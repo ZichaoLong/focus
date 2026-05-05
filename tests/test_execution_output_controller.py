@@ -93,8 +93,8 @@ class ExecutionOutputControllerTests(unittest.TestCase):
                     "cancelled": model.cancelled,
                 }
             ),
-            reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: replies.append(
-                (chat_id, text, message_id, reply_in_thread)
+            reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
+                replies.append((chat_id, text, message_id, reply_in_thread)) or True
             ),
             card_reply_limit=lambda: card_reply_limit,
             terminal_result_card_limit=lambda: terminal_result_card_limit,
@@ -182,6 +182,42 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(bot.reply_refs[-1][0], "msg-4")
         self.assertEqual(bot.sent_messages[-1][0], "c1")
         self.assertEqual(bot.sent_messages[-1][1], "interactive")
+
+    def test_publish_terminal_result_returns_false_when_text_fallback_fails(self) -> None:
+        state = self._make_state()
+        bot = _FakeBot()
+        replies: list[tuple[str, str, str, bool]] = []
+        lock = threading.RLock()
+        turn_execution = TurnExecutionCoordinator()
+
+        controller = ExecutionOutputController(
+            lock=lock,
+            runtime_submit=lambda target, *args, **kwargs: target(*args, **kwargs),
+            turn_execution=turn_execution,
+            get_runtime_state=lambda sender_id, chat_id: state,
+            get_runtime_view=lambda sender_id, chat_id: build_runtime_view(state),
+            apply_runtime_state_message_locked=apply_runtime_state_message,
+            cancel_patch_timer_locked=lambda current_state: None,
+            card_publisher_factory=lambda: RuntimeCardPublisher(bot),
+            dispatch_execution_card_patch=lambda message_id, model: None,
+            reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
+                replies.append((chat_id, text, message_id, reply_in_thread)) or False
+            ),
+            card_reply_limit=lambda: 5,
+            terminal_result_card_limit=lambda: 0,
+            card_log_limit=lambda: 100,
+            stream_patch_interval_ms=lambda: 1,
+        )
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text="done",
+            prompt_message_id="msg-5",
+            prompt_reply_in_thread=True,
+        )
+
+        self.assertFalse(ok)
+        self.assertEqual(replies, [("c1", "done", "msg-5", True)])
 
     def test_schedule_execution_card_update_immediate_path_dispatches_card_patch(self) -> None:
         state = self._make_state()

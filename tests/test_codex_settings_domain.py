@@ -4,7 +4,11 @@ from typing import Any
 
 from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
 from bot.codex_config_reader import ResolvedProfileConfig
-from bot.codex_settings_domain import CodexSettingsDomain, SettingsDomainPorts
+from bot.codex_settings_domain import (
+    CodexSettingsDomain,
+    ProfileResetThreadReplacement,
+    SettingsDomainPorts,
+)
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.profile_resolution import DefaultProfileResolution
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
@@ -65,6 +69,8 @@ class _SettingsPortsStub:
             diagnostics=(),
         )
         self.reset_backend_calls: list[bool] = []
+        self.replacement_result: ProfileResetThreadReplacement | None = None
+        self.replacement_calls: list[tuple[str, str, str, str]] = []
         self.runtime_view_calls: list[tuple[str, str, str]] = []
         self.update_calls: list[tuple[str, str, dict[str, Any]]] = []
         self.resolution_calls: list[RuntimeConfigSummary | None] = []
@@ -157,6 +163,18 @@ class _SettingsPortsStub:
             "app_server_url": "ws://127.0.0.1:8765",
         }
 
+    def replace_bound_provisional_thread_after_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        target_profile: str,
+        message_id: str,
+    ) -> ProfileResetThreadReplacement | None:
+        self.replacement_calls.append((sender_id, chat_id, target_profile, message_id))
+        if self.replacement_result is not None:
+            self.runtime.current_thread_id = self.replacement_result.new_thread_id
+        return self.replacement_result
+
     def resolve_profile_resume_config(self, profile: str) -> ResolvedProfileConfig:
         return ResolvedProfileConfig(
             model=f"{profile}-model",
@@ -196,6 +214,7 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             check_thread_resume_profile_mutable=stub.check_thread_resume_profile_mutable,
             plan_thread_reprofile=stub.plan_thread_reprofile,
             reset_current_instance_backend=stub.reset_current_instance_backend,
+            replace_bound_provisional_thread_after_reset=stub.replace_bound_provisional_thread_after_reset,
             resolve_profile_resume_config=stub.resolve_profile_resume_config,
             adapter_model_provider="",
             get_runtime_view=stub.get_runtime_view,
@@ -325,6 +344,51 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertEqual(response.toast.type, "success")
         self.assertIn("已应用 `work` 并重置 backend", response.toast.content)
         self.assertIsNotNone(response.card)
+        self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "work", "msg-1")])
+
+    def test_apply_profile_with_backend_reset_replaces_provisional_thread(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.thread_reprofile_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
+            diagnostics=(),
+        )
+
+        def _replace(sender_id: str, chat_id: str, target_profile: str, message_id: str):
+            stub.replacement_calls.append((sender_id, chat_id, target_profile, message_id))
+            stub.runtime.current_thread_id = "thread-2"
+            stub.current_thread_profile = ThreadResumeProfileRecord(
+                thread_id="thread-2",
+                profile="work",
+                model="work-model",
+                model_provider="work-provider",
+                updated_at=2.0,
+            )
+            stub.thread_reprofile_plan = SimpleNamespace(
+                status="direct-write",
+                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
+                diagnostics=(),
+            )
+            return ProfileResetThreadReplacement(
+                old_thread_id="thread-1",
+                new_thread_id="thread-2",
+            )
+
+        stub.replace_bound_provisional_thread_after_reset = _replace
+        domain = _make_domain(stub)
+
+        response = domain.handle_apply_profile_with_backend_reset(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"profile": "work", "force": False},
+        )
+
+        self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "work", "msg-1")])
+        self.assertEqual(response.toast.type, "success")
+        content = response.card.data["elements"][0]["content"]
+        self.assertIn("已替换为新 thread：`thread-2", content)
 
     def test_profile_command_rejects_when_unbound(self) -> None:
         stub = _SettingsPortsStub()

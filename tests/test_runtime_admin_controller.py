@@ -94,6 +94,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             cancel_patch_timer_locked=lambda state: state.update({"patch_timer": None}),
             cancel_mirror_watchdog_locked=lambda state: state.update({"mirror_watchdog_timer": None}),
             is_thread_not_found_error=lambda exc: False,
+            is_thread_not_loaded_error=lambda exc: False,
             reprofile_possible_check=lambda thread_id: (thread_id not in loaded_thread_ids, ""),
         )
         return (
@@ -326,6 +327,30 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(plan.backend_thread_status, "notLoaded")
         self.assertEqual(plan.feishu_runtime_state, "released")
         self.assertIn("verifiably globally unloaded", plan.reason_text)
+
+    def test_plan_thread_reprofile_treats_thread_not_loaded_read_error_as_not_loaded(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        controller._read_thread = lambda thread_id: (_ for _ in ()).throw(RuntimeError("thread not loaded: thread-1"))
+        controller._is_thread_not_loaded_error = lambda exc: "thread not loaded:" in str(exc)
+
+        plan = controller.plan_thread_reprofile("thread-1")
+
+        self.assertEqual(plan.status, "reset-available")
+        self.assertEqual(plan.backend_thread_status, "notLoaded")
 
     def test_plan_thread_reprofile_blocks_when_live_runtime_owned_by_other_instance(self) -> None:
         (

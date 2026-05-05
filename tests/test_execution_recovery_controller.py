@@ -110,6 +110,8 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             and str(exc).startswith("Codex request timed out:"),
             runtime_recovery_reason=str,
             mirror_watchdog_seconds=lambda: 60.0,
+            terminal_empty_retry_count=lambda: 3,
+            terminal_empty_retry_delay_seconds=lambda: 0.0,
         )
         return controller, snapshots, patches, deletes, finalized, terminal_results, delivered_images
 
@@ -309,6 +311,75 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "updated reply",
+                    "prompt_message_id": "msg-1",
+                    "prompt_reply_in_thread": True,
+                }
+            ],
+        )
+        self.assertEqual(delivered_images, [])
+
+    def test_run_terminal_execution_reconcile_retries_empty_snapshot_until_final_reply_appears(self) -> None:
+        state = self._make_state()
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
+        snapshots.extend(
+            [
+                ThreadSnapshot(
+                    summary=ThreadSummary(
+                        thread_id="thread-1",
+                        cwd="/tmp/project",
+                        name="demo",
+                        preview="",
+                        created_at=0,
+                        updated_at=0,
+                        source="cli",
+                        status="completed",
+                    ),
+                    turns=[{"id": "turn-1", "items": []}],
+                ),
+                ThreadSnapshot(
+                    summary=ThreadSummary(
+                        thread_id="thread-1",
+                        cwd="/tmp/project",
+                        name="demo",
+                        preview="",
+                        created_at=0,
+                        updated_at=0,
+                        source="cli",
+                        status="completed",
+                    ),
+                    turns=[
+                        {
+                            "id": "turn-1",
+                            "items": [{"type": "agentMessage", "text": "late final"}],
+                        }
+                    ],
+                ),
+            ]
+        )
+
+        controller.run_terminal_execution_reconcile(
+            TerminalReconcileTarget(
+                sender_id="ou_user",
+                chat_id="c1",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                card_message_id="card-1",
+                prompt_message_id="msg-1",
+                prompt_reply_in_thread=True,
+                transcript=state["execution_transcript"],
+                cancelled=False,
+                elapsed=5,
+            )
+        )
+
+        self.assertEqual(patches, [])
+        self.assertEqual(deletes, [])
+        self.assertEqual(
+            terminal_results,
+            [
+                {
+                    "chat_id": "c1",
+                    "final_reply_text": "late final",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
                 }

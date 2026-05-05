@@ -126,6 +126,7 @@ class RuntimeAdminController:
         cancel_patch_timer_locked: Callable[[RuntimeState], None],
         cancel_mirror_watchdog_locked: Callable[[RuntimeState], None],
         is_thread_not_found_error: Callable[[Exception], bool],
+        is_thread_not_loaded_error: Callable[[Exception], bool],
         reprofile_possible_check: Callable[[str], tuple[bool, str]],
     ) -> None:
         self._lock = lock
@@ -154,6 +155,7 @@ class RuntimeAdminController:
         self._cancel_patch_timer_locked = cancel_patch_timer_locked
         self._cancel_mirror_watchdog_locked = cancel_mirror_watchdog_locked
         self._is_thread_not_found_error = is_thread_not_found_error
+        self._is_thread_not_loaded_error = is_thread_not_loaded_error
         self._reprofile_possible_check = reprofile_possible_check
 
     def _current_thread_profile_text(self, thread_id: str) -> str:
@@ -203,6 +205,8 @@ class RuntimeAdminController:
         except Exception as exc:
             if self._is_thread_not_found_error(exc):
                 return None, BACKEND_THREAD_LOOKUP_MISSING
+            if self._is_thread_not_loaded_error(exc):
+                return None, BACKEND_THREAD_STATUS_NOT_LOADED
             logger.exception("读取线程状态失败: thread=%s", normalized_thread_id[:12])
             return None, BACKEND_THREAD_LOOKUP_ERROR
         return summary, str(summary.status or BACKEND_THREAD_STATUS_UNKNOWN).strip() or BACKEND_THREAD_STATUS_UNKNOWN

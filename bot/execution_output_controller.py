@@ -26,7 +26,7 @@ class _ReplyText(Protocol):
         *,
         message_id: str = "",
         reply_in_thread: bool = False,
-    ) -> None: ...
+    ) -> bool: ...
 
 
 class ExecutionOutputController:
@@ -266,13 +266,14 @@ class ExecutionOutputController:
             )
             if published:
                 return True
-        self._reply_text(
-            chat_id,
-            normalized,
-            message_id=prompt_message_id,
-            reply_in_thread=prompt_reply_in_thread,
+        return bool(
+            self._reply_text(
+                chat_id,
+                normalized,
+                message_id=prompt_message_id,
+                reply_in_thread=prompt_reply_in_thread,
+            )
         )
-        return True
 
     def flush_plan_card(self, sender_id: str, chat_id: str) -> None:
         runtime = self._get_runtime_view(sender_id, chat_id)

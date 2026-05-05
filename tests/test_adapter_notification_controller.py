@@ -201,6 +201,76 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(watchdogs, [binding_a, binding_b])
         self.assertEqual(updates, [binding_a, binding_b])
 
+    def test_handle_thread_status_changed_ignores_idle_while_waiting_for_turn_started(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["awaiting_reattach_status_settle"] = True
+        state["current_turn_id"] = "turn-1"
+
+        controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "idle"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_message_id"], "card-1")
+        self.assertTrue(state["awaiting_local_turn_started"])
+
+    def test_handle_thread_status_changed_active_does_not_clear_waiting_for_turn_started(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["awaiting_reattach_status_settle"] = True
+        state["current_turn_id"] = "turn-1"
+
+        controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "active"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_message_id"], "card-1")
+        self.assertTrue(state["awaiting_local_turn_started"])
+
+    def test_handle_thread_closed_ignores_close_while_waiting_for_turn_started(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["awaiting_reattach_status_settle"] = True
+        state["current_turn_id"] = "turn-1"
+
+        controller, note_events, _, _, _, _, _, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_closed({"threadId": "thread-1"})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(state["current_message_id"], "card-1")
+        self.assertTrue(state["awaiting_local_turn_started"])
+
     def test_handle_turn_completed_delegates_terminal_finalize(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()
@@ -242,4 +312,68 @@ class AdapterNotificationControllerTests(unittest.TestCase):
                 ("ou_user", "chat-a", "thread-1", "turn-1"),
                 ("ou_user", "chat-b", "thread-1", "turn-1"),
             ],
+        )
+
+    def test_handle_error_notification_uses_non_retry_error_as_fallback_reply(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, _, _, _, _, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_notification(
+            "error",
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "willRetry": False,
+                "error": {
+                    "message": "provider unavailable",
+                    "additionalDetails": "timeout while contacting upstream",
+                },
+            },
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [binding])
+        self.assertEqual(
+            state["execution_transcript"].reply_text(),
+            "provider unavailable\ntimeout while contacting upstream",
+        )
+
+    def test_handle_error_notification_records_retry_message_in_process_panel(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, _, _, _, _, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_notification(
+            "error",
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "willRetry": True,
+                "error": {
+                    "message": "temporary transport error",
+                },
+            },
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [binding])
+        self.assertEqual(state["execution_transcript"].reply_text(), "")
+        self.assertEqual(
+            state["execution_transcript"].process_text(),
+            "\n[重试中] temporary transport error\n",
         )

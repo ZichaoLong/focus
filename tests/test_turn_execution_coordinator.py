@@ -197,6 +197,38 @@ class TurnExecutionCoordinatorTests(unittest.TestCase):
         self.assertEqual(state["terminal_result_text"], "123456789")
         self.assertIsNone(coordinator.prepare_patch_failure_followup_locked(state))
 
+    def test_apply_terminal_error_locked_uses_error_as_fallback_reply_when_no_reply_exists(self) -> None:
+        coordinator = TurnExecutionCoordinator()
+        state = self._make_state()
+
+        coordinator.apply_terminal_error_locked(state, error_message="provider unavailable")
+        coordinator.apply_turn_completed_locked(
+            state,
+            status="failed",
+            error_message="provider unavailable",
+        )
+
+        self.assertEqual(state["execution_transcript"].reply_text(), "provider unavailable")
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+
+    def test_apply_terminal_error_locked_appends_error_note_after_reply_without_duplication(self) -> None:
+        coordinator = TurnExecutionCoordinator()
+        state = self._make_state()
+        state["execution_transcript"].set_reply_text("partial answer")
+
+        coordinator.apply_terminal_error_locked(state, error_message="provider unavailable")
+        coordinator.apply_turn_completed_locked(
+            state,
+            status="failed",
+            error_message="provider unavailable",
+        )
+
+        self.assertEqual(state["execution_transcript"].reply_text(), "partial answer")
+        self.assertEqual(
+            state["execution_transcript"].process_text(),
+            "\n[错误] provider unavailable\n",
+        )
+
     def test_plan_state_updates_are_scoped_to_current_turn(self) -> None:
         coordinator = TurnExecutionCoordinator()
         state = self._make_state()

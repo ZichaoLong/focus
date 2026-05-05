@@ -148,6 +148,7 @@ class BindingRuntimeManager:
             "followup_text": "",
             "terminal_result_text": "",
             "awaiting_local_turn_started": False,
+            "awaiting_reattach_status_settle": False,
             "approval_policy": self._default_approval_policy,
             "sandbox": self._default_sandbox,
             "collaboration_mode": self._default_collaboration_mode,

@@ -74,6 +74,7 @@ class AdapterNotificationController:
 
     def handle_notification(self, method: str, params: dict[str, Any]) -> None:
         routes: dict[str, Callable[[dict[str, Any]], None]] = {
+            "error": self.handle_error_notification,
             "thread/status/changed": self.handle_thread_status_changed,
             "thread/closed": self.handle_thread_closed,
             "thread/name/updated": self.handle_thread_name_updated,
@@ -91,6 +92,42 @@ class AdapterNotificationController:
         if handler is None:
             return
         handler(params)
+
+    def handle_error_notification(self, params: dict[str, Any]) -> None:
+        thread_id = str(params.get("threadId", "") or "").strip()
+        bindings = self._bindings_for_thread(thread_id)
+        if not bindings:
+            return
+        turn_id = str(params.get("turnId", "") or "").strip()
+        error = params.get("error") or {}
+        message = str(error.get("message") or "").strip()
+        additional_details = str(error.get("additionalDetails") or "").strip()
+        if additional_details:
+            message = f"{message}\n{additional_details}".strip() if message else additional_details
+        if not message:
+            return
+        will_retry = bool(params.get("willRetry"))
+        for binding in bindings:
+            self._note_runtime_event(*binding)
+            state = self._get_runtime_state(*binding)
+            with self._lock:
+                runtime = build_runtime_view(state)
+                if runtime.current_thread_id.strip() != thread_id:
+                    continue
+                current_turn_id = runtime.execution.current_turn_id.strip()
+                if current_turn_id and turn_id and current_turn_id != turn_id:
+                    continue
+                if will_retry:
+                    self._turn_execution.append_process_note_locked(
+                        state,
+                        text=f"\n[重试中] {message}\n",
+                    )
+                else:
+                    self._turn_execution.apply_terminal_error_locked(
+                        state,
+                        error_message=message,
+                    )
+            self._schedule_execution_card_update(*binding)
 
     def _bindings_for_thread(self, thread_id: str) -> tuple[ChatBindingKey, ...]:
         normalized_thread_id = str(thread_id or "").strip()
@@ -114,8 +151,11 @@ class AdapterNotificationController:
                     continue
                 current_turn_id = runtime.execution.current_turn_id.strip()
                 current_message_id = runtime.execution.current_message_id.strip()
-                if status_type == BACKEND_THREAD_STATUS_ACTIVE:
+                awaiting_started = self._turn_execution.awaiting_remote_turn_started_locked(state)
+                if status_type == BACKEND_THREAD_STATUS_ACTIVE and not awaiting_started:
                     self._turn_execution.acknowledge_active_thread_locked(state)
+            if awaiting_started:
+                continue
             if status_type != BACKEND_THREAD_STATUS_ACTIVE and (current_turn_id or current_message_id):
                 self._finalize_execution_from_terminal_signal(
                     binding[0],
@@ -147,6 +187,9 @@ class AdapterNotificationController:
                 current_turn_id = runtime.execution.current_turn_id.strip()
                 current_message_id = runtime.execution.current_message_id.strip()
                 is_running = runtime.running
+                awaiting_started = self._turn_execution.awaiting_remote_turn_started_locked(state)
+            if awaiting_started:
+                continue
             if is_running or current_turn_id or current_message_id:
                 self._finalize_execution_from_terminal_signal(
                     binding[0],

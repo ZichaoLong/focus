@@ -58,6 +58,14 @@ class TurnExecutionCoordinator:
             or bool(state["current_turn_id"])
         )
 
+    @staticmethod
+    def awaiting_remote_turn_started_locked(state: RuntimeState) -> bool:
+        return (
+            bool(state["current_message_id"])
+            and bool(state["awaiting_local_turn_started"])
+            and bool(state["awaiting_reattach_status_settle"])
+        )
+
     def mark_runtime_event_locked(self, state: RuntimeState, *, occurred_at: float) -> None:
         self.apply_runtime_state_message_locked(
             state,
@@ -88,6 +96,7 @@ class TurnExecutionCoordinator:
                 followup_text="",
                 terminal_result_text="",
                 awaiting_local_turn_started=False,
+                awaiting_reattach_status_settle=False,
                 runtime_channel_state="live",
                 reset_transcript=True,
             ),
@@ -101,6 +110,7 @@ class TurnExecutionCoordinator:
         prompt_reply_in_thread: bool,
         actor_open_id: str,
         started_at: float,
+        awaiting_reattach_status_settle: bool = False,
     ) -> None:
         self.apply_runtime_state_message_locked(
             state,
@@ -121,6 +131,7 @@ class TurnExecutionCoordinator:
                 terminal_result_text="",
                 last_patch_at=0.0,
                 awaiting_local_turn_started=True,
+                awaiting_reattach_status_settle=awaiting_reattach_status_settle,
                 reset_transcript=True,
             ),
         )
@@ -131,6 +142,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=False,
                 pending_cancel=False,
+                awaiting_reattach_status_settle=False,
                 reply_text=error_text,
             ),
         )
@@ -261,6 +273,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=True,
                 awaiting_local_turn_started=False,
+                awaiting_reattach_status_settle=False,
             ),
         )
 
@@ -270,6 +283,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 pending_cancel=False,
                 awaiting_local_turn_started=False,
+                awaiting_reattach_status_settle=False,
                 runtime_channel_state="live",
                 running=False,
                 current_turn_id="",
@@ -282,6 +296,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=False,
                 pending_cancel=False,
+                awaiting_reattach_status_settle=False,
             ),
         )
 
@@ -336,6 +351,21 @@ class TurnExecutionCoordinator:
         )
         return True
 
+    def apply_terminal_error_locked(self, state: RuntimeState, *, error_message: str) -> None:
+        normalized = str(error_message or "").strip()
+        if not normalized:
+            return
+        transcript = state["execution_transcript"]
+        if transcript.reply_text().strip() == normalized:
+            return
+        if not transcript.has_reply_output():
+            transcript.set_reply_text(normalized)
+            return
+        note = f"\n[错误] {normalized}\n"
+        if transcript.process_text().endswith(note):
+            return
+        transcript.append_process_note(note)
+
     def prepare_turn_started_locked(
         self,
         state: RuntimeState,
@@ -371,6 +401,7 @@ class TurnExecutionCoordinator:
                     followup_sent=False,
                     followup_text="",
                     terminal_result_text="",
+                    awaiting_reattach_status_settle=False,
                     runtime_channel_state="live",
                     reset_transcript=True,
                 ),
@@ -382,6 +413,7 @@ class TurnExecutionCoordinator:
                 current_turn_id=normalized_turn_id,
                 running=True,
                 awaiting_local_turn_started=False,
+                awaiting_reattach_status_settle=False,
             ),
         )
         return TurnStartedTransition(
@@ -402,11 +434,7 @@ class TurnExecutionCoordinator:
                 state,
                 ExecutionStateChanged(cancelled=True),
             )
-        transcript = state["execution_transcript"]
-        if error_message and not transcript.has_reply_output():
-            transcript.set_reply_text(error_message)
-        elif error_message:
-            transcript.append_process_note(f"\n[错误] {error_message}\n")
+        self.apply_terminal_error_locked(state, error_message=error_message)
 
     def prepare_finalize_locked(self, state: RuntimeState) -> FinalizeExecutionTransition:
         had_card = bool(state["current_message_id"])
@@ -416,6 +444,7 @@ class TurnExecutionCoordinator:
                 running=False,
                 pending_cancel=False,
                 awaiting_local_turn_started=False,
+                awaiting_reattach_status_settle=False,
                 current_turn_id="",
             ),
         )

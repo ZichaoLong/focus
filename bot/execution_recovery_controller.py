@@ -9,6 +9,7 @@ from typing import Any, Callable, TypeAlias
 from bot.adapters.base import ThreadSnapshot
 from bot.binding_runtime_manager import ResolvedRuntimeBinding
 from bot.execution_transcript import ExecutionTranscript
+from bot.generated_image_delivery import collect_generated_images
 from bot.runtime_state import (
     BACKEND_THREAD_STATUS_ACTIVE,
     ExecutionStateChanged,
@@ -68,6 +69,8 @@ class ExecutionRecoveryController:
         is_request_timeout_error: Callable[[Exception], bool],
         runtime_recovery_reason: Callable[[Exception], str],
         mirror_watchdog_seconds: Callable[[], float],
+        terminal_empty_retry_count: Callable[[], int],
+        terminal_empty_retry_delay_seconds: Callable[[], float],
     ) -> None:
         self._lock = lock
         self._runtime_submit = runtime_submit
@@ -88,6 +91,8 @@ class ExecutionRecoveryController:
         self._is_request_timeout_error = is_request_timeout_error
         self._runtime_recovery_reason = runtime_recovery_reason
         self._mirror_watchdog_seconds = mirror_watchdog_seconds
+        self._terminal_empty_retry_count = terminal_empty_retry_count
+        self._terminal_empty_retry_delay_seconds = terminal_empty_retry_delay_seconds
 
     @staticmethod
     def _cancel_timer(timer: threading.Timer | None) -> None:
@@ -411,9 +416,29 @@ class ExecutionRecoveryController:
 
     def run_terminal_execution_reconcile(self, target: TerminalReconcileTarget) -> None:
         fallback_reply_text = target.transcript.reply_text()
-        try:
-            snapshot = self._read_thread(target.thread_id)
-        except Exception as exc:
+        last_snapshot_error: Exception | None = None
+        snapshot: ThreadSnapshot | None = None
+        projection: SnapshotReplyProjection | None = None
+        max_attempts = max(int(self._terminal_empty_retry_count()), 1)
+        for attempt in range(max_attempts):
+            try:
+                snapshot = self._read_thread(target.thread_id)
+            except Exception as exc:
+                last_snapshot_error = exc
+                break
+            projection = self.snapshot_reply(snapshot, turn_id=target.turn_id)
+            if projection.final_reply_text or fallback_reply_text:
+                break
+            if collect_generated_images(snapshot, turn_id=target.turn_id):
+                break
+            if attempt >= max_attempts - 1:
+                break
+            delay = max(float(self._terminal_empty_retry_delay_seconds()), 0.0)
+            if delay > 0:
+                time.sleep(delay)
+
+        if snapshot is None or projection is None:
+            exc = last_snapshot_error or RuntimeError("terminal reconcile snapshot unavailable")
             logger.info(
                 "终态补账跳过: chat=%s thread=%s reason=%s",
                 target.chat_id,
@@ -443,7 +468,6 @@ class ExecutionRecoveryController:
                     )
             return
 
-        projection = self.snapshot_reply(snapshot, turn_id=target.turn_id)
         if projection.final_reply_text:
             carrier_available = self._apply_terminal_snapshot_projection(
                 sender_id=target.sender_id,

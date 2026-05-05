@@ -173,6 +173,11 @@ time:
 - the authoritative terminal result should normally be sent through a separate
   `terminal result card`; only when that carrier cannot represent the text
   safely or within budget may the system fall back to plain text
+- if the upstream first emits a non-retry `error` notification and that turn
+  ultimately produces no textual `agentMessage`, the local runtime must retain
+  that error message as the turn's fail-closed textual close-out; if later
+  reconciliation still finds an authoritative `final_reply_text`, that
+  authoritative text wins
 - the old execution card may remove its final-answer segment only after the
   authoritative terminal-result carrier has been delivered successfully; if the
   system can only fall back to the local transcript, or terminal-result

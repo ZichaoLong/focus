@@ -40,6 +40,13 @@ _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
 
 
 @dataclass(frozen=True, slots=True)
+class ProfileResetThreadReplacement:
+    old_thread_id: str
+    new_thread_id: str
+    warning_text: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class SettingsDomainPorts:
     get_message_context: Callable[[str], dict[str, Any]]
     get_sender_display_name: Callable[..., str]
@@ -53,6 +60,10 @@ class SettingsDomainPorts:
     check_thread_resume_profile_mutable: Callable[[str], tuple[bool, str]]
     plan_thread_reprofile: Callable[[str], Any]
     reset_current_instance_backend: Callable[[bool], dict[str, Any]]
+    replace_bound_provisional_thread_after_reset: Callable[
+        [str, str, str, str],
+        ProfileResetThreadReplacement | None,
+    ]
     resolve_profile_resume_config: Callable[[str], ResolvedProfileConfig]
     adapter_model_provider: str
     get_runtime_view: Callable[[str, str, str], RuntimeView]
@@ -599,6 +610,61 @@ class CodexSettingsDomain:
             logger.exception("reset backend 失败")
             return ProfileCommandOutcome(
                 command_result=CommandResult(text=f"reset backend 失败：{exc}")
+            )
+
+        try:
+            replacement = ports.replace_bound_provisional_thread_after_reset(
+                sender_id,
+                chat_id,
+                target_profile,
+                message_id,
+            )
+        except Exception as exc:
+            logger.exception("reset 后替换临时 thread 失败")
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text=(
+                        "reset 完成，但当前临时 thread 替换失败："
+                        f"{exc}"
+                    )
+                )
+            )
+        if replacement is not None:
+            thread_id = replacement.new_thread_id
+            updated_record = ports.load_thread_resume_profile(thread_id)
+            fresh_plan = ports.plan_thread_reprofile(thread_id)
+            leading_lines = [
+                f"已切换当前 thread 的 profile：`{target_profile}`",
+                "已重置当前实例 backend。",
+                (
+                    "原临时 thread 尚未 materialize，"
+                    f"已替换为新 thread：`{replacement.new_thread_id[:8]}…`"
+                ),
+            ]
+            if reset_result.get("interrupted_binding_ids"):
+                leading_lines.append(
+                    "已中断运行中的 binding："
+                    + ", ".join(f"`{binding_id}`" for binding_id in reset_result["interrupted_binding_ids"])
+                )
+            if reset_result.get("fail_closed_request_count"):
+                leading_lines.append(
+                    f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
+                )
+            if replacement.warning_text:
+                leading_lines.append(replacement.warning_text)
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile=target_profile,
+                        current_record=updated_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=fresh_plan,
+                        leading_lines=leading_lines + [""],
+                    )
+                ),
+                applied_profile=target_profile,
             )
 
         can_write, deny_reason = ports.check_thread_resume_profile_mutable(thread_id)

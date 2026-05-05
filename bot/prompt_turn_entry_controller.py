@@ -295,8 +295,10 @@ class PromptTurnEntryController:
         with self._lock:
             runtime = build_runtime_view(state)
         released_thread_id = runtime.current_thread_id.strip()
+        reattach_pending = False
         preattached_interaction_lease = None
         if released_thread_id and not runtime.binding.feishu_runtime_attached:
+            reattach_pending = True
             denial_text = self._access_policy.prompt_write_denial_text(
                 chat_binding_key,
                 chat_id,
@@ -387,6 +389,7 @@ class PromptTurnEntryController:
                 prompt_reply_in_thread=prompt_reply_in_thread,
                 actor_open_id=str(actor_open_id or "").strip() or self._group_actor_open_id(message_id),
                 started_at=started_at,
+                awaiting_reattach_status_settle=reattach_pending,
             )
             self._clear_plan_state(state)
 

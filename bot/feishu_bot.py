@@ -1873,19 +1873,20 @@ class FeishuBot(ABC):
         *,
         parent_message_id: str = "",
         reply_in_thread: bool = False,
-    ) -> None:
+    ) -> bool:
         """发送文本消息"""
         content = json.dumps({"text": text})
         normalized_parent_id = str(parent_message_id or "").strip()
         if normalized_parent_id:
-            self.reply_to_message(
-                normalized_parent_id,
-                "text",
-                content,
-                reply_in_thread=self._should_reply_in_thread(normalized_parent_id, reply_in_thread),
+            return bool(
+                self.reply_to_message(
+                    normalized_parent_id,
+                    "text",
+                    content,
+                    reply_in_thread=self._should_reply_in_thread(normalized_parent_id, reply_in_thread),
+                )
             )
-            return
-        self.send_message(chat_id, "text", content)
+        return bool(self.send_message_get_id(chat_id, "text", content))
 
     def reply_card(
         self,

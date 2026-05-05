@@ -276,11 +276,12 @@ class _FakeBot:
         self.runtime_bot_open_id = "ou_bot"
         self.downloaded_resources: dict[tuple[str, str, str], object] = {}
 
-    def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> None:
+    def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> bool:
         self.replies.append((chat_id, text))
         if parent_message_id:
             self.reply_parents.append((chat_id, text, parent_message_id))
             self.reply_parent_calls.append((chat_id, text, parent_message_id, reply_in_thread))
+        return True
 
     def reply_card(self, chat_id: str, card: dict, *, parent_message_id: str = "", reply_in_thread: bool = False) -> None:
         self.cards.append((chat_id, card))
@@ -3367,6 +3368,90 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["model_provider"], "provider2_api")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
+
+    def test_replace_bound_provisional_thread_after_reset_rebinds_and_moves_profile(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._thread_resume_profile_store.save(
+            "thread-1",
+            profile="provider2",
+            model="provider2-model",
+            model_provider="provider2_api",
+        )
+        handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
+            summary=ThreadSummary(
+                thread_id="thread-1",
+                cwd="/tmp/project",
+                name="",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="appServer",
+                status="idle",
+                path="/tmp/feishu-codex-missing-rollout",
+            )
+        )
+
+        replacement = handler._replace_bound_provisional_thread_after_reset(
+            "ou_user",
+            "c1",
+            "provider2",
+        )
+
+        assert replacement is not None
+        self.assertEqual(replacement.old_thread_id, "thread-1")
+        self.assertEqual(replacement.new_thread_id, "thread-created")
+        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
+        saved = handler._thread_resume_profile_store.load("thread-created")
+        assert saved is not None
+        self.assertEqual(saved.profile, "provider2")
+
+    def test_replace_bound_provisional_thread_after_reset_handles_thread_not_loaded_read(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._thread_resume_profile_store.save(
+            "thread-1",
+            profile="provider2",
+            model="provider2-model",
+            model_provider="provider2_api",
+        )
+        handler._adapter.thread_snapshots[("thread-1", False)] = CodexRpcError(
+            "thread/read",
+            {"code": -32000, "message": "thread not loaded: thread-1"},
+        )
+
+        replacement = handler._replace_bound_provisional_thread_after_reset(
+            "ou_user",
+            "c1",
+            "provider2",
+        )
+
+        assert replacement is not None
+        self.assertEqual(replacement.old_thread_id, "thread-1")
+        self.assertEqual(replacement.new_thread_id, "thread-created")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
 
     def test_prompt_keeps_last_known_profile_when_runtime_config_read_temporarily_fails(self) -> None:
         handler, _ = self._make_handler()

@@ -311,6 +311,30 @@ thread-wise store 至少应保存：
 - `/new` 与“直接发第一条消息”不应形成两套不同的新 thread profile 语义
 - 若后续要切换该 thread 的 profile，仍应走 `/release-runtime` / `/profile <name>` / `resume`
 
+## 5.7.2 `/new` 后尚未 materialize 的临时 thread
+
+upstream Codex 的 `thread/start` 会先分配 `thread_id`，但在第一条真实用户消息落盘前，这个 thread 仍可能是一个**尚未 materialize 的临时 thread**：
+
+- `thread/read` 还能读到它
+- 但 `thread/resume` 会被 upstream 直接拒绝
+
+因此，本项目不再把这类 thread 当作普通可恢复 thread 处理。
+
+当飞书侧出现以下场景：
+
+- 当前 chat 先执行 `/new`
+- 还没开始第一轮真实对话
+- 管理员执行 `/profile <name>`，并走“应用并 reset backend”路径
+
+则正确行为是：
+
+- reset 当前实例 backend
+- 以目标 `profile` 新建 replacement thread
+- 把当前 chat binding 无缝切到 replacement thread
+- 把 thread-wise resume profile 一并迁移到 replacement thread
+
+这样后续第一条普通消息会直接落在 replacement thread 上，而不是继续绑定一个 upstream 不能 `resume` 的空壳 thread。
+
 ## 5.8 `fcodex resume -p <profile>`
 
 当 `fcodex resume <thread>` 显式带 `-p/--profile` 时：

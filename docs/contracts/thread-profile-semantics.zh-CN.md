@@ -47,6 +47,13 @@
 - 对需要 force reset 的情况，必须显式展示阻塞诊断，并要求管理员 / 操作者确认
 - 对 live runtime owner 在别的实例、或当前实例不支持 reset backend 的情况，直接 blocked
 
+补充约束：
+
+- 若当前绑定 thread 只是 `/new` 后尚未 materialize 的临时 thread，则它虽然有 `thread_id`，但 upstream 仍不能 `resume`
+- 因此，当 `/profile <name>` 走“应用并 reset backend”路径时，不能继续保留这个临时 thread 作为当前绑定目标
+- 正确行为是：reset 完成后，按目标 `profile` 新建 replacement thread，并把当前 chat binding 切到这个新 thread
+- 这样 `/new` 后立刻 re-profile，再发送第一条普通消息，能直接在新 profile 下开始第一轮对话，而不会卡在一个不可恢复的空壳 thread 上
+
 ### `/reset-backend`
 
 - 作用对象：当前实例 backend，不是当前 thread

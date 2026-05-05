@@ -50,7 +50,11 @@ from bot.codex_protocol.client import CodexRpcError
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 from bot.codex_help_domain import CodexHelpDomain
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiRuntimePorts
-from bot.codex_settings_domain import CodexSettingsDomain, SettingsDomainPorts
+from bot.codex_settings_domain import (
+    CodexSettingsDomain,
+    ProfileResetThreadReplacement,
+    SettingsDomainPorts,
+)
 from bot.profile_resolution import DefaultProfileResolution, resolve_local_default_profile
 from bot.reason_codes import ReasonedCheck
 from bot.thread_profile_mutability import check_thread_resume_profile_mutable
@@ -74,6 +78,7 @@ from bot.runtime_card_publisher import (
     RuntimeCardPublisher,
 )
 from bot.runtime_state import (
+    BACKEND_THREAD_STATUS_IDLE,
     FEISHU_RUNTIME_ATTACHED,
     FEISHU_RUNTIME_RELEASED,
     UNSET,
@@ -281,6 +286,8 @@ class CodexHandler(BotHandler):
             is_request_timeout_error=self._is_request_timeout_error,
             runtime_recovery_reason=self._runtime_recovery_reason,
             mirror_watchdog_seconds=lambda: self._mirror_watchdog_seconds,
+            terminal_empty_retry_count=lambda: 6,
+            terminal_empty_retry_delay_seconds=lambda: 0.5,
         )
         self._interaction_requests = InteractionRequestController(
             lock=self._lock,
@@ -361,6 +368,7 @@ class CodexHandler(BotHandler):
                 check_thread_resume_profile_mutable=self._thread_resume_profile_write_check,
                 plan_thread_reprofile=lambda thread_id: self._runtime_admin.plan_thread_reprofile(thread_id),
                 reset_current_instance_backend=self._reset_current_instance_backend,
+                replace_bound_provisional_thread_after_reset=self._replace_bound_provisional_thread_after_reset,
                 resolve_profile_resume_config=resolve_profile_from_codex_config,
                 adapter_model_provider=str(self._adapter_config.model_provider or "").strip(),
                 get_runtime_view=self._get_runtime_view,
@@ -453,6 +461,7 @@ class CodexHandler(BotHandler):
             cancel_patch_timer_locked=self._cancel_patch_timer_locked,
             cancel_mirror_watchdog_locked=self._cancel_mirror_watchdog_locked,
             is_thread_not_found_error=self._is_thread_not_found_error,
+            is_thread_not_loaded_error=self._is_thread_not_loaded_error,
             reprofile_possible_check=self._thread_resume_profile_write_check,
         )
         self._prompt_turn_entry = PromptTurnEntryController(
@@ -1339,16 +1348,17 @@ class CodexHandler(BotHandler):
         *,
         message_id: str = "",
         reply_in_thread: bool = False,
-    ) -> None:
+    ) -> bool:
         if self._is_group_chat(chat_id, message_id) and message_id:
-            self.bot.reply(
-                chat_id,
-                text,
-                parent_message_id=message_id,
-                reply_in_thread=reply_in_thread,
+            return bool(
+                self.bot.reply(
+                    chat_id,
+                    text,
+                    parent_message_id=message_id,
+                    reply_in_thread=reply_in_thread,
+                )
             )
-            return
-        self.bot.reply(chat_id, text)
+        return bool(self.bot.reply(chat_id, text))
 
     def _reply_card(
         self,
@@ -2086,6 +2096,13 @@ class CodexHandler(BotHandler):
         return message.startswith("no rollout found for thread id ")
 
     @staticmethod
+    def _is_thread_not_loaded_error(exc: Exception) -> bool:
+        if not isinstance(exc, CodexRpcError):
+            return False
+        message = str(exc.error.get("message", "") or "").lower()
+        return message.startswith("thread not loaded:")
+
+    @staticmethod
     def _is_transport_disconnect(exc: Exception) -> bool:
         return isinstance(exc, CodexRpcError) and exc.error.get("message") == "Codex websocket disconnected"
 
@@ -2335,6 +2352,69 @@ class CodexHandler(BotHandler):
                 f"后续 resume 可能不会沿用这次 profile（{exc}）。"
             )
         return ""
+
+    @staticmethod
+    def _thread_snapshot_is_provisional(snapshot: ThreadSnapshot) -> bool:
+        summary = snapshot.summary
+        thread_path = str(summary.path or "").strip()
+        if not thread_path:
+            return False
+        try:
+            path_exists = pathlib.Path(thread_path).expanduser().exists()
+        except OSError:
+            return False
+        return (
+            not path_exists
+            and summary.status == BACKEND_THREAD_STATUS_IDLE
+            and not str(summary.preview or "").strip()
+        )
+
+    def _replace_bound_provisional_thread_after_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        target_profile: str,
+        message_id: str = "",
+    ) -> ProfileResetThreadReplacement | None:
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
+        old_thread_id = runtime.current_thread_id.strip()
+        if not old_thread_id:
+            return None
+        provisional_replace = False
+        try:
+            snapshot = self._read_thread_snapshot_authoritatively(
+                old_thread_id,
+                original_arg=old_thread_id,
+                include_turns=False,
+            )
+        except Exception as exc:
+            if not self._is_thread_not_loaded_error(exc):
+                raise
+            provisional_replace = True
+        else:
+            provisional_replace = self._thread_snapshot_is_provisional(snapshot)
+        if not provisional_replace:
+            return None
+        created = self._adapter.create_thread(
+            cwd=runtime.working_dir,
+            profile=str(target_profile or "").strip() or None,
+            approval_policy=runtime.approval_policy or None,
+            sandbox=runtime.sandbox or None,
+        )
+        new_thread_id = created.summary.thread_id
+        warning_text = ""
+        try:
+            warning_text = self._persist_new_thread_profile_seed(new_thread_id, target_profile)
+            self._bind_thread(sender_id, chat_id, created.summary, message_id=message_id)
+        except Exception:
+            self._thread_resume_profile_store.clear(new_thread_id)
+            raise
+        self._thread_resume_profile_store.clear(old_thread_id)
+        return ProfileResetThreadReplacement(
+            old_thread_id=old_thread_id,
+            new_thread_id=new_thread_id,
+            warning_text=warning_text,
+        )
 
     def _effective_default_profile(self) -> str:
         resolution = self._current_default_profile_resolution(self._safe_read_runtime_config())
