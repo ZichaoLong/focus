@@ -60,6 +60,7 @@ class ExecutionRecoveryController:
         dispatch_execution_card_message: Callable[..., None],
         remove_execution_card_message: Callable[[str], bool],
         publish_terminal_result: Callable[..., bool],
+        deliver_generated_images_from_snapshot: Callable[..., int],
         read_thread: Callable[[str], ThreadSnapshot],
         is_thread_not_found_error: Callable[[Exception], bool],
         is_turn_thread_not_found_error: Callable[[Exception], bool],
@@ -79,6 +80,7 @@ class ExecutionRecoveryController:
         self._dispatch_execution_card_message = dispatch_execution_card_message
         self._remove_execution_card_message = remove_execution_card_message
         self._publish_terminal_result = publish_terminal_result
+        self._deliver_generated_images_from_snapshot = deliver_generated_images_from_snapshot
         self._read_thread = read_thread
         self._is_thread_not_found_error = is_thread_not_found_error
         self._is_turn_thread_not_found_error = is_turn_thread_not_found_error
@@ -363,6 +365,39 @@ class ExecutionRecoveryController:
             prompt_reply_in_thread=prompt_reply_in_thread,
         )
 
+    def _deliver_generated_images_if_available(
+        self,
+        *,
+        sender_id: str,
+        chat_id: str,
+        thread_id: str,
+        snapshot: ThreadSnapshot,
+        turn_id: str,
+        prompt_message_id: str = "",
+        prompt_reply_in_thread: bool = False,
+    ) -> int:
+        try:
+            return int(
+                self._deliver_generated_images_from_snapshot(
+                    sender_id=sender_id,
+                    chat_id=chat_id,
+                    thread_id=thread_id,
+                    snapshot=snapshot,
+                    turn_id=turn_id,
+                    prompt_message_id=prompt_message_id,
+                    prompt_reply_in_thread=prompt_reply_in_thread,
+                )
+                or 0
+            )
+        except Exception:
+            logger.exception(
+                "终态图片投递失败: chat=%s thread=%s turn=%s",
+                chat_id,
+                str(thread_id or "")[:12],
+                str(turn_id or "")[:12],
+            )
+            return 0
+
     def schedule_terminal_execution_reconcile(self, target: TerminalReconcileTarget | None) -> None:
         if target is None or not target.thread_id or not target.card_message_id:
             return
@@ -420,6 +455,15 @@ class ExecutionRecoveryController:
                 elapsed=target.elapsed,
                 projection=projection,
             )
+            self._deliver_generated_images_if_available(
+                sender_id=target.sender_id,
+                chat_id=target.chat_id,
+                thread_id=target.thread_id,
+                snapshot=snapshot,
+                turn_id=target.turn_id,
+                prompt_message_id=target.prompt_message_id,
+                prompt_reply_in_thread=target.prompt_reply_in_thread,
+            )
             return
 
         if fallback_reply_text:
@@ -443,6 +487,15 @@ class ExecutionRecoveryController:
                     cancelled=target.cancelled,
                     elapsed=target.elapsed,
                 )
+        self._deliver_generated_images_if_available(
+            sender_id=target.sender_id,
+            chat_id=target.chat_id,
+            thread_id=target.thread_id,
+            snapshot=snapshot,
+            turn_id=target.turn_id,
+            prompt_message_id=target.prompt_message_id,
+            prompt_reply_in_thread=target.prompt_reply_in_thread,
+        )
 
     def mark_runtime_degraded(self, sender_id: str, chat_id: str, *, reason: str) -> None:
         state = self._get_runtime_state(sender_id, chat_id)
@@ -679,6 +732,15 @@ class ExecutionRecoveryController:
                 elapsed=elapsed,
                 projection=projection,
             )
+            self._deliver_generated_images_if_available(
+                sender_id=sender_id,
+                chat_id=chat_id,
+                thread_id=normalized_thread_id,
+                snapshot=snapshot,
+                turn_id=turn_id,
+                prompt_message_id=prompt_message_id,
+                prompt_reply_in_thread=prompt_reply_in_thread,
+            )
             return True
         if fallback_reply_text:
             published = self._maybe_publish_terminal_result(
@@ -701,6 +763,15 @@ class ExecutionRecoveryController:
                     cancelled=cancelled,
                     elapsed=elapsed,
                 )
+        self._deliver_generated_images_if_available(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            thread_id=normalized_thread_id,
+            snapshot=snapshot,
+            turn_id=turn_id,
+            prompt_message_id=prompt_message_id,
+            prompt_reply_in_thread=prompt_reply_in_thread,
+        )
         return finalized
 
     @staticmethod

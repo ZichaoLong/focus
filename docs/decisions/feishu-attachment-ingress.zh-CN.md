@@ -7,6 +7,7 @@
 - `docs/architecture/feishu-codex-design.zh-CN.md`：当前架构与仓库边界
 - `docs/contracts/codex-permissions-model.zh-CN.md`：`sandbox`、`approval`、writable roots 的语义
 - `docs/contracts/group-chat-contract.zh-CN.md`：群激活、群聊工作态与触发边界
+- `docs/decisions/feishu-output-images.zh-CN.md`：反方向能力，即 Codex 图片结果回到飞书的边界
 
 ## 1. 问题陈述
 

@@ -181,6 +181,11 @@ time:
   process log or staged reply content, the old card should be finalized as a
   minimal terminal card instead of being deleted; that minimal card currently
   renders a single `无` placeholder
+- generated images discovered from the terminal thread snapshot are delivered
+  only as separate follow-up Feishu image messages, after the authoritative
+  text terminal result has been sent successfully when such text exists; they
+  are not patched into the execution card and do not change the execution-card
+  anchor contract
 - if later reconciliation discovers a different authoritative
   `final_reply_text`, the system must emit a corrected terminal-result carrier
   again instead of only patching the old execution card
@@ -240,6 +245,8 @@ elsewhere:
 
 - `bot/codex_handler.py`
 - `bot/adapters/codex_app_server.py`
+- `bot/generated_image_delivery.py`
+- `bot/stores/generated_image_delivery_store.py`
 - `bot/fcodex.py`
 - `bot/fcodex_proxy.py`
 - `docs/architecture/fcodex-shared-backend-runtime.md`

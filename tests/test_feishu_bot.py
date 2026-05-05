@@ -1285,6 +1285,29 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         self.assertEqual(len(captured), 1)
         self.assertTrue(captured[0].request_body.reply_in_thread)
 
+    def test_reply_local_image_reuses_thread_reply_shape(self) -> None:
+        bot = self._make_bot()
+        bot._remember_message_context("m-thread", {"thread_id": "th-1"})
+        bot.upload_image = lambda local_path: "img-key-1"
+
+        message_id = FeishuBot.reply_local_image(
+            bot,
+            "chat-1",
+            "/tmp/generated.png",
+            parent_message_id="m-thread",
+        )
+
+        self.assertEqual(message_id, "bootstrap-card-1")
+        self.assertEqual(
+            bot.reply_refs[-1],
+            (
+                "m-thread",
+                "image",
+                json.dumps({"image_key": "img-key-1"}, ensure_ascii=False),
+            ),
+        )
+        self.assertTrue(bot.reply_ref_thread_flags[-1])
+
     def test_get_message_context_returns_empty_after_entry_expires(self) -> None:
         bot = self._make_bot()
         bot._remember_message_context("m-ctx", {"thread_id": "th-1"})

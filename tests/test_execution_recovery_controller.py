@@ -7,6 +7,7 @@ import unittest
 from bot.adapters.base import ThreadSnapshot, ThreadSummary
 from bot.binding_runtime_manager import BindingRuntimeManager, ResolvedRuntimeBinding
 from bot.execution_recovery_controller import ExecutionRecoveryController, TerminalReconcileTarget
+from bot.generated_image_delivery import collect_generated_images
 from bot.runtime_state import apply_runtime_state_message
 from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore
@@ -50,6 +51,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         deletes: list[str] = []
         finalized: list[tuple[str, str]] = []
         terminal_results: list[dict[str, object]] = []
+        delivered_images: list[dict[str, object]] = []
         snapshots: list[ThreadSnapshot | Exception] = []
 
         def _read_thread(thread_id: str) -> ThreadSnapshot:
@@ -58,6 +60,14 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             if isinstance(current, Exception):
                 raise current
             return current
+
+        def _deliver_generated_images_from_snapshot(**kwargs) -> int:
+            snapshot = kwargs["snapshot"]
+            turn_id = str(kwargs.get("turn_id", "") or "")
+            if not collect_generated_images(snapshot, turn_id=turn_id):
+                return 0
+            delivered_images.append(dict(kwargs))
+            return 1
 
         controller = ExecutionRecoveryController(
             lock=lock,
@@ -91,6 +101,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             )
             or True,
+            deliver_generated_images_from_snapshot=_deliver_generated_images_from_snapshot,
             read_thread=_read_thread,
             is_thread_not_found_error=lambda exc: isinstance(exc, _ThreadNotFound),
             is_turn_thread_not_found_error=lambda exc: False,
@@ -100,11 +111,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             runtime_recovery_reason=str,
             mirror_watchdog_seconds=lambda: 60.0,
         )
-        return controller, snapshots, patches, deletes, finalized, terminal_results
+        return controller, snapshots, patches, deletes, finalized, terminal_results, delivered_images
 
     def test_capture_terminal_reconcile_target_preserves_execution_anchor(self) -> None:
         state = self._make_state()
-        controller, _, _, _, _, _ = self._make_controller(state)
+        controller, _, _, _, _, _, _ = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["current_turn_id"] = "turn-1"
         state["current_prompt_message_id"] = "msg-1"
@@ -138,7 +149,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
 
     def test_reconcile_execution_snapshot_updates_runtime_state_from_active_snapshot(self) -> None:
         state = self._make_state()
-        controller, snapshots, _, _, finalized, terminal_results = self._make_controller(state)
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)
         state["running"] = True
         state["current_thread_id"] = "thread-1"
         state["current_thread_title"] = "old"
@@ -181,10 +192,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         self.assertGreater(state["last_runtime_event_at"], 0.0)
         self.assertEqual(state["runtime_channel_state"], "live")
         self.assertEqual(terminal_results, [])
+        self.assertEqual(delivered_images, [])
 
     def test_reconcile_execution_snapshot_timeout_marks_runtime_degraded(self) -> None:
         state = self._make_state()
-        controller, snapshots, _, _, finalized, _ = self._make_controller(state)
+        controller, snapshots, _, _, finalized, _, _ = self._make_controller(state)
         state["running"] = True
         state["current_thread_id"] = "thread-1"
         state["current_message_id"] = "card-1"
@@ -204,7 +216,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
 
     def test_reconcile_execution_snapshot_not_found_finalizes(self) -> None:
         state = self._make_state()
-        controller, snapshots, _, _, finalized, terminal_results = self._make_controller(state)
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)
         state["running"] = True
         state["current_thread_id"] = "thread-1"
         state["current_message_id"] = "card-1"
@@ -233,10 +245,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(delivered_images, [])
 
     def test_note_runtime_event_arms_watchdog_for_running_thread(self) -> None:
         state = self._make_state()
-        controller, _, _, _, _, _ = self._make_controller(state)
+        controller, _, _, _, _, _, _ = self._make_controller(state)
         state["running"] = True
         state["current_thread_id"] = "thread-1"
 
@@ -250,7 +263,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
 
     def test_run_terminal_execution_reconcile_keeps_minimal_execution_card_when_snapshot_only_has_final_reply(self) -> None:
         state = self._make_state()
-        controller, snapshots, patches, deletes, _, terminal_results = self._make_controller(state)
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
         snapshots.append(
             ThreadSnapshot(
                 summary=ThreadSummary(
@@ -301,10 +314,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(delivered_images, [])
 
     def test_run_terminal_execution_reconcile_strips_terminal_final_reply_after_publish(self) -> None:
         state = self._make_state()
-        controller, snapshots, patches, deletes, _, terminal_results = self._make_controller(state)
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["last_execution_message_id"] = "card-1"
         state["execution_transcript"].set_reply_text("阶段总结\n\n最终答案")
@@ -374,10 +388,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(delivered_images, [])
 
     def test_run_terminal_execution_reconcile_sends_fallback_transcript_when_snapshot_unavailable(self) -> None:
         state = self._make_state()
-        controller, snapshots, patches, deletes, _, terminal_results = self._make_controller(state)
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
         state["execution_transcript"].set_reply_text("fallback answer")
         snapshots.append(_ThreadNotFound("thread not found"))
 
@@ -420,10 +435,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(delivered_images, [])
 
     def test_run_terminal_execution_reconcile_keeps_final_reply_on_execution_card_when_result_publish_fails(self) -> None:
         state = self._make_state()
-        controller, snapshots, patches, deletes, _, terminal_results = self._make_controller(state)
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["last_execution_message_id"] = "card-1"
         controller._publish_terminal_result = lambda *args, **kwargs: False
@@ -479,10 +495,11 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         self.assertEqual(terminal_results, [])
         self.assertEqual(state["execution_transcript"].reply_text(), "最终答案")
         self.assertEqual(state["terminal_result_text"], "")
+        self.assertEqual(delivered_images, [])
 
     def test_run_terminal_execution_reconcile_keeps_minimal_execution_card_when_only_final_result_remains(self) -> None:
         state = self._make_state()
-        controller, snapshots, patches, deletes, _, terminal_results = self._make_controller(state)
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["last_execution_message_id"] = "card-1"
         state["execution_transcript"].set_reply_text("最终答案")
@@ -548,3 +565,66 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 }
             ],
         )
+        self.assertEqual(delivered_images, [])
+
+    def test_reconcile_execution_snapshot_delivers_generated_images_after_terminal_text(self) -> None:
+        state = self._make_state()
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)
+        state["running"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "card-1"
+        state["current_prompt_message_id"] = "msg-1"
+
+        snapshots.append(
+            ThreadSnapshot(
+                summary=ThreadSummary(
+                    thread_id="thread-1",
+                    cwd="/tmp/project",
+                    name="demo",
+                    preview="",
+                    created_at=0,
+                    updated_at=0,
+                    source="cli",
+                    status="completed",
+                ),
+                turns=[
+                    {
+                        "id": "turn-1",
+                        "items": [
+                            {"type": "agentMessage", "text": "最终答案"},
+                            {
+                                "type": "imageGeneration",
+                                "id": "img-1",
+                                "status": "completed",
+                                "savedPath": "/tmp/generated.png",
+                            },
+                        ],
+                    }
+                ],
+            )
+        )
+
+        finalized_now = controller.reconcile_execution_snapshot(
+            "ou_user",
+            "c1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+        )
+
+        self.assertTrue(finalized_now)
+        self.assertEqual(finalized, [("ou_user", "c1")])
+        self.assertEqual(
+            terminal_results,
+            [
+                {
+                    "chat_id": "c1",
+                    "final_reply_text": "最终答案",
+                    "prompt_message_id": "msg-1",
+                    "prompt_reply_in_thread": False,
+                }
+            ],
+        )
+        self.assertEqual(len(delivered_images), 1)
+        self.assertEqual(delivered_images[0]["thread_id"], "thread-1")
+        self.assertEqual(delivered_images[0]["turn_id"], "turn-1")
+        self.assertEqual(delivered_images[0]["prompt_message_id"], "msg-1")

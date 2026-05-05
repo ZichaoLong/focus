@@ -61,6 +61,7 @@ from bot.execution_recovery_controller import (
     SnapshotReplyProjection,
     TerminalReconcileTarget,
 )
+from bot.generated_image_delivery import GeneratedImageDeliveryController
 from bot.file_message_domain import FileMessageDomain, FileMessagePorts, IncomingAttachmentMessage
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.interaction_request_controller import InteractionRequestController
@@ -95,6 +96,7 @@ from bot.thread_resolution import (
 from bot.stores.pending_attachment_store import PendingAttachmentStore
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.chat_binding_store import ChatBindingStore
+from bot.stores.generated_image_delivery_store import GeneratedImageDeliveryStore
 from bot.stores.interaction_lease_store import (
     InteractionLease,
     InteractionLeaseAcquireResult,
@@ -249,6 +251,16 @@ class CodexHandler(BotHandler):
             card_log_limit=lambda: self._card_log_limit,
             stream_patch_interval_ms=lambda: self._stream_patch_interval_ms,
         )
+        self._generated_image_delivery_store = GeneratedImageDeliveryStore(self._data_dir)
+        self._generated_image_delivery = GeneratedImageDeliveryController(
+            store=self._generated_image_delivery_store,
+            reply_local_image=lambda chat_id, local_path, parent_message_id, reply_in_thread: self.bot.reply_local_image(
+                chat_id,
+                local_path,
+                parent_message_id=parent_message_id,
+                reply_in_thread=reply_in_thread,
+            ),
+        )
         self._execution_recovery = ExecutionRecoveryController(
             lock=self._lock,
             runtime_submit=self._runtime_submit,
@@ -261,6 +273,7 @@ class CodexHandler(BotHandler):
             dispatch_execution_card_message=self._dispatch_execution_card_message,
             remove_execution_card_message=self._remove_execution_card_message,
             publish_terminal_result=self._publish_terminal_result,
+            deliver_generated_images_from_snapshot=self._deliver_generated_images_from_snapshot,
             read_thread=lambda thread_id: self._adapter.read_thread(thread_id, include_turns=True),
             is_thread_not_found_error=self._is_thread_not_found_error,
             is_turn_thread_not_found_error=self._is_turn_thread_not_found_error,
@@ -1131,6 +1144,27 @@ class CodexHandler(BotHandler):
 
     def _run_terminal_execution_reconcile(self, target: TerminalReconcileTarget) -> None:
         self._execution_recovery.run_terminal_execution_reconcile(target)
+
+    def _deliver_generated_images_from_snapshot(
+        self,
+        *,
+        sender_id: str,
+        chat_id: str,
+        thread_id: str,
+        snapshot: ThreadSnapshot,
+        turn_id: str = "",
+        prompt_message_id: str = "",
+        prompt_reply_in_thread: bool = False,
+    ) -> int:
+        return self._generated_image_delivery.deliver_snapshot_images(
+            sender_id=sender_id,
+            chat_id=chat_id,
+            thread_id=thread_id,
+            snapshot=snapshot,
+            turn_id=turn_id,
+            prompt_message_id=prompt_message_id,
+            prompt_reply_in_thread=prompt_reply_in_thread,
+        )
 
     def _mark_runtime_degraded(self, sender_id: str, chat_id: str, *, reason: str) -> None:
         self._execution_recovery.mark_runtime_degraded(sender_id, chat_id, reason=reason)

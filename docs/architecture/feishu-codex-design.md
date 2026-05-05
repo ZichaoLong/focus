@@ -5,6 +5,7 @@ See also:
 - `docs/contracts/thread-profile-semantics.md`
 - `docs/architecture/fcodex-shared-backend-runtime.md`
 - `docs/decisions/shared-backend-resume-safety.md`
+- `docs/decisions/feishu-output-images.md`
 - `docs/archive/codex-handler-decomposition-plan.md`
 
 ## 1. Background
@@ -151,6 +152,9 @@ Current module split:
   `bot/execution_recovery_controller.py`: execution lifecycle state transitions,
   execution-card publishing, terminal-result delivery, and watchdog /
   reconcile / degraded-channel handling
+- `bot/generated_image_delivery.py`: terminal-snapshot-based outbound image
+  extraction and separate Feishu image-message delivery; it does not alter the
+  authoritative text result contract or execution-card patch model
 - `bot/runtime_admin_controller.py`: `/status`,
   `/release-runtime`, and control-plane status/admin management
 - `bot/inbound_surface_controller.py`: inbound command surface, card-action
@@ -180,6 +184,8 @@ Current module split:
   fragments, and can support hiding the terminal final-answer segment from the
   execution card once that answer has been delivered through a separate
   authoritative carrier; it does not own thread, owner, or binding-level state
+- `bot/stores/generated_image_delivery_store.py`: per-instance durable ledger
+  for deduplicating generated-image deliveries by binding/thread/turn/item
 - `bot/stores/instance_registry_store.py`: machine-global running-instance registry
 - `bot/stores/thread_runtime_lease_store.py`: machine-global thread
   live-runtime lease
@@ -429,6 +435,7 @@ full-tree dump.
     `thread_subscription_registry.py`, `thread_runtime_coordination.py`,
     `turn_execution_coordinator.py`, `execution_output_controller.py`,
     `execution_recovery_controller.py`, `execution_transcript.py`,
+    `generated_image_delivery.py`,
     `interaction_request_controller.py`, `adapter_notification_controller.py`,
     `runtime_admin_controller.py`, `runtime_card_publisher.py`,
     `prompt_turn_entry_controller.py`

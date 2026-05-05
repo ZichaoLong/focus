@@ -152,6 +152,7 @@ flowchart TD
 - 终态权威结果应优先通过单独的 `terminal result card` 发送；只有结果卡预算不足或标记无法安全编码时，才降级为普通文本
 - 只有在终态结果载体已经成功送达后，才允许把旧 execution card 中的最终答案段剔除；如果只能回退本地 transcript，或结果载体发送失败，则必须保留旧 execution card 里的最终回复
 - 如果剔除最终答案后，旧 execution card 已经不再有任何过程日志或过程性回复可展示，则应把它收口为一张极简终态卡，而不是删除消息；这张极简卡当前固定显示单字 `无`
+- 从终态 thread snapshot 里发现的生成图片，只能作为独立的飞书图片消息后续补发；如果该 turn 同时有权威文本终态结果，则必须先送达文本结果，再发送图片。它们不参与 execution card patch，也不改变执行卡片锚点合同
 - 如果后续 reconcile 拿到不同于先前载体的权威 `final_reply_text`，必须再次发送更正后的终态结果载体，而不能只修旧 execution card
 - 这条终态结果发送路径不重新打开执行锚点，也不改变“同一会话任一时刻最多只有一张当前执行卡片”的约束
 - 后续新的本地 prompt 或新的外部 turn，才允许创建下一张执行卡片
@@ -198,6 +199,8 @@ flowchart TD
 
 - `bot/codex_handler.py`
 - `bot/adapters/codex_app_server.py`
+- `bot/generated_image_delivery.py`
+- `bot/stores/generated_image_delivery_store.py`
 - `bot/fcodex.py`
 - `bot/fcodex_proxy.py`
 - `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`

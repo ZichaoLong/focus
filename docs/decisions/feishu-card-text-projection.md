@@ -7,6 +7,7 @@ See also:
 - `docs/architecture/feishu-codex-design.md`: current architecture and module boundaries
 - `docs/contracts/feishu-thread-lifecycle.md`: execution-card lifecycle and terminal finalization
 - `docs/decisions/feishu-attachment-ingress.md`: attachment ingress and local staging boundary
+- `docs/decisions/feishu-output-images.md`: outbound image delivery boundary
 
 ## 1. Problem
 

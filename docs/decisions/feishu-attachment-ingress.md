@@ -8,6 +8,8 @@ See also:
   writable-root semantics
 - `docs/contracts/group-chat-contract.md` for group activation, group modes, and
   triggering boundaries
+- `docs/decisions/feishu-output-images.md` for the opposite direction: Codex
+  image results back to Feishu
 
 ## 1. Problem Statement
 

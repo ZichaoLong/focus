@@ -7,6 +7,7 @@
 - `docs/architecture/feishu-codex-design.zh-CN.md`：当前架构与模块边界
 - `docs/contracts/feishu-thread-lifecycle.zh-CN.md`：执行卡生命周期与终态收口
 - `docs/decisions/feishu-attachment-ingress.zh-CN.md`：附件入口与本地暂存边界
+- `docs/decisions/feishu-output-images.zh-CN.md`：出站图片结果投递边界
 
 ## 1. 问题陈述
 

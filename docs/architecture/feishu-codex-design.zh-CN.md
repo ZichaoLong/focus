@@ -7,6 +7,7 @@
 - `docs/contracts/thread-profile-semantics.zh-CN.md`
 - `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`
+- `docs/decisions/feishu-output-images.zh-CN.md`
 - `docs/archive/codex-handler-decomposition-plan.zh-CN.md`
 
 ## 1. 背景
@@ -118,6 +119,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/thread_access_policy.py`：线程共享与 interaction owner 的准入 policy 边界
 - `bot/thread_runtime_coordination.py`：跨实例 live runtime lease 获取、自动转移与拒绝
 - `bot/turn_execution_coordinator.py`、`bot/execution_output_controller.py`、`bot/execution_recovery_controller.py`：turn / execution 生命周期、执行卡片发布、终态结果载体发送、watchdog / reconcile / degrade 处理
+- `bot/generated_image_delivery.py`：基于终态 thread snapshot 的出站图片提取与独立飞书图片消息发送；它不改写权威文本结果合同，也不进入 execution card patch 模型
 - `bot/runtime_admin_controller.py`：`/status`、`/release-runtime` 与 control-plane 查询/管理
 - `bot/inbound_surface_controller.py`：入站命令面、卡片 action 路由、help 卡片命令复用
 - `bot/forward_aggregator.py`：合并转发缓冲、超时分发与转发树文本化；它只持有这组 transport 内部状态机，不再把这部分状态散落在 `FeishuBot` 主体里
@@ -128,6 +130,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/codex_threads_ui_domain.py`：当前目录线程卡片 UI 流程，包括重命名表单这类瞬时 UI 状态，以及通过 `RuntimeLoop` 串行化的 resume 目标解析
 - `bot/codex_settings_domain.py`：用户侧设置与身份命令，包括 `/profile`、`/approval`、`/sandbox`、`/permissions`、`/collab-mode`、`/whoami` 与 `/init`；它通过显式 `SettingsDomainPorts` 穿过 bot/runtime/profile 边界，而不是继续持有宽泛的 handler owner
 - `bot/execution_transcript.py`：执行卡片展示层的内部 transcript 组装器；负责 display-only 的 `reply_segments` / `process_log` 片段拼装，并支持在权威终态结果已经单独送达后，把最后一段最终答案从 execution card 的 reply 面板里剔除；它不承担 thread、owner 或 binding 级状态职责
+- `bot/stores/generated_image_delivery_store.py`：每实例的已投递生成图片账本；按 binding/thread/turn/item 去重，避免 reconcile 或重复终态信号下重复发图
 - `bot/stores/instance_registry_store.py`：机器级运行中实例注册表
 - `bot/stores/thread_runtime_lease_store.py`：机器级 thread live runtime lease
 - `bot/stores/*.py`：每实例新 thread seed profile、shared backend 运行时发现状态、群聊状态；以及机器级 thread-wise resume profile / lease / registry
@@ -314,6 +317,7 @@ shared backend 与 wrapper 的具体机制，见
     `thread_subscription_registry.py`、`thread_runtime_coordination.py`、
     `turn_execution_coordinator.py`、`execution_output_controller.py`、
     `execution_recovery_controller.py`、`execution_transcript.py`、
+    `generated_image_delivery.py`、
     `interaction_request_controller.py`、`adapter_notification_controller.py`、
     `runtime_admin_controller.py`、`runtime_card_publisher.py`、
     `prompt_turn_entry_controller.py`

@@ -16,6 +16,8 @@ from typing import Any, Optional
 
 import lark_oapi as lark
 from lark_oapi.api.im.v1 import (
+    CreateImageRequest,
+    CreateImageRequestBody,
     CreateMessageRequest,
     CreateMessageRequestBody,
     DeleteMessageRequest,
@@ -1778,6 +1780,57 @@ class FeishuBot(ABC):
             return None
         logger.info("发送消息成功: receive_id=%s, message_id=%s, msg_type=%s", chat_id, message_id, msg_type)
         return message_id
+
+    def upload_image(self, local_path: str) -> str | None:
+        normalized_path = str(local_path or "").strip()
+        if not normalized_path:
+            return None
+        image_path = pathlib.Path(normalized_path).expanduser()
+        if not image_path.exists() or not image_path.is_file():
+            logger.error("上传图片失败: 路径不存在或不是文件 path=%s", image_path)
+            return None
+        try:
+            with image_path.open("rb") as image_file:
+                request = CreateImageRequest.builder().request_body(
+                    CreateImageRequestBody.builder()
+                    .image_type("message")
+                    .image(image_file)
+                    .build()
+                ).build()
+                response = self.client.im.v1.image.create(request)
+        except Exception as e:
+            logger.exception("上传图片失败(SDK异常): path=%s error=%s", image_path, e)
+            return None
+        if not response.success():
+            logger.error("上传图片失败: path=%s code=%s msg=%s", image_path, response.code, response.msg)
+            return None
+        image_key = str(getattr(getattr(response, "data", None), "image_key", "") or "").strip()
+        if not image_key:
+            logger.error("上传图片失败: path=%s image_key 为空", image_path)
+            return None
+        return image_key
+
+    def reply_local_image(
+        self,
+        chat_id: str,
+        local_path: str,
+        *,
+        parent_message_id: str = "",
+        reply_in_thread: bool = False,
+    ) -> str | None:
+        image_key = self.upload_image(local_path)
+        if not image_key:
+            return None
+        content = json.dumps({"image_key": image_key}, ensure_ascii=False)
+        normalized_parent_id = str(parent_message_id or "").strip()
+        if normalized_parent_id:
+            return self.reply_to_message(
+                normalized_parent_id,
+                "image",
+                content,
+                reply_in_thread=self._should_reply_in_thread(normalized_parent_id, reply_in_thread),
+            )
+        return self.send_message_get_id(chat_id, "image", content)
 
     def patch_message(self, message_id: str, content: str) -> bool:
         """更新已发送消息的文本内容
