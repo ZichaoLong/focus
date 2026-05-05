@@ -64,6 +64,7 @@ Status guidance:
 - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md)
 - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
+- [`feishu-output-images.md`](./decisions/feishu-output-images.md)
 
 ### Verification
 
@@ -92,6 +93,7 @@ Status guidance:
 | What safety rules apply to shared backend reuse and `/resume`? | [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md) |
 | What boundary should Feishu attachment / file-message support follow, including what gets downloaded and what remains outside this repository? | [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md) |
 | What is the boundary for Feishu card text projection, terminal `final_reply_text`, and best-effort extraction from ordinary cards? | [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md) |
+| What is the current boundary for Feishu outbound generated images, including text-before-image ordering and why arbitrary workspace images are out of scope? | [`feishu-output-images.md`](./decisions/feishu-output-images.md) |
 | What should be covered in manual group-chat regression testing? | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |
 | What historical rollout plan was used to decompose `CodexHandler` ownership? | [`codex-handler-decomposition-plan.md`](./archive/codex-handler-decomposition-plan.md) |
 
@@ -129,11 +131,13 @@ Status guidance:
 - For Feishu attachment ingress, file messages, local staging, or image-input
   upgrade work:
   - [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md)
+  - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
   - [`codex-permissions-model.md`](./contracts/codex-permissions-model.md)
   - [`group-chat-contract.md`](./contracts/group-chat-contract.md)
 - For Feishu card messages, terminal-result round-trip, or best-effort text
   extraction from ordinary cards:
   - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
+  - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
   - [`feishu-codex-design.md`](./architecture/feishu-codex-design.md)
 - For permission or execution wording:

@@ -7,6 +7,7 @@ import threading
 from dataclasses import asdict, dataclass
 
 _SCHEMA_VERSION = 1
+DeliveryKey = tuple[str, str, str, str, str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,8 +26,9 @@ class GeneratedImageDeliveryStore:
     def __init__(self, data_dir: pathlib.Path) -> None:
         self._data_dir = pathlib.Path(data_dir)
         self._lock = threading.Lock()
+        self._claimed_keys: set[DeliveryKey] = set()
 
-    def has_delivery(
+    def claim_delivery(
         self,
         *,
         sender_id: str,
@@ -34,7 +36,7 @@ class GeneratedImageDeliveryStore:
         thread_id: str,
         turn_id: str,
         item_id: str,
-    ) -> bool:
+    ) -> DeliveryKey | None:
         key = self._delivery_key(
             sender_id=sender_id,
             chat_id=chat_id,
@@ -43,17 +45,31 @@ class GeneratedImageDeliveryStore:
             item_id=item_id,
         )
         if key is None:
-            return False
+            return None
         with self._lock:
-            return any(self._record_key(record) == key for record in self._read_all())
+            if key in self._claimed_keys:
+                return None
+            if any(self._record_key(record) == key for record in self._read_all()):
+                return None
+            self._claimed_keys.add(key)
+            return key
 
-    def record(self, record: GeneratedImageDeliveryRecord) -> None:
+    def commit_delivery(self, claim: DeliveryKey, record: GeneratedImageDeliveryRecord) -> None:
         normalized = self._normalize_record(record)
         key = self._record_key(normalized)
+        if key != claim:
+            raise RuntimeError("generated image delivery claim 与 record 键不一致。")
         with self._lock:
+            if claim not in self._claimed_keys:
+                raise RuntimeError("generated image delivery claim 不存在或已释放。")
             records = [item for item in self._read_all() if self._record_key(item) != key]
             records.append(normalized)
             self._write_all(records)
+            self._claimed_keys.discard(claim)
+
+    def release_delivery(self, claim: DeliveryKey) -> None:
+        with self._lock:
+            self._claimed_keys.discard(claim)
 
     def list_all(self) -> tuple[GeneratedImageDeliveryRecord, ...]:
         with self._lock:
@@ -108,7 +124,7 @@ class GeneratedImageDeliveryStore:
         thread_id: str,
         turn_id: str,
         item_id: str,
-    ) -> tuple[str, str, str, str, str] | None:
+    ) -> DeliveryKey | None:
         normalized_sender_id = str(sender_id or "").strip()
         normalized_chat_id = str(chat_id or "").strip()
         normalized_thread_id = str(thread_id or "").strip()
@@ -131,7 +147,7 @@ class GeneratedImageDeliveryStore:
         )
 
     @classmethod
-    def _record_key(cls, record: GeneratedImageDeliveryRecord) -> tuple[str, str, str, str, str]:
+    def _record_key(cls, record: GeneratedImageDeliveryRecord) -> DeliveryKey:
         key = cls._delivery_key(
             sender_id=record.sender_id,
             chat_id=record.chat_id,
@@ -139,7 +155,8 @@ class GeneratedImageDeliveryStore:
             turn_id=record.turn_id,
             item_id=record.item_id,
         )
-        assert key is not None
+        if key is None:
+            raise RuntimeError("generated image delivery record 缺少 sender/chat/thread/turn/item 键字段。")
         return key
 
     @staticmethod

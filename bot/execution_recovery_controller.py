@@ -309,7 +309,7 @@ class ExecutionRecoveryController:
         cancelled: bool,
         elapsed: int,
         projection: SnapshotReplyProjection,
-    ) -> None:
+    ) -> bool:
         full_transcript = self._transcript_from_snapshot_projection(
             current_transcript,
             projection=projection,
@@ -337,7 +337,7 @@ class ExecutionRecoveryController:
             transcript=display_transcript,
         )
         if not self._display_changed(current_transcript, display_transcript):
-            return
+            return carrier_available
         self._dispatch_execution_card_message(
             execution_message_id,
             transcript=display_transcript,
@@ -345,6 +345,7 @@ class ExecutionRecoveryController:
             elapsed=elapsed,
             cancelled=cancelled,
         )
+        return carrier_available
 
     def _maybe_publish_terminal_result(
         self,
@@ -444,7 +445,7 @@ class ExecutionRecoveryController:
 
         projection = self.snapshot_reply(snapshot, turn_id=target.turn_id)
         if projection.final_reply_text:
-            self._apply_terminal_snapshot_projection(
+            carrier_available = self._apply_terminal_snapshot_projection(
                 sender_id=target.sender_id,
                 chat_id=target.chat_id,
                 execution_message_id=target.card_message_id,
@@ -455,17 +456,19 @@ class ExecutionRecoveryController:
                 elapsed=target.elapsed,
                 projection=projection,
             )
-            self._deliver_generated_images_if_available(
-                sender_id=target.sender_id,
-                chat_id=target.chat_id,
-                thread_id=target.thread_id,
-                snapshot=snapshot,
-                turn_id=target.turn_id,
-                prompt_message_id=target.prompt_message_id,
-                prompt_reply_in_thread=target.prompt_reply_in_thread,
-            )
+            if carrier_available:
+                self._deliver_generated_images_if_available(
+                    sender_id=target.sender_id,
+                    chat_id=target.chat_id,
+                    thread_id=target.thread_id,
+                    snapshot=snapshot,
+                    turn_id=target.turn_id,
+                    prompt_message_id=target.prompt_message_id,
+                    prompt_reply_in_thread=target.prompt_reply_in_thread,
+                )
             return
 
+        published = False
         if fallback_reply_text:
             published = self._maybe_publish_terminal_result(
                 sender_id=target.sender_id,
@@ -487,15 +490,16 @@ class ExecutionRecoveryController:
                     cancelled=target.cancelled,
                     elapsed=target.elapsed,
                 )
-        self._deliver_generated_images_if_available(
-            sender_id=target.sender_id,
-            chat_id=target.chat_id,
-            thread_id=target.thread_id,
-            snapshot=snapshot,
-            turn_id=target.turn_id,
-            prompt_message_id=target.prompt_message_id,
-            prompt_reply_in_thread=target.prompt_reply_in_thread,
-        )
+        if published or not fallback_reply_text:
+            self._deliver_generated_images_if_available(
+                sender_id=target.sender_id,
+                chat_id=target.chat_id,
+                thread_id=target.thread_id,
+                snapshot=snapshot,
+                turn_id=target.turn_id,
+                prompt_message_id=target.prompt_message_id,
+                prompt_reply_in_thread=target.prompt_reply_in_thread,
+            )
 
     def mark_runtime_degraded(self, sender_id: str, chat_id: str, *, reason: str) -> None:
         state = self._get_runtime_state(sender_id, chat_id)
@@ -721,7 +725,7 @@ class ExecutionRecoveryController:
         if not finalized:
             return False
         if projection.final_reply_text:
-            self._apply_terminal_snapshot_projection(
+            carrier_available = self._apply_terminal_snapshot_projection(
                 sender_id=sender_id,
                 chat_id=chat_id,
                 execution_message_id=card_message_id,
@@ -732,16 +736,18 @@ class ExecutionRecoveryController:
                 elapsed=elapsed,
                 projection=projection,
             )
-            self._deliver_generated_images_if_available(
-                sender_id=sender_id,
-                chat_id=chat_id,
-                thread_id=normalized_thread_id,
-                snapshot=snapshot,
-                turn_id=turn_id,
-                prompt_message_id=prompt_message_id,
-                prompt_reply_in_thread=prompt_reply_in_thread,
-            )
+            if carrier_available:
+                self._deliver_generated_images_if_available(
+                    sender_id=sender_id,
+                    chat_id=chat_id,
+                    thread_id=normalized_thread_id,
+                    snapshot=snapshot,
+                    turn_id=turn_id,
+                    prompt_message_id=prompt_message_id,
+                    prompt_reply_in_thread=prompt_reply_in_thread,
+                )
             return True
+        published = False
         if fallback_reply_text:
             published = self._maybe_publish_terminal_result(
                 sender_id=sender_id,
@@ -763,15 +769,16 @@ class ExecutionRecoveryController:
                     cancelled=cancelled,
                     elapsed=elapsed,
                 )
-        self._deliver_generated_images_if_available(
-            sender_id=sender_id,
-            chat_id=chat_id,
-            thread_id=normalized_thread_id,
-            snapshot=snapshot,
-            turn_id=turn_id,
-            prompt_message_id=prompt_message_id,
-            prompt_reply_in_thread=prompt_reply_in_thread,
-        )
+        if published or not fallback_reply_text:
+            self._deliver_generated_images_if_available(
+                sender_id=sender_id,
+                chat_id=chat_id,
+                thread_id=normalized_thread_id,
+                snapshot=snapshot,
+                turn_id=turn_id,
+                prompt_message_id=prompt_message_id,
+                prompt_reply_in_thread=prompt_reply_in_thread,
+            )
         return finalized
 
     @staticmethod

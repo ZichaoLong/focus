@@ -20,7 +20,6 @@ class GeneratedImageArtifact:
     turn_id: str
     item_id: str
     saved_path: str
-    revised_prompt: str = ""
 
 
 def collect_generated_images(
@@ -47,6 +46,9 @@ def collect_generated_images(
     artifacts: list[GeneratedImageArtifact] = []
     for turn in target_turns:
         current_turn_id = str(turn.get("id", "") or "").strip()
+        if not current_turn_id:
+            logger.warning("跳过图片采集：turn 缺少 id，thread=%s", snapshot.summary.thread_id[:12])
+            continue
         items = turn.get("items") or []
         for item in items:
             if str(item.get("type", "") or "").strip() != "imageGeneration":
@@ -63,7 +65,6 @@ def collect_generated_images(
                     turn_id=current_turn_id,
                     item_id=item_id,
                     saved_path=saved_path,
-                    revised_prompt=_read_string(item, "revisedPrompt", "revised_prompt"),
                 )
             )
     return tuple(artifacts)
@@ -94,46 +95,65 @@ class GeneratedImageDeliveryController:
     ) -> int:
         delivered = 0
         for artifact in collect_generated_images(snapshot, turn_id=turn_id):
+            normalized_sender_id = str(sender_id or "").strip()
+            normalized_chat_id = str(chat_id or "").strip()
             normalized_thread_id = str(thread_id or "").strip() or snapshot.summary.thread_id
-            if self._store.has_delivery(
-                sender_id=sender_id,
-                chat_id=chat_id,
-                thread_id=normalized_thread_id,
-                turn_id=artifact.turn_id,
-                item_id=artifact.item_id,
-            ):
-                continue
-            if not self._path_exists(artifact.saved_path):
+            if not normalized_sender_id or not normalized_chat_id or not normalized_thread_id:
                 logger.warning(
-                    "跳过图片投递：图片文件不存在 chat=%s thread=%s turn=%s item=%s path=%s",
-                    chat_id,
+                    "跳过图片投递：缺少投递锚点 chat=%s thread=%s turn=%s item=%s",
+                    normalized_chat_id,
                     normalized_thread_id[:12],
                     artifact.turn_id[:12],
                     artifact.item_id[:12],
+                )
+                continue
+            claim = self._store.claim_delivery(
+                sender_id=normalized_sender_id,
+                chat_id=normalized_chat_id,
+                thread_id=normalized_thread_id,
+                turn_id=artifact.turn_id,
+                item_id=artifact.item_id,
+            )
+            if claim is None:
+                continue
+            committed = False
+            try:
+                if not self._path_exists(artifact.saved_path):
+                    logger.warning(
+                        "跳过图片投递：图片文件不存在 chat=%s thread=%s turn=%s item=%s path=%s",
+                        normalized_chat_id,
+                        normalized_thread_id[:12],
+                        artifact.turn_id[:12],
+                        artifact.item_id[:12],
+                        artifact.saved_path,
+                    )
+                    continue
+                message_id = self._reply_local_image(
+                    normalized_chat_id,
                     artifact.saved_path,
+                    parent_message_id=str(prompt_message_id or "").strip(),
+                    reply_in_thread=bool(prompt_reply_in_thread),
                 )
-                continue
-            message_id = self._reply_local_image(
-                chat_id,
-                artifact.saved_path,
-                parent_message_id=str(prompt_message_id or "").strip(),
-                reply_in_thread=bool(prompt_reply_in_thread),
-            )
-            if not message_id:
-                continue
-            self._store.record(
-                GeneratedImageDeliveryRecord(
-                    sender_id=str(sender_id or "").strip(),
-                    chat_id=str(chat_id or "").strip(),
-                    thread_id=normalized_thread_id,
-                    turn_id=artifact.turn_id,
-                    item_id=artifact.item_id,
-                    local_path=artifact.saved_path,
-                    message_id=message_id,
-                    delivered_at=time.time(),
+                if not message_id:
+                    continue
+                self._store.commit_delivery(
+                    claim,
+                    GeneratedImageDeliveryRecord(
+                        sender_id=normalized_sender_id,
+                        chat_id=normalized_chat_id,
+                        thread_id=normalized_thread_id,
+                        turn_id=artifact.turn_id,
+                        item_id=artifact.item_id,
+                        local_path=artifact.saved_path,
+                        message_id=message_id,
+                        delivered_at=time.time(),
+                    ),
                 )
-            )
-            delivered += 1
+                committed = True
+                delivered += 1
+            finally:
+                if not committed:
+                    self._store.release_delivery(claim)
         return delivered
 
 

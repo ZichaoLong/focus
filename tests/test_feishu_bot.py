@@ -1308,6 +1308,26 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         )
         self.assertTrue(bot.reply_ref_thread_flags[-1])
 
+    def test_reply_local_image_without_parent_sends_standalone_image_message(self) -> None:
+        bot = self._make_bot()
+        bot.upload_image = lambda local_path: "img-key-1"
+
+        message_id = FeishuBot.reply_local_image(
+            bot,
+            "chat-1",
+            "/tmp/generated.png",
+        )
+
+        self.assertEqual(message_id, "bootstrap-card-2")
+        self.assertEqual(
+            bot.sent_messages[-1],
+            (
+                "chat-1",
+                "image",
+                json.dumps({"image_key": "img-key-1"}, ensure_ascii=False),
+            ),
+        )
+
     def test_get_message_context_returns_empty_after_entry_expires(self) -> None:
         bot = self._make_bot()
         bot._remember_message_context("m-ctx", {"thread_id": "th-1"})

@@ -8,7 +8,7 @@ from bot.generated_image_delivery import (
     GeneratedImageDeliveryController,
     collect_generated_images,
 )
-from bot.stores.generated_image_delivery_store import GeneratedImageDeliveryStore
+from bot.stores.generated_image_delivery_store import GeneratedImageDeliveryRecord, GeneratedImageDeliveryStore
 
 
 def _snapshot(*, turns: list[dict]) -> ThreadSnapshot:
@@ -50,7 +50,6 @@ class GeneratedImageDeliveryTests(unittest.TestCase):
                             "id": "new-image",
                             "status": "completed",
                             "savedPath": "/tmp/new.png",
-                            "revisedPrompt": "A blue square",
                         }
                     ],
                 },
@@ -66,7 +65,6 @@ class GeneratedImageDeliveryTests(unittest.TestCase):
                     turn_id="turn-1",
                     item_id="new-image",
                     saved_path="/tmp/new.png",
-                    revised_prompt="A blue square",
                 ),
             ),
         )
@@ -149,7 +147,80 @@ class GeneratedImageDeliveryTests(unittest.TestCase):
             sent,
             [("chat-1", str(image_path), "msg-1", True)],
         )
+
+    def test_collect_generated_images_skips_turn_without_id(self) -> None:
+        snapshot = _snapshot(
+            turns=[
+                {
+                    "items": [
+                        {
+                            "type": "imageGeneration",
+                            "id": "img-1",
+                            "status": "completed",
+                            "savedPath": "/tmp/new.png",
+                        }
+                    ],
+                }
+            ]
+        )
+
+        images = collect_generated_images(snapshot)
+
+        self.assertEqual(images, ())
+
+    def test_generated_image_delivery_claim_is_atomic_within_process(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        store = GeneratedImageDeliveryStore(pathlib.Path(tempdir.name))
+
+        first = store.claim_delivery(
+            sender_id="ou_user",
+            chat_id="chat-1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+            item_id="img-1",
+        )
+        second = store.claim_delivery(
+            sender_id="ou_user",
+            chat_id="chat-1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+            item_id="img-1",
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        store.release_delivery(first)
+        third = store.claim_delivery(
+            sender_id="ou_user",
+            chat_id="chat-1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+            item_id="img-1",
+        )
+        self.assertIsNotNone(third)
+        store.commit_delivery(
+            third,
+            GeneratedImageDeliveryRecord(
+                sender_id="ou_user",
+                chat_id="chat-1",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                item_id="img-1",
+                local_path="/tmp/generated.png",
+                message_id="msg-image-1",
+                delivered_at=1.0,
+            ),
+        )
         self.assertEqual(len(store.list_all()), 1)
+        fourth = store.claim_delivery(
+            sender_id="ou_user",
+            chat_id="chat-1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+            item_id="img-1",
+        )
+        self.assertIsNone(fourth)
 
     def test_generated_image_delivery_supports_keyword_only_reply_transport(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

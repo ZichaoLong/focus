@@ -6,7 +6,7 @@
 > 现在所有实例共享同一套 persisted thread 命名空间；实例边界主要体现在
 > binding、本地运行态与 `ThreadRuntimeLease` 协调上。
 > 请以 `docs/contracts/runtime-control-surface.zh-CN.md` §6.8、
-> `docs/contracts/session-profile-semantics.zh-CN.md` §5 为准。
+> `docs/contracts/thread-profile-semantics.zh-CN.md` §5 为准。
 
 > 状态：已按本文方向完成第一轮实现，本文继续作为管理员/用户工作流说明草案
 >
