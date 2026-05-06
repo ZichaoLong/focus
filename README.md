@@ -220,6 +220,28 @@ fcodex --instance corp-a
 - 持久化 thread 命名空间
 - 机器级 `ThreadRuntimeLease`
 
+## `profile` 与 `permissions` 怎么生效
+
+这两个概念不在同一层：
+
+- `profile` 跟着 `thread` 走
+- `permissions` 跟着“谁从哪里发起这一轮 turn”走
+
+| 你设置的是什么 | 在哪里设置 | 持久化到哪里 | 什么时候生效 |
+| --- | --- | --- | --- |
+| 当前 thread 的 `profile` | 飞书 `/profile <name>` | machine-global 的 thread-wise store | 该 thread 下次从 unloaded 状态恢复时生效；若当前实例可控且仍 loaded，则走显式 reset backend 路径 |
+| 新开的第一个 thread 的 `profile` seed | `fcodex -p <profile>` | 线程真正创建成功后，按 `thread_id` 写入 thread-wise store | 只作用于这次启动创建的第一个新 thread |
+| 已有 thread 的 `profile` | `fcodex -p <profile> resume <thread>` | machine-global 的 thread-wise store | 目标 thread verifiably globally unloaded 时，先写入，再按该配置恢复 |
+| 当前飞书会话的 `permissions` / `approval` / `sandbox` | 飞书 `/permissions`、`/approval`、`/sandbox` | 当前 chat binding | 只影响这个飞书会话后续发起的 turn |
+| 本地 `fcodex` 发起 turn 的权限设置 | 本地 `fcodex` / upstream Codex 自己的设置面与配置 | 本地 Codex 配置 | 只影响本地发起的 turn，不会自动同步到飞书 binding |
+
+再记住 4 条：
+
+- `permissions` 是一个预设，会同时修改 `approval_policy` 和 `sandbox`
+- 同一个 thread 可以被多个前端继续，但它们不共享一套即时同步的 `permissions`
+- 真正执行某一轮 turn 时，采用的是“发起这一轮的那个前端”当下的权限设置
+- 飞书 `/status` 看到的是：当前绑定 thread 的 `profile`，以及当前飞书会话自己的 `permissions` / `approval` / `sandbox`
+
 ## 更多帮助
 
 - 飞书里发送 `/help`
@@ -249,15 +271,15 @@ flowchart LR
 
   CLI["feishu-codex<br/>安装 / 配置 / 启停 / 实例管理"]
   CTL["feishu-codexctl<br/>本地查看 / 管理"]
-  TUI["fcodex<br/>本地继续同一 live thread"]
+  TUI["fcodex<br/>本地继续同一 live thread<br/>local permissions"]
   Raw["裸 codex<br/>独立本地会话"]
 
   subgraph Instance["实例 explorer"]
-    BindA["binding A"]
-    BindB["binding B"]
+    BindA["binding A<br/>binding-wise permissions"]
+    BindB["binding B<br/>binding-wise permissions"]
     Service["feishu-codex service"]
     Backend["shared codex app-server"]
-    Thread["thread"]
+    Thread["thread<br/>thread-wise profile"]
   end
 
   Global["machine-global coordination<br/>ThreadRuntimeLease / instance registry"]
@@ -283,10 +305,10 @@ flowchart LR
 ```mermaid
 flowchart LR
   subgraph A["实例 A：同一 live thread"]
-    F1["Feishu binding 1<br/>(attached)"]
-    F2["Feishu binding 2<br/>(attached)"]
-    TUI["fcodex subscriber"]
-    Thread["thread"]
+    F1["Feishu binding 1<br/>(attached, own permissions)"]
+    F2["Feishu binding 2<br/>(attached, own permissions)"]
+    TUI["fcodex subscriber<br/>(local permissions)"]
+    Thread["thread<br/>thread-wise profile"]
     Owner["interaction owner"]
   end
 
