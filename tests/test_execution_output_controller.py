@@ -160,6 +160,24 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(bot.reply_refs[-1][0], "msg-3")
         self.assertEqual(bot.reply_refs[-1][1], "interactive")
 
+    def test_publish_terminal_result_with_embedded_image_markdown_falls_back_to_text(self) -> None:
+        state = self._make_state()
+        controller, bot, replies, _ = self._make_controller(state)
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text="![示意图](/tmp/demo.png)\n\nPNG 已生成。",
+            prompt_message_id="msg-image",
+            prompt_reply_in_thread=False,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(bot.reply_refs, [])
+        self.assertEqual(
+            replies,
+            [("c1", "![示意图](/tmp/demo.png)\n\nPNG 已生成。", "msg-image", False)],
+        )
+
     def test_publish_terminal_result_falls_back_to_top_level_card_before_text(self) -> None:
         state = self._make_state()
         controller, bot, replies, _ = self._make_controller(state)

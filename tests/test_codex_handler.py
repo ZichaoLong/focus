@@ -2581,6 +2581,20 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex 执行过程")
         self.assertEqual(card["body"]["elements"], [{"tag": "markdown", "content": "无"}])
 
+    def test_execution_card_sanitizes_embedded_image_markdown_in_runtime_text(self) -> None:
+        card = build_execution_card(
+            "命令输出：![日志图](/tmp/log.png)",
+            [ExecutionReplySegment("assistant", "![示意图](/tmp/demo.png)\n\n已生成。")],
+            running=False,
+        )
+
+        card_json = json.dumps(card, ensure_ascii=False)
+        self.assertNotIn("![示意图](/tmp/demo.png)", card_json)
+        self.assertNotIn("![日志图](/tmp/log.png)", card_json)
+        self.assertIn("【图片】示意图", card_json)
+        self.assertIn("路径：`/tmp/demo.png`", card_json)
+        self.assertIn("路径：`/tmp/log.png`", card_json)
+
     def test_status_includes_user_facing_summary(self) -> None:
         handler, bot = self._make_handler()
 

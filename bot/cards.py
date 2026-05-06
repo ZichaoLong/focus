@@ -20,6 +20,7 @@ from bot.card_text_projection import (
 )
 from bot.constants import display_path, format_timestamp, shorten
 from bot.execution_transcript import ExecutionReplySegment
+from bot.feishu_card_markdown import sanitize_runtime_markdown_for_feishu_card
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
 from bot.shared_command_surface import get_shared_command
@@ -244,6 +245,7 @@ def build_execution_card(
     }
 
     def _panel(title: str, content: str, expanded: bool) -> dict:
+        safe_content = sanitize_runtime_markdown_for_feishu_card(content)
         return {
             "tag": "collapsible_panel",
             "expanded": expanded,
@@ -253,7 +255,7 @@ def build_execution_card(
                 "icon_position": "left",
                 "icon_expanded_angle": 90,
             },
-            "elements": [{"tag": "markdown", "content": content or ""}],
+            "elements": [{"tag": "markdown", "content": safe_content or ""}],
         }
 
     def _panel_with_elements(title: str, panel_elements: list[dict], expanded: bool) -> dict:
@@ -281,7 +283,12 @@ def build_execution_card(
             if remaining > 0:
                 text = limit_card_tables(text, remaining)
                 remaining -= count_card_tables(text)
-            panel_elements.append({"tag": "markdown", "content": text})
+            panel_elements.append(
+                {
+                    "tag": "markdown",
+                    "content": sanitize_runtime_markdown_for_feishu_card(text),
+                }
+            )
         return panel_elements
 
     elements: list[dict] = []

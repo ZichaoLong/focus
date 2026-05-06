@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdown
+
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
 TERMINAL_RESULT_CARD_MARKER = "\u2063\u2060\u2064\u2060\u2063"
@@ -49,6 +51,8 @@ def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -
     if not normalized:
         return False
     if TERMINAL_RESULT_CARD_MARKER in normalized:
+        return False
+    if contains_unsupported_embedded_image_markdown(normalized):
         return False
     budget = max(int(char_limit), 0)
     if budget <= 0:

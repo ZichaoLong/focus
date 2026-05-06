@@ -98,6 +98,14 @@ class CardTextProjectionTests(unittest.TestCase):
             )
         )
 
+    def test_terminal_result_card_budget_is_fail_closed_on_embedded_image_markdown(self) -> None:
+        self.assertFalse(
+            can_render_terminal_result_card(
+                "![示意图](/home/zlong/llm/tmp/phase1_report_diagram.png)",
+                char_limit=1000,
+            )
+        )
+
     def test_terminal_result_card_without_authoritative_block_fails_closed(self) -> None:
         projection = project_interactive_card_text(
             {
