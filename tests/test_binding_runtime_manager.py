@@ -68,7 +68,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(second.binding, ("__group__", "chat-group"))
         self.assertIs(first.state, second.state)
 
-    def test_hydrate_stored_bindings_recovers_subscription_and_ignores_legacy_write_owner(self) -> None:
+    def test_hydrate_stored_bindings_downgrades_persisted_attachment(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -103,11 +103,14 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state.thread_id, "thread-1")
         self.assertEqual(state.thread_title, "Demo")
-        self.assertEqual(state.feishu_runtime_state, "attached")
+        self.assertEqual(state.feishu_runtime_state, "released")
         self.assertEqual(manager.bound_bindings_for_thread_locked("thread-1"), [binding])
-        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [binding])
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [])
         interaction_owner = manager.interaction_owner_snapshot_locked("thread-1", current_binding=binding)
         self.assertEqual(interaction_owner["kind"], "none")
+        stored = ChatBindingStore(data_dir).load(binding)
+        assert stored is not None
+        self.assertEqual(stored["feishu_runtime_state"], "released")
 
     def test_binding_status_snapshot_uses_manager_owned_state(self) -> None:
         manager = self._make_manager()

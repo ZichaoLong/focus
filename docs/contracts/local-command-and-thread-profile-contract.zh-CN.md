@@ -220,6 +220,9 @@ thread-wise store 至少应保存：
 - 还要确认 machine-global 上不存在该 thread 的 live runtime owner
 - 如果当前 loaded / unloaded 事实无法验证，也必须拒绝写入
 
+因此，本地诊断面在解释这类拒绝时，不应只展示 `backend thread status`；
+它还应明确展示 machine-global `live runtime owner`。
+
 因此，允许修改的真实条件是：
 
 - verifiably globally unloaded

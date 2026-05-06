@@ -127,6 +127,9 @@
 
 - `attached + 无 owner` 是完全合法的 idle 稳态
 - `released + 外部交互 owner` 也完全合法，表示别的前端仍在持有 live thread
+- `attached` 不是可跨 Feishu 服务进程、websocket 连接或 managed backend 重建持久化恢复的事实。
+  如果从 `chat_bindings.json` 读取到旧的 `attached`，启动时必须降级为
+  `released`；下一条普通 prompt 或显式 `/resume` 再重新附着。
 
 ### 3.2 几个必须明确接受的有效组合
 

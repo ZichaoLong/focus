@@ -16,7 +16,7 @@ from bot.runtime_admin_controller import RuntimeAdminController
 from bot.runtime_state import ThreadStateChanged
 from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore
-from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease, ThreadRuntimeLeaseHolder
 from bot.thread_subscription_registry import ThreadSubscriptionRegistry
 
 
@@ -393,6 +393,59 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(plan.status, "blocked")
         self.assertEqual(plan.reason_code, "reprofile_blocked_by_other_instance_owner")
         self.assertIn("other-instance", plan.reason_text)
+
+    def test_thread_status_snapshot_exposes_machine_global_live_runtime_owner(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        controller._load_thread_runtime_lease = lambda thread_id: ThreadRuntimeLease(
+            thread_id=thread_id,
+            owner_instance="explorer",
+            owner_service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32001",
+            backend_url="ws://127.0.0.1:8765",
+            attached_at=1.0,
+            holders=(
+                ThreadRuntimeLeaseHolder(
+                    holder_id="service:svc-token",
+                    holder_type="service",
+                    instance_name="explorer",
+                    owner_pid=4321,
+                    owner_service_token="svc-token",
+                    control_endpoint="tcp://127.0.0.1:32001",
+                    backend_url="ws://127.0.0.1:8765",
+                    updated_at=1.0,
+                ),
+            ),
+        )
+
+        snapshot = controller.thread_status_snapshot("thread-1")
+
+        self.assertEqual(snapshot["backend_thread_status"], "notLoaded")
+        self.assertEqual(snapshot["live_runtime_owner"]["label"], "explorer")
+        self.assertEqual(snapshot["live_runtime_holder_labels"], ["service@explorer(pid=4321)"])
 
     def test_handle_service_control_request_reset_backend_forwards_force_flag(self) -> None:
         (

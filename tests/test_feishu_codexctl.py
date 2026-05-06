@@ -6,7 +6,13 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
-from bot.feishu_codexctl import _build_parser, _list_running_instances, _thread_target_params
+from bot.feishu_codexctl import (
+    _build_parser,
+    _list_running_instances,
+    _print_binding_status,
+    _print_thread_status,
+    _thread_target_params,
+)
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 
@@ -194,3 +200,70 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(result, 0)
         rendered = stdout.getvalue()
         self.assertIn("ws://127.0.0.1:43210", rendered)
+
+    def test_binding_status_renders_resolved_instance_name(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "binding_id": "p2p:ou_user:chat-1",
+            "binding_kind": "p2p",
+            "chat_id": "chat-1",
+            "sender_id": "ou_user",
+            "working_dir": "/tmp/project",
+            "binding_state": "bound",
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "feishu_runtime_state": "attached",
+            "backend_thread_status": "idle",
+            "backend_running_turn": False,
+            "live_runtime_owner": {"label": "explorer"},
+            "live_runtime_holder_labels": ["service@explorer(pid=1234)"],
+            "interaction_owner": {"label": "none"},
+            "next_prompt_allowed": True,
+            "reprofile_possible": False,
+            "unsubscribe_available": True,
+            "unsubscribe_reason_code": "",
+            "unsubscribe_reason": "",
+            "approval_policy": "on-request",
+            "sandbox": "workspace-write",
+            "collaboration_mode": "default",
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _print_binding_status(Path("/tmp/instance-data"), "p2p:ou_user:chat-1", instance_name="explorer")
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("binding: p2p:ou_user:chat-1", rendered)
+
+    def test_thread_status_renders_resolved_instance_name(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "backend_thread_status": "notLoaded",
+            "backend_running_turn": False,
+            "live_runtime_owner": {"label": "explorer"},
+            "live_runtime_holder_labels": ["service@explorer(pid=1234)"],
+            "bound_binding_ids": [],
+            "attached_binding_ids": [],
+            "released_binding_ids": [],
+            "interaction_owner": {"label": "none"},
+            "reprofile_possible": False,
+            "unsubscribe_available": False,
+            "unsubscribe_reason_code": "unsubscribe_not_applicable_no_binding",
+            "unsubscribe_reason": "当前没有 Feishu 绑定指向该线程。",
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _print_thread_status(
+                    Path("/tmp/instance-data"),
+                    {"thread_name": "demo"},
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("thread: thread-1 demo", rendered)

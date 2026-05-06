@@ -242,6 +242,10 @@ More precisely:
   thread
 - if loaded/unloaded state cannot be verified, the write must be rejected
 
+Therefore, when local diagnostics explain this rejection, they must not show
+only `backend thread status`; they should also surface the machine-global
+`live runtime owner`.
+
 So the real condition is:
 
 - verifiably globally unloaded

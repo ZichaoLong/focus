@@ -737,6 +737,17 @@ class CodexRpcClientTests(unittest.TestCase):
 class FCodexTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
+        env_patcher = patch.dict(
+            os.environ,
+            {
+                "FC_INSTANCE": "",
+                "FC_DATA_DIR": "",
+                "FC_GLOBAL_DATA_DIR": "",
+            },
+            clear=False,
+        )
+        env_patcher.start()
+        self.addCleanup(env_patcher.stop)
         patchers = [
             patch(
                 "bot.instance_resolution.resolve_effective_app_server_url",
@@ -744,6 +755,7 @@ class FCodexTests(unittest.TestCase):
             ),
             patch("bot.instance_resolution.list_running_instances", return_value=[]),
             patch("bot.instance_resolution.load_running_instance", return_value=None),
+            patch("bot.instance_resolution.current_cli_instance_name", return_value="default"),
             patch("bot.fcodex.current_cli_instance_name", return_value="default"),
         ]
         for patcher in patchers:

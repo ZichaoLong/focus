@@ -146,7 +146,7 @@ in code, docs, or product wording.
 | Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
 | --- | --- | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | List persisted threads; defaults to current-directory filtering, but also supports a global view | persisted-thread discovery | read-only | optional `--instance`; `--scope cwd/global`; `--cwd` is meaningful only for `cwd` scope | partially corresponds to Feishu `/threads` and `/resume` target discovery |
-| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show one thread's backend status, bound / attached / released bindings, interaction owner, and `/release-runtime` availability | single thread's thread-scoped state | read-only | exactly one of `--thread-id` or `--thread-name` | no single exact Feishu equivalent; overlaps the lower-level diagnostics behind Feishu `/status`, `/preflight`, and `/release-runtime` |
+| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show one thread's current-instance backend status, machine-global `live runtime owner/holders`, bound / attached / released bindings, interaction owner, and `/release-runtime` availability | single thread's thread-scoped state | read-only | exactly one of `--thread-id` or `--thread-name` | no single exact Feishu equivalent; overlaps the lower-level diagnostics behind Feishu `/status`, `/preflight`, and `/release-runtime` |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show the binding list currently associated with a target thread | reverse mapping from a thread to bindings | read-only | exactly one of `--thread-id` or `--thread-name` | no direct Feishu counterpart |
 | `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | Make Feishu release runtime residency for a target thread while keeping thread and binding relationships intact | Feishu runtime residency for one thread | mutating | exactly one of `--thread-id` or `--thread-name` | corresponds to Feishu `/release-runtime`, but is thread-scoped rather than current-chat-scoped |
 
@@ -194,8 +194,9 @@ When reading command output, the current contract recommends this model:
   - answers “which thread does this Feishu conversation currently point to,
     and can it continue directly”
 - `thread`
-  - answers “what is this thread's current backend state, which bindings point
-    at it, and can Feishu release runtime residency for it”
+  - answers “what is this thread's current state in the selected instance
+    backend, who owns the machine-global live runtime, which bindings point at
+    it, and whether Feishu can release runtime residency for it”
 
 The most important distinction is:
 

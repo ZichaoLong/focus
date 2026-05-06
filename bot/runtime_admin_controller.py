@@ -211,6 +211,33 @@ class RuntimeAdminController:
             return None, BACKEND_THREAD_LOOKUP_ERROR
         return summary, str(summary.status or BACKEND_THREAD_STATUS_UNKNOWN).strip() or BACKEND_THREAD_STATUS_UNKNOWN
 
+    @staticmethod
+    def _live_runtime_owner_snapshot(lease: ThreadRuntimeLease | None) -> dict[str, str]:
+        if lease is None:
+            return {
+                "instance_name": "",
+                "label": "none",
+            }
+        instance_name = str(lease.owner_instance or "").strip()
+        return {
+            "instance_name": instance_name,
+            "label": instance_name or "unknown",
+        }
+
+    @staticmethod
+    def _live_runtime_holder_labels(lease: ThreadRuntimeLease | None) -> list[str]:
+        if lease is None:
+            return []
+        labels: list[str] = []
+        for holder in lease.holders:
+            holder_type = str(holder.holder_type or "").strip() or "unknown"
+            instance_name = str(holder.instance_name or "").strip() or "unknown"
+            label = f"{holder_type}@{instance_name}"
+            if int(holder.owner_pid or 0) > 0:
+                label += f"(pid={int(holder.owner_pid)})"
+            labels.append(label)
+        return labels
+
     def unsubscribe_check_locked(self, thread_id: str) -> ReasonedCheck:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
@@ -394,11 +421,14 @@ class RuntimeAdminController:
         prompt_check = self._binding_prompt_check_from_snapshot(binding, snapshot)
         thread_id = str(snapshot["thread_id"] or "").strip()
         summary, backend_thread_status = self.read_thread_summary_for_status(thread_id)
+        lease = self._load_thread_runtime_lease(thread_id)
         if summary is not None:
             snapshot["thread_title"] = summary.title or str(snapshot["thread_title"] or "").strip()
             snapshot["working_dir"] = summary.cwd or str(snapshot["working_dir"] or "").strip()
         snapshot["backend_thread_status"] = backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN
         snapshot["backend_running_turn"] = backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE
+        snapshot["live_runtime_owner"] = self._live_runtime_owner_snapshot(lease)
+        snapshot["live_runtime_holder_labels"] = self._live_runtime_holder_labels(lease)
         snapshot["reprofile_possible"] = bool(thread_id and self._reprofile_possible_check(thread_id)[0])
         snapshot["unsubscribe_available"] = bool(thread_id and unsubscribe_check.allowed)
         snapshot["unsubscribe_reason_code"] = unsubscribe_check.reason_code
@@ -717,6 +747,7 @@ class RuntimeAdminController:
                 unsubscribe_availability=self.unsubscribe_availability_locked,
             )
         resolved_summary, backend_thread_status = self.read_thread_summary_for_status(normalized_thread_id)
+        lease = self._load_thread_runtime_lease(normalized_thread_id)
         effective_summary = resolved_summary or summary
         unsubscribe_reason_code = self.unsubscribe_check_locked(normalized_thread_id).reason_code
         if not snapshot["bound_binding_ids"]:
@@ -727,6 +758,8 @@ class RuntimeAdminController:
             "working_dir": effective_summary.cwd if effective_summary is not None else "",
             "backend_thread_status": backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN,
             "backend_running_turn": backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE,
+            "live_runtime_owner": self._live_runtime_owner_snapshot(lease),
+            "live_runtime_holder_labels": self._live_runtime_holder_labels(lease),
             "bound_binding_ids": snapshot["bound_binding_ids"],
             "attached_binding_ids": snapshot["attached_binding_ids"],
             "released_binding_ids": snapshot["released_binding_ids"],

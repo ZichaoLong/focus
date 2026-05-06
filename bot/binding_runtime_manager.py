@@ -161,14 +161,22 @@ class BindingRuntimeManager:
             "plan_text": "",
         }
 
-    def hydrate_stored_binding_locked(self, state: RuntimeStateDict, stored_binding: dict[str, str]) -> None:
+    def hydrate_stored_binding_locked(self, state: RuntimeStateDict, stored_binding: dict[str, str]) -> bool:
+        feishu_runtime_state = stored_binding["feishu_runtime_state"]
+        downgraded_attached = False
+        if feishu_runtime_state == FEISHU_RUNTIME_ATTACHED:
+            # A persisted `attached` only says the previous service connection had
+            # runtime residency. A new process / backend connection must reattach
+            # explicitly before it can receive live thread events.
+            feishu_runtime_state = FEISHU_RUNTIME_RELEASED
+            downgraded_attached = True
         apply_runtime_state_message(
             state,
             StoredBindingHydrated(
                 working_dir=stored_binding["working_dir"] or self._default_working_dir,
                 current_thread_id=stored_binding["current_thread_id"],
                 current_thread_title=stored_binding["current_thread_title"],
-                feishu_runtime_state=stored_binding["feishu_runtime_state"],
+                feishu_runtime_state=feishu_runtime_state,
                 approval_policy=normalize_approval_policy(
                     stored_binding["approval_policy"] or self._default_approval_policy,
                 ),
@@ -176,6 +184,7 @@ class BindingRuntimeManager:
                 collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,
             ),
         )
+        return downgraded_attached
 
     def subscribe_thread_locked(self, binding: ChatBindingKey, thread_id: str) -> bool:
         return self._thread_subscription_registry.subscribe(binding, thread_id)
@@ -264,7 +273,10 @@ class BindingRuntimeManager:
         state = self.build_default_runtime_state()
         stored_binding = self._chat_binding_store.load(binding)
         if stored_binding is not None:
-            self.hydrate_stored_binding_locked(state, stored_binding)
+            downgraded_attached = self.hydrate_stored_binding_locked(state, stored_binding)
+            if downgraded_attached:
+                self.release_interaction_lease_for_binding(binding, str(state["current_thread_id"] or "").strip())
+                self.sync_stored_binding_locked(binding, state)
             current_thread_id = str(state["current_thread_id"] or "").strip()
             if state["feishu_runtime_state"] == FEISHU_RUNTIME_ATTACHED:
                 self.subscribe_thread_locked(binding, current_thread_id)
@@ -343,8 +355,11 @@ class BindingRuntimeManager:
                 if binding in self._runtime_state_by_binding:
                     continue
                 state = self.build_default_runtime_state()
-                self.hydrate_stored_binding_locked(state, stored_binding)
+                downgraded_attached = self.hydrate_stored_binding_locked(state, stored_binding)
                 self._runtime_state_by_binding[binding] = state
+                if downgraded_attached:
+                    self.release_interaction_lease_for_binding(binding, str(state["current_thread_id"] or "").strip())
+                    self.sync_stored_binding_locked(binding, state)
             for binding, stored_binding in sorted(stored_bindings.items()):
                 state = self._runtime_state_by_binding[binding]
                 current_thread_id = str(state["current_thread_id"] or "").strip()

@@ -137,7 +137,7 @@
 | 命令 | 作用 | 状态层 | 类型 | 关键参数 | 飞书对应 |
 | --- | --- | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | 列 persisted thread；默认按当前目录过滤，也支持全局列出 | persisted thread 发现面 | 只读 | 可选 `--instance`；`--scope cwd/global`；`--cwd` 仅对 `cwd` 作用域有意义 | 部分对应飞书 `/threads` 与 `/resume` 的目标发现面 |
-| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 的 backend 状态、bound/attached/released bindings、interaction owner、`/release-runtime` 可用性 | 单个 thread 的 thread-scoped 状态 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无一条完全等价的飞书命令；部分覆盖飞书 `/status`、`/preflight`、`/release-runtime` 的底层诊断 |
+| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 的当前实例 backend 状态、machine-global `live runtime owner/holders`、bound/attached/released bindings、interaction owner、`/release-runtime` 可用性 | 单个 thread 的 thread-scoped 状态 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无一条完全等价的飞书命令；部分覆盖飞书 `/status`、`/preflight`、`/release-runtime` 的底层诊断 |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前关联的 binding 列表 | 单个 thread 到 binding 的反向关系 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无直接飞书对应 |
 | `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | 让 Feishu 释放某个 thread 的 runtime residency，同时保留 thread 与 binding 关系 | 单个 thread 的 Feishu runtime residency | 变更 | 必须二选一：`--thread-id` 或 `--thread-name` | 对应飞书 `/release-runtime`，但这是 thread-scoped 而不是当前 chat-scoped |
 
@@ -181,7 +181,7 @@
 - `binding`
   - 回答“某个飞书会话当前默认指向哪个 thread、还能不能直接继续”
 - `thread`
-  - 回答“这个 thread 现在在 backend 里是什么状态、有哪些 binding 连着它、能不能让 Feishu 释放 runtime”
+  - 回答“这个 thread 在当前实例 backend 里是什么状态、machine-global live runtime 现在归谁、有哪些 binding 连着它、能不能让 Feishu 释放 runtime”
 
 最重要的一条：
 

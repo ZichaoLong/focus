@@ -134,6 +134,10 @@ Practical consequence:
 - `attached + no owner` is a valid idle state
 - `released + external interaction owner` is also valid when another frontend
   still keeps the thread live
+- `attached` is not a durable fact across Feishu service process, websocket
+  connection, or managed backend rebuilds. If startup reads an old `attached`
+  value from `chat_bindings.json`, it must downgrade it to `released`; the next
+  ordinary prompt or explicit `/resume` reattaches again.
 
 ### 3.2 Important valid combinations
 

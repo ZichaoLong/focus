@@ -50,6 +50,7 @@ class _FakeAdapter:
         self.resume_thread_calls: list[dict] = []
         self.start_turn_calls: list[dict] = []
         self.interrupt_turn_calls: list[dict] = []
+        self.respond_calls: list[dict] = []
         self.archive_thread_calls: list[str] = []
         self.unsubscribe_thread_calls: list[str] = []
         self.read_thread_calls: list[dict] = []
@@ -245,6 +246,9 @@ class _FakeAdapter:
 
     def interrupt_turn(self, *, thread_id: str, turn_id: str) -> None:
         self.interrupt_turn_calls.append({"thread_id": thread_id, "turn_id": turn_id})
+
+    def respond(self, request_id: str, *, result=None, error=None) -> None:
+        self.respond_calls.append({"request_id": request_id, "result": result, "error": error})
 
 
 class _FakeBot:
@@ -961,7 +965,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler2._adapter.create_thread_calls), 0)
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-created")
 
-    def test_p2p_stored_binding_rebuilds_thread_reverse_mapping_after_restart(self) -> None:
+    def test_p2p_stored_binding_hydrates_released_and_next_prompt_reattaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -973,7 +977,8 @@ class CodexHandlerTests(unittest.TestCase):
         state = handler2._get_runtime_state("ou_user", "c1")
 
         self.assertEqual(state["current_thread_id"], "thread-created")
-        self.assertEqual(handler2._thread_subscribers("thread-created"), (("ou_user", "c1"),))
+        self.assertEqual(state["feishu_runtime_state"], "released")
+        self.assertEqual(handler2._thread_subscribers("thread-created"), ())
 
         handler2.handle_message("ou_user", "c1", "follow up")
         handler2._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-2"}})
@@ -981,6 +986,8 @@ class CodexHandlerTests(unittest.TestCase):
         handler2._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-2", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-created")
+        self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-created")
+        self.assertEqual(handler2._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertTrue(bot2.patches)
         self.assertTrue(
             any("恢复后事件正常路由" in payload for _message_id, payload in bot2.patches)
@@ -1022,7 +1029,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler2._adapter.create_thread_calls), 0)
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
 
-    def test_group_stored_binding_rebuilds_thread_reverse_mapping_after_restart(self) -> None:
+    def test_group_stored_binding_hydrates_released_and_next_prompt_reattaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -1050,7 +1057,8 @@ class CodexHandlerTests(unittest.TestCase):
         state = handler2._get_runtime_state("ou_user2", "chat-group", "m-status")
 
         self.assertEqual(state["current_thread_id"], "thread-group")
-        self.assertEqual(handler2._thread_subscribers("thread-group"), (("__group__", "chat-group"),))
+        self.assertEqual(state["feishu_runtime_state"], "released")
+        self.assertEqual(handler2._thread_subscribers("thread-group"), ())
 
         bot2.message_contexts["m-prompt"] = {"chat_type": "group", "sender_open_id": "ou_user2"}
         handler2.handle_message("ou_user2", "chat-group", "继续", message_id="m-prompt")
@@ -1059,12 +1067,14 @@ class CodexHandlerTests(unittest.TestCase):
         handler2._handle_turn_completed({"threadId": "thread-group", "turn": {"id": "turn-2", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
+        self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-group")
+        self.assertEqual(handler2._get_runtime_state("ou_user2", "chat-group", "m-status")["feishu_runtime_state"], "attached")
         self.assertTrue(bot2.patches)
         self.assertTrue(
             any("群重启后事件正常路由" in payload for _message_id, payload in bot2.patches)
         )
 
-    def test_restart_keeps_interaction_owner_for_multi_subscriber_running_thread(self) -> None:
+    def test_restart_downgrades_multi_subscriber_feishu_runtime_and_owner(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -1086,13 +1096,14 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler2, bot2 = self._make_handler(data_dir=data_dir)
 
-        self.assertEqual(handler2._thread_subscribers("thread-1"), (("ou_user", "chat-a"), ("ou_user", "chat-b")))
+        self.assertEqual(handler2._thread_subscribers("thread-1"), ())
         interaction_owner = handler2._binding_runtime.interaction_owner_snapshot_locked(
             "thread-1",
             current_binding=("ou_user", "chat-a"),
         )
-        self.assertEqual(interaction_owner["binding_id"], "p2p:ou_user:chat-a")
-        self.assertEqual(interaction_owner["relation"], "current")
+        self.assertEqual(interaction_owner["kind"], "none")
+        self.assertEqual(handler2._get_runtime_state("ou_user", "chat-a")["feishu_runtime_state"], "released")
+        self.assertEqual(handler2._get_runtime_state("ou_user", "chat-b")["feishu_runtime_state"], "released")
 
         handler2._handle_adapter_request_impl(
             "req-1",
@@ -1106,15 +1117,9 @@ class CodexHandlerTests(unittest.TestCase):
         )
         handler2._handle_agent_message_delta({"threadId": "thread-1", "delta": "恢复后继续"})
 
-        self.assertEqual(bot2.sent_messages[-1][0], "chat-a")
-        self.assertEqual(
-            handler2._get_runtime_state("ou_user", "chat-a")["execution_transcript"].reply_text(),
-            "恢复后继续",
-        )
-        self.assertEqual(
-            handler2._get_runtime_state("ou_user", "chat-b")["execution_transcript"].reply_text(),
-            "恢复后继续",
-        )
+        self.assertEqual(bot2.sent_messages, [])
+        self.assertEqual(handler2._get_runtime_state("ou_user", "chat-a")["execution_transcript"].reply_text(), "")
+        self.assertEqual(handler2._get_runtime_state("ou_user", "chat-b")["execution_transcript"].reply_text(), "")
 
     def test_status_shows_untitled_instead_of_unbound_when_thread_exists(self) -> None:
         handler, bot = self._make_handler()
@@ -2706,6 +2711,34 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler._adapter.unsubscribe_thread = _unsubscribe
         handler._unsubscribe_feishu_runtime_by_thread_id("thread-1")
+
+        handler2, _ = self._make_handler(data_dir=data_dir)
+        state2 = handler2._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state2["current_thread_id"], "thread-1")
+        self.assertEqual(state2["feishu_runtime_state"], "released")
+        self.assertEqual(handler2._thread_subscribers("thread-1"), ())
+
+        handler2.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
+        self.assertEqual(handler2._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
+
+    def test_persisted_attached_binding_hydrates_as_released_and_next_prompt_reattaches(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, _ = self._make_handler(data_dir=data_dir)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
 
         handler2, _ = self._make_handler(data_dir=data_dir)
         state2 = handler2._get_runtime_state("ou_user", "c1")

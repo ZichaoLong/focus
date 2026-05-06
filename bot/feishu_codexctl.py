@@ -13,12 +13,14 @@ from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerC
 from bot.config import load_config_file
 from bot.constants import display_path
 from bot.env_file import load_env_file
+from bot.instance_layout import global_data_dir
 from bot.instance_resolution import list_running_instances, resolve_cli_instance_target, resolve_running_instance_app_server_url
 from bot.platform_paths import default_data_root
-from bot.thread_resolution import list_current_dir_threads, list_global_threads
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.service_instance_lease import ServiceInstanceLease
+from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
+from bot.thread_resolution import list_current_dir_threads, list_global_threads
 
 
 class _HelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -32,8 +34,8 @@ def _data_dir() -> pathlib.Path:
     return default_data_root()
 
 
-def _resolve_target_data_dir(explicit_instance: str | None) -> pathlib.Path:
-    return resolve_cli_instance_target(explicit_instance).data_dir
+def _resolve_target_instance(explicit_instance: str | None):
+    return resolve_cli_instance_target(explicit_instance)
 
 
 def _request(data_dir: pathlib.Path, method: str, params: dict[str, Any] | None = None) -> Any:
@@ -60,6 +62,30 @@ def _thread_target_params(args: argparse.Namespace) -> dict[str, str]:
     if thread_id:
         return {"thread_id": thread_id}
     return {"thread_name": thread_name}
+
+
+def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
+    owner = snapshot.get("live_runtime_owner")
+    holder_labels = snapshot.get("live_runtime_holder_labels")
+    if isinstance(owner, dict) and isinstance(holder_labels, list):
+        label = str(owner.get("label", "") or "").strip() or "none"
+        normalized_holders = [str(item or "").strip() for item in holder_labels if str(item or "").strip()]
+        return label, normalized_holders
+    thread_id = str(snapshot.get("thread_id", "") or "").strip()
+    if not thread_id:
+        return "none", []
+    lease = ThreadRuntimeLeaseStore(global_data_dir()).load(thread_id)
+    if lease is None:
+        return "none", []
+    labels: list[str] = []
+    for holder in lease.holders:
+        holder_type = str(holder.holder_type or "").strip() or "unknown"
+        instance_name = str(holder.instance_name or "").strip() or "unknown"
+        label = f"{holder_type}@{instance_name}"
+        if int(holder.owner_pid or 0) > 0:
+            label += f"(pid={int(holder.owner_pid)})"
+        labels.append(label)
+    return str(lease.owner_instance or "").strip() or "unknown", labels
 
 
 def _print_service_status(data_dir: pathlib.Path) -> int:
@@ -135,8 +161,11 @@ def _print_binding_list(data_dir: pathlib.Path) -> int:
     return 0
 
 
-def _print_binding_status(data_dir: pathlib.Path, binding_id: str) -> int:
+def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_name: str = "") -> int:
     snapshot = _request(data_dir, "binding/status", {"binding_id": binding_id})
+    live_runtime_owner, live_runtime_holders = _live_runtime_summary(snapshot)
+    if instance_name:
+        print(f"instance: {instance_name}")
     print(f"binding: {snapshot['binding_id']}")
     print(f"kind: {snapshot['binding_kind']}")
     print(f"chat_id: {snapshot['chat_id']}")
@@ -146,8 +175,10 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str) -> int:
     print(f"binding: {snapshot['binding_state']}")
     print(f"thread: {snapshot['thread_id'] or '-'} {snapshot['thread_title'] or ''}".rstrip())
     print(f"feishu runtime: {snapshot['feishu_runtime_state']}")
-    print(f"backend thread status: {snapshot['backend_thread_status']}")
+    print(f"current instance backend thread status: {snapshot['backend_thread_status']}")
     print(f"backend running turn: {'yes' if snapshot['backend_running_turn'] else 'no'}")
+    print(f"live runtime owner: {live_runtime_owner}")
+    print(f"live runtime holders: {', '.join(live_runtime_holders) or '（无）'}")
     print(f"interaction owner: {snapshot['interaction_owner']['label']}")
     if snapshot["next_prompt_allowed"]:
         print("next prompt: accepted")
@@ -185,12 +216,17 @@ def _clear_all_bindings(data_dir: pathlib.Path) -> int:
     return 0
 
 
-def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
+def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
     snapshot = _request(data_dir, "thread/status", target_params)
+    live_runtime_owner, live_runtime_holders = _live_runtime_summary(snapshot)
+    if instance_name:
+        print(f"instance: {instance_name}")
     print(f"thread: {snapshot['thread_id']} {snapshot['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(snapshot['working_dir'])}")
-    print(f"backend thread status: {snapshot['backend_thread_status']}")
+    print(f"current instance backend thread status: {snapshot['backend_thread_status']}")
     print(f"backend running turn: {'yes' if snapshot['backend_running_turn'] else 'no'}")
+    print(f"live runtime owner: {live_runtime_owner}")
+    print(f"live runtime holders: {', '.join(live_runtime_holders) or '（无）'}")
     print(f"bound bindings: {', '.join(snapshot['bound_binding_ids']) or '（无）'}")
     print(f"attached bindings: {', '.join(snapshot['attached_binding_ids']) or '（无）'}")
     print(f"released bindings: {', '.join(snapshot['released_binding_ids']) or '（无）'}")
@@ -449,7 +485,8 @@ def main() -> None:
     try:
         if args.resource == "instance" and args.action == "list":
             raise SystemExit(_list_running_instances())
-        data_dir = _resolve_target_data_dir(args.instance)
+        target = _resolve_target_instance(args.instance)
+        data_dir = target.data_dir
         if args.resource == "service" and args.action == "status":
             raise SystemExit(_print_service_status(data_dir))
         if args.resource == "service" and args.action == "reset-backend":
@@ -457,7 +494,7 @@ def main() -> None:
         if args.resource == "binding" and args.action == "list":
             raise SystemExit(_print_binding_list(data_dir))
         if args.resource == "binding" and args.action == "status":
-            raise SystemExit(_print_binding_status(data_dir, args.binding_id))
+            raise SystemExit(_print_binding_status(data_dir, args.binding_id, instance_name=target.instance_name))
         if args.resource == "binding" and args.action == "clear":
             raise SystemExit(_clear_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear-all":
@@ -466,7 +503,13 @@ def main() -> None:
             cwd = str(args.cwd or "").strip() or os.getcwd()
             raise SystemExit(_print_thread_list(data_dir, scope=args.scope, cwd=cwd))
         if args.resource == "thread" and args.action == "status":
-            raise SystemExit(_print_thread_status(data_dir, _thread_target_params(args)))
+            raise SystemExit(
+                _print_thread_status(
+                    data_dir,
+                    _thread_target_params(args),
+                    instance_name=target.instance_name,
+                )
+            )
         if args.resource == "thread" and args.action == "bindings":
             raise SystemExit(_print_thread_bindings(data_dir, _thread_target_params(args)))
         if args.resource == "thread" and args.action == "unsubscribe":
