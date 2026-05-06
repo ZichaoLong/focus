@@ -1,0 +1,4 @@
+interface:
+  display_name: "Feishu Send Image"
+  short_description: "Send a local image to attached Feishu chats"
+  default_prompt: "Use $feishu-send-image to send a local image file back to the Feishu chats attached to the current thread."

@@ -309,7 +309,14 @@ The formal direction is now:
 4. only deliver `imageGeneration` results that have `savedPath`, with per-turn dedupe / recovery state
 5. keep explicit `send-image` thread-scoped, fail-closed, and shaped as standalone image-message fanout
 
-Recommended follow-up:
+The repository now also includes one thin skill example:
 
-1. provide one thin skill example that tells Codex to call `feishu-codexctl image send --path ...` when needed
-2. continue observing upstream `imageGeneration` / `savedPath` / backend-auth stability, but do not promote that path into the repository's primary contract
+- `.agents/skills/feishu-send-image/`
+
+It only tells Codex to call:
+
+- `feishu-codexctl image send --path ...`
+
+rather than moving core image-delivery logic into the skill layer.
+
+It is still worth observing upstream `imageGeneration` / `savedPath` / backend-auth stability, but that path should not be promoted into the repository's primary contract.
