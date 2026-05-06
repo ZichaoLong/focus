@@ -1830,7 +1830,17 @@ class FeishuBot(ABC):
                 content,
                 reply_in_thread=self._should_reply_in_thread(normalized_parent_id, reply_in_thread),
             )
-        return self.send_message_get_id(chat_id, "image", content)
+        return self.send_image_by_key(chat_id, image_key)
+
+    def send_image_by_key(self, chat_id: str, image_key: str) -> str | None:
+        normalized_image_key = str(image_key or "").strip()
+        if not normalized_image_key:
+            return None
+        return self.send_message_get_id(
+            chat_id,
+            "image",
+            json.dumps({"image_key": normalized_image_key}, ensure_ascii=False),
+        )
 
     def patch_message(self, message_id: str, content: str) -> bool:
         """更新已发送消息的文本内容

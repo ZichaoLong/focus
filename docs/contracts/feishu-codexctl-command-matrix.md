@@ -150,6 +150,12 @@ in code, docs, or product wording.
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show the binding list currently associated with a target thread | reverse mapping from a thread to bindings | read-only | exactly one of `--thread-id` or `--thread-name` | no direct Feishu counterpart |
 | `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | Make Feishu release runtime residency for a target thread while keeping thread and binding relationships intact | Feishu runtime residency for one thread | mutating | exactly one of `--thread-id` or `--thread-name` | corresponds to Feishu `/release-runtime`, but is thread-scoped rather than current-chat-scoped |
 
+### 4.5 `image` resource
+
+| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
+| --- | --- | --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image to all currently attached Feishu bindings for the target thread | outbound-image fanout for one thread | mutating | `--path` is required; the thread target may be given explicitly with `--thread-id/--thread-name`, or may fall back to `CODEX_THREAD_ID` inside a Codex turn; if the thread id is already known and `--instance` is omitted, the CLI may prefer the current `live runtime owner` instance | no direct Feishu counterpart; this is an explicit local control-plane action |
+
 ## 5. Mapping to the Feishu command surface
 
 ### 5.1 Surfaces with a reasonably clear counterpart
@@ -172,6 +178,7 @@ The following local commands intentionally have no one-to-one Feishu command:
 - `binding clear`
 - `binding clear-all`
 - `thread bindings`
+- `image send`
 
 Reasons:
 
@@ -197,6 +204,9 @@ When reading command output, the current contract recommends this model:
   - answers “what is this thread's current state in the selected instance
     backend, who owns the machine-global live runtime, which bindings point at
     it, and whether Feishu can release runtime residency for it”
+- `image`
+  - answers “send one explicitly chosen local image to the Feishu chats
+    currently attached to a target thread”
 
 The most important distinction is:
 

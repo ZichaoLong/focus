@@ -435,6 +435,7 @@ The current formal command set is:
 - `feishu-codexctl thread status (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread bindings (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread unsubscribe (--thread-id <id> | --thread-name <name>)`
+- `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
 
 ### 6.3.1 `service reset-backend` Contract
 
@@ -476,6 +477,31 @@ Formal limits:
   verifiable
 - `--force` means the operator accepts losing or interrupting in-flight work in
   the current instance backend
+
+### 6.3.2 `image send` Contract
+
+`feishu-codexctl image send` is a **thread-scoped** outbound-image action.
+
+Its target is not:
+
+- the execution card
+- the terminal result card
+- arbitrary files in the workspace that merely look like images
+
+Its formal semantics are:
+
+- select one target thread
+- find all currently `attached` Feishu bindings for that thread
+- upload the image once through the running `feishu-codex` service
+- then fan out that image as standalone Feishu `image` messages to those attached bindings
+
+Formal constraints:
+
+- if `--thread-id/--thread-name` are omitted, the CLI may only fall back to the `CODEX_THREAD_ID` environment variable
+- if the thread id is already known and `--instance` is omitted, the CLI may prefer the current machine-global `live runtime owner` instance
+- if the target thread currently has no `attached` binding, the action must fail closed
+- it does not implicitly reply to a prompt message; the first version always sends standalone image messages
+- it does not provide an automatic retry or dedupe contract; if later fanout steps fail, earlier bindings may already have received the image, and the CLI must report that partial delivery explicitly
 
 ### 6.4 Contract for binding persistence and reset
 

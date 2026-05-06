@@ -135,6 +135,7 @@
 - thread / binding 查看
 - thread 发现与本地诊断
 - `thread unsubscribe`
+- `image send`
 - 其他 thread-scoped / binding-scoped 管理动作
 
 这意味着：

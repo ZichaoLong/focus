@@ -55,6 +55,7 @@ from bot.runtime_state import (
     RuntimeStateDict,
 )
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.thread_image_delivery import ThreadImageDeliveryController
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,7 @@ class RuntimeAdminController:
         current_default_profile_resolution: Callable[[RuntimeConfigSummary | None], Any],
         load_thread_resume_profile: Callable[[str], Any],
         permissions_summary: Callable[[str, str], str],
+        thread_image_delivery: ThreadImageDeliveryController,
         prompt_write_denial_check: Callable[[ChatBindingKey, str, str, str], ReasonedCheck],
         released_runtime_reattach_check: Callable[[str], ReasonedCheck],
         resolve_thread_target_for_control_params: Callable[[dict[str, Any]], ThreadSummary],
@@ -149,6 +151,7 @@ class RuntimeAdminController:
         self._current_default_profile_resolution = current_default_profile_resolution
         self._load_thread_resume_profile = load_thread_resume_profile
         self._permissions_summary = permissions_summary
+        self._thread_image_delivery = thread_image_delivery
         self._prompt_write_denial_check = prompt_write_denial_check
         self._released_runtime_reattach_check = released_runtime_reattach_check
         self._resolve_thread_target_for_control_params = resolve_thread_target_for_control_params
@@ -734,6 +737,40 @@ class RuntimeAdminController:
             "unsubscribe_reason_code": "" if result.changed else unsubscribe_check.reason_code,
         }
 
+    def send_image_to_thread_attached_bindings(
+        self,
+        thread_id: str,
+        *,
+        local_path: str,
+        summary: ThreadSummary | None = None,
+    ) -> dict[str, Any]:
+        normalized_thread_id = str(thread_id or "").strip()
+        with self._lock:
+            attached_bindings = tuple(self.attached_bindings_for_thread_locked(normalized_thread_id))
+        result = self._thread_image_delivery.deliver_local_image(
+            thread_id=normalized_thread_id,
+            local_path=local_path,
+            attached_bindings=attached_bindings,
+        )
+        effective_summary = summary
+        if effective_summary is None:
+            resolved_summary, _backend_thread_status = self.read_thread_summary_for_status(normalized_thread_id)
+            effective_summary = resolved_summary
+        return {
+            "thread_id": result.thread_id,
+            "thread_title": effective_summary.title if effective_summary is not None else "",
+            "working_dir": effective_summary.cwd if effective_summary is not None else "",
+            "local_path": result.local_path,
+            "attached_binding_ids": [item.binding_id for item in (*result.delivered, *result.failed)],
+            "delivered_binding_ids": [item.binding_id for item in result.delivered],
+            "failed_binding_ids": [item.binding_id for item in result.failed],
+            "delivered_message_ids": {
+                item.binding_id: item.message_id
+                for item in result.delivered
+            },
+            "fully_delivered": result.fully_delivered,
+        }
+
     def thread_status_snapshot(
         self,
         thread_id: str,
@@ -1066,7 +1103,7 @@ class RuntimeAdminController:
             return self.clear_binding_for_control(binding)
         if method == "binding/clear-all":
             return self.clear_all_bindings_for_control()
-        if method in {"thread/status", "thread/bindings", "thread/unsubscribe"}:
+        if method in {"thread/status", "thread/bindings", "thread/unsubscribe", "thread/send-image"}:
             thread = self._resolve_thread_target_for_control_params(params)
             if method == "thread/status":
                 return self.thread_status_snapshot(thread.thread_id, summary=thread)
@@ -1088,5 +1125,14 @@ class RuntimeAdminController:
                         for binding_id in snapshot["bound_binding_ids"]
                     ],
                 }
+            if method == "thread/send-image":
+                local_path = str(params.get("local_path", "") or "").strip()
+                if not local_path:
+                    raise ValueError("thread/send-image 缺少 local_path。")
+                return self.send_image_to_thread_attached_bindings(
+                    thread.thread_id,
+                    local_path=local_path,
+                    summary=thread,
+                )
             return self.unsubscribe_feishu_runtime_by_thread_id(thread.thread_id)
         raise ValueError(f"未知控制面方法：{method}")

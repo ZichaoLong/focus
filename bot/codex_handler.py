@@ -120,6 +120,7 @@ from bot.thread_runtime_coordination import (
     preview_thread_runtime_holder_acquire,
 )
 from bot.thread_access_policy import ThreadAccessPolicy
+from bot.thread_image_delivery import ThreadImageDeliveryController
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.runtime_loop import RuntimeLoop, RuntimeLoopClosedError
 from bot.platform_paths import default_data_root
@@ -265,6 +266,10 @@ class CodexHandler(BotHandler):
                 parent_message_id=parent_message_id,
                 reply_in_thread=reply_in_thread,
             ),
+        )
+        self._thread_image_delivery = ThreadImageDeliveryController(
+            upload_image=lambda local_path: self.bot.upload_image(local_path),
+            send_image_by_key=lambda chat_id, image_key: self.bot.send_image_by_key(chat_id, image_key),
         )
         self._execution_recovery = ExecutionRecoveryController(
             lock=self._lock,
@@ -455,6 +460,7 @@ class CodexHandler(BotHandler):
             current_default_profile_resolution=self._current_default_profile_resolution,
             load_thread_resume_profile=self._thread_resume_profile_store.load,
             permissions_summary=_permissions_summary,
+            thread_image_delivery=self._thread_image_delivery,
             prompt_write_denial_check=self._thread_access_policy.prompt_write_denial_check,
             released_runtime_reattach_check=self._released_runtime_reattach_check,
             resolve_thread_target_for_control_params=self._resolve_thread_target_for_control_params,

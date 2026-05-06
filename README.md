@@ -442,12 +442,14 @@ feishu-codexctl thread bindings --thread-id <id>
 feishu-codexctl thread bindings --thread-name <name>
 feishu-codexctl thread unsubscribe --thread-id <id>
 feishu-codexctl thread unsubscribe --thread-name <name>
+feishu-codexctl image send --path ./diagram.png
 ```
 
 说明：
 
 - `thread list` 默认 `--scope cwd`，也支持 `--cwd /path/to/project`
 - 线程目标必须显式写成 `--thread-id` 或 `--thread-name`
+- `image send` 在 Codex turn 内可回落到环境变量 `CODEX_THREAD_ID`
 - `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不是删线程，也不等于 `thread unsubscribe`
 
 ## 进阶使用

@@ -82,7 +82,11 @@ class CliRuntimeTarget:
     running_entry: InstanceRegistryEntry | None = None
 
 
-def resolve_cli_instance_target(explicit_instance: str | None = None) -> CliInstanceTarget:
+def resolve_cli_instance_target(
+    explicit_instance: str | None = None,
+    *,
+    preferred_running_instance: str = "",
+) -> CliInstanceTarget:
     normalized_instance = str(explicit_instance or "").strip()
     if normalized_instance:
         validated = validate_instance_name(normalized_instance)
@@ -98,6 +102,15 @@ def resolve_cli_instance_target(explicit_instance: str | None = None) -> CliInst
             instance_name=paths.instance_name,
             data_dir=paths.data_dir,
         )
+    normalized_preferred = str(preferred_running_instance or "").strip().lower()
+    if normalized_preferred:
+        running = load_running_instance(normalized_preferred)
+        if running is not None:
+            return CliInstanceTarget(
+                instance_name=running.instance_name,
+                data_dir=pathlib.Path(running.data_dir),
+                running_entry=running,
+            )
     unique = unique_running_instance()
     if unique is not None:
         return CliInstanceTarget(
@@ -186,14 +199,7 @@ def _resolve_cli_runtime_base_target(
     explicit_instance: str | None,
     preferred_running_instance: str,
 ) -> CliInstanceTarget:
-    if explicit_instance:
-        return resolve_cli_instance_target(explicit_instance)
-    if preferred_running_instance:
-        running = load_running_instance(preferred_running_instance)
-        if running is not None:
-            return CliInstanceTarget(
-                instance_name=running.instance_name,
-                data_dir=pathlib.Path(running.data_dir),
-                running_entry=running,
-            )
-    return resolve_cli_instance_target()
+    return resolve_cli_instance_target(
+        explicit_instance,
+        preferred_running_instance=preferred_running_instance,
+    )

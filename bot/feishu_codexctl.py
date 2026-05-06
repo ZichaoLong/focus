@@ -22,6 +22,8 @@ from bot.stores.service_instance_lease import ServiceInstanceLease
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_resolution import list_current_dir_threads, list_global_threads
 
+_CODEX_THREAD_ID_ENV_VAR = "CODEX_THREAD_ID"
+
 
 class _HelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
     pass
@@ -34,8 +36,15 @@ def _data_dir() -> pathlib.Path:
     return default_data_root()
 
 
-def _resolve_target_instance(explicit_instance: str | None):
-    return resolve_cli_instance_target(explicit_instance)
+def _resolve_target_instance(
+    explicit_instance: str | None,
+    *,
+    preferred_running_instance: str = "",
+):
+    return resolve_cli_instance_target(
+        explicit_instance,
+        preferred_running_instance=preferred_running_instance,
+    )
 
 
 def _request(data_dir: pathlib.Path, method: str, params: dict[str, Any] | None = None) -> Any:
@@ -62,6 +71,30 @@ def _thread_target_params(args: argparse.Namespace) -> dict[str, str]:
     if thread_id:
         return {"thread_id": thread_id}
     return {"thread_name": thread_name}
+
+
+def _lease_owner_instance(thread_id: str) -> str:
+    lease = ThreadRuntimeLeaseStore(global_data_dir()).load(thread_id)
+    if lease is None:
+        return ""
+    return str(lease.owner_instance or "").strip()
+
+
+def _image_send_target_params(args: argparse.Namespace) -> tuple[dict[str, str], str]:
+    thread_id = str(getattr(args, "thread_id", "") or "").strip()
+    thread_name = str(getattr(args, "thread_name", "") or "").strip()
+    if thread_id and thread_name:
+        raise ValueError("不能同时提供 --thread-id 和 --thread-name。")
+    if thread_id:
+        return {"thread_id": thread_id}, thread_id
+    if thread_name:
+        return {"thread_name": thread_name}, ""
+    env_thread_id = str(os.environ.get(_CODEX_THREAD_ID_ENV_VAR, "") or "").strip()
+    if env_thread_id:
+        return {"thread_id": env_thread_id}, env_thread_id
+    raise ValueError(
+        "必须提供 --thread-id 或 --thread-name；若在 Codex turn 内调用，也可依赖环境变量 `CODEX_THREAD_ID`。"
+    )
 
 
 def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
@@ -302,6 +335,34 @@ def _unsubscribe_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -
     return 0
 
 
+def _send_thread_image(
+    data_dir: pathlib.Path,
+    target_params: dict[str, str],
+    *,
+    local_path: str,
+    instance_name: str = "",
+) -> int:
+    result = _request(
+        data_dir,
+        "thread/send-image",
+        {
+            **target_params,
+            "local_path": local_path,
+        },
+    )
+    if instance_name:
+        print(f"instance: {instance_name}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    print(f"local_path: {display_path(result['local_path'])}")
+    print(f"delivered bindings: {', '.join(result['delivered_binding_ids']) or '（无）'}")
+    if result.get("failed_binding_ids"):
+        print(f"failed bindings: {', '.join(result['failed_binding_ids'])}")
+        print("note: 图片只完成部分投递；若重试，已成功的 binding 可能会再次收到同一张图片。")
+        return 1
+    return 0
+
+
 def _list_running_instances() -> int:
     instances = list_running_instances()
     if not instances:
@@ -336,6 +397,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
             "  feishu-codexctl thread unsubscribe --thread-name <name>\n"
+            "  feishu-codexctl image send --path ./diagram.png\n"
             "\n"
             "多实例:\n"
             "  feishu-codexctl --instance corp-a service status\n"
@@ -475,6 +537,31 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_unsubscribe_target = thread_unsubscribe.add_mutually_exclusive_group(required=True)
     thread_unsubscribe_target.add_argument("--thread-id", help="目标 thread id。")
     thread_unsubscribe_target.add_argument("--thread-name", help="目标 thread 名称。")
+
+    image = subparsers.add_parser(
+        "image",
+        help="向某个 thread 的 attached Feishu bindings 发送图片。",
+        description=(
+            "图片出站管理面。\n"
+            "当前只提供 `send`：把一张本地图片发送到目标 thread 当前所有 attached 的 Feishu bindings。\n"
+            "如果省略 `--thread-id/--thread-name`，会尝试读取当前环境变量 `CODEX_THREAD_ID`。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    image_sub = image.add_subparsers(dest="action", required=True, title="image commands", metavar="image-command")
+    image_send = image_sub.add_parser(
+        "send",
+        help="把本地图片发送到目标 thread 的所有 attached bindings。",
+        description=(
+            "把一张本地图片发送到目标 thread 当前所有 attached 的 Feishu bindings。\n"
+            "这是 thread-scoped 动作，不会扫描工作区，也不会自动推断任意图片文件。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    image_send.add_argument("--path", required=True, help="本地图片路径。")
+    image_send_target = image_send.add_mutually_exclusive_group(required=False)
+    image_send_target.add_argument("--thread-id", help="目标 thread id。省略时可回落到 `CODEX_THREAD_ID`。")
+    image_send_target.add_argument("--thread-name", help="目标 thread 名称。")
     return parser
 
 
@@ -485,6 +572,20 @@ def main() -> None:
     try:
         if args.resource == "instance" and args.action == "list":
             raise SystemExit(_list_running_instances())
+        if args.resource == "image" and args.action == "send":
+            target_params, preferred_thread_id = _image_send_target_params(args)
+            target = _resolve_target_instance(
+                args.instance,
+                preferred_running_instance=_lease_owner_instance(preferred_thread_id),
+            )
+            raise SystemExit(
+                _send_thread_image(
+                    target.data_dir,
+                    target_params,
+                    local_path=args.path,
+                    instance_name=target.instance_name,
+                )
+            )
         target = _resolve_target_instance(args.instance)
         data_dir = target.data_dir
         if args.resource == "service" and args.action == "status":

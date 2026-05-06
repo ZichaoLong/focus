@@ -8,8 +8,10 @@ from unittest.mock import patch
 
 from bot.feishu_codexctl import (
     _build_parser,
+    _image_send_target_params,
     _list_running_instances,
     _print_binding_status,
+    _send_thread_image,
     _print_thread_status,
     _thread_target_params,
 )
@@ -145,6 +147,34 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
 
+    def test_image_send_accepts_explicit_thread_selector_and_path(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["image", "send", "--path", "./diagram.png", "--thread-id", "thread-1"])
+
+        self.assertEqual(args.resource, "image")
+        self.assertEqual(args.action, "send")
+        self.assertEqual(args.path, "./diagram.png")
+        self.assertEqual(_image_send_target_params(args), ({"thread_id": "thread-1"}, "thread-1"))
+
+    def test_image_send_falls_back_to_codex_thread_id_env(self) -> None:
+        parser = _build_parser()
+
+        with patch.dict(os.environ, {"CODEX_THREAD_ID": "thread-env-1"}, clear=False):
+            args = parser.parse_args(["image", "send", "--path", "./diagram.png"])
+            params, preferred_thread_id = _image_send_target_params(args)
+
+        self.assertEqual(params, {"thread_id": "thread-env-1"})
+        self.assertEqual(preferred_thread_id, "thread-env-1")
+
+    def test_image_send_requires_selector_when_env_missing(self) -> None:
+        parser = _build_parser()
+        args = parser.parse_args(["image", "send", "--path", "./diagram.png"])
+
+        with patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(ValueError, "CODEX_THREAD_ID"):
+                _image_send_target_params(args)
+
     def test_parser_accepts_global_instance_selector(self) -> None:
         parser = _build_parser()
 
@@ -267,3 +297,28 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
         self.assertIn("thread: thread-1 demo", rendered)
+
+    def test_send_thread_image_reports_partial_delivery(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "local_path": "/tmp/generated.png",
+            "delivered_binding_ids": ["p2p:ou_user:chat-1"],
+            "failed_binding_ids": ["p2p:ou_other:chat-2"],
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _send_thread_image(
+                    Path("/tmp/instance-data"),
+                    {"thread_id": "thread-1"},
+                    local_path="/tmp/generated.png",
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 1)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("delivered bindings: p2p:ou_user:chat-1", rendered)
+        self.assertIn("failed bindings: p2p:ou_other:chat-2", rendered)

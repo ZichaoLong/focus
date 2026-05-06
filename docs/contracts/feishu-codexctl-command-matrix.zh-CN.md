@@ -141,6 +141,12 @@
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前关联的 binding 列表 | 单个 thread 到 binding 的反向关系 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无直接飞书对应 |
 | `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | 让 Feishu 释放某个 thread 的 runtime residency，同时保留 thread 与 binding 关系 | 单个 thread 的 Feishu runtime residency | 变更 | 必须二选一：`--thread-id` 或 `--thread-name` | 对应飞书 `/release-runtime`，但这是 thread-scoped 而不是当前 chat-scoped |
 
+### 4.5 `image` 资源
+
+| 命令 | 作用 | 状态层 | 类型 | 关键参数 | 飞书对应 |
+| --- | --- | --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | 把一张本地图片发送到目标 thread 当前所有 attached 的 Feishu bindings | 单个 thread 的出站图片 fanout | 变更 | `--path` 必填；thread 目标可显式给 `--thread-id/--thread-name`，也可在 Codex turn 内回落到 `CODEX_THREAD_ID`；若已知 thread id 且未显式给 `--instance`，CLI 可优先路由到当前 `live runtime owner` 实例 | 无直接飞书对应；这是本地控制面显式动作 |
+
 ## 5. 与飞书命令面的对应关系
 
 ### 5.1 有较明确对应关系的项目
@@ -163,6 +169,7 @@
 - `binding clear`
 - `binding clear-all`
 - `thread bindings`
+- `image send`
 
 原因是：
 
@@ -182,6 +189,8 @@
   - 回答“某个飞书会话当前默认指向哪个 thread、还能不能直接继续”
 - `thread`
   - 回答“这个 thread 在当前实例 backend 里是什么状态、machine-global live runtime 现在归谁、有哪些 binding 连着它、能不能让 Feishu 释放 runtime”
+- `image`
+  - 回答“把一张明确指定的本地图片，送到哪个 thread 当前 attached 的 Feishu 会话”
 
 最重要的一条：
 

@@ -18,6 +18,7 @@ from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease, ThreadRuntimeLeaseHolder
 from bot.thread_subscription_registry import ThreadSubscriptionRegistry
+from bot.thread_image_delivery import ThreadImageDeliveryController
 
 
 class RuntimeAdminControllerTests(unittest.TestCase):
@@ -48,6 +49,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         loaded_thread_ids: list[str] = []
         pending_requests: list[dict[str, object]] = []
         reset_calls: list[bool] = []
+        sent_images: list[tuple[str, str]] = []
 
         def _read_thread(thread_id: str):
             return ThreadSnapshot(summary=summaries[thread_id])
@@ -79,6 +81,12 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             ),
             load_thread_resume_profile=lambda thread_id: None,
             permissions_summary=lambda approval_policy, sandbox: f"{sandbox}/{approval_policy}",
+            thread_image_delivery=ThreadImageDeliveryController(
+                upload_image=lambda local_path: "img-key-1",
+                send_image_by_key=lambda chat_id, image_key: sent_images.append((chat_id, image_key)) or f"msg:{chat_id}",
+                path_exists=lambda path: True,
+                path_is_file=lambda path: True,
+            ),
             prompt_write_denial_check=lambda binding, chat_id, thread_id, message_id="": ReasonedCheck.allow(),
             released_runtime_reattach_check=lambda thread_id: ReasonedCheck.allow(),
             resolve_thread_target_for_control_params=lambda params: ThreadSummary(
@@ -109,6 +117,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             pending_by_binding,
             pending_requests,
             reset_calls,
+            sent_images,
         )
 
     def _bind_thread(self, lock, binding_runtime, binding, *, thread_id: str):
@@ -136,6 +145,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -171,6 +181,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -209,6 +220,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -264,6 +276,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -306,6 +319,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -341,6 +355,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -365,6 +380,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -407,6 +423,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -460,6 +477,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             reset_calls,
+            _sent_images,
         ) = self._make_controller()
 
         result = controller.handle_service_control_request("service/reset-backend", {"force": True})
@@ -480,6 +498,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
 
         result = controller.handle_reset_backend_command("")
@@ -504,6 +523,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         pending_requests.append({"request_id": "req-1"})
 
@@ -528,6 +548,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             reset_calls,
+            _sent_images,
         ) = self._make_controller()
 
         response = controller.handle_reset_backend_action("ou_user", "c1", "m1", {"force": True})
@@ -553,6 +574,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -592,6 +614,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         controller._list_loaded_thread_ids = lambda: (_ for _ in ()).throw(RuntimeError("backend down"))
 
@@ -616,6 +639,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -652,6 +676,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
@@ -686,6 +711,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         binding_a = ("ou_user", "c1")
         binding_b = ("ou_user2", "c2")
@@ -720,6 +746,52 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             ],
         )
 
+    def test_handle_service_control_request_thread_send_image_fanouts_to_attached_bindings(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            sent_images,
+        ) = self._make_controller()
+        binding_a = ("ou_user", "c1")
+        binding_b = ("ou_user2", "c2")
+        self._bind_thread(lock, binding_runtime, binding_a, thread_id="thread-1")
+        self._bind_thread(lock, binding_runtime, binding_b, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.handle_service_control_request(
+            "thread/send-image",
+            {
+                "thread_id": "thread-1",
+                "local_path": "/tmp/generated.png",
+            },
+        )
+
+        self.assertTrue(result["fully_delivered"])
+        self.assertEqual(result["delivered_binding_ids"], ["p2p:ou_user:c1", "p2p:ou_user2:c2"])
+        self.assertEqual(result["failed_binding_ids"], [])
+        self.assertEqual(
+            sent_images,
+            [("c1", "img-key-1"), ("c2", "img-key-1")],
+        )
+
     def test_binding_status_snapshot_includes_prompt_and_unsubscribe_reason_codes(self) -> None:
         (
             lock,
@@ -733,6 +805,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         controller._prompt_write_denial_check = lambda binding, chat_id, thread_id, message_id="": ReasonedCheck.deny(
             PROMPT_DENIED_BY_INTERACTION_OWNER,
@@ -772,6 +845,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _pending_by_binding,
             _pending_requests,
             _reset_calls,
+            _sent_images,
         ) = self._make_controller()
         controller._prompt_write_denial_check = lambda binding, chat_id, thread_id, message_id="": ReasonedCheck.deny(
             PROMPT_DENIED_BY_INTERACTION_OWNER,
