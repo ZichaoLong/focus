@@ -5266,6 +5266,62 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["toast_type"], "success")
         self.assertEqual(response["toast"], "已重命名。")
 
+    def test_form_value_only_help_cd_callback_reuses_cd_handler(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"_form_value": {"cd_path": "/tmp"}},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 目录已切换")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["working_dir"], "/tmp")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "")
+
+    def test_form_value_only_help_rename_current_callback_reuses_rename_handler(self) -> None:
+        handler, _ = self._make_handler()
+        renamed = {}
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="old-title",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        def fake_rename_thread(thread_id: str, name: str) -> None:
+            renamed["thread_id"] = thread_id
+            renamed["name"] = name
+
+        handler._adapter.rename_thread = fake_rename_thread
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"_form_value": {"help_rename_current_title": "new-title"}},
+        ))
+
+        self.assertEqual(renamed, {"thread_id": "thread-1", "name": "new-title"})
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 重命名结果")
+
     def test_form_value_only_callback_without_pending_rename_returns_warning(self) -> None:
         handler, _ = self._make_handler()
 

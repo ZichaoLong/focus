@@ -85,6 +85,7 @@ class CodexHelpDomain:
         self._local_thread_safety_rule = local_thread_safety_rule
         self._page_specs = self._build_page_specs()
         self._page_aliases = self._build_page_aliases()
+        self._form_specs_by_field = self._build_form_specs_by_field()
 
     def _build_page_specs(self) -> dict[str, _HelpPageSpec]:
         return {
@@ -316,7 +317,7 @@ class CodexHelpDomain:
                 ),
                 form=_HelpFormSpec(
                     form_name="help_rename_current_form",
-                    field_name="rename_title",
+                    field_name="help_rename_current_title",
                     placeholder="输入新标题",
                     submit_label="确认重命名",
                     submit_command="/rename",
@@ -525,6 +526,33 @@ class CodexHelpDomain:
         if spec is None:
             return None
         return self._render_help_page(spec)
+
+    def _build_form_specs_by_field(self) -> dict[str, _HelpFormSpec]:
+        specs: dict[str, _HelpFormSpec] = {}
+        for page in self._page_specs.values():
+            form = page.form
+            if form is None:
+                continue
+            if form.field_name in specs:
+                raise ValueError(f"duplicate help form field: {form.field_name}")
+            specs[form.field_name] = form
+        return specs
+
+    def resolve_form_submit_payload(self, action_value: dict[str, Any]) -> dict[str, str] | None:
+        form_value = action_value.get("_form_value") or {}
+        if not isinstance(form_value, dict) or not form_value:
+            return None
+        matched_fields = [field_name for field_name in self._form_specs_by_field if field_name in form_value]
+        if len(matched_fields) != 1:
+            return None
+        spec = self._form_specs_by_field[matched_fields[0]]
+        return {
+            "action": "help_submit_command",
+            "command": spec.submit_command,
+            "field_name": spec.field_name,
+            "title": spec.submit_title,
+            "required_text": spec.required_text,
+        }
 
     def handle_show_help_page_action(
         self,

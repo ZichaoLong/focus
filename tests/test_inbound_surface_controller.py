@@ -29,6 +29,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         command_calls: list[tuple[str, str, str, str]] = []
         action_calls: list[tuple[str, str, str, dict]] = []
         prefixed_calls: list[tuple[str, str, str, dict]] = []
+        help_fallback_calls: list[tuple[str, str, str, dict]] = []
 
         controller = InboundSurfaceController(
             keyword="CODEX",
@@ -59,6 +60,10 @@ class InboundSurfaceControllerTests(unittest.TestCase):
             ).strip()
             in {"ou_admin", "ou_actor"},
             handle_rename_form_fallback=lambda *args: None,
+            handle_help_form_fallback=lambda sender_id, chat_id, message_id, action_value: (
+                help_fallback_calls.append((sender_id, chat_id, message_id, action_value)),
+                None,
+            )[1],
             handle_user_input_form_fallback=lambda *args: None,
         )
         controller.install_routes(
@@ -97,7 +102,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
                 )
             ],
         )
-        return controller, activated, prompts, replies, cards, command_calls, action_calls, prefixed_calls
+        return controller, activated, prompts, replies, cards, command_calls, action_calls, prefixed_calls, help_fallback_calls
 
     def test_blank_message_dispatches_help_and_activates_binding(self) -> None:
         controller, activated, prompts, replies, *_ = self._make_controller()
@@ -137,7 +142,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         self.assertEqual(response["toast_type"], "warning")
 
     def test_group_action_guard_denies_non_admin_actor(self) -> None:
-        controller, *_rest, action_calls, _prefixed_calls = self._make_controller()
+        controller, *_rest, action_calls, _prefixed_calls, _help_fallback_calls = self._make_controller()
 
         response = self._unpack_card_response(
             controller.handle_card_action(
@@ -153,7 +158,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         self.assertEqual(action_calls, [])
 
     def test_prefixed_action_routes_dispatch_to_matching_handler(self) -> None:
-        controller, *_rest, prefixed_calls = self._make_controller()
+        controller, *_rest, prefixed_calls, _help_fallback_calls = self._make_controller()
 
         response = controller.handle_card_action(
             "ou_user",
@@ -167,6 +172,25 @@ class InboundSurfaceControllerTests(unittest.TestCase):
             prefixed_calls,
             [("ou_user", "group-1", "msg-2", {"action": "command_allow_once", "_operator_open_id": "ou_admin"})],
         )
+
+    def test_form_value_only_callback_checks_help_fallback_before_stale_warning(self) -> None:
+        controller, *_rest, help_fallback_calls = self._make_controller()
+
+        response = self._unpack_card_response(
+            controller.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-help",
+                {"_form_value": {"cd_path": "/tmp"}},
+            )
+        )
+
+        self.assertEqual(
+            help_fallback_calls,
+            [("ou_user", "c1", "msg-help", {"_form_value": {"cd_path": "/tmp"}})],
+        )
+        self.assertEqual(response["toast"], "表单已失效或未找到对应问题，请重新触发该请求。")
+        self.assertEqual(response["toast_type"], "warning")
 
 
 if __name__ == "__main__":

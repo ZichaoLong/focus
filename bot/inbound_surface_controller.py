@@ -47,6 +47,7 @@ class InboundSurfaceController:
         is_group_turn_actor: Callable[..., bool],
         is_group_request_actor_or_admin: Callable[..., bool],
         handle_rename_form_fallback: Callable[..., P2CardActionTriggerResponse | None],
+        handle_help_form_fallback: Callable[..., P2CardActionTriggerResponse | None],
         handle_user_input_form_fallback: Callable[..., P2CardActionTriggerResponse | None],
     ) -> None:
         self._keyword = keyword
@@ -62,6 +63,7 @@ class InboundSurfaceController:
         self._is_group_turn_actor = is_group_turn_actor
         self._is_group_request_actor_or_admin = is_group_request_actor_or_admin
         self._handle_rename_form_fallback = handle_rename_form_fallback
+        self._handle_help_form_fallback = handle_help_form_fallback
         self._handle_user_input_form_fallback = handle_user_input_form_fallback
         self._command_routes: dict[str, CommandRoute] = {}
         self._action_routes: dict[str, ActionRoute] = {}
@@ -118,6 +120,14 @@ class InboundSurfaceController:
             )
             if rename_fallback is not None:
                 return rename_fallback
+            help_fallback = self._handle_help_form_fallback(
+                sender_id,
+                chat_id,
+                message_id,
+                action_value,
+            )
+            if help_fallback is not None:
+                return help_fallback
             fallback = self._handle_user_input_form_fallback(
                 sender_id,
                 chat_id,
