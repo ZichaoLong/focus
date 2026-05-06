@@ -1,136 +1,96 @@
 # feishu-codex
 
-`feishu-codex` 通过飞书机器人，把消息、卡片、审批、群聊管理接到同一个 `codex app-server`。
+`feishu-codex` 把飞书机器人、本地 `fcodex` 和同一个 `codex app-server`
+接到一起。
 
 它不是把 Codex TUI 直接搬进飞书；它提供的是：
 
 - 飞书里的 thread 使用入口
-- 本地共享 backend 上的 `fcodex` 入口
-- 本地管理面 `feishu-codexctl`
+- 本地继续同一 live thread 的 `fcodex`
+- 本地查看 / 管理面 `feishu-codexctl`
 
-## 先建立心智模型
+## 这是什么
 
-先记住 5 个入口：
+你可以把它理解成一层桥接：
+
+- 飞书会话先绑定到某个 `thread`
+- 这个 `thread` 跑在某个实例自己的 shared backend 上
+- 飞书和 `fcodex` 只要连到同一个实例 backend，就能安全继续同一个 live thread
+
+最重要的一条：
+
+- 想让飞书和本地安全地继续同一个 live thread，用 `fcodex`
+- 裸 `codex` 仍然可以单独用，但不在共享线程合同内
+
+## 怎么使用
+
+先记住 4 个入口：
 
 | 入口 | 作用 | 什么时候用 |
 | --- | --- | --- |
-| `feishu-codex` | 配置、运行态、登录后自动启动、本地清理 | 管理本地服务 |
 | 飞书聊天命令 | 当前 chat binding 的使用入口 | 在飞书里提问、切线程、改当前会话设置 |
+| `feishu-codex` | 配置、启停、登录后自动启动、实例管理 | 管理本地服务 |
 | `fcodex` | 接到同一实例 shared backend 的本地 Codex 入口 | 想在本地继续飞书正在操作的同一 live thread |
-| `feishu-codexctl` | 本地查看 / 管理面 | 看 binding / thread 状态，做 thread-scoped 管理 |
-| 裸 `codex` | 独立本地 Codex 会话 | 不需要和飞书共用 live thread 时 |
+| `feishu-codexctl` | 本地查看 / 管理面 | 看 binding / thread / service 状态，做 thread-scoped 管理 |
 
-最重要的一条：如果你想让飞书和本地安全地继续同一个 live thread，就用 `fcodex`，不要混用裸 `codex`。
+如果只是本地独立使用，不需要和飞书共用 live thread，也可以直接用裸 `codex`。
 
-## 前置条件
+## 快速开始
+
+### 前置条件
 
 - Python 3.11+
 - 本机已安装 `codex` CLI，且 `codex --help` 可正常执行
 - 已在飞书开放平台创建应用，拿到 `app_id` 与 `app_secret`
 
-## 快速开始
+### 1. 安装
 
-1. 安装。
+macOS / Linux：
 
-   macOS / Linux：
+```bash
+cd /path/to/feishu-codex
+bash install.sh
+```
 
-   ```bash
-   cd /path/to/feishu-codex
-   bash install.sh
-   ```
+Windows PowerShell：
 
-   Windows PowerShell：
+```powershell
+cd \path\to\feishu-codex
+.\install.ps1
+```
 
-   ```powershell
-   cd \path\to\feishu-codex
-   .\install.ps1
-   ```
+开发期间只支持这两条安装 / 修复路径：
 
-2. 打开系统配置并填写飞书应用信息。
+- `bash install.sh`
+- `.\install.ps1`
 
-   ```bash
-   feishu-codex config system --open
-   ```
+不要使用：
 
-3. 如果 provider key 走环境变量，写到：
+- `pip install .`
+- `pip install -e .`
 
-   ```bash
-   feishu-codex config env --open
-   ```
+### 2. 配置飞书应用
 
-4. 如需“登录后自动启动”，开启它。
+推荐先一次性配好权限、事件与回调。
 
-   ```bash
-   feishu-codex autostart enable
-   ```
+建议权限：
 
-5. 启动服务。
-
-   ```bash
-   feishu-codex start
-   ```
-
-6. 获取初始化口令。
-
-   ```bash
-   feishu-codex config init-token
-   ```
-
-7. 在飞书里私聊机器人执行：
-
-   ```text
-   /init <token>
-   ```
-
-8. 然后就可以发送 `/help`、普通文本，或开始配置群聊。
-
-## 安装与配置
-
-### 安装
-
-- `install.sh` 和 `install.ps1` 是唯一公开安装 / 修复入口
-- `install.py` 是它们调用的内部实现
-- 开发期间不要执行 `pip install .` 或 `pip install -e .`
-  - 这会在当前 Python / Conda 环境额外生成 `feishu-codex` / `feishu-codexctl` / `fcodex` 等 `console_scripts`
-  - 这些残留入口后续不会被 `install.sh` 接管，容易和 `~/.local/bin` 下的受管 wrapper 混淆
-  - 统一使用 `bash install.sh` 或 `./install.ps1`
-- 安装后会生成 `feishu-codex`、`feishu-codexd`、`feishu-codexctl`、`fcodex`
-- 安装脚本会初始化 `default` 实例，并为所有已知实例重建本地 service 定义 / 注册材料
-- 这里的“重建”指：刷新 `system.yaml.example` / `codex.yaml.example`，补齐缺失 scaffold，并重建 shared wrapper
-- 重建不会覆盖已有 `system.yaml`、`codex.yaml`、`init.token`、`feishu-codex.env`，也不会删除实例数据
-- 首次生成 `codex.yaml` 时，如检测到 fnm 管理的 Codex，会自动写入稳定启动命令，避免 service 依赖 `fnm_multishells` 这类临时路径
-- 安装脚本不会自动启动 service
-- 安装脚本不会自动开启“登录后自动启动”
-- `feishu-codex` 本身不提供 `install` 子命令
-- `feishu-codex` 是唯一公开管理面；底层会调用原生 service manager 管理后台进程与“登录后自动启动”
-  - Linux：`systemd`
-  - macOS：`LaunchAgent`
-  - Windows：`Task Scheduler`
-
-### 飞书配置
-
-推荐一次性把机器人、权限、事件与回调配好。
-
-至少建议开通：
-
-| 权限标识 | 用途 |
-| --- | --- |
-| `im:message.p2p_msg:readonly` | 接收单聊消息 |
-| `im:message.group_at_msg:readonly` | 接收群里 `@机器人` 的消息 |
-| `im:message.group_msg` | 支持群 `assistant` / `all`，以及 `trigger_open_ids` |
-| `im:message` | 读取消息内容，并发送 / 引用回复 |
-| `im:message:readonly` | 读取消息详情 |
-| `im:message:send_as_bot` | 以应用身份发送文本和卡片 |
-| `im:message:update` | 更新执行中的卡片 |
-| `application:application:self_manage` | `/init`、`/bot-status` 自动探测机器人身份 |
-| `contact:contact.base:readonly` | 解析用户名 |
-| `contact:user.base:readonly` | `/whoami`、群授权卡片、群上下文显示名字 |
-| `contact:user.employee_id:readonly` | `/whoami` 返回 `user_id` 供排障 |
+- `application:application:self_manage`
+- `contact:contact.base:readonly`
+- `contact:user.base:readonly`
+- `contact:user.employee_id:readonly`
+- `im:message`
+- `im:message.group_at_msg:readonly`
+- `im:message.group_msg`
+- `im:message.p2p_msg:readonly`
+- `im:message:readonly`
+- `im:message:send_as_bot`
+- `im:message:update`
 
 <details>
 <summary>一键导入权限 JSON（点击展开）</summary>
 
-在飞书开放平台「权限管理」页面点击「批量开通」，粘贴以下 JSON 即可导入 README 当前建议的权限集：
+在飞书开放平台「权限管理」页面点击「批量开通」，粘贴以下 JSON 即可导入当前建议权限集：
 
 ```json
 {
@@ -162,391 +122,192 @@
 
 本项目默认走长连接，不需要公网 webhook URL。
 
-### 本地配置
+### 3. 填本地配置
 
-最常改的只有 4 处：
-
-- `feishu-codex config system` → `system.yaml`
-- `feishu-codex config codex` → `codex.yaml`
-- `feishu-codex config env` → `feishu-codex.env`
-- `feishu-codex config init-token` → `init.token`
-
-最小 `system.yaml` 大致长这样：
-
-```yaml
-app_id: "..."
-app_secret: "..."
-# admin_open_ids:
-#   - "ou_admin_1"
-# bot_open_id: "ou_bot_xxx"
-# trigger_open_ids:
-#   - "ou_user_alias_xxx"
-```
-
-建议先在私聊里执行一次 `/init <token>`。它会：
-
-- 把当前发送者写入 `admin_open_ids`
-- 尝试自动探测并写入 `bot_open_id`
-- 立即更新当前运行中的服务进程
-
-如果 provider key 走环境变量，统一放到：
-
-```ini
-provider_api_key=...
-```
-
-`feishu-codexd` 与 `fcodex` 启动时都会主动加载这个文件。
-
-如果你通过 fnm 管理 Node / Codex，首次安装生成 `codex.yaml` 时会尽量自动写入稳定启动命令。
-后续重新运行安装脚本只会刷新 `codex.yaml.example`，不会覆盖你已经存在的 `codex.yaml`。
-
-### 多实例
-
-可以跑多个实例；每个实例有自己的配置目录、数据目录、service owner 和 backend，但共享一套 `CODEX_HOME`。
-
-常用形式：
+打开系统配置：
 
 ```bash
-feishu-codex instance create corp-a
-feishu-codex instance list
-feishu-codex --instance corp-a config system --open
-feishu-codex --instance corp-a autostart enable
-feishu-codex --instance corp-a start
-fcodex --instance corp-a
-feishu-codexctl instance list
-feishu-codexctl --instance corp-a service status
-feishu-codex instance remove corp-a
+feishu-codex config system --open
 ```
 
-多实例下再记住几条：
+按需写入 provider 环境变量：
 
-- `feishu-codex instance create <name>` 只负责创建该实例的 scaffold，不启动 service
-- `feishu-codex instance list` 列出本机已知实例，并标注它们当前是否在运行
-- 除 `instance create` 外，其他 `feishu-codex --instance <name> ...` 命令都不会隐式创建命名实例；实例不存在时会直接报错
-- 重新运行 `install.sh` / `install.ps1` 时，会重建 shared wrapper，并为所有已知实例重建 service 定义 / 注册材料；只刷新 `*.example` 并补齐缺失 scaffold，不覆盖已有配置或数据
-- `--instance default` 等价于不写 `--instance`；`default` 实例直接使用配置根 / 数据根本身，不会创建 `instances/default/`
-- 同一 thread 的 live runtime 不能被两个实例 backend 同时持有
-- 所有实例共享同一套 persisted thread 可见面；真正按实例隔离的是 binding、本地运行态与 live runtime lease
-- 删除命名实例请用 `feishu-codex instance remove <name>`；它只删除该命名实例的配置、数据与实例级 service 注册材料，不会删除 `default`、共享 env 或 `_global`
+```bash
+feishu-codex config env --open
+```
 
-多实例的推荐管理面分工：
+最小需要填的通常是：
 
-- 创建 / 列出 / 删除实例：`feishu-codex instance create|list|remove`
-- 配置 / 启停 / 日志：`feishu-codex --instance <name> ...`
-- 查看运行中的实例注册表：`feishu-codexctl instance list`
-- 本地线程管理：`feishu-codexctl --instance <name> ...`
-- 本地继续 live thread：`fcodex --instance <name> ...`
+- `system.yaml` 里的 `app_id`、`app_secret`
+- `feishu-codex.env` 里的 provider key 或其他环境变量
 
-### 安装后会发生什么
+### 4. 启动服务并初始化管理员
 
-安装器会自动：
+如需登录后自动启动：
 
-- 创建虚拟环境并安装依赖
-- 初始化 `default` 实例的配置 / 数据目录
-- 重建 shared wrapper：`feishu-codex`、`feishu-codexd`、`feishu-codexctl`、`fcodex`
-- 重建所有已知实例的本地 service 定义 / 注册材料
-- 生成 `system.yaml.example`、`codex.yaml.example`
-- 生成 `init.token`
-- 生成共享的 `feishu-codex.env`
-- 安装平台对应的用户态 service manager 配置 / 注册材料
-- 保留已有 `system.yaml`、`codex.yaml`、`init.token`、`feishu-codex.env` 与实例数据，只补齐缺失 scaffold 并刷新 `*.example`
+```bash
+feishu-codex autostart enable
+```
 
-如果当前没有命名实例，“所有已知实例”就只有 `default`；如果你之前创建过 `corp-a` 之类的命名实例，重新运行安装脚本时也会一起重建它们的 service 定义 / 注册材料。
+启动服务：
 
-多实例时，命名实例不会写回根目录；它们固定落在 `instances/<name>` 子目录下。
+```bash
+feishu-codex start
+```
 
-默认根目录如下：
+查看初始化口令：
 
-| 平台 | 配置根 | 数据根 |
-| --- | --- | --- |
-| Linux | `~/.config/feishu-codex` | `~/.local/share/feishu-codex` |
-| macOS | `~/Library/Application Support/feishu-codex/config` | `~/Library/Application Support/feishu-codex/data` |
-| Windows | `%APPDATA%\\feishu-codex\\config` | `%LOCALAPPDATA%\\feishu-codex\\data` |
+```bash
+feishu-codex config init-token
+```
 
-无论是源码树直跑还是安装后运行，默认都走上面的机器级目录；只有显式设置
-`FC_CONFIG_ROOT` / `FC_DATA_ROOT` 时，才会改用自定义根目录。
-
-逻辑布局可以按下面理解：
+然后在飞书里私聊机器人：
 
 ```text
-<config_root>/
-  feishu-codex.env              # 机器级共享 env，所有实例共用
-  system.yaml                   # default 实例
-  codex.yaml
-  init.token
-  instances/
-    corp-a/
-      system.yaml
-      codex.yaml
-      init.token
-
-<data_root>/
-  feishu-codex.log              # default 实例日志
-  chat_bindings.json            # default 实例 binding 持久化
-  profile_state.json            # default 实例“新线程默认 profile”
-  app_server_runtime.json       # default 实例当前 backend 发现状态
-  service-instance.json         # default 实例 service owner 元数据
-  _global/                      # 机器级共享协调区
-    instance_registry.json
-    thread_resume_profiles.json
-    thread_runtime_leases.json
-  instances/
-    corp-a/
-      feishu-codex.log
-      chat_bindings.json
-      profile_state.json
-      app_server_runtime.json
-      service-instance.json
+/init <token>
 ```
 
-如果你执行：
+这一步会把当前发送者登记为管理员，并尝试写入当前机器人的 `bot_open_id`。
 
-```bash
-feishu-codex instance create corp-a
-```
+### 5. 开始使用
 
-它会创建 `corp-a` 这套实例目录、模板文件与对应后台 service 定义 / 注册材料，但不会自动启动该实例 service，也不会自动开启登录后自动启动。
+在飞书里：
 
-### 服务管理
+- 发送 `/help` 看导航
+- 直接发送普通文本开始对话
+- 用 `/new`、`/resume`、`/profile`、`/cd` 管理当前会话绑定的 thread
+- 群聊里先用 `/group activate` 激活，再按群模式使用
 
-统一用 `feishu-codex`：
-
-```bash
-feishu-codex autostart enable|disable|status
-feishu-codex start|stop|restart|status
-feishu-codex log
-feishu-codex run
-feishu-codex config
-feishu-codex instance create <name>
-feishu-codex instance list
-feishu-codex instance remove <name>
-feishu-codex uninstall
-feishu-codex purge
-```
-
-多实例时，`autostart|start|stop|restart|status|log|run|config` 这组命令在最前面加 `--instance <name>` 即可；`instance create|remove` 则直接把实例名写在子命令参数里，`instance list` 不接受顶层 `--instance`。
-
-其中：
-
-- `run` 是跨平台单一 daemon 入口
-- `start|stop|restart|status` 只管理当前运行态
-- `autostart enable|disable|status` 只管理“登录后自动启动”
-- 底层会调用当前平台原生 service manager 托管同一个 `feishu-codex --instance <name> run` 入口
-
-另外：
-
-- `uninstall` 会卸载所有已知实例的 service 定义 / 自启动注册与 shared wrapper，但保留配置与数据
-- `purge` 会在 `uninstall` 的基础上，再删除所有实例配置与数据
-
-## 使用
-
-### 单聊
-
-只有管理员可在私聊里直接发送普通文本提问。
-
-- 非管理员私聊会被拒绝；如需协作使用，请把机器人拉进群并由管理员先执行 `/group activate`
-
-- 当前没有绑定线程时，会在当前目录创建新线程
-- 当前已经绑定线程时，会继续写入该线程
-- 附件会先下载到当前工作目录的 `_feishu_attachments/`
-- `folder`、`sticker`、`merge_forward` 的子附件、`interactive` 卡片内资源，当前会直接拒绝为附件输入
-- 附件消息本身不会直接启动 turn；通常要再发一条文字说明来消费这些 pending 附件
-
-常用命令：
-
-- `/help`
-- `/status`
-- `/preflight`
-- `/threads`
-- `/resume <thread_id|thread_name>`
-- `/new`
-- `/release-runtime`
-- `/cd <path>`、`/pwd`、`/cancel`
-- `/rename <title>`、`/archive [thread_id|thread_name]`
-- `/profile [name]`
-- `/permissions`、`/approval`、`/sandbox`、`/collab-mode`
-- `/whoami`、`/bot-status`、`/init <token>`
-
-### 群聊
-
-新群默认是：
-
-- 工作态：`assistant`
-- 群状态：`未激活`（管理员仍可先用来初始化和管理）
-
-群里再记住 5 条：
-
-- 群里的共享状态命令和设置都只给管理员
-- `/group` 查看当前群是否已激活；`/group activate` 激活，`/group deactivate` 停用
-- 群一旦激活，当前成员和后续新加入成员都可正常使用；管理员之后退群也不影响日常对话
-- 在 `assistant` / `mention-only` 下，管理员命令和普通对话都需要先显式 mention 触发对象
-- 运行时审批卡片和补充输入卡片默认由当前请求发起者本人处理；管理员仍可兜底处理
-- 如需支持 `trigger_open_ids` 或读取非 `@机器人` 群消息，需要开 `im:message.group_msg`
-
-最常用的群命令：
-
-```text
-@机器人 /group
-@机器人 /group activate
-@机器人 /group deactivate
-@机器人 /group-mode
-@机器人 /group-mode assistant
-@机器人 /group-mode mention-only
-@机器人 /group-mode all
-```
-
-### 本地继续与本地管理
-
-#### `fcodex`
-
-`fcodex` 现在尽量接近裸 `codex`：它负责 shared-backend 路由、实例选择、cwd 代理，以及少量 thread-wise profile 逻辑；它不再保留 shell 层 slash 自命令。
-
-最常用的入口：
+在本地继续同一个 live thread：
 
 ```bash
 fcodex
-fcodex --instance corp-a
-fcodex --cd /path/to/project
 fcodex resume <thread_id|thread_name>
-fcodex -p <profile>
-fcodex -p <profile> resume <thread_id|thread_name>
+fcodex --instance corp-a
 ```
 
-请直接记住下面几条：
-
-- `fcodex`、`fcodex <prompt>`、`fcodex resume <thread_id>` 仍是 upstream Codex CLI，只是默认连到 shared backend
-- `fcodex resume <thread_name>` 会做跨 provider 的精确名字匹配，再按 thread id 恢复
-- `fcodex` shell 层不再支持 `/help`、`/threads`、`/profile`、`/archive`、`/resume`
-- `fcodex` 也不再提供 `--dry-run` wrapper 入口
-- 一旦进入 TUI，里面的 `/help`、`/resume`、`/new` 等都回到 upstream Codex 语义
-
-#### `feishu-codexctl`
-
-`feishu-codexctl` 是本地查看 / 管理面，不是第二个 Codex 前端。
-
-常用命令：
+本地查看 / 管理：
 
 ```bash
 feishu-codexctl service status
-feishu-codexctl service reset-backend
-feishu-codexctl instance list
 feishu-codexctl binding list
-feishu-codexctl binding status <binding_id>
-feishu-codexctl binding clear <binding_id>
-feishu-codexctl binding clear-all
 feishu-codexctl thread list --scope cwd
-feishu-codexctl thread list --scope global
-feishu-codexctl thread status --thread-id <id>
 feishu-codexctl thread status --thread-name <name>
-feishu-codexctl thread bindings --thread-id <id>
-feishu-codexctl thread bindings --thread-name <name>
-feishu-codexctl thread unsubscribe --thread-id <id>
-feishu-codexctl thread unsubscribe --thread-name <name>
 feishu-codexctl image send --path ./diagram.png
 ```
 
-说明：
+### 6. 多实例
 
-- `thread list` 默认 `--scope cwd`，也支持 `--cwd /path/to/project`
-- 线程目标必须显式写成 `--thread-id` 或 `--thread-name`
-- `image send` 在 Codex turn 内可回落到环境变量 `CODEX_THREAD_ID`
-- `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不是删线程，也不等于 `thread unsubscribe`
+如果你需要多个机器人实例：
 
-## 进阶使用
+```bash
+feishu-codex instance create corp-a
+feishu-codex --instance corp-a config system --open
+feishu-codex --instance corp-a start
+fcodex --instance corp-a
+```
 
-### 多目录 / 多项目
+每个实例有自己的：
 
-最稳妥的做法是：按“一个飞书会话绑定一个工作目录 / 线程上下文”来用。
+- 配置目录
+- 数据目录
+- service
+- shared backend
 
-常见形态：
+所有实例共享：
 
-- 私聊机器人时，单聊天然按人隔离
-- 群聊时，一个群绑定一个共享线程上下文
-- 同时操控多个项目时，开多个会话 / 群，让它们分别绑定不同目录和 thread
+- `CODEX_HOME`
+- 持久化 thread 命名空间
+- 机器级 `ThreadRuntimeLease`
 
-### 飞书与本地共同操作同一个 thread
+## 更多帮助
 
-这是本项目最重要的能力之一，但前提是：飞书和本地都连到同一个实例 backend。
+- 飞书里发送 `/help`
+- 本地查看 `feishu-codex --help`
+- 本地查看 `feishu-codexctl --help`
+- 深入文档看 `docs/doc-index.zh-CN.md`
 
-当前模型是：
-
-- 同一个 thread 可以有多个 subscriber
-- 普通输出和终态结果会广播给所有订阅者
-- 审批、补充输入、中断等交互请求只路由给当前 `interaction owner`
-- 谁发起当前 turn，谁拿到这一轮的交互 owner
-- turn 结束后 owner 被释放，thread 回到 idle 稳态
-
-推荐路径：
-
-1. 飞书里操作某 thread
-2. 需要本地接手时，用 `fcodex` 连到同一实例 backend
-3. 需要让 Feishu 释放 runtime residency 时，用 `/release-runtime` 或 `feishu-codexctl thread unsubscribe`
-
-不推荐路径：
-
-- 用裸 `codex` 在另一个 isolated backend 上继续同一 thread
-- 让两个实例 backend 同时 live attach 同一 thread
-
-## 关键行为说明
-
-### Thread-wise `profile/provider`
-
-当前正式合同已经是 thread-wise，而不是实例级 resume 默认值。
-
-请直接记住：
-
-- 飞书 `/profile <name>` 作用于**当前绑定 thread**，不是实例级全局默认值
-- 当前 chat 还没绑定 thread 时，`/profile` 会直接拒绝；先 `/new`，或先发第一条普通消息创建 thread
-- `/new` 与未绑定 chat 的第一条普通消息，都会把当前实例当前生效的“新线程默认 profile”作为这个新 thread 的一次性 seed
-- 新 thread 真正创建成功、拿到真实 `thread_id` 后，这个 seed 才会按 `thread_id` 持久化成 thread-wise resume 设置
-- 后续 resume 读的是 thread 自己保存的 profile，而不是实例此刻的“新线程默认 profile”
-- 只有目标 thread **可验证地 globally unloaded** 时才允许改 profile；loaded 或状态不可验证时都会直接拒绝，不会热切，也不会偷偷记账
-
-本地侧对应规则：
-
-- `fcodex -p <profile>`：给这次启动将创建的**第一个新 thread**做一次性 seed
-- `fcodex -p <profile> resume <thread>`：只有 thread **可验证地 globally unloaded** 时才允许；成功后会写入该 thread 的持久化 resume profile
-- 如果目标 thread 仍 loaded，会直接拒绝，并提示先 `/release-runtime` 或 `feishu-codexctl thread unsubscribe`，再关闭其他打开该 thread 的 `fcodex` TUI
-
-### Sandbox / approval / permissions
-
-先记住概念：
-
-- `sandbox`：技术执行边界
-- `approval_policy`：什么时候必须先审批
-- `permissions`：对前两者的预设打包
-
-当前实现里：
-
-- 飞书侧设置是 binding 级的，并会随 binding 持久化
-- `fcodex` 侧仍主要按显式参数和 upstream Codex 配置生效
-- 当前没有跨前端即时同步、统一持久化的设置面
-- 某一轮 turn 实际采用的是发起该轮的那个前端设置
-
-### 避坑速记
-
-- `/new` 会立即创建新线程并切换当前 binding
-- `/archive` 实际调用的是 Codex archive，不是硬删除
-- `/release-runtime` 释放的是 Feishu runtime residency，不会清 binding，也不会删线程
-- `/profile` 改不了时，通常先 `/release-runtime`，再关闭其他打开同一 thread 的 `fcodex` TUI
-- `folder`、`sticker`、`merge_forward` 子附件、`interactive` 卡片资源，当前不作为附件输入
-- `fcodex resume <name>` 与 TUI 内 `/resume` 不是一回事
-- 本地查线程请用 `feishu-codexctl thread list`，不要再找 `fcodex /threads`
-- 本地切换 profile 请用 `-p/--profile`；不要再找 `fcodex /profile`
-
-## 按问题查文档
+按主题查文档时，最常用的是：
 
 | 你想确认什么 | 先看哪里 |
 | --- | --- |
-| 当前总体架构、模块边界、仓库结构 | `docs/architecture/feishu-codex-design.zh-CN.md` |
-| 飞书 `/threads`、`/resume`、`/profile`，以及 `fcodex` / `feishu-codexctl` 的当前语义 | `docs/contracts/thread-profile-semantics.zh-CN.md` |
-| `/release-runtime`、`fcodex` / `feishu-codexctl` 分工、thread-wise profile/provider 的正式合同 | `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md` |
-| `/status`、`/preflight`、`/release-runtime`、`feishu-codexctl` 的共享状态词汇 | `docs/contracts/runtime-control-surface.zh-CN.md` |
-| 群激活、群聊模式、历史回捞、触发规则 | `docs/contracts/group-chat-contract.zh-CN.md` |
-| `approval`、`sandbox`、`permissions` 的语义 | `docs/contracts/codex-permissions-model.zh-CN.md` |
-| `fcodex`、shared backend、动态端口、cwd 代理 | `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md` |
+| 总体架构、模块边界、仓库结构 | `docs/architecture/feishu-codex-design.zh-CN.md` |
+| `fcodex` shared backend、动态端口、cwd 代理 | `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md` |
+| `/status`、`/preflight`、`/reset-backend`、本地控制面状态词汇 | `docs/contracts/runtime-control-surface.zh-CN.md` |
+| 飞书线程生命周期、绑定与释放 | `docs/contracts/feishu-thread-lifecycle.zh-CN.md` |
+| `/threads`、`/resume`、`/profile` 的当前语义 | `docs/contracts/thread-profile-semantics.zh-CN.md` |
 | shared backend 与 `/resume` 的安全边界 | `docs/decisions/shared-backend-resume-safety.zh-CN.md` |
-| 飞书 `/help` 的导航结构 | `docs/contracts/feishu-help-navigation.zh-CN.md` |
-| 飞书线程生命周期 | `docs/contracts/feishu-thread-lifecycle.zh-CN.md` |
 
-更完整的文档入口见 `docs/doc-index.zh-CN.md`。
+## 一图看懂架构
+
+```mermaid
+flowchart LR
+  subgraph Feishu["Feishu"]
+    ChatA["单聊 / 群聊 A"]
+    ChatB["单聊 / 群聊 B"]
+  end
+
+  CLI["feishu-codex<br/>安装 / 配置 / 启停 / 实例管理"]
+  CTL["feishu-codexctl<br/>本地查看 / 管理"]
+  TUI["fcodex<br/>本地继续同一 live thread"]
+  Raw["裸 codex<br/>独立本地会话"]
+
+  subgraph Instance["实例 explorer"]
+    BindA["binding A"]
+    BindB["binding B"]
+    Service["feishu-codex service"]
+    Backend["shared codex app-server"]
+    Thread["thread"]
+  end
+
+  Global["machine-global coordination<br/>ThreadRuntimeLease / instance registry"]
+
+  ChatA --> BindA --> Service
+  ChatB --> BindB --> Service
+  Service --> Backend --> Thread
+  TUI --> Backend
+  CTL -.查看/管理.-> Service
+  CLI -.安装/配置/启停.-> Service
+  Global -.协调.-> Backend
+  Raw -.不在共享线程合同内.-> Thread
+```
+
+这张图只表达 3 件事：
+
+- 飞书会话先绑定 `thread`
+- `fcodex` 连的是同一个实例 backend
+- 裸 `codex` 不在共享线程合同内
+
+## 一图看懂共享与冲突控制
+
+```mermaid
+flowchart LR
+  subgraph A["实例 A：同一 live thread"]
+    F1["Feishu binding 1<br/>(attached)"]
+    F2["Feishu binding 2<br/>(attached)"]
+    TUI["fcodex subscriber"]
+    Thread["thread"]
+    Owner["interaction owner"]
+  end
+
+  subgraph B["实例 B"]
+    Other["尝试 resume / attach<br/>同一 thread"]
+  end
+
+  Lease["ThreadRuntimeLease"]
+
+  Thread -->|"普通输出广播"| F1
+  Thread -->|"普通输出广播"| F2
+  Thread -->|"普通输出广播"| TUI
+
+  Owner -. "独占：下一轮写入 / 审批 / 补充输入 / 中断" .-> Thread
+
+  Lease -. "同一时刻只允许一个实例 backend<br/>live attach 这个 thread" .-> Thread
+  Other -. "跨实例 attach / resume 时先过 lease" .-> Lease
+```
+
+这张图表达的是当前运行时合同：
+
+- 多个 `attached` 订阅者可以同时收到同一 thread 的 backend 普通消息
+- 多订阅不等于多方都能写；真正的写入与交互控制由 `interaction owner` 独占
+- 不同实例不能同时 live attach 同一个 thread；这由机器级 `ThreadRuntimeLease` 控制
