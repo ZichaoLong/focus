@@ -61,7 +61,9 @@
 ### 3.1 实例选择
 
 - 除 `instance list` 外，其余命令都可接受 `--instance <name>`
-- 省略 `--instance` 时，默认目标实例是 `default`
+- 显式给出的 `--instance <name>` 始终优先
+- 若调用方额外提供 preferred running instance（例如已知 thread id 的 `image send`），会先尝试该运行中实例
+- 否则，省略 `--instance` 时按 `unique-running -> default-running -> current-instance-paths` 规则解析；若多个运行中实例仍无唯一目标，则必须报错
 - `instance list` 是跨实例查看面，不使用 `--instance`
 - 当前 `feishu-codexctl` 只接受一个 `--instance`，不像 `feishu-codex` 那样支持批量多实例
 
@@ -145,7 +147,7 @@
 
 | 命令 | 作用 | 状态层 | 类型 | 关键参数 | 飞书对应 |
 | --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | 把一张本地图片发送到目标 thread 当前所有 attached 的 Feishu bindings | 单个 thread 的出站图片 fanout | 变更 | `--path` 必填；thread 目标可显式给 `--thread-id/--thread-name`，也可在 Codex turn 内回落到 `CODEX_THREAD_ID`；若已知 thread id 且未显式给 `--instance`，CLI 可优先路由到当前 `live runtime owner` 实例 | 无直接飞书对应；这是本地控制面显式动作 |
+| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | 把一张本地图片发送到目标 thread 当前所有 attached 的 Feishu bindings | 单个 thread 的出站图片 fanout | 变更 | `--path` 必填；thread 目标可显式给 `--thread-id/--thread-name`，也可在 Codex turn 内回落到 `CODEX_THREAD_ID`；若已知 thread id 且未显式给 `--instance`，CLI 可优先路由到当前 `live runtime owner` 实例；该 owner 优先只适用于 thread-id 已知路径，`--thread-name` 路径需先解析目标 thread | 无直接飞书对应；这是本地控制面显式动作 |
 
 ## 5. 与飞书命令面的对应关系
 

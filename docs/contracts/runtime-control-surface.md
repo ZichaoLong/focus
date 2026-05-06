@@ -498,7 +498,7 @@ Its formal semantics are:
 Formal constraints:
 
 - if `--thread-id/--thread-name` are omitted, the CLI may only fall back to the `CODEX_THREAD_ID` environment variable
-- if the thread id is already known and `--instance` is omitted, the CLI may prefer the current machine-global `live runtime owner` instance
+- if the thread id is already known and `--instance` is omitted, the CLI may prefer the current machine-global `live runtime owner` instance; this applies only when thread-id addressing is already available, because `--thread-name` addressing must resolve the target thread first
 - if the target thread currently has no `attached` binding, the action must fail closed
 - it does not implicitly reply to a prompt message; the first version always sends standalone image messages
 - it does not provide an automatic retry or dedupe contract; if later fanout steps fail, earlier bindings may already have received the image, and the CLI must report that partial delivery explicitly
@@ -624,9 +624,13 @@ In multi-instance mode, `feishu-codexctl` deliberately splits into two scopes:
 - all other subcommands
   - instance-scoped
   - operate on one running `feishu-codex` service
-  - may select it explicitly via `--instance <name>`; otherwise they resolve
-    by current / unique-running / default-running rules and must fail when the
-    target remains ambiguous
+  - may select it explicitly via `--instance <name>`
+  - if the caller provides an extra preferred running instance (for example
+    `image send` with a known thread id), that running instance is tried first
+  - otherwise they resolve by `unique-running -> default-running ->
+    current-instance-paths`
+  - if multiple running instances still leave no unique target, the command
+    must fail
 
 The formal contract for multi-instance thread visibility is:
 

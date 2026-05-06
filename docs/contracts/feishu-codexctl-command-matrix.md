@@ -66,7 +66,12 @@ Therefore:
 ### 3.1 Instance selection
 
 - every command except `instance list` accepts `--instance <name>`
-- if `--instance` is omitted, the target instance defaults to `default`
+- an explicit `--instance <name>` always wins
+- if the caller provides an extra preferred running instance (for example
+  `image send` with a known thread id), that running instance is tried first
+- otherwise, omitting `--instance` resolves by `unique-running ->
+  default-running -> current-instance-paths`; if multiple running instances
+  still leave no unique target, the command must fail
 - `instance list` is a cross-instance inspection surface and does not use
   `--instance`
 - current `feishu-codexctl` accepts only one `--instance`; unlike
@@ -154,7 +159,7 @@ in code, docs, or product wording.
 
 | Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
 | --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image to all currently attached Feishu bindings for the target thread | outbound-image fanout for one thread | mutating | `--path` is required; the thread target may be given explicitly with `--thread-id/--thread-name`, or may fall back to `CODEX_THREAD_ID` inside a Codex turn; if the thread id is already known and `--instance` is omitted, the CLI may prefer the current `live runtime owner` instance | no direct Feishu counterpart; this is an explicit local control-plane action |
+| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image to all currently attached Feishu bindings for the target thread | outbound-image fanout for one thread | mutating | `--path` is required; the thread target may be given explicitly with `--thread-id/--thread-name`, or may fall back to `CODEX_THREAD_ID` inside a Codex turn; if the thread id is already known and `--instance` is omitted, the CLI may prefer the current `live runtime owner` instance; that owner preference applies only when thread-id addressing is already known, because `--thread-name` addressing must resolve the target first | no direct Feishu counterpart; this is an explicit local control-plane action |
 
 ## 5. Mapping to the Feishu command surface
 
