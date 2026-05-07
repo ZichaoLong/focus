@@ -3,7 +3,7 @@
 `feishu-codex` 把飞书机器人、本地 `fcodex` 和同一个 `codex app-server`
 接到一起。
 
-它不是把 Codex TUI 直接搬进飞书；它提供的是：
+本项目提供：
 
 - 飞书里的 codex thread 使用入口
 - 本地继续同一 codex live thread 的 `fcodex`
@@ -13,7 +13,7 @@
 
 - 飞书会话先绑定到某个 `thread`
 - 这个 `thread` 跑在某个 `feishu-codex` 实例自己的 shared backend 即 `codex app-server` 上
-- 飞书和 `fcodex` 可连到同一个实例 backend，按“多订阅观察+单交互轮转租约”模式协同，此时可安全继续操作同一个 live thread，并同时收到回复消息推送
+- 多订阅观察+单交互轮转租约：飞书和 `fcodex` 可连到同一个实例 backend，此时可安全继续操作同一个 live thread，并同时收到回复消息推送
 - 裸 `codex` 仍然可单独使用，裸 `codex` 将使用自己的独立 backend，不在共享线程合同内
 
 ## 使用入口
@@ -49,7 +49,7 @@ cd \path\to\feishu-codex
 .\install.ps1
 ```
 
-不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被 `feishu-codex uninstall/purge` 管理覆盖的命令入口残留
+不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `feishu-codex uninstall/purge` 覆盖的残留命令入口。
 
 ### 2. 配置飞书应用
 
