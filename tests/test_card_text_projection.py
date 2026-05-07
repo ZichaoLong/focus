@@ -20,6 +20,20 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertEqual(projection.text, "最终答复")
         self.assertIn("Codex", projection.visible_text)
 
+    def test_terminal_result_card_normalizes_markdown_links_to_visible_urls(self) -> None:
+        projection = project_interactive_card_text(
+            build_terminal_result_card(
+                "- [示例地图链接](https://maps.example.invalid/shanghai/live)"
+            )
+        )
+
+        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertEqual(
+            projection.final_reply_text,
+            "- 示例地图链接 (https://maps.example.invalid/shanghai/live)",
+        )
+        self.assertIn("https://maps.example.invalid/shanghai/live", projection.visible_text)
+
     def test_execution_card_projects_visible_text_best_effort(self) -> None:
         projection = project_interactive_card_text(
             build_execution_card(

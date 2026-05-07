@@ -83,19 +83,20 @@ def build_markdown_card(title: str, content: str, *, template: str = "blue") -> 
             "title": {"tag": "plain_text", "content": title},
             "template": template,
         },
-        "elements": [{"tag": "markdown", "content": content}],
+        "elements": [{"tag": "markdown", "content": sanitize_runtime_markdown_for_feishu_card(content)}],
     }
 
 
 def build_terminal_result_card(final_reply_text: str) -> dict:
     """构造终态结果卡。"""
+    normalized = sanitize_runtime_markdown_for_feishu_card(final_reply_text)
     return {
         "config": _card_config(),
         "header": {
             "title": {"tag": "plain_text", "content": TERMINAL_RESULT_CARD_TITLE},
             "template": "green",
         },
-        "elements": [{"tag": "markdown", "content": render_final_reply_text_block(final_reply_text)}],
+        "elements": [{"tag": "markdown", "content": render_final_reply_text_block(normalized)}],
     }
 
 
@@ -1369,7 +1370,9 @@ def build_plan_card(
         elements.append(
             {
                 "tag": "markdown",
-                "content": f"**说明**\n{shorten(explanation, _PLAN_CONTENT_MAX)}",
+                "content": sanitize_runtime_markdown_for_feishu_card(
+                    f"**说明**\n{shorten(explanation, _PLAN_CONTENT_MAX)}"
+                ),
             }
         )
         elements.append({"tag": "hr"})
@@ -1389,7 +1392,7 @@ def build_plan_card(
             elements.append(
                 {
                     "tag": "markdown",
-                    "content": "**计划步骤**\n" + "\n".join(lines),
+                    "content": sanitize_runtime_markdown_for_feishu_card("**计划步骤**\n" + "\n".join(lines)),
                 }
             )
             elements.append({"tag": "hr"})
@@ -1398,7 +1401,9 @@ def build_plan_card(
         elements.append(
             {
                 "tag": "markdown",
-                "content": f"**计划正文**\n{shorten(plan_text, _PLAN_CONTENT_MAX)}",
+                "content": sanitize_runtime_markdown_for_feishu_card(
+                    f"**计划正文**\n{shorten(plan_text, _PLAN_CONTENT_MAX)}"
+                ),
             }
         )
 

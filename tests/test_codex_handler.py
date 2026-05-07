@@ -2595,6 +2595,27 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("路径：`/tmp/demo.png`", card_json)
         self.assertIn("路径：`/tmp/log.png`", card_json)
 
+    def test_execution_card_sanitizes_markdown_links_to_visible_urls(self) -> None:
+        card = build_execution_card(
+            "参考：[示例地图链接](https://maps.example.invalid/shanghai/live)",
+            [
+                ExecutionReplySegment(
+                    "assistant",
+                    "[示例扩散条件图](https://weather.example.invalid/china/dispersion-24h)",
+                )
+            ],
+            running=False,
+        )
+
+        card_json = json.dumps(card, ensure_ascii=False)
+        self.assertNotIn("[示例地图链接](", card_json)
+        self.assertNotIn("[示例扩散条件图](", card_json)
+        self.assertIn("示例地图链接 (https://maps.example.invalid/shanghai/live)", card_json)
+        self.assertIn(
+            "示例扩散条件图 (https://weather.example.invalid/china/dispersion-24h)",
+            card_json,
+        )
+
     def test_status_includes_user_facing_summary(self) -> None:
         handler, bot = self._make_handler()
 

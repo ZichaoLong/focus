@@ -215,6 +215,17 @@ follows:
 - if the sender can only fall back to the local transcript, or if terminal
   result delivery fails, do not strip the final reply from the execution card
 
+If `final_reply_text` contains Markdown that Feishu card rendering cannot carry
+faithfully, but that Markdown can still be normalized **without losing textual
+information**, the sender may normalize it before embedding it into the card.
+
+The current fixed rules are:
+
+- inline Markdown links may be rewritten into an explicit visible-URL form such
+  as `label (https://...)`
+- Markdown images are not part of this rule; they still must not enter the
+  strong-contract text terminal card
+
 ### 5.3 If the terminal result is too long, send plain text
 
 If `final_reply_text` cannot be represented losslessly within the card budget:

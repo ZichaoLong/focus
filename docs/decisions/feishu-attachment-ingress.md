@@ -215,6 +215,9 @@ Reasons:
 - make it obvious which files came from Feishu ingress
 - give cleanup and debugging one stable path
 
+If the host workspace is itself a git repository, that repository should also
+ignore this directory in its own `.gitignore`.
+
 ### 6.2 File Naming
 
 Staged file names must not rely on the user-supplied original filename alone.

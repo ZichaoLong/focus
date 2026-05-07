@@ -233,7 +233,6 @@ feishu-codex instance remove corp-a
 <data_root>/
   feishu-codex.log              # default 实例日志
   chat_bindings.json            # default 实例 binding 持久化
-  profile_state.json            # default 实例“新线程默认 profile”
   app_server_runtime.json       # default 实例当前 backend 发现状态
   service-instance.json         # default 实例 service owner 元数据
   _global/                      # 机器级共享协调区
@@ -244,7 +243,6 @@ feishu-codex instance remove corp-a
     corp-a/
       feishu-codex.log
       chat_bindings.json
-      profile_state.json
       app_server_runtime.json
       service-instance.json
 ```
@@ -434,9 +432,9 @@ feishu-codexctl thread revoke --thread-id <id>
 
 - 飞书 `/profile <name>` 作用于**当前绑定 thread**，不是实例级全局默认值
 - 当前 chat 还没绑定 thread 时，`/profile` 会直接拒绝；先 `/new`，或先发第一条普通消息创建 thread
-- `/new` 与未绑定 chat 的第一条普通消息，都会把当前实例当前生效的“新线程默认 profile”作为这个新 thread 的一次性 seed
-- 新 thread 真正创建成功、拿到真实 `thread_id` 后，这个 seed 才会按 `thread_id` 持久化成 thread-wise resume 设置
-- 后续 resume 读的是 thread 自己保存的 profile，而不是实例此刻的“新线程默认 profile”
+- `/new` 与未绑定 chat 的第一条普通消息，不会再注入任何实例级“新线程默认 profile”
+- 新 thread 的初始 profile 由 Codex 自身当前默认配置决定；本项目只在 thread 级显式写入 profile 时记录 thread-wise resume 设置
+- 后续 resume 读的是 thread 自己保存的 profile；如果该 thread 还没有 thread-wise profile 记录，则继续落回 Codex 自身当前默认配置
 - 只有目标 thread **可验证地 globally unloaded** 时才允许改 profile；loaded 或状态不可验证时都会直接拒绝，不会热切，也不会偷偷记账
 
 本地侧对应规则：
