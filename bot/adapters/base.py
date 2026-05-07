@@ -138,6 +138,7 @@ class AgentAdapter(ABC):
         input_items: list[TurnInputItem],
         cwd: str | None = None,
         model: str | None = None,
+        model_provider: str | None = None,
         profile: str | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,

@@ -121,7 +121,7 @@ from bot.thread_access_policy import ThreadAccessPolicy
 from bot.thread_image_delivery import ThreadImageDeliveryController
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.runtime_loop import RuntimeLoop, RuntimeLoopClosedError
-from bot.platform_paths import default_data_root
+from bot.platform_paths import default_data_root, default_working_dir
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +198,7 @@ class CodexHandler(BotHandler):
 
         self._default_working_dir = resolve_working_dir(
             str(cfg.get("default_working_dir", "")),
+            fallback=str(default_working_dir()),
         )
         self._threads_initial_limit = int(cfg.get("threads_initial_limit", DEFAULT_THREADS_INITIAL_LIMIT))
         self._thread_list_query_limit = int(cfg.get("thread_list_query_limit", DEFAULT_THREAD_LIST_QUERY_LIMIT))
@@ -496,7 +497,7 @@ class CodexHandler(BotHandler):
                 ),
                 resume_snapshot_by_id=self._resume_snapshot_by_id,
                 create_thread=lambda **kwargs: self._adapter.create_thread(**kwargs),
-                thread_profile_for_thread=self._thread_profile_for_thread,
+                thread_resume_profile_for_thread=self._thread_resume_profile,
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
                 access_policy=self._thread_access_policy,
@@ -2265,10 +2266,6 @@ class CodexHandler(BotHandler):
         if not normalized_thread_id:
             return None
         return self._thread_resume_profile_store.load(normalized_thread_id)
-
-    def _thread_profile_for_thread(self, thread_id: str) -> str:
-        record = self._thread_resume_profile(thread_id)
-        return record.profile if record is not None else ""
 
     def _thread_resume_profile_write_check(self, thread_id: str) -> tuple[bool, str]:
         def _has_attached_binding(normalized_thread_id: str) -> bool:

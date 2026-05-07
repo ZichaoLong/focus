@@ -1,6 +1,7 @@
 import pathlib
 import tempfile
 import threading
+import types
 import unittest
 
 from bot.adapters.base import ThreadSnapshot, ThreadSummary
@@ -188,7 +189,11 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
                 clear_thread_binding=_clear_thread_binding,
                 resume_snapshot_by_id=_resume_snapshot_by_id,
                 create_thread=_create_thread,
-                thread_profile_for_thread=lambda thread_id: thread_profiles.get(thread_id, ""),
+                thread_resume_profile_for_thread=lambda thread_id: (
+                    types.SimpleNamespace(profile=thread_profiles[thread_id], model="", model_provider="")
+                    if thread_id in thread_profiles
+                    else None
+                ),
                 message_reply_in_thread=lambda message_id: message_id.startswith("thread-"),
                 group_actor_open_id=lambda message_id: "ou_actor" if message_id else "",
                 access_policy=access_policy,

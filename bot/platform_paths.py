@@ -67,6 +67,10 @@ def default_data_root() -> pathlib.Path:
     return home / ".local" / "share" / APP_NAME
 
 
+def default_working_dir() -> pathlib.Path:
+    return pathlib.Path.home()
+
+
 def default_user_bin_dir() -> pathlib.Path:
     raw = os.environ.get("FC_BIN_DIR", "").strip()
     if raw:

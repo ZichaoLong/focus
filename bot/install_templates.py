@@ -46,7 +46,7 @@ app_secret: "your_cc_bot_app_secret"
 # group_history_fetch_lookback_seconds: 86400
 """
 
-CODEX_YAML_TEMPLATE = """# 默认工作目录；默认值：进程当前目录
+CODEX_YAML_TEMPLATE = """# 默认工作目录；默认值：当前用户 Home 目录
 # default_working_dir: /path/to/workspace
 
 # Codex 可执行命令；默认值：codex

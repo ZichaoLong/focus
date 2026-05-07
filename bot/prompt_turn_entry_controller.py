@@ -53,7 +53,7 @@ class PromptTurnEntryPorts:
     clear_thread_binding: Callable[..., None]
     resume_snapshot_by_id: Callable[..., ThreadSnapshot]
     create_thread: Callable[..., ThreadSnapshot]
-    thread_profile_for_thread: Callable[[str], str]
+    thread_resume_profile_for_thread: Callable[[str], Any]
     message_reply_in_thread: Callable[[str], bool]
     group_actor_open_id: Callable[[str], str]
     access_policy: _ThreadAccessPolicy
@@ -104,7 +104,7 @@ class PromptTurnEntryController:
         self._clear_thread_binding = ports.clear_thread_binding
         self._resume_snapshot_by_id = ports.resume_snapshot_by_id
         self._create_thread = ports.create_thread
-        self._thread_profile_for_thread = ports.thread_profile_for_thread
+        self._thread_resume_profile_for_thread = ports.thread_resume_profile_for_thread
         self._message_reply_in_thread = ports.message_reply_in_thread
         self._group_actor_open_id = ports.group_actor_open_id
         self._access_policy = ports.access_policy
@@ -422,12 +422,16 @@ class PromptTurnEntryController:
             )
 
         def _start_turn_once(bound_thread_id: str) -> dict[str, Any]:
-            thread_profile = self._thread_profile_for_thread(bound_thread_id).strip()
+            profile_record = self._thread_resume_profile_for_thread(bound_thread_id)
+            thread_profile = str(getattr(profile_record, "profile", "") or "").strip()
+            thread_model = str(getattr(profile_record, "model", "") or "").strip()
+            thread_model_provider = str(getattr(profile_record, "model_provider", "") or "").strip()
             return self._start_turn(
                 thread_id=bound_thread_id,
                 input_items=effective_input_items,
                 cwd=state["working_dir"],
-                model=state["model"] or None,
+                model=thread_model or (None if thread_profile else state["model"] or None),
+                model_provider=thread_model_provider or None,
                 profile=thread_profile or None,
                 approval_policy=state["approval_policy"] or None,
                 sandbox=state["sandbox"] or None,

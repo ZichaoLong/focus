@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from bot.platform_paths import default_config_root, default_data_root
+from bot.platform_paths import default_config_root, default_data_root, default_working_dir
 
 
 class PlatformPathsTests(unittest.TestCase):
@@ -61,6 +61,10 @@ class PlatformPathsTests(unittest.TestCase):
         ):
             self.assertEqual(default_config_root(), Path("/tmp/custom-config-root"))
             self.assertEqual(default_data_root(), Path("/tmp/custom-data-root"))
+
+    def test_default_working_dir_uses_home_directory(self) -> None:
+        with patch("bot.platform_paths.pathlib.Path.home", return_value=Path("/home/tester")):
+            self.assertEqual(default_working_dir(), Path("/home/tester"))
 
 
 if __name__ == "__main__":

@@ -313,6 +313,27 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(fake_rpc.calls[1][0], "turn/start")
         self.assertEqual(fake_rpc.calls[1][1]["config"], {"profile": "provider2"})
 
+    def test_start_turn_can_attach_profile_model_provider_override(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "hello"}],
+            cwd="/tmp",
+            model="provider2-model",
+            model_provider="provider2_api",
+            profile="provider2",
+        )
+
+        self.assertEqual(fake_rpc.calls[0][0], "turn/start")
+        params = fake_rpc.calls[0][1]
+        self.assertEqual(params["model"], "provider2-model")
+        self.assertEqual(params["modelProvider"], "provider2_api")
+        self.assertEqual(params["config"], {"profile": "provider2"})
+        self.assertEqual(params["collaborationMode"]["settings"]["model"], "provider2-model")
+
     def test_start_turn_can_override_sandbox_policy(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()

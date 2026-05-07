@@ -217,6 +217,7 @@ class _FakeAdapter:
         input_items,
         cwd: str | None = None,
         model: str | None = None,
+        model_provider: str | None = None,
         profile: str | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
@@ -235,6 +236,7 @@ class _FakeAdapter:
                 "input_items": [dict(item) for item in input_items or []],
                 "cwd": cwd,
                 "model": model,
+                "model_provider": model_provider,
                 "profile": profile,
                 "approval_policy": approval_policy,
                 "sandbox": sandbox,
@@ -3400,6 +3402,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
+    def test_prompt_without_configured_default_working_dir_uses_home_directory(self) -> None:
+        with patch("bot.codex_handler.default_working_dir", return_value=pathlib.Path("/home/tester")):
+            handler, _ = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(handler._adapter.create_thread_calls[-1]["cwd"], "/home/tester")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["cwd"], "/home/tester")
+
     def test_released_thread_resume_uses_thread_wise_profile(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
@@ -3427,6 +3438,36 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["model_provider"], "provider2_api")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
+
+    def test_thread_wise_profile_turn_does_not_use_binding_default_model(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["model"] = "stale-default-model"
+        handler._thread_resume_profile_store.save(
+            "thread-1",
+            profile="provider2",
+            model="provider2-model",
+            model_provider="provider2_api",
+        )
+
+        handler.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
 
     def test_replace_bound_provisional_thread_after_reset_rebinds_and_moves_profile(self) -> None:
         handler, _ = self._make_handler()
