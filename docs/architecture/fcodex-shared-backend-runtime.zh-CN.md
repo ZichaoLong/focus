@@ -92,7 +92,7 @@ fcodex shell wrapper
 
 因此，“wrapper 与 service 共享的本地状态”应理解为：
 
-- **同一实例**共享自己的配置目录、profile-state、runtime backend 发现状态
+- **同一实例**共享自己的配置目录与 runtime backend 发现状态
 - wrapper 与 daemon 都会加载同一个机器级 `feishu-codex.env` provider 环境文件
 - **所有实例**共享 `CODEX_HOME`
 - **所有实例**共享机器级实例注册表与 thread runtime lease

@@ -166,11 +166,10 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
     print(f"interrupted bindings: {', '.join(result.get('interrupted_binding_ids') or []) or '（无）'}")
     print(f"fail-closed requests: {int(result.get('fail_closed_request_count') or 0)}")
     print(f"purged runtime leases: {', '.join(result.get('purged_thread_ids') or []) or '（无）'}")
-    if result.get("released_binding_ids"):
-        print("next:")
-        print("  - reattach this instance: feishu-codexctl service reattach")
-        print("  - reattach one thread: feishu-codexctl thread reattach --thread-id <thread_id>")
-        print("  - reattach one binding: feishu-codexctl binding reattach <binding_id>")
+    print("next:")
+    print("  - reattach this instance: feishu-codexctl service reattach")
+    print("  - reattach one thread: feishu-codexctl thread reattach --thread-id <thread_id>")
+    print("  - reattach one binding: feishu-codexctl binding reattach <binding_id>")
     return 0
 
 

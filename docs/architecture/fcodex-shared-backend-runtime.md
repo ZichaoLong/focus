@@ -107,8 +107,8 @@ For code ownership, the launch path is intentionally split:
 
 So "wrapper and service share local state" should now be read as:
 
-- the wrapper and service of the same instance share that instance's config,
-  profile-state, and runtime backend-discovery state
+- the wrapper and service of the same instance share that instance's config
+  and runtime backend-discovery state
 - the wrapper and daemon both load the same machine-level `feishu-codex.env`
   provider environment file
 - all instances share `CODEX_HOME`

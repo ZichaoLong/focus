@@ -178,7 +178,7 @@ def _resolve_runtime_target_for_wrapper(
         raise SystemExit(2)
 
 
-def _inject_default_profile(user_args: list[str], profile: str) -> list[str]:
+def _inject_profile_arg_if_missing(user_args: list[str], profile: str) -> list[str]:
     if not profile or _has_explicit_profile(user_args):
         return list(user_args)
     return ["--profile", profile, *user_args]
@@ -300,7 +300,7 @@ def _inject_saved_thread_resume_profile_if_needed(user_args: list[str], thread_i
     record = ThreadResumeProfileStore(global_data_dir()).load(thread_id)
     if record is None or not record.profile:
         return list(user_args)
-    return _inject_default_profile(user_args, record.profile)
+    return _inject_profile_arg_if_missing(user_args, record.profile)
 
 
 @dataclass(frozen=True, slots=True)

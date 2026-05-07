@@ -683,7 +683,6 @@ class RuntimeAdminController:
             "",
             "不会覆盖 binding bookmark、thread-wise profile/provider、其他用户配置或数据。",
         ]
-        extra_action_rows = None
         current_thread_id = str(result.get("current_thread_id", "") or "").strip()
         if result.get("released_binding_ids"):
             lines.extend(
@@ -692,15 +691,21 @@ class RuntimeAdminController:
                     "当前所有相关 Feishu binding 已变为 `released`；若要继续接收推送，可直接在此卡片选择重附着范围。",
                 ]
             )
-            extra_action_rows = self._reattach_action_rows(
-                include_thread=bool(current_thread_id),
-                include_service=True,
-                thread_id=current_thread_id,
+        else:
+            lines.extend(
+                [
+                    "",
+                    "如需确认飞书侧继续接收本地 `fcodex` / backend 推送，可直接在此卡片选择重附着范围。",
+                ]
             )
         return build_backend_reset_card(
             content="\n".join(lines),
             force=None,
-            extra_action_rows=extra_action_rows,
+            extra_action_rows=self._reattach_action_rows(
+                include_thread=bool(current_thread_id),
+                include_service=True,
+                thread_id=current_thread_id,
+            ),
             template="green",
         )
 

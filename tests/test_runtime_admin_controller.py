@@ -556,6 +556,48 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         assert response.card is not None
         self.assertEqual(response.card.data["header"]["title"]["content"], "Codex Backend Reset")
         self.assertIn("已重置当前实例 backend。", response.card.data["elements"][0]["content"])
+        self.assertIn("如需确认飞书侧继续接收本地", response.card.data["elements"][0]["content"])
+        actions = response.card.data["elements"][-1]["actions"]
+        self.assertEqual([action["text"]["content"] for action in actions], ["重附着当前实例", "保持 released"])
+
+    def test_handle_reset_backend_action_offers_current_thread_reattach_after_reset(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        response = controller.handle_reset_backend_action("ou_user", "c1", "m1", {"force": False})
+
+        self.assertIsNotNone(response.card)
+        assert response.card is not None
+        actions = response.card.data["elements"][-1]["actions"]
+        self.assertEqual(
+            [action["text"]["content"] for action in actions],
+            ["重附着当前线程", "重附着当前实例", "保持 released"],
+        )
+        self.assertEqual(actions[0]["value"]["thread_id"], "thread-1")
 
     def test_handle_preflight_command_blocks_released_binding_when_live_runtime_owner_blocks_reattach(self) -> None:
         (
