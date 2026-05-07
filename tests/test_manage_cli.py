@@ -21,6 +21,8 @@ from bot.manage_cli import (
     _handle_instance_create,
     _handle_instance_list,
     _handle_instance_remove,
+    _handle_skill_install,
+    _handle_skill_uninstall,
     _handle_service_action,
     _handle_service_actions,
     _write_wrapper,
@@ -67,9 +69,11 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("bash install.sh", rendered)
         self.assertIn("autostart", rendered)
         self.assertIn("feishu-codex instance create corp-a", rendered)
+        self.assertIn("feishu-codex skill install", rendered)
         self.assertIn("feishu-codex --instance default --instance corp-a status", rendered)
         self.assertIn("创建、列出、删除命名实例", rendered)
         self.assertIn("查看或打开当前实例相关配置文件", rendered)
+        self.assertIn("安装或卸载 feishu-codex 提供的全局 Codex skill", rendered)
         self.assertNotIn("    install            ", rendered)
         self.assertNotIn("bootstrap-install", rendered)
 
@@ -109,6 +113,21 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("disable", rendered)
         self.assertIn("status", rendered)
 
+    def test_skill_help_includes_subcommand_guidance(self) -> None:
+        parser = _build_parser()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exc:
+                parser.parse_args(["skill", "--help"])
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("Skill 管理", rendered)
+        self.assertIn("skill commands", rendered)
+        self.assertIn("install", rendered)
+        self.assertIn("uninstall", rendered)
+        self.assertIn("不接受顶层 `--instance`", rendered)
+
     def test_public_install_subcommand_is_not_available(self) -> None:
         parser = _build_parser()
         stderr = io.StringIO()
@@ -138,6 +157,7 @@ class ManageCliTests(unittest.TestCase):
                 {
                     "FC_CONFIG_ROOT": str(config_root),
                     "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
                     "FC_ENV_FILE": str(env_file),
                 },
@@ -191,6 +211,8 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("  1. 配置飞书应用、provider 环境变量", summary)
             self.assertIn("    - feishu-codex config --open system", summary)
             self.assertIn("    - feishu-codex config --open env（按需）", summary)
+            self.assertIn("  5. 如需在其他 repo 里也可直接让 Codex 发图（可选）", summary)
+            self.assertIn("    - feishu-codex skill install", summary)
 
     def test_ensure_instance_scaffold_writes_detected_initial_codex_command_without_changing_example(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -236,6 +258,7 @@ class ManageCliTests(unittest.TestCase):
                 {
                     "FC_CONFIG_ROOT": str(config_root),
                     "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
                     "FC_ENV_FILE": str(env_file),
                 },
@@ -343,6 +366,7 @@ class ManageCliTests(unittest.TestCase):
                 {
                     "FC_CONFIG_ROOT": str(config_root),
                     "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
                     "FC_ENV_FILE": str(env_file),
                 },
@@ -403,6 +427,57 @@ class ManageCliTests(unittest.TestCase):
                 ensured_definitions[0].daemon_command,
                 (str(bin_dir / "feishu-codex"), "--instance", "default", "run"),
             )
+
+    def test_handle_skill_install_copies_repo_skill_into_codex_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = pathlib.Path(tmpdir) / "codex-home"
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    result = _handle_skill_install()
+
+            self.assertEqual(result, 0)
+            target = codex_home / "skills" / "feishu-send-image"
+            self.assertTrue((target / "SKILL.md").exists())
+            self.assertTrue((target / ".feishu-codex-managed").exists())
+            rendered = stdout.getvalue()
+            self.assertIn("已安装 skill: feishu-send-image", rendered)
+            self.assertIn(str(target), rendered)
+
+    def test_handle_skill_install_refuses_unmanaged_existing_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = pathlib.Path(tmpdir) / "codex-home"
+            target = codex_home / "skills" / "feishu-send-image"
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "SKILL.md").write_text("manual\n", encoding="utf-8")
+
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                with self.assertRaisesRegex(ValueError, "不是 feishu-codex 受管安装"):
+                    _handle_skill_install()
+
+    def test_handle_skill_uninstall_removes_managed_skill_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = pathlib.Path(tmpdir) / "codex-home"
+            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+                _handle_skill_install()
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    result = _handle_skill_uninstall()
+
+            self.assertEqual(result, 0)
+            target = codex_home / "skills" / "feishu-send-image"
+            self.assertFalse(target.exists())
+            rendered = stdout.getvalue()
+            self.assertIn("已卸载 skill: feishu-send-image", rendered)
+
+    def test_main_skill_subcommand_rejects_top_level_instance(self) -> None:
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as exc:
+                main(["--instance", "corp-a", "skill", "install"])
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("`feishu-codex skill ...` 不接受顶层 `--instance`", stderr.getvalue())
 
     def test_handle_autostart_action_uses_manager_display_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -728,13 +803,15 @@ class ManageCliTests(unittest.TestCase):
                 {
                     "FC_CONFIG_ROOT": str(config_root),
                     "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
                 stdout = io.StringIO()
-                with redirect_stdout(stdout):
-                    result = _handle_instance_list()
+                with patch("bot.manage_cli.list_running_instances", return_value=[]):
+                    with redirect_stdout(stdout):
+                        result = _handle_instance_list()
 
             self.assertEqual(result, 0)
             output_lines = stdout.getvalue().strip().splitlines()
@@ -752,6 +829,7 @@ class ManageCliTests(unittest.TestCase):
                 {
                     "FC_CONFIG_ROOT": str(config_root),
                     "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
@@ -771,8 +849,20 @@ class ManageCliTests(unittest.TestCase):
                     )
                 )
                 stdout = io.StringIO()
-                with redirect_stdout(stdout):
-                    result = _handle_instance_list()
+                with patch(
+                    "bot.manage_cli.list_running_instances",
+                    return_value=[build_instance_registry_entry(
+                        instance_name="corp-a",
+                        service_token="svc-token",
+                        control_endpoint="http://127.0.0.1:1",
+                        app_server_url="http://127.0.0.1:2",
+                        config_dir=paths.config_dir,
+                        data_dir=paths.data_dir,
+                        owner_pid=os.getpid(),
+                    )],
+                ):
+                    with redirect_stdout(stdout):
+                        result = _handle_instance_list()
 
             self.assertEqual(result, 0)
             output_lines = stdout.getvalue().strip().splitlines()

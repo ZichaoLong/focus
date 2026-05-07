@@ -44,6 +44,10 @@ class _ArgumentParser(argparse.ArgumentParser):
         super().error(sanitized)
 
 
+_MANAGED_SKILL_NAME = "feishu-send-image"
+_MANAGED_SKILL_MARKER = ".feishu-codex-managed"
+
+
 def _hide_subcommand_from_help(
     subparsers: argparse._SubParsersAction[argparse.ArgumentParser], name: str
 ) -> None:
@@ -84,6 +88,9 @@ def _build_parser() -> argparse.ArgumentParser:
             "    feishu-codex --instance corp-a config system --open\n"
             "    feishu-codex --instance corp-a autostart enable\n"
             "    feishu-codex --instance corp-a start\n"
+            "\n"
+            "  跨 repo 使用发图 skill（可选）:\n"
+            "    feishu-codex skill install\n"
             "\n"
             "  批量查看 / 控制多个实例:\n"
             "    feishu-codex --instance default --instance corp-a status\n"
@@ -245,6 +252,36 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     instance_remove_parser.add_argument("name", help="要删除的实例名，例如 `corp-a`。")
 
+    skill_parser = subparsers.add_parser(
+        "skill",
+        help="安装或卸载 feishu-codex 提供的全局 Codex skill。",
+        description=(
+            "Skill 管理。\n"
+            "当前只管理 feishu-codex 自带的 `feishu-send-image` skill，"
+            "安装位置为 `$CODEX_HOME/skills`（未设置时回落到 `~/.codex/skills`）。\n"
+            "注意：`feishu-codex skill ...` 不接受顶层 `--instance`。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    skill_subparsers = skill_parser.add_subparsers(
+        dest="skill_command",
+        required=True,
+        title="skill commands",
+        metavar="skill-command",
+    )
+    skill_subparsers.add_parser(
+        "install",
+        help="安装 feishu-codex 自带的全局发图 skill。",
+        description="把 feishu-codex 自带的 `feishu-send-image` 安装到全局 Codex skills 目录。",
+        formatter_class=_HelpFormatter,
+    )
+    skill_subparsers.add_parser(
+        "uninstall",
+        help="卸载 feishu-codex 受管安装的全局发图 skill。",
+        description="删除 feishu-codex 受管安装的 `feishu-send-image` 全局 skill；不会删除其他 skills。",
+        formatter_class=_HelpFormatter,
+    )
+
     subparsers.add_parser(
         "uninstall",
         help="卸载所有 service 定义 / 自启动注册与 wrapper，保留配置与数据。",
@@ -273,6 +310,47 @@ def _venv_python() -> pathlib.Path:
 
 def _repo_root() -> pathlib.Path:
     return pathlib.Path(__file__).resolve().parent.parent
+
+
+def _codex_home_dir() -> pathlib.Path:
+    raw = str(os.environ.get("CODEX_HOME", "") or "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    return pathlib.Path.home() / ".codex"
+
+
+def _codex_skills_dir() -> pathlib.Path:
+    return _codex_home_dir() / "skills"
+
+
+def _managed_skill_source_dir() -> pathlib.Path:
+    return _repo_root() / ".agents" / "skills" / _MANAGED_SKILL_NAME
+
+
+def _managed_skill_target_dir() -> pathlib.Path:
+    return _codex_skills_dir() / _MANAGED_SKILL_NAME
+
+
+def _managed_skill_marker_path(skill_dir: pathlib.Path) -> pathlib.Path:
+    return skill_dir / _MANAGED_SKILL_MARKER
+
+
+def _write_managed_skill_marker(skill_dir: pathlib.Path) -> None:
+    _managed_skill_marker_path(skill_dir).write_text(
+        f"managed_by=feishu-codex\nskill={_MANAGED_SKILL_NAME}\n",
+        encoding="utf-8",
+    )
+
+
+def _is_feishu_codex_managed_skill(skill_dir: pathlib.Path) -> bool:
+    marker = _managed_skill_marker_path(skill_dir)
+    if not marker.exists():
+        return False
+    try:
+        contents = marker.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "managed_by=feishu-codex" in contents and f"skill={_MANAGED_SKILL_NAME}" in contents
 
 
 def _ensure_text_file(path: pathlib.Path, contents: str, *, overwrite: bool, private: bool = False) -> None:
@@ -463,13 +541,12 @@ def _known_instance_names() -> list[str]:
 
 
 def _print_install_summary(bin_dir: pathlib.Path, rebuilt_instances: list[str]) -> None:
-    default_paths = resolve_instance_paths(DEFAULT_INSTANCE_NAME)
     print("安装完成。")
     print(f"配置根目录: {default_config_root()}")
     print(f"数据根目录: {default_data_root()}")
     print(f"命令目录: {bin_dir}")
-    print( "  - 本地服务进程管理 feishu-codex --help")
-    print( "  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
+    print("  - 本地服务进程管理 feishu-codex --help")
+    print("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
     print(f"已重建实例: {', '.join(rebuilt_instances)}。不覆盖各实例现有用户配置")
     if not shutil.which("codex"):
         print("警告: 未检测到 `codex` 命令，请先安装 Codex CLI。")
@@ -487,6 +564,8 @@ def _print_install_summary(bin_dir: pathlib.Path, rebuilt_instances: list[str]) 
     print("  4. 新建并配置命名实例")
     print("    - feishu-codex instance create corp-a")
     print("    - feishu-codex --instance corp-a start|autostart|config ...")
+    print("  5. 如需在其他 repo 里也可直接让 Codex 发图（可选）")
+    print("    - feishu-codex skill install")
 
 
 def _handle_bootstrap_install() -> int:
@@ -755,6 +834,49 @@ def _handle_instance_remove(instance_name: str) -> int:
     return 0
 
 
+def _handle_skill_install() -> int:
+    source_dir = _managed_skill_source_dir()
+    if not source_dir.is_dir():
+        raise ValueError(f"skill 源目录不存在：{source_dir}")
+    target_dir = _managed_skill_target_dir()
+    target_parent = target_dir.parent
+    target_parent.mkdir(parents=True, exist_ok=True)
+    if target_dir.exists():
+        if not target_dir.is_dir():
+            raise ValueError(f"skill 目标路径已存在且不是目录：{target_dir}")
+        if not _is_feishu_codex_managed_skill(target_dir):
+            raise ValueError(
+                "目标 skill 已存在且不是 feishu-codex 受管安装；"
+                f"请先手动处理：{target_dir}"
+            )
+        shutil.rmtree(target_dir)
+    shutil.copytree(source_dir, target_dir)
+    _write_managed_skill_marker(target_dir)
+    print(f"已安装 skill: {_MANAGED_SKILL_NAME}")
+    print(f"source: {source_dir}")
+    print(f"target: {target_dir}")
+    return 0
+
+
+def _handle_skill_uninstall() -> int:
+    target_dir = _managed_skill_target_dir()
+    if not target_dir.exists():
+        print(f"未安装 skill: {_MANAGED_SKILL_NAME}")
+        print(f"target: {target_dir}")
+        return 0
+    if not target_dir.is_dir():
+        raise ValueError(f"skill 目标路径不是目录：{target_dir}")
+    if not _is_feishu_codex_managed_skill(target_dir):
+        raise ValueError(
+            "目标 skill 不是 feishu-codex 受管安装；拒绝删除："
+            f" {target_dir}"
+        )
+    shutil.rmtree(target_dir)
+    print(f"已卸载 skill: {_MANAGED_SKILL_NAME}")
+    print(f"target: {target_dir}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
     requested_instances = getattr(args, "instance", [])
@@ -795,6 +917,13 @@ def main(argv: list[str] | None = None) -> None:
                 raise SystemExit(_handle_instance_list())
             if args.instance_command == "remove":
                 raise SystemExit(_handle_instance_remove(args.name))
+        if args.command == "skill":
+            if requested_instances:
+                raise ValueError("`feishu-codex skill ...` 不接受顶层 `--instance`。")
+            if args.skill_command == "install":
+                raise SystemExit(_handle_skill_install())
+            if args.skill_command == "uninstall":
+                raise SystemExit(_handle_skill_uninstall())
         if args.command == "uninstall":
             raise SystemExit(_handle_uninstall(purge=False))
         if args.command == "purge":
