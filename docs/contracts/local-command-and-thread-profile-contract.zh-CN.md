@@ -133,6 +133,7 @@
 应优先由 `feishu-codexctl` 承担的能力包括：
 
 - thread / binding 查看
+- `thread archive`
 - `service/thread/binding reattach`
 - thread 发现与本地诊断
 - `thread unsubscribe`

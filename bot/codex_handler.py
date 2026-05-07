@@ -446,6 +446,7 @@ class CodexHandler(BotHandler):
             current_app_server_url=lambda: self._adapter.current_app_server_url(),
             app_server_mode=lambda: self._adapter_config.app_server_mode,
             unsubscribe_thread=lambda thread_id: self._adapter.unsubscribe_thread(thread_id),
+            archive_thread=lambda thread_id: self._adapter.archive_thread(thread_id),
             release_service_thread_runtime_lease=self._release_service_thread_runtime_lease,
             service_control_endpoint=lambda: self._service_control_plane.control_endpoint,
             instance_name=lambda: self._instance_name,

@@ -467,6 +467,7 @@ The current formal command set is:
 - `feishu-codexctl binding clear-all`
 - `feishu-codexctl thread status (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread bindings (--thread-id <id> | --thread-name <name>)`
+- `feishu-codexctl thread archive (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread reattach (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread unsubscribe (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`

@@ -97,6 +97,29 @@ def _image_send_target_params(args: argparse.Namespace) -> tuple[dict[str, str],
     )
 
 
+def _resolve_thread_archive_target(args: argparse.Namespace):
+    target_params = _thread_target_params(args)
+    explicit_instance = str(getattr(args, "instance", "") or "").strip()
+    if explicit_instance:
+        return _resolve_target_instance(explicit_instance), target_params
+    thread_id = str(target_params.get("thread_id", "") or "").strip()
+    if thread_id:
+        preferred_instance = _lease_owner_instance(thread_id)
+        return _resolve_target_instance(None, preferred_running_instance=preferred_instance), target_params
+    bootstrap_target = _resolve_target_instance(None)
+    snapshot = _request(bootstrap_target.data_dir, "thread/status", target_params)
+    resolved_thread_id = str(snapshot.get("thread_id", "") or "").strip()
+    live_runtime_owner = snapshot.get("live_runtime_owner") or {}
+    owner_instance = ""
+    if isinstance(live_runtime_owner, dict):
+        owner_instance = str(live_runtime_owner.get("instance_name", "") or "").strip()
+    if resolved_thread_id:
+        target_params = {"thread_id": resolved_thread_id}
+    if owner_instance:
+        return _resolve_target_instance(None, preferred_running_instance=owner_instance), target_params
+    return bootstrap_target, target_params
+
+
 def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
     owner = snapshot.get("live_runtime_owner")
     holder_labels = snapshot.get("live_runtime_holder_labels")
@@ -381,6 +404,18 @@ def _reattach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> i
     return 0
 
 
+def _archive_thread(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
+    result = _request(data_dir, "thread/archive", target_params)
+    if instance_name:
+        print(f"instance: {instance_name}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    print(f"cleared bindings in this instance: {', '.join(result.get('cleared_binding_ids') or []) or '（无）'}")
+    print("note: 归档完成；该 thread 会从常规列表中隐藏，不是硬删除。")
+    print("note: 该动作只清理当前目标实例里的相关 bindings；其他实例若仍保留 bookmark，需要分别处理。")
+    return 0
+
+
 def _send_thread_image(
     data_dir: pathlib.Path,
     target_params: dict[str, str],
@@ -445,6 +480,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl binding reattach <binding_id>\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
+            "  feishu-codexctl thread archive --thread-name demo\n"
             "  feishu-codexctl thread reattach --thread-id <id>\n"
             "  feishu-codexctl thread unsubscribe --thread-name <name>\n"
             "  feishu-codexctl image send --path ./diagram.png\n"
@@ -591,6 +627,18 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_bindings_target = thread_bindings.add_mutually_exclusive_group(required=True)
     thread_bindings_target.add_argument("--thread-id", help="目标 thread id。")
     thread_bindings_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_archive = thread_sub.add_parser(
+        "archive",
+        help="归档某个 thread，并清理当前实例里指向它的 bindings。",
+        description=(
+            "归档目标 thread，使其从常规列表中隐藏，而不是硬删除。\n"
+            "该动作只清理当前目标实例里指向该 thread 的 bindings；不跨实例联动清理。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    thread_archive_target = thread_archive.add_mutually_exclusive_group(required=True)
+    thread_archive_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_archive_target.add_argument("--thread-name", help="目标 thread 名称。")
     thread_unsubscribe = thread_sub.add_parser(
         "unsubscribe",
         help="让 Feishu 释放某个 thread 的 runtime residency。",
@@ -655,6 +703,15 @@ def main() -> None:
                     target.data_dir,
                     target_params,
                     local_path=args.path,
+                    instance_name=target.instance_name,
+                )
+            )
+        if args.resource == "thread" and args.action == "archive":
+            target, target_params = _resolve_thread_archive_target(args)
+            raise SystemExit(
+                _archive_thread(
+                    target.data_dir,
+                    target_params,
                     instance_name=target.instance_name,
                 )
             )

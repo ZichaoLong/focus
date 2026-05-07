@@ -111,6 +111,7 @@ class RuntimeAdminController:
         current_app_server_url: Callable[[], str],
         app_server_mode: Callable[[], str],
         unsubscribe_thread: Callable[[str], None],
+        archive_thread: Callable[[str], None],
         release_service_thread_runtime_lease: Callable[[str], None],
         service_control_endpoint: Callable[[], str],
         instance_name: Callable[[], str],
@@ -140,6 +141,7 @@ class RuntimeAdminController:
         self._current_app_server_url = current_app_server_url
         self._app_server_mode = app_server_mode
         self._unsubscribe_thread = unsubscribe_thread
+        self._archive_thread = archive_thread
         self._release_service_thread_runtime_lease = release_service_thread_runtime_lease
         self._service_control_endpoint = service_control_endpoint
         self._instance_name = instance_name
@@ -1044,6 +1046,76 @@ class RuntimeAdminController:
             "unsubscribe_reason_code": "" if result.changed else unsubscribe_check.reason_code,
         }
 
+    def archive_thread_for_control(
+        self,
+        thread_id: str,
+        *,
+        summary: ThreadSummary | None = None,
+    ) -> dict[str, Any]:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            raise ValueError("thread_id 不能为空。")
+        effective_summary = summary
+        if effective_summary is None:
+            resolved_summary, _backend_thread_status = self.read_thread_summary_for_status(normalized_thread_id)
+            effective_summary = resolved_summary
+        lease = self._load_thread_runtime_lease(normalized_thread_id)
+        live_runtime_owner = self._live_runtime_owner_snapshot(lease)
+        owner_instance = str(live_runtime_owner.get("instance_name", "") or "").strip()
+        if owner_instance and owner_instance != self._instance_name():
+            raise ValueError(
+                f"当前 thread 的 live runtime 由实例 `{owner_instance}` 持有；"
+                "请改在该实例执行 archive。"
+            )
+        with self._lock:
+            snapshot = self._binding_runtime.thread_binding_snapshot_locked(
+                normalized_thread_id,
+                unsubscribe_availability=self.unsubscribe_availability_locked,
+            )
+            bound_bindings = list(self.bound_bindings_for_thread_locked(normalized_thread_id))
+            running_binding_ids = [
+                format_binding_id(binding)
+                for binding in bound_bindings
+                if (
+                    runtime_snapshot := self._binding_runtime.binding_runtime_snapshot_locked(binding)
+                ) is not None
+                and runtime_snapshot.has_inflight_turn
+            ]
+            pending_binding_ids = [
+                format_binding_id(binding)
+                for binding in bound_bindings
+                if self.binding_has_pending_request_locked(binding)
+            ]
+        if running_binding_ids:
+            raise ValueError(
+                "当前实例仍有飞书侧 turn 正在运行，不能 archive 该 thread："
+                + ", ".join(f"`{binding_id}`" for binding_id in running_binding_ids)
+            )
+        if pending_binding_ids:
+            raise ValueError(
+                "当前实例仍有待处理审批或补充输入，不能 archive 该 thread："
+                + ", ".join(f"`{binding_id}`" for binding_id in pending_binding_ids)
+            )
+        self._archive_thread(normalized_thread_id)
+        cleared_binding_ids: list[str] = []
+        with self._lock:
+            for binding in bound_bindings:
+                if self._binding_runtime.binding_runtime_snapshot_locked(binding) is None:
+                    continue
+                self._deactivate_binding_locked(binding)
+                cleared_binding_ids.append(format_binding_id(binding))
+        self._release_service_thread_runtime_lease(normalized_thread_id)
+        return {
+            "thread_id": normalized_thread_id,
+            "thread_title": effective_summary.title if effective_summary is not None else "",
+            "working_dir": effective_summary.cwd if effective_summary is not None else "",
+            "bound_binding_ids": snapshot["bound_binding_ids"],
+            "attached_binding_ids": snapshot["attached_binding_ids"],
+            "released_binding_ids": snapshot["released_binding_ids"],
+            "cleared_binding_ids": cleared_binding_ids,
+            "live_runtime_owner": live_runtime_owner,
+        }
+
     def send_image_to_thread_attached_bindings(
         self,
         thread_id: str,
@@ -1418,7 +1490,14 @@ class RuntimeAdminController:
             return self.clear_binding_for_control(binding)
         if method == "binding/clear-all":
             return self.clear_all_bindings_for_control()
-        if method in {"thread/status", "thread/bindings", "thread/unsubscribe", "thread/send-image", "thread/reattach"}:
+        if method in {
+            "thread/status",
+            "thread/bindings",
+            "thread/unsubscribe",
+            "thread/send-image",
+            "thread/reattach",
+            "thread/archive",
+        }:
             thread = self._resolve_thread_target_for_control_params(params)
             if method == "thread/status":
                 return self.thread_status_snapshot(thread.thread_id, summary=thread)
@@ -1451,5 +1530,7 @@ class RuntimeAdminController:
                 )
             if method == "thread/reattach":
                 return self.reattach_thread(thread.thread_id)
+            if method == "thread/archive":
+                return self.archive_thread_for_control(thread.thread_id, summary=thread)
             return self.unsubscribe_feishu_runtime_by_thread_id(thread.thread_id)
         raise ValueError(f"未知控制面方法：{method}")

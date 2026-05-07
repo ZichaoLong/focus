@@ -7,14 +7,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bot.feishu_codexctl import (
+    _archive_thread,
     _build_parser,
     _image_send_target_params,
     _list_running_instances,
     _print_binding_status,
     _send_thread_image,
+    _resolve_thread_archive_target,
     _print_thread_status,
     _thread_target_params,
 )
+from bot.instance_resolution import CliInstanceTarget
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 
@@ -30,6 +33,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("binding clear", rendered)
         self.assertIn("常用命令:", rendered)
         self.assertIn("feishu-codexctl --instance corp-a service status", rendered)
+        self.assertIn("thread archive --thread-name demo", rendered)
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
         parser = _build_parser()
@@ -44,6 +48,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("`list` 默认列当前目录线程", rendered)
         self.assertIn("`--thread-id` 或 `--thread-name`", rendered)
         self.assertIn("thread commands", rendered)
+        self.assertIn("archive", rendered)
         self.assertIn("unsubscribe", rendered)
         self.assertIn("persisted thread", rendered)
 
@@ -144,6 +149,13 @@ class FeishuCodexCtlTests(unittest.TestCase):
         parser = _build_parser()
 
         args = parser.parse_args(["thread", "unsubscribe", "--thread-name", "demo"])
+
+        self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
+
+    def test_thread_archive_accepts_explicit_thread_name(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "archive", "--thread-name", "demo"])
 
         self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
 
@@ -322,3 +334,46 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("instance: explorer", rendered)
         self.assertIn("delivered bindings: p2p:ou_user:chat-1", rendered)
         self.assertIn("failed bindings: p2p:ou_other:chat-2", rendered)
+
+    def test_archive_thread_prints_scope_note(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _archive_thread(
+                    Path("/tmp/instance-data"),
+                    {"thread_id": "thread-1"},
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("cleared bindings in this instance: p2p:ou_user:chat-1", rendered)
+        self.assertIn("只清理当前目标实例", rendered)
+
+    def test_resolve_thread_archive_target_prefers_live_runtime_owner_for_thread_name(self) -> None:
+        parser = _build_parser()
+        args = parser.parse_args(["thread", "archive", "--thread-name", "demo"])
+        bootstrap = CliInstanceTarget(instance_name="default", data_dir=Path("/tmp/default-data"))
+        owner_target = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
+        snapshot = {
+            "thread_id": "thread-1",
+            "live_runtime_owner": {
+                "instance_name": "explorer",
+                "label": "explorer",
+            },
+        }
+
+        with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[bootstrap, owner_target]):
+            with patch("bot.feishu_codexctl._request", return_value=snapshot):
+                target, target_params = _resolve_thread_archive_target(args)
+
+        self.assertEqual(target.instance_name, "explorer")
+        self.assertEqual(target.data_dir, Path("/tmp/explorer-data"))
+        self.assertEqual(target_params, {"thread_id": "thread-1"})

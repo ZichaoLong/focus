@@ -145,6 +145,7 @@ TUI or continuing a live thread interactively.
 Capabilities that primarily live in `feishu-codexctl` include:
 
 - thread and binding inspection
+- `thread archive`
 - `service/thread/binding reattach`
 - local discovery and diagnosis
 - `thread unsubscribe`

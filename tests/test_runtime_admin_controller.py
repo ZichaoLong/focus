@@ -42,6 +42,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             is_group_chat=lambda chat_id, message_id: False,
         )
         unsubscribed: list[str] = []
+        archived: list[str] = []
         released_runtime_leases: list[str] = []
         pending_by_thread: set[str] = set()
         pending_by_binding: set[tuple[str, str]] = set()
@@ -68,6 +69,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             current_app_server_url=lambda: "http://127.0.0.1:1234",
             app_server_mode=lambda: "managed",
             unsubscribe_thread=lambda thread_id: unsubscribed.append(thread_id),
+            archive_thread=lambda thread_id: archived.append(thread_id),
             release_service_thread_runtime_lease=lambda thread_id: released_runtime_leases.append(thread_id),
             service_control_endpoint=lambda: "tcp://127.0.0.1:32001",
             instance_name=lambda: "corp-a",
@@ -108,6 +110,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             loaded_thread_ids,
             unsubscribed,
+            archived,
             released_runtime_leases,
             pending_by_thread,
             pending_by_binding,
@@ -136,6 +139,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             pending_by_thread,
             _pending_by_binding,
@@ -172,6 +176,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             unsubscribed,
+            _archived,
             released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -211,6 +216,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             unsubscribed,
+            _archived,
             released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -259,6 +265,94 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(unsubscribed, ["thread-1", "retry:thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
 
+    def test_archive_thread_for_control_archives_and_clears_current_instance_bindings(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding_a = ("ou_user", "c1")
+        binding_b = ("ou_user2", "c2")
+        self._bind_thread(lock, binding_runtime, binding_a, thread_id="thread-1")
+        self._bind_thread(lock, binding_runtime, binding_b, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, ["thread-1"])
+        self.assertEqual(released_runtime_leases, ["thread-1"])
+        self.assertEqual(
+            result["cleared_binding_ids"],
+            ["p2p:ou_user:c1", "p2p:ou_user2:c2"],
+        )
+        with lock:
+            self.assertIsNone(binding_runtime.binding_runtime_snapshot_locked(binding_a))
+            self.assertIsNone(binding_runtime.binding_runtime_snapshot_locked(binding_b))
+
+    def test_archive_thread_for_control_rejects_other_instance_live_runtime_owner(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        controller._load_thread_runtime_lease = lambda thread_id: ThreadRuntimeLease(
+            thread_id=thread_id,
+            owner_instance="explorer",
+            owner_service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32001",
+            backend_url="ws://127.0.0.1:8765",
+            attached_at=1.0,
+            holders=(),
+        )
+
+        with self.assertRaisesRegex(ValueError, "explorer"):
+            controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, [])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
+
     def test_handle_service_control_request_service_status_aggregates_runtime_inventory(self) -> None:
         (
             lock,
@@ -267,6 +361,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -310,6 +405,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -346,6 +442,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -371,6 +468,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -414,6 +512,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -468,6 +567,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -489,6 +589,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -514,6 +615,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -539,6 +641,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -568,6 +671,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -607,6 +711,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -647,6 +752,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -672,6 +778,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -709,6 +816,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             pending_by_binding,
@@ -744,6 +852,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -784,6 +893,41 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             ],
         )
 
+    def test_handle_service_control_request_thread_archive_dispatches_control_action(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.handle_service_control_request("thread/archive", {"thread_id": "thread-1"})
+
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(archived, ["thread-1"])
+        self.assertEqual(released_runtime_leases, ["thread-1"])
+
     def test_handle_service_control_request_thread_send_image_fanouts_to_attached_bindings(self) -> None:
         (
             lock,
@@ -792,6 +936,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             _pending_by_thread,
             _pending_by_binding,
@@ -838,6 +983,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             pending_by_thread,
             _pending_by_binding,
@@ -878,6 +1024,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             summaries,
             _loaded_thread_ids,
             _unsubscribed,
+            _archived,
             _released_runtime_leases,
             pending_by_thread,
             _pending_by_binding,

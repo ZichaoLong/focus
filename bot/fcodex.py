@@ -57,7 +57,7 @@ _REMOVED_WRAPPER_COMMAND_HINTS = {
     "/threads": "本地看线程请改用 `feishu-codexctl thread list --scope cwd` 或 `feishu-codexctl thread list --scope global`。",
     "/resume": "请改用 `fcodex resume <thread_id|thread_name>`。",
     "/profile": "请改用启动时显式传 `fcodex -p <profile>`。",
-    "/archive": "请在飞书侧用 `/archive`，或进入 Codex TUI 后使用 upstream `/rm`。",
+    "/archive": "请改用 `feishu-codexctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
 
 

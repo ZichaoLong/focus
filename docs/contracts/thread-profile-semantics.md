@@ -154,6 +154,7 @@ It owns:
 - `thread list --scope cwd|global`
 - `thread status`
 - `thread bindings`
+- `thread archive`
 - `thread reattach`
 - `thread unsubscribe`
 - `binding list/status/clear`

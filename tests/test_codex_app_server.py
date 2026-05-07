@@ -1075,7 +1075,7 @@ class FCodexTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as exc:
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("请在飞书侧用 `/archive`", stderr.getvalue())
+        self.assertIn("feishu-codexctl thread archive", stderr.getvalue())
 
     def test_fcodex_rejects_slash_resume_command(self) -> None:
         stderr = StringIO()
