@@ -1,6 +1,7 @@
 import io
 import os
 import pathlib
+import shutil
 import stat
 import subprocess
 import sys
@@ -25,6 +26,8 @@ from bot.manage_cli import (
     _handle_skill_uninstall,
     _handle_service_action,
     _handle_service_actions,
+    _managed_skill_source_dir,
+    _skill_tree_matches_source,
     _write_wrapper,
     main,
 )
@@ -73,7 +76,7 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("feishu-codex --instance default --instance corp-a status", rendered)
         self.assertIn("创建、列出、删除命名实例", rendered)
         self.assertIn("查看或打开当前实例相关配置文件", rendered)
-        self.assertIn("安装或卸载 feishu-codex 提供的全局 Codex skill", rendered)
+        self.assertIn("安装或卸载 feishu-codex 提供的工作区 skill", rendered)
         self.assertNotIn("    install            ", rendered)
         self.assertNotIn("bootstrap-install", rendered)
 
@@ -211,8 +214,8 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("  1. 配置飞书应用、provider 环境变量", summary)
             self.assertIn("    - feishu-codex config --open system", summary)
             self.assertIn("    - feishu-codex config --open env（按需）", summary)
-            self.assertIn("  5. 如需在其他 repo 里也可直接让 Codex 发图（可选）", summary)
-            self.assertIn("    - feishu-codex skill install", summary)
+            self.assertIn("  5. 如需在某个目录下也可直接让 Codex 发图（可选）", summary)
+            self.assertIn("    - 先 cd 到目标目录，再执行 feishu-codex skill install", summary)
 
     def test_ensure_instance_scaffold_writes_detected_initial_codex_command_without_changing_example(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -428,17 +431,19 @@ class ManageCliTests(unittest.TestCase):
                 (str(bin_dir / "feishu-codex"), "--instance", "default", "run"),
             )
 
-    def test_handle_skill_install_copies_repo_skill_into_codex_home(self) -> None:
+    def test_handle_skill_install_copies_packaged_skill_into_current_workspace_agents_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            codex_home = pathlib.Path(tmpdir) / "codex-home"
-            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+            workspace = pathlib.Path(tmpdir) / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            with patch.object(pathlib.Path, "cwd", return_value=workspace):
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):
                     result = _handle_skill_install()
 
             self.assertEqual(result, 0)
-            target = codex_home / "skills" / "feishu-send-image"
+            target = workspace / ".agents" / "skills" / "feishu-send-image"
             self.assertTrue((target / "SKILL.md").exists())
+            self.assertTrue((target / "agents" / "openai.yaml").exists())
             self.assertTrue((target / ".feishu-codex-managed").exists())
             rendered = stdout.getvalue()
             self.assertIn("已安装 skill: feishu-send-image", rendered)
@@ -446,26 +451,48 @@ class ManageCliTests(unittest.TestCase):
 
     def test_handle_skill_install_refuses_unmanaged_existing_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            codex_home = pathlib.Path(tmpdir) / "codex-home"
-            target = codex_home / "skills" / "feishu-send-image"
+            workspace = pathlib.Path(tmpdir) / "workspace"
+            target = workspace / ".agents" / "skills" / "feishu-send-image"
             target.mkdir(parents=True, exist_ok=True)
             (target / "SKILL.md").write_text("manual\n", encoding="utf-8")
 
-            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+            with patch.object(pathlib.Path, "cwd", return_value=workspace):
                 with self.assertRaisesRegex(ValueError, "不是 feishu-codex 受管安装"):
                     _handle_skill_install()
 
+    def test_handle_skill_install_is_noop_when_current_workspace_already_has_same_unmanaged_skill(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            workspace = pathlib.Path(tmpdir) / "workspace"
+            source = pathlib.Path(__file__).resolve().parent.parent / ".agents" / "skills" / "feishu-send-image"
+            target = workspace / ".agents" / "skills" / "feishu-send-image"
+            shutil.copytree(source, target)
+
+            with patch.object(pathlib.Path, "cwd", return_value=workspace):
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    result = _handle_skill_install()
+
+            self.assertEqual(result, 0)
+            self.assertFalse((target / ".feishu-codex-managed").exists())
+            self.assertIn("当前目录已可用 skill: feishu-send-image", stdout.getvalue())
+
+    def test_packaged_skill_source_matches_repo_workspace_skill(self) -> None:
+        repo_skill = pathlib.Path(__file__).resolve().parent.parent / ".agents" / "skills" / "feishu-send-image"
+
+        self.assertTrue(_skill_tree_matches_source(repo_skill, _managed_skill_source_dir()))
+
     def test_handle_skill_uninstall_removes_managed_skill_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            codex_home = pathlib.Path(tmpdir) / "codex-home"
-            with patch.dict(os.environ, {"CODEX_HOME": str(codex_home)}, clear=False):
+            workspace = pathlib.Path(tmpdir) / "workspace"
+            workspace.mkdir(parents=True, exist_ok=True)
+            with patch.object(pathlib.Path, "cwd", return_value=workspace):
                 _handle_skill_install()
                 stdout = io.StringIO()
                 with redirect_stdout(stdout):
                     result = _handle_skill_uninstall()
 
             self.assertEqual(result, 0)
-            target = codex_home / "skills" / "feishu-send-image"
+            target = workspace / ".agents" / "skills" / "feishu-send-image"
             self.assertFalse(target.exists())
             rendered = stdout.getvalue()
             self.assertIn("已卸载 skill: feishu-send-image", rendered)

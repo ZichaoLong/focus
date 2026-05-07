@@ -313,6 +313,13 @@ The repository now also includes one thin skill example:
 
 - `.agents/skills/feishu-send-image/`
 
+`feishu-codex skill install` installs the same skill into the current
+directory's `.agents/skills/feishu-send-image/`.
+That makes it directory-scoped:
+
+- run it in `~` if you want home-level Codex threads to discover it
+- run it in a repository if you want it to apply only to that repository
+
 It only tells Codex to call:
 
 - `feishu-codexctl image send --path ...`

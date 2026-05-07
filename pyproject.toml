@@ -22,3 +22,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["bot*"]
+
+[tool.setuptools.package-data]
+"bot.managed_skills.feishu_send_image" = ["skill/SKILL.md", "skill/agents/openai.yaml"]
