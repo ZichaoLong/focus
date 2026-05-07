@@ -186,17 +186,17 @@ class PromptTurnEntryController:
             reply_in_thread=self._message_reply_in_thread(message_id),
         )
 
-    def ensure_thread(self, sender_id: str, chat_id: str, *, message_id: str = "") -> tuple[str, str]:
+    def ensure_thread(self, sender_id: str, chat_id: str, *, message_id: str = "") -> str:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         if runtime.current_thread_id:
-            return runtime.current_thread_id, ""
+            return runtime.current_thread_id
         snapshot = self._create_thread(
             cwd=runtime.working_dir,
             approval_policy=runtime.approval_policy or None,
             sandbox=runtime.sandbox or None,
         )
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
-        return snapshot.summary.thread_id, ""
+        return snapshot.summary.thread_id
 
     def resume_bound_thread(self, sender_id: str, chat_id: str, *, message_id: str = "") -> str:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
@@ -328,9 +328,8 @@ class PromptTurnEntryController:
                     reply_in_thread=self._message_reply_in_thread(message_id),
                 )
                 return False
-        seed_warning = ""
         try:
-            thread_id, seed_warning = self.ensure_thread(sender_id, chat_id, message_id=message_id)
+            thread_id = self.ensure_thread(sender_id, chat_id, message_id=message_id)
             thread_id = self.ensure_binding_runtime_attached(sender_id, chat_id, message_id=message_id)
         except Exception as exc:
             if preattached_interaction_lease is not None and preattached_interaction_lease.acquired:
@@ -489,13 +488,6 @@ class PromptTurnEntryController:
                         ExecutionStateChanged(pending_cancel=False),
                     )
         self._schedule_mirror_watchdog(sender_id, chat_id)
-        if seed_warning:
-            self._reply_text(
-                chat_id,
-                seed_warning,
-                message_id=message_id,
-                reply_in_thread=prompt_reply_in_thread,
-            )
         return True
 
     def cancel_current_turn(

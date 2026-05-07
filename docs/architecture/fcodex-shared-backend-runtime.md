@@ -70,7 +70,8 @@ operate on the same live thread.
 `fcodex` exists to provide:
 
 - one shared backend with the selected Feishu instance
-- a default-profile seed for new threads started through that selected instance
+- an explicit `-p/--profile` first-thread seed for new threads created during
+  that launch
 - `resume <thread_name>` resolution on top of the shared backend
 - a compatibility patch for remote-mode working-directory behavior
 

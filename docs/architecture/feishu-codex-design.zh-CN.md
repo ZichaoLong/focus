@@ -217,7 +217,6 @@ shared backend 与 wrapper 的具体机制，见
 
 `feishu-codex` 只保存飞书或集成侧专属的数据：
 
-- 每实例飞书与该实例 `fcodex` 新建 thread 时共用的本地 default-profile seed
 - 机器级共享的 thread-wise resume profile
 - 每实例 shared backend 的运行时地址发现状态
 - 私聊当前绑定到哪个 thread，以及群聊按 `chat_id` 共享绑定到哪个 thread

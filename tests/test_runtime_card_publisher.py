@@ -4,6 +4,7 @@ import time
 import unittest
 
 from bot.execution_transcript import ExecutionReplySegment, ExecutionTranscript
+from bot.message_patch_result import MessagePatchResult
 from bot.runtime_card_publisher import (
     ExecutionCardPatchDispatcher,
     RuntimeCardPublisher,
@@ -17,6 +18,7 @@ class _FakeBot:
     def __init__(self) -> None:
         self.patches: list[tuple[str, str]] = []
         self.patch_results: dict[str, bool] = {}
+        self.patch_result_overrides: dict[str, MessagePatchResult] = {}
         self.reply_calls: list[tuple[str, str, str]] = []
         self.send_calls: list[tuple[str, str, str]] = []
         self.deletes: list[str] = []
@@ -24,6 +26,15 @@ class _FakeBot:
     def patch_message(self, message_id: str, content: str) -> bool:
         self.patches.append((message_id, content))
         return self.patch_results.get(message_id, True)
+
+    def patch_message_result(self, message_id: str, content: str) -> MessagePatchResult:
+        self.patches.append((message_id, content))
+        override = self.patch_result_overrides.get(message_id)
+        if override is not None:
+            return override
+        if self.patch_results.get(message_id, True):
+            return MessagePatchResult.success()
+        return MessagePatchResult.failure()
 
     def reply_to_message(self, parent_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False) -> str:
         self.reply_calls.append((parent_id, msg_type, content))
@@ -128,9 +139,9 @@ class RuntimeCardPublisherTests(unittest.TestCase):
             reply_limit=100,
         )
 
-        ok = publisher.patch_execution_card("exec-1", model)
+        result = publisher.patch_execution_card("exec-1", model)
 
-        self.assertTrue(ok)
+        self.assertTrue(result.ok)
         self.assertEqual(len(bot.patches), 1)
         message_id, content = bot.patches[0]
         self.assertEqual(message_id, "exec-1")
@@ -151,12 +162,12 @@ class RuntimeCardPublisherTests(unittest.TestCase):
         release_first = threading.Event()
         calls: list[tuple[str, int]] = []
 
-        def publish_patch(message_id: str, model) -> bool:
+        def publish_patch(message_id: str, model) -> MessagePatchResult:
             calls.append((message_id, model.elapsed))
             if len(calls) == 1:
                 first_started.set()
                 release_first.wait(timeout=1)
-            return True
+            return MessagePatchResult.success()
 
         dispatcher = ExecutionCardPatchDispatcher(publish_patch, worker_count=2)
         self.addCleanup(dispatcher.shutdown)
@@ -178,14 +189,14 @@ class RuntimeCardPublisherTests(unittest.TestCase):
         second_started = threading.Event()
         release_first = threading.Event()
 
-        def publish_patch(message_id: str, model) -> bool:
+        def publish_patch(message_id: str, model) -> MessagePatchResult:
             del model
             if message_id == "exec-1":
                 first_started.set()
                 release_first.wait(timeout=1)
             elif message_id == "exec-2":
                 second_started.set()
-            return True
+            return MessagePatchResult.success()
 
         dispatcher = ExecutionCardPatchDispatcher(publish_patch, worker_count=2)
         self.addCleanup(dispatcher.shutdown)
@@ -196,6 +207,86 @@ class RuntimeCardPublisherTests(unittest.TestCase):
 
         self.assertTrue(second_started.wait(timeout=1))
         release_first.set()
+
+    def test_execution_card_patch_dispatcher_retries_latest_model_after_retryable_failure(self) -> None:
+        first_attempt = threading.Event()
+        calls: list[tuple[str, int]] = []
+
+        def publish_patch(message_id: str, model) -> MessagePatchResult:
+            calls.append((message_id, model.elapsed))
+            if len(calls) == 1:
+                first_attempt.set()
+                return MessagePatchResult.retry_later(0.01)
+            return MessagePatchResult.success()
+
+        dispatcher = ExecutionCardPatchDispatcher(publish_patch, worker_count=1)
+        self.addCleanup(dispatcher.shutdown)
+
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=True, elapsed=1, cancelled=False, log_limit=100, reply_limit=100))
+        self.assertTrue(first_attempt.wait(timeout=1))
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=True, elapsed=2, cancelled=False, log_limit=100, reply_limit=100))
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=False, elapsed=3, cancelled=False, log_limit=100, reply_limit=100))
+
+        deadline = time.time() + 1
+        while len(calls) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+
+        self.assertEqual(calls, [("exec-1", 1), ("exec-1", 3)])
+
+    def test_execution_card_patch_dispatcher_retry_backoff_does_not_block_other_messages(self) -> None:
+        first_attempt = threading.Event()
+        second_started = threading.Event()
+        calls: list[str] = []
+
+        def publish_patch(message_id: str, model) -> MessagePatchResult:
+            del model
+            calls.append(message_id)
+            if message_id == "exec-1" and len(calls) == 1:
+                first_attempt.set()
+                return MessagePatchResult.retry_later(0.05)
+            if message_id == "exec-2":
+                second_started.set()
+            return MessagePatchResult.success()
+
+        dispatcher = ExecutionCardPatchDispatcher(publish_patch, worker_count=1)
+        self.addCleanup(dispatcher.shutdown)
+
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=True, elapsed=1, cancelled=False, log_limit=100, reply_limit=100))
+        self.assertTrue(first_attempt.wait(timeout=1))
+        dispatcher.submit("exec-2", build_execution_card_model(ExecutionTranscript(), running=True, elapsed=2, cancelled=False, log_limit=100, reply_limit=100))
+
+        self.assertTrue(second_started.wait(timeout=1))
+        self.assertEqual(calls[:2], ["exec-1", "exec-2"])
+
+    def test_execution_card_patch_dispatcher_keeps_backoff_when_newer_model_arrives_during_retry_wait(self) -> None:
+        first_attempt = threading.Event()
+        calls: list[tuple[str, int, float]] = []
+        started_at = time.monotonic()
+
+        def publish_patch(message_id: str, model) -> MessagePatchResult:
+            calls.append((message_id, model.elapsed, time.monotonic() - started_at))
+            if len(calls) == 1:
+                first_attempt.set()
+                return MessagePatchResult.retry_later(0.05)
+            return MessagePatchResult.success()
+
+        dispatcher = ExecutionCardPatchDispatcher(publish_patch, worker_count=1)
+        self.addCleanup(dispatcher.shutdown)
+
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=True, elapsed=1, cancelled=False, log_limit=100, reply_limit=100))
+        self.assertTrue(first_attempt.wait(timeout=1))
+        time.sleep(0.01)
+        dispatcher.submit("exec-1", build_execution_card_model(ExecutionTranscript(), running=False, elapsed=2, cancelled=False, log_limit=100, reply_limit=100))
+        time.sleep(0.02)
+
+        self.assertEqual(len(calls), 1)
+
+        deadline = time.time() + 1
+        while len(calls) < 2 and time.time() < deadline:
+            time.sleep(0.01)
+
+        self.assertEqual(calls[1][0:2], ("exec-1", 2))
+        self.assertGreaterEqual(calls[1][2], 0.04)
 
 
 if __name__ == "__main__":

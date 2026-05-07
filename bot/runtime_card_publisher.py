@@ -15,6 +15,7 @@ from typing import Callable, Protocol
 
 from bot.cards import build_execution_card, build_plan_card, build_terminal_result_card
 from bot.execution_transcript import ExecutionReplySegment, ExecutionTranscript
+from bot.message_patch_result import MessagePatchResult
 from bot.runtime_view import PlanView
 
 _LOG_TRUNCATION_NOTICE = "\n\n**[日志已截断，仅保留最近部分]**"
@@ -62,6 +63,7 @@ class PlanCardPublishResult:
 class _ExecutionCardPatchSlot:
     queued: bool = False
     inflight: bool = False
+    retry_scheduled: bool = False
 
 
 _PATCH_DISPATCHER_STOP = object()
@@ -143,6 +145,19 @@ class RuntimeCardPublisher:
     def __init__(self, bot: _CardPublisherBot):
         self._bot = bot
 
+    def _patch_message_result(self, message_id: str, content: str) -> MessagePatchResult:
+        patch_message_result = getattr(self._bot, "patch_message_result", None)
+        if callable(patch_message_result):
+            result = patch_message_result(message_id, content)
+            if isinstance(result, MessagePatchResult):
+                return result
+            if result:
+                return MessagePatchResult.success()
+            return MessagePatchResult.failure()
+        if self._bot.patch_message(message_id, content):
+            return MessagePatchResult.success()
+        return MessagePatchResult.failure()
+
     def send_execution_card(
         self,
         chat_id: str,
@@ -160,11 +175,11 @@ class RuntimeCardPublisher:
             )
         return self._bot.send_message_get_id(chat_id, "interactive", content)
 
-    def patch_execution_card(self, message_id: str, model: ExecutionCardModel) -> bool:
+    def patch_execution_card(self, message_id: str, model: ExecutionCardModel) -> MessagePatchResult:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
-            return False
-        return self._bot.patch_message(
+            return MessagePatchResult.failure()
+        return self._patch_message_result(
             normalized_message_id,
             json.dumps(render_execution_card(model), ensure_ascii=False),
         )
@@ -236,7 +251,7 @@ class RuntimeCardPublisher:
 class ExecutionCardPatchDispatcher:
     def __init__(
         self,
-        publish_patch: Callable[[str, ExecutionCardModel], bool],
+        publish_patch: Callable[[str, ExecutionCardModel], MessagePatchResult],
         *,
         worker_count: int = 2,
     ) -> None:
@@ -246,6 +261,7 @@ class ExecutionCardPatchDispatcher:
         self._lock = threading.Lock()
         self._pending: dict[str, ExecutionCardModel] = {}
         self._slots: dict[str, _ExecutionCardPatchSlot] = {}
+        self._retry_timers: dict[str, threading.Timer] = {}
         self._workers: list[threading.Thread] = []
         self._closed = False
 
@@ -258,7 +274,7 @@ class ExecutionCardPatchDispatcher:
                 return
             self._pending[normalized_message_id] = model
             slot = self._slots.setdefault(normalized_message_id, _ExecutionCardPatchSlot())
-            if slot.queued or slot.inflight:
+            if slot.queued or slot.inflight or slot.retry_scheduled:
                 return
             slot.queued = True
             self._ensure_workers_locked()
@@ -270,8 +286,12 @@ class ExecutionCardPatchDispatcher:
                 return
             self._closed = True
             workers = list(self._workers)
+            timers = list(self._retry_timers.values())
+            self._retry_timers.clear()
         for _ in workers:
             self._queue.put(_PATCH_DISPATCHER_STOP)
+        for timer in timers:
+            timer.cancel()
         for worker in workers:
             if worker.is_alive():
                 worker.join(timeout=1)
@@ -301,14 +321,62 @@ class ExecutionCardPatchDispatcher:
                         self._slots.pop(message_id, None)
                     continue
                 slot.inflight = True
+            result = MessagePatchResult.failure()
             try:
-                self._publish_patch(message_id, model)
+                result = self._publish_patch(message_id, model)
             finally:
                 with self._lock:
                     slot = self._slots.setdefault(message_id, _ExecutionCardPatchSlot())
                     slot.inflight = False
-                    if self._pending.get(message_id) is not None and not slot.queued and not self._closed:
+                    if result.retryable and not self._closed:
+                        if message_id not in self._pending:
+                            self._pending[message_id] = model
+                        self._schedule_retry_locked(message_id, result.retry_after_seconds)
+                    if (
+                        self._pending.get(message_id) is not None
+                        and not slot.queued
+                        and not slot.retry_scheduled
+                        and not self._closed
+                    ):
                         slot.queued = True
                         self._queue.put(message_id)
-                    elif message_id not in self._pending and not slot.queued:
+                    elif (
+                        message_id not in self._pending
+                        and not slot.queued
+                        and not slot.retry_scheduled
+                    ):
                         self._slots.pop(message_id, None)
+
+    def _schedule_retry_locked(self, message_id: str, delay_seconds: float) -> None:
+        slot = self._slots.setdefault(message_id, _ExecutionCardPatchSlot())
+        if slot.retry_scheduled or self._closed:
+            return
+        slot.retry_scheduled = True
+        timer = threading.Timer(
+            max(float(delay_seconds), 0.0),
+            self._retry_ready,
+            args=(message_id,),
+        )
+        timer.daemon = True
+        self._retry_timers[message_id] = timer
+        timer.start()
+
+    def _retry_ready(self, message_id: str) -> None:
+        with self._lock:
+            self._retry_timers.pop(message_id, None)
+            slot = self._slots.get(message_id)
+            if slot is None:
+                return
+            slot.retry_scheduled = False
+            if self._closed:
+                if not slot.queued and not slot.inflight and message_id not in self._pending:
+                    self._slots.pop(message_id, None)
+                return
+            if slot.queued or slot.inflight:
+                return
+            if message_id not in self._pending:
+                self._slots.pop(message_id, None)
+                return
+            slot.queued = True
+            self._ensure_workers_locked()
+            self._queue.put(message_id)

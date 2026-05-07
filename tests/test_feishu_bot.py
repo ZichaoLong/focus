@@ -14,6 +14,7 @@ from lark_oapi.api.im.v1 import (
 from bot.cards import build_execution_card, build_terminal_result_card
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_bot import FeishuBot
+from bot.message_patch_result import MessagePatchResult
 
 
 class _RecordingBot(FeishuBot):
@@ -1699,4 +1700,60 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         self.assertEqual(
             [item["message_id"] for item in entries],
             ["hist-other-app", "hist-user"],
+        )
+
+
+class FeishuBotPatchMessageTests(unittest.TestCase):
+    def _make_bot(self) -> _RecordingBot:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        return _RecordingBot(pathlib.Path(tempdir.name))
+
+    def test_patch_message_result_retries_on_feishu_frequency_limit(self) -> None:
+        bot = self._make_bot()
+
+        class _Response:
+            code = 230020
+            msg = "This operation triggers the frequency limit"
+            raw = {"ext": ""}
+
+            @staticmethod
+            def success() -> bool:
+                return False
+
+        bot.client = SimpleNamespace(
+            im=SimpleNamespace(
+                v1=SimpleNamespace(
+                    message=SimpleNamespace(patch=lambda request: _Response())
+                )
+            )
+        )
+
+        result = bot.patch_message_result("om_123", "{}")
+
+        self.assertEqual(
+            result,
+            MessagePatchResult.retry_later(2.0),
+        )
+
+    def test_patch_message_result_retries_on_timeout_exception(self) -> None:
+        bot = self._make_bot()
+
+        def _raise_timeout(request):
+            del request
+            raise TimeoutError("Read timed out.")
+
+        bot.client = SimpleNamespace(
+            im=SimpleNamespace(
+                v1=SimpleNamespace(
+                    message=SimpleNamespace(patch=_raise_timeout)
+                )
+            )
+        )
+
+        result = bot.patch_message_result("om_456", "{}")
+
+        self.assertEqual(
+            result,
+            MessagePatchResult.retry_later(2.0),
         )

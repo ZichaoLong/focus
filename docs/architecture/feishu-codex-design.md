@@ -312,8 +312,6 @@ Codex remains the authority for:
 
 `feishu-codex` keeps only data that is Feishu- or integration-specific:
 
-- per-instance local default-profile seed used when Feishu or `fcodex`
-  creates a new thread on that same instance
 - machine-global thread-wise resume profile
 - per-instance runtime shared-backend discovery state
 - p2p thread bindings and group-shared thread bindings keyed by `chat_id`

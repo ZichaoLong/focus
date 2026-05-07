@@ -93,7 +93,7 @@ class ExecutionOutputController:
             log_limit=int(self._card_log_limit()),
             reply_limit=int(self._card_reply_limit()),
         )
-        return self._card_publisher_factory().patch_execution_card(message_id, model)
+        return self._card_publisher_factory().patch_execution_card(message_id, model).ok
 
     def dispatch_execution_card_message(
         self,

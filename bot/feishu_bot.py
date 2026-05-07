@@ -59,6 +59,7 @@ from bot.group_history_recovery import (
     GroupHistoryRecoveryPorts,
     ListedMessagesPage,
 )
+from bot.message_patch_result import MessagePatchResult
 from bot.stores.group_chat_store import (
     GroupChatStore,
 )
@@ -84,6 +85,7 @@ _CHAT_TYPE_CACHE_TTL = 24 * 3600
 # 原始消息 -> 预发送执行卡片缓存；用于在耗时预处理前先给用户反馈
 _PENDING_EXECUTION_CARD_MAX_SIZE = 1000
 _PENDING_EXECUTION_CARD_TTL = 600
+_PATCH_MESSAGE_RETRY_SECONDS = 2.0
 
 # 显示名缓存（秒）
 _SENDER_NAME_CACHE_TTL = 6 * 3600
@@ -1842,12 +1844,26 @@ class FeishuBot(ABC):
             json.dumps({"image_key": normalized_image_key}, ensure_ascii=False),
         )
 
-    def patch_message(self, message_id: str, content: str) -> bool:
-        """更新已发送消息的文本内容
+    @staticmethod
+    def _patch_error_ext(response: Any) -> str:
+        raw = getattr(response, "raw", None)
+        if isinstance(raw, dict):
+            return str(raw.get("ext", "") or "")
+        return ""
 
-        Returns:
-            更新是否成功
-        """
+    @staticmethod
+    def _is_retryable_patch_exception(exc: Exception) -> bool:
+        if isinstance(exc, TimeoutError):
+            return True
+        module_name = type(exc).__module__.lower()
+        class_name = type(exc).__name__.lower()
+        text = str(exc).lower()
+        if "timeout" in class_name or "timeout" in text:
+            return True
+        return "requests" in module_name and "timeout" in class_name
+
+    def patch_message_result(self, message_id: str, content: str) -> MessagePatchResult:
+        """更新已发送消息的文本内容并返回结构化结果。"""
         request = PatchMessageRequest.builder() \
             .message_id(message_id) \
             .request_body(PatchMessageRequestBody.builder()
@@ -1857,18 +1873,44 @@ class FeishuBot(ABC):
         try:
             response = self.client.im.v1.message.patch(request)
         except Exception as e:
+            if self._is_retryable_patch_exception(e):
+                logger.warning(
+                    "消息更新失败，稍后重试: message_id=%s error=%s",
+                    message_id,
+                    e,
+                )
+                return MessagePatchResult.retry_later(_PATCH_MESSAGE_RETRY_SECONDS)
             logger.error("消息更新失败(SDK异常): message_id=%s error=%s", message_id, e)
-            return False
+            return MessagePatchResult.failure()
         if not response.success():
+            code = str(getattr(response, "code", "") or "").strip()
+            ext = self._patch_error_ext(response)
+            if code == "230020":
+                logger.warning(
+                    "消息更新触发频率限制，稍后重试: message_id=%s code=%s msg=%s ext=%s",
+                    message_id,
+                    code,
+                    response.msg,
+                    ext,
+                )
+                return MessagePatchResult.retry_later(_PATCH_MESSAGE_RETRY_SECONDS)
             logger.error(
                 "消息更新失败: message_id=%s code=%s msg=%s ext=%s",
                 message_id,
-                response.code,
+                code,
                 response.msg,
-                getattr(response, 'raw', {}).get('ext', '') if isinstance(getattr(response, 'raw', None), dict) else '',
+                ext,
             )
-            return False
-        return True
+            return MessagePatchResult.failure()
+        return MessagePatchResult.success()
+
+    def patch_message(self, message_id: str, content: str) -> bool:
+        """更新已发送消息的文本内容
+
+        Returns:
+            更新是否成功
+        """
+        return self.patch_message_result(message_id, content).ok
 
     def _should_reply_in_thread(self, parent_message_id: str, explicit_reply_in_thread: bool) -> bool:
         if explicit_reply_in_thread:
