@@ -86,6 +86,7 @@
 
 - `thread status`
 - `thread bindings`
+- `thread reattach`
 - `thread unsubscribe`
 
 必须且只能提供其中一种：
@@ -124,6 +125,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] service status` | 查看目标实例当前 service 运行态、control endpoint、app-server 地址，以及 binding / thread 统计 | 实例级 service / control plane 概况 | 只读 | 可选 `--instance` | 无一条完全等价的飞书命令；它更接近实例管理员视角 |
 | `feishu-codexctl [--instance <name>] service reset-backend [--force]` | 重置当前实例 backend，但不重启 `feishu-codex` service | 实例级 backend 生命周期 | 变更 | 可选 `--instance`；可选 `--force` | 对应飞书 `/reset-backend`，但这是本地实例管理面 |
+| `feishu-codexctl [--instance <name>] service reattach` | 重附着当前实例内所有可恢复的 released Feishu bindings | 实例级 Feishu runtime 恢复 | 变更 | 可选 `--instance` | 最接近飞书 `/re-attach service`，以及 `/reset-backend` 结果卡的“重附着当前实例” |
 
 ### 4.3 `binding` 资源
 
@@ -131,6 +133,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] binding list` | 列出当前实例可见 binding，以及其 binding state、Feishu runtime、关联 thread 与 cwd | 实例内 binding 发现面 | 只读 | 可选 `--instance` | 无直接飞书对应；比飞书 `/threads` 和 `/status` 更底层 |
 | `feishu-codexctl [--instance <name>] binding status <binding_id>` | 查看单个 binding 的 chat、thread、runtime、next prompt 可用性、interaction owner、当前会话设置等 | 单个 binding 详细状态 | 只读 | `binding_id` | 覆盖并超出飞书 `/status` 与 `/preflight` |
+| `feishu-codexctl [--instance <name>] binding reattach <binding_id>` | 重新附着单个 released binding，但不改变其 bookmark | 单个 binding 的 Feishu runtime 恢复 | 变更 | `binding_id` | 最接近飞书 `/re-attach binding` |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | 清除单个 binding bookmark | 单个 binding bookmark | 变更 | `binding_id` | 无直接飞书对应 |
 | `feishu-codexctl [--instance <name>] binding clear-all` | 清除当前实例下全部 binding bookmark | 实例内全部 binding bookmark | 变更 | 可选 `--instance` | 无直接飞书对应 |
 
@@ -141,6 +144,7 @@
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | 列 persisted thread；默认按当前目录过滤，也支持全局列出 | persisted thread 发现面 | 只读 | 可选 `--instance`；`--scope cwd/global`；`--cwd` 仅对 `cwd` 作用域有意义 | 部分对应飞书 `/threads` 与 `/resume` 的目标发现面 |
 | `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 的当前实例 backend 状态、machine-global `live runtime owner/holders`、bound/attached/released bindings、interaction owner、`/release-runtime` 可用性 | 单个 thread 的 thread-scoped 状态 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无一条完全等价的飞书命令；部分覆盖飞书 `/status`、`/preflight`、`/release-runtime` 的底层诊断 |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前关联的 binding 列表 | 单个 thread 到 binding 的反向关系 | 只读 | 必须二选一：`--thread-id` 或 `--thread-name` | 无直接飞书对应 |
+| `feishu-codexctl [--instance <name>] thread reattach (--thread-id <id> \| --thread-name <name>)` | 重附着当前指向某个 thread 的所有 released bindings | 单个 thread 的 Feishu runtime 恢复 | 变更 | 必须二选一：`--thread-id` 或 `--thread-name` | 最接近飞书 `/re-attach thread`，以及 `/reset-backend` 结果卡的“重附着当前线程” |
 | `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | 让 Feishu 释放某个 thread 的 runtime residency，同时保留 thread 与 binding 关系 | 单个 thread 的 Feishu runtime residency | 变更 | 必须二选一：`--thread-id` 或 `--thread-name` | 对应飞书 `/release-runtime`，但这是 thread-scoped 而不是当前 chat-scoped |
 
 ### 4.5 `image` 资源
@@ -156,8 +160,11 @@
 | `feishu-codexctl` | 飞书侧最接近入口 | 关键区别 |
 | --- | --- | --- |
 | `service reset-backend` | `/reset-backend` | 都是实例级 backend 管理；飞书面是管理员卡片流，本地面是 CLI 管理流 |
+| `service reattach` | `/re-attach service` | 都是实例级重附着动作；飞书侧也会在 reset 后结果卡直接给出该按钮 |
 | `binding status <binding_id>` | `/status`、`/preflight` | 本地输出更底层，包含 binding id、interaction owner、reason code 等调试信息 |
+| `binding reattach <binding_id>` | `/re-attach binding` | 本地命令可直接按任意已知 binding id 定位；飞书默认只作用于当前 chat binding |
 | `thread unsubscribe --thread-id/--thread-name` | `/release-runtime` | 飞书 `/release-runtime` 只作用于当前 chat binding；本地命令可按任意 thread 定位 |
+| `thread reattach --thread-id/--thread-name` | `/re-attach thread` | 飞书 thread 级动作只作用于当前 chat 的当前 thread；本地命令可按任意 thread 定位 |
 | `thread list --scope cwd` | `/threads` | 飞书 `/threads` 是 chat 使用入口；本地命令只是线程发现面 |
 | `thread list --scope global` / `thread status` | `/resume` 的目标发现与诊断 | 飞书 `/resume` 是恢复动作；本地命令是查看 / 管理，不会帮你进入 live thread |
 

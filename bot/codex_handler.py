@@ -55,7 +55,6 @@ from bot.codex_settings_domain import (
     ProfileResetThreadReplacement,
     SettingsDomainPorts,
 )
-from bot.profile_resolution import DefaultProfileResolution, resolve_local_default_profile
 from bot.reason_codes import ReasonedCheck
 from bot.thread_profile_mutability import check_thread_resume_profile_mutable
 from bot.execution_transcript import ExecutionTranscript
@@ -107,7 +106,6 @@ from bot.stores.interaction_lease_store import (
     InteractionLeaseAcquireResult,
     InteractionLeaseStore,
 )
-from bot.stores.profile_state_store import ProfileStateStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord, ThreadResumeProfileStore
 from bot.stores.service_instance_lease import (
     ServiceInstanceLease,
@@ -351,7 +349,6 @@ class CodexHandler(BotHandler):
                     data_dir=self._data_dir,
                 ),
             )
-        self._profile_state = ProfileStateStore(self._data_dir)
         self._thread_resume_profile_store = ThreadResumeProfileStore(self._global_data_dir)
         self._adapter = CodexAppServerAdapter(
             self._adapter_config,
@@ -367,7 +364,6 @@ class CodexHandler(BotHandler):
                 get_bot_identity_snapshot=lambda: self.bot.get_bot_identity_snapshot(),
                 add_admin_open_id=lambda open_id: self.bot.add_admin_open_id(open_id),
                 set_configured_bot_open_id=lambda open_id: self.bot.set_configured_bot_open_id(open_id),
-                save_default_profile=self._profile_state.save_default_profile,
                 load_thread_resume_profile=self._thread_resume_profile_store.load,
                 save_thread_resume_profile=self._save_thread_resume_profile_record,
                 check_thread_resume_profile_mutable=self._thread_resume_profile_write_check,
@@ -379,7 +375,6 @@ class CodexHandler(BotHandler):
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
-                current_default_profile_resolution=self._current_default_profile_resolution,
             ),
             approval_policies=_APPROVAL_POLICIES,
             sandbox_policies=_SANDBOX_POLICIES,
@@ -456,8 +451,7 @@ class CodexHandler(BotHandler):
             load_thread_runtime_lease=lambda thread_id: self._thread_runtime_lease_store.load(thread_id),
             list_pending_interaction_requests=self._interaction_requests.pending_requests_snapshot,
             reset_current_instance_backend=self._reset_current_instance_backend,
-            safe_read_runtime_config=self._safe_read_runtime_config,
-            current_default_profile_resolution=self._current_default_profile_resolution,
+            reattach_binding=self._reattach_binding_for_control,
             load_thread_resume_profile=self._thread_resume_profile_store.load,
             permissions_summary=_permissions_summary,
             thread_image_delivery=self._thread_image_delivery,
@@ -502,8 +496,6 @@ class CodexHandler(BotHandler):
                 ),
                 resume_snapshot_by_id=self._resume_snapshot_by_id,
                 create_thread=lambda **kwargs: self._adapter.create_thread(**kwargs),
-                effective_default_profile=self._effective_default_profile,
-                persist_new_thread_profile_seed=self._persist_new_thread_profile_seed,
                 thread_profile_for_thread=self._thread_profile_for_thread,
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
@@ -1464,6 +1456,14 @@ class CodexHandler(BotHandler):
                     message_id=message_id,
                 ),
             ),
+            "/re-attach": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._handle_reattach_command(
+                    sender_id,
+                    chat_id,
+                    arg,
+                    message_id=message_id,
+                ),
+            ),
             "/whoami": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_whoami_command(
                     sender_id, chat_id, message_id=message_id
@@ -1643,6 +1643,19 @@ class CodexHandler(BotHandler):
                 handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_reset_backend_action(
                     sender_id, chat_id, message_id, action_value
                 ),
+                group_guard="group_admin",
+            ),
+            "reattach_runtime": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_reattach_action(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                    action_value,
+                ),
+                group_guard="group_admin",
+            ),
+            "dismiss_reattach": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_dismiss_reattach_action(),
                 group_guard="group_admin",
             ),
             "set_collaboration_mode": ActionRoute(
@@ -1847,26 +1860,21 @@ class CodexHandler(BotHandler):
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return CommandResult(text="执行中不能新建线程，请等待结束或先执行 `/cancel`。")
-        seed_profile = self._effective_default_profile().strip()
         try:
             snapshot = self._adapter.create_thread(
                 cwd=runtime.working_dir,
-                profile=seed_profile or None,
                 approval_policy=runtime.approval_policy or None,
                 sandbox=runtime.sandbox or None,
             )
         except Exception as exc:
             logger.exception("新建线程失败")
             return CommandResult(text=f"新建线程失败：{exc}")
-        seed_warning = self._persist_new_thread_profile_seed(snapshot.summary.thread_id, seed_profile)
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         content = (
             f"线程：`{snapshot.summary.thread_id[:8]}…`\n"
             f"目录：`{display_path(snapshot.summary.cwd)}`\n"
             "直接发送普通文本开始第一轮对话。"
         )
-        if seed_warning:
-            content += f"\n\n{seed_warning}"
         return CommandResult(card=build_markdown_card(
             "Codex 线程已新建",
             content,
@@ -1908,6 +1916,17 @@ class CodexHandler(BotHandler):
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
         return self._runtime_admin.handle_release_runtime_command(binding, arg)
 
+    def _handle_reattach_command(
+        self,
+        sender_id: str,
+        chat_id: str,
+        arg: str,
+        *,
+        message_id: str = "",
+    ) -> CommandResult:
+        binding = self._chat_binding_key(sender_id, chat_id, message_id)
+        return self._runtime_admin.handle_reattach_command(binding, arg)
+
     def _unsubscribe_feishu_runtime_by_thread_id(self, thread_id: str) -> dict[str, Any]:
         return self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)
 
@@ -1916,6 +1935,39 @@ class CodexHandler(BotHandler):
 
     def _handle_service_control_request_impl(self, method: str, params: dict[str, Any]) -> Any:
         return self._runtime_admin.handle_service_control_request(method, params)
+
+    def _reattach_binding_for_control(self, binding: ChatBindingKey, thread_id: str) -> ThreadSummary:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            raise ValueError("thread_id 不能为空。")
+        reattach_check = self._released_runtime_reattach_check(normalized_thread_id)
+        if not reattach_check.allowed:
+            raise ValueError(reattach_check.reason_text)
+        try:
+            summary = self._read_thread_summary_authoritatively(
+                normalized_thread_id,
+                original_arg=normalized_thread_id,
+            )
+        except Exception as exc:
+            if not self._is_thread_not_loaded_error(exc):
+                raise
+            fallback_summary = ThreadSummary(
+                thread_id=normalized_thread_id,
+                cwd="",
+                name="",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="appServer",
+                status=BACKEND_THREAD_STATUS_IDLE,
+            )
+            summary = self._resume_snapshot_by_id(
+                normalized_thread_id,
+                original_arg=normalized_thread_id,
+                summary=fallback_summary,
+            ).summary
+        self._bind_thread(binding[0], binding[1], summary)
+        return summary
 
     def _handle_cancel_action(self, sender_id: str, chat_id: str) -> P2CardActionTriggerResponse:
         ok, message = self._cancel_current_turn(sender_id, chat_id)
@@ -2372,7 +2424,7 @@ class CodexHandler(BotHandler):
         try:
             self._persist_thread_resume_profile(thread_id, normalized_profile)
         except Exception as exc:
-            logger.exception("持久化新 thread 的默认 profile seed 失败: thread=%s", str(thread_id or "")[:12])
+            logger.exception("持久化新 thread 的显式 profile seed 失败: thread=%s", str(thread_id or "")[:12])
             return (
                 "警告：thread 已创建，但默认 profile 未成功持久化；"
                 f"后续 resume 可能不会沿用这次 profile（{exc}）。"
@@ -2441,25 +2493,6 @@ class CodexHandler(BotHandler):
             new_thread_id=new_thread_id,
             warning_text=warning_text,
         )
-
-    def _effective_default_profile(self) -> str:
-        resolution = self._current_default_profile_resolution(self._safe_read_runtime_config())
-        return resolution.effective_profile
-
-    def _current_default_profile_resolution(
-        self,
-        runtime_config: RuntimeConfigSummary | None,
-    ) -> DefaultProfileResolution:
-        stored_profile = self._profile_state.load_default_profile().strip()
-        resolution = resolve_local_default_profile(stored_profile, runtime_config)
-        if resolution.stale_profile:
-            self._profile_state.save_default_profile("")
-            return DefaultProfileResolution(
-                stored_profile=resolution.stale_profile,
-                stale_profile=resolution.stale_profile,
-                available_profiles=resolution.available_profiles,
-            )
-        return resolution
 
     def _extract_history_rounds(self, snapshot: ThreadSnapshot) -> list[tuple[str, str]]:
         rounds: list[tuple[str, str]] = []

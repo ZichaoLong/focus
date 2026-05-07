@@ -52,7 +52,7 @@
 
 - 原生协议优先：优先使用 `codex app-server` 行为和 API，而不是本地抓取或重建状态
 - 单一事实来源：thread id、cwd、title、preview、source、runtime config 来自 Codex
-- 飞书本地状态留在本地：每实例新 thread seed profile、线程/UI 绑定状态由 `feishu-codex` 管理；thread-wise resume profile 走机器级共享存储
+- 飞书本地状态留在本地：线程/UI 绑定状态由 `feishu-codex` 管理；thread-wise resume profile 走机器级共享存储
 - shared-backend 路径显式存在：如果要和飞书继续同一个 live thread，应明确走同一个**实例 backend**
 - `CODEX_HOME` 与 Feishu 运行时边界分离：前者共享，后者按实例隔离
 - 运行时假设要文档化：wrapper 与 shared-backend 行为不能只隐含在代码里
@@ -120,7 +120,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/thread_runtime_coordination.py`：跨实例 live runtime lease 获取、自动转移与拒绝
 - `bot/turn_execution_coordinator.py`、`bot/execution_output_controller.py`、`bot/execution_recovery_controller.py`：turn / execution 生命周期、执行卡片发布、终态结果载体发送、watchdog / reconcile / degrade 处理
 - `bot/generated_image_delivery.py`：基于终态 thread snapshot 的出站图片提取与独立飞书图片消息发送；它不改写权威文本结果合同，也不进入 execution card patch 模型
-- `bot/runtime_admin_controller.py`：`/status`、`/release-runtime` 与 control-plane 查询/管理
+- `bot/runtime_admin_controller.py`：`/status`、`/release-runtime`、`/re-attach` 与 control-plane 查询/管理
 - `bot/inbound_surface_controller.py`：入站命令面、卡片 action 路由、help 卡片命令复用
 - `bot/forward_aggregator.py`：合并转发缓冲、超时分发与转发树文本化；它只持有这组 transport 内部状态机，不再把这部分状态散落在 `FeishuBot` 主体里
 - `bot/group_history_recovery.py`：`assistant` 群模式的历史回捞、实时日志合并、上下文格式化与边界 `message_id` 推导；它不直接依赖飞书 SDK，请求构造与 API 调用仍留在 `FeishuBot` 这一 transport 边界，并通过显式 ports 传入分页结果
@@ -133,7 +133,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/stores/generated_image_delivery_store.py`：每实例的已投递生成图片账本；按 binding/thread/turn/item 去重，避免 reconcile 或重复终态信号下重复发图
 - `bot/stores/instance_registry_store.py`：机器级运行中实例注册表
 - `bot/stores/thread_runtime_lease_store.py`：机器级 thread live runtime lease
-- `bot/stores/*.py`：每实例新 thread seed profile、shared backend 运行时发现状态、群聊状态；以及机器级 thread-wise resume profile / lease / registry
+- `bot/stores/*.py`：shared backend 运行时发现状态、群聊状态；以及机器级 thread-wise resume profile / lease / registry
 
 对飞书传输层还应补一条维护性约束：
 
@@ -328,16 +328,15 @@ shared backend 与 wrapper 的具体机制，见
     `shared_command_surface.py`、`feishu_types.py`、`codex_config_reader.py`
   - wrapper 与服务管理路径：`fcodex.py`、`fcodex_proxy.py`、
     `feishu_codexctl.py`、`service_control_plane.py`、`instance_layout.py`、
-    `instance_resolution.py`、`profile_resolution.py`、`thread_resolution.py`、
-    `binding_identity.py`
+    `instance_resolution.py`、`thread_resolution.py`、`binding_identity.py`
   - Codex adapter / protocol 边界：
     `adapters/base.py`、`adapters/codex_app_server.py`、
     `codex_protocol/client.py`
   - 本地持久化状态：`stores/app_server_runtime_store.py`、
     `stores/chat_binding_store.py`、`stores/group_chat_store.py`、
     `stores/instance_registry_store.py`、`stores/interaction_lease_store.py`、
-    `stores/pending_attachment_store.py`、`stores/profile_state_store.py`、
-    `stores/service_instance_lease.py`、`stores/thread_runtime_lease_store.py`
+    `stores/pending_attachment_store.py`、`stores/service_instance_lease.py`、
+    `stores/thread_runtime_lease_store.py`
 - `config/`
   - 本地配置样例：`system.yaml.example`、`codex.yaml.example`
 - `docs/`

@@ -35,9 +35,10 @@ If older docs still describe `fcodex` shell slash self-commands, this document w
 ### `/new`
 
 - immediately creates a new thread and switches the chat binding to it
-- uses the current instance's effective new-thread default profile as a one-time
-  seed for that new thread
-- once the thread is really created, the seed is persisted by `thread_id` as thread-wise resume profile state
+- does not apply any instance-local default profile seed
+- the new thread starts with no thread-wise profile override unless the user
+  later changes it explicitly through `/profile` or a local `fcodex -p` seed on
+  the creating launch
 
 ### `/profile [name]`
 
@@ -61,6 +62,24 @@ If older docs still describe `fcodex` shell slash self-commands, this document w
   rely on for re-profile recovery
 - exists so operators can clear stale loaded / pending runtime state even when
   they are not currently changing a thread profile
+- after a successful reset, related Feishu bindings stay `bound` but become
+  `released`
+- the result card should offer:
+  - re-attach current thread
+  - re-attach current instance
+  - keep released
+
+### `/re-attach [binding|thread|service]`
+
+- advanced admin-only runtime-recovery command
+- default scope is `binding`
+- `binding`: reattach only the current chat binding
+- `thread`: reattach all released bindings that currently point to the same
+  thread as the current chat binding
+- `service`: reattach all reattachable released bindings in the current
+  instance
+- it exists so operators can restore push delivery after `reset-backend`
+  without waiting for the next prompt or `/resume`
 
 ### `/release-runtime`
 
@@ -121,10 +140,7 @@ That means shell-level support is removed for:
 ### `fcodex resume <thread>` without explicit `-p`
 
 - if the thread already has saved thread-wise profile state, inject it automatically
-- if it does not, do not fall back to the instance's current new-thread default
-  profile
-- the instance's new-thread default profile now seeds new threads only; it does
-  not override old-thread resume
+- if it does not, do not inject any profile fallback
 
 ### `feishu-codexctl`
 
@@ -134,11 +150,14 @@ It owns:
 
 - `service status`
 - `service reset-backend`
+- `service reattach`
 - `thread list --scope cwd|global`
 - `thread status`
 - `thread bindings`
+- `thread reattach`
 - `thread unsubscribe`
 - `binding list/status/clear`
+- `binding reattach`
 
 It is not a second Codex frontend and does not enter the TUI.
 
@@ -159,18 +178,15 @@ Therefore:
 
 ## 4. Profile Summary
 
-The system no longer treats the instance's new-thread default profile as the
-primary resume model.
-
 The active model is:
 
 - Feishu `/profile` changes the next-resume config of the currently bound thread
 - `fcodex -p <profile>` on a new session only seeds the first new thread created by that launch
 - `fcodex -p <profile> resume <thread>` changes that thread's persisted resume config
-- future resume reads the thread's own thread-wise config, not the instance's
-  current new-thread default profile
+- future resume reads only the thread's own thread-wise config
 - wrapper and proxy do not co-own the same write path:
-  - wrapper owns existing-thread read/write behavior
+  - wrapper owns existing-thread read/write behavior and decides whether an
+    explicit `-p` launch carries a first-thread seed
   - proxy owns one-time persistence of the first new-thread seed
 
 ## 5. Multi-Instance Visibility

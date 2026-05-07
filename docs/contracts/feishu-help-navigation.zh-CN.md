@@ -169,6 +169,7 @@ Help 按钮和表单的交互形态可以不同，但行为语义不能另起一
 - `/cancel`
 - `/pwd`
 - `/release-runtime`
+- `/re-attach [binding|thread|service]`
 - `/debug-contact <open_id>`
 - 本地 `fcodex` wrapper 命令
 
@@ -178,6 +179,7 @@ Help 按钮和表单的交互形态可以不同，但行为语义不能另起一
 - `/cancel` 已经有执行卡片上的主入口
 - `/pwd` 的信息基本已被“无参数 `/cd`”覆盖
 - `/release-runtime` 已被刻意弱化；面向用户的主路径应优先走 `/profile`
+- `/re-attach` 是高级恢复命令；普通操作者应优先使用 `/reset-backend` 后直接给出的卡片按钮
 - `/debug-contact` 是排障命令，不属于常用导航面
 - 本地 wrapper 用法应留在本地 help，不属于飞书 help
 

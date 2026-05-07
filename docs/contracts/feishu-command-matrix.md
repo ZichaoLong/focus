@@ -110,7 +110,8 @@ so it is not confused with those two management CLIs.
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | User-visible buttons / forms | Local counterpart |
 | --- | --- | --- | --- | --- | --- | --- |
-| `/reset-backend` | Preview and reset the current instance backend | Yes; `/help -> runtime` | admin only | admin only | `Reset backend` or `Force reset backend` | `feishu-codexctl service reset-backend`; no `feishu-codex` counterpart |
+| `/reset-backend` | Preview and reset the current instance backend | Yes; `/help -> runtime` | admin only | admin only | preview card `Reset backend` or `Force reset backend`; result card `Re-attach current thread`, `Re-attach current instance`, `Keep released` | `feishu-codexctl service reset-backend`; no `feishu-codex` counterpart |
+| `/re-attach [binding\|thread\|service]` | Reattach released Feishu runtime subscriptions after reset or manual release | No | admin only | admin only | none; the main button entry is on the `/reset-backend` result card | `feishu-codexctl binding/thread/service reattach`; no `feishu-codex` counterpart |
 | `/permissions [read-only\|default\|full-access]` | Set approval policy and sandbox together | Yes; `/help -> runtime` | admin only | admin only | `read-only`, `default`, `full-access` | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy only | Yes; `/help -> runtime` | admin only | admin only | `untrusted`, `on-request`, `never` | none |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy only | Yes; `/help -> runtime` | admin only | admin only | `read-only`, `workspace-write`, `danger-full-access` | none |
@@ -141,6 +142,7 @@ from `/help`:
 - `/pwd`
 - `/cancel`
 - `/release-runtime`
+- `/re-attach [binding|thread|service]`
 - `/debug-contact <open_id>`
 
 The reasons are:
@@ -149,6 +151,8 @@ The reasons are:
 - `/pwd` is largely covered by no-argument `/cd`
 - `/cancel` already has its primary entry on the execution card
 - `/release-runtime` is intentionally weakened in favor of `/profile`
+- `/re-attach` is an advanced recovery surface; ordinary users should mostly use
+  the buttons shown right after `/reset-backend`
 - `/debug-contact` is a troubleshooting surface, not a common navigation topic
 
 ## 5. Non-slash but first-class user card surfaces

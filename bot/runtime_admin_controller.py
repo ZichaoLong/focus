@@ -9,7 +9,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.adapters.base import RuntimeConfigSummary, ThreadSummary
+from bot.adapters.base import ThreadSummary
 from bot.binding_identity import format_binding_id, parse_binding_id
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.cards import (
@@ -117,8 +117,7 @@ class RuntimeAdminController:
         load_thread_runtime_lease: Callable[[str], ThreadRuntimeLease | None],
         list_pending_interaction_requests: Callable[[], list[dict[str, Any]]],
         reset_current_instance_backend: Callable[[bool], dict[str, Any]],
-        safe_read_runtime_config: Callable[[], RuntimeConfigSummary | None],
-        current_default_profile_resolution: Callable[[RuntimeConfigSummary | None], Any],
+        reattach_binding: Callable[[ChatBindingKey, str], ThreadSummary],
         load_thread_resume_profile: Callable[[str], Any],
         permissions_summary: Callable[[str, str], str],
         thread_image_delivery: ThreadImageDeliveryController,
@@ -147,8 +146,7 @@ class RuntimeAdminController:
         self._load_thread_runtime_lease = load_thread_runtime_lease
         self._list_pending_interaction_requests = list_pending_interaction_requests
         self._reset_current_instance_backend = reset_current_instance_backend
-        self._safe_read_runtime_config = safe_read_runtime_config
-        self._current_default_profile_resolution = current_default_profile_resolution
+        self._reattach_binding = reattach_binding
         self._load_thread_resume_profile = load_thread_resume_profile
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
@@ -198,6 +196,13 @@ class RuntimeAdminController:
             thread_id,
             current_binding=current_binding,
         )
+
+    def _effective_binding_key(self, sender_id: str, chat_id: str) -> ChatBindingKey:
+        with self._lock:
+            existing = self._binding_runtime.existing_chat_binding_key_locked(sender_id, chat_id)
+        if existing is not None:
+            return existing
+        return (sender_id, chat_id)
 
     def read_thread_summary_for_status(self, thread_id: str) -> tuple[ThreadSummary | None, str]:
         normalized_thread_id = str(thread_id or "").strip()
@@ -457,8 +462,6 @@ class RuntimeAdminController:
             thread_line,
         ]
         if include_profile_lines:
-            runtime_config = self._safe_read_runtime_config()
-            self._current_default_profile_resolution(runtime_config)
             current_profile = self._current_thread_profile_text(thread_id)
             if current_profile:
                 lines.append(f"当前 profile：`{current_profile}`")
@@ -526,23 +529,15 @@ class RuntimeAdminController:
             self._release_preflight_line(snapshot),
         ]
         if include_profile_lines:
-            runtime_config = self._safe_read_runtime_config()
-            profile_resolution = self._current_default_profile_resolution(runtime_config)
-            local_profile = profile_resolution.effective_profile
             lines.extend(
                 [
                     "",
-                    f"新 thread seed profile：`{local_profile or '（未设置）'}`",
                     f"权限预设：`{self._permissions_summary(snapshot['approval_policy'], snapshot['sandbox'])}`",
                     f"审批策略：`{snapshot['approval_policy']}`",
                     f"沙箱策略：`{snapshot['sandbox']}`",
                     f"协作模式：`{snapshot['collaboration_mode']}`",
                 ]
             )
-            if profile_resolution.stale_profile:
-                lines.append(
-                    f"注意：之前保存的新 thread seed profile `{profile_resolution.stale_profile}` 已不存在，实际执行会回退到 Codex 原生默认。"
-                )
         if thread_id and snapshot["feishu_runtime_state"] == FEISHU_RUNTIME_RELEASED:
             lines.extend(
                 [
@@ -573,6 +568,69 @@ class RuntimeAdminController:
         if not normalized:
             return "（无）"
         return ", ".join(f"`{binding_id}`" for binding_id in normalized)
+
+    @staticmethod
+    def _reattach_action_rows(*, include_thread: bool, include_service: bool, thread_id: str = "") -> list[dict]:
+        actions: list[dict] = []
+        if include_thread and str(thread_id or "").strip():
+            actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "重附着当前线程"},
+                    "type": "primary",
+                    "value": {
+                        "action": "reattach_runtime",
+                        "scope": "thread",
+                        "thread_id": str(thread_id or "").strip(),
+                    },
+                }
+            )
+        if include_service:
+            actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "重附着当前实例"},
+                    "type": "default",
+                    "value": {
+                        "action": "reattach_runtime",
+                        "scope": "service",
+                    },
+                }
+            )
+        actions.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "保持 released"},
+                "type": "default",
+                "value": {
+                    "action": "dismiss_reattach",
+                },
+            }
+        )
+        return [
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": "如需继续收到本地 `fcodex` / backend 的推送，可选择重附着范围：",
+            },
+            {
+                "tag": "action",
+                "actions": actions,
+            },
+        ]
+
+    @staticmethod
+    def _format_blocked_reattach_entries(items: list[dict[str, Any]]) -> list[str]:
+        lines: list[str] = []
+        for item in items:
+            thread_id = str(item.get("thread_id", "") or "").strip()
+            binding_ids = [str(value or "").strip() for value in (item.get("binding_ids") or []) if str(value or "").strip()]
+            reason = str(item.get("reason", "") or "").strip() or "（无原因）"
+            label = f"`{thread_id[:8]}…`" if thread_id else "（未知 thread）"
+            if binding_ids:
+                label += " " + ", ".join(f"`{binding_id}`" for binding_id in binding_ids)
+            lines.append(f"- {label}: {reason}")
+        return lines
 
     def _build_backend_reset_preview_card(
         self,
@@ -625,9 +683,24 @@ class RuntimeAdminController:
             "",
             "不会覆盖 binding bookmark、thread-wise profile/provider、其他用户配置或数据。",
         ]
+        extra_action_rows = None
+        current_thread_id = str(result.get("current_thread_id", "") or "").strip()
+        if result.get("released_binding_ids"):
+            lines.extend(
+                [
+                    "",
+                    "当前所有相关 Feishu binding 已变为 `released`；若要继续接收推送，可直接在此卡片选择重附着范围。",
+                ]
+            )
+            extra_action_rows = self._reattach_action_rows(
+                include_thread=bool(current_thread_id),
+                include_service=True,
+                thread_id=current_thread_id,
+            )
         return build_backend_reset_card(
             content="\n".join(lines),
             force=None,
+            extra_action_rows=extra_action_rows,
             template="green",
         )
 
@@ -644,9 +717,13 @@ class RuntimeAdminController:
         message_id: str,
         action_value: dict[str, Any],
     ) -> P2CardActionTriggerResponse:
-        del sender_id
-        del chat_id
-        del message_id
+        binding = self._effective_binding_key(sender_id, chat_id)
+        current_thread_id = ""
+        try:
+            snapshot = self.binding_status_snapshot(binding)
+        except ValueError:
+            snapshot = {}
+        current_thread_id = str(snapshot.get("thread_id", "") or "").strip()
         force = bool(action_value.get("force"))
         try:
             result = self._reset_current_instance_backend(force)
@@ -660,10 +737,235 @@ class RuntimeAdminController:
                 toast=str(exc) or "reset backend 失败",
                 toast_type="warning",
             )
+        result = {
+            **result,
+            "current_thread_id": current_thread_id,
+        }
         return make_card_response(
             card=self._build_backend_reset_result_card(result, forced=force),
             toast="已重置当前实例 backend。",
             toast_type="success",
+        )
+
+    def _binding_thread_id_or_raise(self, binding: ChatBindingKey) -> str:
+        with self._lock:
+            snapshot = self._binding_runtime.binding_runtime_snapshot_locked(binding)
+        if snapshot is None:
+            raise ValueError(f"未找到 binding：{format_binding_id(binding)}")
+        thread_id = str(snapshot.thread_id or "").strip()
+        if not thread_id:
+            raise ValueError("当前 binding 没有绑定 thread。")
+        return thread_id
+
+    def reattach_binding(self, binding: ChatBindingKey) -> dict[str, Any]:
+        with self._lock:
+            snapshot = self._binding_runtime.binding_runtime_snapshot_locked(binding)
+        if snapshot is None:
+            raise ValueError(f"未找到 binding：{format_binding_id(binding)}")
+        thread_id = str(snapshot.thread_id or "").strip()
+        if not thread_id:
+            raise ValueError("当前 binding 没有绑定 thread。")
+        binding_id = format_binding_id(binding)
+        if snapshot.feishu_runtime_state == FEISHU_RUNTIME_ATTACHED:
+            return {
+                "binding_id": binding_id,
+                "thread_id": thread_id,
+                "thread_title": snapshot.thread_title,
+                "working_dir": snapshot.working_dir,
+                "changed": False,
+                "already_attached": True,
+            }
+        check = self._released_runtime_reattach_check(thread_id)
+        if not check.allowed:
+            raise ValueError(check.reason_text)
+        summary = self._reattach_binding(binding, thread_id)
+        return {
+            "binding_id": binding_id,
+            "thread_id": thread_id,
+            "thread_title": str(summary.title or snapshot.thread_title or "").strip(),
+            "working_dir": str(summary.cwd or snapshot.working_dir or "").strip(),
+            "changed": True,
+            "already_attached": False,
+        }
+
+    def reattach_thread(self, thread_id: str) -> dict[str, Any]:
+        normalized_thread_id = str(thread_id or "").strip()
+        with self._lock:
+            bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
+            attached_bindings = set(self.attached_bindings_for_thread_locked(normalized_thread_id))
+        if not bound_bindings:
+            raise ValueError("当前没有 Feishu 绑定指向该线程。")
+        reattach_check = self._released_runtime_reattach_check(normalized_thread_id)
+        if not reattach_check.allowed:
+            raise ValueError(reattach_check.reason_text)
+        reattached_binding_ids: list[str] = []
+        already_attached_binding_ids: list[str] = []
+        effective_title = ""
+        effective_working_dir = ""
+        for binding in bound_bindings:
+            binding_id = format_binding_id(binding)
+            if binding in attached_bindings:
+                already_attached_binding_ids.append(binding_id)
+                continue
+            result = self.reattach_binding(binding)
+            reattached_binding_ids.append(binding_id)
+            effective_title = str(result.get("thread_title", "") or "").strip() or effective_title
+            effective_working_dir = str(result.get("working_dir", "") or "").strip() or effective_working_dir
+        if not effective_title or not effective_working_dir:
+            summary, _backend_status = self.read_thread_summary_for_status(normalized_thread_id)
+            if summary is not None:
+                effective_title = str(summary.title or "").strip() or effective_title
+                effective_working_dir = str(summary.cwd or "").strip() or effective_working_dir
+        return {
+            "thread_id": normalized_thread_id,
+            "thread_title": effective_title,
+            "working_dir": effective_working_dir,
+            "reattached_binding_ids": reattached_binding_ids,
+            "already_attached_binding_ids": already_attached_binding_ids,
+            "changed": bool(reattached_binding_ids),
+        }
+
+    def reattach_service(self) -> dict[str, Any]:
+        with self._lock:
+            inventory = self.binding_inventory_locked()
+        released_by_thread: dict[str, list[str]] = {}
+        for item in inventory:
+            if item["binding_state"] != "bound" or item["feishu_runtime_state"] != FEISHU_RUNTIME_RELEASED:
+                continue
+            thread_id = str(item["thread_id"] or "").strip()
+            binding_id = str(item["binding_id"] or "").strip()
+            if not thread_id or not binding_id:
+                continue
+            released_by_thread.setdefault(thread_id, []).append(binding_id)
+
+        reattached_binding_ids: list[str] = []
+        reattached_thread_ids: list[str] = []
+        already_attached_thread_ids: list[str] = []
+        blocked_threads: list[dict[str, Any]] = []
+        for thread_id in sorted(released_by_thread):
+            try:
+                result = self.reattach_thread(thread_id)
+            except Exception as exc:
+                blocked_threads.append(
+                    {
+                        "thread_id": thread_id,
+                        "binding_ids": released_by_thread[thread_id],
+                        "reason": str(exc) or "重附着失败",
+                    }
+                )
+                continue
+            if result["changed"]:
+                reattached_thread_ids.append(thread_id)
+                reattached_binding_ids.extend(result["reattached_binding_ids"])
+            else:
+                already_attached_thread_ids.append(thread_id)
+        return {
+            "instance_name": self._instance_name(),
+            "reattached_binding_ids": sorted(set(reattached_binding_ids)),
+            "reattached_thread_ids": sorted(set(reattached_thread_ids)),
+            "already_attached_thread_ids": sorted(set(already_attached_thread_ids)),
+            "blocked_threads": blocked_threads,
+        }
+
+    def _build_thread_reattach_result_card(self, result: dict[str, Any]) -> dict:
+        lines = [
+            f"线程：`{result['thread_id'][:8]}…` {result.get('thread_title', '') or '（无标题）'}",
+            f"目录：`{display_path(str(result.get('working_dir', '') or ''))}`",
+            f"已重附着 binding：{self._format_binding_ids(result.get('reattached_binding_ids') or [])}",
+        ]
+        if result.get("already_attached_binding_ids"):
+            lines.append(
+                f"原本已附着：{self._format_binding_ids(result.get('already_attached_binding_ids') or [])}"
+            )
+        if not result.get("changed"):
+            lines.append("说明：当前 thread 相关 binding 原本就没有需要恢复的 released 订阅。")
+        return build_markdown_card("Codex Runtime 已重附着", "\n".join(lines), template="green")
+
+    def _build_service_reattach_result_card(self, result: dict[str, Any]) -> dict:
+        lines = [
+            f"当前实例：`{result.get('instance_name') or self._instance_name()}`",
+            f"已重附着 threads：{self._short_thread_ids(result.get('reattached_thread_ids') or [])}",
+            f"已重附着 bindings：{self._format_binding_ids(result.get('reattached_binding_ids') or [])}",
+        ]
+        if result.get("already_attached_thread_ids"):
+            lines.append(
+                f"原本已附着 threads：{self._short_thread_ids(result.get('already_attached_thread_ids') or [])}"
+            )
+        blocked_threads = result.get("blocked_threads") or []
+        template = "green"
+        if blocked_threads:
+            template = "yellow"
+            lines.extend(["", "**未恢复项**"])
+            lines.extend(self._format_blocked_reattach_entries(blocked_threads))
+        elif not result.get("reattached_binding_ids"):
+            lines.append("说明：当前实例没有需要恢复的 released 订阅。")
+        return build_markdown_card("Codex Runtime 已重附着", "\n".join(lines), template=template)
+
+    def handle_reattach_command(self, binding: ChatBindingKey, arg: str) -> CommandResult:
+        normalized = str(arg or "").strip().lower()
+        scope = normalized or "binding"
+        if scope not in {"binding", "thread", "service"}:
+            return CommandResult(text="用法：`/re-attach [binding|thread|service]`")
+        try:
+            if scope == "binding":
+                result = self.reattach_binding(binding)
+                body = [
+                    f"binding：`{result['binding_id']}`",
+                    f"线程：`{result['thread_id'][:8]}…` {result.get('thread_title', '') or '（无标题）'}",
+                    f"目录：`{display_path(str(result.get('working_dir', '') or ''))}`",
+                ]
+                if result["already_attached"]:
+                    body.append("说明：当前 binding 原本就已是 `attached`。")
+                    template = "blue"
+                else:
+                    body.append("说明：当前 binding 已恢复为 `attached`，后续可继续接收该 thread 的推送。")
+                    template = "green"
+                return CommandResult(card=build_markdown_card("Codex Runtime 已重附着", "\n".join(body), template=template))
+            if scope == "thread":
+                thread_id = self._binding_thread_id_or_raise(binding)
+                return CommandResult(card=self._build_thread_reattach_result_card(self.reattach_thread(thread_id)))
+            return CommandResult(card=self._build_service_reattach_result_card(self.reattach_service()))
+        except Exception as exc:
+            return CommandResult(text=f"重附着失败：{exc}")
+
+    def handle_reattach_action(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict[str, Any],
+    ) -> P2CardActionTriggerResponse:
+        del message_id
+        binding = self._effective_binding_key(sender_id, chat_id)
+        scope = str(action_value.get("scope", "") or "").strip().lower()
+        thread_id = str(action_value.get("thread_id", "") or "").strip()
+        try:
+            if scope == "service":
+                card = self._build_service_reattach_result_card(self.reattach_service())
+                toast = "已重附着当前实例。"
+            elif scope == "thread":
+                target_thread_id = thread_id or self._binding_thread_id_or_raise(binding)
+                card = self._build_thread_reattach_result_card(self.reattach_thread(target_thread_id))
+                toast = "已重附着当前线程。"
+            else:
+                raise ValueError("未知的重附着范围。")
+        except Exception as exc:
+            return make_card_response(
+                card=build_markdown_card("Codex Runtime 重附着失败", str(exc) or "重附着失败", template="red"),
+                toast=str(exc) or "重附着失败",
+                toast_type="warning",
+            )
+        return make_card_response(card=card, toast=toast, toast_type="success")
+
+    def handle_dismiss_reattach_action(self) -> P2CardActionTriggerResponse:
+        return make_card_response(
+            card=build_markdown_card(
+                "Codex Backend Reset",
+                "已保持 `released` 状态。\n如需稍后恢复推送，可发送 `/re-attach`、`/resume`，或直接发送下一条普通消息。",
+                template="blue",
+            ),
+            toast="已保持 released。",
+            toast_type="info",
         )
 
     def handle_release_runtime_command(self, binding: ChatBindingKey, arg: str) -> CommandResult:
@@ -1088,6 +1390,8 @@ class RuntimeAdminController:
         if method == "service/reset-backend":
             force = bool(params.get("force"))
             return self._reset_current_instance_backend(force)
+        if method == "service/reattach":
+            return self.reattach_service()
         if method == "binding/list":
             with self._lock:
                 return {"bindings": self.binding_inventory_locked()}
@@ -1095,6 +1399,12 @@ class RuntimeAdminController:
             binding_id = str(params.get("binding_id", "") or "").strip()
             binding = parse_binding_id(binding_id)
             return self.binding_status_snapshot(binding)
+        if method == "binding/reattach":
+            binding_id = str(params.get("binding_id", "") or "").strip()
+            if not binding_id:
+                raise ValueError("binding/reattach 缺少 binding_id。")
+            binding = parse_binding_id(binding_id)
+            return self.reattach_binding(binding)
         if method == "binding/clear":
             binding_id = str(params.get("binding_id", "") or "").strip()
             if not binding_id:
@@ -1103,7 +1413,7 @@ class RuntimeAdminController:
             return self.clear_binding_for_control(binding)
         if method == "binding/clear-all":
             return self.clear_all_bindings_for_control()
-        if method in {"thread/status", "thread/bindings", "thread/unsubscribe", "thread/send-image"}:
+        if method in {"thread/status", "thread/bindings", "thread/unsubscribe", "thread/send-image", "thread/reattach"}:
             thread = self._resolve_thread_target_for_control_params(params)
             if method == "thread/status":
                 return self.thread_status_snapshot(thread.thread_id, summary=thread)
@@ -1134,5 +1444,7 @@ class RuntimeAdminController:
                     local_path=local_path,
                     summary=thread,
                 )
+            if method == "thread/reattach":
+                return self.reattach_thread(thread.thread_id)
             return self.unsubscribe_feishu_runtime_by_thread_id(thread.thread_id)
         raise ValueError(f"未知控制面方法：{method}")

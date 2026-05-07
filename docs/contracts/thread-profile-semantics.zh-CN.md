@@ -35,8 +35,9 @@
 ### `/new`
 
 - 立即创建新 thread，并把当前 chat binding 切到这个 thread
-- 会把当前实例当前生效的新线程默认 profile 作为这个 thread 的一次性 seed
-- thread 真正创建成功后，seed 会按 `thread_id` 持久化为 thread-wise resume profile
+- 不再注入任何实例级默认 profile seed
+- 新 thread 初始没有 thread-wise profile override；只有后续显式 `/profile`
+  或本地 `fcodex -p` 创建时的一次性 seed 才会写入
 
 ### `/profile [name]`
 
@@ -61,6 +62,20 @@
 - 先预览，真正执行必须显式确认
 - 与 `/profile` 触发的 re-profile 恢复路径，共享同一套实例级 backend-reset 语义
 - 它存在的原因是：即使当前并不是为了切 profile，操作者也仍可能需要清理卡住的 loaded / pending runtime 状态
+- reset 成功后，相关 Feishu binding 仍保持 `bound`，但会变成 `released`
+- 结果卡片应直接提供：
+  - 重附着当前线程
+  - 重附着当前实例
+  - 保持 released
+
+### `/re-attach [binding|thread|service]`
+
+- 高级管理员运行时恢复命令
+- 默认作用域是 `binding`
+- `binding`：只重附着当前 chat binding
+- `thread`：重附着当前 chat binding 所在 thread 上的所有 released bindings
+- `service`：重附着当前实例内所有可恢复的 released bindings
+- 它的存在意义是：`reset-backend` 之后，操作者可不等待下一条普通消息或 `/resume`，直接恢复推送
 
 ### `/release-runtime`
 
@@ -120,8 +135,7 @@
 ### `fcodex resume <thread>`（未显式 `-p`）
 
 - 如果 thread 已保存 thread-wise profile，则自动注入该 profile
-- 如果没有保存记录，则不再回退到“当前实例的新线程默认 profile”
-- 当前实例的新线程默认 profile 现在只负责 seed 新 thread，不负责覆盖旧 thread 的 resume
+- 如果没有保存记录，则不再注入任何 profile fallback
 
 ### `feishu-codexctl`
 
@@ -131,11 +145,14 @@
 
 - `service status`
 - `service reset-backend`
+- `service reattach`
 - `thread list --scope cwd|global`
 - `thread status`
 - `thread bindings`
+- `thread reattach`
 - `thread unsubscribe`
 - `binding list/status/clear`
+- `binding reattach`
 
 它不是第二个 Codex 前端，也不负责进入 TUI。
 
@@ -156,16 +173,14 @@
 
 ## 4. Profile 语义总结
 
-当前已经不再把“当前实例的新线程默认 profile”当作主要 resume 模型。
-
 应按下面理解：
 
 - 飞书 `/profile` 改的是当前绑定 thread 的下次 resume 配置
 - `fcodex -p <profile>` 新开会话时，只 seed 本次启动创建的第一个新 thread
 - `fcodex -p <profile> resume <thread>` 改的是该 thread 的持久化 resume 配置
-- 旧 thread 后续 resume 读的是它自己的 thread-wise 配置，而不是实例当前的新线程默认 profile
+- 旧 thread 后续 resume 只读它自己的 thread-wise 配置
 - wrapper 与 proxy 不共同持有同一条写路径：
-  - wrapper 负责已有 thread 的读取 / 改写
+  - wrapper 负责已有 thread 的读取 / 改写，并决定显式 `-p` 是否携带首个新 thread seed
   - proxy 只负责第一个新 thread seed 的一次性持久化
 
 ## 5. 多实例与可见性

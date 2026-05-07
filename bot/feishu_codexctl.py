@@ -166,6 +166,29 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
     print(f"interrupted bindings: {', '.join(result.get('interrupted_binding_ids') or []) or '（无）'}")
     print(f"fail-closed requests: {int(result.get('fail_closed_request_count') or 0)}")
     print(f"purged runtime leases: {', '.join(result.get('purged_thread_ids') or []) or '（无）'}")
+    if result.get("released_binding_ids"):
+        print("next:")
+        print("  - reattach this instance: feishu-codexctl service reattach")
+        print("  - reattach one thread: feishu-codexctl thread reattach --thread-id <thread_id>")
+        print("  - reattach one binding: feishu-codexctl binding reattach <binding_id>")
+    return 0
+
+
+def _reattach_service(data_dir: pathlib.Path) -> int:
+    result = _request(data_dir, "service/reattach")
+    print("runtime reattach: ok")
+    print(f"instance: {result.get('instance_name', '-')}")
+    print(f"reattached threads: {', '.join(result.get('reattached_thread_ids') or []) or '（无）'}")
+    print(f"reattached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    blocked_threads = result.get("blocked_threads") or []
+    if blocked_threads:
+        print("blocked threads:")
+        for item in blocked_threads:
+            binding_ids = ", ".join(item.get("binding_ids") or []) or "（无 binding）"
+            print(f"- {item.get('thread_id', '-')}: {binding_ids} -> {item.get('reason', '（无原因）')}")
+        return 1
+    if not result.get("reattached_binding_ids"):
+        print("note: 当前实例没有需要恢复的 released 订阅。")
     return 0
 
 
@@ -236,6 +259,18 @@ def _clear_binding(data_dir: pathlib.Path, binding_id: str) -> int:
     result = _request(data_dir, "binding/clear", {"binding_id": binding_id})
     print(f"cleared binding: {result['binding_id']}")
     print(f"thread: {result['thread_id'] or '-'} {result['thread_title'] or ''}".rstrip())
+    return 0
+
+
+def _reattach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
+    result = _request(data_dir, "binding/reattach", {"binding_id": binding_id})
+    print(f"binding: {result['binding_id']}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    if result.get("already_attached"):
+        print("note: 该 binding 原本就已 attached。")
+    else:
+        print("note: 该 binding 已恢复 attached，可继续接收推送。")
     return 0
 
 
@@ -335,6 +370,18 @@ def _unsubscribe_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -
     return 0
 
 
+def _reattach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
+    result = _request(data_dir, "thread/reattach", target_params)
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    print(f"reattached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    if result.get("already_attached_binding_ids"):
+        print(f"already attached bindings: {', '.join(result.get('already_attached_binding_ids') or [])}")
+    if not result.get("changed"):
+        print("note: 当前 thread 没有需要恢复的 released 订阅。")
+    return 0
+
+
 def _send_thread_image(
     data_dir: pathlib.Path,
     target_params: dict[str, str],
@@ -392,11 +439,14 @@ def _build_parser() -> argparse.ArgumentParser:
             "常用命令:\n"
             "  feishu-codexctl service status\n"
             "  feishu-codexctl service reset-backend\n"
+            "  feishu-codexctl service reattach\n"
             "  feishu-codexctl instance list\n"
             "  feishu-codexctl binding list\n"
             "  feishu-codexctl binding status <binding_id>\n"
+            "  feishu-codexctl binding reattach <binding_id>\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
+            "  feishu-codexctl thread reattach --thread-id <id>\n"
             "  feishu-codexctl thread unsubscribe --thread-name <name>\n"
             "  feishu-codexctl image send --path ./diagram.png\n"
             "\n"
@@ -453,6 +503,12 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="强制重置 backend，允许打断当前实例里正在进行的工作。",
     )
+    service_sub.add_parser(
+        "reattach",
+        help="恢复当前实例下 released 的 Feishu 订阅。",
+        description="恢复当前实例下全部 released 的 Feishu binding 订阅；若部分 thread 被其他实例占用，会逐项报告 blocked 原因。",
+        formatter_class=_HelpFormatter,
+    )
 
     binding = subparsers.add_parser(
         "binding",
@@ -484,6 +540,13 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_HelpFormatter,
     )
     binding_clear.add_argument("binding_id", help="要清除的 binding id。")
+    binding_reattach = binding_sub.add_parser(
+        "reattach",
+        help="恢复单个 binding 的 Feishu 订阅。",
+        description="让目标 binding 从 released 恢复到 attached；不启动 turn，只恢复推送接收能力。",
+        formatter_class=_HelpFormatter,
+    )
+    binding_reattach.add_argument("binding_id", help="要恢复的 binding id。")
     binding_sub.add_parser(
         "clear-all",
         help="清除当前实例下全部 binding bookmark。",
@@ -538,6 +601,15 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_unsubscribe_target = thread_unsubscribe.add_mutually_exclusive_group(required=True)
     thread_unsubscribe_target.add_argument("--thread-id", help="目标 thread id。")
     thread_unsubscribe_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_reattach = thread_sub.add_parser(
+        "reattach",
+        help="恢复某个 thread 下 released 的 Feishu 订阅。",
+        description="把目标 thread 当前所有 released 的 Feishu bindings 恢复到 attached；不启动 turn。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_reattach_target = thread_reattach.add_mutually_exclusive_group(required=True)
+    thread_reattach_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_reattach_target.add_argument("--thread-name", help="目标 thread 名称。")
 
     image = subparsers.add_parser(
         "image",
@@ -593,10 +665,14 @@ def main() -> None:
             raise SystemExit(_print_service_status(data_dir))
         if args.resource == "service" and args.action == "reset-backend":
             raise SystemExit(_reset_service_backend(data_dir, force=bool(args.force)))
+        if args.resource == "service" and args.action == "reattach":
+            raise SystemExit(_reattach_service(data_dir))
         if args.resource == "binding" and args.action == "list":
             raise SystemExit(_print_binding_list(data_dir))
         if args.resource == "binding" and args.action == "status":
             raise SystemExit(_print_binding_status(data_dir, args.binding_id, instance_name=target.instance_name))
+        if args.resource == "binding" and args.action == "reattach":
+            raise SystemExit(_reattach_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear":
             raise SystemExit(_clear_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear-all":
@@ -614,6 +690,8 @@ def main() -> None:
             )
         if args.resource == "thread" and args.action == "bindings":
             raise SystemExit(_print_thread_bindings(data_dir, _thread_target_params(args)))
+        if args.resource == "thread" and args.action == "reattach":
+            raise SystemExit(_reattach_thread(data_dir, _thread_target_params(args)))
         if args.resource == "thread" and args.action == "unsubscribe":
             raise SystemExit(_unsubscribe_thread(data_dir, _thread_target_params(args)))
     except ServiceControlError as exc:

@@ -13,6 +13,7 @@ It answers five questions:
 - what `/status` is actually describing
 - what `/preflight` may dry-run and must not mutate
 - what Feishu `/reset-backend` may reset and what it must not overwrite
+- how Feishu `/re-attach` and local `reattach` actions restore push delivery
 - what `/release-runtime` releases and does not release
 - why local runtime-release actions must go through the running `feishu-codex` service rather than directly calling app-server from a separate CLI connection
 
@@ -322,6 +323,36 @@ It must not overwrite:
 - thread-wise profile / provider state
 - other persisted user configuration or data
 
+After a successful Feishu reset:
+
+- affected bindings stay `bound` but become `released`
+- the result card should offer explicit follow-up choices:
+  - re-attach current thread
+  - re-attach current instance
+  - keep released
+
+### 4.3 `/re-attach` Contract
+
+Feishu `/re-attach [binding|thread|service]` is an admin-only recovery action.
+
+Its purpose is narrow:
+
+- restore released Feishu runtime subscriptions
+- without waiting for the next ordinary prompt or `/resume`
+
+Scope rules:
+
+- `binding`: current chat binding only
+- `thread`: all released bindings that currently point to the current chat's
+  current thread
+- `service`: all reattachable released bindings in the current instance
+
+It must not:
+
+- rewrite binding bookmarks
+- bypass live-runtime admission
+- invent a missing thread target for `thread` scope
+
 ## 5. Exact Contract of `/release-runtime`
 
 ### 5.1 Scope
@@ -428,12 +459,15 @@ The current formal command set is:
 - `feishu-codexctl instance list`
 - `feishu-codexctl service status`
 - `feishu-codexctl service reset-backend [--force]`
+- `feishu-codexctl service reattach`
 - `feishu-codexctl binding list`
 - `feishu-codexctl binding status <binding_id>`
+- `feishu-codexctl binding reattach <binding_id>`
 - `feishu-codexctl binding clear <binding_id>`
 - `feishu-codexctl binding clear-all`
 - `feishu-codexctl thread status (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread bindings (--thread-id <id> | --thread-name <name>)`
+- `feishu-codexctl thread reattach (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl thread unsubscribe (--thread-id <id> | --thread-name <name>)`
 - `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
 
@@ -478,7 +512,32 @@ Formal limits:
 - `--force` means the operator accepts losing or interrupting in-flight work in
   the current instance backend
 
-### 6.3.2 `image send` Contract
+### 6.3.2 `reattach` Contracts
+
+The local reattach surfaces are:
+
+- `service reattach`
+- `thread reattach`
+- `binding reattach`
+
+Their shared purpose is:
+
+- restore `released` Feishu runtime subscriptions
+- without changing bookmarks or thread-wise profile state
+
+Scope split:
+
+- `service reattach`: fan out across the current instance
+- `thread reattach`: fan out across one target thread's released bindings
+- `binding reattach`: reattach exactly one binding
+
+All reattach actions must still fail closed when:
+
+- the target has no corresponding binding/thread
+- live-runtime admission denies reattach
+- the underlying thread target is no longer reattachable
+
+### 6.3.3 `image send` Contract
 
 `feishu-codexctl image send` is a **thread-scoped** outbound-image action.
 

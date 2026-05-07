@@ -63,9 +63,9 @@ bridge:
   scraping or reconstructed state
 - Single source of truth: thread id, cwd, title, preview, source, and runtime
   config come from Codex
-- Feishu-specific state stays local: per-instance new-thread seed profile and
-  thread/UI binding state remain in `feishu-codex`, while thread-wise resume
-  profile is machine-global shared state
+- Feishu-specific state stays local: thread/UI binding state remains in
+  `feishu-codex`, while thread-wise resume profile is machine-global shared
+  state
 - Shared-backend behavior is explicit: continuing the same live thread with
   Feishu should go through the same instance backend
 - `CODEX_HOME` and Feishu runtime boundaries stay separate: the former is
@@ -155,8 +155,8 @@ Current module split:
 - `bot/generated_image_delivery.py`: terminal-snapshot-based outbound image
   extraction and separate Feishu image-message delivery; it does not alter the
   authoritative text result contract or execution-card patch model
-- `bot/runtime_admin_controller.py`: `/status`,
-  `/release-runtime`, and control-plane status/admin management
+- `bot/runtime_admin_controller.py`: `/status`, `/release-runtime`,
+  `/re-attach`, and control-plane status/admin management
 - `bot/inbound_surface_controller.py`: inbound command surface, card-action
   routing, and help-card command reuse
 - `bot/forward_aggregator.py`: merged-forward buffering, timeout dispatch, and
@@ -189,9 +189,8 @@ Current module split:
 - `bot/stores/instance_registry_store.py`: machine-global running-instance registry
 - `bot/stores/thread_runtime_lease_store.py`: machine-global thread
   live-runtime lease
-- `bot/stores/*.py`: per-instance new-thread seed profile, runtime backend
-  discovery state, group-chat state, and machine-global thread-wise resume
-  profile / lease / registry state
+- `bot/stores/*.py`: runtime backend discovery state, group-chat state, and
+  machine-global thread-wise resume profile / lease / registry state
 
 One maintenance rule should also stay explicit for the Feishu transport layer:
 
@@ -447,16 +446,15 @@ full-tree dump.
     `shared_command_surface.py`, `feishu_types.py`, `codex_config_reader.py`
   - wrapper and service-admin path: `fcodex.py`, `fcodex_proxy.py`,
     `feishu_codexctl.py`, `service_control_plane.py`, `instance_layout.py`,
-    `instance_resolution.py`, `profile_resolution.py`, `thread_resolution.py`,
-    `binding_identity.py`
+    `instance_resolution.py`, `thread_resolution.py`, `binding_identity.py`
   - Codex adapter / protocol boundary:
     `adapters/base.py`, `adapters/codex_app_server.py`,
     `codex_protocol/client.py`
   - persisted local state: `stores/app_server_runtime_store.py`,
     `stores/chat_binding_store.py`, `stores/group_chat_store.py`,
     `stores/instance_registry_store.py`, `stores/interaction_lease_store.py`,
-    `stores/pending_attachment_store.py`, `stores/profile_state_store.py`,
-    `stores/service_instance_lease.py`, `stores/thread_runtime_lease_store.py`
+    `stores/pending_attachment_store.py`, `stores/service_instance_lease.py`,
+    `stores/thread_runtime_lease_store.py`
 - `config/`
   - example local config files: `system.yaml.example`, `codex.yaml.example`
 - `docs/`

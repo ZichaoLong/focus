@@ -214,7 +214,8 @@ This is intentional. Explicit `--remote` means "use the target I asked for."
 Compared with bare Codex TUI, `fcodex` adds these semantics:
 
 - shared backend with the selected Feishu instance by default
-- new-thread default-profile seeding when `-p/--profile` is absent
+- explicit `-p/--profile` one-time seeding for the first new thread created by
+  that launch
 - thread-name resume resolution plus thread-wise profile injection / persistence
 - cwd patching through a thin local proxy
 

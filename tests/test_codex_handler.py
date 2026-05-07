@@ -3354,38 +3354,30 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIn("当前还没有绑定 thread", bot.replies[-1][1])
 
-    def test_status_mentions_stale_local_default_profile_cleanup(self) -> None:
+    def test_status_hides_removed_new_thread_seed_profile_row(self) -> None:
         handler, bot = self._make_handler()
-        handler._profile_state.save_default_profile("provider9")
 
         handler.handle_message("ou_user", "c1", "/status")
 
         _, card = bot.cards[-1]
         self.assertNotIn("新 thread seed profile", card["elements"][0]["content"])
-        self.assertEqual(handler._profile_state.load_default_profile(), "")
 
-    def test_new_thread_uses_local_default_profile(self) -> None:
+    def test_new_thread_does_not_inject_instance_default_profile(self) -> None:
         handler, _ = self._make_handler()
-        handler._profile_state.save_default_profile("provider2")
 
         handler.handle_message("ou_user", "c1", "/new")
 
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
-        saved = handler._thread_resume_profile_store.load("thread-created")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
-    def test_prompt_uses_local_default_profile(self) -> None:
+    def test_prompt_without_threadwise_profile_starts_without_profile_override(self) -> None:
         handler, _ = self._make_handler()
-        handler._profile_state.save_default_profile("provider2")
 
         handler.handle_message("ou_user", "c1", "hello")
 
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
-        saved = handler._thread_resume_profile_store.load("thread-created")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
     def test_released_thread_resume_uses_thread_wise_profile(self) -> None:
         handler, _ = self._make_handler()
@@ -3407,7 +3399,6 @@ class CodexHandlerTests(unittest.TestCase):
             model="provider2-model",
             model_provider="provider2_api",
         )
-        handler._profile_state.save_default_profile("provider1")
 
         handler.handle_message("ou_user", "c1", "hello")
 
@@ -3499,17 +3490,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(replacement.old_thread_id, "thread-1")
         self.assertEqual(replacement.new_thread_id, "thread-created")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
-
-    def test_prompt_keeps_last_known_profile_when_runtime_config_read_temporarily_fails(self) -> None:
-        handler, _ = self._make_handler()
-        handler._profile_state.save_default_profile("provider2")
-
-        self.assertIsNotNone(handler._safe_read_runtime_config())
-        handler._adapter.read_runtime_config = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("config down"))
-
-        handler.handle_message("ou_user", "c1", "/new")
-
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
 
     def test_prompt_reuses_reserved_execution_card(self) -> None:
         handler, bot = self._make_handler()

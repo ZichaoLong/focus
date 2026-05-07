@@ -148,6 +148,7 @@ def build_backend_reset_card(
     *,
     content: str,
     force: bool | None = None,
+    extra_action_rows: list[dict] | None = None,
     title: str = "Codex Backend Reset",
     template: str = "blue",
 ) -> dict:
@@ -178,6 +179,8 @@ def build_backend_reset_card(
                 },
             ]
         )
+    elif extra_action_rows:
+        elements.extend(extra_action_rows)
     else:
         elements.extend(
             [

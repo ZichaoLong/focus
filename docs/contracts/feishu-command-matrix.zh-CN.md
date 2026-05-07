@@ -99,7 +99,8 @@
 
 | 命令 | 作用 | `/help` 可达 | 私聊可执行者 | 群聊可执行者 | 用户可见按钮 / 表单 | 本地对应 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `/reset-backend` | 预览并重置当前实例 backend | 是；`/help -> runtime` | 仅管理员 | 仅管理员 | `重置 backend` 或 `强制重置 backend` | `feishu-codexctl service reset-backend`；`feishu-codex` 无对应 |
+| `/reset-backend` | 预览并重置当前实例 backend | 是；`/help -> runtime` | 仅管理员 | 仅管理员 | 预览卡 `重置 backend` 或 `强制重置 backend`；结果卡 `重附着当前线程`、`重附着当前实例`、`保持 released` | `feishu-codexctl service reset-backend`；`feishu-codex` 无对应 |
+| `/re-attach [binding\|thread\|service]` | 在 reset 或手动 release 后，重新附着 released 的 Feishu runtime 订阅 | 否 | 仅管理员 | 仅管理员 | 无；主入口是 `/reset-backend` 结果卡上的按钮 | `feishu-codexctl binding/thread/service reattach`；`feishu-codex` 无对应 |
 | `/permissions [read-only\|default\|full-access]` | 同时设置审批策略与沙箱策略 | 是；`/help -> runtime` | 仅管理员 | 仅管理员 | `read-only`、`default`、`full-access` | 无 |
 | `/approval [untrusted\|on-request\|never]` | 单独设置审批策略 | 是；`/help -> runtime` | 仅管理员 | 仅管理员 | `untrusted`、`on-request`、`never` | 无 |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | 单独设置沙箱策略 | 是；`/help -> runtime` | 仅管理员 | 仅管理员 | `read-only`、`workspace-write`、`danger-full-access` | 无 |
@@ -129,6 +130,7 @@
 - `/pwd`
 - `/cancel`
 - `/release-runtime`
+- `/re-attach [binding|thread|service]`
 - `/debug-contact <open_id>`
 
 原因分别是：
@@ -137,6 +139,7 @@
 - `/pwd` 已基本被“无参数 `/cd`”覆盖
 - `/cancel` 的主入口是执行卡片里的 `取消执行`
 - `/release-runtime` 已被刻意弱化；面向用户的主路径应优先走 `/profile`
+- `/re-attach` 是高级恢复命令；普通用户主要应通过 `/reset-backend` 结果卡上的按钮完成恢复
 - `/debug-contact` 是排障命令，不属于常用导航面
 
 ## 5. 非 slash、但属于一等用户表面的卡片动作

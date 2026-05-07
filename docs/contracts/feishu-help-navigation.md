@@ -188,6 +188,7 @@ Feishu `/help`:
 - `/cancel`
 - `/pwd`
 - `/release-runtime`
+- `/re-attach [binding|thread|service]`
 - `/debug-contact <open_id>`
 - `fcodex` local-wrapper commands
 
@@ -197,6 +198,8 @@ Specific rationale:
 - `/cancel` already has a primary action on the execution card
 - `/pwd` is effectively subsumed by `/cd` with no argument
 - `/release-runtime` is intentionally weakened in favor of `/profile`
+- `/re-attach` is an advanced recovery command; ordinary operators should mostly
+  use the post-`/reset-backend` result-card buttons instead
 - `/debug-contact` is a troubleshooting surface, not a normal navigation topic
 - local wrapper usage belongs to local help, not Feishu help
 

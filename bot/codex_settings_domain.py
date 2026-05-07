@@ -27,7 +27,6 @@ from bot.cards import (
 from bot.config import ensure_init_token, load_system_config_raw, save_system_config
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.feishu_command_syntax import feishu_visible_command_syntax
-from bot.profile_resolution import DefaultProfileResolution
 from bot.runtime_view import RuntimeView
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
 
@@ -54,7 +53,6 @@ class SettingsDomainPorts:
     get_bot_identity_snapshot: Callable[[], dict[str, Any]]
     add_admin_open_id: Callable[[str], None]
     set_configured_bot_open_id: Callable[[str], None]
-    save_default_profile: Callable[[str], None]
     load_thread_resume_profile: Callable[[str], ThreadResumeProfileRecord | None]
     save_thread_resume_profile: Callable[[str, str, str, str], ThreadResumeProfileRecord]
     check_thread_resume_profile_mutable: Callable[[str], tuple[bool, str]]
@@ -69,7 +67,6 @@ class SettingsDomainPorts:
     get_runtime_view: Callable[[str, str, str], RuntimeView]
     update_runtime_settings: Callable[..., None]
     safe_read_runtime_config: Callable[[], RuntimeConfigSummary | None]
-    current_default_profile_resolution: Callable[[RuntimeConfigSummary | None], DefaultProfileResolution]
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,6 +375,56 @@ class CodexSettingsDomain:
             },
         ]
 
+    @staticmethod
+    def _post_reset_reattach_action_rows(thread_id: str) -> list[dict]:
+        normalized_thread_id = str(thread_id or "").strip()
+        actions: list[dict] = []
+        if normalized_thread_id:
+            actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "重附着当前线程"},
+                    "type": "primary",
+                    "value": {
+                        "action": "reattach_runtime",
+                        "scope": "thread",
+                        "thread_id": normalized_thread_id,
+                    },
+                }
+            )
+        actions.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "重附着当前实例"},
+                "type": "default",
+                "value": {
+                    "action": "reattach_runtime",
+                    "scope": "service",
+                },
+            }
+        )
+        actions.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "保持 released"},
+                "type": "default",
+                "value": {
+                    "action": "dismiss_reattach",
+                },
+            }
+        )
+        return [
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": "如需继续收到本地 `fcodex` / backend 的推送，可选择重附着范围：",
+            },
+            {
+                "tag": "action",
+                "actions": actions,
+            },
+        ]
+
     def _build_profile_summary_card(
         self,
         *,
@@ -390,6 +437,7 @@ class CodexSettingsDomain:
         leading_lines: list[str] | None = None,
         reset_target_profile: str = "",
         reset_requires_force: bool = False,
+        extra_action_rows: list[dict] | None = None,
     ) -> dict:
         lines = list(leading_lines or [])
         lines.extend(
@@ -426,12 +474,18 @@ class CodexSettingsDomain:
             profile_names=profile_names,
             current_profile=current_profile,
             extra_action_rows=(
-                self._profile_reset_action_rows(
-                    target_profile=reset_target_profile,
-                    force=reset_requires_force,
-                )
-                if reset_target_profile and plan.status in {"reset-available", "reset-force-only"}
-                else None
+                [
+                    *(
+                        self._profile_reset_action_rows(
+                            target_profile=reset_target_profile,
+                            force=reset_requires_force,
+                        )
+                        if reset_target_profile and plan.status in {"reset-available", "reset-force-only"}
+                        else []
+                    ),
+                    *(extra_action_rows or []),
+                ]
+                or None
             ),
             title="Codex Thread Profile",
         )
@@ -662,6 +716,7 @@ class CodexSettingsDomain:
                         profile_names=profile_names,
                         plan=fresh_plan,
                         leading_lines=leading_lines + [""],
+                        extra_action_rows=self._post_reset_reattach_action_rows(thread_id),
                     )
                 ),
                 applied_profile=target_profile,
@@ -726,6 +781,7 @@ class CodexSettingsDomain:
                     profile_names=profile_names,
                     plan=fresh_plan,
                     leading_lines=leading_lines + [""],
+                    extra_action_rows=self._post_reset_reattach_action_rows(thread_id),
                 )
             ),
             applied_profile=target_profile,

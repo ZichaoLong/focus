@@ -60,7 +60,7 @@ fcodex shell wrapper
 `fcodex` 存在的目的，是提供：
 
 - 与所选飞书实例共享的单一 backend
-- 新 thread 启动时由所选实例提供的 default profile seed
+- 显式 `-p/--profile` 对本次启动创建的首个新 thread 的一次性 seed
 - `resume <thread_name>` 这类 wrapper 级名字解析
 - 一个用于修正 remote 模式工作目录行为的兼容层
 
@@ -185,7 +185,7 @@ fcodex shell wrapper
 相较于裸 Codex TUI，`fcodex` 增加了这些语义：
 
 - 默认与所选飞书实例共享 backend
-- 对新 thread 启动，缺少 `-p/--profile` 时注入本地 default profile seed
+- 显式 `-p/--profile` 时，对本次启动创建的首个新 thread 写入一次性 seed
 - 对 `resume`，支持 thread-name 解析与 thread-wise profile 注入 / 持久化
 - 通过一个轻量本地代理修补 cwd
 

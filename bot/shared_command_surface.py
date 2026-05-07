@@ -69,6 +69,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_usage="/release-runtime",
         feishu_summary="释放当前绑定 thread 的 Feishu runtime 附着。",
     ),
+    SharedCommandSpec(
+        key="re-attach",
+        slash_name="/re-attach",
+        feishu_usage="/re-attach [binding|thread|service]",
+        feishu_summary="恢复 released 的 Feishu runtime 附着。",
+    ),
 )
 
 _SHARED_COMMANDS_BY_KEY = {spec.key: spec for spec in _SHARED_COMMAND_SPECS}

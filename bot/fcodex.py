@@ -21,12 +21,10 @@ from bot.env_file import load_env_file
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, global_data_dir, validate_instance_name
 from bot.instance_resolution import CliRuntimeTarget, current_cli_instance_name, resolve_cli_runtime_target
 from bot.platform_paths import default_data_root, is_windows
-from bot.profile_resolution import resolve_local_default_profile_via_remote_backend
 from bot.thread_resolution import (
     looks_like_thread_id,
     resolve_resume_name_via_remote_backend,
 )
-from bot.stores.profile_state_store import ProfileStateStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_profile_mutability import check_thread_resume_profile_mutable
@@ -316,7 +314,6 @@ def _build_wrapper_profile_launch_plan(
     cfg: dict,
     app_server_url: str,
     user_args: list[str],
-    default_profile: str,
 ) -> _WrapperProfileLaunchPlan:
     """Plan wrapper-side profile behavior before launching upstream Codex.
 
@@ -352,9 +349,7 @@ def _build_wrapper_profile_launch_plan(
             user_args=planned_args,
             thread_profile_seed=explicit_profile,
         )
-    return _WrapperProfileLaunchPlan(
-        user_args=_inject_default_profile(planned_args, default_profile),
-    )
+    return _WrapperProfileLaunchPlan(user_args=planned_args)
 
 
 def _extract_option_value(user_args: list[str], names: tuple[str, ...]) -> str:
@@ -546,17 +541,6 @@ def main() -> None:
 
     user_args = list(preprocessed_args)
 
-    profile_store = ProfileStateStore(data_dir)
-    stored_profile = profile_store.load_default_profile()
-    resolution = resolve_local_default_profile_via_remote_backend(
-        base_config=_remote_adapter_config(cfg, app_server_url),
-        app_server_url=app_server_url,
-        stored_profile=stored_profile,
-    )
-    if resolution.stale_profile:
-        profile_store.save_default_profile("")
-    default_profile = resolution.effective_profile
-
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
     thread_profile_seed = ""
@@ -565,7 +549,6 @@ def main() -> None:
             cfg=cfg,
             app_server_url=app_server_url,
             user_args=user_args,
-            default_profile=default_profile,
         )
         user_args = list(profile_launch_plan.user_args)
         thread_profile_seed = profile_launch_plan.thread_profile_seed

@@ -53,8 +53,6 @@ class PromptTurnEntryPorts:
     clear_thread_binding: Callable[..., None]
     resume_snapshot_by_id: Callable[..., ThreadSnapshot]
     create_thread: Callable[..., ThreadSnapshot]
-    effective_default_profile: Callable[[], str]
-    persist_new_thread_profile_seed: Callable[[str, str], str]
     thread_profile_for_thread: Callable[[str], str]
     message_reply_in_thread: Callable[[str], bool]
     group_actor_open_id: Callable[[str], str]
@@ -106,8 +104,6 @@ class PromptTurnEntryController:
         self._clear_thread_binding = ports.clear_thread_binding
         self._resume_snapshot_by_id = ports.resume_snapshot_by_id
         self._create_thread = ports.create_thread
-        self._effective_default_profile = ports.effective_default_profile
-        self._persist_new_thread_profile_seed = ports.persist_new_thread_profile_seed
         self._thread_profile_for_thread = ports.thread_profile_for_thread
         self._message_reply_in_thread = ports.message_reply_in_thread
         self._group_actor_open_id = ports.group_actor_open_id
@@ -194,16 +190,13 @@ class PromptTurnEntryController:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         if runtime.current_thread_id:
             return runtime.current_thread_id, ""
-        seed_profile = self._effective_default_profile().strip()
         snapshot = self._create_thread(
             cwd=runtime.working_dir,
-            profile=seed_profile or None,
             approval_policy=runtime.approval_policy or None,
             sandbox=runtime.sandbox or None,
         )
-        seed_warning = self._persist_new_thread_profile_seed(snapshot.summary.thread_id, seed_profile)
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
-        return snapshot.summary.thread_id, seed_warning
+        return snapshot.summary.thread_id, ""
 
     def resume_bound_thread(self, sender_id: str, chat_id: str, *, message_id: str = "") -> str:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)

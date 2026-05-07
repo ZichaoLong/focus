@@ -133,6 +133,7 @@
 应优先由 `feishu-codexctl` 承担的能力包括：
 
 - thread / binding 查看
+- `service/thread/binding reattach`
 - thread 发现与本地诊断
 - `thread unsubscribe`
 - `image send`
@@ -306,9 +307,9 @@ thread-wise store 至少应保存：
 
 都应遵守同一条 seed 合同：
 
-- 创建 thread 时，仍可带当前实例当前生效的新线程默认 profile 作为创建实参
-- 一旦成功拿到真实 `thread_id`，就立刻把这个默认 profile 解析并写入 thread-wise store
-- 这份写入只作用于这个新 thread，不回写到 binding 级或实例级临时状态
+- 创建 thread 时，不再注入任何实例级默认 profile
+- 新 thread 初始没有 thread-wise profile override，后续只有显式修改才会写入
+- 不应在 binding 级或实例级暂存任何“待应用 profile”占位状态
 
 因此：
 

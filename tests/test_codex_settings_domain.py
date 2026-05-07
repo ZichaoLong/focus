@@ -10,7 +10,6 @@ from bot.codex_settings_domain import (
     SettingsDomainPorts,
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
-from bot.profile_resolution import DefaultProfileResolution
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
 
 
@@ -55,11 +54,6 @@ class _SettingsPortsStub:
                 RuntimeProfileSummary(name="work", model_provider="anthropic"),
             ],
         )
-        self.profile_resolution = DefaultProfileResolution(
-            effective_profile="default",
-            available_profiles=("default", "work"),
-        )
-        self.saved_profiles: list[str] = []
         self.saved_thread_profiles: list[tuple[str, str, str, str]] = []
         self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.thread_profile_mutable = (True, "")
@@ -116,9 +110,6 @@ class _SettingsPortsStub:
 
     def set_configured_bot_open_id(self, open_id: str) -> None:
         self.configured_bot_open_ids.append(open_id)
-
-    def save_default_profile(self, profile: str) -> None:
-        self.saved_profiles.append(profile)
 
     def load_thread_resume_profile(self, thread_id: str) -> ThreadResumeProfileRecord | None:
         if self.current_thread_profile is None:
@@ -191,13 +182,6 @@ class _SettingsPortsStub:
     def safe_read_runtime_config(self) -> RuntimeConfigSummary | None:
         return self.runtime_config
 
-    def current_default_profile_resolution(
-        self,
-        runtime_config: RuntimeConfigSummary | None,
-    ) -> DefaultProfileResolution:
-        self.resolution_calls.append(runtime_config)
-        return self.profile_resolution
-
 
 def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
     return CodexSettingsDomain(
@@ -208,7 +192,6 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_bot_identity_snapshot=stub.get_bot_identity_snapshot,
             add_admin_open_id=stub.add_admin_open_id,
             set_configured_bot_open_id=stub.set_configured_bot_open_id,
-            save_default_profile=stub.save_default_profile,
             load_thread_resume_profile=stub.load_thread_resume_profile,
             save_thread_resume_profile=stub.save_thread_resume_profile,
             check_thread_resume_profile_mutable=stub.check_thread_resume_profile_mutable,
@@ -220,7 +203,6 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_runtime_view=stub.get_runtime_view,
             update_runtime_settings=stub.update_runtime_settings,
             safe_read_runtime_config=stub.safe_read_runtime_config,
-            current_default_profile_resolution=stub.current_default_profile_resolution,
         ),
         approval_policies=_APPROVAL_POLICIES,
         sandbox_policies=_SANDBOX_POLICIES,

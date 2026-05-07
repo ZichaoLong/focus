@@ -145,6 +145,7 @@ TUI or continuing a live thread interactively.
 Capabilities that primarily live in `feishu-codexctl` include:
 
 - thread and binding inspection
+- `service/thread/binding reattach`
 - local discovery and diagnosis
 - `thread unsubscribe`
 - `image send`
@@ -345,12 +346,10 @@ Feishu has two entry points that create a new thread:
 
 Both must follow the same seed contract:
 
-- thread creation may still use the current instance effective new-thread
-  default profile as the creation-time argument
-- once the real `thread_id` is known, that default profile must immediately be
-  resolved and persisted into the thread-wise store
-- that write belongs only to the new thread; it must not be staged in some
-  binding-level or instance-level temporary state
+- thread creation must not inject any instance-local default profile
+- the new thread starts with no thread-wise profile override unless the user
+  later changes it explicitly
+- no binding-level or instance-level placeholder profile state should be staged
 
 Therefore:
 

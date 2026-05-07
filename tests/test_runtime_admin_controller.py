@@ -4,7 +4,7 @@ import threading
 import types
 import unittest
 
-from bot.adapters.base import RuntimeConfigSummary, ThreadSnapshot, ThreadSummary
+from bot.adapters.base import ThreadSnapshot, ThreadSummary
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.reason_codes import (
     PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
@@ -74,11 +74,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             load_thread_runtime_lease=lambda thread_id: None,
             list_pending_interaction_requests=lambda: list(pending_requests),
             reset_current_instance_backend=lambda force: reset_calls.append(bool(force)) or {"force": bool(force)},
-            safe_read_runtime_config=lambda: RuntimeConfigSummary(current_model_provider="provider1"),
-            current_default_profile_resolution=lambda runtime_config: types.SimpleNamespace(
-                effective_profile="default",
-                stale_profile="",
-            ),
+            reattach_binding=lambda binding, thread_id: summaries[thread_id],
             load_thread_resume_profile=lambda thread_id: None,
             permissions_summary=lambda approval_policy, sandbox: f"{sandbox}/{approval_policy}",
             thread_image_delivery=ThreadImageDeliveryController(
