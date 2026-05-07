@@ -444,8 +444,22 @@ Therefore:
 
 - Feishu-side `sandbox/approval` and `fcodex` defaults are intentionally
   separate
-- whichever frontend actually starts a turn is the frontend whose settings are
-  carried into that turn
+- when a new thread is created, or when a turn starts on an unloaded thread,
+  the initiating frontend's settings are the ones carried into that turn
+
+But the runtime contract must be stated more precisely:
+
+- when `fcodex` or Feishu attaches / resumes a thread that is **already loaded**
+  in the same shared backend, the upstream app-server may ignore resume-time
+  `approval_policy`, `sandbox`, and even `permissions` overrides
+- in that case the effective settings remain the loaded thread runtime's current
+  active config, not the newly attached frontend's own defaults
+- therefore local `fcodex resume` can temporarily inherit Feishu-side
+  `sandbox/approval` that is still active on that loaded thread runtime
+- this is live runtime sharing, not a hidden merge of Feishu binding settings
+  and local `fcodex` defaults into one persistent configuration plane
+- if a different frontend's settings should become effective again, the thread
+  usually must return to an unloaded state; when needed, use `reset-backend`
 
 ## 7. Questions Intentionally Deferred
 

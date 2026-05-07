@@ -294,9 +294,7 @@ flowchart LR
 - 不同实例不能同时 live attach 同一个 thread；这由机器级 `ThreadRuntimeLease` 控制
 
 **补充说明**
-`binding wise permissions` 与 `thread wise profile` 的设置、生效机制：
-- `permissions / approval / sandbox` 是各自前端自己的设置面：飞书侧按 binding 持有，本地 `fcodex` 按本地 Codex 设置持有
-- 每次发起新的 turn，都会重新注入“发起这一轮的那个前端”当前的 `permissions / approval / sandbox` 设置
-- 同一个 thread 可以被多个订阅者继续，但它们不会即时同步成同一套 permissions
-- `profile` 是 thread-wise 的恢复配置；它在新 thread 创建后被这个 thread 自己记住，也会在后续 `/resume` 时继续使用
-- `profile` 变更通常要在 thread 未加载时通过 `/resume` 生效；若当前实例仍持有 loaded runtime，则通常要先 `reset-backend`，同时退出仍附着该 thread 的本地 `fcodex` TUI
+- 飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步
+- 新建 thread，或在未加载的 thread 上开始新一轮时，用“发起这一轮的那一端”的权限设置
+- 如果一个 thread 已经在 shared backend 里加载过，后续 attach / resume 可能继续沿用它当前正在生效的权限设置
+- `profile` 属于 thread 本身；切换 `profile` 通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`
