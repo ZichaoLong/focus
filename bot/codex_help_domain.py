@@ -26,6 +26,7 @@ _SHARED_RESUME_COMMAND = get_shared_command("resume")
 _SHARED_DETACH_COMMAND = get_shared_command("detach")
 _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
+_SHARED_MEMORY_COMMAND = get_shared_command("memory")
 
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
 _LOCAL_THREAD_LIST_GLOBAL = "feishu-codexctl thread list --scope global"
@@ -37,6 +38,7 @@ _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
 _RENAME_COMMAND = feishu_visible_command_syntax("/rename <title>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
+_MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
 
 
 @dataclass(frozen=True)
@@ -207,7 +209,7 @@ class CodexHelpDomain:
                     f"- `{_SHARED_THREADS_COMMAND.feishu_usage}`：浏览当前目录线程\n"
                     "- `/new`：立即新建线程\n"
                     f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`：全局精确恢复线程，可填 `thread_id` 或 `thread_name`\n"
-                    "- “当前线程”页：查看 `/profile`、重命名、归档当前绑定 thread\n\n"
+                    "- “当前线程”页：查看 `/profile`、`/memory`、重命名、归档当前绑定 thread\n\n"
                     "**本地继续**\n"
                     f"- 需要在本地继续同一 live thread 时，使用 `{_LOCAL_RESUME_COMMAND}`\n"
                     f"- 本地查看当前目录线程请用 `{_LOCAL_THREAD_LIST_CWD}`\n"
@@ -242,11 +244,14 @@ class CodexHelpDomain:
                 markdown=(
                     "作用对象：**当前绑定 thread**。\n\n"
                     f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`：查看或切换当前 thread 的 resume profile；必要时会提供 reset backend 路径\n"
+                    f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`：查看或切换当前 thread 的 thread-wise memory mode；必要时会提供 reset backend 路径\n"
                     f"- `{_RENAME_COMMAND}`：重命名当前线程\n"
                     f"- `{_SHARED_ARCHIVE_COMMAND.slash_name}`：归档当前线程\n"
                     "- 当前会话的飞书推送开关请到“当前会话”页\n\n"
                     "如果当前没有绑定线程，相关命令会按 slash 语义返回明确提示。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}` 走现有路径；"
+                    f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}` 走现有路径；"
+                    "\n"
                     "需要排障或本地管理时，再用 "
                     f"`{_LOCAL_THREAD_DETACH}`。"
                 ),
@@ -259,12 +264,17 @@ class CodexHelpDomain:
                                 title="Codex Thread Profile",
                             ),
                             _HelpCommandButtonSpec(
+                                label="/memory",
+                                command="/memory",
+                                title="Codex Thread Memory Mode",
+                            ),
+                            _HelpCommandButtonSpec(
                                 label="/archive",
                                 command="/archive",
                                 title="Codex 归档线程",
                             ),
                         ),
-                        layout="bisected",
+                        layout="trisection",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
@@ -675,6 +685,7 @@ class CodexHelpDomain:
                 "- `/new`\n"
                 f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n"
                 "\n"

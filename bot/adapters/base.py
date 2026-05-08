@@ -76,6 +76,7 @@ class AgentAdapter(ABC):
         *,
         cwd: str,
         profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
@@ -87,6 +88,7 @@ class AgentAdapter(ABC):
         thread_id: str,
         *,
         profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
     ) -> ThreadSnapshot:
@@ -120,6 +122,10 @@ class AgentAdapter(ABC):
 
     @abstractmethod
     def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
+        ...
+
+    @abstractmethod
+    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
         ...
 
     @abstractmethod

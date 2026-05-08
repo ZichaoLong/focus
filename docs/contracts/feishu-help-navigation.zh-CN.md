@@ -88,6 +88,7 @@
 必须提供：
 
 - `/profile`
+- `/memory`
 - `/archive`
 - `重命名` 表单入口
 

@@ -28,6 +28,13 @@ from bot.reason_codes import (
     BACKEND_RESET_FORCE_ONLY_BY_RUNNING_BINDING,
     BACKEND_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     BACKEND_RESET_UNSUPPORTED_REMOTE,
+    MEMORY_MODE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
+    MEMORY_MODE_BLOCKED_BY_RESET_UNSUPPORTED,
+    MEMORY_MODE_BLOCKED_BY_UNBOUND_THREAD,
+    MEMORY_MODE_DIRECT_WRITE_AVAILABLE,
+    MEMORY_MODE_RESET_AVAILABLE,
+    MEMORY_MODE_RESET_FORCE_ONLY,
+    MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     PROMPT_DENIED_BY_RUNNING_TURN,
     REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
     REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
@@ -86,7 +93,7 @@ class BackendResetPreview:
 
 
 @dataclass(frozen=True, slots=True)
-class ThreadReprofilePlan:
+class ThreadMutationPlan:
     status: str
     thread_id: str
     backend_thread_status: str
@@ -120,6 +127,7 @@ class RuntimeAdminController:
         reset_current_instance_backend: Callable[[bool], dict[str, Any]],
         attach_binding: Callable[[ChatBindingKey, str], ThreadSummary],
         load_thread_resume_profile: Callable[[str], Any],
+        load_thread_memory_mode: Callable[[str], Any],
         permissions_summary: Callable[[str, str], str],
         thread_image_delivery: ThreadImageDeliveryController,
         prompt_write_denial_check: Callable[[ChatBindingKey, str, str, str], ReasonedCheck],
@@ -150,6 +158,7 @@ class RuntimeAdminController:
         self._reset_current_instance_backend = reset_current_instance_backend
         self._attach_binding = attach_binding
         self._load_thread_resume_profile = load_thread_resume_profile
+        self._load_thread_memory_mode = load_thread_memory_mode
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
         self._prompt_write_denial_check = prompt_write_denial_check
@@ -174,6 +183,20 @@ class RuntimeAdminController:
             return "（未设置）"
         profile = str(getattr(record, "profile", "") or "").strip()
         return profile or "（未设置）"
+
+    def _current_thread_memory_mode_text(self, thread_id: str) -> str:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return ""
+        try:
+            record = self._load_thread_memory_mode(normalized_thread_id)
+        except Exception:
+            logger.exception("读取 thread-wise memory mode 失败: thread=%s", normalized_thread_id[:12])
+            return "读取失败"
+        if record is None:
+            return "（未设置）"
+        mode = str(getattr(record, "mode", "") or "").strip()
+        return mode or "（未设置）"
 
     @staticmethod
     def binding_has_inflight_turn_locked(state: RuntimeState) -> bool:
@@ -1279,6 +1302,7 @@ class RuntimeAdminController:
             "thread_id": snapshot["thread_id"],
             "thread_title": effective_summary.title if effective_summary is not None else "",
             "working_dir": effective_summary.cwd if effective_summary is not None else "",
+            "thread_memory_mode": self._current_thread_memory_mode_text(normalized_thread_id),
             "backend_thread_status": backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN,
             "backend_running_turn": backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE,
             "live_runtime_owner": self._live_runtime_owner_snapshot(lease),
@@ -1422,16 +1446,28 @@ class RuntimeAdminController:
     def backend_reset_preview(self) -> BackendResetPreview:
         return self._backend_reset_preview()
 
-    def plan_thread_reprofile(self, thread_id: str) -> ThreadReprofilePlan:
+    def _plan_threadwise_mutation(
+        self,
+        thread_id: str,
+        *,
+        direct_write_reason_code: str,
+        reset_available_reason_code: str,
+        reset_force_only_reason_code: str,
+        reset_force_only_runtime_unverified_reason_code: str,
+        blocked_by_other_instance_reason_code: str,
+        blocked_by_reset_unsupported_reason_code: str,
+        blocked_by_unbound_thread_reason_code: str,
+        subject_label: str,
+    ) -> ThreadMutationPlan:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
-            return ThreadReprofilePlan(
+            return ThreadMutationPlan(
                 status=REPROFILE_STATUS_BLOCKED,
                 thread_id="",
                 backend_thread_status=BACKEND_THREAD_STATUS_UNKNOWN,
                 feishu_runtime_state="-",
                 live_runtime_owner="",
-                reason_code=REPROFILE_BLOCKED_BY_UNBOUND_THREAD,
+                reason_code=blocked_by_unbound_thread_reason_code,
                 reason_text="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
             )
 
@@ -1466,15 +1502,15 @@ class RuntimeAdminController:
             and not attached_bindings
             and lease is None
         ):
-            diagnostics.append("当前 thread 已 verifiably globally unloaded，可直接写入 profile。")
-            return ThreadReprofilePlan(
+            diagnostics.append(f"当前 thread 已 verifiably globally unloaded，可直接写入 {subject_label}。")
+            return ThreadMutationPlan(
                 status=REPROFILE_STATUS_DIRECT_WRITE,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
                 live_runtime_owner=live_runtime_owner,
-                reason_code=REPROFILE_DIRECT_WRITE_AVAILABLE,
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
+                reason_code=direct_write_reason_code,
+                reason_text=f"当前 thread 已 verifiably globally unloaded，可直接写入 {subject_label}。",
                 diagnostics=tuple(diagnostics),
             )
 
@@ -1482,13 +1518,13 @@ class RuntimeAdminController:
             diagnostics.append(
                 f"当前 thread 的 live runtime 由实例 `{lease.owner_instance}` 持有；当前实例不能代它 reset backend。"
             )
-            return ThreadReprofilePlan(
+            return ThreadMutationPlan(
                 status=REPROFILE_STATUS_BLOCKED,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
                 live_runtime_owner=live_runtime_owner,
-                reason_code=REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
+                reason_code=blocked_by_other_instance_reason_code,
                 reason_text=(
                     f"当前 thread 的 live runtime 仍由实例 `{lease.owner_instance}` 持有；"
                     "请在该实例侧释放或重置 backend 后再重试。"
@@ -1499,40 +1535,69 @@ class RuntimeAdminController:
         reset_preview = self._backend_reset_preview()
         diagnostics.extend(reset_preview.diagnostics)
         if reset_preview.status == BACKEND_RESET_STATUS_BLOCKED:
-            return ThreadReprofilePlan(
+            return ThreadMutationPlan(
                 status=REPROFILE_STATUS_BLOCKED,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
                 live_runtime_owner=live_runtime_owner,
-                reason_code=REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
+                reason_code=blocked_by_reset_unsupported_reason_code,
                 reason_text=reset_preview.reason_text,
                 diagnostics=tuple(diagnostics),
             )
         if reset_preview.status == BACKEND_RESET_STATUS_FORCE_ONLY:
-            return ThreadReprofilePlan(
+            return ThreadMutationPlan(
                 status=REPROFILE_STATUS_RESET_FORCE_ONLY,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
                 live_runtime_owner=live_runtime_owner,
                 reason_code=(
-                    REPROFILE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED
+                    reset_force_only_runtime_unverified_reason_code
                     if reset_preview.reason_code == BACKEND_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED
-                    else REPROFILE_RESET_FORCE_ONLY
+                    else reset_force_only_reason_code
                 ),
                 reason_text=reset_preview.reason_text,
                 diagnostics=tuple(diagnostics),
             )
-        return ThreadReprofilePlan(
+        return ThreadMutationPlan(
             status=REPROFILE_STATUS_RESET_AVAILABLE,
             thread_id=normalized_thread_id,
             backend_thread_status=backend_thread_status,
             feishu_runtime_state=feishu_runtime_state,
             live_runtime_owner=live_runtime_owner,
-            reason_code=REPROFILE_RESET_AVAILABLE,
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
+            reason_code=reset_available_reason_code,
+            reason_text=(
+                f"当前 thread 尚未满足 verifiably globally unloaded；"
+                f"可通过 reset 当前实例 backend 后再写入 {subject_label}。"
+            ),
             diagnostics=tuple(diagnostics),
+        )
+
+    def plan_thread_reprofile(self, thread_id: str) -> ThreadMutationPlan:
+        return self._plan_threadwise_mutation(
+            thread_id,
+            direct_write_reason_code=REPROFILE_DIRECT_WRITE_AVAILABLE,
+            reset_available_reason_code=REPROFILE_RESET_AVAILABLE,
+            reset_force_only_reason_code=REPROFILE_RESET_FORCE_ONLY,
+            reset_force_only_runtime_unverified_reason_code=REPROFILE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
+            blocked_by_other_instance_reason_code=REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
+            blocked_by_reset_unsupported_reason_code=REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
+            blocked_by_unbound_thread_reason_code=REPROFILE_BLOCKED_BY_UNBOUND_THREAD,
+            subject_label="profile",
+        )
+
+    def plan_thread_memory_mode_update(self, thread_id: str) -> ThreadMutationPlan:
+        return self._plan_threadwise_mutation(
+            thread_id,
+            direct_write_reason_code=MEMORY_MODE_DIRECT_WRITE_AVAILABLE,
+            reset_available_reason_code=MEMORY_MODE_RESET_AVAILABLE,
+            reset_force_only_reason_code=MEMORY_MODE_RESET_FORCE_ONLY,
+            reset_force_only_runtime_unverified_reason_code=MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
+            blocked_by_other_instance_reason_code=MEMORY_MODE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
+            blocked_by_reset_unsupported_reason_code=MEMORY_MODE_BLOCKED_BY_RESET_UNSUPPORTED,
+            blocked_by_unbound_thread_reason_code=MEMORY_MODE_BLOCKED_BY_UNBOUND_THREAD,
+            subject_label="memory mode",
         )
 
     def handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:

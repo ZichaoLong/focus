@@ -20,6 +20,7 @@ from bot.adapters.base import (
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
+from bot.thread_memory_mode import deep_merge_config_overrides
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,7 @@ class CodexAppServerAdapter(AgentAdapter):
         *,
         cwd: str,
         profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
@@ -142,6 +144,7 @@ class CodexAppServerAdapter(AgentAdapter):
             cwd=cwd,
             include_service_name=True,
             profile=profile,
+            config_overrides=config_overrides,
             approval_policy=approval_policy,
             sandbox=sandbox,
         )
@@ -154,6 +157,7 @@ class CodexAppServerAdapter(AgentAdapter):
         thread_id: str,
         *,
         profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
     ) -> ThreadSnapshot:
@@ -162,8 +166,9 @@ class CodexAppServerAdapter(AgentAdapter):
             params["model"] = model
         if model_provider:
             params["modelProvider"] = model_provider
-        if profile:
-            params["config"] = {"profile": profile}
+        merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
+        if merged_config:
+            params["config"] = merged_config
         result = self._rpc.request("thread/resume", params)
         self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
@@ -227,6 +232,15 @@ class CodexAppServerAdapter(AgentAdapter):
             },
         )
         return self.read_runtime_config()
+
+    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
+        self._rpc.request(
+            "thread/memoryMode/set",
+            {
+                "threadId": thread_id,
+                "mode": mode,
+            },
+        )
 
     def rename_thread(self, thread_id: str, name: str) -> None:
         self._rpc.request("thread/name/set", {"threadId": thread_id, "name": name})
@@ -314,6 +328,7 @@ class CodexAppServerAdapter(AgentAdapter):
         cwd: str,
         include_service_name: bool,
         profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> dict[str, Any]:
@@ -327,11 +342,22 @@ class CodexAppServerAdapter(AgentAdapter):
             "modelProvider": self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
-        if profile:
-            params["config"] = {"profile": profile}
+        merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
+        if merged_config:
+            params["config"] = merged_config
         if include_service_name:
             params["serviceName"] = self._config.service_name or None
         return _compact(params)
+
+    @staticmethod
+    def _merge_request_config(
+        *,
+        profile: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        normalized_profile = str(profile or "").strip()
+        profile_override = {"profile": normalized_profile} if normalized_profile else None
+        return deep_merge_config_overrides(profile_override, config_overrides)
 
     @staticmethod
     def _normalize_sandbox_mode(mode: str | None) -> str | None:

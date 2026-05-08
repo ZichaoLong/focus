@@ -78,6 +78,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             reset_current_instance_backend=lambda force: reset_calls.append(bool(force)) or {"force": bool(force)},
             attach_binding=lambda binding, thread_id: summaries[thread_id],
             load_thread_resume_profile=lambda thread_id: None,
+            load_thread_memory_mode=lambda thread_id: None,
             permissions_summary=lambda approval_policy, sandbox: f"{sandbox}/{approval_policy}",
             thread_image_delivery=ThreadImageDeliveryController(
                 upload_image=lambda local_path: "img-key-1",
@@ -692,6 +693,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(snapshot["backend_thread_status"], "notLoaded")
         self.assertEqual(snapshot["live_runtime_owner"]["label"], "explorer")
         self.assertEqual(snapshot["live_runtime_holder_labels"], ["service@explorer(pid=4321)"])
+        self.assertEqual(snapshot["thread_memory_mode"], "（未设置）")
 
     def test_handle_service_control_request_reset_backend_forwards_force_flag(self) -> None:
         (

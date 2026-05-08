@@ -88,6 +88,7 @@ Must provide:
 Must provide:
 
 - `/profile`
+- `/memory`
 - `/archive`
 - a `Rename` form entry
 

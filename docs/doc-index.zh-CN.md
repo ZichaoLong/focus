@@ -42,6 +42,7 @@
 - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
 - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
 - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
+- [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
 - [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md)
 - [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md)
 - [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md)
@@ -77,6 +78,7 @@
 | 飞书侧线程生命周期是什么？哪些状态绝不能混淆？ | [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md) |
 | `/status`、`/detach`、`feishu-codexctl` 共享的状态词汇与管理面合同是什么？ | [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | `/threads`、`/resume`、`/profile`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
+| `/memory` 如何映射到上游 memory 配置、何时可直接写入、何时必须 reset-backend？ | [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md) |
 | 本地命令面应如何重划？`/detach`、`fcodex` thin wrapper、`feishu-codexctl` 分工、thread-wise profile/provider 的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
 | 多实例下 `default` / 命名实例、共享 thread 可见面、`fcodex --instance`、全局 runtime lease 怎么工作？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)、[`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md) |
 | 飞书 `/help` 的信息架构、按钮导航与 slash 语义一致性合同是什么？ | [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md) |
@@ -99,6 +101,7 @@
   - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
+  - [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
 - 改群聊相关能力时：
@@ -111,6 +114,7 @@
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
+  - [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
 - 改 `fcodex` wrapper、shared backend、本地代理相关逻辑时：
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)

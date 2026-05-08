@@ -21,6 +21,7 @@ from bot.env_file import load_env_file
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, global_data_dir, validate_instance_name
 from bot.instance_resolution import CliRuntimeTarget, current_cli_instance_name, resolve_cli_runtime_target
 from bot.platform_paths import default_data_root, is_windows
+from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.thread_resolution import (
     looks_like_thread_id,
     resolve_resume_name_via_remote_backend,
@@ -307,6 +308,7 @@ def _inject_saved_thread_resume_profile_if_needed(user_args: list[str], thread_i
 class _WrapperProfileLaunchPlan:
     user_args: list[str]
     thread_profile_seed: str = ""
+    resume_profile_hint: str = ""
 
 
 def _build_wrapper_profile_launch_plan(
@@ -329,6 +331,21 @@ def _build_wrapper_profile_launch_plan(
     resume_thread_id = _thread_target_hint(planned_args)
     explicit_profile = _extract_option_value(planned_args, ("-p", "--profile")).strip()
     if resume_thread_id:
+        resume_profile_hint = ""
+        saved_profile_record = ThreadResumeProfileStore(global_data_dir()).load(resume_thread_id)
+        if explicit_profile:
+            resume_profile_hint = explicit_profile
+        elif saved_profile_record is not None:
+            resume_profile_hint = str(saved_profile_record.profile or "").strip()
+        elif ThreadMemoryModeStore(global_data_dir()).load(resume_thread_id) is not None:
+            adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
+            try:
+                runtime_config = adapter.read_runtime_config()
+                resume_profile_hint = str(runtime_config.current_profile or "").strip()
+            except Exception:
+                resume_profile_hint = ""
+            finally:
+                adapter.stop()
         if explicit_profile:
             can_write, deny_reason = _thread_resume_profile_mutable(cfg, app_server_url, resume_thread_id)
             if not can_write:
@@ -340,9 +357,13 @@ def _build_wrapper_profile_launch_plan(
                 resume_thread_id,
                 explicit_profile,
             )
-            return _WrapperProfileLaunchPlan(user_args=planned_args)
+            return _WrapperProfileLaunchPlan(
+                user_args=planned_args,
+                resume_profile_hint=resume_profile_hint,
+            )
         return _WrapperProfileLaunchPlan(
             user_args=_inject_saved_thread_resume_profile_if_needed(planned_args, resume_thread_id),
+            resume_profile_hint=resume_profile_hint,
         )
     if explicit_profile:
         return _WrapperProfileLaunchPlan(
@@ -418,6 +439,7 @@ def _launch_local_cwd_proxy(
     instance_name: str = DEFAULT_INSTANCE_NAME,
     service_token: str = "",
     thread_profile_seed: str = "",
+    resume_profile_hint: str = "",
 ) -> tuple[str, subprocess.Popen[str]]:
     cmd = [
         sys.executable,
@@ -437,6 +459,8 @@ def _launch_local_cwd_proxy(
         service_token,
         "--thread-profile-seed",
         thread_profile_seed,
+        "--resume-profile-hint",
+        resume_profile_hint,
         "--parent-pid",
         str(os.getpid()),
     ]
@@ -544,6 +568,7 @@ def main() -> None:
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
     thread_profile_seed = ""
+    resume_profile_hint = ""
     if not _has_explicit_remote(user_args):
         profile_launch_plan = _build_wrapper_profile_launch_plan(
             cfg=cfg,
@@ -552,6 +577,7 @@ def main() -> None:
         )
         user_args = list(profile_launch_plan.user_args)
         thread_profile_seed = profile_launch_plan.thread_profile_seed
+        resume_profile_hint = profile_launch_plan.resume_profile_hint
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
     if not _has_explicit_remote(user_args):
@@ -571,6 +597,7 @@ def main() -> None:
                 effective_cwd,
                 data_dir,
                 thread_profile_seed=thread_profile_seed,
+                resume_profile_hint=resume_profile_hint,
                 **proxy_kwargs,
             )
         except Exception as exc:

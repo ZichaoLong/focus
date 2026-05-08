@@ -56,6 +56,7 @@ class _FakeAdapter:
         self.respond_calls: list[dict] = []
         self.archive_thread_calls: list[str] = []
         self.unsubscribe_thread_calls: list[str] = []
+        self.set_thread_memory_mode_calls: list[dict] = []
         self.read_thread_calls: list[dict] = []
         self.thread_snapshots: dict[tuple[str, bool | None], ThreadSnapshot | Exception] = {}
 
@@ -73,6 +74,7 @@ class _FakeAdapter:
         *,
         cwd: str,
         profile: str | None = None,
+        config_overrides: dict | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ):
@@ -80,6 +82,7 @@ class _FakeAdapter:
             {
                 "cwd": cwd,
                 "profile": profile,
+                "config_overrides": config_overrides,
                 "approval_policy": approval_policy,
                 "sandbox": sandbox,
             }
@@ -137,12 +140,14 @@ class _FakeAdapter:
         thread_id: str,
         *,
         profile: str | None = None,
+        config_overrides: dict | None = None,
         model: str | None = None,
         model_provider: str | None = None,
     ):
         self.resume_thread_calls.append({
             "thread_id": thread_id,
             "profile": profile,
+            "config_overrides": config_overrides,
             "model": model,
             "model_provider": model_provider,
         })
@@ -161,6 +166,9 @@ class _FakeAdapter:
 
     def unsubscribe_thread(self, thread_id: str) -> None:
         self.unsubscribe_thread_calls.append(thread_id)
+
+    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
+        self.set_thread_memory_mode_calls.append({"thread_id": thread_id, "mode": mode})
 
     def list_threads_all(
         self,
@@ -784,7 +792,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(attempts, ["thread-created", "thread-created"])
         self.assertEqual(
             handler._adapter.resume_thread_calls,
-            [{"thread_id": "thread-created", "profile": None, "model": None, "model_provider": None}],
+            [
+                {
+                    "thread_id": "thread-created",
+                    "profile": None,
+                    "config_overrides": None,
+                    "model": None,
+                    "model_provider": None,
+                }
+            ],
         )
         self.assertEqual(len(handler._adapter.create_thread_calls), 1)
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
@@ -820,7 +836,13 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(attempts, ["thread-created", "thread-created"])
         self.assertEqual(
             handler._adapter.resume_thread_calls[-1],
-            {"thread_id": "thread-created", "profile": None, "model": None, "model_provider": None},
+            {
+                "thread_id": "thread-created",
+                "profile": None,
+                "config_overrides": None,
+                "model": None,
+                "model_provider": None,
+            },
         )
         self.assertEqual(handler._adapter.unsubscribe_thread_calls, [])
 
@@ -4709,6 +4731,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("常用命令列表", reply)
         self.assertIn("`/commands`", reply)
         self.assertIn("`/status`", reply)
+        self.assertIn("`/memory [off|read|read_write]`", reply)
         self.assertIn("`/detach`", reply)
         self.assertIn("`/attach [binding|thread|service]`", reply)
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
@@ -4950,7 +4973,7 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/profile", "/archive"],
+            ["/profile", "/memory", "/archive"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],

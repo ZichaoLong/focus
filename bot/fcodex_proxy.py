@@ -34,8 +34,10 @@ from bot.stores.interaction_lease_store import (
     make_fcodex_interaction_holder,
 )
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, BACKEND_THREAD_STATUS_NOT_LOADED
+from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
+from bot.thread_memory_mode import build_thread_memory_config_override, deep_merge_config_overrides
 from bot.thread_runtime_coordination import acquire_thread_runtime_holder_or_raise
 
 _CWD_PROXY_METHODS = {"thread/start"}
@@ -182,6 +184,7 @@ class _ProxyInteractionGate:
         service_token: str = "",
         holder_pid: int,
         thread_profile_seed: str = "",
+        resume_profile_hint: str = "",
     ) -> None:
         self._cwd = cwd
         self._holder = make_fcodex_interaction_holder(
@@ -197,6 +200,7 @@ class _ProxyInteractionGate:
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
         self._initial_thread_profile_seed = str(thread_profile_seed or "").strip()
         self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed
+        self._resume_profile_hint = str(resume_profile_hint or "").strip()
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
@@ -298,6 +302,38 @@ class _ProxyInteractionGate:
                 file=sys.stderr,
             )
 
+    def _apply_saved_thread_memory_mode_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
+        thread_id = _payload_thread_id(payload)
+        if not thread_id:
+            return payload
+        memory_record = ThreadMemoryModeStore(self._global_data_dir).load(thread_id)
+        if memory_record is None:
+            return payload
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return payload
+        existing_config = params.get("config")
+        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+        profile_name_hint = str(normalized_existing_config.get("profile", "") or "").strip()
+        if not profile_name_hint:
+            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+            if profile_record is not None:
+                profile_name_hint = str(profile_record.profile or "").strip()
+        if not profile_name_hint:
+            profile_name_hint = self._resume_profile_hint
+        merged_config = deep_merge_config_overrides(
+            normalized_existing_config,
+            build_thread_memory_config_override(
+                memory_record.mode,
+                profile_name_hint=profile_name_hint,
+            ),
+        )
+        updated_payload = dict(payload)
+        updated_params = dict(params)
+        updated_params["config"] = merged_config
+        updated_payload["params"] = updated_params
+        return updated_payload
+
     def handle_client_message(self, message: str | bytes, *, client_ws: Any, backend_ws: Any) -> None:
         rewritten = _rewrite_thread_start_cwd(message, self._cwd)
         parsed = _parse_jsonrpc_message(rewritten)
@@ -308,6 +344,8 @@ class _ProxyInteractionGate:
 
         method = payload.get("method")
         if isinstance(method, str):
+            if method == "thread/resume":
+                payload = self._apply_saved_thread_memory_mode_for_resume(payload)
             thread_id = _payload_thread_id(payload)
             request_id = payload.get("id")
             if method == "thread/resume" and thread_id:
@@ -463,6 +501,7 @@ def run_proxy(
     instance_name: str = "",
     service_token: str = "",
     thread_profile_seed: str = "",
+    resume_profile_hint: str = "",
     listen_host: str = "127.0.0.1",
     listen_port: int = 0,
     idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT_SECONDS,
@@ -535,6 +574,7 @@ def run_proxy(
                     service_token=service_token,
                     holder_pid=holder_pid,
                     thread_profile_seed=thread_profile_seed,
+                    resume_profile_hint=resume_profile_hint,
                 )
 
                 def _backend_to_client() -> None:
@@ -597,6 +637,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--instance", default="")
     parser.add_argument("--service-token", default="")
     parser.add_argument("--thread-profile-seed", default="")
+    parser.add_argument("--resume-profile-hint", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--parent-pid", type=int, default=0)
@@ -609,6 +650,7 @@ def main(argv: list[str] | None = None) -> None:
         instance_name=args.instance,
         service_token=args.service_token,
         thread_profile_seed=args.thread_profile_seed,
+        resume_profile_hint=args.resume_profile_hint,
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         parent_pid=args.parent_pid or None,

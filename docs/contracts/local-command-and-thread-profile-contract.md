@@ -2,10 +2,11 @@
 
 Chinese original: `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
 
-This file clarifies three things only:
+This file clarifies four things only:
 
 - the responsibility boundary between `feishu-codex`, `feishu-codexctl`, and `fcodex`
 - how thread-wise profile behaves locally and in Feishu
+- how thread-wise memory mode behaves locally and in Feishu
 - why the public local command surface now uses attach / detach instead of exposing release-runtime
 
 ## 1. Three local entry points
@@ -94,6 +95,16 @@ Therefore:
 - `fcodex resume <thread> -p <profile>` must reject while the thread is still loaded
 - the user should not be forced to reason about release-runtime / unsubscribe first
 - the preferred recovery path is Feishu `/profile <name>`, with reset-backend when needed
+
+### 4.3 Thread-wise memory mode
+
+The local command surface does not currently expose a standalone thread-wise memory-mode mutator.
+
+The formal contract is:
+
+- Feishu `/memory [off|read|read_write]` mutates the thread-wise memory mode
+- `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
+- the direct-write / reset-backend rule is defined in `docs/contracts/thread-memory-semantics.md`
 
 ## 5. reset-backend locally and in Feishu
 

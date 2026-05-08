@@ -19,6 +19,7 @@ from bot.cards import (
     CommandResult,
     build_approval_policy_card,
     build_collaboration_mode_card,
+    build_memory_mode_card,
     build_profile_card,
     build_permissions_preset_card,
     build_sandbox_policy_card,
@@ -28,7 +29,9 @@ from bot.config import ensure_init_token, load_system_config_raw, save_system_co
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.runtime_view import RuntimeView
+from bot.stores.thread_memory_mode_store import ThreadMemoryModeRecord
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
+from bot.thread_memory_mode import THREAD_MEMORY_MODES, normalize_thread_memory_mode
 
 logger = logging.getLogger(__name__)
 
@@ -36,10 +39,11 @@ _UNSET = object()
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
+_MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
 
 
 @dataclass(frozen=True, slots=True)
-class ProfileResetThreadReplacement:
+class ThreadResetReplacement:
     old_thread_id: str
     new_thread_id: str
     warning_text: str = ""
@@ -55,12 +59,15 @@ class SettingsDomainPorts:
     set_configured_bot_open_id: Callable[[str], None]
     load_thread_resume_profile: Callable[[str], ThreadResumeProfileRecord | None]
     save_thread_resume_profile: Callable[[str, str, str, str], ThreadResumeProfileRecord]
+    load_thread_memory_mode: Callable[[str], ThreadMemoryModeRecord | None]
+    apply_thread_memory_mode: Callable[[str, str], ThreadMemoryModeRecord]
     check_thread_resume_profile_mutable: Callable[[str], tuple[bool, str]]
     plan_thread_reprofile: Callable[[str], Any]
+    plan_thread_memory_mode_update: Callable[[str], Any]
     reset_current_instance_backend: Callable[[bool], dict[str, Any]]
     replace_bound_provisional_thread_after_reset: Callable[
-        [str, str, str, str],
-        ProfileResetThreadReplacement | None,
+        [str, str, str, str, str],
+        ThreadResetReplacement | None,
     ]
     resolve_profile_resume_config: Callable[[str], ResolvedProfileConfig]
     adapter_model_provider: str
@@ -74,6 +81,14 @@ class ProfileCommandOutcome:
     command_result: CommandResult
     applied_profile: str = ""
     reset_offered_profile: str = ""
+    reset_requires_force: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryModeCommandOutcome:
+    command_result: CommandResult
+    applied_mode: str = ""
+    reset_offered_mode: str = ""
     reset_requires_force: bool = False
 
 
@@ -318,6 +333,14 @@ class CodexSettingsDomain:
             message_id=message_id,
         ).command_result
 
+    def handle_memory_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
+        return self._handle_memory_mode_request(
+            sender_id,
+            chat_id,
+            arg,
+            message_id=message_id,
+        ).command_result
+
     def _profile_provider_text(
         self,
         profile_name: str,
@@ -336,7 +359,7 @@ class CodexSettingsDomain:
         return "未显式设置，实际以恢复时解析结果为准"
 
     @staticmethod
-    def _profile_reprofile_diagnostics(plan: Any) -> list[str]:
+    def _threadwise_mutation_diagnostics(plan: Any) -> list[str]:
         ignored_prefixes = (
             "当前 thread：",
             "当前 backend thread status：",
@@ -352,8 +375,14 @@ class CodexSettingsDomain:
         return diagnostics
 
     @staticmethod
-    def _profile_reset_action_rows(*, target_profile: str, force: bool) -> list[dict]:
-        if not target_profile:
+    def _threadwise_reset_action_rows(
+        *,
+        action: str,
+        target_key: str,
+        target_value: str,
+        force: bool,
+    ) -> list[dict]:
+        if not target_value:
             return []
         label = "强制应用并重置 backend" if force else "应用并重置 backend"
         return [
@@ -366,8 +395,8 @@ class CodexSettingsDomain:
                         "text": {"tag": "plain_text", "content": label},
                         "type": "primary",
                         "value": {
-                            "action": "apply_profile_with_backend_reset",
-                            "profile": target_profile,
+                            "action": action,
+                            target_key: target_value,
                             "force": bool(force),
                         },
                     }
@@ -465,7 +494,7 @@ class CodexSettingsDomain:
             lines.append(f"当前不能直接写入：{plan.reason_text}")
         else:
             lines.append(f"当前不可直接写入：{plan.reason_text}")
-        diagnostics = self._profile_reprofile_diagnostics(plan)
+        diagnostics = self._threadwise_mutation_diagnostics(plan)
         if diagnostics:
             lines.extend(["", "**re-profile 诊断**"])
             lines.extend(f"- {line}" for line in diagnostics)
@@ -476,8 +505,10 @@ class CodexSettingsDomain:
             extra_action_rows=(
                 [
                     *(
-                        self._profile_reset_action_rows(
-                            target_profile=reset_target_profile,
+                        self._threadwise_reset_action_rows(
+                            action="apply_profile_with_backend_reset",
+                            target_key="profile",
+                            target_value=reset_target_profile,
                             force=reset_requires_force,
                         )
                         if reset_target_profile and plan.status in {"reset-available", "reset-force-only"}
@@ -488,6 +519,66 @@ class CodexSettingsDomain:
                 or None
             ),
             title="Codex Thread Profile",
+        )
+
+    @staticmethod
+    def _memory_mode_display_text(record: ThreadMemoryModeRecord | None) -> str:
+        if record is None:
+            return "（未设置）"
+        return str(record.mode or "").strip() or "（未设置）"
+
+    def _build_memory_mode_summary_card(
+        self,
+        *,
+        thread_id: str,
+        current_record: ThreadMemoryModeRecord | None,
+        plan: Any,
+        leading_lines: list[str] | None = None,
+        reset_target_mode: str = "",
+        reset_requires_force: bool = False,
+        extra_action_rows: list[dict] | None = None,
+    ) -> dict:
+        current_mode = self._memory_mode_display_text(current_record)
+        lines = list(leading_lines or [])
+        lines.extend(
+            [
+                f"当前 thread：`{thread_id[:8]}…`",
+                f"当前 thread-wise memory mode：`{current_mode}`",
+                "未设置时，沿用当前 Codex 配置。",
+            ]
+        )
+        if reset_target_mode:
+            lines.extend(["", f"目标 memory mode：`{reset_target_mode}`"])
+        if plan.status == "direct-write":
+            lines.append("当前已满足切换条件：thread globally unloaded。")
+        elif plan.status in {"reset-available", "reset-force-only"}:
+            lines.append(f"当前不能直接写入：{plan.reason_text}")
+        else:
+            lines.append(f"当前不可直接写入：{plan.reason_text}")
+        diagnostics = self._threadwise_mutation_diagnostics(plan)
+        if diagnostics:
+            lines.extend(["", "**memory mode 诊断**"])
+            lines.extend(f"- {line}" for line in diagnostics)
+        return build_memory_mode_card(
+            content="\n".join(lines),
+            current_mode=current_mode if current_mode in THREAD_MEMORY_MODES else "",
+            extra_action_rows=(
+                [
+                    *(
+                        self._threadwise_reset_action_rows(
+                            action="apply_memory_mode_with_backend_reset",
+                            target_key="mode",
+                            target_value=reset_target_mode,
+                            force=reset_requires_force,
+                        )
+                        if reset_target_mode and plan.status in {"reset-available", "reset-force-only"}
+                        else []
+                    ),
+                    *(extra_action_rows or []),
+                ]
+                or None
+            ),
+            title="Codex Thread Memory Mode",
         )
 
     def _handle_profile_request(
@@ -671,6 +762,7 @@ class CodexSettingsDomain:
                 sender_id,
                 chat_id,
                 target_profile,
+                "",
                 message_id,
             )
         except Exception as exc:
@@ -785,6 +877,260 @@ class CodexSettingsDomain:
                 )
             ),
             applied_profile=target_profile,
+        )
+
+    def _handle_memory_mode_request(
+        self,
+        sender_id: str,
+        chat_id: str,
+        arg: str,
+        *,
+        message_id: str = "",
+    ) -> MemoryModeCommandOutcome:
+        ports = self._ports
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        thread_id = str(runtime.current_thread_id or "").strip()
+        if not thread_id:
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    text="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。"
+                )
+            )
+
+        current_record = ports.load_thread_memory_mode(thread_id)
+        plan = ports.plan_thread_memory_mode_update(thread_id)
+
+        if not arg:
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=current_record,
+                        plan=plan,
+                    )
+                )
+            )
+
+        target_mode = str(arg or "").strip().lower()
+        try:
+            normalized_target_mode = normalize_thread_memory_mode(target_mode)
+        except ValueError:
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    text=(
+                        f"非法 memory mode：`{target_mode}`\n"
+                        f"用法：`{_MEMORY_WITH_NAME_COMMAND}`\n"
+                        "先发 `/memory` 查看可用模式。"
+                    )
+                )
+            )
+
+        if plan.status == "direct-write":
+            try:
+                ports.apply_thread_memory_mode(thread_id, normalized_target_mode)
+            except Exception as exc:
+                logger.exception("写入 thread-wise memory mode 失败")
+                return MemoryModeCommandOutcome(
+                    command_result=CommandResult(text=f"切换 memory mode 失败：{exc}")
+                )
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=ports.load_thread_memory_mode(thread_id),
+                        plan=ports.plan_thread_memory_mode_update(thread_id),
+                        leading_lines=[f"已切换当前 thread 的 memory mode：`{normalized_target_mode}`", ""],
+                    )
+                ),
+                applied_mode=normalized_target_mode,
+            )
+
+        if plan.status == "reset-available":
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=current_record,
+                        plan=plan,
+                        leading_lines=[
+                            f"当前还不能直接切换到 `{normalized_target_mode}`。",
+                            "可继续执行：应用该 memory mode，并重置当前实例 backend。",
+                        ],
+                        reset_target_mode=normalized_target_mode,
+                        reset_requires_force=False,
+                    )
+                ),
+                reset_offered_mode=normalized_target_mode,
+                reset_requires_force=False,
+            )
+
+        if plan.status == "reset-force-only":
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=current_record,
+                        plan=plan,
+                        leading_lines=[
+                            f"当前还不能直接切换到 `{normalized_target_mode}`。",
+                            plan.reason_text,
+                            "如确认可打断，可强制应用该 memory mode 并重置 backend。",
+                        ],
+                        reset_target_mode=normalized_target_mode,
+                        reset_requires_force=True,
+                    )
+                ),
+                reset_offered_mode=normalized_target_mode,
+                reset_requires_force=True,
+            )
+
+        return MemoryModeCommandOutcome(
+            command_result=CommandResult(
+                card=self._build_memory_mode_summary_card(
+                    thread_id=thread_id,
+                    current_record=current_record,
+                    plan=plan,
+                    leading_lines=[
+                        f"当前不能切换到 `{normalized_target_mode}`。",
+                        plan.reason_text,
+                    ],
+                )
+            )
+        )
+
+    def _apply_memory_mode_after_backend_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        target_mode: str,
+        *,
+        force: bool,
+        message_id: str = "",
+    ) -> MemoryModeCommandOutcome:
+        initial = self._handle_memory_mode_request(sender_id, chat_id, target_mode, message_id=message_id)
+        if initial.applied_mode:
+            return initial
+        if not initial.reset_offered_mode:
+            return initial
+
+        ports = self._ports
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        thread_id = str(runtime.current_thread_id or "").strip()
+        current_record = ports.load_thread_memory_mode(thread_id)
+
+        try:
+            reset_result = ports.reset_current_instance_backend(force)
+        except Exception as exc:
+            logger.exception("reset backend 失败")
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(text=f"reset backend 失败：{exc}")
+            )
+
+        try:
+            replacement = ports.replace_bound_provisional_thread_after_reset(
+                sender_id,
+                chat_id,
+                "",
+                target_mode,
+                message_id,
+            )
+        except Exception as exc:
+            logger.exception("reset 后替换临时 thread 失败")
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    text=(
+                        "reset 完成，但当前临时 thread 替换失败："
+                        f"{exc}"
+                    )
+                )
+            )
+        if replacement is not None:
+            thread_id = replacement.new_thread_id
+            updated_record = ports.load_thread_memory_mode(thread_id)
+            fresh_plan = ports.plan_thread_memory_mode_update(thread_id)
+            leading_lines = [
+                f"已切换当前 thread 的 memory mode：`{target_mode}`",
+                "已重置当前实例 backend。",
+                (
+                    "原临时 thread 尚未 materialize，"
+                    f"已替换为新 thread：`{replacement.new_thread_id[:8]}…`"
+                ),
+            ]
+            if reset_result.get("interrupted_binding_ids"):
+                leading_lines.append(
+                    "已中断运行中的 binding："
+                    + ", ".join(f"`{binding_id}`" for binding_id in reset_result["interrupted_binding_ids"])
+                )
+            if reset_result.get("fail_closed_request_count"):
+                leading_lines.append(
+                    f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
+                )
+            if replacement.warning_text:
+                leading_lines.append(replacement.warning_text)
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=updated_record,
+                        plan=fresh_plan,
+                        leading_lines=leading_lines + [""],
+                        extra_action_rows=self._post_reset_attach_action_rows(thread_id),
+                    )
+                ),
+                applied_mode=target_mode,
+            )
+
+        can_write, deny_reason = ports.check_thread_resume_profile_mutable(thread_id)
+        if not can_write:
+            plan = ports.plan_thread_memory_mode_update(thread_id)
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=current_record,
+                        plan=plan,
+                        leading_lines=[
+                            "backend 已重置，但当前仍不能写入目标 memory mode。",
+                            deny_reason,
+                        ],
+                    )
+                )
+            )
+
+        try:
+            ports.apply_thread_memory_mode(thread_id, target_mode)
+        except Exception as exc:
+            logger.exception("reset 后写入 thread-wise memory mode 失败")
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(text=f"reset 完成，但写入 memory mode 失败：{exc}")
+            )
+
+        leading_lines = [
+            f"已切换当前 thread 的 memory mode：`{target_mode}`",
+            "已重置当前实例 backend。",
+        ]
+        if reset_result.get("interrupted_binding_ids"):
+            leading_lines.append(
+                "已中断运行中的 binding："
+                + ", ".join(f"`{binding_id}`" for binding_id in reset_result["interrupted_binding_ids"])
+            )
+        if reset_result.get("fail_closed_request_count"):
+            leading_lines.append(
+                f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
+            )
+        updated_record = ports.load_thread_memory_mode(thread_id)
+        fresh_plan = ports.plan_thread_memory_mode_update(thread_id)
+        return MemoryModeCommandOutcome(
+            command_result=CommandResult(
+                card=self._build_memory_mode_summary_card(
+                    thread_id=thread_id,
+                    current_record=updated_record,
+                    plan=fresh_plan,
+                    leading_lines=leading_lines + [""],
+                    extra_action_rows=self._post_reset_attach_action_rows(thread_id),
+                )
+            ),
+            applied_mode=target_mode,
         )
 
     def handle_approval_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
@@ -1053,5 +1399,67 @@ class CodexSettingsDomain:
         return make_card_response(
             card=result.card,
             toast=result.text or "当前仍无法应用该 profile。",
+            toast_type="warning",
+        )
+
+    def handle_set_memory_mode(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict,
+    ) -> P2CardActionTriggerResponse:
+        target_mode = str(action_value.get("mode", "")).strip().lower()
+        if not target_mode:
+            return make_card_response(toast="缺少 memory mode", toast_type="warning")
+        outcome = self._handle_memory_mode_request(sender_id, chat_id, target_mode, message_id=message_id)
+        result = outcome.command_result
+        if result.card is None:
+            return make_card_response(toast=result.text or "切换 memory mode 失败", toast_type="warning")
+        if outcome.applied_mode:
+            toast = f"已切换当前 thread 的 memory mode：{target_mode}"
+            toast_type = "success"
+        elif outcome.reset_offered_mode:
+            toast = (
+                "当前需要先重置 backend，才能应用该 memory mode。"
+                if outcome.reset_requires_force
+                else "当前可通过重置 backend 后应用该 memory mode。"
+            )
+            toast_type = "info"
+        else:
+            toast = result.text or "当前不能切换该 memory mode。"
+            toast_type = "warning"
+        return make_card_response(
+            card=result.card,
+            toast=toast,
+            toast_type=toast_type,
+        )
+
+    def handle_apply_memory_mode_with_backend_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict,
+    ) -> P2CardActionTriggerResponse:
+        target_mode = str(action_value.get("mode", "")).strip().lower()
+        if not target_mode:
+            return make_card_response(toast="缺少 memory mode", toast_type="warning")
+        outcome = self._apply_memory_mode_after_backend_reset(
+            sender_id,
+            chat_id,
+            target_mode,
+            force=bool(action_value.get("force")),
+            message_id=message_id,
+        )
+        result = outcome.command_result
+        if result.card is None:
+            return make_card_response(toast=result.text or "应用 memory mode 失败", toast_type="warning")
+        if outcome.applied_mode:
+            toast = f"已应用 `{target_mode}` 并重置 backend。"
+            return make_card_response(card=result.card, toast=toast, toast_type="success")
+        return make_card_response(
+            card=result.card,
+            toast=result.text or "当前仍无法应用该 memory mode。",
             toast_type="warning",
         )

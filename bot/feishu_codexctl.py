@@ -314,6 +314,7 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
         print(f"instance: {instance_name}")
     print(f"thread: {snapshot['thread_id']} {snapshot['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(snapshot['working_dir'])}")
+    print(f"thread-wise memory mode: {snapshot.get('thread_memory_mode', '（未设置）')}")
     print(f"current instance backend thread status: {snapshot['backend_thread_status']}")
     print(f"backend running turn: {'yes' if snapshot['backend_running_turn'] else 'no'}")
     print(f"live runtime owner: {live_runtime_owner}")

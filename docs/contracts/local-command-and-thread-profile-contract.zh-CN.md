@@ -2,10 +2,11 @@
 
 英文原文：`docs/contracts/local-command-and-thread-profile-contract.md`
 
-本文只澄清三件事：
+本文只澄清四件事：
 
 - 本地三个入口 `feishu-codex`、`feishu-codexctl`、`fcodex` 的职责边界
 - thread-wise profile 在本地和飞书侧分别怎么生效
+- thread-wise memory mode 在本地和飞书侧分别怎么生效
 - 为什么本地命令面现在统一使用 attach / detach，而不再对外暴露 release-runtime
 
 ## 1. 三个本地入口
@@ -94,6 +95,16 @@
 - `fcodex resume <thread> -p <profile>` 遇到 loaded thread 必须拒绝
 - 不应要求用户先去理解 release-runtime / unsubscribe
 - 推荐路径应是飞书 `/profile <name>`，必要时走 reset-backend
+
+### 4.3 thread-wise memory mode
+
+当前本地命令面没有单独的 thread-wise memory mode 改写命令。
+
+正式合同是：
+
+- 飞书 `/memory [off|read|read_write]` 负责改写 thread-wise memory mode
+- `fcodex resume <thread>` 恢复该 thread 时，会自动沿用已持久化的 memory mode
+- 若要理解 direct-write / reset-backend 条件，以 `docs/contracts/thread-memory-semantics.zh-CN.md` 为准
 
 ## 5. reset-backend 在本地与飞书侧的关系
 

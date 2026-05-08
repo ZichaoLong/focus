@@ -33,6 +33,14 @@ REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER = "reprofile_blocked_by_other_instance
 REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED = "reprofile_blocked_by_reset_unsupported"
 REPROFILE_BLOCKED_BY_UNBOUND_THREAD = "reprofile_blocked_by_unbound_thread"
 
+MEMORY_MODE_DIRECT_WRITE_AVAILABLE = "memory_mode_direct_write_available"
+MEMORY_MODE_RESET_AVAILABLE = "memory_mode_reset_available"
+MEMORY_MODE_RESET_FORCE_ONLY = "memory_mode_reset_force_only"
+MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED = "memory_mode_reset_force_only_by_runtime_unverified"
+MEMORY_MODE_BLOCKED_BY_OTHER_INSTANCE_OWNER = "memory_mode_blocked_by_other_instance_owner"
+MEMORY_MODE_BLOCKED_BY_RESET_UNSUPPORTED = "memory_mode_blocked_by_reset_unsupported"
+MEMORY_MODE_BLOCKED_BY_UNBOUND_THREAD = "memory_mode_blocked_by_unbound_thread"
+
 
 @dataclass(frozen=True, slots=True)
 class ReasonedCheck:

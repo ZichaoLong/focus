@@ -49,6 +49,7 @@ Status guidance:
 - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
 - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
 - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
+- [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md)
 - [`codex-permissions-model.md`](./contracts/codex-permissions-model.md)
 - [`group-chat-contract.md`](./contracts/group-chat-contract.md)
@@ -84,6 +85,7 @@ Status guidance:
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |
 | What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | What do `/threads`, `/resume`, `/profile`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
+| How does `/memory` map to upstream memory configuration, when is direct write allowed, and when is reset-backend required? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md) |
 | What is the current contract for `/detach`, a thinner `fcodex`, the `feishu-codexctl` split, and thread-wise profile/provider? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
 | How do multi-instance `default` / named-instance behavior, shared thread visibility, `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
 | What information architecture and semantic rules does the Feishu `/help` navigation surface follow? | [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md) |
@@ -106,6 +108,7 @@ Status guidance:
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
+  - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - For group-chat work:
@@ -118,6 +121,7 @@ Status guidance:
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
+  - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - For wrapper or backend work:
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)

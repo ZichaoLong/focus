@@ -287,6 +287,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "working_dir": "/tmp/project",
             "backend_thread_status": "notLoaded",
             "backend_running_turn": False,
+            "thread_memory_mode": "read",
             "live_runtime_owner": {"label": "explorer"},
             "live_runtime_holder_labels": ["service@explorer(pid=1234)"],
             "bound_binding_ids": [],
@@ -310,6 +311,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
         self.assertIn("thread: thread-1 demo", rendered)
+        self.assertIn("thread-wise memory mode: read", rendered)
 
     def test_send_thread_image_reports_partial_delivery(self) -> None:
         stdout = io.StringIO()

@@ -40,6 +40,7 @@ from bot.instance_resolution import (
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
+from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
 from bot.thread_resolution import (
@@ -120,6 +121,44 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
+    def test_create_thread_merges_profile_with_memory_config_overrides(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.create_thread(
+            cwd="/tmp/project",
+            profile="provider2",
+            config_overrides={
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": False,
+                }
+            },
+        )
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/start",
+                {
+                    "cwd": "/tmp/project",
+                    "sandbox": "workspace-write",
+                    "approvalPolicy": "on-request",
+                    "approvalsReviewer": "user",
+                    "personality": "pragmatic",
+                    "serviceName": "feishu-codex",
+                    "config": {
+                        "profile": "provider2",
+                        "memories": {
+                            "use_memories": True,
+                            "generate_memories": False,
+                        },
+                    },
+                },
+            ),
+        )
+
     def test_create_thread_allows_permission_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
@@ -183,6 +222,57 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "threadId": "thread-1",
                     "model": "gpt-5.4",
                     "modelProvider": "provider2_api",
+                },
+            ),
+        )
+
+    def test_resume_thread_merges_profile_with_memory_config_overrides(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.resume_thread(
+            "thread-1",
+            profile="provider2",
+            config_overrides={
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": True,
+                }
+            },
+        )
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/resume",
+                {
+                    "threadId": "thread-1",
+                    "config": {
+                        "profile": "provider2",
+                        "memories": {
+                            "use_memories": True,
+                            "generate_memories": True,
+                        },
+                    },
+                },
+            ),
+        )
+
+    def test_set_thread_memory_mode_calls_upstream_endpoint(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.set_thread_memory_mode("thread-1", mode="enabled")
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/memoryMode/set",
+                {
+                    "threadId": "thread-1",
+                    "mode": "enabled",
                 },
             ),
         )
@@ -845,6 +935,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="",
+            resume_profile_hint="",
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
@@ -865,6 +956,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="",
+            resume_profile_hint="",
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
@@ -903,6 +995,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="provider1",
+            resume_profile_hint="",
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
@@ -987,6 +1080,7 @@ class FCodexTests(unittest.TestCase):
             instance_name="corp-b",
             service_token="token-b",
             thread_profile_seed="",
+            resume_profile_hint="",
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
@@ -1303,6 +1397,7 @@ class FCodexTests(unittest.TestCase):
             "/home/tester/project",
             _default_data_dir(),
             thread_profile_seed="",
+            resume_profile_hint="",
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
@@ -1843,6 +1938,49 @@ class ProxyInteractionGateTests(unittest.TestCase):
             assert first is not None
             self.assertEqual(first.profile, "provider2")
             self.assertIsNone(second)
+
+    def test_thread_resume_request_injects_saved_thread_memory_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            ThreadMemoryModeStore(root_dir).save("thread-1", mode="read_write")
+            ThreadResumeProfileStore(root_dir).save(
+                "thread-1",
+                profile="provider2",
+                model="provider2-model",
+                model_provider="provider2_api",
+            )
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            forwarded = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded["method"], "thread/resume")
+            self.assertEqual(
+                forwarded["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": True,
+                },
+            )
+            self.assertEqual(forwarded["params"]["config"]["profiles"]["provider2"]["memories"]["use_memories"], True)
 
 
 class SessionResolutionTests(unittest.TestCase):

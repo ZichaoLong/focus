@@ -13,6 +13,7 @@ from bot.cards import (
     build_execution_card,
     build_group_activation_card,
     build_group_mode_card,
+    build_memory_mode_card,
     build_permissions_preset_card,
     build_profile_card,
     build_rename_card,
@@ -113,6 +114,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         self.assertIn("`feishu-codexctl thread list --scope cwd`", overview_markdown)
         self.assertIn(f"`{threads_command.feishu_usage}`", thread_markdown)
         self.assertIn(f"`{resume_command.feishu_usage}`", thread_markdown)
+        self.assertIn("`/memory`", thread_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", thread_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", threads_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", threads_markdown)
@@ -131,6 +133,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
             help_domain.reply_help("chat-1").card,
             help_domain.reply_help("chat-1", "thread").card,
             build_profile_card(content="切换 profile", profile_names=["p1"], current_profile="p1"),
+            build_memory_mode_card(content="切换 memory", current_mode="off"),
             build_backend_reset_card(content="预览", force=False),
             build_execution_card("log", [], running=True),
             build_command_approval_card("req-1", command="ls", cwd="/tmp/project", reason="需要执行"),

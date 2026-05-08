@@ -40,6 +40,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或切换当前绑定 thread 的 resume profile。",
     ),
     SharedCommandSpec(
+        key="memory",
+        slash_name="/memory",
+        feishu_usage="/memory [off|read|read_write]",
+        feishu_summary="查看或切换当前绑定 thread 的 thread-wise memory mode。",
+    ),
+    SharedCommandSpec(
         key="reset-backend",
         slash_name="/reset-backend",
         feishu_usage="/reset-backend",
