@@ -36,6 +36,39 @@ def _home_dir() -> pathlib.Path:
     return pathlib.Path.home()
 
 
+def _nvm_installation_root_for_path(path: pathlib.Path) -> pathlib.Path | None:
+    current = path.resolve()
+    for ancestor in (current, *current.parents):
+        parent = ancestor.parent
+        grandparent = parent.parent
+        if parent.name == "node" and grandparent.name == "versions":
+            return ancestor
+    return None
+
+
+def _node_launcher_command(
+    installation_root: pathlib.Path,
+    *,
+    fallback_codex: pathlib.Path | None = None,
+) -> str | None:
+    node_candidates = [
+        installation_root / "bin" / "node",
+        installation_root / "bin" / "node.exe",
+    ]
+    node = next((candidate for candidate in node_candidates if candidate.exists()), None)
+    if node is None:
+        return None
+    codex_js = installation_root / "lib" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+    if codex_js.exists():
+        return shlex.join([str(node), str(codex_js)])
+    if fallback_codex is not None and fallback_codex.exists():
+        resolved_fallback = fallback_codex.resolve()
+        if resolved_fallback.exists():
+            return shlex.join([str(node), str(resolved_fallback)])
+        return shlex.join([str(node), str(fallback_codex)])
+    return None
+
+
 def _candidate_fnm_roots() -> list[pathlib.Path]:
     roots: list[pathlib.Path] = []
     for raw in (
@@ -135,15 +168,32 @@ def _detect_nvm_stable_codex_command() -> str | None:
             and _is_path_within(resolved_codex, nvm_root)
             and resolved_codex.name.startswith("codex")
         ):
-            return str(resolved_codex)
-        matching_candidates = [
-            candidate / "bin" / "codex"
-            for candidate in version_candidates
-            if (candidate / "bin" / "codex").exists()
-        ]
-        if matching_candidates:
-            return str(matching_candidates[0])
+            installation_root = _nvm_installation_root_for_path(resolved_codex)
+            if installation_root is not None:
+                command = _node_launcher_command(installation_root, fallback_codex=current_codex)
+                if command is not None:
+                    return command
+        for candidate in version_candidates:
+            wrapper = candidate / "bin" / "codex"
+            if not wrapper.exists():
+                continue
+            command = _node_launcher_command(candidate, fallback_codex=wrapper)
+            if command is not None:
+                return command
     return None
+
+
+def _normalize_explicit_managed_command(configured_command: str) -> str | None:
+    parts = shlex.split(configured_command)
+    if len(parts) != 1:
+        return None
+    explicit_path = _resolve_existing_path(parts[0])
+    if explicit_path is None or explicit_path.name.startswith("node"):
+        return None
+    installation_root = _nvm_installation_root_for_path(explicit_path)
+    if installation_root is None:
+        return None
+    return _node_launcher_command(installation_root, fallback_codex=pathlib.Path(parts[0]).expanduser())
 
 
 def detect_stable_codex_command() -> str | None:
@@ -153,7 +203,7 @@ def detect_stable_codex_command() -> str | None:
 def resolve_managed_codex_command(configured_command: str) -> str:
     normalized = str(configured_command or "").strip() or DEFAULT_CODEX_COMMAND
     if normalized != DEFAULT_CODEX_COMMAND:
-        return normalized
+        return _normalize_explicit_managed_command(normalized) or normalized
     if shutil.which(DEFAULT_CODEX_COMMAND):
         return DEFAULT_CODEX_COMMAND
     return detect_stable_codex_command() or DEFAULT_CODEX_COMMAND

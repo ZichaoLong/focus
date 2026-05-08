@@ -640,10 +640,14 @@ class CodexRpcClientTests(unittest.TestCase):
 
     def test_launch_managed_process_uses_resolved_stable_codex_command_when_default_missing(self) -> None:
         client = CodexRpcClient(codex_command=DEFAULT_CODEX_COMMAND)
+        stable_command = (
+            "/home/bot/.nvm/versions/node/v24.15.0/bin/node "
+            "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js"
+        )
 
         with patch(
             "bot.codex_protocol.client.resolve_managed_codex_command",
-            return_value="/home/bot/.nvm/versions/node/v24.15.0/bin/codex",
+            return_value=stable_command,
         ):
             with patch("bot.codex_protocol.client.subprocess.Popen") as mock_popen:
                 client._launch_managed_process_locked("ws://127.0.0.1:8765")
@@ -652,7 +656,8 @@ class CodexRpcClientTests(unittest.TestCase):
         self.assertEqual(
             launched,
             [
-                "/home/bot/.nvm/versions/node/v24.15.0/bin/codex",
+                "/home/bot/.nvm/versions/node/v24.15.0/bin/node",
+                "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js",
                 "app-server",
                 "--listen",
                 "ws://127.0.0.1:8765",
