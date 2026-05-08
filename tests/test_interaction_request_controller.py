@@ -186,3 +186,38 @@ class InteractionRequestControllerTests(unittest.TestCase):
         self.assertFalse(controller.has_pending_request("req-1"))
         self.assertTrue(controller.has_pending_request("req-2"))
         self.assertEqual(responses, [("rpc-1", {"decision": "abort"}, None)])
+
+    def test_fail_close_all_requests_without_response_patches_cards_and_drops_pending_only(self) -> None:
+        controller, _, _, responses, patches = self._make_controller()
+        controller.store_pending_request("req-1", {
+            "rpc_request_id": "rpc-1",
+            "method": "item/commandExecution/requestApproval",
+            "params": {"threadId": "thread-1"},
+            "title": "Codex 命令执行审批",
+            "message_id": "msg-card-1",
+            "chat_id": "chat-1",
+            "sender_id": "ou_user",
+            "thread_id": "thread-1",
+        })
+        controller.store_pending_request("req-2", {
+            "rpc_request_id": "rpc-2",
+            "method": "item/tool/requestUserInput",
+            "params": {"threadId": "thread-2"},
+            "title": "Codex 用户输入",
+            "message_id": "msg-card-2",
+            "chat_id": "chat-2",
+            "sender_id": "ou_other",
+            "thread_id": "thread-2",
+        })
+
+        closed = controller.fail_close_all_requests_without_response(
+            note="当前实例与 Codex backend 的 websocket 已断开，已自动结束该请求。",
+        )
+
+        self.assertEqual(closed, 2)
+        self.assertFalse(controller.has_pending_request("req-1"))
+        self.assertFalse(controller.has_pending_request("req-2"))
+        self.assertEqual(responses, [])
+        self.assertEqual([message_id for message_id, _card in patches], ["msg-card-1", "msg-card-2"])
+        rendered = json.dumps(patches, ensure_ascii=False)
+        self.assertIn("websocket 已断开", rendered)

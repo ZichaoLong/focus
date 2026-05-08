@@ -2580,15 +2580,26 @@ class CodexHandler(BotHandler):
                         state,
                         error_message="Codex websocket disconnected",
                     )
+        pending_fail_closed = self._interaction_requests.fail_close_all_requests_without_response(
+            note="当前实例与 Codex backend 的 websocket 已断开，已自动结束该请求。",
+        )
         if not affected_bindings:
+            if pending_fail_closed:
+                logger.warning(
+                    "Codex websocket disconnected; detached bindings=%s threads=%s pending=%s",
+                    [],
+                    [],
+                    pending_fail_closed,
+                )
             return
         result = self._runtime_admin.fail_close_service_attached_runtime()
         for sender_id, chat_id in affected_bindings:
             self._finalize_execution_card_from_state(sender_id, chat_id)
         logger.warning(
-            "Codex websocket disconnected; detached bindings=%s threads=%s",
+            "Codex websocket disconnected; detached bindings=%s threads=%s pending=%s",
             result["detached_binding_ids"],
             result["detached_thread_ids"],
+            pending_fail_closed,
         )
 
     def _handle_thread_status_changed(self, params: dict[str, Any]) -> None:

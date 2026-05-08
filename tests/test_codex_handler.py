@@ -1147,6 +1147,55 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("Codex websocket disconnected", state["execution_transcript"].process_text())
         self.assertTrue(any("Codex websocket disconnected" in payload for _message_id, payload in bot.patches))
 
+    def test_adapter_disconnect_fail_closes_pending_interaction_requests_without_upstream_response(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "hello")
+        handler._interaction_requests.store_pending_request("req-1", {
+            "rpc_request_id": "rpc-1",
+            "method": "item/commandExecution/requestApproval",
+            "params": {"threadId": "thread-created"},
+            "thread_id": "thread-created",
+            "title": "Codex 命令执行审批",
+            "message_id": "approval-card-1",
+            "chat_id": "c1",
+            "sender_id": "ou_user",
+            "status": "pending",
+        })
+
+        handler._handle_adapter_disconnect_impl()
+
+        self.assertFalse(handler._interaction_requests.has_pending_request("req-1"))
+        self.assertEqual(handler._adapter.respond_calls, [])
+        self.assertTrue(any(message_id == "approval-card-1" for message_id, _payload in bot.patches))
+        self.assertTrue(
+            any("websocket 已断开" in payload for message_id, payload in bot.patches if message_id == "approval-card-1")
+        )
+
+    def test_adapter_disconnect_fail_closes_pending_interaction_requests_even_without_attached_binding(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler._interaction_requests.store_pending_request("req-1", {
+            "rpc_request_id": "rpc-1",
+            "method": "item/tool/requestUserInput",
+            "params": {"threadId": "thread-created"},
+            "thread_id": "thread-created",
+            "title": "Codex 用户输入",
+            "message_id": "approval-card-1",
+            "chat_id": "c1",
+            "sender_id": "ou_user",
+            "status": "pending",
+        })
+
+        handler._handle_adapter_disconnect_impl()
+
+        self.assertFalse(handler._interaction_requests.has_pending_request("req-1"))
+        self.assertEqual(handler._adapter.respond_calls, [])
+        self.assertTrue(any(message_id == "approval-card-1" for message_id, _payload in bot.patches))
+        self.assertTrue(
+            any("websocket 已断开" in payload for message_id, payload in bot.patches if message_id == "approval-card-1")
+        )
+
     def test_status_shows_untitled_instead_of_unbound_when_thread_exists(self) -> None:
         handler, bot = self._make_handler()
 

@@ -154,25 +154,36 @@ class InteractionRequestController:
             note="当前实例 backend 已重置，已自动结束该请求。",
         )
 
+    def fail_close_all_requests_without_response(self, *, note: str) -> int:
+        return self._fail_close_matching_requests(
+            lambda _pending: True,
+            note=note,
+            respond_upstream=False,
+        )
+
     def _fail_close_matching_requests(
         self,
         predicate: Callable[[PendingRequestState], bool],
         *,
         note: str,
+        respond_upstream: bool = True,
     ) -> int:
         pending_to_fail_close: list[tuple[int | str, str, dict[str, Any]]] = []
         cards_to_patch: list[tuple[str, dict]] = []
+        matched_count = 0
         with self._lock:
             for request_key, pending in list(self._pending_requests.items()):
                 if not predicate(pending):
                     continue
-                pending_to_fail_close.append(
-                    (
-                        pending["rpc_request_id"],
-                        str(pending.get("method", "") or ""),
-                        dict(pending.get("params") or {}),
+                matched_count += 1
+                if respond_upstream:
+                    pending_to_fail_close.append(
+                        (
+                            pending["rpc_request_id"],
+                            str(pending.get("method", "") or ""),
+                            dict(pending.get("params") or {}),
+                        )
                     )
-                )
                 message_id = str(pending.get("message_id", "") or "").strip()
                 title = str(pending.get("title", "Codex 请求") or "Codex 请求")
                 method = str(pending.get("method", "") or "").strip()
@@ -199,7 +210,7 @@ class InteractionRequestController:
                 logger.exception("fail-close 请求卡片收口失败: message=%s", message_id)
         for rpc_request_id, method, params in pending_to_fail_close:
             self.auto_reject_request(rpc_request_id, method, params)
-        return len(pending_to_fail_close)
+        return matched_count
 
     def handle_adapter_request(
         self,
