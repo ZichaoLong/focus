@@ -77,7 +77,12 @@ class SharedCommandSurfaceTests(unittest.TestCase):
     def test_help_thread_and_threads_cards_reuse_shared_command_specs(self) -> None:
         threads_command = get_shared_command("threads")
         resume_command = get_shared_command("resume")
-        help_domain = CodexHelpDomain(local_thread_safety_rule="测试规则")
+        help_domain = CodexHelpDomain(
+            local_thread_safety_rule="测试规则",
+            get_runtime_state=lambda sender_id, chat_id, message_id="": {
+                "feishu_runtime_state": "attached",
+            },
+        )
 
         overview = help_domain.reply_help("chat-1").card
         thread_help = help_domain.reply_help("chat-1", "thread").card
@@ -116,7 +121,12 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         self.assertNotIn("`/help`", json.dumps(execution_card, ensure_ascii=False))
 
     def test_generated_cards_do_not_emit_plugin_payload_keys(self) -> None:
-        help_domain = CodexHelpDomain(local_thread_safety_rule="测试规则")
+        help_domain = CodexHelpDomain(
+            local_thread_safety_rule="测试规则",
+            get_runtime_state=lambda sender_id, chat_id, message_id="": {
+                "feishu_runtime_state": "attached",
+            },
+        )
         cards = [
             help_domain.reply_help("chat-1").card,
             help_domain.reply_help("chat-1", "thread").card,

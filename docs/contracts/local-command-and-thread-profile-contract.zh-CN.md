@@ -86,7 +86,8 @@
 
 ### 4.2 已有线程
 
-已有线程只有在 **verifiably globally unloaded** 时，才允许直接改写 thread-wise profile。
+已有线程的直接改写条件，以
+`docs/contracts/thread-profile-semantics.zh-CN.md` 为准。
 
 因此：
 

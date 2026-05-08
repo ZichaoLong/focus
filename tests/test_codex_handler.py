@@ -38,11 +38,13 @@ class _FakeAdapter:
         *,
         on_notification=None,
         on_request=None,
+        on_disconnect=None,
         app_server_runtime_store=None,
     ) -> None:
         self.config = config
         self.on_notification = on_notification
         self.on_request = on_request
+        self.on_disconnect = on_disconnect
         self.app_server_runtime_store = app_server_runtime_store
         self.start_calls = 0
         self.last_profile = "provider1"
@@ -252,6 +254,10 @@ class _FakeAdapter:
 
     def respond(self, request_id: str, *, result=None, error=None) -> None:
         self.respond_calls.append({"request_id": request_id, "result": result, "error": error})
+
+    def trigger_disconnect(self) -> None:
+        if self.on_disconnect is not None:
+            self.on_disconnect()
 
 
 class _FakeBot:
@@ -1123,6 +1129,23 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot2.sent_messages, [])
         self.assertEqual(handler2._get_runtime_state("ou_user", "chat-a")["execution_transcript"].reply_text(), "")
         self.assertEqual(handler2._get_runtime_state("ou_user", "chat-b")["execution_transcript"].reply_text(), "")
+
+    def test_adapter_disconnect_fail_closes_attached_runtime_state(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "hello")
+        handler._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-1"}})
+        handler._handle_agent_message_delta({"threadId": "thread-created", "delta": "partial"})
+
+        handler._handle_adapter_disconnect_impl()
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state["feishu_runtime_state"], "detached")
+        self.assertEqual(handler._thread_subscribers("thread-created"), ())
+        self.assertFalse(state["running"])
+        self.assertEqual(state["current_turn_id"], "")
+        self.assertIn("Codex websocket disconnected", state["execution_transcript"].process_text())
+        self.assertTrue(any("Codex websocket disconnected" in payload for _message_id, payload in bot.patches))
 
     def test_status_shows_untitled_instead_of_unbound_when_thread_exists(self) -> None:
         handler, bot = self._make_handler()

@@ -1,21 +1,17 @@
-import threading
 import unittest
 from types import SimpleNamespace
 
 from bot.adapters.base import ThreadSummary
-from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiRuntimePorts
+from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
 
 
-class _OwnerStub:
+class _PortsStub:
     def __init__(self) -> None:
-        self.bot = SimpleNamespace(patch_message=lambda message_id, content: None)
-        self._adapter = SimpleNamespace()
-        self._lock = threading.RLock()
-        self._threads_initial_limit = 5
-        self._thread_list_query_limit = 20
         self.archive_calls: list[tuple[str, ThreadSummary | None]] = []
         self.reply_calls: list[tuple[str, str, str]] = []
         self.resolve_calls: list[str] = []
+        self.rename_calls: list[tuple[str, str]] = []
+        self.patches: list[tuple[str, str]] = []
         self.thread = ThreadSummary(
             thread_id="thread-1",
             cwd="/tmp/project",
@@ -62,9 +58,6 @@ class _OwnerStub:
         del sender_id, chat_id, title, message_id, thread_id
         return True
 
-    def _clear_thread_binding(self, sender_id: str, chat_id: str, *, message_id: str = "") -> None:
-        del sender_id, chat_id, message_id
-
     def _reply_text(self, chat_id: str, text: str, *, message_id: str = "") -> None:
         self.reply_calls.append((chat_id, text, message_id))
 
@@ -100,14 +93,34 @@ class _OwnerStub:
         self.archive_calls.append((thread_id, summary))
         return {"thread_id": thread_id, "cleared_binding_ids": ["p2p:ou_user:chat-a"]}
 
+    def rename_thread(self, thread_id: str, name: str) -> None:
+        self.rename_calls.append((thread_id, name))
+
+    def patch_message(self, message_id: str, content: str) -> bool:
+        self.patches.append((message_id, content))
+        return True
+
 
 class CodexThreadsUiDomainTests(unittest.TestCase):
     def test_handle_resume_command_dispatches_via_runtime_port(self) -> None:
-        owner = _OwnerStub()
+        ports_stub = _PortsStub()
         submit_calls: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
         resume_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
         domain = CodexThreadsUiDomain(
-            owner,
+            ports=ThreadsUiPorts(
+                get_runtime_view=ports_stub._get_runtime_view,
+                is_group_chat=ports_stub._is_group_chat,
+                is_group_admin_actor=ports_stub._is_group_admin_actor,
+                rename_bound_thread_title=ports_stub._rename_bound_thread_title,
+                reply_text=ports_stub._reply_text,
+                resolve_resume_target=ports_stub._resolve_resume_target,
+                list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
+                read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                archive_thread_for_control=ports_stub._archive_thread_for_control,
+                rename_thread=ports_stub.rename_thread,
+                patch_message=ports_stub.patch_message,
+                threads_initial_limit=5,
+            ),
             runtime_ports=ThreadsUiRuntimePorts(
                 submit_to_runtime=lambda fn, *args, **kwargs: submit_calls.append((fn, args, kwargs)),
                 resume_thread_on_runtime=lambda *args, **kwargs: resume_calls.append((args, kwargs)),
@@ -128,11 +141,24 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
         self.assertEqual(resume_calls, [])
 
     def test_resume_target_on_runtime_calls_resume_port_directly(self) -> None:
-        owner = _OwnerStub()
+        ports_stub = _PortsStub()
         submit_calls: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
         resume_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
         domain = CodexThreadsUiDomain(
-            owner,
+            ports=ThreadsUiPorts(
+                get_runtime_view=ports_stub._get_runtime_view,
+                is_group_chat=ports_stub._is_group_chat,
+                is_group_admin_actor=ports_stub._is_group_admin_actor,
+                rename_bound_thread_title=ports_stub._rename_bound_thread_title,
+                reply_text=ports_stub._reply_text,
+                resolve_resume_target=ports_stub._resolve_resume_target,
+                list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
+                read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                archive_thread_for_control=ports_stub._archive_thread_for_control,
+                rename_thread=ports_stub.rename_thread,
+                patch_message=ports_stub.patch_message,
+                threads_initial_limit=5,
+            ),
             runtime_ports=ThreadsUiRuntimePorts(
                 submit_to_runtime=lambda fn, *args, **kwargs: submit_calls.append((fn, args, kwargs)),
                 resume_thread_on_runtime=lambda *args, **kwargs: resume_calls.append((args, kwargs)),
@@ -147,20 +173,33 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
             refresh_threads_message_id="msg-session",
         )
 
-        self.assertEqual(owner.resolve_calls, ["thread-1"])
+        self.assertEqual(ports_stub.resolve_calls, ["thread-1"])
         self.assertEqual(submit_calls, [])
         self.assertEqual(len(resume_calls), 1)
         args, kwargs = resume_calls[0]
         self.assertEqual(args, ("ou_user", "chat-a", "thread-1"))
         self.assertEqual(kwargs["original_arg"], "thread-1")
-        self.assertEqual(kwargs["summary"], owner.thread)
+        self.assertEqual(kwargs["summary"], ports_stub.thread)
         self.assertEqual(kwargs["message_id"], "msg-1")
         self.assertEqual(kwargs["refresh_threads_message_id"], "msg-session")
 
     def test_handle_archive_thread_action_uses_control_path(self) -> None:
-        owner = _OwnerStub()
+        ports_stub = _PortsStub()
         domain = CodexThreadsUiDomain(
-            owner,
+            ports=ThreadsUiPorts(
+                get_runtime_view=ports_stub._get_runtime_view,
+                is_group_chat=ports_stub._is_group_chat,
+                is_group_admin_actor=ports_stub._is_group_admin_actor,
+                rename_bound_thread_title=ports_stub._rename_bound_thread_title,
+                reply_text=ports_stub._reply_text,
+                resolve_resume_target=ports_stub._resolve_resume_target,
+                list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
+                read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                archive_thread_for_control=ports_stub._archive_thread_for_control,
+                rename_thread=ports_stub.rename_thread,
+                patch_message=ports_stub.patch_message,
+                threads_initial_limit=5,
+            ),
             runtime_ports=ThreadsUiRuntimePorts(
                 submit_to_runtime=lambda fn, *args, **kwargs: None,
                 resume_thread_on_runtime=lambda *args, **kwargs: None,
@@ -174,7 +213,7 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
             {"thread_id": "thread-1"},
         )
 
-        self.assertEqual(owner.archive_calls, [("thread-1", owner.thread)])
+        self.assertEqual(ports_stub.archive_calls, [("thread-1", ports_stub.thread)])
         self.assertIsNotNone(result.toast)
         self.assertEqual(result.toast.content, "已归档线程：thread-1…")
         self.assertEqual(result.toast.type, "success")

@@ -44,7 +44,7 @@
 | `/profile [name]` | 查看或切换当前 thread 的 thread-wise profile | 是；`thread -> 当前线程` | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/rename <title>` | 重命名当前 thread | 是；`thread -> 当前线程` 表单 | 仅管理员 | 仅管理员 | 无 |
 | `/archive [thread_id\|thread_name]` | 归档当前 thread，或按目标归档 | 是；`thread -> 当前线程` | 仅管理员 | 仅管理员 | `feishu-codexctl thread archive --thread-id/--thread-name` |
-| `/detach` | 让当前 chat 暂停接收当前 thread 的飞书推送；保留 binding bookmark | 否；仅在 `thread -> 当前线程` 页作为按钮曝光 | 仅管理员 | 仅管理员 | `feishu-codexctl binding detach <binding_id>`；thread 级是 `feishu-codexctl thread detach ...` |
+| `/detach` | 让当前 chat 暂停接收当前 thread 的飞书推送；保留 binding bookmark | 否；仅在 `chat -> 当前会话` 页作为按钮曝光 | 仅管理员 | 仅管理员 | `feishu-codexctl binding detach <binding_id>`；thread 级是 `feishu-codexctl thread detach ...` |
 | `/attach [binding\|thread\|service]` | 恢复当前 chat、当前 thread 或当前实例的飞书推送 | 否；高级恢复面，主入口通常是 reset 结果卡按钮 | 仅管理员 | 仅管理员 | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | 取消当前执行 | 否；主入口是执行卡按钮 | 仅管理员 | 仅管理员 | 无 |
 
@@ -85,7 +85,7 @@
 - `/attach`
 - `/debug-contact`
 
-`/detach` 也不是根导航命令，但会在“当前线程”页以按钮形式暴露，因为它仍然是可理解的 thread 级会话动作。
+`/detach` 也不是根导航命令，但会在“当前会话”页以按钮形式暴露，因为它仍然是可理解的会话级推送开关。
 
 ## 4. 结果卡按钮
 

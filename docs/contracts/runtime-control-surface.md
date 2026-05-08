@@ -251,35 +251,21 @@ So the result card must directly offer:
 
 ## 6. Local management surface
 
-The formal local `feishu-codexctl` naming must align with the Feishu surface:
+The formal local `feishu-codexctl` command matrix lives in
+`docs/contracts/feishu-codexctl-command-matrix.md`.
 
-- `service attach`
-- `binding attach`
-- `binding detach`
-- `thread attach`
-- `thread detach`
-
-The lower layer may still route through internal protocol operations such as:
-
-- `thread/unsubscribe`
-
-But that is no longer a user-facing term and should not remain in primary product wording.
+This document no longer maintains a second command list; it only defines runtime
+state and control semantics.
 
 ## 7. reset-backend and re-profile
 
-A thread-wise profile is directly writable only when the thread is verifiably globally unloaded.
+The direct-write rule and reset path for thread-wise profile live in
+`docs/contracts/thread-profile-semantics.md`.
 
-Therefore:
+This document keeps only the runtime-control requirement:
 
-- detached alone is not enough
-- if local `fcodex` still holds live runtime, the user will often still need a backend reset or to wait for natural unload
-
-The Feishu-side `/profile <name>` flow should prefer:
-
-- direct write when possible
-- otherwise “apply and reset backend”
-
-It should not force ordinary users to understand complex detach / attach / unsubscribe relationships first.
+- the Feishu-side `/profile <name>` flow should prefer direct write when possible, otherwise “apply and reset backend”
+- it should not force ordinary users to understand complex detach / attach / unsubscribe relationships first
 
 ## 8. Bottom line
 

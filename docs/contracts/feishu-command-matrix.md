@@ -42,7 +42,7 @@ It does not redefine:
 | `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `thread -> current thread` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `thread -> current thread` | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
-| `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding bookmark | not from the root; exposed as a button on `thread -> current thread` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
+| `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding bookmark | not from the root; exposed as a button on `chat -> current chat` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
 | `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | not a root help command; primary entry is usually a reset result card | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
 
@@ -83,7 +83,7 @@ These remain plain-text or result-card entry points rather than first-class root
 - `/attach`
 - `/debug-contact`
 
-`/detach` is also not a root help command, but it is intentionally exposed as a button on the “current thread” help page because it is still a comprehensible thread-scoped session action.
+`/detach` is also not a root help command, but it is intentionally exposed as a button on the “current chat” help page because it is still a comprehensible session-scoped push toggle.
 
 ## 4. Result-card Buttons
 

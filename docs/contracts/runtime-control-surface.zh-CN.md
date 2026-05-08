@@ -251,37 +251,20 @@ attach 不是只读查看动作。
 
 ## 6. 本地管理面
 
-本地 `feishu-codexctl` 的正式用户命名应与飞书侧一致：
+本地 `feishu-codexctl` 的正式命令矩阵以
+`docs/contracts/feishu-codexctl-command-matrix.zh-CN.md` 为准。
 
-- `service attach`
-- `binding attach`
-- `binding detach`
-- `thread attach`
-- `thread detach`
-
-底层实现仍可通过正在运行的服务调用内部协议，例如：
-
-- `thread/unsubscribe`
-
-但这不再是用户概念，也不应继续出现在主文案里。
+这里不再维护第二份命令清单；本文只定义运行时状态与控制语义。
 
 ## 7. reset-backend 与 re-profile
 
-当前 thread-wise profile 可直接写入的前提是：
+thread-wise profile 的直接写入前提与 reset 路径，以
+`docs/contracts/thread-profile-semantics.zh-CN.md` 为准。
 
-- thread verifiably globally unloaded
+这里仅保留本运行时控制面的结果要求：
 
-所以：
-
-- 单纯 detached 不够
-- 如果本地 `fcodex` 仍持有 live runtime，通常仍要 reset backend 或等待自然 unload
-
-飞书侧 `/profile <name>` 应优先给用户走：
-
-- 直接写入
-- 或“应用并重置 backend”
-
-而不是要求用户先理解复杂的 detach / attach / unsubscribe 关系。
+- 飞书侧 `/profile <name>` 应优先给用户走“直接写入”或“应用并重置 backend”
+- 不应要求用户先理解复杂的 detach / attach / unsubscribe 关系
 
 ## 8. 结论
 

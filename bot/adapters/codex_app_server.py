@@ -89,6 +89,7 @@ class CodexAppServerAdapter(AgentAdapter):
         *,
         on_notification: Callable[[str, dict[str, Any]], None] | None = None,
         on_request: Callable[[int | str, str, dict[str, Any]], None] | None = None,
+        on_disconnect: Callable[[], None] | None = None,
         app_server_runtime_store: AppServerRuntimeStore | None = None,
     ) -> None:
         self._config = config
@@ -108,6 +109,7 @@ class CodexAppServerAdapter(AgentAdapter):
             request_timeout_seconds=config.request_timeout_seconds,
             on_notification=on_notification,
             on_request=on_request,
+            on_disconnect=on_disconnect,
             app_server_runtime_store=app_server_runtime_store,
         )
 

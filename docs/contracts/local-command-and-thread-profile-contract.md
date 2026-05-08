@@ -86,7 +86,8 @@ New threads may be created through:
 
 ### 4.2 Existing thread
 
-An existing thread may be rewritten directly only when it is **verifiably globally unloaded**.
+The direct-write rule for an existing thread is defined in
+`docs/contracts/thread-profile-semantics.md`.
 
 Therefore:
 

@@ -1076,6 +1076,40 @@ class RuntimeAdminController:
         self._cancel_patch_timer_locked(state)
         self._cancel_mirror_watchdog_locked(state)
 
+    def fail_close_service_attached_runtime(self) -> dict[str, Any]:
+        detached_binding_ids: list[str] = []
+        detached_thread_ids: list[str] = []
+        release_thread_ids: list[str] = []
+        with self._lock:
+            attached_thread_ids = sorted(
+                {
+                    snapshot.thread_id
+                    for binding in self._binding_runtime.binding_keys_locked()
+                    for snapshot in [self._binding_runtime.binding_runtime_snapshot_locked(binding)]
+                    if snapshot is not None
+                    and snapshot.thread_id
+                    and snapshot.feishu_runtime_state == FEISHU_RUNTIME_ATTACHED
+                }
+            )
+            for thread_id in attached_thread_ids:
+                result = self._binding_runtime.detach_thread_bindings_locked(
+                    thread_id,
+                    detach_availability=lambda _thread_id: (True, ""),
+                    on_release_binding_state=self._detach_binding_runtime_state_locked,
+                )
+                if result.detached_binding_ids:
+                    detached_binding_ids.extend(result.detached_binding_ids)
+                    detached_thread_ids.append(thread_id)
+                if result.unsubscribe_thread_id:
+                    release_thread_ids.append(result.unsubscribe_thread_id)
+        for thread_id in sorted(set(release_thread_ids)):
+            self._release_service_thread_runtime_lease(thread_id)
+        return {
+            "detached_binding_ids": sorted(set(detached_binding_ids)),
+            "detached_thread_ids": sorted(set(detached_thread_ids)),
+            "released_thread_ids": sorted(set(release_thread_ids)),
+        }
+
     def detach_thread(self, thread_id: str) -> dict[str, Any]:
         normalized_thread_id = str(thread_id or "").strip()
         with self._lock:
@@ -1163,13 +1197,21 @@ class RuntimeAdminController:
             )
         self._archive_thread(normalized_thread_id)
         cleared_binding_ids: list[str] = []
+        unsubscribe_thread_ids: list[str] = []
         with self._lock:
             for binding in bound_bindings:
                 if self._binding_runtime.binding_runtime_snapshot_locked(binding) is None:
                     continue
-                self._deactivate_binding_locked(binding)
+                unsubscribe_thread_id = self._deactivate_binding_locked(binding)
+                if unsubscribe_thread_id:
+                    unsubscribe_thread_ids.append(unsubscribe_thread_id)
                 cleared_binding_ids.append(format_binding_id(binding))
-        self._release_service_thread_runtime_lease(normalized_thread_id)
+        unique_unsubscribe_thread_ids = sorted(set(unsubscribe_thread_ids))
+        for unsubscribe_thread_id in unique_unsubscribe_thread_ids:
+            self._unsubscribe_thread(unsubscribe_thread_id)
+            self._release_service_thread_runtime_lease(unsubscribe_thread_id)
+        if normalized_thread_id not in unique_unsubscribe_thread_ids:
+            self._release_service_thread_runtime_lease(normalized_thread_id)
         return {
             "thread_id": normalized_thread_id,
             "thread_title": effective_summary.title if effective_summary is not None else "",

@@ -753,6 +753,21 @@ class CodexRpcClientTests(unittest.TestCase):
                 fallback_url,
             )
 
+    def test_reader_loop_notifies_disconnect_once_for_unexpected_close(self) -> None:
+        disconnects: list[str] = []
+        client = CodexRpcClient(on_disconnect=lambda: disconnects.append("disconnected"))
+
+        class _Ws:
+            def recv(self):
+                raise ConnectionClosedOK(None, None)
+
+        client._ws = _Ws()
+
+        client._reader_loop()
+
+        self.assertEqual(disconnects, ["disconnected"])
+        self.assertIsNone(client._ws)
+
 
 class FCodexTests(unittest.TestCase):
     def setUp(self) -> None:

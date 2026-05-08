@@ -272,7 +272,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             controller,
             summaries,
             _loaded_thread_ids,
-            _unsubscribed,
+            unsubscribed,
             archived,
             released_runtime_leases,
             _pending_by_thread,
@@ -299,6 +299,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         result = controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
 
         self.assertEqual(archived, ["thread-1"])
+        self.assertEqual(unsubscribed, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
         self.assertEqual(
             result["cleared_binding_ids"],
@@ -352,6 +353,65 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(archived, [])
         with lock:
             self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
+
+    def test_fail_close_service_attached_runtime_downgrades_attached_without_backend_unsubscribe(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding_a = ("ou_user", "c1")
+        binding_b = ("ou_user2", "c2")
+        self._bind_thread(lock, binding_runtime, binding_a, thread_id="thread-1")
+        self._bind_thread(lock, binding_runtime, binding_b, thread_id="thread-2")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo-1",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        summaries["thread-2"] = ThreadSummary(
+            thread_id="thread-2",
+            cwd="/tmp/project",
+            name="demo-2",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.fail_close_service_attached_runtime()
+
+        self.assertCountEqual(
+            result["detached_binding_ids"],
+            ["p2p:ou_user:c1", "p2p:ou_user2:c2"],
+        )
+        self.assertEqual(result["detached_thread_ids"], ["thread-1", "thread-2"])
+        self.assertEqual(result["released_thread_ids"], ["thread-1", "thread-2"])
+        self.assertEqual(unsubscribed, [])
+        self.assertEqual(released_runtime_leases, ["thread-1", "thread-2"])
+        with lock:
+            snapshot_a = binding_runtime.binding_runtime_snapshot_locked(binding_a)
+            snapshot_b = binding_runtime.binding_runtime_snapshot_locked(binding_b)
+        assert snapshot_a is not None
+        assert snapshot_b is not None
+        self.assertEqual(snapshot_a.feishu_runtime_state, "detached")
+        self.assertEqual(snapshot_b.feishu_runtime_state, "detached")
 
     def test_archive_thread_for_control_rejects_running_binding(self) -> None:
         (

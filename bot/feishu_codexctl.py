@@ -127,21 +127,7 @@ def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
         label = str(owner.get("label", "") or "").strip() or "none"
         normalized_holders = [str(item or "").strip() for item in holder_labels if str(item or "").strip()]
         return label, normalized_holders
-    thread_id = str(snapshot.get("thread_id", "") or "").strip()
-    if not thread_id:
-        return "none", []
-    lease = ThreadRuntimeLeaseStore(global_data_dir()).load(thread_id)
-    if lease is None:
-        return "none", []
-    labels: list[str] = []
-    for holder in lease.holders:
-        holder_type = str(holder.holder_type or "").strip() or "unknown"
-        instance_name = str(holder.instance_name or "").strip() or "unknown"
-        label = f"{holder_type}@{instance_name}"
-        if int(holder.owner_pid or 0) > 0:
-            label += f"(pid={int(holder.owner_pid)})"
-        labels.append(label)
-    return str(lease.owner_instance or "").strip() or "unknown", labels
+    return "none", []
 
 
 def _print_service_status(data_dir: pathlib.Path) -> int:

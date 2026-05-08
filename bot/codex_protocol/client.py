@@ -61,6 +61,7 @@ class CodexRpcClient:
         request_timeout_seconds: float = 30.0,
         on_notification: Callable[[str, dict[str, Any]], None] | None = None,
         on_request: Callable[[int | str, str, dict[str, Any]], None] | None = None,
+        on_disconnect: Callable[[], None] | None = None,
         app_server_runtime_store: AppServerRuntimeStore | None = None,
         managed_startup_lock_path: pathlib.Path | str | None = None,
     ) -> None:
@@ -72,6 +73,7 @@ class CodexRpcClient:
         self._request_timeout_seconds = request_timeout_seconds
         self._on_notification = on_notification or (lambda _method, _params: None)
         self._on_request = on_request or (lambda _request_id, _method, _params: None)
+        self._on_disconnect = on_disconnect or (lambda: None)
         self._app_server_runtime_store = app_server_runtime_store
         self._managed_startup_lock_path = (
             pathlib.Path(managed_startup_lock_path) if managed_startup_lock_path is not None else None
@@ -320,6 +322,7 @@ class CodexRpcClient:
             self._ws.send(json.dumps(payload, ensure_ascii=False))
 
     def _reader_loop(self) -> None:
+        disconnected = False
         while True:
             with self._lock:
                 if self._closing:
@@ -330,11 +333,14 @@ class CodexRpcClient:
             try:
                 message = ws.recv()
             except ConnectionClosed:
+                disconnected = True
                 break
             except Exception as exc:
                 logger.warning("Codex websocket recv failed: %s", exc)
+                disconnected = True
                 break
             if message is None:
+                disconnected = True
                 break
             if isinstance(message, bytes):
                 message = message.decode("utf-8", errors="replace")
@@ -347,7 +353,10 @@ class CodexRpcClient:
 
         self._fail_pending({"code": -32000, "message": "Codex websocket disconnected"})
         with self._lock:
+            should_notify_disconnect = disconnected and not self._closing and self._ws is ws
             self._ws = None
+        if should_notify_disconnect:
+            self._safe_on_disconnect()
 
     def _dispatch_payload(self, payload: dict[str, Any]) -> None:
         if "method" in payload and "id" in payload:
@@ -394,6 +403,12 @@ class CodexRpcClient:
             self._on_request(request_id, method, params)
         except Exception:
             logger.exception("处理 Codex server request 失败: method=%s", method)
+
+    def _safe_on_disconnect(self) -> None:
+        try:
+            self._on_disconnect()
+        except Exception:
+            logger.exception("处理 Codex websocket disconnect 失败")
 
     @staticmethod
     def _log_stream(stream, level: int, name: str) -> None:

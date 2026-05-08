@@ -49,7 +49,7 @@ from bot.stores.instance_registry_store import InstanceRegistryStore, build_inst
 from bot.codex_protocol.client import CodexRpcError
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 from bot.codex_help_domain import CodexHelpDomain
-from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiRuntimePorts
+from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
 from bot.codex_settings_domain import (
     CodexSettingsDomain,
     ProfileResetThreadReplacement,
@@ -355,6 +355,7 @@ class CodexHandler(BotHandler):
             self._adapter_config,
             on_notification=self._handle_adapter_notification,
             on_request=self._handle_adapter_request,
+            on_disconnect=self._handle_adapter_disconnect,
             app_server_runtime_store=self._app_server_runtime,
         )
         self._settings_domain = CodexSettingsDomain(
@@ -412,7 +413,20 @@ class CodexHandler(BotHandler):
             ),
         )
         self._threads_ui_domain = CodexThreadsUiDomain(
-            self,
+            ports=ThreadsUiPorts(
+                get_runtime_view=self._get_runtime_view,
+                is_group_chat=self._is_group_chat,
+                is_group_admin_actor=self._is_group_admin_actor,
+                rename_bound_thread_title=self._rename_bound_thread_title,
+                reply_text=self._reply_text,
+                resolve_resume_target=self._resolve_resume_target,
+                list_visible_current_dir_threads=self._list_visible_current_dir_threads,
+                read_thread_summary_authoritatively=self._read_thread_summary_authoritatively,
+                archive_thread_for_control=self._archive_thread_for_control,
+                rename_thread=lambda thread_id, name: self._adapter.rename_thread(thread_id, name),
+                patch_message=lambda message_id, content: self.bot.patch_message(message_id, content),
+                threads_initial_limit=self._threads_initial_limit,
+            ),
             runtime_ports=ThreadsUiRuntimePorts(
                 submit_to_runtime=self._runtime_submit,
                 resume_thread_on_runtime=self._resume_thread_on_runtime,
@@ -2546,6 +2560,36 @@ class CodexHandler(BotHandler):
 
     def _handle_server_request_resolved(self, params: dict[str, Any]) -> None:
         self._interaction_requests.handle_server_request_resolved(params)
+
+    def _handle_adapter_disconnect(self) -> None:
+        self._runtime_submit(self._handle_adapter_disconnect_impl)
+
+    def _handle_adapter_disconnect_impl(self) -> None:
+        affected_bindings: list[tuple[str, str]] = []
+        with self._lock:
+            for binding in self._binding_runtime.binding_keys_locked():
+                snapshot = self._binding_runtime.binding_runtime_snapshot_locked(binding)
+                if snapshot is None:
+                    continue
+                if snapshot.feishu_runtime_state != FEISHU_RUNTIME_ATTACHED or not snapshot.thread_id:
+                    continue
+                affected_bindings.append(binding)
+                state = self._binding_runtime.get_or_create_runtime_state_locked(binding)
+                if self._turn_execution.has_active_execution_locked(state):
+                    self._turn_execution.apply_terminal_error_locked(
+                        state,
+                        error_message="Codex websocket disconnected",
+                    )
+        if not affected_bindings:
+            return
+        result = self._runtime_admin.fail_close_service_attached_runtime()
+        for sender_id, chat_id in affected_bindings:
+            self._finalize_execution_card_from_state(sender_id, chat_id)
+        logger.warning(
+            "Codex websocket disconnected; detached bindings=%s threads=%s",
+            result["detached_binding_ids"],
+            result["detached_thread_ids"],
+        )
 
     def _handle_thread_status_changed(self, params: dict[str, Any]) -> None:
         self._adapter_notifications.handle_thread_status_changed(params)

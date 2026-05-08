@@ -52,29 +52,26 @@ class _ResumeThreadOnRuntime(Protocol):
     ) -> None: ...
 
 
-@dataclass(frozen=True, slots=True)
-class ThreadsUiRuntimePorts:
-    submit_to_runtime: _SubmitToRuntime
-    resume_thread_on_runtime: _ResumeThreadOnRuntime
+class _GetRuntimeView(Protocol):
+    def __call__(self, sender_id: str, chat_id: str, message_id: str = "") -> RuntimeView: ...
 
 
-class _ThreadsUiDomainOwner(Protocol):
-    bot: Any
-    _adapter: Any
-    _lock: threading.RLock
-    _threads_initial_limit: int
-    _thread_list_query_limit: int
+class _IsGroupChat(Protocol):
+    def __call__(self, chat_id: str, message_id: str = "") -> bool: ...
 
-    def _get_runtime_view(self, sender_id: str, chat_id: str, message_id: str = "") -> RuntimeView: ...
-    def _is_group_chat(self, chat_id: str, message_id: str = "") -> bool: ...
-    def _is_group_admin_actor(
+
+class _IsGroupAdminActor(Protocol):
+    def __call__(
         self,
         chat_id: str,
         *,
         message_id: str = "",
         operator_open_id: str = "",
     ) -> bool: ...
-    def _rename_bound_thread_title(
+
+
+class _RenameBoundThreadTitle(Protocol):
+    def __call__(
         self,
         sender_id: str,
         chat_id: str,
@@ -84,13 +81,17 @@ class _ThreadsUiDomainOwner(Protocol):
         thread_id: str = "",
     ) -> bool: ...
 
-    def _clear_thread_binding(self, sender_id: str, chat_id: str, *, message_id: str = "") -> None: ...
 
-    def _reply_text(self, chat_id: str, text: str, *, message_id: str = "") -> None: ...
+class _ReplyText(Protocol):
+    def __call__(self, chat_id: str, text: str, *, message_id: str = "") -> None: ...
 
-    def _resolve_resume_target(self, arg: str) -> ThreadSummary: ...
 
-    def _list_visible_current_dir_threads(
+class _ResolveResumeTarget(Protocol):
+    def __call__(self, arg: str) -> ThreadSummary: ...
+
+
+class _ListVisibleCurrentDirThreads(Protocol):
+    def __call__(
         self,
         sender_id: str,
         chat_id: str,
@@ -98,24 +99,54 @@ class _ThreadsUiDomainOwner(Protocol):
         message_id: str = "",
     ) -> list[ThreadSummary]: ...
 
-    def _read_thread_summary_authoritatively(
-        self,
-        thread_id: str,
-        *,
-        original_arg: str,
-    ) -> ThreadSummary: ...
 
-    def _archive_thread_for_control(
+class _ReadThreadSummaryAuthoritatively(Protocol):
+    def __call__(self, thread_id: str, *, original_arg: str) -> ThreadSummary: ...
+
+
+class _ArchiveThreadForControl(Protocol):
+    def __call__(
         self,
         thread_id: str,
         *,
         summary: ThreadSummary | None = None,
     ) -> dict[str, Any]: ...
 
+
+class _RenameThread(Protocol):
+    def __call__(self, thread_id: str, name: str) -> None: ...
+
+
+class _PatchMessage(Protocol):
+    def __call__(self, message_id: str, content: str) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadsUiRuntimePorts:
+    submit_to_runtime: _SubmitToRuntime
+    resume_thread_on_runtime: _ResumeThreadOnRuntime
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadsUiPorts:
+    get_runtime_view: _GetRuntimeView
+    is_group_chat: _IsGroupChat
+    is_group_admin_actor: _IsGroupAdminActor
+    rename_bound_thread_title: _RenameBoundThreadTitle
+    reply_text: _ReplyText
+    resolve_resume_target: _ResolveResumeTarget
+    list_visible_current_dir_threads: _ListVisibleCurrentDirThreads
+    read_thread_summary_authoritatively: _ReadThreadSummaryAuthoritatively
+    archive_thread_for_control: _ArchiveThreadForControl
+    rename_thread: _RenameThread
+    patch_message: _PatchMessage
+    threads_initial_limit: int
+
 class CodexThreadsUiDomain:
-    def __init__(self, owner: _ThreadsUiDomainOwner, *, runtime_ports: ThreadsUiRuntimePorts) -> None:
-        self._owner = owner
+    def __init__(self, *, ports: ThreadsUiPorts, runtime_ports: ThreadsUiRuntimePorts) -> None:
+        self._ports = ports
         self._runtime_ports = runtime_ports
+        self._lock = threading.RLock()
         self._expanded_threads_cards: set[str] = set()
         self._pending_rename_forms: dict[str, dict[str, str]] = {}
 
@@ -123,7 +154,7 @@ class CodexThreadsUiDomain:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
             return None
-        with self._owner._lock:
+        with self._lock:
             pending = self._pending_rename_forms.get(normalized_message_id)
             if pending is None:
                 return None
@@ -136,7 +167,7 @@ class CodexThreadsUiDomain:
             raise ValueError("message_id 不能为空")
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空")
-        with self._owner._lock:
+        with self._lock:
             self._pending_rename_forms[normalized_message_id] = {"thread_id": normalized_thread_id}
 
     def handle_threads_command(
@@ -159,7 +190,7 @@ class CodexThreadsUiDomain:
         arg: str,
         message_id: str = "",
     ) -> CommandResult | None:
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return CommandResult(text="执行中不能切换线程，请等待结束或先执行 `/cancel`。")
         if not arg:
@@ -188,17 +219,17 @@ class CodexThreadsUiDomain:
         arg: str,
         message_id: str = "",
     ) -> CommandResult:
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         if not runtime.current_thread_id:
             return CommandResult(text="当前没有绑定线程，无法重命名。")
         if not arg:
             return CommandResult(text=f"用法：`{_RENAME_USAGE}`")
         try:
-            self._owner._adapter.rename_thread(runtime.current_thread_id, arg)
+            self._ports.rename_thread(runtime.current_thread_id, arg)
         except Exception as exc:
             logger.exception("重命名线程失败")
             return CommandResult(text=f"重命名失败：{exc}")
-        self._owner._rename_bound_thread_title(
+        self._ports.rename_bound_thread_title(
             sender_id,
             chat_id,
             arg,
@@ -214,13 +245,13 @@ class CodexThreadsUiDomain:
         arg: str,
         message_id: str = "",
     ) -> CommandResult:
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return CommandResult(text="执行中不能归档线程，请等待结束或先执行 `/cancel`。")
         target = arg.strip() if arg else ""
         if target:
             try:
-                thread = self._owner._resolve_resume_target(target)
+                thread = self._ports.resolve_resume_target(target)
             except Exception as exc:
                 logger.exception("解析归档目标失败")
                 return CommandResult(text=f"归档线程失败：{exc}")
@@ -228,7 +259,7 @@ class CodexThreadsUiDomain:
             if not runtime.current_thread_id:
                 return CommandResult(text="用法：`/archive [thread_id 或 thread_name]`；省略参数时归档当前线程。")
             try:
-                thread = self._owner._read_thread_summary_authoritatively(
+                thread = self._ports.read_thread_summary_authoritatively(
                     runtime.current_thread_id,
                     original_arg=runtime.current_thread_id,
                 )
@@ -237,7 +268,7 @@ class CodexThreadsUiDomain:
                 return CommandResult(text=f"归档线程失败：{exc}")
 
         try:
-            result = self._owner._archive_thread_for_control(thread.thread_id, summary=thread)
+            result = self._ports.archive_thread_for_control(thread.thread_id, summary=thread)
         except Exception as exc:
             logger.exception("归档线程失败")
             return CommandResult(text=f"归档线程失败：{exc}")
@@ -285,7 +316,7 @@ class CodexThreadsUiDomain:
         message_id: str,
         action_value: dict[str, Any],
     ) -> P2CardActionTriggerResponse:
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return make_card_response(
                 toast="执行中不能切换线程，请等待结束或先执行 /cancel。",
@@ -319,10 +350,10 @@ class CodexThreadsUiDomain:
         refresh_threads_message_id: str = "",
     ) -> None:
         try:
-            thread = self._owner._resolve_resume_target(target)
+            thread = self._ports.resolve_resume_target(target)
         except Exception as exc:
             logger.exception("解析恢复目标失败")
-            self._owner._reply_text(chat_id, f"恢复线程失败：{exc}", message_id=message_id)
+            self._ports.reply_text(chat_id, f"恢复线程失败：{exc}", message_id=message_id)
             if refresh_threads_message_id:
                 self.refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
             return
@@ -371,7 +402,7 @@ class CodexThreadsUiDomain:
                 toast="重命名表单已失效，请重新打开。",
                 toast_type="warning",
             )
-        if self._owner._is_group_chat(chat_id, message_id) and not self._owner._is_group_admin_actor(
+        if self._ports.is_group_chat(chat_id, message_id) and not self._ports.is_group_admin_actor(
             chat_id,
             message_id=message_id,
             operator_open_id=str(action_value.get("_operator_open_id", "")).strip(),
@@ -399,13 +430,13 @@ class CodexThreadsUiDomain:
         if not new_title:
             return make_card_response(toast="标题不能为空", toast_type="warning")
         try:
-            self._owner._adapter.rename_thread(thread_id, new_title)
+            self._ports.rename_thread(thread_id, new_title)
         except Exception as exc:
             logger.exception("卡片重命名失败")
             return make_card_response(toast=f"重命名失败：{exc}", toast_type="warning")
 
         self._clear_pending_rename_form(message_id)
-        self._owner._rename_bound_thread_title(
+        self._ports.rename_bound_thread_title(
             sender_id,
             chat_id,
             new_title,
@@ -432,7 +463,7 @@ class CodexThreadsUiDomain:
         message_id: str,
         action_value: dict[str, Any],
     ) -> P2CardActionTriggerResponse:
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return make_card_response(
                 toast="执行中不能归档线程，请等待结束或先执行 /cancel。",
@@ -442,12 +473,12 @@ class CodexThreadsUiDomain:
         if not thread_id:
             return make_card_response(toast="缺少 thread_id", toast_type="warning")
         try:
-            thread = self._owner._read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
+            thread = self._ports.read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
         except Exception as exc:
             logger.exception("读取归档目标失败")
             return make_card_response(toast=f"归档线程失败：{exc}", toast_type="warning")
         try:
-            self._owner._archive_thread_for_control(thread.thread_id, summary=thread)
+            self._ports.archive_thread_for_control(thread.thread_id, summary=thread)
         except Exception as exc:
             logger.exception("归档线程失败")
             return make_card_response(toast=f"归档线程失败：{exc}", toast_type="warning")
@@ -483,12 +514,12 @@ class CodexThreadsUiDomain:
         except Exception:
             logger.exception("刷新线程卡片失败")
             return
-        self._owner.bot.patch_message(normalized_message_id, json.dumps(card, ensure_ascii=False))
+        self._ports.patch_message(normalized_message_id, json.dumps(card, ensure_ascii=False))
 
     def _clear_pending_rename_form(self, message_id: str) -> None:
         if not message_id:
             return
-        with self._owner._lock:
+        with self._lock:
             self._pending_rename_forms.pop(message_id, None)
 
     def _handle_threads_refresh_action(
@@ -510,7 +541,7 @@ class CodexThreadsUiDomain:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
             return
-        with self._owner._lock:
+        with self._lock:
             if expanded:
                 self._expanded_threads_cards.add(normalized_message_id)
             else:
@@ -520,7 +551,7 @@ class CodexThreadsUiDomain:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
             return False
-        with self._owner._lock:
+        with self._lock:
             return normalized_message_id in self._expanded_threads_cards
 
     def _render_threads_card(
@@ -532,7 +563,7 @@ class CodexThreadsUiDomain:
     ) -> dict:
         threads = self._list_current_dir_threads(sender_id, chat_id, message_id=message_id)
         rows, counts = self._build_thread_rows(sender_id, chat_id, threads, message_id=message_id)
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         return build_threads_card(
             rows,
             runtime.current_thread_id,
@@ -562,7 +593,7 @@ class CodexThreadsUiDomain:
         ]
         rows.sort(key=lambda item: item["updated_at"], reverse=True)
 
-        runtime = self._owner._get_runtime_view(sender_id, chat_id, message_id)
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
         current_id = runtime.current_thread_id
         if current_id and all(item["thread_id"] != current_id for item in rows):
             rows.insert(
@@ -578,7 +609,7 @@ class CodexThreadsUiDomain:
 
         counts = {
             "total_all": len(rows),
-            "shown": self._owner._threads_initial_limit,
+            "shown": self._ports.threads_initial_limit,
         }
         return rows, counts
 
@@ -595,7 +626,7 @@ class CodexThreadsUiDomain:
         return next((item for item in rows if item["thread_id"] == thread_id), None)
 
     def _list_current_dir_threads(self, sender_id: str, chat_id: str, *, message_id: str = "") -> list[ThreadSummary]:
-        return self._owner._list_visible_current_dir_threads(
+        return self._ports.list_visible_current_dir_threads(
             sender_id,
             chat_id,
             message_id=message_id,
