@@ -25,6 +25,33 @@ def _venv_python_path(venv_dir: pathlib.Path) -> pathlib.Path:
     return venv_dir / "bin" / "python"
 
 
+def _run_checked(command: list[str]) -> None:
+    subprocess.run(command, check=True)
+
+
+def _venv_has_pip(venv_python: pathlib.Path) -> bool:
+    result = subprocess.run(
+        [str(venv_python), "-m", "pip", "--version"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    return result.returncode == 0
+
+
+def _ensure_venv_pip(venv_python: pathlib.Path) -> None:
+    if _venv_has_pip(venv_python):
+        return
+    try:
+        _run_checked([str(venv_python), "-m", "ensurepip", "--upgrade"])
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            "当前 Python 无法在受管 .venv 中引导 pip；请确认已安装该 Python 对应的 venv/ensurepip 组件。"
+        ) from exc
+    if not _venv_has_pip(venv_python):
+        raise SystemExit("已尝试使用 ensurepip 修复受管 .venv，但其中仍然缺少 pip。")
+
+
 def main() -> None:
     _ensure_supported_python()
     install_dir = pathlib.Path(__file__).resolve().parent
@@ -33,13 +60,13 @@ def main() -> None:
         venv_dir.parent.mkdir(parents=True, exist_ok=True)
         venv.EnvBuilder(with_pip=True).create(venv_dir)
     venv_python = _venv_python_path(venv_dir)
-    subprocess.run([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
-    subprocess.run(
-        [str(venv_python), "-m", "pip", "install", "--upgrade", "setuptools<81", "wheel"],
-        check=True,
-    )
-    subprocess.run([str(venv_python), "-m", "pip", "install", str(install_dir)], check=True)
-    subprocess.run([str(venv_python), "-m", "bot.manage_cli", "bootstrap-install"], check=True)
+    if not venv_python.exists():
+        raise SystemExit(f"受管 .venv 不完整，缺少解释器：{venv_python}")
+    _ensure_venv_pip(venv_python)
+    _run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
+    _run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "setuptools<81", "wheel"])
+    _run_checked([str(venv_python), "-m", "pip", "install", str(install_dir)])
+    _run_checked([str(venv_python), "-m", "bot.manage_cli", "bootstrap-install"])
 
 
 if __name__ == "__main__":
