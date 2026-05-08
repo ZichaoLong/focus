@@ -24,6 +24,7 @@ from websockets.sync.client import connect
 from bot.file_lock import acquire_file_lock, release_file_lock
 from bot.instance_layout import global_data_dir
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, uses_default_app_server_url
+from bot.version import __version__
 
 logger = logging.getLogger(__name__)
 _MANAGED_APP_SERVER_START_LOCK = "codex-app-server-start.lock"
@@ -102,7 +103,7 @@ class CodexRpcClient:
                 self.request(
                     "initialize",
                     {
-                        "clientInfo": {"name": "feishu-codex", "version": "0.1.0"},
+                        "clientInfo": {"name": "feishu-codex", "version": __version__},
                         "capabilities": {"experimentalApi": True},
                     },
                     timeout=self._connect_timeout_seconds,

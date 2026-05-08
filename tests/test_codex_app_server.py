@@ -46,6 +46,7 @@ from bot.thread_resolution import (
     looks_like_thread_id,
     resolve_resume_target_by_name,
 )
+from bot.version import __version__
 
 
 class _FakeRpc:
@@ -610,7 +611,7 @@ class CodexRpcClientTests(unittest.TestCase):
                 (
                     "initialize",
                     {
-                        "clientInfo": {"name": "feishu-codex", "version": "0.1.0"},
+                        "clientInfo": {"name": "feishu-codex", "version": __version__},
                         "capabilities": {"experimentalApi": True},
                     },
                     client._connect_timeout_seconds,
