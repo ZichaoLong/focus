@@ -1,62 +1,55 @@
-# Runtime Control Surface
+# Runtime Control Surface Contract
 
 Chinese original: `docs/contracts/runtime-control-surface.zh-CN.md`
 
-This document defines the shared state vocabulary and control contract across:
+This file is the authoritative contract for the current runtime vocabulary and control actions.
 
-- Feishu commands
-- the local `feishu-codexctl` admin CLI
-- the shared app-server backend
+## 1. Three-layer mental model
 
-It answers five questions:
+The product now exposes only three user-facing layers:
 
-- what `/status` is actually describing
-- what `/preflight` may dry-run and must not mutate
-- what Feishu `/reset-backend` may reset and what it must not overwrite
-- how Feishu `/re-attach` and local `reattach` actions restore push delivery
-- what `/release-runtime` releases and does not release
-- why local runtime-release actions must go through the running `feishu-codex` service rather than directly calling app-server from a separate CLI connection
+1. `binding`
+   - which thread a Feishu chat currently remembers
+2. `attach / detach`
+   - whether that Feishu chat currently receives push for that thread
+3. `backend / live runtime`
+   - whether that thread is loaded in the backend, and which instance / local frontend currently owns live runtime
 
-See also:
+Upstream `thread/unsubscribe` still exists, but only as an internal protocol action. It is no longer a user-facing concept.
 
-- `docs/contracts/feishu-thread-lifecycle.md`
-- `docs/contracts/thread-profile-semantics.md`
-- `docs/decisions/shared-backend-resume-safety.md`
-
-## 1. Upstream Baseline
-
-- Upstream project: [`openai/codex`](https://github.com/openai/codex.git)
-- Current local verification baseline: `codex-cli 0.118.0` (2026-04-03)
-
-## 2. Shared State Vocabulary
-
-These terms are the shared factual vocabulary used by Feishu `/status`,
-`/preflight`, and the local `feishu-codexctl` admin surface.
+## 2. Core vocabulary
 
 ### 2.1 `binding`
 
-Which `thread_id` a Feishu chat is logically bound to.
+One Feishu chat's logical pointer to a thread.
 
 - `unbound`
 - `bound`
 
-`binding` is the source of truth for “which thread this chat continues on next”.
-It is not the same as runtime attachment, and not the same as whether the backend
-still has the thread loaded.
+It answers:
 
-### 2.2 `feishu runtime`
+- “Which thread will this chat continue by default on the next message?”
 
-Whether the `feishu-codex` service connection is still attached to that thread.
+It does not answer:
+
+- whether push is still attached
+- whether the backend is loaded
+
+### 2.2 `feishu push`
+
+Whether the current Feishu chat receives push for the thread.
 
 - `attached`
-- `released`
+- `detached`
 - `not-applicable`
 
-This is Feishu-side attachment state, not backend-global loaded state.
+It answers:
+
+- “Will this Feishu chat currently receive push for this thread?”
 
 ### 2.3 `backend thread status`
 
-The thread state reported by the current shared backend.
+The current backend state of the thread in this instance.
 
 Typical values:
 
@@ -65,719 +58,229 @@ Typical values:
 - `active`
 - `systemError`
 
-Fallback value in Feishu status/admin surfaces when the backend could not be
-read at all:
+This is a separate axis from Feishu attachment state.
 
-- `unknown`
-- `missing`
-- `error`
+### 2.4 `live runtime owner`
 
-These fallback values are not backend-native thread states:
+The machine-global owner of the live thread runtime.
 
-- `unknown`: the current surface could not determine the backend status field
-- `missing`: the current surface confirmed the thread does not exist
-- `error`: one backend read attempt failed
+It may be:
 
-### 2.4 `backend running turn`
-
-A derived judgment:
-
-- `yes` when `backend thread status == active`
-- otherwise `no`
-
-This answers whether the backend is currently executing a turn on that thread.
-It does not mean the current Feishu chat owns that execution.
-
-### 2.5 `interaction owner`
-
-This is the same-instance, cross-frontend turn / interaction lease. In the current contract, it is the only same-instance frontend owner shared by Feishu and `fcodex`.
+- one `feishu-codex` service instance
+- one local `fcodex` / proxy holder
+- none
 
 It answers:
 
-- which frontend may start the next turn on the thread
-- who may handle interrupts, approvals, and user-input requests
+- “Which instance or local frontend is actually holding this live thread now?”
 
-Typical holders:
+### 2.5 `interaction owner`
 
-- one Feishu binding
-- one `fcodex` TUI proxy holder
+Who currently owns write / interrupt / approval / extra-input control for the thread.
 
-Ordinary reply streams are not interaction requests: replies from the same backend are broadcast to same-instance Feishu subscribers and `fcodex` subscribers. Approval, user-input, and interrupt requests are routed only to the current `interaction owner`.
+It is not identical to `live runtime owner`:
 
-The old `Feishu write owner` is no longer a separate product concept; Feishu prompt admission no longer maintains an additional Feishu-only write lease.
+- `live runtime owner` is about holding live runtime
+- `interaction owner` is about owning the current turn's interaction control
 
-### 2.6 Auto-Closing Interaction Requests
+## 3. Hard rules
 
-When runtime lifecycle control automatically closes a pending approval or
-supplemental-input request, for example during:
+### 3.1 First attach / last detach
 
-- chat-unavailable cleanup
-- `service reset-backend`
+For the Feishu service itself:
 
-the system should patch the original card into a closed visual state before it
-auto-rejects the underlying request.
+- when the first binding on a thread goes from detached to attached, the service must ensure it is subscribed to that thread
+- when the last attached Feishu binding on a thread becomes detached, the service must automatically stop its own Feishu-side subscription for that thread
 
-This is runtime cleanup only. It does not mean the user manually approved,
-manually answered, or that the request completed successfully at the product
-level.
+This constrains the Feishu service only.
 
-## 3. State Combinations And Transitions
+It does not constrain local `fcodex`:
 
-### 3.1 Lease comparison
+- local `fcodex` may still subscribe independently
+- so the backend may stay loaded after the last Feishu detach
 
-| Fact | Scope | Question it answers | Can exist while `feishu runtime == released`? |
-| --- | --- | --- | --- |
-| `feishu runtime` = `attached/released` | Feishu service connection | Is the running Feishu service still attached to the thread at all? | This is the state itself |
-| `interaction owner` | Cross-frontend (`feishu-codex` + `fcodex`) | Who may start turns and handle interrupts, approvals, and user-input requests? | Yes. An external owner such as `fcodex` may still exist |
+### 3.2 Restart recovery
 
-Practical consequence:
+A persisted `attached` value is not a durable truth across processes.
 
-- `attached + no owner` is a valid idle state
-- `released + external interaction owner` is also valid when another frontend
-  still keeps the thread live
-- `attached` is not a durable fact across Feishu service process, websocket
-  connection, or managed backend rebuilds. If startup reads an old `attached`
-  value from `chat_bindings.json`, it must downgrade it to `released`; the next
-  ordinary prompt or explicit `/resume` reattaches again.
+So after restart or a fresh service connection:
 
-### 3.2 Important valid combinations
+- persisted `attached` must be downgraded to `detached`
+- the binding bookmark stays
+- later `/attach`, `/resume`, or the next accepted plain message may attach again
 
-#### `bound + attached + idle + no owner`
+### 3.3 Pure reject for detached prompts
 
-The chat still points to the thread, Feishu is still attached, and there is no
-current turn owner. This is the normal idle steady state after a turn finishes.
+If the current binding is `bound + detached`, and the next plain message is denied by live-runtime / interaction / sharing rules:
 
-#### `bound + attached + active + current binding is owner`
+- it must be a pure reject
+- it must not resume behind the scenes
+- it must not add a Feishu subscriber behind the scenes
+- it must not flip `detached` back to `attached`
 
-The binding is attached and currently owns the cross-frontend interaction lease for the running turn.
+## 4. Important state combinations
 
-#### `bound + released + notLoaded`
+### 4.1 `bound + attached + idle`
 
-The binding remains, Feishu has released runtime residency, and the backend has
-also unloaded the thread.
+Valid steady state.
 
-This is the clearest state in which thread-wise profile writes are allowed.
+Meaning:
 
-#### `bound + released + idle/active`
+- the chat still remembers the thread
+- the chat still receives push
+- no turn is currently running in the backend
 
-Feishu has already released its own runtime residency, but some external subscriber
-still keeps the thread loaded in the backend.
+### 4.2 `bound + detached + notLoaded`
 
-The most common case is local `fcodex`.
+The most typical “thread-wise profile is directly writable” state.
 
-So `released` does not imply `notLoaded`.
+Meaning:
 
-### 3.3 Formal transition table
+- the binding bookmark still exists
+- Feishu is not receiving push
+- this instance has confirmed the thread is not loaded
 
-The table below is authoritative for Feishu-facing state transitions.
+### 4.3 `bound + detached + idle/active`
 
-| Current binding | Current `feishu runtime` | Current backend | Event | Guard | Next binding | Next `feishu runtime` | Next backend | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `unbound` | `not-applicable` | `not-applicable` | ordinary prompt or `/new` | accepted | `bound` | `attached` | `idle` or `active` | Creates a new thread, then starts or prepares the turn |
-| `unbound` | `not-applicable` | any | `/resume <thread>` | target resolved and allowed | `bound` | `attached` | usually `idle` | Binds the chat to the resumed thread |
-| `bound` | `attached` | `idle` | ordinary prompt | prompt preflight passes | `bound` | `attached` | `active` | Acquires the interaction owner for the turn |
-| `bound` | `attached` | `active` | turn terminal event | none | `bound` | `attached` | usually `idle` | Clears the interaction owner; binding and attachment remain |
-| `bound` | `attached` | `idle` or `active` | `/release-runtime` | no Feishu in-flight turn and no pending Feishu approval / input | `bound` | `released` | `notLoaded`, `idle`, or `active` | `/release-runtime` releases Feishu residency across the whole running service |
-| `bound` | `released` | `notLoaded` or `idle` | ordinary prompt | prompt preflight passes | `bound` | `attached` | `active` | Feishu reattaches / resumes first, then starts the turn; accepted here also means machine-global live-runtime admission passes |
-| `bound` | `released` | any | ordinary prompt | prompt preflight denied | unchanged | unchanged | unchanged | Pure reject: no resume, no subscriber add, no `released -> attached` flip |
-| `bound` | `attached` or `released` | any | `/new` or `/resume <other>` | accepted | `bound` to another thread | `attached` | usually `idle` | Replaces the current binding with the new target |
-| `bound` | `attached` or `released` | any | explicit clear / archive current binding / chat unavailable cleanup | accepted | `unbound` | `not-applicable` | `not-applicable` for Feishu binding | Clears the Feishu binding and any Feishu-local execution anchor |
+Also valid.
 
-### 3.4 Non-ambiguous rules
+Meaning:
 
-- `all`-mode exclusivity is evaluated against current Feishu runtime occupancy
-  on the thread, not against a merely remembered `bound + released` bookmark.
-- A denied prompt is a pure reject.
-  It must not call `thread/resume`, add a Feishu subscriber, or mutate
-  `feishu runtime` from `released` to `attached`.
-- For a `bound + released` binding, ordinary-prompt acceptance is not decided
-  by same-instance interaction-owner checks alone.
-  The path must also pass machine-global live-runtime admission:
-  if another instance still owns `ThreadRuntimeLease` and cannot release it
-  immediately, the prompt must be a pure reject.
-- `/release-runtime` drops Feishu residency and clears the interaction owner when Feishu currently owns it, but
-  it does not erase the chat's binding bookmark.
+- Feishu has detached
+- but another subscriber still keeps the backend loaded
+- the common case is local `fcodex`
 
-## 4. `/status` Contract
+So:
 
-Feishu `/status` is chat-scoped.
+- `detached` does not imply `notLoaded`
 
-Even when it is triggered from inside a group chat, it still targets the
-**current group binding**, not an arbitrary thread. Whether it may be triggered
-in that group is governed by the group-command rules in
-`docs/contracts/group-chat-contract.md`.
+## 5. Command contracts
 
-It answers, for the current chat binding:
+### 5.1 `/status`
+
+`/status` is a chat-scoped summary command.
+
+It shows only:
 
 - current directory
 - current thread
-- the bound thread's thread-wise `profile`
-- the current Feishu session's later-turn settings for permissions, approval,
-  sandbox, and Codex collaboration mode
+- the current thread's thread-wise profile
+- the current Feishu session's permissions / approval / sandbox / collaboration settings
 
-It is a compact user-facing summary, not the full runtime debug surface.
+It is no longer the full debugging surface.
 
-The following lower-level runtime / admission facts are no longer required to
-be rendered directly by Feishu `/status`:
+### 5.2 `/preflight`
 
-- `binding`
-- `feishu runtime`
-- `backend thread status`
-- `backend running turn`
-- `interaction owner`
-- `re-profile possible`
-- whether `/release-runtime` is currently allowed
-- whether the next ordinary prompt would currently be accepted or blocked
+`/preflight` is a chat-scoped dry-run.
 
-Those details should be obtained through:
+It may answer:
 
-- Feishu `/preflight`
-- local `feishu-codexctl binding status`
-- local `feishu-codexctl thread status`
-
-When `/status` or local admin surfaces need to explain a deny / blocked result,
-they may expose both:
-
-- a stable `reason_code`
-- a human-facing explanation text
-
-The code is the automation-stable key; the text is for operators.
-
-It is not a global thread-management command.
-Global binding/thread inspection belongs to `feishu-codexctl`.
-
-### 4.1 `/preflight` Contract
-
-Feishu `/preflight` is also chat-scoped and targets the current chat binding.
-
-It is a read-only dry-run surface. It may explain what would happen next, but
-it must not:
-
-- start a turn
-- call `thread/resume`
-- add a subscriber
-- mutate binding / runtime / owner state
-- clear or write local profile state
-
-It reuses the same prompt preflight checks as ordinary prompts and the same
-availability checks as `/release-runtime`. When it renders a deny /
-blocked result, it may expose the same stable `reason_code` plus human-facing
-text.
-
-If the current binding is `bound + released`, `/preflight` may only report
-whether the next ordinary prompt would be accepted. It must not flip
-`released` back to `attached`.
-
-For that `bound + released` case, "accepted" means both of these are true:
-
-- the normal prompt-write / interaction-owner checks pass
-- the machine-global `ThreadRuntimeLease` can either be acquired directly or
-  transferred immediately from the current owner instance
-
-So if another instance still owns the live runtime but:
-
-- is still executing
-- still has pending approval / input
-- has no Feishu binding on that thread
-- or still has a local `fcodex` holder on that thread
-
-then `/preflight` must report `blocked`, and the next ordinary prompt must stay
-a pure reject.
-
-### 4.2 `/reset-backend` Contract
-
-Feishu `/reset-backend` is an **instance-scoped** admin action.
-
-Its target is:
-
-- the currently selected `feishu-codex` instance
-- the backend / app-server process managed by that instance
-
-It is not:
-
-- a thread-level write command
-- a binding-clear command
-- a restart of the whole `feishu-codex` service process
-
-Its Feishu-side interaction contract is:
-
-- `/reset-backend` itself is preview-only and must not reset immediately
-- it may render the same backend-reset diagnostics as local admin surfaces
-- if the reset is safe, it may offer a direct confirm action
-- if the reset is `force-only`, it must require an explicit force confirm
-- if reset is unsupported or otherwise blocked, it must fail closed and render
-  the blocking reason without offering a destructive action
-
-Its successful execution semantics are the same as local
-`service reset-backend`:
-
-- interrupt running Feishu turns on the current instance backend
-- fail-close still-pending approval / input requests on the current instance
-- release all Feishu runtime attachments held by the current instance bindings
-- clear machine-global live runtime leases held by the current instance
-- restart the current instance backend / app-server
-
-It must not overwrite:
-
-- binding bookmarks
-- thread-wise profile / provider state
-- other persisted user configuration or data
-
-After a successful Feishu reset:
-
-- affected bindings stay `bound` but become `released`
-- the result card should offer explicit follow-up choices:
-  - re-attach current thread
-  - re-attach current instance
-  - keep released
-
-### 4.3 `/re-attach` Contract
-
-Feishu `/re-attach [binding|thread|service]` is an admin-only recovery action.
-
-Its purpose is narrow:
-
-- restore released Feishu runtime subscriptions
-- without waiting for the next ordinary prompt or `/resume`
-
-Scope rules:
-
-- `binding`: current chat binding only
-- `thread`: all released bindings that currently point to the current chat's
-  current thread
-- `service`: all reattachable released bindings in the current instance
+- whether the next plain message would be accepted or blocked
+- whether `/detach` is currently available for the current chat
 
 It must not:
 
-- rewrite binding bookmarks
-- bypass live-runtime admission
-- invent a missing thread target for `thread` scope
+- start a turn
+- call resume
+- change binding / attached / detached / owner state
 
-## 5. Exact Contract of `/release-runtime`
+### 5.3 `/detach`
 
-### 5.1 Scope
+`/detach` applies only to the current chat binding.
 
-Feishu `/release-runtime`:
+It:
 
-- takes no arguments
-- targets the current chat’s bound thread
-- but semantically releases Feishu runtime residency for that thread across the whole running `feishu-codex` service
-
-Even when it is triggered from a group chat, this remains a chat-scoped entry
-for the **current group binding**, not a global arbitrary-thread admin command.
-Whether it may be triggered in that group is still governed by the
-group-command rules in `docs/contracts/group-chat-contract.md`.
-
-It is not a per-chat “soft local flag”.
-
-### 5.2 What it does
-
-On success it:
-
-- keeps all Feishu bindings that point to that thread
-- clears the Feishu interaction owner for that thread when Feishu currently owns it
-- flips all still-`attached` Feishu bindings on that thread to `released`
-- makes the running `feishu-codex` service release its own app-server connection from that thread via `thread/unsubscribe`
-
-### 5.3 What it does not do
+- keeps the binding bookmark
+- flips the current chat from `attached` to `detached`
+- if that chat was the last attached Feishu binding on the thread, automatically stops the Feishu service's own subscription for that thread
 
 It does not:
 
 - delete the thread
-- archive the thread
-- clear the Feishu chat-to-thread binding
-- force local `fcodex` to close
-- guarantee that the backend unloads the thread
+- clear the binding
+- force the backend to unload
 
-If the backend still reports `idle` or `active` afterward, some external subscriber
-is still attached.
+### 5.4 `/attach [binding|thread|service]`
 
-### 5.4 When it must be rejected
+This is the recovery action.
 
-This command must reject release when:
+Scopes:
 
-- a Feishu-side turn on that thread is still in flight
-- a Feishu-side approval or user-input request on that thread is still pending
+- `binding`
+  - restore only the current chat binding
+- `thread`
+  - restore all detached bindings on the current chat's thread
+- `service`
+  - restore all recoverable detached bindings in the current instance
 
-This avoids releasing runtime ownership while Feishu is still responsible for
-closing out an execution flow.
+All attach actions must fail closed when:
 
-### 5.5 How to interpret success
+- live-runtime lease admission denies them
+- the target thread is no longer reattachable
+- the current instance cannot safely acquire the needed runtime
 
-If the command succeeds and:
+### 5.5 `/reset-backend`
 
-- `backend thread status == notLoaded`
-  - the backend is no longer holding the thread live
-  - the next resume path may re-profile
-- `backend thread status in {idle, active, systemError}`
-  - the backend is still loaded
-  - the usual reason is an external subscriber such as local `fcodex`
+`/reset-backend` is an instance-scoped action.
 
-### 5.6 What happens on the next normal prompt
+It:
 
-If a Feishu binding remains `bound` but its `feishu runtime == released`, then
-the next ordinary prompt in that chat:
+- resets the current instance backend
+- preserves binding bookmarks
+- preserves thread-wise profile/provider data
+- preserves user config and data
+- moves affected Feishu bindings into `detached`
 
-- runs the normal prompt preflight first
-- must be a pure reject if preflight denies it, with the binding staying
-  `released`
-- may only reattach / resume and start a new turn after preflight accepts it
+It does not:
 
-This document owns the runtime-admission and pure-reject rule only.
-If the accepted path hits an unloaded thread, profile / provider resolution is
-owned by `docs/contracts/thread-profile-semantics.md`.
+- automatically delete bindings
+- automatically clear thread-wise profile
+- automatically guarantee that push becomes attached again
 
-## 6. Local Admin Surface: `feishu-codexctl`
+So the result card must directly offer:
 
-### 6.1 What it is
+- `Attach Current Thread`
+- `Attach Current Instance`
+- `Keep Detached`
 
-`feishu-codexctl` is the local admin CLI for the running `feishu-codex` service.
+## 6. Local management surface
 
-It is not:
+The formal local `feishu-codexctl` naming must align with the Feishu surface:
 
-- an alias of `fcodex`
-- a local shell wrapper for Feishu chat commands
-- another app-server frontend
+- `service attach`
+- `binding attach`
+- `binding detach`
+- `thread attach`
+- `thread detach`
 
-Its role is to inspect service / binding / thread state and issue explicit
-management actions to the running Feishu service.
+The lower layer may still route through internal protocol operations such as:
 
-### 6.2 Why it must go through the running service
+- `thread/unsubscribe`
 
-In the public upstream protocol, `thread/unsubscribe` is connection-scoped.
+But that is no longer a user-facing term and should not remain in primary product wording.
 
-So if a local CLI opens its own app-server connection and sends `thread/unsubscribe`,
-it only unsubscribes its own connection, not the Feishu service connection.
+## 7. reset-backend and re-profile
 
-Therefore any action that truly changes whether Feishu is still attached to a
-thread must be executed by the running `feishu-codex` service itself.
+A thread-wise profile is directly writable only when the thread is verifiably globally unloaded.
 
-### 6.3 Current formal command set
+Therefore:
 
-The current formal command set is:
+- detached alone is not enough
+- if local `fcodex` still holds live runtime, the user will often still need a backend reset or to wait for natural unload
 
-- `feishu-codexctl instance list`
-- `feishu-codexctl service status`
-- `feishu-codexctl service reset-backend [--force]`
-- `feishu-codexctl service reattach`
-- `feishu-codexctl binding list`
-- `feishu-codexctl binding status <binding_id>`
-- `feishu-codexctl binding reattach <binding_id>`
-- `feishu-codexctl binding clear <binding_id>`
-- `feishu-codexctl binding clear-all`
-- `feishu-codexctl thread status (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread bindings (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread archive (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread reattach (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread unsubscribe (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
+The Feishu-side `/profile <name>` flow should prefer:
 
-### 6.3.1 `service reset-backend` Contract
+- direct write when possible
+- otherwise “apply and reset backend”
 
-`feishu-codexctl service reset-backend` is an **instance-scoped** admin action.
+It should not force ordinary users to understand complex detach / attach / unsubscribe relationships first.
 
-Its target is:
+## 8. Bottom line
 
-- the currently selected `feishu-codex` instance
-- the backend / app-server process managed by that instance
+The user-facing contract must stay:
 
-It is not:
+- `binding` answers “which thread is remembered”
+- `attach / detach` answers “whether this chat receives push”
+- `backend / live runtime` answers “where the thread is loaded and who currently holds it”
 
-- a restart of the whole `feishu-codex` service process
-- a thread-level write entry point
-- a binding-clear entry point
-
-Its formal semantics are:
-
-- interrupt running Feishu turns on the current instance backend
-- fail-close still-pending approval / input requests on the current instance
-- release all Feishu runtime attachments held by the current instance bindings
-- clear machine-global live runtime leases held by the current instance
-- restart the current instance backend / app-server
-
-It does not overwrite:
-
-- binding bookmarks
-- thread-wise profile / provider state
-- other persisted user configuration or data
-
-Formal limits:
-
-- only `managed` app-server mode supports this action
-- `service status` should expose `app_server_mode`,
-  `backend_reset_status`, `backend_reset_reason_code`, and
-  `backend_reset_reason`
-- non-force execution is allowed only when the current instance has no pending
-  requests, no running bindings, no active loaded threads, and backend state is
-  verifiable
-- `--force` means the operator accepts losing or interrupting in-flight work in
-  the current instance backend
-
-### 6.3.2 `reattach` Contracts
-
-The local reattach surfaces are:
-
-- `service reattach`
-- `thread reattach`
-- `binding reattach`
-
-Their shared purpose is:
-
-- restore `released` Feishu runtime subscriptions
-- without changing bookmarks or thread-wise profile state
-
-Scope split:
-
-- `service reattach`: fan out across the current instance
-- `thread reattach`: fan out across one target thread's released bindings
-- `binding reattach`: reattach exactly one binding
-
-All reattach actions must still fail closed when:
-
-- the target has no corresponding binding/thread
-- live-runtime admission denies reattach
-- the underlying thread target is no longer reattachable
-
-### 6.3.3 `image send` Contract
-
-`feishu-codexctl image send` is a **thread-scoped** outbound-image action.
-
-Its target is not:
-
-- the execution card
-- the terminal result card
-- arbitrary files in the workspace that merely look like images
-
-Its formal semantics are:
-
-- select one target thread
-- find all currently `attached` Feishu bindings for that thread
-- upload the image once through the running `feishu-codex` service
-- then fan out that image as standalone Feishu `image` messages to those attached bindings
-
-Formal constraints:
-
-- if `--thread-id/--thread-name` are omitted, the CLI may only fall back to the `CODEX_THREAD_ID` environment variable
-- if the thread id is already known and `--instance` is omitted, the CLI may prefer the current machine-global `live runtime owner` instance; this applies only when thread-id addressing is already available, because `--thread-name` addressing must resolve the target thread first
-- if the target thread currently has no `attached` binding, the action must fail closed
-- it does not implicitly reply to a prompt message; the first version always sends standalone image messages
-- it does not provide an automatic retry or dedupe contract; if later fanout steps fail, earlier bindings may already have received the image, and the CLI must report that partial delivery explicitly
-
-### 6.3.4 `thread archive` Contract
-
-`feishu-codexctl thread archive` is a **thread-scoped** admin action.
-
-Its target is:
-
-- the target thread on the currently selected `feishu-codex` instance backend
-- Feishu bindings in that instance that still point at that thread
-
-It is not:
-
-- a lightweight current-chat UI action
-- a cross-instance bulk cleanup entrypoint
-- a hard-delete surface for thread history
-
-Its formal semantics are:
-
-- call Codex thread archive so the target becomes hidden from normal thread lists
-- clear bindings in the current instance that still point at that thread
-- release the current instance's service-level live runtime lease for that thread
-
-It does not overwrite:
-
-- binding bookmarks still persisted in other instances
-- the thread's rollout history itself
-- runtime / binding state for unrelated threads
-
-Formal constraints:
-
-- if the machine-global live runtime owner is another instance, the action must fail closed and require running archive on that owner instance
-- if the current instance still has Feishu inflight turns on that thread, the action must fail closed
-- if the current instance still has pending approval or supplemental-input requests on that thread, the action must fail closed
-- this is an irreversible visibility change; it is not a hard delete
-
-### 6.4 Contract for binding persistence and reset
-
-`binding` is a local fact that should persist across Feishu service restarts.
-
-That persistence exists so a Feishu chat can still remember which thread it
-should continue with by default after restart. This is a Feishu-side bookmark,
-not Codex-owned thread metadata.
-
-At the same time, "clear one or all bindings" is a legitimate local admin need,
-especially for:
-
-- development-time bulk reset
-- operational recovery
-- forcing Feishu back to a fresh "pick a thread again" state
-
-The formal contract is:
-
-- this is a `binding`-layer action, not a `thread runtime` action
-- it is not the same thing as `/release-runtime`
-- its formal surface belongs to `feishu-codexctl`
-
-So the formal admin surface is:
-
-- `feishu-codexctl binding clear <binding_id>`
-- `feishu-codexctl binding clear-all`
-
-Those actions mean:
-
-- clear Feishu-side remembered binding facts
-- consistently clear the running Feishu in-memory state and persisted state
-- release any Feishu-local lease, execution-anchor, or subscription state that
-  must disappear with that binding
-
-They do not mean:
-
-- delete a Codex thread
-- archive a thread
-- replace `/release-runtime`
-- replace thread-level admin commands
-
-The distinction is intentional:
-
-- `/release-runtime`
-  - releases Feishu runtime residency for a thread
-  - does not clear the binding bookmark
-- `binding clear/clear-all`
-  - clears Feishu-local binding bookmarks
-  - should no longer exist as a separate architectural concept of "just delete
-    `chat_bindings.json`"
-
-### 6.5 `binding_id` shape
-
-The local admin CLI uses stable admin-facing binding ids:
-
-- group binding: `group:<chat_id>`
-- p2p binding: `p2p:<sender_id>:<chat_id>`
-
-These are local admin identifiers. They do not need to mirror Feishu command names.
-In this project, `binding_id` is a restricted admin-facing syntax, not a
-generic reversible serializer for arbitrary strings:
-
-- `:` is a reserved separator
-- `sender_id` and `chat_id` components must not contain `:`
-- if a real upstream id format ever requires `:`, the syntax should be replaced
-  explicitly rather than relying on the current concatenation format to round-trip silently
-
-### 6.6 Explicit thread target contract
-
-For the local admin surface, thread targeting is intentionally explicit.
-
-- `--thread-id <id>`
-  - means exact thread-id addressing
-  - does not fall back to name lookup
-- `--thread-name <name>`
-  - means exact thread-name matching
-  - uses the same shared cross-provider global listing filters as the session
-    discovery surface
-  - keeps scanning later pages until uniqueness or ambiguity is proven
-  - rejects zero matches
-  - rejects multiple exact-name matches
-
-The control plane follows the same rule.
-It no longer accepts an untyped union `target` that guesses whether the input
-was an id or a name.
-
-### 6.7 Single service owner per `FC_DATA_DIR`
-
-For one `FC_DATA_DIR`, there must be exactly one running `feishu-codex`
-service owner.
-
-The contract is:
-
-- ownership is established before adapter/control-plane startup
-- a second instance must fail fast
-- the control endpoint is not the ownership primitive
-- the owner writes metadata including `owner_pid`, `owner_token`, and
-  `control_endpoint`
-- the on-disk owner metadata contains a local control token and must be treated
-  as sensitive local state; on Windows this relies on the current user's
-  profile path and NTFS ACLs rather than POSIX `0600` semantics
-- if startup fails after ownership is acquired, partially started runtime
-  components must be fully rolled back before the lease is released
-- shutdown may only clean up ownership metadata that still belong to the same
-  owner token
-
-Therefore `feishu-codex run` and a background service started via
-`feishu-codex start` must not coexist on the same `FC_DATA_DIR`.
-If both point at the same directory, the later starter must exit instead of
-trying to replace the published control endpoint.
-
-### 6.8 Instance Scope and Global Coordination
-
-In multi-instance mode, `feishu-codexctl` deliberately splits into two scopes:
-
-- `instance list`
-  - machine-scoped
-  - reads the global running-instance registry
-  - does not target one specific instance
-- all other subcommands
-  - instance-scoped
-  - operate on one running `feishu-codex` service
-  - may select it explicitly via `--instance <name>`
-  - if the caller provides an extra preferred running instance (for example
-    `image send` with a known thread id), that running instance is tried first
-  - otherwise they resolve by `unique-running -> default-running ->
-    current-instance-paths`
-  - if multiple running instances still leave no unique target, the command
-    must fail
-
-The formal contract for multi-instance thread visibility is:
-
-- `default` and named instances share the same persisted thread namespace
-- Feishu `/threads` and `feishu-codexctl thread list --scope cwd` are
-  current-directory views over that namespace
-- Feishu `/resume`, `fcodex resume <thread_name>`, and thread-targeted control
-  plane commands resolve against the same global persisted thread set
-- instance boundaries matter only once a path wants service-local binding state
-  or live runtime residency
-
-There are also two machine-level coordination facts:
-
-- `InstanceRegistry`
-  - records which instances are currently running and how local CLIs can reach
-    their control endpoint / backend endpoints
-  - used by `fcodex` and `feishu-codexctl instance list`
-- `ThreadRuntimeLease`
-  - records which instance currently owns live backend runtime residency for a
-    thread
-  - allows multiple holders for the same thread only when they come from the
-    same instance
-  - rejects concurrent live attachment from different instances
-
-The formal contract for cross-instance live-runtime transfer is:
-
-- if the current owner instance can release Feishu runtime immediately,
-  automatic transfer is allowed
-- if the current owner instance is still executing, or still has pending
-  approval / input, the write attempt must reject clearly
-- if the current owner instance has no Feishu binding for that thread, or still
-  has a non-service holder such as local `fcodex`, the write attempt must also
-  reject clearly; current code does not silently steal that live runtime
-- no queueing, no implicit stealing, and no "last binder wins" guesswork
-
-This `ThreadRuntimeLease` is a machine-level live-runtime fact.
-It is not the same thing as Feishu chat binding or interaction owner.
-
-## 7. Shared Vocabulary, Not Forced Command Symmetry
-
-This repo intentionally chooses:
-
-- shared state vocabulary across Feishu and local admin
-- without forcing identical command names or identical interaction shape
-
-That is because:
-
-- Feishu is naturally chat-scoped
-- the local admin CLI is naturally service / binding / thread scoped
-- `fcodex` should remain focused on Codex usage over the shared backend, not on Feishu service administration
-
-So the current architecture has three distinct entry points:
-
-- Feishu chat commands: current chat binding control
-- `fcodex`: Codex usage on the shared backend
-- `feishu-codexctl`: local administration of the running Feishu service
+Any code, CLI wording, help card, result card, README, or contract doc that still collapses these layers into a single “release runtime residency” concept should be treated as a contract bug and tightened further.

@@ -185,23 +185,23 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
     print("backend reset: ok")
     print(f"force: {'yes' if result.get('force') else 'no'}")
     print(f"app server: {result.get('app_server_url', '-')}")
-    print(f"released bindings: {', '.join(result.get('released_binding_ids') or []) or '（无）'}")
+    print(f"detached bindings: {', '.join(result.get('released_binding_ids') or []) or '（无）'}")
     print(f"interrupted bindings: {', '.join(result.get('interrupted_binding_ids') or []) or '（无）'}")
     print(f"fail-closed requests: {int(result.get('fail_closed_request_count') or 0)}")
     print(f"purged runtime leases: {', '.join(result.get('purged_thread_ids') or []) or '（无）'}")
     print("next:")
-    print("  - reattach this instance: feishu-codexctl service reattach")
-    print("  - reattach one thread: feishu-codexctl thread reattach --thread-id <thread_id>")
-    print("  - reattach one binding: feishu-codexctl binding reattach <binding_id>")
+    print("  - attach this instance: feishu-codexctl service attach")
+    print("  - attach one thread: feishu-codexctl thread attach --thread-id <thread_id>")
+    print("  - attach one binding: feishu-codexctl binding attach <binding_id>")
     return 0
 
 
-def _reattach_service(data_dir: pathlib.Path) -> int:
-    result = _request(data_dir, "service/reattach")
-    print("runtime reattach: ok")
+def _attach_service(data_dir: pathlib.Path) -> int:
+    result = _request(data_dir, "service/attach")
+    print("runtime attach: ok")
     print(f"instance: {result.get('instance_name', '-')}")
-    print(f"reattached threads: {', '.join(result.get('reattached_thread_ids') or []) or '（无）'}")
-    print(f"reattached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    print(f"attached threads: {', '.join(result.get('reattached_thread_ids') or []) or '（无）'}")
+    print(f"attached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
     blocked_threads = result.get("blocked_threads") or []
     if blocked_threads:
         print("blocked threads:")
@@ -210,7 +210,7 @@ def _reattach_service(data_dir: pathlib.Path) -> int:
             print(f"- {item.get('thread_id', '-')}: {binding_ids} -> {item.get('reason', '（无原因）')}")
         return 1
     if not result.get("reattached_binding_ids"):
-        print("note: 当前实例没有需要恢复的 released 订阅。")
+        print("note: 当前实例没有需要恢复的 detached 推送。")
     return 0
 
 
@@ -252,7 +252,7 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
     print(f"working_dir: {display_path(snapshot['working_dir'])}")
     print(f"binding: {snapshot['binding_state']}")
     print(f"thread: {snapshot['thread_id'] or '-'} {snapshot['thread_title'] or ''}".rstrip())
-    print(f"feishu runtime: {snapshot['feishu_runtime_state']}")
+    print(f"feishu push: {snapshot['feishu_runtime_state']}")
     print(f"current instance backend thread status: {snapshot['backend_thread_status']}")
     print(f"backend running turn: {'yes' if snapshot['backend_running_turn'] else 'no'}")
     print(f"live runtime owner: {live_runtime_owner}")
@@ -266,11 +266,11 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
     print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
     if snapshot["thread_id"]:
         availability = "available" if snapshot["unsubscribe_available"] else "blocked"
-        print(f"unsubscribe: {availability}")
+        print(f"detach: {availability}")
         if snapshot["unsubscribe_reason_code"]:
-            print(f"unsubscribe reason code: {snapshot['unsubscribe_reason_code']}")
+            print(f"detach reason code: {snapshot['unsubscribe_reason_code']}")
         if snapshot["unsubscribe_reason"]:
-            print(f"unsubscribe reason: {snapshot['unsubscribe_reason']}")
+            print(f"detach reason: {snapshot['unsubscribe_reason']}")
     print(f"approval_policy: {snapshot['approval_policy']}")
     print(f"sandbox: {snapshot['sandbox']}")
     print(f"collaboration_mode: {snapshot['collaboration_mode']}")
@@ -284,8 +284,8 @@ def _clear_binding(data_dir: pathlib.Path, binding_id: str) -> int:
     return 0
 
 
-def _reattach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
-    result = _request(data_dir, "binding/reattach", {"binding_id": binding_id})
+def _attach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
+    result = _request(data_dir, "binding/attach", {"binding_id": binding_id})
     print(f"binding: {result['binding_id']}")
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
@@ -293,6 +293,21 @@ def _reattach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
         print("note: 该 binding 原本就已 attached。")
     else:
         print("note: 该 binding 已恢复 attached，可继续接收推送。")
+    return 0
+
+
+def _detach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
+    result = _request(data_dir, "binding/detach", {"binding_id": binding_id})
+    print(f"binding: {result['binding_id']}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    print(f"backend thread status: {result['backend_thread_status']}")
+    if result.get("already_detached"):
+        print("note: 该 binding 原本就已 detached。")
+    elif result.get("backend_still_loaded"):
+        print("note: backend 仍保持 loaded；通常还有本地 fcodex 或其他外部订阅者。")
+    else:
+        print("note: 该 binding 已 detached；如果它是最后一个 attached 的 Feishu binding，服务已自动停止该 thread 的 Feishu 订阅。")
     return 0
 
 
@@ -319,15 +334,15 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
     print(f"live runtime holders: {', '.join(live_runtime_holders) or '（无）'}")
     print(f"bound bindings: {', '.join(snapshot['bound_binding_ids']) or '（无）'}")
     print(f"attached bindings: {', '.join(snapshot['attached_binding_ids']) or '（无）'}")
-    print(f"released bindings: {', '.join(snapshot['released_binding_ids']) or '（无）'}")
+    print(f"detached bindings: {', '.join(snapshot['released_binding_ids']) or '（无）'}")
     print(f"interaction owner: {snapshot['interaction_owner']['label']}")
     print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
     availability = "available" if snapshot["unsubscribe_available"] else "blocked"
-    print(f"unsubscribe: {availability}")
+    print(f"detach: {availability}")
     if snapshot["unsubscribe_reason_code"]:
-        print(f"unsubscribe reason code: {snapshot['unsubscribe_reason_code']}")
+        print(f"detach reason code: {snapshot['unsubscribe_reason_code']}")
     if snapshot["unsubscribe_reason"]:
-        print(f"unsubscribe reason: {snapshot['unsubscribe_reason']}")
+        print(f"detach reason: {snapshot['unsubscribe_reason']}")
     return 0
 
 
@@ -375,32 +390,32 @@ def _print_thread_list(data_dir: pathlib.Path, *, scope: str, cwd: str) -> int:
     return 0
 
 
-def _unsubscribe_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
-    result = _request(data_dir, "thread/unsubscribe", target_params)
+def _detach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
+    result = _request(data_dir, "thread/detach", target_params)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
-    print(f"released bindings: {', '.join(result['released_binding_ids']) or '（无）'}")
+    print(f"detached bindings: {', '.join(result['released_binding_ids']) or '（无）'}")
     print(f"backend thread status: {result['backend_thread_status']}")
     print(f"re-profile possible: {'yes' if result['reprofile_possible'] else 'no'}")
     if result.get("unsubscribe_reason_code"):
-        print(f"unsubscribe reason code: {result['unsubscribe_reason_code']}")
+        print(f"detach reason code: {result['unsubscribe_reason_code']}")
     if result["already_released"]:
-        print("note: Feishu runtime was already released.")
+        print("note: Feishu push for this thread was already detached.")
     elif result["backend_still_loaded"]:
         print("note: backend is still loaded; external subscribers are still attached, typically local fcodex.")
     else:
-        print("note: Feishu has released its runtime residency for this thread while keeping bindings intact.")
+        print("note: Feishu push for this thread has been detached while keeping bindings intact.")
     return 0
 
 
-def _reattach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
-    result = _request(data_dir, "thread/reattach", target_params)
+def _attach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
+    result = _request(data_dir, "thread/attach", target_params)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
-    print(f"reattached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    print(f"attached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
     if result.get("already_attached_binding_ids"):
         print(f"already attached bindings: {', '.join(result.get('already_attached_binding_ids') or [])}")
     if not result.get("changed"):
-        print("note: 当前 thread 没有需要恢复的 released 订阅。")
+        print("note: 当前 thread 没有需要恢复的 detached 推送。")
     return 0
 
 
@@ -466,23 +481,24 @@ def _build_parser() -> argparse.ArgumentParser:
             "- `feishu-codexctl` 是本地查看 / 管理面，不是第二个 Codex 前端\n"
             "- 除 `instance list` 外，其余命令都可加 `--instance <name>`；显式值优先\n"
             "- 若未显式指定，则按 preferred-running（若有）/ unique-running / default-running / current-instance-paths 规则解析；多实例仍有歧义时必须显式指定\n"
-            "- `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `unsubscribe`\n"
+            "- `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`\n"
             "- `thread list` 默认列当前目录线程，也支持 `--scope global`\n"
         ),
         epilog=(
             "常用命令:\n"
             "  feishu-codexctl service status\n"
             "  feishu-codexctl service reset-backend\n"
-            "  feishu-codexctl service reattach\n"
+            "  feishu-codexctl service attach\n"
             "  feishu-codexctl instance list\n"
             "  feishu-codexctl binding list\n"
             "  feishu-codexctl binding status <binding_id>\n"
-            "  feishu-codexctl binding reattach <binding_id>\n"
+            "  feishu-codexctl binding attach <binding_id>\n"
+            "  feishu-codexctl binding detach <binding_id>\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
-            "  feishu-codexctl thread reattach --thread-id <id>\n"
-            "  feishu-codexctl thread unsubscribe --thread-name <name>\n"
+            "  feishu-codexctl thread attach --thread-id <id>\n"
+            "  feishu-codexctl thread detach --thread-name <name>\n"
             "  feishu-codexctl image send --path ./diagram.png\n"
             "\n"
             "多实例:\n"
@@ -539,9 +555,9 @@ def _build_parser() -> argparse.ArgumentParser:
         help="强制重置 backend，允许打断当前实例里正在进行的工作。",
     )
     service_sub.add_parser(
-        "reattach",
-        help="恢复当前实例下 released 的 Feishu 订阅。",
-        description="恢复当前实例下全部 released 的 Feishu binding 订阅；若部分 thread 被其他实例占用，会逐项报告 blocked 原因。",
+        "attach",
+        help="恢复当前实例下 detached 的 Feishu 推送。",
+        description="恢复当前实例下全部 detached 的 Feishu binding 推送；若部分 thread 被其他实例占用，会逐项报告 blocked 原因。",
         formatter_class=_HelpFormatter,
     )
 
@@ -550,7 +566,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="查看或清理目标实例里的 Feishu binding。",
         description=(
             "Binding 管理面。\n"
-            "`clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `unsubscribe`。"
+            "`clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -571,21 +587,28 @@ def _build_parser() -> argparse.ArgumentParser:
     binding_clear = binding_sub.add_parser(
         "clear",
         help="清除单个 binding bookmark。",
-        description="清除单个 Feishu binding bookmark；不会删除 thread，也不会执行 unsubscribe。",
+        description="清除单个 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
     )
     binding_clear.add_argument("binding_id", help="要清除的 binding id。")
-    binding_reattach = binding_sub.add_parser(
-        "reattach",
-        help="恢复单个 binding 的 Feishu 订阅。",
-        description="让目标 binding 从 released 恢复到 attached；不启动 turn，只恢复推送接收能力。",
+    binding_attach = binding_sub.add_parser(
+        "attach",
+        help="恢复单个 binding 的飞书推送。",
+        description="让目标 binding 从 detached 恢复到 attached；不启动 turn，只恢复推送接收能力。",
         formatter_class=_HelpFormatter,
     )
-    binding_reattach.add_argument("binding_id", help="要恢复的 binding id。")
+    binding_attach.add_argument("binding_id", help="要恢复的 binding id。")
+    binding_detach = binding_sub.add_parser(
+        "detach",
+        help="暂停单个 binding 的飞书推送。",
+        description="让目标 binding 从 attached 变为 detached；保留 bookmark，不删除 thread。",
+        formatter_class=_HelpFormatter,
+    )
+    binding_detach.add_argument("binding_id", help="要暂停的 binding id。")
     binding_sub.add_parser(
         "clear-all",
         help="清除当前实例下全部 binding bookmark。",
-        description="清除当前实例下全部 Feishu binding bookmark；不会删除 thread，也不会执行 unsubscribe。",
+        description="清除当前实例下全部 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
     )
 
@@ -612,7 +635,7 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_status = thread_sub.add_parser(
         "status",
         help="查看单个 thread 详情。",
-        description="查看单个 thread 的 backend 状态、绑定关系与 unsubscribe 可用性。",
+        description="查看单个 thread 的 backend 状态、绑定关系与 detach 可用性。",
         formatter_class=_HelpFormatter,
     )
     thread_status_target = thread_status.add_mutually_exclusive_group(required=True)
@@ -639,24 +662,24 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_archive_target = thread_archive.add_mutually_exclusive_group(required=True)
     thread_archive_target.add_argument("--thread-id", help="目标 thread id。")
     thread_archive_target.add_argument("--thread-name", help="目标 thread 名称。")
-    thread_unsubscribe = thread_sub.add_parser(
-        "unsubscribe",
-        help="让 Feishu 释放某个 thread 的 runtime residency。",
-        description="让 Feishu 释放某个 thread 的 runtime residency，同时保留 thread 与 binding 关系。",
+    thread_detach = thread_sub.add_parser(
+        "detach",
+        help="暂停某个 thread 的飞书推送。",
+        description="让 Feishu 服务暂停该 thread 当前 attached bindings 的推送，同时保留 thread 与 binding 关系。",
         formatter_class=_HelpFormatter,
     )
-    thread_unsubscribe_target = thread_unsubscribe.add_mutually_exclusive_group(required=True)
-    thread_unsubscribe_target.add_argument("--thread-id", help="目标 thread id。")
-    thread_unsubscribe_target.add_argument("--thread-name", help="目标 thread 名称。")
-    thread_reattach = thread_sub.add_parser(
-        "reattach",
-        help="恢复某个 thread 下 released 的 Feishu 订阅。",
-        description="把目标 thread 当前所有 released 的 Feishu bindings 恢复到 attached；不启动 turn。",
+    thread_detach_target = thread_detach.add_mutually_exclusive_group(required=True)
+    thread_detach_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_detach_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_attach = thread_sub.add_parser(
+        "attach",
+        help="恢复某个 thread 下 detached 的飞书推送。",
+        description="把目标 thread 当前所有 detached 的 Feishu bindings 恢复到 attached；不启动 turn。",
         formatter_class=_HelpFormatter,
     )
-    thread_reattach_target = thread_reattach.add_mutually_exclusive_group(required=True)
-    thread_reattach_target.add_argument("--thread-id", help="目标 thread id。")
-    thread_reattach_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_attach_target = thread_attach.add_mutually_exclusive_group(required=True)
+    thread_attach_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_attach_target.add_argument("--thread-name", help="目标 thread 名称。")
 
     image = subparsers.add_parser(
         "image",
@@ -721,14 +744,16 @@ def main() -> None:
             raise SystemExit(_print_service_status(data_dir))
         if args.resource == "service" and args.action == "reset-backend":
             raise SystemExit(_reset_service_backend(data_dir, force=bool(args.force)))
-        if args.resource == "service" and args.action == "reattach":
-            raise SystemExit(_reattach_service(data_dir))
+        if args.resource == "service" and args.action == "attach":
+            raise SystemExit(_attach_service(data_dir))
         if args.resource == "binding" and args.action == "list":
             raise SystemExit(_print_binding_list(data_dir))
         if args.resource == "binding" and args.action == "status":
             raise SystemExit(_print_binding_status(data_dir, args.binding_id, instance_name=target.instance_name))
-        if args.resource == "binding" and args.action == "reattach":
-            raise SystemExit(_reattach_binding(data_dir, args.binding_id))
+        if args.resource == "binding" and args.action == "attach":
+            raise SystemExit(_attach_binding(data_dir, args.binding_id))
+        if args.resource == "binding" and args.action == "detach":
+            raise SystemExit(_detach_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear":
             raise SystemExit(_clear_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear-all":
@@ -746,10 +771,10 @@ def main() -> None:
             )
         if args.resource == "thread" and args.action == "bindings":
             raise SystemExit(_print_thread_bindings(data_dir, _thread_target_params(args)))
-        if args.resource == "thread" and args.action == "reattach":
-            raise SystemExit(_reattach_thread(data_dir, _thread_target_params(args)))
-        if args.resource == "thread" and args.action == "unsubscribe":
-            raise SystemExit(_unsubscribe_thread(data_dir, _thread_target_params(args)))
+        if args.resource == "thread" and args.action == "attach":
+            raise SystemExit(_attach_thread(data_dir, _thread_target_params(args)))
+        if args.resource == "thread" and args.action == "detach":
+            raise SystemExit(_detach_thread(data_dir, _thread_target_params(args)))
     except ServiceControlError as exc:
         print(f"控制面请求失败：{exc}", file=sys.stderr)
         raise SystemExit(2)

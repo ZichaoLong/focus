@@ -61,7 +61,7 @@ _SHARED_COMMAND_SPECS = (
         key="preflight",
         slash_name="/preflight",
         feishu_usage="/preflight",
-        feishu_summary="预检当前 chat 下一条普通消息与 release 可用性。",
+        feishu_summary="预检当前 chat 下一条普通消息与 detach 可用性。",
     ),
     SharedCommandSpec(
         key="resume",
@@ -70,16 +70,16 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="恢复指定线程。",
     ),
     SharedCommandSpec(
-        key="release-runtime",
-        slash_name="/release-runtime",
-        feishu_usage="/release-runtime",
-        feishu_summary="释放当前绑定 thread 的 Feishu runtime 附着。",
+        key="detach",
+        slash_name="/detach",
+        feishu_usage="/detach",
+        feishu_summary="暂停当前会话接收当前线程的飞书推送。",
     ),
     SharedCommandSpec(
-        key="re-attach",
-        slash_name="/re-attach",
-        feishu_usage="/re-attach [binding|thread|service]",
-        feishu_summary="恢复 released 的 Feishu runtime 附着。",
+        key="attach",
+        slash_name="/attach",
+        feishu_usage="/attach [binding|thread|service]",
+        feishu_summary="恢复当前会话、当前线程或当前实例的飞书推送。",
     ),
 )
 

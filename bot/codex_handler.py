@@ -709,7 +709,7 @@ class CodexHandler(BotHandler):
                 try:
                     self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)
                 except Exception:
-                    logger.exception("将冲突线程 fail-closed 为 released 失败: thread=%s", thread_id[:12])
+                    logger.exception("将冲突线程 fail-closed 为 detached 失败: thread=%s", thread_id[:12])
 
     def handle_message(self, sender_id: str, chat_id: str, text: str, message_id: str = "") -> None:
         self._runtime_call(self._handle_message_impl, sender_id, chat_id, text, message_id=message_id)
@@ -1460,16 +1460,16 @@ class CodexHandler(BotHandler):
                     message_id=message_id,
                 ),
             ),
-            "/release-runtime": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._handle_release_runtime_command(
+            "/detach": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._handle_detach_command(
                     sender_id,
                     chat_id,
                     arg,
                     message_id=message_id,
                 ),
             ),
-            "/re-attach": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._handle_reattach_command(
+            "/attach": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._handle_attach_command(
                     sender_id,
                     chat_id,
                     arg,
@@ -1657,8 +1657,8 @@ class CodexHandler(BotHandler):
                 ),
                 group_guard="group_admin",
             ),
-            "reattach_runtime": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_reattach_action(
+            "attach_runtime": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_attach_action(
                     sender_id,
                     chat_id,
                     message_id,
@@ -1666,8 +1666,8 @@ class CodexHandler(BotHandler):
                 ),
                 group_guard="group_admin",
             ),
-            "dismiss_reattach": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_dismiss_reattach_action(),
+            "dismiss_attach": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_dismiss_attach_action(),
                 group_guard="group_admin",
             ),
             "set_collaboration_mode": ActionRoute(
@@ -1917,7 +1917,7 @@ class CodexHandler(BotHandler):
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
         return self._runtime_admin.handle_preflight_command(binding, arg)
 
-    def _handle_release_runtime_command(
+    def _handle_detach_command(
         self,
         sender_id: str,
         chat_id: str,
@@ -1926,9 +1926,9 @@ class CodexHandler(BotHandler):
         message_id: str = "",
     ) -> CommandResult:
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
-        return self._runtime_admin.handle_release_runtime_command(binding, arg)
+        return self._runtime_admin.handle_detach_command(binding, arg)
 
-    def _handle_reattach_command(
+    def _handle_attach_command(
         self,
         sender_id: str,
         chat_id: str,
@@ -1937,7 +1937,7 @@ class CodexHandler(BotHandler):
         message_id: str = "",
     ) -> CommandResult:
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
-        return self._runtime_admin.handle_reattach_command(binding, arg)
+        return self._runtime_admin.handle_attach_command(binding, arg)
 
     def _unsubscribe_feishu_runtime_by_thread_id(self, thread_id: str) -> dict[str, Any]:
         return self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)

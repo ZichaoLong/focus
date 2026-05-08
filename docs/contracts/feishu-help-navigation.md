@@ -1,161 +1,100 @@
 # Feishu Help Navigation Contract
 
-This document defines the Feishu-side `/help` navigation surface.
+Chinese original: `docs/contracts/feishu-help-navigation.zh-CN.md`
 
-It is the contract for:
+This file defines only the `/help` and `/commands` navigation contract.
 
-- which commands are reachable from `/help`
-- which commands are intentionally not reachable from `/help`
-- how button and form navigation must relate to slash-command semantics
+It answers:
 
-If implementation and this document disagree, treat that as a contract gap and tighten the implementation, the docs, or both.
+- which topic pages `/help` must expose
+- what each page is responsible for
+- which commands are intentionally not on the main help path
 
-## 1. Scope
+## 1. Goal
 
-This document only covers the Feishu-side help and navigation surface.
+`/help` is not a second documentation site and not a flat dump of every command.
 
-It does not redefine:
+Its job is progressive disclosure:
 
-- thread lifecycle
-- runtime control semantics
-- thread/profile semantics
-- `fcodex` local-wrapper help
+1. group actions by the problem the user is solving now
+2. enter the relevant action through buttons or forms
+3. leave advanced recovery / debugging actions to result cards or plain-text commands
 
-Those belong to their dedicated docs.
+## 2. Root Navigation
 
-## 2. Root Structure
+The `/help` root card must expose exactly five topics:
 
-Feishu `/help` is a navigation entry, not a flat command dump.
+- `Current Chat`
+- `Group`
+- `Thread`
+- `Runtime`
+- `Identity`
 
-The root help card must expose exactly five top-level entries, in this order:
+They correspond to:
 
-- `Current Chat`, text topic `chat`
-- `Group`, text topic `group`
-- `Thread`, text topic `thread`
-- `Runtime`, text topic `runtime`
-- `Identity`, text topic `identity`
+- `Current Chat`
+  - `/status`
+  - `/preflight`
+  - `/cd`
+- `Group`
+  - `/group`
+  - `/group-mode`
+  - group-collaboration boundaries
+- `Thread`
+  - `/threads`
+  - `/new`
+  - `/resume`
+  - the current-thread page
+- `Runtime`
+  - `/permissions`
+  - `/approval`
+  - `/sandbox`
+  - `/collab-mode`
+  - `/reset-backend`
+- `Identity`
+  - `/whoami`
+  - `/bot-status`
+  - `/init`
 
-The button labels may be localized, but the textual `/help <topic>` contract
-must stay explicit and stable.
+## 3. Page Contracts
 
-The root card may include short explanatory text for these entries, but it
-should not try to list every command inline.
+### 3.1 Current Chat
 
-Local `fcodex` usage is not a standalone Feishu `/help` page. If it appears at
-all, it should only appear as brief text guidance on the overview or thread
-pages.
+Must provide:
 
-## 3. Navigation Reachability
+- a `/status` button
+- a `/preflight` button
+- a `/cd` form entry
 
-“Reachable from `/help`” means reachable through one or more card buttons after
-entering `/help`.
+It does not need to expose `/pwd`.
 
-It does not require every command to appear on the root card.
+### 3.2 Thread
 
-Multi-level navigation is preferred when it reduces clutter and clarifies
-responsibility.
-
-## 4. Semantic Equivalence Rule
-
-Help buttons and forms may differ from slash commands in presentation, but not
-in behavior.
-
-Therefore:
-
-- a help button that triggers a command must reuse the same command semantics as the slash command
-- a help form may only collect missing arguments, then dispatch into the same command path
-- help navigation must not introduce a second copy of command business logic
-
-Different response shape is allowed:
-
-- slash commands may reply with a new message
-- card actions may update the current card or show a toast
-
-But the underlying operation, validation, scope guard, and state transition
-must remain equivalent.
-
-Help/navigation card payloads must also stay minimal and explicit:
-
-- routing is keyed by `action`
-- payloads should only carry the parameters the target action actually consumes
-- `plugin`, bot keyword, or other deployment-identifying fields are not part of the callback contract and must not be required for routing
-
-## 5. Current-Chat Surface
-
-The `chat` branch of `/help` owns **current chat binding** state and working-directory control.
-
-It must make the following capabilities reachable:
-
-- `/status`
-- `/preflight`
-- `/cd <path>` via a form
-
-This branch may link onward to the thread surface, but it does not own thread
-management semantics.
-
-`/status` and `/preflight` remain chat-scoped commands:
-
-- even in group chats, they still describe the current chat binding
-- they are not a global thread-admin surface
-
-## 6. Group Surface
-
-The `group` branch of `/help` owns group-only operating rules and controls.
-
-It must make the following capabilities reachable:
-
-- `/group`
-- `/group-mode`
-
-The page text should cover:
-
-- that groups start deactivated
-- what `/group activate` and `/group deactivate` do
-- the three group modes `assistant`, `mention-only`, and `all`
-- the permission boundary between daily group usage, shared-state management,
-  and approval-card handling
-
-If the implementation keeps follow-up buttons on the `/group` and `/group-mode`
-state cards, then `/group activate`, `/group deactivate`, and
-`/group-mode <mode>` are also considered reachable from `/help`, even though
-they are not flattened onto the help page itself.
-
-## 7. Thread Surface
-
-The `thread` branch of `/help` owns thread browsing, creation, resumption, and
-current-thread management.
-
-It must make the following capabilities reachable:
+Must provide:
 
 - `/threads`
 - `/new`
-- `/resume <thread_id|thread_name>` via a form
-- a current-thread page for the currently bound thread
+- a `/resume` form
+- a `Current Thread` secondary page
 
-The current-thread page should cover:
+### 3.3 Current Thread
 
-- `/profile [name]`
-- `/rename <title>` for the current thread, via a form
-- `/archive` for the current thread
+Must provide:
 
-That current-thread page is still an entry for the **currently bound thread**,
-not a global thread-admin surface.
+- `/profile`
+- `/archive`
+- `/detach`
+- a `Rename` form entry
 
-The existing `/threads` card remains the current-directory thread browser and
-archive/resume surface for listed threads.
+Its body must also state:
 
-`/release-runtime` is intentionally not a first-class help-navigation capability:
+- `/attach [binding|thread|service]` is an advanced recovery action
+- if the goal is re-profiling, `/profile` is the preferred path
+- local advanced debugging may use `feishu-codexctl thread detach --thread-id <thread_id>`
 
-- the main user-facing re-profile path should flow through `/profile [name]`
-- if needed, help text may point users to `feishu-codexctl` for local
-  troubleshooting, but no dedicated help button is required
+### 3.4 Runtime
 
-## 8. Runtime Surface
-
-The `runtime` branch of `/help` owns per-Feishu-binding runtime settings and
-instance-level backend control.
-
-It must make the following capabilities reachable:
+Must provide:
 
 - `/permissions`
 - `/approval`
@@ -163,67 +102,64 @@ It must make the following capabilities reachable:
 - `/collab-mode`
 - `/reset-backend`
 
-`/profile` does not belong here. It is a property of the current thread and
-must remain under `Thread -> Current Thread`.
+Its body must also state:
 
-## 9. Identity Surface
+- after reset, `/attach [binding|thread|service]` can restore push delivery
+- the more common entry point is the attach buttons on the reset result card
 
-The `identity` branch of `/help` owns identity and bootstrap.
+### 3.5 Identity
 
-It must make the following capabilities reachable:
+Must provide:
 
 - `/whoami`
 - `/bot-status`
-- `/init <token>` via a form
+- an `/init` form entry
 
-`/debug-contact <open_id>` is not part of the normal help navigation surface
-and is not required to be reachable from `/help`.
+And it must clearly state:
 
-## 10. Commands Intentionally Excluded From `/help` Navigation
+- `/whoami` and `/init` are P2P-only
 
-The following are intentionally not required to be navigation-reachable from
-Feishu `/help`:
+## 4. Role of `/commands`
+
+`/commands` is a plain-text command index.
+
+It must:
+
+- list common commands in the same grouping as `/help`
+
+It must not become:
+
+- a second navigation card system
+- an exhaustive dump of every debugging command
+
+## 5. Commands Intentionally Off the Main Help Path
+
+These are not required to be reachable directly from the `/help` root card:
 
 - `/commands`
 - `/h`
-- `/cancel`
 - `/pwd`
-- `/release-runtime`
-- `/re-attach [binding|thread|service]`
-- `/debug-contact <open_id>`
-- `fcodex` local-wrapper commands
+- `/cancel`
+- `/attach`
+- `/debug-contact`
 
-Specific rationale:
+Why:
 
-- `/commands` is a text-first slash index for operators who do not want the card navigation flow; it should not become a second help tree
-- `/h` is only an alias for `/help`
-- `/cancel` already has a primary action on the execution card
-- `/pwd` is effectively subsumed by `/cd` with no argument
-- `/release-runtime` is intentionally weakened in favor of `/profile`
-- `/re-attach` is an advanced recovery command; ordinary operators should mostly
-  use the post-`/reset-backend` result-card buttons instead
-- `/debug-contact` is a troubleshooting surface, not a normal navigation topic
-- local wrapper usage belongs to local help, not Feishu help
+- `/commands` and `/h` are index / alias surfaces
+- `/pwd` has effectively been weakened by no-arg `/cd`
+- `/cancel` already has a primary execution-card button
+- `/attach` is a recovery surface and is better surfaced from reset result cards
+- `/debug-contact` is an admin debugging command
 
-## 11. Guard Semantics
+`/detach` is also not a root help command, but it must remain visible on the `Current Thread` page because it is still a user-comprehensible session-scoped thread action.
 
-Help-triggered command execution must preserve the same access rules as slash commands.
+## 6. Button Permissions
 
-That includes:
+The help card itself may be browsed in groups, but any button or form that mutates state must still be permission-checked by the command handler.
 
-- private-chat-only commands
-- group-only commands
-- group admin restrictions
-- ordinary non-admin private chats remaining denied by default
-- `/whoami`, `/bot-status`, and `/init <token>` remaining directly reachable in private chat as identity/bootstrap commands, rather than being swallowed by a generic "admin private chat only" guard first
+So:
 
-If a slash command would be rejected in the current scope, the same operation
-triggered from `/help` must also be rejected.
+- seeing navigation is not the same as being authorized to execute it
+- final permission enforcement belongs to backend command handling, not to card visibility alone
 
-## 12. Cross-Reference
-
-Related contracts:
-
-- `docs/contracts/thread-profile-semantics.md`
-- `docs/contracts/runtime-control-surface.md`
-- `docs/contracts/feishu-thread-lifecycle.md`
+If any help page, button, or form entry is added, removed, or renamed, this file must be updated with the code.

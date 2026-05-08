@@ -103,14 +103,14 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         assert state is not None
         self.assertEqual(state.thread_id, "thread-1")
         self.assertEqual(state.thread_title, "Demo")
-        self.assertEqual(state.feishu_runtime_state, "released")
+        self.assertEqual(state.feishu_runtime_state, "detached")
         self.assertEqual(manager.bound_bindings_for_thread_locked("thread-1"), [binding])
         self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [])
         interaction_owner = manager.interaction_owner_snapshot_locked("thread-1", current_binding=binding)
         self.assertEqual(interaction_owner["kind"], "none")
         stored = ChatBindingStore(data_dir).load(binding)
         assert stored is not None
-        self.assertEqual(stored["feishu_runtime_state"], "released")
+        self.assertEqual(stored["feishu_runtime_state"], "detached")
 
     def test_binding_status_snapshot_uses_manager_owned_state(self) -> None:
         manager = self._make_manager()
@@ -186,7 +186,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertTrue(inventory[0]["running_turn"])
         self.assertEqual(inventory[0]["working_dir"], "/tmp/project")
 
-    def test_thread_binding_snapshot_locked_reports_bound_attached_and_released_bindings(self) -> None:
+    def test_thread_binding_snapshot_locked_reports_bound_attached_and_detached_bindings(self) -> None:
         manager = self._make_manager()
         binding_a = ("ou-user-a", "chat-a")
         binding_b = ("ou-user-b", "chat-b")
@@ -201,7 +201,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
             manager.apply_persisted_runtime_state_message_locked(
                 binding_b,
                 state_b,
-                ThreadStateChanged(feishu_runtime_state="released"),
+                ThreadStateChanged(feishu_runtime_state="detached"),
             )
             snapshot = manager.thread_binding_snapshot_locked(
                 "thread-1",
@@ -346,7 +346,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(state["sandbox"], "workspace-write")
         self.assertEqual(state["collaboration_mode"], "default")
 
-    def test_unsubscribe_by_thread_id_locked_marks_bindings_released(self) -> None:
+    def test_unsubscribe_by_thread_id_locked_marks_bindings_detached(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -380,8 +380,8 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(result.unsubscribe_thread_id, "thread-1")
         self.assertEqual(sorted(result.bound_binding_ids), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
         self.assertEqual(sorted(result.released_binding_ids), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
-        self.assertEqual(state_a["feishu_runtime_state"], "released")
-        self.assertEqual(state_b["feishu_runtime_state"], "released")
+        self.assertEqual(state_a["feishu_runtime_state"], "detached")
+        self.assertEqual(state_b["feishu_runtime_state"], "detached")
         self.assertEqual(state_a["current_message_id"], "")
         self.assertEqual(state_b["current_message_id"], "")
         self.assertEqual(manager.bound_bindings_for_thread_locked("thread-1"), [binding_a, binding_b])
@@ -389,8 +389,8 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(manager.interaction_owner_snapshot_locked("thread-1")["kind"], "none")
         assert stored_a is not None
         assert stored_b is not None
-        self.assertEqual(stored_a["feishu_runtime_state"], "released")
-        self.assertEqual(stored_b["feishu_runtime_state"], "released")
+        self.assertEqual(stored_a["feishu_runtime_state"], "detached")
+        self.assertEqual(stored_b["feishu_runtime_state"], "detached")
 
     def test_unsubscribe_by_thread_id_locked_respects_external_availability_gate(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

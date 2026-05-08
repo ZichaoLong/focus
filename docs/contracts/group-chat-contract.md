@@ -27,7 +27,7 @@ This document only defines the group-chat contract.
 It does not redefine:
 
 - p2p thread lifecycle
-- the shared state vocabulary for `/status`, `/release-runtime`, and the local
+- the shared state vocabulary for `/status`, `/detach`, and the local
   admin surface
 - `fcodex` wrapper semantics
 
@@ -124,7 +124,7 @@ Those remain owned by their dedicated documents.
 - in group `all`, admins can send group commands directly
 - "group commands" here includes both group-specific commands such as
   `/group` and `/group-mode`, and generic Feishu commands triggered from a group
-  context such as `/status`, `/release-runtime`, and `/reset-backend`
+  context such as `/status`, `/detach`, and `/reset-backend`
 - group commands do not enter the `assistant` context log and do not advance
   the assistant boundary
 - commands and settings that mutate shared state remain strictly admin-only,
@@ -132,7 +132,7 @@ Those remain owned by their dedicated documents.
   - `/new`
   - `/threads`
   - `/resume`
-  - `/release-runtime`
+  - `/detach`
   - `/reset-backend`
   - `/profile`
   - `/approval`

@@ -13,6 +13,7 @@ from bot.runtime_state import (
     BACKEND_THREAD_STATUS_NOT_LOADED,
     BACKEND_THREAD_STATUS_UNKNOWN,
     FEISHU_RUNTIME_ATTACHED,
+    FEISHU_RUNTIME_DETACHED,
     FEISHU_RUNTIME_NOT_APPLICABLE,
     FEISHU_RUNTIME_RELEASED,
     RuntimeStateMessage,
@@ -50,6 +51,17 @@ class UnsubscribeThreadResult:
     released_binding_ids: list[str]
     changed: bool
     already_released: bool
+    unsubscribe_thread_id: str = ""
+
+
+@dataclass(frozen=True)
+class DetachBindingResult:
+    thread_id: str
+    thread_title: str
+    working_dir: str
+    binding_id: str
+    changed: bool
+    already_detached: bool
     unsubscribe_thread_id: str = ""
 
 
@@ -168,7 +180,7 @@ class BindingRuntimeManager:
             # A persisted `attached` only says the previous service connection had
             # runtime residency. A new process / backend connection must reattach
             # explicitly before it can receive live thread events.
-            feishu_runtime_state = FEISHU_RUNTIME_RELEASED
+            feishu_runtime_state = FEISHU_RUNTIME_DETACHED
             downgraded_attached = True
         apply_runtime_state_message(
             state,
@@ -572,7 +584,7 @@ class BindingRuntimeManager:
             self.apply_persisted_runtime_state_message_locked(
                 binding,
                 state,
-                ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_RELEASED),
+                ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_DETACHED),
             )
             released_binding_ids.append(format_binding_id(binding))
         unsubscribe_thread_id = ""
@@ -594,6 +606,49 @@ class BindingRuntimeManager:
             released_binding_ids=released_binding_ids,
             changed=bool(released_binding_ids),
             already_released=bool(bound_bindings) and not attached_bindings,
+            unsubscribe_thread_id=unsubscribe_thread_id,
+        )
+
+    def detach_binding_locked(
+        self,
+        binding: ChatBindingKey,
+        *,
+        on_detach_binding_state: Callable[[RuntimeStateDict], None] | None = None,
+    ) -> DetachBindingResult:
+        state = self._runtime_state_by_binding.get(binding)
+        if state is None:
+            raise ValueError("当前 binding 不存在。")
+        thread_id = str(state["current_thread_id"] or "").strip()
+        if not thread_id:
+            raise ValueError("当前没有绑定 thread。")
+        if str(state["feishu_runtime_state"] or "").strip() != FEISHU_RUNTIME_ATTACHED:
+            return DetachBindingResult(
+                thread_id=thread_id,
+                thread_title=str(state["current_thread_title"] or "").strip(),
+                working_dir=str(state["working_dir"] or "").strip(),
+                binding_id=format_binding_id(binding),
+                changed=False,
+                already_detached=True,
+            )
+        self.release_interaction_lease_for_binding(binding, thread_id)
+        self.unsubscribe_thread_locked(binding, thread_id)
+        if on_detach_binding_state is not None:
+            on_detach_binding_state(state)
+        self.apply_persisted_runtime_state_message_locked(
+            binding,
+            state,
+            ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_DETACHED),
+        )
+        unsubscribe_thread_id = ""
+        if not self.attached_bindings_for_thread_locked(thread_id):
+            unsubscribe_thread_id = thread_id
+        return DetachBindingResult(
+            thread_id=thread_id,
+            thread_title=str(state["current_thread_title"] or "").strip(),
+            working_dir=str(state["working_dir"] or "").strip(),
+            binding_id=format_binding_id(binding),
+            changed=True,
+            already_detached=False,
             unsubscribe_thread_id=unsubscribe_thread_id,
         )
 

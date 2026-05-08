@@ -168,7 +168,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         check = controller.unsubscribe_check_locked("thread-1")
         self.assertEqual(check.reason_code, UNSUBSCRIBE_BLOCKED_BY_PENDING_REQUEST)
 
-    def test_unsubscribe_by_thread_id_marks_binding_released_and_unsubscribes(self) -> None:
+    def test_unsubscribe_by_thread_id_marks_binding_detached_and_unsubscribes(self) -> None:
         (
             lock,
             binding_runtime,
@@ -204,7 +204,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         with lock:
             snapshot = binding_runtime.binding_runtime_snapshot_locked(binding)
         assert snapshot is not None
-        self.assertEqual(snapshot.feishu_runtime_state, "released")
+        self.assertEqual(snapshot.feishu_runtime_state, "detached")
         self.assertEqual(unsubscribed, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
 
@@ -261,7 +261,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         with lock:
             snapshot = binding_runtime.binding_runtime_snapshot_locked(binding)
         assert snapshot is not None
-        self.assertEqual(snapshot.feishu_runtime_state, "released")
+        self.assertEqual(snapshot.feishu_runtime_state, "detached")
         self.assertEqual(unsubscribed, ["thread-1", "retry:thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
 
@@ -471,7 +471,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(status["backend_reset_status"], "force-only")
         self.assertEqual(status["backend_reset_reason_code"], "backend_reset_force_only_by_running_binding")
 
-    def test_plan_thread_reprofile_allows_direct_write_after_released_and_globally_unloaded(self) -> None:
+    def test_plan_thread_reprofile_allows_direct_write_after_detached_and_globally_unloaded(self) -> None:
         (
             lock,
             binding_runtime,
@@ -505,7 +505,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
 
         self.assertEqual(plan.status, "direct-write")
         self.assertEqual(plan.backend_thread_status, "notLoaded")
-        self.assertEqual(plan.feishu_runtime_state, "released")
+        self.assertEqual(plan.feishu_runtime_state, "detached")
         self.assertIn("verifiably globally unloaded", plan.reason_text)
 
     def test_plan_thread_reprofile_treats_thread_not_loaded_read_error_as_not_loaded(self) -> None:
@@ -735,7 +735,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertIn("已重置当前实例 backend。", response.card.data["elements"][0]["content"])
         self.assertIn("如需确认飞书侧继续接收本地", response.card.data["elements"][0]["content"])
         actions = response.card.data["elements"][-1]["actions"]
-        self.assertEqual([action["text"]["content"] for action in actions], ["重附着当前实例", "保持 released"])
+        self.assertEqual([action["text"]["content"] for action in actions], ["附着当前实例", "保持 detached"])
 
     def test_handle_reset_backend_action_offers_current_thread_reattach_after_reset(self) -> None:
         (
@@ -773,7 +773,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         actions = response.card.data["elements"][-1]["actions"]
         self.assertEqual(
             [action["text"]["content"] for action in actions],
-            ["重附着当前线程", "重附着当前实例", "保持 released"],
+            ["附着当前线程", "附着当前实例", "保持 detached"],
         )
         self.assertEqual(actions[0]["value"]["thread_id"], "thread-1")
 
@@ -795,7 +795,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         ) = self._make_controller()
         binding = ("ou_user", "c1")
         state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        state["feishu_runtime_state"] = "released"
+        state["feishu_runtime_state"] = "detached"
         summaries["thread-1"] = ThreadSummary(
             thread_id="thread-1",
             cwd="/tmp/project",
@@ -918,7 +918,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertIn("p2p:ou_user:c1", str(ctx.exception))
         self.assertIn("不能清除 binding", str(ctx.exception))
 
-    def test_handle_service_control_request_thread_bindings_reports_attached_and_released(self) -> None:
+    def test_handle_service_control_request_thread_bindings_reports_attached_and_detached(self) -> None:
         (
             lock,
             binding_runtime,
@@ -943,7 +943,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             binding_runtime.apply_persisted_runtime_state_message_locked(
                 binding_b,
                 state_b,
-                ThreadStateChanged(feishu_runtime_state="released"),
+                ThreadStateChanged(feishu_runtime_state="detached"),
             )
         summaries["thread-1"] = ThreadSummary(
             thread_id="thread-1",
@@ -963,7 +963,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             result["bindings"],
             [
                 {"binding_id": "p2p:ou_user:c1", "feishu_runtime_state": "attached"},
-                {"binding_id": "p2p:ou_user2:c2", "feishu_runtime_state": "released"},
+                {"binding_id": "p2p:ou_user2:c2", "feishu_runtime_state": "detached"},
             ],
         )
 
@@ -1059,8 +1059,8 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _unsubscribed,
             _archived,
             _released_runtime_leases,
-            pending_by_thread,
-            _pending_by_binding,
+            _pending_by_thread,
+            pending_by_binding,
             _pending_requests,
             _reset_calls,
             _sent_images,
@@ -1081,7 +1081,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             source="cli",
             status="idle",
         )
-        pending_by_thread.add("thread-1")
+        pending_by_binding.add(binding)
 
         snapshot = controller.binding_status_snapshot(binding)
 
@@ -1100,8 +1100,8 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             _unsubscribed,
             _archived,
             _released_runtime_leases,
-            pending_by_thread,
-            _pending_by_binding,
+            _pending_by_thread,
+            pending_by_binding,
             _pending_requests,
             _reset_calls,
             _sent_images,
@@ -1122,7 +1122,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             source="cli",
             status="idle",
         )
-        pending_by_thread.add("thread-1")
+        pending_by_binding.add(binding)
 
         result = controller.handle_preflight_command(binding, "")
 
@@ -1131,4 +1131,4 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("作用对象：当前 chat binding；这是 dry-run", content)
         self.assertIn("下一条普通消息：`blocked` (`prompt_denied_by_interaction_owner`)", content)
-        self.assertIn("unsubscribe：`blocked` (`unsubscribe_blocked_by_pending_request`)", content)
+        self.assertIn("detach：`blocked` (`detach_blocked_by_pending_request`)", content)

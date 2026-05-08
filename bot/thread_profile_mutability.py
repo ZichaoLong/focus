@@ -3,7 +3,12 @@ from __future__ import annotations
 from collections.abc import Callable
 
 THREAD_RESUME_PROFILE_LOADED_REASON = (
-    "当前 thread 仍处于 loaded 状态；请先释放飞书侧订阅，并关闭所有打开该 thread 的 `fcodex` TUI。"
+    "当前 thread 仍处于 loaded 状态；本次 `fcodex resume` 不能同时携带 `-p/--profile` 改写该 thread 的 profile。"
+    "若只是进入当前会话，请去掉 `-p/--profile` 后重试。"
+    "若要修改该 thread 的 profile，需要先让它变成 verifiably globally unloaded；"
+    "通常还要关闭仍打开该 thread 的 `fcodex` TUI，并等待上游 backend 自然 unload。"
+    "若不想等待，请改在飞书侧执行 `/profile <name>` 并按卡片重置 backend，"
+    "或先对当前实例执行 `feishu-codexctl service reset-backend`，再重新执行本命令。"
 )
 THREAD_RESUME_PROFILE_ADAPTER_UNAVAILABLE_REASON = (
     "当前无法确认该 thread 是否已完全 unloaded；请稍后重试。"

@@ -33,13 +33,12 @@
 飞书侧以 `binding` 作为“这个会话当前接着哪个线程继续聊”的事实来源。
 `loaded runtime` 只是一个可恢复的运行态事实，不是绑定事实。
 
-从当前版本起，飞书面对外把“当前 service 连接是否仍附着该 thread”明确命名为
-`feishu runtime`：
+从当前版本起，飞书面对外把这层事实明确收紧为“飞书推送附着态”：
 
 - `attached`
   - 飞书服务当前仍订阅这个 thread
-- `released`
-  - binding 还在，但飞书服务已主动释放自己对这个 thread 的 runtime 持有
+- `detached`
+  - binding 还在，但当前飞书会话已不再接收这个 thread 的推送
 
 这只是对 `subscription` 的显式命名收紧，不改变它与 `binding` / `loaded runtime`
 必须严格区分的合同。
@@ -74,7 +73,7 @@ flowchart TD
     B -->|发送 prompt| C[已绑定 thread, loaded, running]
     C -->|turn completed / idle status / thread closed| B
 
-    B -->|/release-runtime、连接断开、最后订阅者离开| D[已绑定 thread, unloaded]
+    B -->|/detach、连接断开、最后订阅者离开| D[已绑定 thread, unloaded]
     C -->|连接断开或漏掉终态通知| D
 
     D -->|下一条消息 turn/start 直接成功| C
@@ -85,7 +84,7 @@ flowchart TD
 ```
 
 这张图有意把多条状态轴压缩展示。
-真正权威的 binding/runtime/backend 状态转移表，以及 `bound + released`
+真正权威的 binding/runtime/backend 状态转移表，以及 `bound + detached`
 下被拒绝 prompt 必须 pure reject 的规则，都定义在
 `docs/contracts/runtime-control-surface.zh-CN.md`。
 
@@ -192,7 +191,7 @@ flowchart TD
 
 下列规则虽然和生命周期紧密相关，但正式归属不在本文：
 
-- `bound + released` 下 prompt 的 pure reject / 重新附着规则：见 `docs/contracts/runtime-control-surface.zh-CN.md`
+- `bound + detached` 下 prompt 的 pure reject / attach 规则：见 `docs/contracts/runtime-control-surface.zh-CN.md`
 - unloaded thread 恢复路径上的 profile / provider 解析合同：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
 - 群聊按 `chat_id` 共享 binding 以及群会话范围规则：见 `docs/contracts/group-chat-contract.zh-CN.md`
 

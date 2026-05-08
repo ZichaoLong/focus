@@ -1,244 +1,123 @@
 # `feishu-codexctl` Command Matrix
 
-Chinese version: `docs/contracts/feishu-codexctl-command-matrix.zh-CN.md`
+Chinese original: `docs/contracts/feishu-codexctl-command-matrix.zh-CN.md`
 
-See also:
+This file defines the formal local `feishu-codexctl` management surface.
 
-- `docs/contracts/feishu-command-matrix.md`
-- `docs/contracts/local-command-and-thread-profile-contract.md`
-- `docs/contracts/runtime-control-surface.md`
-- `docs/contracts/thread-profile-semantics.md`
+It answers:
 
-This document defines the formal local command matrix for `feishu-codexctl`.
-
-It answers five questions:
-
-- which resources `feishu-codexctl` actually manages
-- which state layer each subcommand operates on
+- which resources `feishu-codexctl` owns
 - which commands are read-only vs mutating
-- what the parameter constraints and instance-selection rules are
-- which Feishu surfaces each command corresponds to, and which ones it
-  intentionally does not
+- how thread targets are selected
+- how it maps to the Feishu command surface
 
-If code and this document disagree, treat that as a contract gap and tighten
-the code, the docs, or both.
+## 1. Core Positioning
 
-## 1. Scope
+- `feishu-codexctl` is the local inspection / management surface. It is not a second Codex frontend.
+- Use `fcodex` when you want to continue a live thread locally.
+- Use `feishu-codex` when you want install, repair, service lifecycle, or instance management.
+- Use `feishu-codexctl` when you want local service / binding / thread status or local thread-scoped management.
 
-This document only describes the local `feishu-codexctl` surface.
+## 2. Instance and Target Resolution
 
-It does not redefine:
+- Every command except `instance list` accepts `--instance <name>`.
+- An explicit `--instance` always wins.
+- Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
+- `thread status`, `thread bindings`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
+  - `--thread-id <id>`
+  - `--thread-name <name>`
 
-- the Feishu slash-command matrix
-- `fcodex` wrapper semantics
-- thread lifecycle and runtime vocabulary
-- the low-level behavior of `reset-backend`, `thread unsubscribe`, `/status`, or
-  `/preflight`
+## 3. Resource Layers
 
-Those remain defined by their dedicated docs.
-
-## 2. Positioning
-
-`feishu-codexctl` is the local inspection / management surface.
-
-Its formal role is:
-
-- inspect running instances
-- inspect the target instance's service / binding / thread state
-- perform a limited set of binding / thread management actions
-
-It is not:
-
-- a second Codex frontend
-- the entrypoint for entering the TUI
-- a one-to-one local mirror of every Feishu chat-scoped command
-
-Therefore:
-
-- use `fcodex` to continue a live thread
-- use `feishu-codex` to manage local service lifecycle, autostart, install,
-  and instances
-- use `feishu-codexctl` to inspect binding / thread / service state or perform
-  thread-scoped management
-
-## 3. Global Rules
-
-### 3.1 Instance selection
-
-- every command except `instance list` accepts `--instance <name>`
-- an explicit `--instance <name>` always wins
-- if the caller provides an extra preferred running instance (for example
-  `image send` with a known thread id), that running instance is tried first
-- otherwise, omitting `--instance` resolves by `unique-running ->
-  default-running -> current-instance-paths`; if multiple running instances
-  still leave no unique target, the command must fail
-- `instance list` is a cross-instance inspection surface and does not use
-  `--instance`
-- current `feishu-codexctl` accepts only one `--instance`; unlike
-  `feishu-codex`, it does not support batch multi-instance operations
-
-### 3.2 Resource layering
-
-The command surface is split into four resource classes:
+`feishu-codexctl` is split into five resource groups:
 
 - `instance`
-  - the running-instance registry
 - `service`
-  - a target instance's service / control-plane / backend overview
 - `binding`
-  - the local Feishu chat-binding facts inside an instance
 - `thread`
-  - persisted thread discovery plus thread-scoped management for a target
-    thread
-
-### 3.3 Thread target constraints
-
-For the following thread subcommands:
-
-- `thread status`
-- `thread bindings`
-- `thread reattach`
-- `thread unsubscribe`
-
-the caller must provide exactly one of:
-
-- `--thread-id <id>`
-- `--thread-name <name>`
-
-This is a hard surface constraint, not a recommendation.
-
-### 3.4 `binding clear` is not `thread unsubscribe`
-
-`binding clear` / `clear-all`:
-
-- clears Feishu-side local bookmarks
-- does not delete the thread
-- is not `thread unsubscribe`
-
-`thread unsubscribe`:
-
-- releases Feishu runtime residency for the target thread
-- keeps the thread and binding relationships intact
-
-These two actions operate on different state layers and must not be conflated
-in code, docs, or product wording.
-
-## 4. Command Matrix
-
-### 4.1 `instance` resource
-
-| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
-| --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl instance list` | List currently running local instances, owner pid, control endpoint, and app-server address | running-instance registry | read-only | none; does not use `--instance` | no direct Feishu counterpart |
-
-### 4.2 `service` resource
-
-| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
-| --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] service status` | Show the target instance's current service state, control endpoint, app-server address, and binding / thread counts | instance-level service / control-plane overview | read-only | optional `--instance` | no single exact Feishu equivalent; this is closer to an instance-admin view |
-| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend without restarting the `feishu-codex` service | instance-level backend lifecycle | mutating | optional `--instance`; optional `--force` | corresponds to Feishu `/reset-backend`, but this is the local instance-admin surface |
-| `feishu-codexctl [--instance <name>] service reattach` | Reattach all reattachable released Feishu bindings in the target instance | instance-level Feishu runtime recovery | mutating | optional `--instance` | closest counterpart is Feishu `/re-attach service`, and the post-`/reset-backend` result-card button `Re-attach current instance` |
-
-### 4.3 `binding` resource
-
-| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
-| --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] binding list` | List visible bindings in the target instance, including binding state, Feishu runtime state, associated thread, and cwd | instance-local binding discovery | read-only | optional `--instance` | no direct Feishu counterpart; lower-level than Feishu `/threads` and `/status` |
-| `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show a single binding's chat, thread, runtime, next-prompt availability, interaction owner, and current session settings | single-binding detailed state | read-only | `binding_id` | covers and exceeds Feishu `/status` and `/preflight` |
-| `feishu-codexctl [--instance <name>] binding reattach <binding_id>` | Reattach one released binding without changing its bookmark | single-binding Feishu runtime recovery | mutating | `binding_id` | closest counterpart is Feishu `/re-attach binding` |
-| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear a single binding bookmark | single-binding bookmark | mutating | `binding_id` | no direct Feishu counterpart |
-| `feishu-codexctl [--instance <name>] binding clear-all` | Clear all binding bookmarks in the target instance | all binding bookmarks in one instance | mutating | optional `--instance` | no direct Feishu counterpart |
-
-### 4.4 `thread` resource
-
-| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
-| --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | List persisted threads; defaults to current-directory filtering, but also supports a global view | persisted-thread discovery | read-only | optional `--instance`; `--scope cwd/global`; `--cwd` is meaningful only for `cwd` scope | partially corresponds to Feishu `/threads` and `/resume` target discovery |
-| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show one thread's current-instance backend status, machine-global `live runtime owner/holders`, bound / attached / released bindings, interaction owner, and `/release-runtime` availability | single thread's thread-scoped state | read-only | exactly one of `--thread-id` or `--thread-name` | no single exact Feishu equivalent; overlaps the lower-level diagnostics behind Feishu `/status`, `/preflight`, and `/release-runtime` |
-| `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show the binding list currently associated with a target thread | reverse mapping from a thread to bindings | read-only | exactly one of `--thread-id` or `--thread-name` | no direct Feishu counterpart |
-| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | Archive the target thread, hide it from normal lists, and clear bindings in the targeted instance that still point at it | thread-scoped archive plus current-instance binding cleanup | mutating | exactly one of `--thread-id` or `--thread-name`; when `--instance` is omitted, the CLI may prefer the current live-runtime owner instance if one exists | closest local counterpart of Feishu `/archive`, but this is instance-targeted rather than current-chat-scoped |
-| `feishu-codexctl [--instance <name>] thread reattach (--thread-id <id> \| --thread-name <name>)` | Reattach all released bindings that currently point to a target thread | thread-scoped Feishu runtime recovery | mutating | exactly one of `--thread-id` or `--thread-name` | closest counterpart is Feishu `/re-attach thread`, and the post-`/reset-backend` result-card button `Re-attach current thread` |
-| `feishu-codexctl [--instance <name>] thread unsubscribe (--thread-id <id> \| --thread-name <name>)` | Make Feishu release runtime residency for a target thread while keeping thread and binding relationships intact | Feishu runtime residency for one thread | mutating | exactly one of `--thread-id` or `--thread-name` | corresponds to Feishu `/release-runtime`, but is thread-scoped rather than current-chat-scoped |
-
-### 4.5 `image` resource
-
-| Command | Purpose | State layer | Type | Key parameters | Feishu counterpart |
-| --- | --- | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image to all currently attached Feishu bindings for the target thread | outbound-image fanout for one thread | mutating | `--path` is required; the thread target may be given explicitly with `--thread-id/--thread-name`, or may fall back to `CODEX_THREAD_ID` inside a Codex turn; if the thread id is already known and `--instance` is omitted, the CLI may prefer the current `live runtime owner` instance; that owner preference applies only when thread-id addressing is already known, because `--thread-name` addressing must resolve the target first | no direct Feishu counterpart; this is an explicit local control-plane action |
-
-## 5. Mapping to the Feishu command surface
-
-### 5.1 Surfaces with a reasonably clear counterpart
-
-| `feishu-codexctl` | Closest Feishu surface | Key difference |
-| --- | --- | --- |
-| `service reset-backend` | `/reset-backend` | both are instance-level backend management; Feishu is an admin card flow, local is a CLI admin flow |
-| `service reattach` | `/re-attach service` | both are instance-level reattach actions; Feishu also exposes the same action through the post-reset result card |
-| `binding status <binding_id>` | `/status`, `/preflight` | local output is lower-level and includes binding id, interaction owner, reason codes, and other debugging details |
-| `binding reattach <binding_id>` | `/re-attach binding` | local action targets any known binding id directly; Feishu default scope uses the current chat binding |
-| `thread unsubscribe --thread-id/--thread-name` | `/release-runtime` | Feishu `/release-runtime` only targets the current chat binding; the local command can target any thread directly |
-| `thread reattach --thread-id/--thread-name` | `/re-attach thread` | Feishu thread-scope action is limited to the current chat's current thread; the local command can target any thread directly |
-| `thread list --scope cwd` | `/threads` | Feishu `/threads` is a chat usage surface; the local command is only thread discovery |
-| `thread list --scope global` / `thread status` | `/resume` target discovery and diagnosis | Feishu `/resume` is a resume action; the local commands are inspection / management surfaces and do not enter the live thread |
-
-### 5.2 Surfaces intentionally without a Feishu counterpart
-
-The following local commands intentionally have no one-to-one Feishu command:
-
-- `instance list`
-- `service status`
-- `binding list`
-- `binding clear`
-- `binding clear-all`
-- `thread bindings`
-- `image send`
-
-Reasons:
-
-- they belong to a local admin / debugging perspective
-- exposing them directly in Feishu would raise cognitive load for ordinary
-  users
-- some of them, such as `binding clear`, are pure local cleanup surfaces rather
-  than part of the day-to-day chat contract
-
-## 6. Output and mental model
-
-When reading command output, the current contract recommends this model:
-
-- `instance`
-  - answers “which instances are actually running right now”
-- `service`
-  - answers “what is the state of this instance's background service and
-    control plane”
-- `binding`
-  - answers “which thread does this Feishu conversation currently point to,
-    and can it continue directly”
-- `thread`
-  - answers “what is this thread's current state in the selected instance
-    backend, who owns the machine-global live runtime, which bindings point at
-    it, and whether Feishu can release runtime residency for it”
 - `image`
-  - answers “send one explicitly chosen local image to the Feishu chats
-    currently attached to a target thread”
 
-The most important distinction is:
+Important mental model:
 
-- `binding` is a chat-scoped view
-- `thread` is a thread-scoped view
+- `binding` is the chat-scoped view
+- `thread` is the thread-scoped view
 
-They must not be read as interchangeable views.
+Do not conflate them.
 
-## 7. Related implementation fact sources
+## 4. Commands
 
-The main implementation fact sources for this document include:
+### 4.1 `instance`
 
-- `bot/feishu_codexctl.py`
-- `bot/runtime_admin_controller.py`
-- `bot/instance_resolution.py`
-- `bot/thread_resolution.py`
-- `bot/service_control_plane.py`
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl instance list` | List running local instances, owner pid, control endpoint, and app-server URL | read-only | none |
 
-If any future change adds, removes, renames, or re-scopes a `feishu-codexctl`
-subcommand, or changes instance-selection rules, thread-target constraints,
-state-layer boundaries, or Feishu-command correspondence, this document must be
-updated together with that change.
+### 4.2 `service`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] service status` | Show the target instance's service / control-plane / app-server overview | read-only | no exact single command |
+| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend without restarting the `feishu-codex` service | mutating | Feishu `/reset-backend` |
+| `feishu-codexctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
+
+### 4.3 `binding`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] binding list` | List bindings visible in the target instance | read-only | none |
+| `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
+| `feishu-codexctl [--instance <name>] binding attach <binding_id>` | Restore Feishu push for one binding | mutating | Feishu `/attach binding` |
+| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping its bookmark | mutating | binding-scoped counterpart of Feishu `/detach` |
+| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear one binding bookmark | mutating | none |
+| `feishu-codexctl [--instance <name>] binding clear-all` | Clear all binding bookmarks in the target instance | mutating | none |
+
+`binding clear` is not `detach`:
+
+- `clear` removes the local bookmark
+- `detach` removes the current Feishu push attachment
+
+### 4.4 `thread`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | Browse persisted threads; default is current-directory scope | read-only | target-discovery counterpart of Feishu `/threads` |
+| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show backend status, live runtime owner / holders, and bound / attached / detached bindings for one thread | read-only | no exact single command |
+| `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show all bindings currently pointing at one thread | read-only | none |
+| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | Archive a target thread and clear bindings that still point to it in the target instance | mutating | local instance-scoped counterpart of Feishu `/archive` |
+| `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
+| `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |
+
+Implementation note:
+
+- local `thread detach` goes through the running `feishu-codex` service control plane
+- the lower layer may still call upstream `thread/unsubscribe`, but that is an internal protocol detail, not the user-facing command name
+
+### 4.5 `image`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image file to all currently attached Feishu bindings on the target thread | mutating | none; this is a local control-plane action |
+
+## 5. Mapping to Feishu
+
+| Local command | Closest Feishu entry | Key difference |
+| --- | --- | --- |
+| `service reset-backend` | `/reset-backend` | both are instance-level backend actions; one is CLI, one is a Feishu card flow |
+| `service attach` | `/attach service` | both are instance-level recovery actions; the Feishu primary entry usually comes from a reset result card |
+| `binding status <binding_id>` | `/status`, `/preflight` | local output is lower-level and includes binding ids, reason codes, and interaction owner details |
+| `binding attach <binding_id>` | `/attach binding` | local command can target any known binding id directly; Feishu defaults to the current chat binding |
+| `binding detach <binding_id>` | `/detach` | Feishu `/detach` is only current-chat scoped; local command can target any known binding id directly |
+| `thread attach --thread-id/--thread-name` | `/attach thread` | Feishu thread scope is limited to the current chat's current thread; local command can target any thread directly |
+| `thread detach --thread-id/--thread-name` | no exact single Feishu command | Feishu `/detach` is current-binding scoped; the local thread action can affect all currently attached bindings on that thread |
+| `thread list --scope cwd` | `/threads` | Feishu is a chat workflow entry point; local CLI is just thread discovery |
+| `thread status` | lower-level diagnostics behind `/status`, `/preflight`, `/attach`, `/detach` | local CLI is a thread-scoped debugging surface |
+
+## 6. Boundary
+
+The following expectations are explicitly wrong:
+
+- `feishu-codexctl` is not a local UI for Feishu `/threads`
+- `feishu-codexctl` does not enter the Codex TUI
+- `binding clear` does not mean “stop push for the current thread”
+
+If any `feishu-codexctl` subcommand is added, removed, renamed, or changes its selector rules, instance resolution, or Feishu mapping, this document must change with the code.

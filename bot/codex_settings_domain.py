@@ -340,7 +340,7 @@ class CodexSettingsDomain:
         ignored_prefixes = (
             "当前 thread：",
             "当前 backend thread status：",
-            "当前 Feishu runtime：",
+            "当前飞书推送：",
             "当前 live runtime owner：",
         )
         diagnostics = []
@@ -376,17 +376,17 @@ class CodexSettingsDomain:
         ]
 
     @staticmethod
-    def _post_reset_reattach_action_rows(thread_id: str) -> list[dict]:
+    def _post_reset_attach_action_rows(thread_id: str) -> list[dict]:
         normalized_thread_id = str(thread_id or "").strip()
         actions: list[dict] = []
         if normalized_thread_id:
             actions.append(
                 {
                     "tag": "button",
-                    "text": {"tag": "plain_text", "content": "重附着当前线程"},
+                    "text": {"tag": "plain_text", "content": "附着当前线程"},
                     "type": "primary",
                     "value": {
-                        "action": "reattach_runtime",
+                        "action": "attach_runtime",
                         "scope": "thread",
                         "thread_id": normalized_thread_id,
                     },
@@ -395,10 +395,10 @@ class CodexSettingsDomain:
         actions.append(
             {
                 "tag": "button",
-                "text": {"tag": "plain_text", "content": "重附着当前实例"},
+                "text": {"tag": "plain_text", "content": "附着当前实例"},
                 "type": "default",
                 "value": {
-                    "action": "reattach_runtime",
+                    "action": "attach_runtime",
                     "scope": "service",
                 },
             }
@@ -406,10 +406,10 @@ class CodexSettingsDomain:
         actions.append(
             {
                 "tag": "button",
-                "text": {"tag": "plain_text", "content": "保持 released"},
+                "text": {"tag": "plain_text", "content": "保持 detached"},
                 "type": "default",
                 "value": {
-                    "action": "dismiss_reattach",
+                    "action": "dismiss_attach",
                 },
             }
         )
@@ -417,7 +417,7 @@ class CodexSettingsDomain:
             {"tag": "hr"},
             {
                 "tag": "markdown",
-                "content": "如需继续收到本地 `fcodex` / backend 的推送，可选择重附着范围：",
+                "content": "如需继续收到本地 `fcodex` / backend 的推送，可选择 attach 范围：",
             },
             {
                 "tag": "action",
@@ -716,7 +716,7 @@ class CodexSettingsDomain:
                         profile_names=profile_names,
                         plan=fresh_plan,
                         leading_lines=leading_lines + [""],
-                        extra_action_rows=self._post_reset_reattach_action_rows(thread_id),
+                        extra_action_rows=self._post_reset_attach_action_rows(thread_id),
                     )
                 ),
                 applied_profile=target_profile,
@@ -781,7 +781,7 @@ class CodexSettingsDomain:
                     profile_names=profile_names,
                     plan=fresh_plan,
                     leading_lines=leading_lines + [""],
-                    extra_action_rows=self._post_reset_reattach_action_rows(thread_id),
+                    extra_action_rows=self._post_reset_attach_action_rows(thread_id),
                 )
             ),
             applied_profile=target_profile,

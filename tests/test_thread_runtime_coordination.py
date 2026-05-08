@@ -62,7 +62,7 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
                     "unsubscribe_available": True,
                     "unsubscribe_reason": "",
                 }
-            self.assertEqual(method, "thread/unsubscribe")
+            self.assertEqual(method, "thread/detach")
             lease_store.release("thread-1", "service:one")
             return {"thread_id": "thread-1", "changed": True}
 
@@ -80,7 +80,7 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
             unsubscribe_calls,
             [
                 (owner_data_dir, "thread/status", {"thread_id": "thread-1"}),
-                (owner_data_dir, "thread/unsubscribe", {"thread_id": "thread-1"}),
+                (owner_data_dir, "thread/detach", {"thread_id": "thread-1"}),
             ],
         )
         self.assertIsNone(lease_store.load_transfer_reservation("thread-1"))
@@ -114,9 +114,9 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
 
         with patch(
             "bot.thread_runtime_coordination.control_request",
-            side_effect=ServiceControlError("当前有飞书侧 turn 正在运行，不能释放 runtime。"),
+            side_effect=ServiceControlError("当前有飞书侧 turn 正在运行，不能立即 detach 飞书推送。"),
         ):
-            with self.assertRaisesRegex(RuntimeError, "不能释放 runtime"):
+            with self.assertRaisesRegex(RuntimeError, "不能立即 detach 飞书推送"):
                 acquire_thread_runtime_holder_or_raise(
                     thread_id="thread-1",
                     holder=_holder(instance_name="corp-b", holder_id="service:two", service_token="token-b"),

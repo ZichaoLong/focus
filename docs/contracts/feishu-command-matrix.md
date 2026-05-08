@@ -1,214 +1,103 @@
 # Feishu Command Matrix
 
-Chinese version: `docs/contracts/feishu-command-matrix.zh-CN.md`
+Chinese original: `docs/contracts/feishu-command-matrix.zh-CN.md`
 
-See also:
+This file is the source-of-truth matrix for the Feishu command surface.
 
-- `docs/contracts/feishu-help-navigation.md`
-- `docs/contracts/thread-profile-semantics.md`
-- `docs/contracts/runtime-control-surface.md`
-- `docs/contracts/group-chat-contract.md`
+It answers four questions only:
 
-This document defines the current first-class Feishu command surface maintained
-by this repository.
-
-It answers five questions:
-
-- which Feishu slash commands currently exist
+- which slash commands are formally supported
 - which commands are reachable from `/help`
-- which commands are intentionally text-only
-- who may execute them in p2p vs group chats
-- which user-visible buttons belong to each command, and whether
-  `feishu-codexctl` or `feishu-codex` has a local counterpart
-
-If code and this document disagree, treat that as a contract gap and tighten
-the code, the docs, or both.
-
-## 1. Scope
-
-This document covers two surfaces:
-
-- slash commands registered on the Feishu ingress surface
-- user-visible card buttons and form actions that directly belong to those
-  commands
+- who may execute them in P2P and group chats
+- which local surface is the closest counterpart
 
 It does not redefine:
 
-- thread lifecycle
-- the low-level state semantics behind `/status`, `/preflight`, and
-  `/release-runtime`
-- thread semantics for `/threads`, `/resume`, and `/profile`
-- upstream Codex commands after entering the `fcodex` TUI
+- binding / attach / detach / backend state semantics
+- when a thread-wise profile is mutable
+- the full group-chat contract
 
-Those remain defined by their dedicated contract docs.
+## 1. Reading Rules
 
-## 2. Reading Convention
+- “Reachable from `/help`” means reachable through help-page buttons, forms, or follow-up result cards.
+- “Admin only” means the current bot's admin check must pass.
+- “Anyone” only means no admin check in that scope; it does not mean all group members may mutate shared state.
 
-### 2.1 “Reachable from `/help`”
+## 2. Commands
 
-“Reachable from `/help`” means:
+### 2.1 Navigation, Chat, and Thread
 
-- the user can enter a topic from the `/help` root card
-- then reach the command through buttons, forms, or follow-up state cards
+| Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
+| --- | --- | --- | --- | --- | --- |
+| `/help [chat\|group\|thread\|runtime\|identity]` | Open help navigation or one page directly | yes | admin only | admin only | none |
+| `/commands` | Show a plain-text list of common commands | no | admin only | admin only | none |
+| `/h` | Alias for `/help` | no | admin only | admin only | none |
+| `/pwd` | Show current working directory | no | admin only | admin only | none |
+| `/status` | Show current chat's directory, current thread, and current-session settings summary | yes; `chat` page | admin only | admin only | `feishu-codexctl binding status <binding_id>` for deeper diagnostics |
+| `/preflight` | Dry-run the next plain message and current-chat detach availability | yes; `chat` page | admin only | admin only | partly overlaps `feishu-codexctl binding status <binding_id>` |
+| `/cd [path]` | Show or switch current directory; switching clears current thread binding | yes; `chat` page form | admin only | admin only | none |
+| `/new` | Create a new current thread | yes; `thread` page | admin only | admin only | none |
+| `/threads` | Browse threads in the current directory | yes; `thread` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
+| `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `thread` page form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
+| `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
+| `/rename <title>` | Rename the current thread | yes; `thread -> current thread` form | admin only | admin only | none |
+| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `thread -> current thread` | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
+| `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding bookmark | not from the root; exposed as a button on `thread -> current thread` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
+| `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | not a root help command; primary entry is usually a reset result card | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
+| `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
 
-It does not require the command to appear directly on the root card.
+### 2.2 Runtime and Identity
 
-### 2.2 Meaning of the permission columns
+| Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
+| --- | --- | --- | --- | --- | --- |
+| `/reset-backend` | Preview and reset the current instance backend | yes; `runtime` page | admin only | admin only | `feishu-codexctl service reset-backend` |
+| `/permissions [read-only\|default\|full-access]` | Set approval policy and sandbox together | yes; `runtime` page | admin only | admin only | none |
+| `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `runtime` page | admin only | admin only | none |
+| `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy | yes; `runtime` page | admin only | admin only | none |
+| `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `runtime` page | admin only | admin only | none |
+| `/whoami` | Show the caller's identity | yes; `identity` page | anyone | unsupported | none |
+| `/bot-status` | Show bot identity and config probe results | yes; `identity` page | anyone | admin only | none |
+| `/init <token>` | Initialize admins and `bot_open_id` | yes; `identity` page form | anyone | unsupported | `feishu-codex config init-token` only shows the token |
+| `/debug-contact <open_id>` | Debug contact-name resolution | no | admin only | unsupported | none |
 
-The p2p / group executor columns follow the current product contract:
+### 2.3 Group-only
 
-- `any user`
-  - no admin identity is required in that context
-- `admin only`
-  - the actor must pass this bot's admin check
-- `unsupported`
-  - the scope does not allow the command in that context
+| Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
+| --- | --- | --- | --- | --- | --- |
+| `/group` | Show whether the current group is activated | yes; `group` page | unsupported | admin only | none |
+| `/group activate` | Activate the current group | yes; `group` page | unsupported | admin only | none |
+| `/group deactivate` | Deactivate the current group | yes; `group` page | unsupported | admin only | none |
+| `/group-mode` | Show the current group working mode | yes; `group` page | unsupported | admin only | none |
+| `/group-mode assistant` | Switch to `assistant` | yes; `group` page | unsupported | admin only | none |
+| `/group-mode mention-only` | Switch to `mention-only` | yes; `group` page | unsupported | admin only | none |
+| `/group-mode all` | Switch to `all` | yes; `group` page | unsupported | admin only | none |
 
-Important:
+## 3. Commands Intentionally Not on the Main Help Path
 
-- group members being allowed to chat does not mean they may run group slash
-  commands
-- under the current contract, group slash commands and shared-state settings
-  remain admin surfaces by default
-- ordinary group members mainly participate through direct prompts and by
-  handling approval / supplemental-input cards for their own turns
-
-### 2.3 “Local counterpart”
-
-“Local counterpart” only answers:
-
-- whether `feishu-codexctl` exposes a comparable local inspection / management
-  surface
-- whether `feishu-codex` exposes a comparable install / service / config
-  surface
-
-If the real local counterpart is actually `fcodex`, that is stated explicitly
-so it is not confused with those two management CLIs.
-
-## 3. Slash Command Matrix
-
-### 3.1 Navigation, current-chat, and thread
-
-| Command | Purpose | Reachable from `/help` | P2P | Group | User-visible buttons / forms | Local counterpart |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/help [chat\|group\|thread\|runtime\|identity]` | Show the help navigation card or open a specific topic page | Yes; root entry | admin only | admin only | root entries `Current Chat(chat)`, `Group(group)`, `Thread(thread)`, `Runtime(runtime)`, `Identity(identity)` | `feishu-codex --help` and `feishu-codexctl --help` are only local help, not Feishu `/help` |
-| `/commands` | List common user-facing commands in plain text, grouped by the `/help` sections | No | admin only | admin only | none | none |
-| `/h` | Text alias for `/help` | No | admin only | admin only | none | none |
-| `/pwd` | Show the current working directory | No | admin only | admin only | none | none |
-| `/status` | Show the compact state summary for the current chat binding | Yes; `/help -> chat` | admin only | admin only | none | `feishu-codexctl binding status <binding_id>` exposes a deeper local view; no `feishu-codex` counterpart |
-| `/preflight` | Dry-run the next plain message and `/release-runtime` availability | Yes; `/help -> chat` | admin only | admin only | none | no exact one-line local equivalent; `feishu-codexctl binding status <binding_id>` exposes overlapping diagnostics |
-| `/cd [path]` | Without args, show cwd; with args, switch cwd and clear the current thread binding | Yes; `/help -> chat` form | admin only | admin only | help form submission | none |
-| `/new` | Create a new thread immediately and bind the current chat to it | Yes; `/help -> thread` | admin only | admin only | none | none |
-| `/threads` | Show current-directory threads | Yes; `/help -> thread` | admin only | admin only | list-card buttons `Resume/Current`, `Archive`, `More`, `Collapse`, `Expand list` | closest local surface is `feishu-codexctl thread list --scope cwd`; no `feishu-codex` counterpart |
-| `/resume <thread_id\|thread_name>` | Resume a specific thread into the current chat | Yes; `/help -> thread` form | admin only | admin only | help form submission; the `/threads` card `Resume` button uses the same semantics | no `feishu-codexctl` / `feishu-codex` counterpart; local continuation uses `fcodex resume <thread_id\|thread_name>` |
-| `/profile [name]` | View or change the current bound thread's thread-wise resume profile | Yes; `/help -> thread -> Current Thread` | admin only | admin only | profile-name buttons; when needed, `Apply and reset backend` / `Force apply and reset backend` | no direct `feishu-codexctl` / `feishu-codex` counterpart; the related local path is `fcodex -p <profile>` |
-| `/rename <title>` | Rename the current bound thread | Yes; `/help -> thread -> Current Thread` form | admin only | admin only | help form submission | no `feishu-codexctl` / `feishu-codex` counterpart |
-| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive a specific target thread | Yes; `/help -> thread -> Current Thread`, and also through `/threads` list cards | admin only | admin only | `/threads` list card `Archive`; the current-thread page may also invoke `/archive` directly | closest local counterpart is `feishu-codexctl thread archive --thread-id/--thread-name`; both surfaces fail closed when another instance owns the live runtime, or when the current instance still has running/pending Feishu work on that thread; the local command additionally clears bindings in the targeted instance, not just the current chat |
-| `/release-runtime` | Release Feishu runtime residency for the current bound thread while keeping the binding | No | admin only | admin only | none | `feishu-codexctl thread unsubscribe --thread-id/--thread-name`; no `feishu-codex` counterpart |
-| `/cancel` | Stop the current running turn | No | admin only | admin only | the execution card exposes the primary `Cancel run` button | none |
-
-### 3.2 Runtime and identity
-
-| Command | Purpose | Reachable from `/help` | P2P | Group | User-visible buttons / forms | Local counterpart |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/reset-backend` | Preview and reset the current instance backend | Yes; `/help -> runtime` | admin only | admin only | preview card `Reset backend` or `Force reset backend`; result card `Re-attach current thread`, `Re-attach current instance`, `Keep released` | `feishu-codexctl service reset-backend`; no `feishu-codex` counterpart |
-| `/re-attach [binding\|thread\|service]` | Reattach released Feishu runtime subscriptions after reset or manual release | No | admin only | admin only | none; the main button entry is on the `/reset-backend` result card | `feishu-codexctl binding/thread/service reattach`; no `feishu-codex` counterpart |
-| `/permissions [read-only\|default\|full-access]` | Set approval policy and sandbox together | Yes; `/help -> runtime` | admin only | admin only | `read-only`, `default`, `full-access` | none |
-| `/approval [untrusted\|on-request\|never]` | Set approval policy only | Yes; `/help -> runtime` | admin only | admin only | `untrusted`, `on-request`, `never` | none |
-| `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy only | Yes; `/help -> runtime` | admin only | admin only | `read-only`, `workspace-write`, `danger-full-access` | none |
-| `/collab-mode [default\|plan]` | Set the Codex collaboration mode for future turns in the current Feishu binding | Yes; `/help -> runtime` | admin only | admin only | `default`, `plan` | none |
-| `/whoami` | Show the user's identity information | Yes; `/help -> identity` | any user | unsupported | none | none |
-| `/bot-status` | Show bot identity, configured values, and runtime-discovered values | Yes; `/help -> identity` | any user | admin only | none | none |
-| `/init <token>` | Bootstrap admin identity and `bot_open_id` | Yes; `/help -> identity` form | any user | unsupported | help form submission | `feishu-codex config init-token` only reveals the token; it does not execute `/init` |
-| `/debug-contact <open_id>` | Troubleshoot contact-name resolution, cache hits, and fallback reasons | No | admin only | unsupported | none | none |
-
-### 3.3 Group-only
-
-| Command | Purpose | Reachable from `/help` | P2P | Group | User-visible buttons / forms | Local counterpart |
-| --- | --- | --- | --- | --- | --- | --- |
-| `/group` | Show whether the current group is activated | Yes; `/help -> group` | unsupported | admin only | the state card may expose `Activate this group` and `Deactivate this group` | no `feishu-codexctl` / `feishu-codex` counterpart |
-| `/group activate` | Activate the current group chat | Yes; `/help -> group -> /group` state card | unsupported | admin only | `/group` card button `Activate this group` | none |
-| `/group deactivate` | Deactivate the current group chat | Yes; `/help -> group -> /group` state card | unsupported | admin only | `/group` card button `Deactivate this group` | none |
-| `/group-mode` | Show the current group work mode | Yes; `/help -> group` | unsupported | admin only | the state card may expose group-mode switch buttons | none |
-| `/group-mode assistant` | Switch to `assistant` | Yes; `/help -> group -> /group-mode` state card | unsupported | admin only | `/group-mode` card button `assistant` | none |
-| `/group-mode all` | Switch to `all` | Yes; `/help -> group -> /group-mode` state card | unsupported | admin only | `/group-mode` card button `all` | none |
-| `/group-mode mention-only` | Switch to `mention-only` | Yes; `/help -> group -> /group-mode` state card | unsupported | admin only | `/group-mode` card button `mention-only` | none |
-
-## 4. Commands intentionally kept text-only
-
-The following commands are intentionally not required to be pure button-driven
-from `/help`:
+These remain plain-text or result-card entry points rather than first-class root help buttons:
 
 - `/commands`
 - `/h`
 - `/pwd`
 - `/cancel`
-- `/release-runtime`
-- `/re-attach [binding|thread|service]`
-- `/debug-contact <open_id>`
+- `/attach`
+- `/debug-contact`
 
-The reasons are:
+`/detach` is also not a root help command, but it is intentionally exposed as a button on the “current thread” help page because it is still a comprehensible thread-scoped session action.
 
-- `/commands` is a text-first command index and is intentionally not turned into a second navigation card flow
-- `/h` is only an alias for `/help`
-- `/pwd` is largely covered by no-argument `/cd`
-- `/cancel` already has its primary entry on the execution card
-- `/release-runtime` is intentionally weakened in favor of `/profile`
-- `/re-attach` is an advanced recovery surface; ordinary users should mostly use
-  the buttons shown right after `/reset-backend`
-- `/debug-contact` is a troubleshooting surface, not a common navigation topic
+## 4. Result-card Buttons
 
-## 5. Non-slash but first-class user card surfaces
+These are part of the formal Feishu user surface and must be maintained together with slash commands:
 
-These actions are not slash commands, but they are formal user-facing Feishu
-surfaces and must be maintained together with the slash contract.
+- execution card: `Cancel Execution`
+- `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
+- `/profile` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 
-| Card surface | Purpose | Who may click | Reachable from `/help` | Local counterpart |
-| --- | --- | --- | --- | --- |
-| Execution card `Cancel run` | Stop the current turn | p2p: current operator; group: admin or the current turn actor | No | none |
-| Command-approval card `Allow once / Allow for session / Deny / Abort turn` | Resolve a command approval request | p2p: current operator; group: admin or that request's current actor | No | none |
-| File-change approval card `Allow once / Allow for session / Deny / Abort turn` | Resolve a file-change approval request | p2p: current operator; group: admin or that request's current actor | No | none |
-| Extra-permissions approval card `Allow once / Allow for session / Deny` | Resolve a permissions approval request | p2p: current operator; group: admin or that request's current actor | No | none |
-| Supplemental-input card `option buttons / custom submit` | Answer a `requestUserInput` question | p2p: current operator; group: admin or that request's current actor | No | none |
+## 5. Boundary
 
-## 6. Local command-surface boundary
+- `feishu-codex` owns install, instance, and service lifecycle. It is not the Feishu chat command surface.
+- `feishu-codexctl` owns local inspection and management of bindings, threads, and services. It is not a second frontend.
+- `fcodex` is the local live-thread continuation entry point.
 
-To avoid conflating Feishu commands with local management surfaces, the current
-contract is:
-
-- `feishu-codex`
-  - owns installation, service lifecycle, autostart, instance management, and
-    config entrypoints
-  - it is not the Feishu session / thread operation surface
-- `feishu-codexctl`
-  - owns local inspection / management for service, binding, and thread state
-  - it is not a second Codex frontend
-- `fcodex`
-  - is the local entrypoint for continuing live threads and entering the Codex
-    TUI
-
-So the following expectations are intentionally false:
-
-- `feishu-codex status` is not the same thing as Feishu `/status`
-- `feishu-codexctl` is not a local UI-equivalent of Feishu `/threads`
-- `feishu-codex` and `feishu-codexctl` do not expose chat-scoped interactive
-  commands such as Feishu `/new`, `/rename`, or `/archive`
-
-## 7. Related implementation fact sources
-
-The main implementation fact sources for this document include:
-
-- `bot/codex_handler.py`
-- `bot/inbound_surface_controller.py`
-- `bot/codex_help_domain.py`
-- `bot/codex_threads_ui_domain.py`
-- `bot/codex_settings_domain.py`
-- `bot/codex_group_domain.py`
-- `bot/cards.py`
-- `bot/feishu_codexctl.py`
-- `bot/manage_cli.py`
-
-If any future change adds, removes, renames, or re-scopes a Feishu command, or
-changes `/help` reachability, group-admin boundaries, button permissions, or
-the local CLI correspondence, this document must be updated together with that
-change.
+If any Feishu command is added, removed, renamed, or moved in `/help`, or if button entry points or permission boundaries change, this file must be updated with the code.

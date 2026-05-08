@@ -1,60 +1,55 @@
-# 运行时控制面
+# 运行时控制面合同
 
 英文原文：`docs/contracts/runtime-control-surface.md`
 
-本文定义 Feishu 命令面、本地 `feishu-codexctl` 管理面，以及 shared backend
-之间共享的一组状态词汇与控制合同。它主要回答五件事：
+本文是当前运行时词汇与控制动作的权威合同。
 
-- `/status` 到底在描述哪些状态
-- `/preflight` 可以 dry-run 什么，不可以改变什么
-- Feishu `/reset-backend` 可以重置什么，绝不能覆盖什么
-- 飞书 `/re-attach` 与本地 `reattach` 动作如何恢复推送能力
-- `/release-runtime` 具体释放什么，不释放什么
-- 为什么本地管理 CLI 必须通过正在运行的 `feishu-codex` 服务，而不能自己直连 app-server 做释放
+## 1. 三层心智模型
 
-另见：
+当前系统对外只保留三层心智模型：
 
-- `docs/contracts/feishu-thread-lifecycle.zh-CN.md`
-- `docs/contracts/thread-profile-semantics.zh-CN.md`
-- `docs/decisions/shared-backend-resume-safety.zh-CN.md`
+1. `binding`
+   - 某个飞书会话当前记住哪个 thread
+2. `attach / detach`
+   - 某个飞书会话当前是否接收这个 thread 的飞书推送
+3. `backend / live runtime`
+   - 这个 thread 当前是否在 backend 中 loaded，以及 live runtime 归哪个实例 / 本地前端持有
 
-## 1. 上游基线
+上游 `thread/unsubscribe` 仍然存在，但它只是内部协议动作，不再作为用户概念。
 
-- 上游项目：[`openai/codex`](https://github.com/openai/codex.git)
-- 当前本地验证基线：`codex-cli 0.118.0`（2026-04-03）
-
-## 2. 共享状态词汇
-
-这组词汇是 Feishu `/status`、`/preflight` 和本地 `feishu-codexctl` 共同使用的事实词汇。
+## 2. 核心词汇
 
 ### 2.1 `binding`
 
-表示某个飞书会话逻辑上当前绑定到哪个 `thread_id`。
+表示一个飞书会话逻辑上当前指向哪个 thread。
 
 - `unbound`
-  - 当前没有绑定线程
 - `bound`
-  - 当前仍绑定某个线程
 
-`binding` 是“这个会话下一次默认接着哪个线程继续”的事实来源。
-它不等于 runtime 是否仍加载，也不等于 Feishu 是否仍附着该 thread。
+它回答的是：
 
-### 2.2 `feishu runtime`
+- “这个会话下一条默认接着哪个 thread 说话？”
 
-表示 `feishu-codex` 这条 app-server 连接当前是否仍附着在该 thread 上。
+它不回答：
+
+- 是否正在接收推送
+- backend 是否 loaded
+
+### 2.2 `feishu push`
+
+表示当前飞书会话是否接收该 thread 的推送。
 
 - `attached`
-  - Feishu 服务当前仍订阅这个 thread
-- `released`
-  - 绑定还在，但 Feishu 服务已经主动释放了自己对这个 thread 的运行时持有
+- `detached`
 - `not-applicable`
-  - 当前没有绑定线程
 
-这里描述的是 Feishu 这一侧的运行时附着状态，不是 backend 全局 loaded 状态。
+它回答的是：
+
+- “这个飞书会话现在会不会收到该 thread 的飞书推送？”
 
 ### 2.3 `backend thread status`
 
-表示该 thread 在当前 shared backend 中的状态。
+表示该 thread 在当前实例 backend 里的状态。
 
 典型值：
 
@@ -63,675 +58,231 @@
 - `active`
 - `systemError`
 
-若当前 status/admin surface 根本读不到 backend 信息，则回落为：
+这和飞书会话是否 attached 是两条不同状态轴。
 
-- `unknown`
-- `missing`
-- `error`
+### 2.4 `live runtime owner`
 
-这些回落值都不是 backend 自身的线程状态词汇：
+表示 machine-global 的 live thread 运行时归谁持有。
 
-- `unknown`：当前 surface 无法判定 backend status 字段
-- `missing`：当前 surface 已确认该 thread 不存在
-- `error`：本次 backend 读取失败
+它可能是：
 
-这是 app-server 的线程状态，不是飞书会话自己的 UI 状态。
+- 某个 `feishu-codex` service 实例
+- 某个本地 `fcodex` / proxy holder
+- 无
 
-### 2.4 `backend running turn`
+它回答的是：
 
-这是从 `backend thread status` 派生出来的判断：
+- “当前哪个实例 / 本地前端真正占着这条 live thread？”
 
-- 当 status 为 `active` 时，值为 `yes`
-- 其他状态为 `no`
+### 2.5 `interaction owner`
 
-它回答的是“当前 backend 上这个 thread 是否正在跑 turn”，并不等于“当前飞书会话是否是这次执行的 owner”。
+表示当前谁可以对这条 thread 发起下一轮写入、处理中断、审批、补充输入。
 
-### 2.5 `交互 owner`
+它和 `live runtime owner` 不完全相同：
 
-这是同实例内、跨前端共享的 turn / interaction 租约；在当前合同中，它是 Feishu 与 `fcodex` 的唯一同实例前端 owner。
+- `live runtime owner` 关注谁持有 live runtime
+- `interaction owner` 关注谁拥有当前这轮交互控制权
 
-它回答的问题是：
+## 3. 强约束
 
-- 当前哪个前端可以向该 thread 发起下一轮 turn
-- 当前谁可以处理中断、审批、用户输入等交互控制
+### 3.1 首次 attach / 最后一次 detach
 
-典型持有者：
+对 Feishu 服务自身而言：
 
-- 某个 Feishu binding
-- 某个 `fcodex` TUI proxy holder
+- 第一个 binding 从 detached 变 attached 时，服务必须确保自己已对该 thread 建立订阅
+- 某个 thread 的最后一个 attached Feishu binding 变 detached 时，服务必须自动停止自己对该 thread 的 Feishu-side 订阅
 
-普通回复流不是交互请求：同一个 backend 的回复流会广播给同实例 Feishu subscribers 和 `fcodex` subscribers。审批、补充输入、中断等交互请求只路由给当前 `交互 owner`。
+这条约束只约束 Feishu 服务自己。
 
-旧的 `Feishu 写入 owner` 不再是独立产品概念；Feishu prompt 准入也不再额外维护一层 Feishu-only 写入租约。
+它不约束本地 `fcodex`：
 
-### 2.6 交互请求的自动收口
+- 本地 `fcodex` 仍可独立订阅同一个 thread
+- 所以最后一个 Feishu detach 后，backend 仍可能保持 loaded
 
-当运行时生命周期控制自动结束一个待处理的审批 / 补充输入请求时，例如：
+### 3.2 重启恢复
 
-- chat unavailable 清理
-- `service reset-backend`
+持久化文件里的 `attached` 不能跨进程直接恢复成真 attached 事实。
 
-系统应先把原卡片 patch 成已收口的视觉状态，再 auto-reject 对应请求。
+因此重启或重新创建服务连接时：
 
-这只是运行时收口，不表示用户手动批准、手动回答，或请求在业务上成功完成。
+- 旧的 persisted `attached` 必须降级为 `detached`
+- binding bookmark 保留
+- 后续 `/attach`、`/resume`、或下一条普通消息才会重新附着
 
-## 3. 状态组合与转移
+### 3.3 detached prompt 的 pure reject
 
-### 3.1 两类事实的对照
+如果当前 binding 是 `bound + detached`，而下一条普通消息因为 live runtime / interaction / sharing 规则被拒绝：
 
-| 事实 | 作用范围 | 它回答的问题 | 在 `feishu runtime == released` 时还能存在吗？ |
-| --- | --- | --- | --- |
-| `feishu runtime` = `attached/released` | Feishu 服务连接 | 当前运行中的 Feishu 服务是否仍附着该 thread？ | 这是它本身的状态轴 |
-| `交互 owner` | 跨前端（`feishu-codex` + `fcodex`） | 当前谁可以发起 turn，并处理中断、审批、补充输入？ | 可以。外部 owner（如 `fcodex`）仍可能存在 |
+- 必须 pure reject
+- 不得偷偷 resume
+- 不得偷偷新增 Feishu subscriber
+- 不得把 `detached` 改回 `attached`
 
-直接后果是：
+## 4. 关键状态组合
 
-- `attached + 无 owner` 是完全合法的 idle 稳态
-- `released + 外部交互 owner` 也完全合法，表示别的前端仍在持有 live thread
-- `attached` 不是可跨 Feishu 服务进程、websocket 连接或 managed backend 重建持久化恢复的事实。
-  如果从 `chat_bindings.json` 读取到旧的 `attached`，启动时必须降级为
-  `released`；下一条普通 prompt 或显式 `/resume` 再重新附着。
+### 4.1 `bound + attached + idle`
 
-### 3.2 几个必须明确接受的有效组合
-
-#### `bound + attached + idle + 无 owner`
-
-表示当前 chat 仍指向该 thread，Feishu 仍附着，但没有正在运行的 turn owner。
-这是 turn 结束后的正常 idle 稳态。
-
-#### `bound + attached + active + 当前 binding 是 owner`
-
-表示当前 binding 持有跨前端交互租约，正在执行这一轮 turn。
-
-#### `bound + released + notLoaded`
+合法稳态。
 
 表示：
 
-- 飞书侧逻辑绑定仍保留
-- Feishu 服务已不再持有该 thread 的 runtime
-- 当前 backend 里 thread 也已 unload
+- 当前 chat 记住该 thread
+- 当前 chat 正在接收推送
+- backend 当前没有运行中的 turn
 
-这是最典型的“thread-wise profile 可写再恢复”的状态。
+### 4.2 `bound + detached + notLoaded`
 
-#### `bound + released + idle/active`
+最典型的“可直接改 thread-wise profile”状态。
 
 表示：
 
-- Feishu 自己已经释放 runtime
-- 但当前 backend 中还有其他订阅者仍附着该 thread
+- binding bookmark 仍在
+- 飞书当前不接收推送
+- 当前实例 backend 已确认该 thread 不在内存
+
+### 4.3 `bound + detached + idle/active`
+
+同样合法。
+
+表示：
+
+- 飞书已经 detach
+- 但别的订阅者仍让 backend 保持 loaded
 - 最常见的是本地 `fcodex`
 
-因此，`released` 不保证 backend 一定 `notLoaded`。
+所以：
 
-### 3.3 正式状态转移表
+- `detached` 不等于 `notLoaded`
 
-下表是 Feishu 侧状态迁移的权威合同。
+## 5. 命令合同
 
-| 当前 binding | 当前 `feishu runtime` | 当前 backend | 事件 | 守卫条件 | 下一 binding | 下一 `feishu runtime` | 下一 backend | 说明 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `unbound` | `not-applicable` | `not-applicable` | 普通 prompt 或 `/new` | 被接受 | `bound` | `attached` | `idle` 或 `active` | 先建新 thread，再启动或准备 turn |
-| `unbound` | `not-applicable` | 任意 | `/resume <thread>` | 目标解析成功且允许恢复 | `bound` | `attached` | 通常为 `idle` | 当前 chat 绑定切到目标 thread |
-| `bound` | `attached` | `idle` | 普通 prompt | prompt preflight 通过 | `bound` | `attached` | `active` | 获取交互 owner |
-| `bound` | `attached` | `active` | turn 终态事件 | 无 | `bound` | `attached` | 通常为 `idle` | 清理交互 owner；binding 与附着保持不变 |
-| `bound` | `attached` | `idle` 或 `active` | `/release-runtime` | 当前没有 Feishu 侧运行中的 turn，且没有待处理审批 / 输入 | `bound` | `released` | `notLoaded`、`idle` 或 `active` | `/release-runtime` 释放的是整个运行中 Feishu 服务对该 thread 的 runtime 持有 |
-| `bound` | `released` | `notLoaded` 或 `idle` | 普通 prompt | prompt preflight 通过 | `bound` | `attached` | `active` | 先重新附着 / resume，再启动 turn；这里的 accepted 还要求 machine-global live runtime 准入通过 |
-| `bound` | `released` | 任意 | 普通 prompt | prompt preflight 被拒绝 | 不变 | 不变 | 不变 | 纯拒绝：不得 resume，不得新增 subscriber，不得把 `released` 改成 `attached` |
-| `bound` | `attached` 或 `released` | 任意 | `/new` 或 `/resume <other>` | 被接受 | 绑定到另一 thread | `attached` | 通常为 `idle` | 当前 binding 切换到新目标 |
-| `bound` | `attached` 或 `released` | 任意 | 显式清空 / 归档当前 binding / chat unavailable 清理 | 被接受 | `unbound` | `not-applicable` | 对该 Feishu binding 来说为 `not-applicable` | 清理 Feishu 侧 binding 以及本地执行锚点 |
+### 5.1 `/status`
 
-### 3.4 不允许含糊的规则
+`/status` 是 chat-scoped 摘要命令。
 
-- `all` 模式独占是按“当前 thread 上的 Feishu runtime 占用”判断，不按一个仅被记住的 `bound + released` bookmark 判断。
-- 被拒绝的 prompt 必须是 pure reject。
-  它不能调用 `thread/resume`，不能新增 Feishu subscriber，也不能把
-  `feishu runtime` 从 `released` 改成 `attached`。
-- 对 `bound + released` 的普通 prompt，是否 accepted 不能只看同实例内的
-  interaction owner / prompt-write 检查。
-  它还必须通过 machine-global live runtime 准入：
-  如果另一个实例仍持有 `ThreadRuntimeLease`，且当前不能立即释放，就必须
-  pure reject。
-- `/release-runtime` 释放的是 Feishu 的 runtime residency，并在当前 owner 是 Feishu 时清除交互 owner；
-  它不会抹掉 chat 仍指向哪个 thread 的 binding bookmark。
-
-## 4. `/status` 合同
-
-飞书 `/status` 是 chat-scoped 命令。
-
-即使它是在群里触发的，作用对象仍是**当前群 binding**，而不是任意 thread。
-它在群里能否被触发，受 `docs/contracts/group-chat-contract.zh-CN.md` 的群命令触发规则约束。
-
-它只回答：
+它只负责显示：
 
 - 当前目录
 - 当前线程
-- 当前绑定 thread 的 thread-wise `profile`
-- 当前飞书会话后续 turn 会使用的权限 / 批准 / 沙箱 / Codex 协作模式设置
+- 当前 thread 的 thread-wise profile
+- 当前飞书会话后续 turn 的权限 / 审批 / 沙箱 / 协作模式
 
-它是用户视角的简明摘要，不承担完整调试面。
+它不再承担完整调试面。
 
-下列更细的 runtime / admission 事实不再要求由飞书 `/status` 直接展示：
+### 5.2 `/preflight`
 
-- `binding`
-- `feishu runtime`
-- `backend thread status`
-- `backend running turn`
-- `interaction owner`
-- `re-profile possible`
-- `/release-runtime` 当前是否允许
-- 下一条普通消息当前会被 accepted 还是 blocked
+`/preflight` 是 chat-scoped dry-run。
 
-这些信息应通过以下入口获取：
+它可以回答：
 
-- 飞书 `/preflight`
-- 本地 `feishu-codexctl binding status`
-- 本地 `feishu-codexctl thread status`
-
-当 `/status` 或本地管理面需要解释某个 deny / blocked 结果时，可以同时暴露：
-
-- 稳定的 `reason_code`
-- 面向操作者的人类可读说明文本
-
-其中 code 是自动化和测试应依赖的稳定键；文本只负责给人看。
-
-它不会变成一个“全局线程管理器”。
-全局线程和绑定状态应交给本地 `feishu-codexctl`。
-
-### 4.1 `/preflight` 合同
-
-飞书 `/preflight` 也是 chat-scoped 命令，作用对象同样是当前 chat binding。
-
-它是只读 dry-run，只能回答“如果现在做下一步会怎样”，不得：
-
-- 启动 turn
-- 调用 `thread/resume`
-- 新建 subscriber
-- 改变 binding / runtime / owner 状态
-- 清理或写入本地 profile 状态
-
-它复用与普通 prompt 相同的 prompt preflight 检查，并复用
-`/release-runtime` 的 availability 检查；展示结果时可以暴露同一套
-`reason_code` 与人类可读说明。
-
-如果当前 binding 是 `bound + released`，`/preflight` 只能说明下一条普通消息是否会被接受。
-它本身不能把 `released` 改成 `attached`。
-
-对这个 `bound + released` 场景，所谓 “accepted” 必须同时满足：
-
-- 普通 prompt 的写入 / interaction-owner 检查通过
-- machine-global `ThreadRuntimeLease` 要么可直接获取，要么可从当前 owner
-  实例立即转移过来
-
-因此，如果另一个实例仍持有 live runtime，但它：
-
-- 仍在执行
-- 仍有待处理审批 / 输入
-- 当前没有任何 Feishu binding 指向该 thread
-- 或该 thread 上仍有本地 `fcodex` 这类非 service holder
-
-那么 `/preflight` 必须显示 `blocked`，下一条普通消息也必须保持 pure reject。
-
-### 4.2 `/reset-backend` 合同
-
-Feishu `/reset-backend` 是**实例级**管理动作，且只能由管理员执行。
-
-它的作用对象是：
-
-- 当前选中的 `feishu-codex` 实例
-- 该实例自己管理的 backend / app-server 进程
-
-它不是：
-
-- thread 级写命令
-- binding 清空命令
-- 重启整个 `feishu-codex` 服务进程
-
-它在飞书侧的交互合同是：
-
-- `/reset-backend` 本身只负责预览，不能直接立刻重置
-- 它可以展示与本地管理面一致的 backend-reset 诊断
-- 如果当前可安全重置，可以提供直接确认按钮
-- 如果当前只能 `force reset`，必须要求显式强制确认
-- 如果当前实例不支持 reset 或当前被阻塞，必须 fail-closed，只展示原因，不提供破坏性动作
-
-真正执行成功后的语义，与本地 `service reset-backend` 完全一致：
-
-- 中断当前实例 backend 上仍在执行的 Feishu turn
-- fail-close 当前实例仍待处理的审批 / 输入请求
-- 释放当前实例所有 Feishu binding 对 thread runtime 的附着
-- 清除当前实例持有的 machine-global live runtime lease
-- 重启当前实例 backend / app-server
-
-它绝不能覆盖：
-
-- binding bookmark
-- thread-wise profile / provider
-- 其他持久化用户配置与数据
-
-飞书 reset 成功后：
-
-- 相关 binding 会保持 `bound`，但切成 `released`
-- 结果卡应直接提供后续选择：
-  - 重附着当前线程
-  - 重附着当前实例
-  - 保持 released
-
-### 4.3 `/re-attach` 合同
-
-飞书 `/re-attach [binding|thread|service]` 是管理员恢复动作。
-
-它的目的很窄：
-
-- 恢复已经 `released` 的 Feishu runtime 订阅
-- 不必等待下一条普通消息或 `/resume`
-
-作用域规则：
-
-- `binding`：只恢复当前 chat binding
-- `thread`：恢复当前 chat 所在 thread 上的全部 released bindings
-- `service`：恢复当前实例内所有可恢复的 released bindings
+- 下一条普通消息会 accepted 还是 blocked
+- 当前 chat 的 `/detach` 是否可执行
 
 它不能：
 
-- 改写 binding bookmark
-- 绕过 live-runtime admission
-- 在 `thread` 作用域下凭空猜一个不存在的 thread 目标
+- 启动 turn
+- 调用 resume
+- 改变 binding / attached / detached / owner
 
-## 5. `/release-runtime` 精确合同
+### 5.3 `/detach`
 
-### 5.1 作用对象
+`/detach` 只作用于**当前 chat binding**。
 
-飞书 `/release-runtime`：
+它会：
 
-- 不带参数
-- 作用于“当前 chat 绑定的 thread”
-- 但它的实际生效范围是：这个 thread 在整个 `feishu-codex` 服务内的 Feishu runtime 持有
-
-即使它是在群里触发的，这也仍然是一个**当前群 binding** 的 chat-scoped 入口，
-而不是任意 thread 的全局管理命令。群里能否触发它，仍受
-`docs/contracts/group-chat-contract.zh-CN.md` 的群命令触发规则约束。
-
-也就是说，它不是“只把当前 chat 自己标成 released”。
-
-### 5.2 它会做什么
-
-当该命令成功时：
-
-- 保留所有指向该 thread 的 Feishu `binding`
-- 清除该 thread 的 Feishu 交互 owner（如果当前 owner 是 Feishu）
-- 把所有当前仍 `attached` 的相关 Feishu binding 统一切到 `released`
-- 让 `feishu-codex` 服务自己的 app-server 连接对该 thread 执行 `thread/unsubscribe`
-
-### 5.3 它不会做什么
+- 保留当前 binding bookmark
+- 把当前 chat 从 `attached` 改成 `detached`
+- 如果它是该 thread 的最后一个 attached Feishu binding，则自动让 Feishu 服务停止自己对该 thread 的订阅
 
 它不会：
 
 - 删除 thread
-- archive thread
-- 清空 Feishu chat 与 thread 的绑定关系
-- 强制关闭本地 `fcodex` TUI
-- 保证 backend 一定 unload
+- 清空 binding
+- 强制让 backend unload
 
-如果 backend 在命令后仍 `idle` 或 `active`，说明还有外部订阅者没有释放。
+### 5.4 `/attach [binding|thread|service]`
 
-### 5.4 它何时必须被拒绝
+这是恢复动作。
 
-该命令在以下场景必须拒绝：
+作用域：
 
-- 该 thread 当前仍有飞书侧 turn 在执行
-- 该 thread 当前仍有飞书侧审批请求或用户输入请求未处理
+- `binding`
+  - 只恢复当前 chat binding
+- `thread`
+  - 恢复当前 chat 所在 thread 上的所有 detached bindings
+- `service`
+  - 恢复当前实例内所有可恢复的 detached bindings
 
-这是为了避免把“当前仍由 Feishu 负责收口的执行”切成半关闭状态。
+所有 attach 动作都必须 fail-closed：
 
-### 5.5 成功后的解释
+- 如果 live runtime lease 不允许
+- 如果目标 thread 已不再可恢复
+- 如果当前实例无法安全取得所需运行时
 
-如果命令成功后：
+### 5.5 `/reset-backend`
 
-- `backend thread status == notLoaded`
-  - 说明当前 backend 中已不再有订阅者
-  - 后续重新 resume 时，重新解析 profile / provider 是可能的
-- `backend thread status in {idle, active, systemError}`
-  - 说明 backend 仍 loaded
-  - 最常见原因是本地 `fcodex` 还在订阅这个 thread
+`/reset-backend` 是实例级动作。
 
-### 5.6 之后再发普通消息会怎样
+它会：
 
-如果某个 Feishu binding 当前仍 `bound`，但其 `feishu runtime == released`，那么之后在这个 chat 里直接发送普通消息时：
+- 重置当前实例 backend
+- 保留 binding bookmark
+- 保留 thread-wise profile/provider
+- 保留用户配置与数据
+- 让相关 Feishu binding 进入 `detached`
 
-- 先走正常的 prompt preflight
-- 如果 prompt 被拒绝，这次拒绝必须是 pure reject，binding 继续保持 `released`
-- 只有在 prompt 被接受时，Feishu 才允许按当前绑定重新附着 / resume，然后启动 turn
+它不会：
 
-本文只定义这里的 runtime 准入与 pure reject 规则。
-如果 accepted 路径命中了 unloaded thread，profile / provider 如何解析，统一以
-`docs/contracts/thread-profile-semantics.zh-CN.md` 为准。
+- 自动删除 binding
+- 自动清空 thread-wise profile
+- 自动保证重新 attached
 
-## 6. 本地管理面：`feishu-codexctl`
+因此 reset 完成后，结果卡应直接给出：
 
-### 6.1 它是什么
+- `附着当前线程`
+- `附着当前实例`
+- `保持 detached`
 
-`feishu-codexctl` 是 `feishu-codex` 服务的本地管理 CLI。
+## 6. 本地管理面
 
-它不是：
+本地 `feishu-codexctl` 的正式用户命名应与飞书侧一致：
 
-- `fcodex` 的别名
-- 飞书聊天命令的本地壳
-- 一个新的 app-server 前端
+- `service attach`
+- `binding attach`
+- `binding detach`
+- `thread attach`
+- `thread detach`
 
-它的职责是：
+底层实现仍可通过正在运行的服务调用内部协议，例如：
 
-- 查看服务状态
-- 查看 binding / thread 的共享状态词汇
-- 对运行中的 `feishu-codex` 服务发出明确的管理动作
+- `thread/unsubscribe`
 
-### 6.2 为什么它必须经过运行中的服务
+但这不再是用户概念，也不应继续出现在主文案里。
 
-上游公开协议里，`thread/unsubscribe` 是 connection-scoped 的。
+## 7. reset-backend 与 re-profile
 
-这意味着：
+当前 thread-wise profile 可直接写入的前提是：
 
-- 如果本地 CLI 自己连 app-server，再发 `thread/unsubscribe`
-- 它只会取消“CLI 这条连接自己的订阅”
-- 不会取消 `feishu-codex` 服务那条连接的订阅
+- thread verifiably globally unloaded
 
-因此，任何要真正改变“Feishu 是否仍附着该 thread”的动作，都必须由运行中的 `feishu-codex` 服务代为执行。
+所以：
 
-### 6.3 当前正式命令集
+- 单纯 detached 不够
+- 如果本地 `fcodex` 仍持有 live runtime，通常仍要 reset backend 或等待自然 unload
 
-当前正式提供：
+飞书侧 `/profile <name>` 应优先给用户走：
 
-- `feishu-codexctl instance list`
-- `feishu-codexctl service status`
-- `feishu-codexctl service reset-backend [--force]`
-- `feishu-codexctl service reattach`
-- `feishu-codexctl binding list`
-- `feishu-codexctl binding status <binding_id>`
-- `feishu-codexctl binding reattach <binding_id>`
-- `feishu-codexctl binding clear <binding_id>`
-- `feishu-codexctl binding clear-all`
-- `feishu-codexctl thread status (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread bindings (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread archive (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread reattach (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl thread unsubscribe (--thread-id <id> | --thread-name <name>)`
-- `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
+- 直接写入
+- 或“应用并重置 backend”
 
-### 6.3.1 `service reset-backend` 合同
+而不是要求用户先理解复杂的 detach / attach / unsubscribe 关系。
 
-`feishu-codexctl service reset-backend` 是**实例级**管理动作。
+## 8. 结论
 
-它的作用对象是：
+当前产品对外合同必须坚持：
 
-- 当前选中的 `feishu-codex` 实例
-- 该实例自己管理的 backend / app-server 进程
+- `binding` 回答“记住哪个 thread”
+- `attach / detach` 回答“收不收推送”
+- `backend / live runtime` 回答“thread 现在在哪、归谁持有”
 
-它不是：
-
-- 重启整个 `feishu-codex` 服务进程
-- thread 级写入口
-- binding 清空入口
-
-它的正式语义是：
-
-- 中断当前实例 backend 上仍在执行的 Feishu turn
-- fail-close 当前实例仍待处理的审批 / 输入请求
-- 释放当前实例所有 Feishu binding 对 thread runtime 的附着
-- 清除当前实例持有的 machine-global live runtime lease
-- 重启当前实例 backend / app-server
-
-它不会覆盖：
-
-- binding bookmark
-- thread-wise profile / provider
-- 其他持久化用户配置与数据
-
-正式限制：
-
-- 只有 `managed` app-server 模式支持该动作
-- `service status` 应暴露 `app_server_mode`、`backend_reset_status`、`backend_reset_reason_code`、`backend_reset_reason`
-- 非 `force` 只能在当前实例没有待处理请求、没有运行中的 binding、没有 active loaded thread、且 backend 状态可验证时执行
-- `--force` 表示操作者接受丢失 / 打断当前实例 backend 内的进行中工作
-
-### 6.3.2 `reattach` 合同
-
-本地 reattach 管理面包括：
-
-- `service reattach`
-- `thread reattach`
-- `binding reattach`
-
-它们的共同目的都是：
-
-- 恢复 `released` 的 Feishu runtime 订阅
-- 不改变 bookmark，也不改变 thread-wise profile 状态
-
-作用域拆分：
-
-- `service reattach`：按当前实例批量恢复
-- `thread reattach`：按单个 thread 批量恢复
-- `binding reattach`：只恢复一个 binding
-
-所有 reattach 动作仍必须在以下场景 fail-closed：
-
-- 目标 binding / thread 不存在
-- live-runtime admission 拒绝恢复
-- 底层 thread 已不再满足可恢复条件
-
-### 6.3.3 `image send` 合同
-
-`feishu-codexctl image send` 是**thread-scoped** 出站图片动作。
-
-它的作用对象不是：
-
-- execution card
-- terminal result card
-- 工作区里“任意看起来像图片的文件”
-
-它的正式语义是：
-
-- 选定一个目标 thread
-- 找到该 thread 当前所有 `attached` 的 Feishu bindings
-- 通过运行中的 `feishu-codex` service 上传一次图片
-- 再把这张图片作为独立飞书 `image` 消息 fanout 给这些 attached bindings
-
-正式约束：
-
-- 若显式省略 `--thread-id/--thread-name`，CLI 只允许回落到环境变量 `CODEX_THREAD_ID`
-- 若已知 thread id 且未显式给 `--instance`，CLI 可以优先路由到当前 machine-global `live runtime owner` 实例；这只适用于 thread-id 已知路径，`--thread-name` 路径需先解析目标 thread
-- 若目标 thread 当前没有任何 `attached` binding，必须 fail-closed
-- 它不会自动回复到某条 prompt 消息；第一版统一发送为独立图片消息
-- 它不承担自动重试 / 自动去重合同；若 fanout 过程中后半段发送失败，前面已成功的 bindings 可能已经收到了图片，CLI 必须明确报告 partial delivery
-
-### 6.3.4 `thread archive` 合同
-
-`feishu-codexctl thread archive` 是**thread-scoped** 管理动作。
-
-它的作用对象是：
-
-- 当前选中的 `feishu-codex` 实例 backend 上的目标 thread
-- 当前实例里仍指向该 thread 的 Feishu bindings
-
-它不是：
-
-- 当前 chat 的轻量 UI 操作
-- 跨实例批量清理入口
-- 硬删除 thread 历史
-
-它的正式语义是：
-
-- 调用 Codex 的 thread archive，使该 thread 从常规列表中隐藏
-- 清理当前实例里仍指向该 thread 的 bindings
-- 释放当前实例持有的该 thread service-level live runtime lease
-
-它不会覆盖：
-
-- 其他实例里仍保留的 binding bookmark
-- thread rollout 历史本身
-- 其他 thread 的 runtime / binding 状态
-
-正式限制：
-
-- 若 machine-global live runtime owner 是其他实例，必须 fail-closed，并要求改在 owner 实例执行 archive
-- 若当前实例里该 thread 仍有 Feishu inflight turn，必须 fail-closed
-- 若当前实例里该 thread 仍有待处理审批或补充输入请求，必须 fail-closed
-- 这是不可逆的可见性变更；它不是 hard delete
-
-### 6.4 `binding` 持久化与重置合同
-
-`binding` 默认是跨重启保留的本地事实。
-
-这样设计的原因是：
-
-- 飞书会话重启后，仍应记住“下一次默认接着哪个 thread 继续”
-- 这属于 Feishu 集成层自己的 bookmark，不属于 Codex thread 元数据
-
-但“清空一个或全部 binding”也是一个合理的本地管理需求，尤其适用于：
-
-- 开发期批量重置
-- 状态救火
-- 让飞书侧整体回到“重新选择 thread”的初始状态
-
-这类动作的正式合同是：
-
-- 它属于 `binding` 层，不属于 `thread runtime` 层
-- 它不等于 `/release-runtime`
-- 它的正式入口应属于本地管理面 `feishu-codexctl`
-
-因此，正式控制面收敛为：
-
-- `feishu-codexctl binding clear <binding_id>`
-- `feishu-codexctl binding clear-all`
-
-这两个动作的语义是：
-
-- 清除 Feishu 侧记住的 binding 事实
-- 同步清理运行中的 Feishu 内存态与持久化态
-- 必要时释放该 binding 相关的 Feishu 本地 lease / 执行锚点 / 订阅关系
-
-它们不承诺：
-
-- 删除 Codex thread
-- archive thread
-- 替代 `/release-runtime`
-- 替代 thread 级管理命令
-
-明确区分：
-
-- `/release-runtime`
-  - 释放的是 Feishu 对某个 thread 的 runtime 持有
-  - 不清空 binding
-- `binding clear/clear-all`
-  - 清掉的是 Feishu 本地 bookmark
-  - 不应再作为一个“单独删 `chat_bindings.json` 文件”的独立架构概念存在
-
-### 6.5 `binding_id` 形状
-
-本地管理 CLI 使用稳定的 admin-facing `binding_id`：
-
-- 群聊共享 binding：`group:<chat_id>`
-- 私聊 binding：`p2p:<sender_id>:<chat_id>`
-
-它们只服务于本地管理面，不需要和飞书聊天命令名字保持对称。
-`binding_id` 在本项目里被定义为受限的管理语法，而不是任意字符串的通用可逆编码：
-
-- `:` 是保留分隔符
-- `sender_id` 和 `chat_id` 组件不允许包含 `:`
-- 如果未来发现真实上游 ID 可能包含 `:`，应整体替换这套语法，而不是继续依赖当前拼接格式做静默 round-trip
-
-### 6.6 显式 thread 目标合同
-
-对本地管理面而言，thread 目标必须显式表达，不再靠输入内容推断。
-
-- `--thread-id <id>`
-  - 表示按 thread id 精确寻址
-  - 不会再回退到名字解析
-- `--thread-name <name>`
-  - 表示按 thread name 精确匹配
-  - 过滤规则与 session 发现面使用的共享跨 provider 全局列表一致
-  - 会继续扫描后续分页，直到能证明唯一命中或存在歧义
-  - 0 个匹配时报错
-  - 多个精确同名匹配时报错
-
-控制面 RPC 也遵守同一规则。
-它不再接受一个未标注类型的 union `target` 字段，让 service 自己猜是 id 还是 name。
-
-### 6.7 每个 `FC_DATA_DIR` 只允许一个 service owner
-
-对同一个 `FC_DATA_DIR`，只允许一个正在运行的 `feishu-codex` service 实例持有所有权。
-
-合同是：
-
-- 所有权必须先于 adapter / control plane 启动建立
-- 第二个实例必须 fail-fast
-- control endpoint 不是所有权原语
-- owner 会写入包含 `owner_pid`、`owner_token`、`control_endpoint` 的元数据
-- 这份本地 owner metadata 含有本机控制令牌，必须按敏感本地状态处理；在 Windows 上，其保密性依赖当前用户目录与 NTFS ACL，而不是 POSIX `0600` 语义
-- 如果在拿到 owner 之后启动失败，所有已部分启动的 runtime 组件都必须先完整回滚，再释放 lease
-- 停止时只允许清理由同一个 owner token 仍持有的所有权元数据
-
-因此，`feishu-codex run` 前台直跑和通过 `feishu-codex start` 安装/启动的后台服务，
-不允许在同一个 `FC_DATA_DIR` 上并存。
-如果二者指向同一目录，后启动的一方必须直接退出，而不是尝试替换已发布的 control endpoint。
-
-### 6.8 实例作用域与全局协调
-
-多实例下，`feishu-codexctl` 的作用域需要明确拆成两层：
-
-- `instance list`
-  - 机器级
-  - 读取全局运行中实例注册表
-  - 不针对某一个目标实例
-- 其他子命令
-  - 实例级
-  - 作用于某一个运行中的 `feishu-codex` service
-  - 可通过 `--instance <name>` 显式选择
-  - 若调用方额外提供 preferred running instance（例如已知 thread id 的 `image send`），则先尝试该运行中实例
-  - 否则按 `unique-running -> default-running -> current-instance-paths` 规则解析
-  - 若多个运行中实例仍无唯一目标，则必须报错
-
-多实例下与 thread 可见性相关的正式合同是：
-
-- `default` 与命名实例共享同一套 persisted thread 命名空间
-- 飞书 `/threads` 与 `feishu-codexctl thread list --scope cwd` 都是在该命名空间上的当前目录视图
-- 飞书 `/resume`、`fcodex resume <thread_name>` 与按 thread 定位的控制面命令，都针对同一套全局 persisted thread 集合解析目标
-- 只有当路径真正需要服务内 binding 状态或 live runtime residency 时，实例边界才开始起作用
-
-机器级还有两份共享协调事实：
-
-- `InstanceRegistry`
-  - 记录当前有哪些运行中的实例，以及它们的 control endpoint / backend 入口
-  - 供 `fcodex` 与 `feishu-codexctl instance list` 做实例发现
-- `ThreadRuntimeLease`
-  - 记录某个 thread 当前由哪个实例持有 live backend runtime
-  - 允许同一实例为同一 thread 持有多个 holder
-  - 不允许不同实例同时 live attach 同一 thread
-
-跨实例 live runtime 流转的正式合同是：
-
-- 若当前 owner 实例可以立即 release Feishu runtime，则允许自动流转
-- 若当前 owner 实例仍在执行，或仍有待处理审批 / 输入，则必须明确拒绝
-- 若当前 owner 实例对该 thread 没有任何 Feishu binding，或仍有本地
-  `fcodex` 这类非 service holder，也必须明确拒绝；当前实现不会静默强抢
-  这份 live runtime
-- 不排队，不隐式强抢，不靠“最后一个 binding”猜测 owner
-
-这里的 `ThreadRuntimeLease` 是机器级 live runtime 事实。
-它不是飞书 chat binding，也不是 interaction owner 的替代物。
-
-## 7. 共享词汇，而不是强求命令同名
-
-本项目当前选择的是：
-
-- Feishu 端和本地管理端共享同一组状态词汇
-- 但不强求命令名、入口形态、交互方式完全同构
-
-这样做的原因是：
-
-- Feishu 天然是 chat-scoped
-- 本地管理 CLI 天然是 service / binding / thread scoped
-- `fcodex` wrapper 仍应保持“Codex 使用入口”的边界，不应兼任 Feishu 服务管理 CLI
-
-因此，当前架构里的三种入口分别是：
-
-- 飞书聊天命令：面向当前 chat binding
-- `fcodex`：面向 shared backend 的 Codex 使用入口
-- `feishu-codexctl`：面向运行中 Feishu 服务的本地管理入口
+任何代码、CLI 文案、帮助卡、结果卡、README、合同文档，如果继续把这些层混成 “release runtime residency” 这类单一概念，都应视为合同缺口并继续收紧。

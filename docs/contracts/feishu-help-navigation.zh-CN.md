@@ -1,145 +1,100 @@
-# 飞书 Help 导航合同
+# 飞书帮助导航合同
 
 英文原文：`docs/contracts/feishu-help-navigation.md`
 
-本文定义飞书侧 `/help` 的导航面合同。
+本文只定义 `/help` 与 `/commands` 相关的导航合同。
 
-它回答三件事：
+它回答：
 
-- 哪些命令应可从 `/help` 导航到达
-- 哪些命令刻意不放进 `/help`
-- 按钮 / 表单 与 slash 命令之间必须保持什么关系
+- `/help` 要暴露哪些主题页
+- 每个主题页要解决什么问题
+- 哪些命令刻意不走主导航
 
-如果实现与本文不一致，应把它视为合同缺口，并收紧实现、文档，或两者一起修正。
+## 1. 目标
 
-## 1. 范围
+`/help` 不是第二套完整文档，也不是所有命令的平铺清单。
 
-本文只描述飞书侧 help 与导航面。
+它的目标是渐进披露：
 
-它不重新定义：
+1. 先按用户眼前要解决的问题分组
+2. 再通过按钮或表单进入对应操作
+3. 把高级恢复 / 调试动作留给结果卡或纯文字命令
 
-- 线程生命周期
-- runtime 控制面语义
-- thread / profile 语义
-- 本地 `fcodex` 的 help
+## 2. 根导航
 
-这些内容分别以各自专题文档为准。
+`/help` 根卡固定暴露五个主题：
 
-## 2. 根结构
+- `当前会话`
+- `群聊`
+- `线程`
+- `运行时`
+- `身份`
 
-飞书 `/help` 是导航入口，不是平铺所有命令的总清单。
+它们对应的关注点分别是：
 
-`/help` 根卡片必须按如下顺序暴露五个一级入口：
+- `当前会话`
+  - `/status`
+  - `/preflight`
+  - `/cd`
+- `群聊`
+  - `/group`
+  - `/group-mode`
+  - 群聊协作边界
+- `线程`
+  - `/threads`
+  - `/new`
+  - `/resume`
+  - 当前线程页
+- `运行时`
+  - `/permissions`
+  - `/approval`
+  - `/sandbox`
+  - `/collab-mode`
+  - `/reset-backend`
+- `身份`
+  - `/whoami`
+  - `/bot-status`
+  - `/init`
 
-- `当前会话`，对应文字主题 `chat`
-- `群聊`，对应文字主题 `group`
-- `线程`，对应文字主题 `thread`
-- `运行时`，对应文字主题 `runtime`
-- `身份`，对应文字主题 `identity`
+## 3. 子页合同
 
-根卡片可以为这五个入口提供简短说明，但不应在根卡片上平铺全部命令。
+### 3.1 当前会话
 
-本地 `fcodex` 用法不属于飞书 `/help` 的独立页面；如有必要，只能在概览页或线程页里作为文字提示出现。
+必须提供：
 
-## 3. 导航可达性的定义
+- `/status` 按钮
+- `/preflight` 按钮
+- `/cd` 表单入口
 
-“从 `/help` 可达”指的是：进入 `/help` 后，可以经过一级或多级按钮到达某个能力。
+不要求暴露 `/pwd`。
 
-它不要求每个命令都直接出现在 `/help` 根卡片。
+### 3.2 线程
 
-当多级导航能显著减少拥挤、澄清职责时，应优先采用多级导航。
-
-## 4. 语义等价规则
-
-Help 按钮和表单的交互形态可以不同，但行为语义不能另起一套。
-
-因此：
-
-- 由按钮触发的命令，必须复用与 slash 命令相同的命令语义
-- 表单只能负责补齐参数，提交后仍必须回到同一条命令路径
-- `/help` 导航不能再写一份平行的业务实现
-
-允许不同的返回形态：
-
-- slash 命令可以发送新消息
-- 卡片动作可以更新当前卡片或弹 toast
-
-但底层操作、校验、scope guard、状态迁移必须等价。
-
-同时，help / 导航卡片的 payload 也必须保持最小且显式：
-
-- 路由键是 `action`
-- payload 里只放目标 action 实际会消费的参数
-- `plugin`、bot keyword 或其他部署标识字段不属于回调合同，路由时不得依赖它们
-
-## 5. 当前会话面
-
-`/help` 下的 `chat` 分支负责**当前 chat binding** 的状态与目录控制。
-
-它必须让下列能力可达：
-
-- `/status`
-- `/preflight`
-- `/cd <path>`，通过表单
-
-这个分支可以跳转到“线程”页，但不承担 thread 管理职责。
-
-这里的 `/status` 与 `/preflight` 仍然是 chat-scoped 命令：
-
-- 即使在群里触发，也仍按当前 chat binding 解释
-- 它们不等于全局 thread 管理入口
-
-## 6. 群聊面
-
-`/help` 下的 `group` 分支负责群聊专属规则与控制项。
-
-它必须让下列能力可达：
-
-- `/group`
-- `/group-mode`
-
-`group` 页的文字说明应覆盖：
-
-- 群默认是“未激活”
-- `/group activate` 与 `/group deactivate` 的用途
-- `assistant`、`mention-only`、`all` 三种群聊工作态
-- 群成员日常使用、共享状态管理、审批卡片处理三者的权限边界
-
-如果实现保留 `/group` 状态卡和 `/group-mode` 状态卡上的后续按钮，
-那么 `/group activate`、`/group deactivate`、`/group-mode <mode>` 也属于
-“从 `/help` 可达”的能力，只是它们不要求直接铺在 help 页面上。
-
-## 7. 线程面
-
-`/help` 下的 `thread` 分支负责 thread 浏览、创建、恢复与当前线程管理。
-
-它必须让下列能力可达：
+必须提供：
 
 - `/threads`
 - `/new`
-- `/resume <thread_id|thread_name>`，通过表单
-- 一个“当前线程”页面，用于当前绑定 thread 的操作
+- `/resume` 表单
+- `当前线程` 二级页
 
-“当前线程”页面应覆盖：
+### 3.3 当前线程
 
-- `/profile [name]`
-- 当前线程的 `/rename <title>`，通过表单
-- 当前线程的 `/archive`
+必须提供：
 
-这里的“当前线程”页，仍然是**当前绑定 thread** 的操作入口，不是全局 thread 管理页。
+- `/profile`
+- `/archive`
+- `/detach`
+- `重命名` 表单入口
 
-现有 `/threads` 卡片继续作为“当前目录线程浏览 + 已列线程的 resume / archive 入口”。
+并且正文里要明确：
 
-`/release-runtime` 当前明确不要求从 `/help` 作为一等导航能力暴露：
+- `/attach [binding|thread|service]` 是高级恢复动作
+- 如果只是为了 re-profile，应优先走 `/profile`
+- 本地高级排障可用 `feishu-codexctl thread detach --thread-id <thread_id>`
 
-- re-profile 的主路径应由 `/profile [name]` 承担
-- 如需排障或本地管理，可以在文字说明中提示 `feishu-codexctl`，但不要求独立 help 按钮
+### 3.4 运行时
 
-## 8. 运行时面
-
-`/help` 下的 `runtime` 分支负责当前飞书会话的运行时设置，以及当前实例 backend 的实例级控制。
-
-它必须让下列能力可达：
+必须提供：
 
 - `/permissions`
 - `/approval`
@@ -147,62 +102,65 @@ Help 按钮和表单的交互形态可以不同，但行为语义不能另起一
 - `/collab-mode`
 - `/reset-backend`
 
-`/profile` 不属于这一层。它是当前 thread 的属性，必须留在“线程 -> 当前线程”路径下。
+并且正文里要明确：
 
-## 9. 身份面
+- reset 完成后，如需继续收到推送，可使用 `/attach [binding|thread|service]`
+- 更常见的入口是 reset 结果卡里的 attach 按钮
 
-`/help` 下的 `identity` 分支负责身份与 bootstrap。
+### 3.5 身份
 
-它必须让下列能力可达：
+必须提供：
 
 - `/whoami`
 - `/bot-status`
-- `/init <token>`，通过表单
+- `/init` 表单入口
 
-`/debug-contact <open_id>` 不属于常规 help 导航面，不要求从 `/help` 可达。
+并明确：
 
-## 10. 明确不纳入 `/help` 导航的命令
+- `/whoami` 和 `/init` 只支持私聊
 
-下列能力当前明确不要求从飞书 `/help` 导航到达：
+## 4. `/commands` 的角色
+
+`/commands` 是纯文字命令索引。
+
+它的责任是：
+
+- 用文字列出常用命令
+- 与 `/help` 的分组保持一致
+
+它不是：
+
+- 第二套导航卡
+- 所有调试命令的穷举列表
+
+## 5. 刻意不走主导航的命令
+
+下列命令当前不要求从 `/help` 根导航直达：
 
 - `/commands`
 - `/h`
-- `/cancel`
 - `/pwd`
-- `/release-runtime`
-- `/re-attach [binding|thread|service]`
-- `/debug-contact <open_id>`
-- 本地 `fcodex` wrapper 命令
+- `/cancel`
+- `/attach`
+- `/debug-contact`
 
-对应原因：
+原因：
 
-- `/commands` 是面向直接输入 slash 的文字速查入口，不应变成第二套 help 导航树
-- `/h` 只是 `/help` 别名
-- `/cancel` 已经有执行卡片上的主入口
-- `/pwd` 的信息基本已被“无参数 `/cd`”覆盖
-- `/release-runtime` 已被刻意弱化；面向用户的主路径应优先走 `/profile`
-- `/re-attach` 是高级恢复命令；普通操作者应优先使用 `/reset-backend` 后直接给出的卡片按钮
-- `/debug-contact` 是排障命令，不属于常用导航面
-- 本地 wrapper 用法应留在本地 help，不属于飞书 help
+- `/commands` 与 `/h` 属于索引 / 别名
+- `/pwd` 已被无参数 `/cd` 弱化
+- `/cancel` 的主入口是执行卡按钮
+- `/attach` 属于恢复面，更适合由 reset 结果卡给出
+- `/debug-contact` 是管理员排障命令
 
-## 11. 权限与作用域语义
+`/detach` 虽然不是根导航命令，但它必须在“当前线程”页可见，因为它仍是用户能理解的会话级 thread 操作。
 
-从 `/help` 触发命令时，必须保留与 slash 命令完全一致的访问规则。
+## 6. 按钮权限
 
-包括：
+帮助卡本身允许在群里被翻页查看，但真正会变更状态的按钮 / 表单提交，仍必须在后续命令处理层执行权限检查。
 
-- 仅私聊命令
-- 仅群聊命令
-- 群管理员限制
-- 非管理员普通私聊默认拒绝
-- 但 `/whoami`、`/bot-status`、`/init <token>` 作为身份 / bootstrap 命令，必须仍可在私聊直接触发，不能先被通用“仅管理员私聊”守卫吞掉
+也就是说：
 
-如果某个 slash 命令在当前上下文下会被拒绝，那么通过 `/help` 触发同一操作时，也必须被拒绝。
+- 导航可被非管理员看到并不等于可越权执行
+- slash 命令与卡片动作的最终权限判定，必须以后端命令处理为准
 
-## 12. 关联文档
-
-相关合同见：
-
-- `docs/contracts/thread-profile-semantics.zh-CN.md`
-- `docs/contracts/runtime-control-surface.zh-CN.md`
-- `docs/contracts/feishu-thread-lifecycle.zh-CN.md`
+如果新增、删除、改名任何帮助页、按钮或表单入口，本文必须同步更新。

@@ -22,13 +22,15 @@ _SHARED_PREFLIGHT_COMMAND = get_shared_command("preflight")
 _SHARED_ARCHIVE_COMMAND = get_shared_command("archive")
 _SHARED_THREADS_COMMAND = get_shared_command("threads")
 _SHARED_RESUME_COMMAND = get_shared_command("resume")
+_SHARED_DETACH_COMMAND = get_shared_command("detach")
+_SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
 _LOCAL_THREAD_LIST_GLOBAL = "feishu-codexctl thread list --scope global"
 _LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <thread_id|thread_name>")
-_LOCAL_THREAD_UNSUBSCRIBE = feishu_visible_command_syntax(
-    "feishu-codexctl thread unsubscribe --thread-id <thread_id>"
+_LOCAL_THREAD_DETACH = feishu_visible_command_syntax(
+    "feishu-codexctl thread detach --thread-id <thread_id>"
 )
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
@@ -128,7 +130,7 @@ class CodexHelpDomain:
                 markdown=(
                     "作用对象：**当前 chat binding**。\n\n"
                     "- `/status`：查看当前目录、当前线程，以及当前会话设置摘要\n"
-                    f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`：dry-run 下一条普通消息与当前 chat 的 release 可用性，不启动 turn、不改 binding\n"
+                    f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`：dry-run 下一条普通消息与当前 chat 的 detach 可用性，不启动 turn、不改 binding\n"
                     f"- `{_CD_COMMAND}`：切换当前目录并清空当前线程绑定\n"
                     "- 无参数 `/cd` 等价于查看当前目录；`/pwd` 不再作为主导航入口\n"
                     "- 执行中如需停止，直接使用执行卡片里的“取消执行”\n\n"
@@ -258,12 +260,13 @@ class CodexHelpDomain:
                     "作用对象：**当前绑定 thread**。\n\n"
                     f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`：查看或切换当前 thread 的 resume profile；必要时会提供 reset backend 路径\n"
                     f"- `{_RENAME_COMMAND}`：重命名当前线程\n"
-                    f"- `{_SHARED_ARCHIVE_COMMAND.slash_name}`：归档当前线程\n\n"
+                    f"- `{_SHARED_ARCHIVE_COMMAND.slash_name}`：归档当前线程\n"
+                    f"- `{_SHARED_DETACH_COMMAND.feishu_usage}`：让当前 chat 暂停接收该 thread 的飞书推送，但保留 bookmark\n"
+                    f"- `{_SHARED_ATTACH_COMMAND.feishu_usage}`：按 binding / thread / service 范围恢复飞书推送\n\n"
                     "如果当前没有绑定线程，相关命令会按 slash 语义返回明确提示。\n\n"
-                    "通常不需要在飞书侧主动理解 `/release-runtime`。\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}` 走现有路径；"
                     "需要排障或本地管理时，再用 "
-                    f"`{_LOCAL_THREAD_UNSUBSCRIBE}`。"
+                    f"`{_LOCAL_THREAD_DETACH}`。"
                 ),
                 action_rows=(
                     _HelpActionRowSpec(
@@ -278,12 +281,20 @@ class CodexHelpDomain:
                                 command="/archive",
                                 title="Codex 归档线程",
                             ),
-                            _HelpPageButtonSpec(label="重命名", page="thread-rename-current-form"),
+                            _HelpCommandButtonSpec(
+                                label=_SHARED_DETACH_COMMAND.slash_name,
+                                command=_SHARED_DETACH_COMMAND.slash_name,
+                                title="Codex 已暂停飞书推送",
+                            ),
                         ),
                         layout="trisection",
                     ),
                     _HelpActionRowSpec(
-                        buttons=(_HelpPageButtonSpec(label="返回线程", page="thread"),),
+                        buttons=(
+                            _HelpPageButtonSpec(label="重命名", page="thread-rename-current-form"),
+                            _HelpPageButtonSpec(label="返回线程", page="thread"),
+                        ),
+                        layout="bisected",
                     ),
                 ),
             ),
@@ -340,6 +351,7 @@ class CodexHelpDomain:
                     "- `/approval`、`/sandbox`：单独调整审批或沙箱\n"
                     "- `/collab-mode`：切换当前飞书会话后续 turn 的协作模式\n"
                     f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`：管理员预览并重置当前实例 backend；这是实例级管理动作，不是当前 thread 命令\n"
+                    f"- 重置后若要继续收到推送，可使用 `{_SHARED_ATTACH_COMMAND.feishu_usage}`，或直接点结果卡里的 attach 按钮\n"
                     "- 如果当前正在执行，新设置从下一轮生效。"
                 ),
                 action_rows=(
@@ -608,7 +620,9 @@ class CodexHelpDomain:
                 f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
-                f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"
+                f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_DETACH_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_ATTACH_COMMAND.feishu_usage}`\n\n"
                 "`运行时`\n"
                 "- `/permissions [read-only|default|full-access]`\n"
                 "- `/approval [untrusted|on-request|never]`\n"

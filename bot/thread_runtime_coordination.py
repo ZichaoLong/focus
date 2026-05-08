@@ -95,7 +95,7 @@ def acquire_thread_runtime_holder_or_raise(
         target_service_token=holder.owner_service_token,
     )
     try:
-        _remote_unsubscribe_thread(owner_entry, thread_id)
+        _remote_detach_thread(owner_entry, thread_id)
     except Exception:
         lease_store.clear_transfer_reservation(
             thread_id,
@@ -183,7 +183,7 @@ def preview_thread_runtime_holder_acquire_conflict(
             reason_code=PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             reason_text=build_runtime_lease_conflict_message(
                 current,
-                reason=f"无法确认 owner 实例是否可立即释放 runtime：{exc}",
+                reason=f"无法确认 owner 实例是否可立即 detach 飞书推送：{exc}",
             ),
         )
 
@@ -206,7 +206,7 @@ def preview_thread_runtime_holder_acquire_conflict(
             reason_code=PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             reason_text=build_runtime_lease_conflict_message(
                 current,
-                reason=f"owner 实例当前不能立即释放 runtime：{owner_status['unsubscribe_reason']}",
+                reason=f"owner 实例当前不能立即 detach 飞书推送：{owner_status['unsubscribe_reason']}",
             ),
         )
 
@@ -282,12 +282,12 @@ def _remote_owner_thread_status(owner: InstanceRegistryEntry, thread_id: str) ->
         "unsubscribe_reason": str(payload.get("unsubscribe_reason", "") or "").strip(),
     }
 
-def _remote_unsubscribe_thread(owner: InstanceRegistryEntry, thread_id: str) -> dict:
+def _remote_detach_thread(owner: InstanceRegistryEntry, thread_id: str) -> dict:
     try:
         return control_request(
             pathlib.Path(owner.data_dir),
-            "thread/unsubscribe",
+            "thread/detach",
             {"thread_id": thread_id},
         )
     except ServiceControlError as exc:
-        raise RuntimeError(f"无法释放 owner 实例 `{owner.instance_name}` 的 Feishu runtime：{exc}") from exc
+        raise RuntimeError(f"无法让 owner 实例 `{owner.instance_name}` detach 飞书推送：{exc}") from exc

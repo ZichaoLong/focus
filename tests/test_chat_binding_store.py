@@ -172,7 +172,7 @@ class ChatBindingStoreTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self.assertRaisesRegex(ValueError, "feishu_runtime_state must be attached or released"):
+        with self.assertRaisesRegex(ValueError, "feishu_runtime_state must be attached or detached"):
             store.load(("ou_user", "oc_p2p"))
 
     def test_store_ignores_legacy_write_owner_field(self) -> None:
@@ -205,7 +205,7 @@ class ChatBindingStoreTests(unittest.TestCase):
         loaded = store.load(("ou_user", "oc_p2p"))
 
         assert loaded is not None
-        self.assertEqual(loaded["feishu_runtime_state"], "released")
+        self.assertEqual(loaded["feishu_runtime_state"], "detached")
         self.assertNotIn("current_thread_write_owner_thread_id", loaded)
 
     def test_store_rejects_runtime_state_without_thread_id(self) -> None:

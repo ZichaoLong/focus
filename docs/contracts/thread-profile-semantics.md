@@ -1,198 +1,92 @@
-# Threads, Resume, and Profile Semantics
+# Thread Profile Semantics
 
 Chinese original: `docs/contracts/thread-profile-semantics.zh-CN.md`
 
-See also:
+This file defines only the contract for thread-wise profile behavior.
 
-- `docs/contracts/local-command-and-thread-profile-contract.md`
-- `docs/contracts/runtime-control-surface.md`
-- `docs/decisions/shared-backend-resume-safety.md`
+## 1. Basic fact
 
-This document describes the active semantics across three layers:
+- profile is **thread-wise**, not binding-wise
+- when a thread is resumed from any frontend, the same thread-wise profile should be observed
+- the project no longer keeps an “instance-level default profile” as a user-facing concept
 
-1. Feishu commands
-2. local `fcodex` / `feishu-codexctl`
-3. upstream Codex commands after entering the TUI
+## 2. When direct mutation is allowed
 
-If older docs still describe `fcodex` shell slash self-commands, this document wins.
+A thread-wise profile may be written directly only when the thread is **verifiably globally unloaded**.
 
-## 1. Feishu Semantics
+That requires at least:
 
-### `/threads`
-
-- scope: current directory
-- provider behavior: cross-provider aggregation
-- all instances: current backend's current-directory threads
-
-### `/resume <thread_id|thread_name>`
-
-- supports exact `thread_id`
-- also supports exact `thread_name`
-- provider behavior: cross-provider
-- all instances: backend-global
-- zero matches error; multiple exact-name matches also error
-
-### `/new`
-
-- immediately creates a new thread and switches the chat binding to it
-- does not apply any instance-local default profile seed
-- the new thread starts with no thread-wise profile override unless the user
-  later changes it explicitly through `/profile` or a local `fcodex -p` seed on
-  the creating launch
-
-### `/profile [name]`
-
-- target: the currently bound thread
-- if no thread is bound, reject directly
-- writes are allowed only when the target thread is verifiably globally
-  unloaded
-- loaded threads still under the current instance's control are not hot-switched;
-  instead, Feishu offers an “apply and reset the current instance backend” path
-- force-reset-only cases must show explicit blocking diagnostics and require
-  admin/operator confirmation
-- if the live runtime owner belongs to another instance, or the current
-  instance does not support backend reset, the request is hard-blocked
-
-### `/reset-backend`
-
-- target: the current instance backend, not the current thread
-- admin-only
-- preview first; execution must require explicit confirmation
-- uses the same instance-scoped backend-reset semantics that `/profile` may
-  rely on for re-profile recovery
-- exists so operators can clear stale loaded / pending runtime state even when
-  they are not currently changing a thread profile
-- after a successful reset, related Feishu bindings stay `bound` but become
-  `released`
-- the result card should offer:
-  - re-attach current thread
-  - re-attach current instance
-  - keep released
-
-### `/re-attach [binding|thread|service]`
-
-- advanced admin-only runtime-recovery command
-- default scope is `binding`
-- `binding`: reattach only the current chat binding
-- `thread`: reattach all released bindings that currently point to the same
-  thread as the current chat binding
-- `service`: reattach all reattachable released bindings in the current
-  instance
-- it exists so operators can restore push delivery after `reset-backend`
-  without waiting for the next prompt or `/resume`
-
-### `/release-runtime`
-
-- target: the thread currently bound by the chat
-- releases Feishu-side runtime residency on that thread
-- does not clear the binding, delete the thread, or archive it
-- exact state vocabulary is defined in `docs/contracts/runtime-control-surface.md`
-
-## 2. Local Command Surface
-
-### `fcodex`
-
-`fcodex` is now a thin wrapper and no longer exposes shell slash self-commands.
-
-The repository-specific surface it still owns is limited to:
-
-1. enhanced `resume` routing and name resolution
-2. thread-wise `-p/--profile` integration
-
-That means shell-level support is removed for:
-
-- `fcodex /help`
-- `fcodex /threads`
-- `fcodex /profile`
-- `fcodex /archive`
-- `fcodex /resume`
-- `fcodex --dry-run ...`
-
-### `fcodex resume <thread_id|thread_name>`
-
-- `thread_id`: resume directly on the selected instance shared backend
-- `thread_name`: do cross-provider exact-name resolution first, then resume by thread id
-- multi-instance routing still follows runtime-lease safety rules
-- local resolution is operator-local; live-attach safety is enforced later by runtime-lease acquisition
-
-### `fcodex -p <profile>`
-
-- when this launch is opening a new session rather than resuming:
-  - `-p` is passed through to upstream Codex
-  - it also becomes a one-time seed for the first new thread created by this launch
-- that seed is written only after the first successful `thread/start`
-- if no thread is ever created, no thread-wise record is persisted
-- ownership is explicit:
-  - wrapper chooses whether this launch carries a seed
-  - proxy persists that seed only after a real `thread_id` is returned
-
-### `fcodex -p <profile> resume <thread>`
-
-- if the target thread is verifiably globally unloaded:
-  - write the thread-wise resume profile for that thread
-  - then resume it
-- otherwise:
-  - reject directly
-  - tell the user to run Feishu `/release-runtime` or local
-    `feishu-codexctl thread unsubscribe`
-  - and close any other open `fcodex` TUIs on that thread
-
-### `fcodex resume <thread>` without explicit `-p`
-
-- if the thread already has saved thread-wise profile state, inject it automatically
-- if it does not, do not inject any profile fallback
-
-### `feishu-codexctl`
-
-`feishu-codexctl` is the local discovery / inspection / admin surface.
-
-It owns:
-
-- `service status`
-- `service reset-backend`
-- `service reattach`
-- `thread list --scope cwd|global`
-- `thread status`
-- `thread bindings`
-- `thread archive`
-- `thread reattach`
-- `thread unsubscribe`
-- `binding list/status/clear`
-- `binding reattach`
-
-It is not a second Codex frontend and does not enter the TUI.
-
-## 3. TUI-Inside Semantics
-
-Once inside a running `fcodex` TUI:
-
-- `/help` is upstream Codex `/help`
-- `/resume` is upstream Codex `/resume`
-- `/new` is upstream Codex `/new`
-- all other commands are upstream semantics too
+- no attached Feishu binding on the thread
+- no live runtime lease on the thread
+- backend confirmation that the thread is not loaded
 
 Therefore:
 
-- TUI `/resume` is not Feishu `/resume`
-- TUI `/resume` is not `fcodex resume <thread_name>`
-- shared backend means shared live thread state, not one globally synchronized settings surface across clients
+- detached alone is not enough
+- closing one Feishu chat is not enough
+- an open local `fcodex` session is usually not enough either
 
-## 4. Profile Summary
+## 3. Feishu-side `/profile [name]`
 
-The active model is:
+`/profile` is the formal profile-management entry point for the current thread.
 
-- Feishu `/profile` changes the next-resume config of the currently bound thread
-- `fcodex -p <profile>` on a new session only seeds the first new thread created by that launch
-- `fcodex -p <profile> resume <thread>` changes that thread's persisted resume config
-- future resume reads only the thread's own thread-wise config
-- wrapper and proxy do not co-own the same write path:
-  - wrapper owns existing-thread read/write behavior and decides whether an
-    explicit `-p` launch carries a first-thread seed
-  - proxy owns one-time persistence of the first new-thread seed
+It has three outcomes:
 
-## 5. Multi-Instance Visibility
+1. direct write
+   - the thread is already verifiably globally unloaded
+2. offer “apply and reset backend”
+   - the thread is not directly writable yet, but the current instance can converge through reset-backend
+3. fail closed
+   - live runtime is owned by another instance, or the current instance cannot safely reset
 
-- all instances share one persisted thread namespace
-- Feishu `/threads` and `feishu-codexctl thread list --scope cwd` are current-directory views over that namespace
-- Feishu `/resume`, `fcodex resume <thread_name>`, and thread-targeted local admin commands resolve against the same global persisted thread set
-- runtime-lease routing and transfer safety are defined in `docs/decisions/shared-backend-resume-safety.md`
+## 4. State after reset-backend
+
+When backend reset is triggered from `/profile`:
+
+- binding bookmarks stay
+- related Feishu bindings become `detached`
+- the thread-wise profile/provider is persisted immediately once the write succeeds
+- continued Feishu push is not automatically guaranteed
+
+The result card must offer:
+
+- `Attach Current Thread`
+- `Attach Current Instance`
+- `Keep Detached`
+
+## 5. Relationship to `/attach` and `/detach`
+
+- `/detach`
+  - only pauses Feishu push for a chat
+  - does not imply the thread is globally unloaded
+- `/attach`
+  - only restores Feishu push
+  - does not change thread-wise profile
+
+So:
+
+- profile management and attach/detach are different state axes
+
+## 6. Local `fcodex -p`
+
+`fcodex resume <thread> -p <profile>` may rewrite profile only when the thread is not currently loaded.
+
+If the thread is still loaded, the command should reject clearly and tell the user:
+
+- removing `-p/--profile` is the direct way to enter the current session
+- if the goal is to change profile, wait until the thread is verifiably globally unloaded
+- the common alternative is Feishu `/profile <name>` plus the reset-backend flow
+
+## 7. Old mental models that are no longer valid
+
+These statements are no longer accurate:
+
+- “release runtime first, then change profile”
+- “unsubscribe always makes the profile writable”
+- “the instance has its own default profile that affects existing threads”
+
+The accurate contract is:
+
+- profile is thread-wise
+- writability depends on verifiable global unload
+- if that condition is not met, the system should converge through reset-backend rather than forcing the user to reason about more low-level actions

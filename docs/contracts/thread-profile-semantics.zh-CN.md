@@ -1,192 +1,92 @@
-# Threads、Resume 与 Profile 语义
+# Thread Profile 语义
 
 英文原文：`docs/contracts/thread-profile-semantics.md`
 
-另见：
+本文只定义 thread-wise profile 的生效与切换合同。
 
-- `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
-- `docs/contracts/runtime-control-surface.zh-CN.md`
-- `docs/decisions/shared-backend-resume-safety.zh-CN.md`
+## 1. 基本事实
 
-本文描述当前已收口的三层语义：
+- profile 是 **thread-wise** 状态，不是 binding-wise 状态。
+- 一个 thread 在任意前端重新 resume 时，都应看到同一个 thread-wise profile。
+- 当前项目不再保留“实例级默认 profile”这一层用户概念。
 
-1. 飞书命令面
-2. 本地 `fcodex` / `feishu-codexctl` 命令面
-3. 进入 TUI 后的 upstream Codex 命令面
+## 2. 何时能直接改
 
-如果旧文档仍把 `fcodex` shell 层写成一组 slash 自命令，以本文为准。
+thread-wise profile 只有在 thread **verifiably globally unloaded** 时，才允许直接写入。
 
-## 1. 飞书侧语义
+这要求至少同时满足：
 
-### `/threads`
+- 当前 thread 没有 attached 的 Feishu binding
+- 当前 thread 没有 live runtime lease
+- backend 侧已确认该 thread 不在内存
 
-- 作用范围：当前目录
-- provider：跨 provider 聚合
-- 所有实例：都看当前 backend 的当前目录线程
+所以：
 
-### `/resume <thread_id|thread_name>`
+- 单纯 `detached` 不够
+- 只关掉一个飞书会话不够
+- 本地 `fcodex` 仍开着时通常也不够
 
-- 支持精确 `thread_id`
-- 也支持精确 `thread_name`
-- provider：跨 provider
-- 所有实例：都看 backend 全局
-- 0 个匹配报错；多个同名精确匹配也报错
+## 3. 飞书侧 `/profile [name]`
 
-### `/new`
+`/profile` 是当前 thread 的正式 profile 管理入口。
 
-- 立即创建新 thread，并把当前 chat binding 切到这个 thread
-- 不再注入任何实例级默认 profile seed
-- 新 thread 初始没有 thread-wise profile override；只有后续显式 `/profile`
-  或本地 `fcodex -p` 创建时的一次性 seed 才会写入
+它有三类结果：
 
-### `/profile [name]`
+1. 直接写入
+   - 当前 thread 已 verifiably globally unloaded
+2. 提供 “应用并重置 backend”
+   - 当前 thread 还没满足直接写入条件，但当前实例可通过 reset-backend 收口
+3. fail-closed
+   - live runtime 由别的实例持有，或当前实例无法安全重置
 
-- 作用对象：当前绑定 thread
-- 没有绑定 thread 时直接拒绝
-- 只有目标 thread verifiably globally unloaded 时才允许修改
-- 对当前实例自己仍控制的 loaded thread，不做热切；而是提供“应用并 reset 当前实例 backend”路径
-- 对需要 force reset 的情况，必须显式展示阻塞诊断，并要求管理员 / 操作者确认
-- 对 live runtime owner 在别的实例、或当前实例不支持 reset backend 的情况，直接 blocked
+## 4. reset-backend 后的状态
 
-补充约束：
+通过 `/profile` 触发 backend reset 后：
 
-- 若当前绑定 thread 只是 `/new` 后尚未 materialize 的临时 thread，则它虽然有 `thread_id`，但 upstream 仍不能 `resume`
-- 因此，当 `/profile <name>` 走“应用并 reset backend”路径时，不能继续保留这个临时 thread 作为当前绑定目标
-- 正确行为是：reset 完成后，按目标 `profile` 新建 replacement thread，并把当前 chat binding 切到这个新 thread
-- 这样 `/new` 后立刻 re-profile，再发送第一条普通消息，能直接在新 profile 下开始第一轮对话，而不会卡在一个不可恢复的空壳 thread 上
+- binding bookmark 保留
+- 相关 Feishu binding 会变成 `detached`
+- thread-wise profile/provider 写入成功后立即持久化
+- 不自动保证继续接收飞书推送
 
-### `/reset-backend`
+结果卡必须给用户明确选项：
 
-- 作用对象：当前实例 backend，不是当前 thread
-- 只允许管理员
-- 先预览，真正执行必须显式确认
-- 与 `/profile` 触发的 re-profile 恢复路径，共享同一套实例级 backend-reset 语义
-- 它存在的原因是：即使当前并不是为了切 profile，操作者也仍可能需要清理卡住的 loaded / pending runtime 状态
-- reset 成功后，相关 Feishu binding 仍保持 `bound`，但会变成 `released`
-- 结果卡片应直接提供：
-  - 重附着当前线程
-  - 重附着当前实例
-  - 保持 released
+- `附着当前线程`
+- `附着当前实例`
+- `保持 detached`
 
-### `/re-attach [binding|thread|service]`
+## 5. `/attach` 与 `/detach` 的关系
 
-- 高级管理员运行时恢复命令
-- 默认作用域是 `binding`
-- `binding`：只重附着当前 chat binding
-- `thread`：重附着当前 chat binding 所在 thread 上的所有 released bindings
-- `service`：重附着当前实例内所有可恢复的 released bindings
-- 它的存在意义是：`reset-backend` 之后，操作者可不等待下一条普通消息或 `/resume`，直接恢复推送
+- `/detach`
+  - 只是暂停某个飞书会话接收推送
+  - 不等于 thread 已 globally unloaded
+- `/attach`
+  - 只是恢复推送
+  - 不修改 thread-wise profile
 
-### `/release-runtime`
+也就是说：
 
-- 作用对象：当前 chat binding 指向的 thread
-- 释放的是 Feishu 对该 thread 的 runtime residency
-- 不清 binding，不删 thread，不 archive thread
-- 更精确的状态词汇以 `docs/contracts/runtime-control-surface.zh-CN.md` 为准
+- profile 管理与 attach/detach 是两条不同状态轴
 
-## 2. 本地命令面
+## 6. 本地 `fcodex -p`
 
-### `fcodex`
+`fcodex resume <thread> -p <profile>` 只有在 thread 当前未 loaded 时才允许改写 profile。
 
-`fcodex` 现在是 thin wrapper，不再提供 shell 层 slash 自命令。
+如果 thread 仍 loaded，应明确拒绝，并告诉用户：
 
-它保留的仓库级能力只有两类：
+- 去掉 `-p/--profile` 可直接进入当前会话
+- 如果真要改 profile，应等待 thread verifiably globally unloaded
+- 常见替代路径是飞书 `/profile <name>` + reset-backend
 
-1. `resume` 的增强路由与名字解析
-2. `-p/--profile` 的 thread-wise 语义接入
+## 7. 不再支持的旧心智
 
-这意味着：
+以下说法当前都不准确：
 
-- 不再支持 `fcodex /help`
-- 不再支持 `fcodex /threads`
-- 不再支持 `fcodex /profile`
-- 不再支持 `fcodex /archive`
-- 不再支持 `fcodex /resume`
-- 不再支持 `fcodex --dry-run ...`
+- “先 release-runtime，再改 profile”
+- “只要 unsubscribe，profile 就一定可写”
+- “实例有自己的默认 profile，会影响现有 thread”
 
-### `fcodex resume <thread_id|thread_name>`
+当前准确说法是：
 
-- `thread_id`：按目标实例 shared backend 直接恢复
-- `thread_name`：先做跨 provider 精确名字匹配，再按 thread id 恢复
-- 多实例下，仍服从 runtime lease 与实例路由规则
-- 本地恢复目标解析是操作者视角；真正的 live attach 安全边界在后续 runtime lease 获取阶段
-
-### `fcodex -p <profile>`
-
-- 若这次启动不是 resume，而是准备新开会话：
-  - `-p` 会透传给 upstream Codex
-  - 同时作为**本次启动创建的第一个新 thread**的一次性 seed
-- 这个 seed 只在第一次 `thread/start` 成功后写入 thread-wise store
-- 如果这次启动根本没创建 thread，就不会落任何 thread-wise 记录
-- 职责边界是显式的：
-  - wrapper 决定这次启动是否携带 seed
-  - proxy 只在拿到真实 `thread_id` 后负责把这个 seed 落盘
-
-### `fcodex -p <profile> resume <thread>`
-
-- 若目标 thread verifiably globally unloaded：
-  - 允许写入该 thread 的 thread-wise resume profile
-  - 然后再恢复该 thread
-- 否则：
-  - 直接拒绝
-  - 提示先执行飞书 `/release-runtime`，或本地 `feishu-codexctl thread unsubscribe`
-  - 并关闭其他打开该 thread 的 `fcodex` TUI
-
-### `fcodex resume <thread>`（未显式 `-p`）
-
-- 如果 thread 已保存 thread-wise profile，则自动注入该 profile
-- 如果没有保存记录，则不再注入任何 profile fallback
-
-### `feishu-codexctl`
-
-`feishu-codexctl` 是本地查看 / 管理面。
-
-它负责：
-
-- `service status`
-- `service reset-backend`
-- `service reattach`
-- `thread list --scope cwd|global`
-- `thread status`
-- `thread bindings`
-- `thread archive`
-- `thread reattach`
-- `thread unsubscribe`
-- `binding list/status/clear`
-- `binding reattach`
-
-它不是第二个 Codex 前端，也不负责进入 TUI。
-
-## 3. TUI 内语义
-
-一旦进入运行中的 `fcodex` TUI：
-
-- `/help` 是 upstream Codex 的 `/help`
-- `/resume` 是 upstream Codex 的 `/resume`
-- `/new` 是 upstream Codex 的 `/new`
-- 其他命令也都按 upstream 语义解释
-
-因此：
-
-- TUI 内 `/resume` 不等同于飞书 `/resume`
-- TUI 内 `/resume` 不等同于 `fcodex resume <thread_name>`
-- shared backend 代表共享 live thread 状态，不代表所有前端存在一个即时同步的统一设置面
-
-## 4. Profile 语义总结
-
-应按下面理解：
-
-- 飞书 `/profile` 改的是当前绑定 thread 的下次 resume 配置
-- `fcodex -p <profile>` 新开会话时，只 seed 本次启动创建的第一个新 thread
-- `fcodex -p <profile> resume <thread>` 改的是该 thread 的持久化 resume 配置
-- 旧 thread 后续 resume 只读它自己的 thread-wise 配置
-- wrapper 与 proxy 不共同持有同一条写路径：
-  - wrapper 负责已有 thread 的读取 / 改写，并决定显式 `-p` 是否携带首个新 thread seed
-  - proxy 只负责第一个新 thread seed 的一次性持久化
-
-## 5. 多实例与可见性
-
-- 所有实例共享同一套 persisted thread 命名空间
-- 飞书 `/threads` 与 `feishu-codexctl thread list --scope cwd` 都是在该命名空间上的当前目录视图
-- 飞书 `/resume`、`fcodex resume <thread_name>` 与按 thread 定位的本地管理命令，都针对同一套全局 persisted thread 集合解析目标
-- runtime lease、实例选择与转移安全边界，见 `docs/decisions/shared-backend-resume-safety.zh-CN.md`
+- profile 是 thread-wise
+- 是否可写取决于 thread 是否 verifiably globally unloaded
+- 不满足时，应通过 reset-backend 路径收口，而不是要求用户手工理解更多低层动作

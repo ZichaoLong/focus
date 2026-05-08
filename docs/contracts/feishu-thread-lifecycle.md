@@ -34,14 +34,14 @@ For one Feishu chat, the following are different facts:
 The Feishu implementation uses `binding` as the chat-local source of truth.
 `loaded runtime` is a recoverable runtime fact, not the binding fact.
 
-In the current repo wording, Feishu now explicitly names “whether the service
-connection is still attached to that thread” as `feishu runtime`:
+In the current repo wording, Feishu now explicitly exposes this as the chat's
+Feishu push attachment state:
 
 - `attached`
   - the Feishu service is still subscribed to that thread
-- `released`
-  - the binding remains, but the Feishu service has explicitly released its own
-    runtime residency for that thread
+- `detached`
+  - the binding remains, but this Feishu chat is no longer receiving push for
+    that thread
 
 This is only a stricter name for the `subscription` fact. It does not change
 the requirement to keep it distinct from `binding` and `loaded runtime`.
@@ -79,7 +79,7 @@ flowchart TD
     B -->|send prompt| C[Bound thread, loaded, running]
     C -->|turn completed / idle status / thread closed| B
 
-    B -->|/release-runtime, connection loss, last subscriber leaves| D[Bound thread, unloaded]
+    B -->|/detach, connection loss, last subscriber leaves| D[Bound thread, unloaded]
     C -->|connection loss or missed terminal events| D
 
     D -->|next prompt -> turn/start succeeds| C
@@ -91,7 +91,7 @@ flowchart TD
 
 This diagram intentionally compresses several axes.
 The authoritative binding/runtime/backend transition table, including the
-pure-reject rule for `bound + released` prompts, lives in
+pure-reject rule for `bound + detached` prompts, lives in
 `docs/contracts/runtime-control-surface.md`.
 
 ## 5. Runtime Recovery Rules
@@ -239,7 +239,7 @@ thread-lifecycle layer itself:
 The following rules are closely related, but their formal ownership lives
 elsewhere:
 
-- pure-reject / reattach rules for prompts on `bound + released` bindings:
+- pure-reject / attach rules for prompts on `bound + detached` bindings:
   `docs/contracts/runtime-control-surface.md`
 - profile / provider resolution on unloaded-thread restore paths:
   `docs/contracts/thread-profile-semantics.md`

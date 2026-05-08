@@ -15,12 +15,15 @@ from typing import Any, TypedDict
 from bot.execution_transcript import ExecutionTranscript
 
 FEISHU_RUNTIME_ATTACHED = "attached"
-FEISHU_RUNTIME_RELEASED = "released"
+FEISHU_RUNTIME_DETACHED = "detached"
+# Back-compat alias for older internal imports; user-facing surfaces should use
+# "detached" terminology.
+FEISHU_RUNTIME_RELEASED = FEISHU_RUNTIME_DETACHED
 FEISHU_RUNTIME_NOT_APPLICABLE = "not-applicable"
 VALID_FEISHU_RUNTIME_STATES = frozenset(
     {
         FEISHU_RUNTIME_ATTACHED,
-        FEISHU_RUNTIME_RELEASED,
+        FEISHU_RUNTIME_DETACHED,
     }
 )
 
