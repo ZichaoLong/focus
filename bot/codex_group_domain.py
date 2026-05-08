@@ -21,6 +21,7 @@ from bot.stores.group_chat_store import GROUP_MODES
 class GroupDomainPorts:
     get_sender_display_name: Callable[..., str]
     get_message_context: Callable[[str], MessageContextPayload]
+    reply_text: Callable[..., bool]
     get_group_mode: Callable[[str], str]
     is_group_admin: Callable[[str], bool]
     get_group_activation_snapshot: Callable[[str], GroupActivationSnapshot]
@@ -34,6 +35,24 @@ class GroupDomainPorts:
 class CodexGroupDomain:
     def __init__(self, *, ports: GroupDomainPorts) -> None:
         self._ports = ports
+
+    @staticmethod
+    def _group_mode_violation_detail(mode: str, violation: str) -> str:
+        normalized_violation = str(violation or "").strip()
+        if not normalized_violation:
+            return ""
+        if str(mode or "").strip().lower() != "all":
+            return normalized_violation
+        lines = [
+            f"切换到 `all` 失败：{normalized_violation}",
+            "",
+            "请先在其他仍绑定当前 thread 的飞书会话里解除绑定，再回当前群聊重试。",
+            "可用方式：",
+            "1. 在那些会话里执行 `/new`，切到新 thread。",
+            "2. 或执行 `/cd <目录>`、`/resume <thread_id|thread_name>`，改绑到别的 thread。",
+            "3. 如果冲突的是另一个已处于 `all` 模式的群，也可先把对方切回 `assistant` 或 `mention-only`。",
+        ]
+        return "\n".join(lines)
 
     def _group_member_label(self, open_id: str) -> str:
         normalized_open_id = str(open_id or "").strip()
@@ -104,7 +123,7 @@ class CodexGroupDomain:
             return CommandResult(text="群聊工作态仅支持：`assistant`、`all`、`mention-only`")
         violation = self._ports.validate_group_mode_change(chat_id, mode, message_id)
         if violation:
-            return CommandResult(text=violation)
+            return CommandResult(text=self._group_mode_violation_detail(mode, violation))
         self._ports.set_group_mode(chat_id, mode)
         labels = {
             "assistant": "assistant",
@@ -155,7 +174,13 @@ class CodexGroupDomain:
             return make_card_response(toast="仅管理员可切换群聊工作态。", toast_type="warning")
         violation = self._ports.validate_group_mode_change(chat_id, mode, message_id)
         if violation:
-            return make_card_response(toast=violation, toast_type="warning")
+            detail = self._group_mode_violation_detail(mode, violation)
+            self._ports.reply_text(chat_id, detail, message_id=message_id)
+            return make_card_response(
+                card=self._group_mode_card(chat_id, open_id=operator_open_id),
+                toast="切换失败；已发送处理建议。",
+                toast_type="warning",
+            )
         self._ports.set_group_mode(chat_id, mode)
         return make_card_response(
             card=self._group_mode_card(chat_id, open_id=operator_open_id),

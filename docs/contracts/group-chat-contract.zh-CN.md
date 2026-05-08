@@ -85,6 +85,7 @@
 - 风险最高，容易刷屏
 - 发给 backend 时默认等价于单聊直转，不附带群历史上下文，也不额外包一层 `group turn`
 - 如果当前绑定 thread 已被其他飞书会话共享，`/group-mode all` 必须拒绝
+- 无论从 slash 命令还是卡片按钮切换到 `all` 被拒绝，都应给出可留存的处理建议，明确提示用户去其他仍绑定该 thread 的会话里执行 `/new`、`/cd` 或切到别的 thread
 - 一旦群聊处于 `all` 模式，该 thread 就进入 `all` 模式线程独占规则，不能再被其他飞书会话共享；更精确的 runtime 词汇与拒绝规则见 `docs/contracts/runtime-control-surface.zh-CN.md`
 
 ## 5. 群命令与共享状态规则

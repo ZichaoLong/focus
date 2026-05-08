@@ -6,6 +6,7 @@ from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 class _GroupPortsStub:
     def __init__(self) -> None:
         self.message_contexts = {"m-group": {"sender_open_id": "ou_admin"}}
+        self.replies: list[tuple[str, str, str]] = []
         self.group_modes = {"chat-group": "assistant"}
         self.group_activation = {
             "activated": False,
@@ -25,6 +26,10 @@ class _GroupPortsStub:
 
     def get_message_context(self, message_id: str) -> dict:
         return dict(self.message_contexts.get(message_id, {}))
+
+    def reply_text(self, chat_id: str, text: str, *, message_id: str = "") -> bool:
+        self.replies.append((chat_id, text, message_id))
+        return True
 
     def get_group_mode(self, chat_id: str) -> str:
         return self.group_modes.get(chat_id, "assistant")
@@ -72,6 +77,7 @@ def _make_domain(stub: _GroupPortsStub) -> CodexGroupDomain:
         ports=GroupDomainPorts(
             get_sender_display_name=stub.get_sender_display_name,
             get_message_context=stub.get_message_context,
+            reply_text=stub.reply_text,
             get_group_mode=stub.get_group_mode,
             is_group_admin=stub.is_group_admin,
             get_group_activation_snapshot=stub.get_group_activation_snapshot,
@@ -113,6 +119,39 @@ class CodexGroupDomainTests(unittest.TestCase):
 
         self.assertEqual(stub.activation_calls, [("chat-group", "ou_admin")])
         self.assertIn("已激活当前群聊", result.text)
+
+    def test_group_mode_command_rejecting_all_returns_actionable_detail(self) -> None:
+        stub = _GroupPortsStub()
+        stub.violation = "当前群聊处于 `all` 模式；该模式下线程不能与其他飞书会话共享。"
+        domain = _make_domain(stub)
+
+        result = domain.handle_group_mode_command("chat-group", "all", message_id="m-group")
+
+        self.assertIn("切换到 `all` 失败", result.text)
+        self.assertIn("/new", result.text)
+        self.assertIn("/cd <目录>", result.text)
+
+    def test_group_mode_card_action_rejecting_all_sends_persistent_reply(self) -> None:
+        stub = _GroupPortsStub()
+        stub.violation = "当前群聊处于 `all` 模式；该模式下线程不能与其他飞书会话共享。"
+        domain = _make_domain(stub)
+
+        response = self._unpack_response(
+            domain.handle_set_group_mode_action(
+                "chat-group",
+                "m-group",
+                {"mode": "all", "_operator_open_id": "ou_admin"},
+            )
+        )
+
+        self.assertEqual(response["toast"], "切换失败；已发送处理建议。")
+        self.assertEqual(response["toast_type"], "warning")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 群聊工作态")
+        self.assertEqual(len(stub.replies), 1)
+        self.assertEqual(stub.replies[0][0], "chat-group")
+        self.assertEqual(stub.replies[0][2], "m-group")
+        self.assertIn("切换到 `all` 失败", stub.replies[0][1])
+        self.assertIn("/resume <thread_id|thread_name>", stub.replies[0][1])
 
     def test_group_activation_card_action_can_deactivate_group(self) -> None:
         stub = _GroupPortsStub()

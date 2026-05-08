@@ -385,6 +385,7 @@ class CodexHandler(BotHandler):
             ports=GroupDomainPorts(
                 get_sender_display_name=lambda **kwargs: self.bot.get_sender_display_name(**kwargs),
                 get_message_context=lambda message_id: self.bot.get_message_context(message_id),
+                reply_text=self._reply_text,
                 get_group_mode=lambda chat_id: self.bot.get_group_mode(chat_id),
                 is_group_admin=lambda open_id: self.bot.is_group_admin(open_id=open_id),
                 get_group_activation_snapshot=lambda chat_id: self.bot.get_group_activation_snapshot(chat_id),

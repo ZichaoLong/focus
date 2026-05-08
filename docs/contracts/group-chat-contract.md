@@ -107,6 +107,10 @@ Those remain owned by their dedicated documents.
 - has the highest spam risk
 - `/group-mode all` must reject when the currently bound thread is already
   shared by other Feishu chats
+- when switching to `all` is rejected, both slash and card-button entry points
+  should produce a durable operator-facing message that explains how to clear
+  the other bindings, such as using `/new`, `/cd`, or switching those sessions
+  to another thread first
 - once a group is in `all` mode, that thread enters the `all`-mode thread
   exclusivity rule and must not be shared with other Feishu chats; for the
   exact runtime vocabulary and rejection rules, see

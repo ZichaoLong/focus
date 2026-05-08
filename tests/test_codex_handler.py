@@ -2205,6 +2205,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.get_group_mode("chat-group"), "assistant")
         self.assertIn("`all` 模式", bot.replies[-1][1])
         self.assertIn("不能与其他飞书会话共享", bot.replies[-1][1])
+        self.assertIn("/new", bot.replies[-1][1])
+        self.assertIn("/cd <目录>", bot.replies[-1][1])
 
     def test_group_mode_command_rejects_non_admin(self) -> None:
         handler, bot = self._make_handler()
@@ -2294,7 +2296,12 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(bot.get_group_mode("chat-group"), "assistant")
         self.assertEqual(response["toast_type"], "warning")
-        self.assertIn("不能与其他飞书会话共享", response["toast"])
+        self.assertEqual(response["toast"], "切换失败；已发送处理建议。")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 群聊工作态")
+        self.assertIn("切换到 `all` 失败", bot.reply_parents[-1][1])
+        self.assertIn("/new", bot.reply_parents[-1][1])
+        self.assertIn("/cd <目录>", bot.reply_parents[-1][1])
+        self.assertEqual(bot.reply_parents[-1][2], "m1")
 
     def test_group_activation_card_action_updates_group_status(self) -> None:
         handler, _ = self._make_handler()
