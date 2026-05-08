@@ -4612,6 +4612,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("常用命令列表", reply)
         self.assertIn("`/commands`", reply)
         self.assertIn("`/status`", reply)
+        self.assertIn("`/detach`", reply)
+        self.assertIn("`/attach [binding|thread|service]`", reply)
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
         self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
         self.assertIn("`/reset-backend`", reply)
@@ -4637,6 +4639,7 @@ class CodexHandlerTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("`/status`", content)
         self.assertIn("`/preflight`", content)
+        self.assertIn("`/detach` / `/attach`", content)
         self.assertIn(f"`{_DISPLAY_CD_COMMAND}`", content)
         self.assertIn("`/pwd` 不再作为主导航入口", content)
         action_elements = self._action_elements(card)
@@ -4646,7 +4649,21 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["线程", "返回帮助"],
+            ["/detach", "线程", "返回帮助"],
+        )
+
+    def test_help_chat_page_switches_toggle_to_attach_when_binding_detached(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        handler.handle_message("ou_user", "c1", "/help chat")
+
+        _, card = bot.cards[-1]
+        action_elements = self._action_elements(card)
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[1]["actions"]],
+            ["/attach", "线程", "返回帮助"],
         )
 
     def test_help_thread_page_mentions_resume_scope_and_local_resume(self) -> None:
@@ -4832,10 +4849,11 @@ class CodexHandlerTests(unittest.TestCase):
             _DISPLAY_LOCAL_THREAD_UNSUBSCRIBE,
             response["card"]["elements"][0]["content"],
         )
+        self.assertIn("“当前会话”页", response["card"]["elements"][0]["content"])
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/profile", "/archive", "/detach"],
+            ["/profile", "/archive"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],

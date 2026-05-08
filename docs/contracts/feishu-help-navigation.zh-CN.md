@@ -64,9 +64,15 @@
 
 - `/status` 按钮
 - `/preflight` 按钮
+- 一个动态推送切换动作
 - `/cd` 表单入口
 
 不要求暴露 `/pwd`。
+
+这个推送切换动作必须跟随当前 binding 状态：
+
+- 当前 binding 为 `attached` 时显示 `/detach`
+- 当前 binding 为 `detached` 时显示 `/attach`
 
 ### 3.2 线程
 
@@ -83,12 +89,11 @@
 
 - `/profile`
 - `/archive`
-- `/detach`
 - `重命名` 表单入口
 
 并且正文里要明确：
 
-- `/attach [binding|thread|service]` 是高级恢复动作
+- 推送开关属于“当前会话”页
 - 如果只是为了 re-profile，应优先走 `/profile`
 - 本地高级排障可用 `feishu-codexctl thread detach --thread-id <thread_id>`
 
@@ -152,7 +157,7 @@
 - `/attach` 属于恢复面，更适合由 reset 结果卡给出
 - `/debug-contact` 是管理员排障命令
 
-`/detach` 虽然不是根导航命令，但它必须在“当前线程”页可见，因为它仍是用户能理解的会话级 thread 操作。
+虽然 `/detach` 与 `/attach` 都不是根导航命令，但“当前会话”页必须把这个会话级推送切换动作显式给出来。
 
 ## 6. 按钮权限
 

@@ -64,9 +64,15 @@ Must provide:
 
 - a `/status` button
 - a `/preflight` button
+- a dynamic push-toggle action
 - a `/cd` form entry
 
 It does not need to expose `/pwd`.
+
+The push-toggle action must follow current binding state:
+
+- show `/detach` when the current binding is `attached`
+- show `/attach` when the current binding is `detached`
 
 ### 3.2 Thread
 
@@ -83,12 +89,11 @@ Must provide:
 
 - `/profile`
 - `/archive`
-- `/detach`
 - a `Rename` form entry
 
 Its body must also state:
 
-- `/attach [binding|thread|service]` is an advanced recovery action
+- push toggling belongs to the `Current Chat` page
 - if the goal is re-profiling, `/profile` is the preferred path
 - local advanced debugging may use `feishu-codexctl thread detach --thread-id <thread_id>`
 
@@ -151,7 +156,7 @@ Why:
 - `/attach` is a recovery surface and is better surfaced from reset result cards
 - `/debug-contact` is an admin debugging command
 
-`/detach` is also not a root help command, but it must remain visible on the `Current Thread` page because it is still a user-comprehensible session-scoped thread action.
+The `Current Chat` page must still make the session-scoped push toggle visible, even though neither `/detach` nor `/attach` is a root help command.
 
 ## 6. Button Permissions
 

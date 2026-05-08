@@ -405,6 +405,11 @@ class CodexHandler(BotHandler):
         )
         self._help_domain = CodexHelpDomain(
             local_thread_safety_rule=_LOCAL_THREAD_SAFETY_RULE,
+            get_runtime_state=lambda sender_id, chat_id, message_id="": self._get_runtime_state(
+                sender_id,
+                chat_id,
+                message_id,
+            ),
         )
         self._threads_ui_domain = CodexThreadsUiDomain(
             self,
@@ -1408,12 +1413,12 @@ class CodexHandler(BotHandler):
         return {
             "/help": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._help_domain.reply_help(
-                    chat_id, arg, message_id=message_id
+                    chat_id, arg, sender_id=sender_id, message_id=message_id
                 ),
             ),
             "/h": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._help_domain.reply_help(
-                    chat_id, arg, message_id=message_id
+                    chat_id, arg, sender_id=sender_id, message_id=message_id
                 ),
             ),
             "/commands": CommandRoute(

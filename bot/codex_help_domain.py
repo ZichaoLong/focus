@@ -13,6 +13,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 
 from bot.cards import CommandResult, make_card_response
 from bot.feishu_command_syntax import feishu_visible_command_syntax
+from bot.runtime_state import FEISHU_RUNTIME_DETACHED
 from bot.shared_command_surface import get_shared_command
 
 
@@ -84,8 +85,10 @@ class CodexHelpDomain:
         self,
         *,
         local_thread_safety_rule: str,
+        get_runtime_state,
     ) -> None:
         self._local_thread_safety_rule = local_thread_safety_rule
+        self._get_runtime_state = get_runtime_state
         self._page_specs = self._build_page_specs()
         self._page_aliases = self._build_page_aliases()
         self._form_specs_by_field = self._build_form_specs_by_field()
@@ -96,7 +99,7 @@ class CodexHelpDomain:
                 title="Codex 帮助",
                 markdown=(
                     # "从下面五个入口按作用对象进入，不需要先记住命令名。\n\n"
-                    "- `当前会话`：当前 chat 的状态、预检、目录切换\n"
+                    "- `当前会话`：当前 chat 的状态、预检、目录切换、本会话推送开关\n"
                     "- `群聊`：当前群的激活、工作态、管理员边界\n"
                     "- `线程`：新建、浏览、恢复、当前 thread 管理\n"
                     "- `运行时`：当前会话设置，以及当前实例 backend reset\n"
@@ -131,31 +134,11 @@ class CodexHelpDomain:
                     "作用对象：**当前 chat binding**。\n\n"
                     "- `/status`：查看当前目录、当前线程，以及当前会话设置摘要\n"
                     f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`：dry-run 下一条普通消息与当前 chat 的 detach 可用性，不启动 turn、不改 binding\n"
+                    f"- `{_SHARED_DETACH_COMMAND.feishu_usage}` / `{_SHARED_ATTACH_COMMAND.slash_name}`：切换当前会话是否接收当前 thread 的飞书推送\n"
                     f"- `{_CD_COMMAND}`：切换当前目录并清空当前线程绑定\n"
                     "- 无参数 `/cd` 等价于查看当前目录；`/pwd` 不再作为主导航入口\n"
                     "- 执行中如需停止，直接使用执行卡片里的“取消执行”\n\n"
                     "线程浏览、新建与恢复，请看“线程”页。"
-                ),
-                action_rows=(
-                    _HelpActionRowSpec(
-                        buttons=(
-                            _HelpCommandButtonSpec(label="/status", command="/status", title="Codex 当前状态"),
-                            _HelpCommandButtonSpec(
-                                label=_SHARED_PREFLIGHT_COMMAND.slash_name,
-                                command=_SHARED_PREFLIGHT_COMMAND.slash_name,
-                                title="Codex Preflight",
-                            ),
-                            _HelpPageButtonSpec(label="切换目录", page="chat-cd-form"),
-                        ),
-                        layout="trisection",
-                    ),
-                    _HelpActionRowSpec(
-                        buttons=(
-                            _HelpPageButtonSpec(label="线程", page="thread"),
-                            _HelpPageButtonSpec(label="返回帮助", page="overview"),
-                        ),
-                        layout="bisected",
-                    ),
                 ),
             ),
             "chat-cd-form": _HelpPageSpec(
@@ -261,8 +244,7 @@ class CodexHelpDomain:
                     f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`：查看或切换当前 thread 的 resume profile；必要时会提供 reset backend 路径\n"
                     f"- `{_RENAME_COMMAND}`：重命名当前线程\n"
                     f"- `{_SHARED_ARCHIVE_COMMAND.slash_name}`：归档当前线程\n"
-                    f"- `{_SHARED_DETACH_COMMAND.feishu_usage}`：让当前 chat 暂停接收该 thread 的飞书推送，但保留 bookmark\n"
-                    f"- `{_SHARED_ATTACH_COMMAND.feishu_usage}`：按 binding / thread / service 范围恢复飞书推送\n\n"
+                    "- 当前会话的飞书推送开关请到“当前会话”页\n\n"
                     "如果当前没有绑定线程，相关命令会按 slash 语义返回明确提示。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}` 走现有路径；"
                     "需要排障或本地管理时，再用 "
@@ -281,13 +263,8 @@ class CodexHelpDomain:
                                 command="/archive",
                                 title="Codex 归档线程",
                             ),
-                            _HelpCommandButtonSpec(
-                                label=_SHARED_DETACH_COMMAND.slash_name,
-                                command=_SHARED_DETACH_COMMAND.slash_name,
-                                title="Codex 已暂停飞书推送",
-                            ),
                         ),
-                        layout="trisection",
+                        layout="bisected",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
@@ -485,9 +462,73 @@ class CodexHelpDomain:
             row["layout"] = spec.layout
         return row
 
-    def _render_help_page(self, spec: _HelpPageSpec) -> dict:
+    @staticmethod
+    def _binding_push_toggle_button(feishu_runtime_state: str) -> _HelpCommandButtonSpec:
+        if str(feishu_runtime_state or "").strip() == FEISHU_RUNTIME_DETACHED:
+            return _HelpCommandButtonSpec(
+                label=_SHARED_ATTACH_COMMAND.slash_name,
+                command=_SHARED_ATTACH_COMMAND.slash_name,
+                title="Codex 已附着飞书推送",
+            )
+        return _HelpCommandButtonSpec(
+            label=_SHARED_DETACH_COMMAND.slash_name,
+            command=_SHARED_DETACH_COMMAND.slash_name,
+            title="Codex 已暂停飞书推送",
+        )
+
+    def _resolve_help_page_action_rows(
+        self,
+        page_id: str,
+        *,
+        sender_id: str = "",
+        chat_id: str = "",
+        message_id: str = "",
+    ) -> tuple[_HelpActionRowSpec, ...]:
+        if page_id != "chat":
+            spec = self._page_specs.get(page_id)
+            return spec.action_rows if spec is not None else ()
+        runtime_state = self._get_runtime_state(sender_id, chat_id, message_id)
+        toggle_button = self._binding_push_toggle_button(str(runtime_state.get("feishu_runtime_state", "") or ""))
+        return (
+            _HelpActionRowSpec(
+                buttons=(
+                    _HelpCommandButtonSpec(label="/status", command="/status", title="Codex 当前状态"),
+                    _HelpCommandButtonSpec(
+                        label=_SHARED_PREFLIGHT_COMMAND.slash_name,
+                        command=_SHARED_PREFLIGHT_COMMAND.slash_name,
+                        title="Codex Preflight",
+                    ),
+                    _HelpPageButtonSpec(label="切换目录", page="chat-cd-form"),
+                ),
+                layout="trisection",
+            ),
+            _HelpActionRowSpec(
+                buttons=(
+                    toggle_button,
+                    _HelpPageButtonSpec(label="线程", page="thread"),
+                    _HelpPageButtonSpec(label="返回帮助", page="overview"),
+                ),
+                layout="trisection",
+            ),
+        )
+
+    def _render_help_page(
+        self,
+        page_id: str,
+        spec: _HelpPageSpec,
+        *,
+        sender_id: str = "",
+        chat_id: str = "",
+        message_id: str = "",
+    ) -> dict:
         elements: list[dict[str, Any]] = [{"tag": "markdown", "content": spec.markdown}]
-        if spec.form is not None or spec.action_rows:
+        action_rows = self._resolve_help_page_action_rows(
+            page_id,
+            sender_id=sender_id,
+            chat_id=chat_id,
+            message_id=message_id,
+        )
+        if spec.form is not None or action_rows:
             elements.append({"tag": "hr"})
         if spec.form is not None:
             elements.append(
@@ -521,7 +562,7 @@ class CodexHelpDomain:
                     ],
                 }
             )
-        elements.extend(self._render_action_row(row) for row in spec.action_rows)
+        elements.extend(self._render_action_row(row) for row in action_rows)
         return {
             "config": {"wide_screen_mode": True, "update_multi": True},
             "header": {
@@ -531,14 +572,27 @@ class CodexHelpDomain:
             "elements": elements,
         }
 
-    def _build_help_card(self, page_or_alias: str) -> dict | None:
+    def _build_help_card(
+        self,
+        page_or_alias: str,
+        *,
+        sender_id: str = "",
+        chat_id: str = "",
+        message_id: str = "",
+    ) -> dict | None:
         page_id = self._resolve_page_id(page_or_alias)
         if not page_id:
             return None
         spec = self._page_specs.get(page_id)
         if spec is None:
             return None
-        return self._render_help_page(spec)
+        return self._render_help_page(
+            page_id,
+            spec,
+            sender_id=sender_id,
+            chat_id=chat_id,
+            message_id=message_id,
+        )
 
     def _build_form_specs_by_field(self) -> dict[str, _HelpFormSpec]:
         specs: dict[str, _HelpFormSpec] = {}
@@ -574,18 +628,18 @@ class CodexHelpDomain:
         message_id: str,
         action_value: dict[str, Any],
     ) -> P2CardActionTriggerResponse:
-        del sender_id
-        del chat_id
-        del message_id
-        card = self._build_help_card(str(action_value.get("page", "")))
+        card = self._build_help_card(
+            str(action_value.get("page", "")),
+            sender_id=sender_id,
+            chat_id=chat_id,
+            message_id=message_id,
+        )
         if card is None:
             return make_card_response(toast="未知帮助页面。", toast_type="warning")
         return make_card_response(card=card)
 
-    def reply_help(self, chat_id: str, topic: str = "", *, message_id: str = "") -> CommandResult:
-        del chat_id
-        del message_id
-        card = self._build_help_card(topic)
+    def reply_help(self, chat_id: str, topic: str = "", *, sender_id: str = "", message_id: str = "") -> CommandResult:
+        card = self._build_help_card(topic, sender_id=sender_id, chat_id=chat_id, message_id=message_id)
         if card is not None:
             return CommandResult(card=card)
         return CommandResult(
@@ -608,6 +662,8 @@ class CodexHelpDomain:
                 "`当前会话`\n"
                 "- `/status`\n"
                 f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_DETACH_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_ATTACH_COMMAND.feishu_usage}`\n"
                 "- `/cd [path]`\n\n"
                 "`群聊`\n"
                 "- `/group`\n"
@@ -621,8 +677,7 @@ class CodexHelpDomain:
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n"
-                f"- `{_SHARED_DETACH_COMMAND.feishu_usage}`\n"
-                f"- `{_SHARED_ATTACH_COMMAND.feishu_usage}`\n\n"
+                "\n"
                 "`运行时`\n"
                 "- `/permissions [read-only|default|full-access]`\n"
                 "- `/approval [untrusted|on-request|never]`\n"
