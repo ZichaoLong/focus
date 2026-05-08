@@ -5,10 +5,9 @@ Installation templates bundled with the Python package.
 from __future__ import annotations
 
 import pathlib
-import shlex
-import shutil
 
 import yaml
+from bot.codex_command_resolver import detect_stable_codex_command
 
 SYSTEM_YAML_TEMPLATE = """app_id: "your_cc_bot_app_id"
 app_secret: "your_cc_bot_app_secret"
@@ -50,8 +49,8 @@ CODEX_YAML_TEMPLATE = """# 默认工作目录；默认值：当前用户 Home �
 # default_working_dir: /path/to/workspace
 
 # Codex 可执行命令；默认值：codex
-# 首次安装时，如检测到 fnm 管理的 Codex，会自动把稳定启动命令写入真实 `codex.yaml`。
-# 如果通过 fnm 管理 Node，建议填写稳定安装路径，不要写 /run/user/.../fnm_multishells/... 这类临时 shim。
+# 首次安装时，如检测到 fnm / nvm 管理的 Codex，会自动把稳定启动命令写入真实 `codex.yaml`。
+# 如果通过 Node 版本管理器管理 Codex，建议填写稳定安装路径，不要写 /run/user/.../fnm_multishells/... 这类临时 shim。
 # codex_command: codex
 
 # app-server 连接模式；默认值：managed
@@ -152,96 +151,6 @@ CODEX_YAML_TEMPLATE = """# 默认工作目录；默认值：当前用户 Home �
 # card_log_limit: 8000
 """
 
-
-def _is_path_within(path: pathlib.Path, root: pathlib.Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def _resolve_existing_path(raw: str | None) -> pathlib.Path | None:
-    if not raw:
-        return None
-    path = pathlib.Path(raw).expanduser()
-    if not path.exists():
-        return None
-    return path.resolve()
-
-
-def _current_command_path(command: str) -> pathlib.Path | None:
-    resolved = shutil.which(command)
-    if not resolved:
-        return None
-    return pathlib.Path(resolved).expanduser()
-
-
-def _detect_fnm_root() -> pathlib.Path | None:
-    fnm_executable = _resolve_existing_path(shutil.which("fnm"))
-    if fnm_executable is not None:
-        return fnm_executable.parent
-
-    for command in ("codex", "node"):
-        current = _current_command_path(command)
-        if current is None:
-            continue
-        resolved = _resolve_existing_path(str(current))
-        if resolved is None:
-            continue
-        for candidate in (resolved, *resolved.parents):
-            if candidate.name == "node-versions":
-                return candidate.parent
-    return None
-
-
-def _looks_like_fnm_managed_command(current: pathlib.Path | None, resolved: pathlib.Path | None, fnm_root: pathlib.Path) -> bool:
-    if current is not None and "fnm_multishells" in current.parts:
-        return True
-    if current is not None and _is_path_within(current, fnm_root):
-        return True
-    return resolved is not None and _is_path_within(resolved, fnm_root)
-
-
-def detect_stable_codex_command() -> str | None:
-    current_codex = _current_command_path("codex")
-    current_node = _current_command_path("node")
-    resolved_codex = _resolve_existing_path(str(current_codex)) if current_codex is not None else None
-    resolved_node = _resolve_existing_path(str(current_node)) if current_node is not None else None
-    fnm_root = _detect_fnm_root()
-    if fnm_root is None:
-        return None
-
-    if not (
-        _looks_like_fnm_managed_command(current_codex, resolved_codex, fnm_root)
-        or _looks_like_fnm_managed_command(current_node, resolved_node, fnm_root)
-    ):
-        return None
-
-    default_installation_root = fnm_root / "aliases" / "default"
-    default_node_candidates = [
-        default_installation_root / "bin" / "node",
-        default_installation_root / "bin" / "node.exe",
-    ]
-    default_codex_candidates = [
-        default_installation_root / "bin" / "codex",
-        default_installation_root / "bin" / "codex.cmd",
-        default_installation_root / "bin" / "codex.exe",
-    ]
-    default_codex_js = default_installation_root / "lib" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
-
-    stable_node = next((candidate for candidate in default_node_candidates if candidate.exists()), resolved_node)
-    stable_codex = next(
-        (candidate for candidate in default_codex_candidates if candidate.exists()),
-        default_codex_js if default_codex_js.exists() else resolved_codex,
-    )
-    if stable_node is None or stable_codex is None:
-        return None
-    if not stable_node.exists() or not stable_codex.exists():
-        return None
-    return shlex.join([str(stable_node), str(stable_codex)])
-
-
 def _yaml_assignment_line(key: str, value: str) -> str:
     return yaml.safe_dump({key: value}, sort_keys=False, allow_unicode=True).strip()
 
@@ -255,7 +164,7 @@ def render_initial_codex_yaml() -> str:
         "# codex_command: codex",
         "\n".join(
             [
-                "# 已自动探测到稳定的 fnm Codex 启动命令；如需改回其他命令，可手动编辑。",
+                "# 已自动探测到稳定的 Node 管理器 Codex 启动命令；如需改回其他命令，可手动编辑。",
                 rendered_assignment,
                 "# codex_command: codex",
             ]

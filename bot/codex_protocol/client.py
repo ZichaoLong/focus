@@ -24,6 +24,7 @@ from websockets.sync.client import connect
 from bot.file_lock import acquire_file_lock, release_file_lock
 from bot.instance_layout import global_data_dir
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, uses_default_app_server_url
+from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -215,7 +216,10 @@ class CodexRpcClient:
 
     def _launch_managed_process_locked(self, listen_url: str) -> None:
         self._app_server_url = listen_url
-        cmd = [*shlex.split(self._codex_command), "app-server", "--listen", self._app_server_url]
+        effective_codex_command = resolve_managed_codex_command(self._codex_command)
+        if effective_codex_command != self._codex_command:
+            logger.info("默认 codex 命令不可用，回退到稳定启动命令: %s", effective_codex_command)
+        cmd = [*shlex.split(effective_codex_command), "app-server", "--listen", self._app_server_url]
         logger.info("启动 Codex app-server: %s", cmd)
         self._process = subprocess.Popen(
             cmd,

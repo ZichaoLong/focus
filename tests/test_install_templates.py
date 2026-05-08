@@ -39,16 +39,33 @@ class InstallTemplateTests(unittest.TestCase):
                 }
                 return mapping.get(name)
 
-            with patch("bot.install_templates.shutil.which", side_effect=_which):
+            with patch("bot.codex_command_resolver.shutil.which", side_effect=_which):
                 command = detect_stable_codex_command()
 
         self.assertEqual(command, shlex.join([str(stable_node), str(stable_codex)]))
+
+    def test_detect_stable_codex_command_supports_nvm_default_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            nvm_root = root / ".nvm"
+            version_root = nvm_root / "versions" / "node" / "v24.15.0" / "bin"
+            version_root.mkdir(parents=True)
+            (nvm_root / "alias").mkdir(parents=True)
+            stable_codex = version_root / "codex"
+            stable_codex.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            (nvm_root / "alias" / "default").write_text("v24.15.0\n", encoding="utf-8")
+
+            with patch.dict("os.environ", {"HOME": str(root)}, clear=False):
+                with patch("bot.codex_command_resolver.shutil.which", return_value=None):
+                    command = detect_stable_codex_command()
+
+        self.assertEqual(command, str(stable_codex))
 
     def test_render_initial_codex_yaml_embeds_detected_stable_command(self) -> None:
         with patch("bot.install_templates.detect_stable_codex_command", return_value="/stable/node /stable/codex"):
             rendered = render_initial_codex_yaml()
 
-        self.assertIn("已自动探测到稳定的 fnm Codex 启动命令", rendered)
+        self.assertIn("已自动探测到稳定的 Node 管理器 Codex 启动命令", rendered)
         self.assertIn("codex_command: /stable/node /stable/codex", rendered)
         active_lines = [
             line

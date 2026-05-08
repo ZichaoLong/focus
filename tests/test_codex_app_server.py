@@ -16,6 +16,7 @@ from pathlib import Path
 from bot import process_utils
 from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary, ThreadSummary
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
+from bot.codex_command_resolver import DEFAULT_CODEX_COMMAND
 from bot.codex_protocol.client import CodexRpcClient
 from bot.fcodex import (
     _default_data_dir,
@@ -636,6 +637,27 @@ class CodexRpcClientTests(unittest.TestCase):
         _, kwargs = mock_connect.call_args
         self.assertEqual(kwargs["open_timeout"], client._connect_timeout_seconds)
         self.assertIsNone(kwargs["max_size"])
+
+    def test_launch_managed_process_uses_resolved_stable_codex_command_when_default_missing(self) -> None:
+        client = CodexRpcClient(codex_command=DEFAULT_CODEX_COMMAND)
+
+        with patch(
+            "bot.codex_protocol.client.resolve_managed_codex_command",
+            return_value="/home/bot/.nvm/versions/node/v24.15.0/bin/codex",
+        ):
+            with patch("bot.codex_protocol.client.subprocess.Popen") as mock_popen:
+                client._launch_managed_process_locked("ws://127.0.0.1:8765")
+
+        launched = mock_popen.call_args.args[0]
+        self.assertEqual(
+            launched,
+            [
+                "/home/bot/.nvm/versions/node/v24.15.0/bin/codex",
+                "app-server",
+                "--listen",
+                "ws://127.0.0.1:8765",
+            ],
+        )
 
     def test_start_locked_reuses_existing_managed_process(self) -> None:
         client = CodexRpcClient()
