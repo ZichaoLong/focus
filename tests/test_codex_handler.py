@@ -17,6 +17,7 @@ from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.service_instance_lease import ServiceInstanceLease, ServiceInstanceLeaseError
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
+from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
 
 _DISPLAY_INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DISPLAY_DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
@@ -3369,6 +3370,67 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.archive_thread_calls, ["thread-1"])
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "")
         self.assertIn("不是硬删除", bot.replies[-1][1])
+        self.assertIn("已同步清理当前实例里仍指向该 thread 的 bindings：`1` 个。", bot.replies[-1][1])
+
+    def test_archive_command_rejects_when_other_binding_has_pending_request(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._bind_thread("ou_other", "c2", thread)
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        self._store_pending_request(handler, "req-1", {
+            "rpc_request_id": "rpc-1",
+            "method": "item/tool/requestUserInput",
+            "thread_id": "thread-1",
+            "sender_id": "ou_other",
+            "chat_id": "c2",
+            "status": "pending",
+        })
+
+        handler.handle_message("ou_user", "c1", "/archive")
+
+        self.assertEqual(handler._adapter.archive_thread_calls, [])
+        self.assertIn("待处理审批或补充输入", bot.replies[-1][1])
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-1")
+
+    def test_archive_command_rejects_when_live_runtime_owner_is_other_instance(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        handler._runtime_admin._load_thread_runtime_lease = lambda thread_id: ThreadRuntimeLease(
+            thread_id=thread_id,
+            owner_instance="explorer",
+            owner_service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32001",
+            backend_url="ws://127.0.0.1:8765",
+            attached_at=1.0,
+            holders=(),
+        )
+
+        handler.handle_message("ou_user", "c1", "/archive")
+
+        self.assertEqual(handler._adapter.archive_thread_calls, [])
+        self.assertIn("explorer", bot.replies[-1][1])
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-1")
 
     def test_profile_command_rejects_when_unbound(self) -> None:
         handler, bot = self._make_handler()
@@ -4540,6 +4602,29 @@ class CodexHandlerTests(unittest.TestCase):
             ["运行时", "身份"],
         )
 
+    def test_commands_lists_common_navigation_commands(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/commands")
+
+        reply = bot.replies[-1][1]
+        self.assertIn("常用命令列表", reply)
+        self.assertIn("`/commands`", reply)
+        self.assertIn("`/status`", reply)
+        self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
+        self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
+        self.assertIn("`/reset-backend`", reply)
+        self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
+        self.assertNotIn("/debug-contact", reply)
+        self.assertNotIn("`/cancel`", reply)
+
+    def test_commands_rejects_extra_args(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/commands extra")
+
+        self.assertIn("用法：`/commands`", bot.replies[-1][1])
+
     def test_help_chat_page_mentions_status_preflight_and_cd(self) -> None:
         handler, bot = self._make_handler()
 
@@ -4849,6 +4934,13 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/help nonsense")
 
         self.assertIn("帮助主题仅支持", bot.replies[-1][1])
+
+    def test_unknown_command_mentions_help_and_commands(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/missing")
+
+        self.assertIn("发送 `/help` 或 `/commands` 查看可用命令。", bot.replies[-1][1])
 
     def test_help_execute_command_action_reuses_status_command(self) -> None:
         handler, _ = self._make_handler()

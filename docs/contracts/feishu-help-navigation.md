@@ -184,6 +184,7 @@ and is not required to be reachable from `/help`.
 The following are intentionally not required to be navigation-reachable from
 Feishu `/help`:
 
+- `/commands`
 - `/h`
 - `/cancel`
 - `/pwd`
@@ -194,6 +195,7 @@ Feishu `/help`:
 
 Specific rationale:
 
+- `/commands` is a text-first slash index for operators who do not want the card navigation flow; it should not become a second help tree
 - `/h` is only an alias for `/help`
 - `/cancel` already has a primary action on the execution card
 - `/pwd` is effectively subsumed by `/cd` with no argument

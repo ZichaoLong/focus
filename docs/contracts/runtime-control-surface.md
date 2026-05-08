@@ -563,6 +563,40 @@ Formal constraints:
 - it does not implicitly reply to a prompt message; the first version always sends standalone image messages
 - it does not provide an automatic retry or dedupe contract; if later fanout steps fail, earlier bindings may already have received the image, and the CLI must report that partial delivery explicitly
 
+### 6.3.4 `thread archive` Contract
+
+`feishu-codexctl thread archive` is a **thread-scoped** admin action.
+
+Its target is:
+
+- the target thread on the currently selected `feishu-codex` instance backend
+- Feishu bindings in that instance that still point at that thread
+
+It is not:
+
+- a lightweight current-chat UI action
+- a cross-instance bulk cleanup entrypoint
+- a hard-delete surface for thread history
+
+Its formal semantics are:
+
+- call Codex thread archive so the target becomes hidden from normal thread lists
+- clear bindings in the current instance that still point at that thread
+- release the current instance's service-level live runtime lease for that thread
+
+It does not overwrite:
+
+- binding bookmarks still persisted in other instances
+- the thread's rollout history itself
+- runtime / binding state for unrelated threads
+
+Formal constraints:
+
+- if the machine-global live runtime owner is another instance, the action must fail closed and require running archive on that owner instance
+- if the current instance still has Feishu inflight turns on that thread, the action must fail closed
+- if the current instance still has pending approval or supplemental-input requests on that thread, the action must fail closed
+- this is an irreversible visibility change; it is not a hard delete
+
 ### 6.4 Contract for binding persistence and reset
 
 `binding` is a local fact that should persist across Feishu service restarts.

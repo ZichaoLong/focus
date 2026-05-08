@@ -105,6 +105,13 @@ class _ThreadsUiDomainOwner(Protocol):
         original_arg: str,
     ) -> ThreadSummary: ...
 
+    def _archive_thread_for_control(
+        self,
+        thread_id: str,
+        *,
+        summary: ThreadSummary | None = None,
+    ) -> dict[str, Any]: ...
+
 class CodexThreadsUiDomain:
     def __init__(self, owner: _ThreadsUiDomainOwner, *, runtime_ports: ThreadsUiRuntimePorts) -> None:
         self._owner = owner
@@ -230,17 +237,18 @@ class CodexThreadsUiDomain:
                 return CommandResult(text=f"归档线程失败：{exc}")
 
         try:
-            self._owner._adapter.archive_thread(thread.thread_id)
+            result = self._owner._archive_thread_for_control(thread.thread_id, summary=thread)
         except Exception as exc:
             logger.exception("归档线程失败")
             return CommandResult(text=f"归档线程失败：{exc}")
-
-        if runtime.current_thread_id == thread.thread_id:
-            self._owner._clear_thread_binding(sender_id, chat_id, message_id=message_id)
-        return CommandResult(text=(
-            f"已归档线程：`{thread.thread_id[:8]}…` {thread.title}\n"
-            "说明：这里调用的是 Codex 的线程归档（archive），会从常规列表中隐藏，不是硬删除。"
-        ))
+        lines = [
+            f"已归档线程：`{thread.thread_id[:8]}…` {thread.title}",
+            "说明：这里调用的是 Codex 的线程归档（archive），会从常规列表中隐藏，不是硬删除。",
+        ]
+        cleared_binding_ids = list(result.get("cleared_binding_ids") or [])
+        if cleared_binding_ids:
+            lines.append(f"已同步清理当前实例里仍指向该 thread 的 bindings：`{len(cleared_binding_ids)}` 个。")
+        return CommandResult(text="\n".join(lines))
 
     def handle_close_threads_card_action(
         self,

@@ -90,6 +90,15 @@ class _OwnerStub:
         del thread_id, original_arg
         return self.thread
 
+    def _archive_thread_for_control(
+        self,
+        thread_id: str,
+        *,
+        summary: ThreadSummary | None = None,
+    ) -> dict[str, object]:
+        del summary
+        return {"thread_id": thread_id, "cleared_binding_ids": ["p2p:ou_user:chat-a"]}
+
 
 class CodexThreadsUiDomainTests(unittest.TestCase):
     def test_handle_resume_command_dispatches_via_runtime_port(self) -> None:

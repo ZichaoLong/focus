@@ -1415,6 +1415,15 @@ class CodexHandler(BotHandler):
                     chat_id, arg, message_id=message_id
                 ),
             ),
+            "/commands": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: (
+                    CommandResult(
+                        text="用法：`/commands`\n说明：该命令不接受额外参数；发送 `/help` 查看导航入口。"
+                    )
+                    if arg.strip()
+                    else self._help_domain.reply_commands(chat_id, message_id=message_id)
+                ),
+            ),
             "/init": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_init_command(
                     sender_id, chat_id, arg, message_id=message_id
@@ -1931,6 +1940,14 @@ class CodexHandler(BotHandler):
 
     def _unsubscribe_feishu_runtime_by_thread_id(self, thread_id: str) -> dict[str, Any]:
         return self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)
+
+    def _archive_thread_for_control(
+        self,
+        thread_id: str,
+        *,
+        summary: ThreadSummary | None = None,
+    ) -> dict[str, Any]:
+        return self._runtime_admin.archive_thread_for_control(thread_id, summary=summary)
 
     def _handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         return self._runtime_call(self._handle_service_control_request_impl, method, params)

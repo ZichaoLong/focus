@@ -22,6 +22,7 @@ _SHARED_PREFLIGHT_COMMAND = get_shared_command("preflight")
 _SHARED_ARCHIVE_COMMAND = get_shared_command("archive")
 _SHARED_THREADS_COMMAND = get_shared_command("threads")
 _SHARED_RESUME_COMMAND = get_shared_command("resume")
+_SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
 _LOCAL_THREAD_LIST_GLOBAL = "feishu-codexctl thread list --scope global"
@@ -579,5 +580,45 @@ class CodexHelpDomain:
             text=(
                 "帮助主题仅支持：`chat`、`group`、`thread`、`runtime`、`identity`。\n"
                 "发送 `/help` 查看导航入口。"
+            )
+        )
+
+    def reply_commands(self, chat_id: str, *, message_id: str = "") -> CommandResult:
+        del chat_id
+        del message_id
+        return CommandResult(
+            text=(
+                "常用命令列表（按 `/help` 导航分组）：\n\n"
+                "`帮助`\n"
+                "- `/help [chat|group|thread|runtime|identity]`\n"
+                "- `/h`\n"
+                f"- `{_SHARED_COMMANDS_COMMAND.feishu_usage}`\n\n"
+                "`当前会话`\n"
+                "- `/status`\n"
+                f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`\n"
+                "- `/cd [path]`\n\n"
+                "`群聊`\n"
+                "- `/group`\n"
+                "- `/group activate`\n"
+                "- `/group deactivate`\n"
+                "- `/group-mode [assistant|mention-only|all]`\n\n"
+                "`线程`\n"
+                f"- `{_SHARED_THREADS_COMMAND.feishu_usage}`\n"
+                "- `/new`\n"
+                f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
+                "- `/rename <title>`\n"
+                f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"
+                "`运行时`\n"
+                "- `/permissions [read-only|default|full-access]`\n"
+                "- `/approval [untrusted|on-request|never]`\n"
+                "- `/sandbox [read-only|workspace-write|danger-full-access]`\n"
+                "- `/collab-mode [default|plan]`\n"
+                f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`\n\n"
+                "`身份`\n"
+                "- `/whoami`\n"
+                "- `/bot-status`\n"
+                f"- `{_INIT_COMMAND}`\n\n"
+                "具体私聊 / 群聊限制以命令返回为准；发送 `/help` 或 `/h` 查看导航卡片。"
             )
         )

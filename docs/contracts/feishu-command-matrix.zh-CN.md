@@ -81,6 +81,7 @@
 | 命令 | 作用 | `/help` 可达 | 私聊可执行者 | 群聊可执行者 | 用户可见按钮 / 表单 | 本地对应 |
 | --- | --- | --- | --- | --- | --- | --- |
 | `/help [chat\|group\|thread\|runtime\|identity]` | 显示帮助导航卡片或直接打开指定主题 | 是；根入口 | 仅管理员 | 仅管理员 | 根入口：`当前会话(chat)`、`群聊(group)`、`线程(thread)`、`运行时(runtime)`、`身份(identity)` | `feishu-codex --help`、`feishu-codexctl --help` 仅是本地帮助，不等同于飞书 `/help` |
+| `/commands` | 按 `/help` 分组列出常用命令的纯文字清单 | 否 | 仅管理员 | 仅管理员 | 无 | 无 |
 | `/h` | `/help` 的文字别名 | 否 | 仅管理员 | 仅管理员 | 无 | 无 |
 | `/pwd` | 查看当前工作目录 | 否 | 仅管理员 | 仅管理员 | 无 | 无 |
 | `/status` | 查看当前 chat binding 的简明状态摘要 | 是；`/help -> chat` | 仅管理员 | 仅管理员 | 无 | `feishu-codexctl binding status <binding_id>` 可看更细状态；`feishu-codex` 无对应 |
@@ -91,7 +92,7 @@
 | `/resume <thread_id\|thread_name>` | 精确恢复指定 thread 到当前 chat | 是；`/help -> thread` 表单 | 仅管理员 | 仅管理员 | help 表单提交；`/threads` 卡片中的 `恢复` 也走同一语义 | `feishu-codexctl` / `feishu-codex` 无对应；本地继续同一线程应使用 `fcodex resume <thread_id\|thread_name>` |
 | `/profile [name]` | 查看或切换当前绑定 thread 的 thread-wise resume profile | 是；`/help -> thread -> 当前线程` | 仅管理员 | 仅管理员 | profile 名按钮；必要时附带 `应用并重置 backend` / `强制应用并重置 backend` | `feishu-codexctl` / `feishu-codex` 无直接对应；本地相关入口是 `fcodex -p <profile>` |
 | `/rename <title>` | 重命名当前绑定 thread | 是；`/help -> thread -> 当前线程` 表单 | 仅管理员 | 仅管理员 | help 表单提交 | `feishu-codexctl` / `feishu-codex` 无对应 |
-| `/archive [thread_id\|thread_name]` | 归档当前 thread，或归档指定 thread | 是；`/help -> thread -> 当前线程`，也可经 `/threads` 列表卡 | 仅管理员 | 仅管理员 | `/threads` 列表卡里的 `归档`；当前线程页也可直接执行 `/archive` | 最接近的本地对应是 `feishu-codexctl thread archive --thread-id/--thread-name`；注意本地命令是 thread-scoped，并会清理目标实例里指向该 thread 的 bindings，不只是当前 chat |
+| `/archive [thread_id\|thread_name]` | 归档当前 thread，或归档指定 thread | 是；`/help -> thread -> 当前线程`，也可经 `/threads` 列表卡 | 仅管理员 | 仅管理员 | `/threads` 列表卡里的 `归档`；当前线程页也可直接执行 `/archive` | 最接近的本地对应是 `feishu-codexctl thread archive --thread-id/--thread-name`；两者都会在 live runtime owner 为其他实例、或当前实例该 thread 仍有 running / pending Feishu 工作时 fail-close；本地命令另外还会清理目标实例里指向该 thread 的 bindings，不只是当前 chat |
 | `/release-runtime` | 释放当前绑定 thread 的 Feishu runtime residency，但保留 binding | 否 | 仅管理员 | 仅管理员 | 无 | `feishu-codexctl thread unsubscribe --thread-id/--thread-name`；`feishu-codex` 无对应 |
 | `/cancel` | 停止当前执行中的 turn | 否 | 仅管理员 | 仅管理员 | 执行卡片内有主入口按钮 `取消执行` | 无 |
 
@@ -126,6 +127,7 @@
 
 下列命令当前明确不要求从 `/help` 导航纯按钮直达：
 
+- `/commands`
 - `/h`
 - `/pwd`
 - `/cancel`
@@ -135,6 +137,7 @@
 
 原因分别是：
 
+- `/commands` 是偏文字速查的命令索引，刻意不再做成第二套导航卡
 - `/h` 只是 `/help` 别名
 - `/pwd` 已基本被“无参数 `/cd`”覆盖
 - `/cancel` 的主入口是执行卡片里的 `取消执行`

@@ -1,5 +1,7 @@
 # feishu-codex
 
+> 说明：本项目最开始来源于 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot)。更准确地说，它是从 `feishu_bot` 中用于“飞书 + Claude Code”的那部分子集能力演进而来，并在此基础上改造成面向 Codex 的实现，因此形成了当前的 `feishu-codex`。
+
 `feishu-codex` 把飞书机器人、本地 `fcodex` 和同一个 `codex app-server`
 接到一起。
 
@@ -166,8 +168,10 @@ feishu-codex config init-token
 在飞书里：
 
 - 发送 `/help` 或 `/h` 看可用命令导航
+- 发送 `/commands` 看可用命令列表
 - 直接发送普通文本开始对话
 - 手动发送命令 `/new`、`/resume`、`/profile`、`/cd` 管理当前会话绑定的 thread
+- 如果想让同一个机器人同时服务多个项目，建议为每个项目单独建一个群聊；每个群聊固定在自己的目录和 thread 上，避免在单聊里反复 `/cd`、`/resume`
 - 群聊里管理员先用 `/group activate` 激活，再按群模式使用
 
 在本地继续同一个 live thread：

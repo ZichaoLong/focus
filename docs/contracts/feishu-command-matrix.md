@@ -92,6 +92,7 @@ so it is not confused with those two management CLIs.
 | Command | Purpose | Reachable from `/help` | P2P | Group | User-visible buttons / forms | Local counterpart |
 | --- | --- | --- | --- | --- | --- | --- |
 | `/help [chat\|group\|thread\|runtime\|identity]` | Show the help navigation card or open a specific topic page | Yes; root entry | admin only | admin only | root entries `Current Chat(chat)`, `Group(group)`, `Thread(thread)`, `Runtime(runtime)`, `Identity(identity)` | `feishu-codex --help` and `feishu-codexctl --help` are only local help, not Feishu `/help` |
+| `/commands` | List common user-facing commands in plain text, grouped by the `/help` sections | No | admin only | admin only | none | none |
 | `/h` | Text alias for `/help` | No | admin only | admin only | none | none |
 | `/pwd` | Show the current working directory | No | admin only | admin only | none | none |
 | `/status` | Show the compact state summary for the current chat binding | Yes; `/help -> chat` | admin only | admin only | none | `feishu-codexctl binding status <binding_id>` exposes a deeper local view; no `feishu-codex` counterpart |
@@ -102,7 +103,7 @@ so it is not confused with those two management CLIs.
 | `/resume <thread_id\|thread_name>` | Resume a specific thread into the current chat | Yes; `/help -> thread` form | admin only | admin only | help form submission; the `/threads` card `Resume` button uses the same semantics | no `feishu-codexctl` / `feishu-codex` counterpart; local continuation uses `fcodex resume <thread_id\|thread_name>` |
 | `/profile [name]` | View or change the current bound thread's thread-wise resume profile | Yes; `/help -> thread -> Current Thread` | admin only | admin only | profile-name buttons; when needed, `Apply and reset backend` / `Force apply and reset backend` | no direct `feishu-codexctl` / `feishu-codex` counterpart; the related local path is `fcodex -p <profile>` |
 | `/rename <title>` | Rename the current bound thread | Yes; `/help -> thread -> Current Thread` form | admin only | admin only | help form submission | no `feishu-codexctl` / `feishu-codex` counterpart |
-| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive a specific target thread | Yes; `/help -> thread -> Current Thread`, and also through `/threads` list cards | admin only | admin only | `/threads` list card `Archive`; the current-thread page may also invoke `/archive` directly | closest local counterpart is `feishu-codexctl thread archive --thread-id/--thread-name`; note that the local command is thread-scoped and clears bindings in the targeted instance, not just the current chat |
+| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive a specific target thread | Yes; `/help -> thread -> Current Thread`, and also through `/threads` list cards | admin only | admin only | `/threads` list card `Archive`; the current-thread page may also invoke `/archive` directly | closest local counterpart is `feishu-codexctl thread archive --thread-id/--thread-name`; both surfaces fail closed when another instance owns the live runtime, or when the current instance still has running/pending Feishu work on that thread; the local command additionally clears bindings in the targeted instance, not just the current chat |
 | `/release-runtime` | Release Feishu runtime residency for the current bound thread while keeping the binding | No | admin only | admin only | none | `feishu-codexctl thread unsubscribe --thread-id/--thread-name`; no `feishu-codex` counterpart |
 | `/cancel` | Stop the current running turn | No | admin only | admin only | the execution card exposes the primary `Cancel run` button | none |
 
@@ -138,6 +139,7 @@ so it is not confused with those two management CLIs.
 The following commands are intentionally not required to be pure button-driven
 from `/help`:
 
+- `/commands`
 - `/h`
 - `/pwd`
 - `/cancel`
@@ -147,6 +149,7 @@ from `/help`:
 
 The reasons are:
 
+- `/commands` is a text-first command index and is intentionally not turned into a second navigation card flow
 - `/h` is only an alias for `/help`
 - `/pwd` is largely covered by no-argument `/cd`
 - `/cancel` already has its primary entry on the execution card

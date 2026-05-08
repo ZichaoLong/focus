@@ -28,6 +28,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看帮助概览与主题入口。",
     ),
     SharedCommandSpec(
+        key="commands",
+        slash_name="/commands",
+        feishu_usage="/commands",
+        feishu_summary="按帮助分组查看常用命令列表。",
+    ),
+    SharedCommandSpec(
         key="profile",
         slash_name="/profile",
         feishu_usage="/profile [name]",

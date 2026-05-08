@@ -184,7 +184,7 @@ class InboundSurfaceController:
         route = self._command_routes.get(cmd)
         if route is None:
             return CommandExecution(
-                error_text=f"未知命令：`{command}`\n发送 `/help` 查看可用命令。"
+                error_text=f"未知命令：`{command}`\n发送 `/help` 或 `/commands` 查看可用命令。"
             )
         denied_text = self._command_denial_text(route, sender_id, chat_id, message_id=message_id)
         if denied_text:

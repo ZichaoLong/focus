@@ -353,6 +353,80 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         with lock:
             self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
 
+    def test_archive_thread_for_control_rejects_running_binding(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        state["running"] = True
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="active",
+        )
+
+        with self.assertRaisesRegex(ValueError, "飞书侧 turn 正在运行"):
+            controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, [])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
+
+    def test_archive_thread_for_control_rejects_pending_binding_request(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        pending_by_binding.add(binding)
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        with self.assertRaisesRegex(ValueError, "待处理审批或补充输入"):
+            controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, [])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
+
     def test_handle_service_control_request_service_status_aggregates_runtime_inventory(self) -> None:
         (
             lock,
