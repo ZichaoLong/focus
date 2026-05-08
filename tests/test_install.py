@@ -1,12 +1,70 @@
 import pathlib
 import subprocess
 import unittest
+from io import StringIO
 from unittest.mock import patch
 
 import install
 
 
 class InstallTests(unittest.TestCase):
+    def test_run_pip_install_retries_once_with_official_extra_index(self) -> None:
+        venv_python = pathlib.Path("/tmp/fc-venv/bin/python")
+        calls: list[list[str]] = []
+
+        def fake_run(command, check=True, **kwargs):
+            rendered = list(command)
+            calls.append(rendered)
+            if "--extra-index-url" in rendered:
+                return subprocess.CompletedProcess(command, 0)
+            raise subprocess.CalledProcessError(1, command)
+
+        stderr = StringIO()
+        with patch("install.subprocess.run", side_effect=fake_run):
+            with patch("sys.stderr", stderr):
+                install._run_pip_install(venv_python, "--upgrade", "pip")
+
+        self.assertEqual(
+            calls,
+            [
+                [str(venv_python), "-m", "pip", "install", "--disable-pip-version-check", "--upgrade", "pip"],
+                [
+                    str(venv_python),
+                    "-m",
+                    "pip",
+                    "install",
+                    "--disable-pip-version-check",
+                    "--extra-index-url",
+                    "https://pypi.org/simple",
+                    "--upgrade",
+                    "pip",
+                ],
+            ],
+        )
+        self.assertIn("官方 PyPI 额外源重试一次", stderr.getvalue())
+
+    def test_run_pip_install_does_not_retry_when_user_already_set_extra_index(self) -> None:
+        venv_python = pathlib.Path("/tmp/fc-venv/bin/python")
+
+        with patch.dict("install.os.environ", {"PIP_EXTRA_INDEX_URL": "https://mirror.example/simple"}, clear=False):
+            with patch(
+                "install.subprocess.run",
+                side_effect=subprocess.CalledProcessError(
+                    1,
+                    [
+                        str(venv_python),
+                        "-m",
+                        "pip",
+                        "install",
+                        "--disable-pip-version-check",
+                        "--upgrade",
+                        "pip",
+                    ],
+                ),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    install._run_pip_install(venv_python, "--upgrade", "pip")
+
     def test_ensure_venv_pip_skips_ensurepip_when_pip_exists(self) -> None:
         venv_python = pathlib.Path("/tmp/fc-venv/bin/python")
         calls: list[list[str]] = []

@@ -13,6 +13,8 @@ import venv
 
 from bot.platform_paths import default_data_root
 
+_DEFAULT_PIP_EXTRA_INDEX_URL = "https://pypi.org/simple"
+
 
 def _ensure_supported_python() -> None:
     if sys.version_info < (3, 11):
@@ -27,6 +29,32 @@ def _venv_python_path(venv_dir: pathlib.Path) -> pathlib.Path:
 
 def _run_checked(command: list[str]) -> None:
     subprocess.run(command, check=True)
+
+
+def _run_pip_install(venv_python: pathlib.Path, *args: str) -> None:
+    command = [str(venv_python), "-m", "pip", "install", "--disable-pip-version-check", *args]
+    try:
+        _run_checked(command)
+        return
+    except subprocess.CalledProcessError:
+        if os.environ.get("PIP_EXTRA_INDEX_URL"):
+            raise
+        fallback_command = [
+            str(venv_python),
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--extra-index-url",
+            _DEFAULT_PIP_EXTRA_INDEX_URL,
+            *args,
+        ]
+        print(
+            "pip install 失败，正在使用官方 PyPI 额外源重试一次："
+            f" {_DEFAULT_PIP_EXTRA_INDEX_URL}",
+            file=sys.stderr,
+        )
+        _run_checked(fallback_command)
 
 
 def _venv_has_pip(venv_python: pathlib.Path) -> bool:
@@ -63,9 +91,8 @@ def main() -> None:
     if not venv_python.exists():
         raise SystemExit(f"受管 .venv 不完整，缺少解释器：{venv_python}")
     _ensure_venv_pip(venv_python)
-    _run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "pip"])
-    _run_checked([str(venv_python), "-m", "pip", "install", "--upgrade", "setuptools<81", "wheel"])
-    _run_checked([str(venv_python), "-m", "pip", "install", str(install_dir)])
+    _run_pip_install(venv_python, "setuptools<81", "wheel")
+    _run_pip_install(venv_python, "--no-build-isolation", str(install_dir))
     _run_checked([str(venv_python), "-m", "bot.manage_cli", "bootstrap-install"])
 
 
