@@ -63,7 +63,7 @@ class TurnExecutionCoordinator:
         return (
             bool(state["current_message_id"])
             and bool(state["awaiting_local_turn_started"])
-            and bool(state["awaiting_reattach_status_settle"])
+            and bool(state["awaiting_attach_status_settle"])
         )
 
     def mark_runtime_event_locked(self, state: RuntimeState, *, occurred_at: float) -> None:
@@ -96,7 +96,7 @@ class TurnExecutionCoordinator:
                 followup_text="",
                 terminal_result_text="",
                 awaiting_local_turn_started=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
                 runtime_channel_state="live",
                 reset_transcript=True,
             ),
@@ -110,7 +110,7 @@ class TurnExecutionCoordinator:
         prompt_reply_in_thread: bool,
         actor_open_id: str,
         started_at: float,
-        awaiting_reattach_status_settle: bool = False,
+        awaiting_attach_status_settle: bool = False,
     ) -> None:
         self.apply_runtime_state_message_locked(
             state,
@@ -131,7 +131,7 @@ class TurnExecutionCoordinator:
                 terminal_result_text="",
                 last_patch_at=0.0,
                 awaiting_local_turn_started=True,
-                awaiting_reattach_status_settle=awaiting_reattach_status_settle,
+                awaiting_attach_status_settle=awaiting_attach_status_settle,
                 reset_transcript=True,
             ),
         )
@@ -142,7 +142,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=False,
                 pending_cancel=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
                 reply_text=error_text,
             ),
         )
@@ -273,7 +273,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=True,
                 awaiting_local_turn_started=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
             ),
         )
 
@@ -283,7 +283,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 pending_cancel=False,
                 awaiting_local_turn_started=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
                 runtime_channel_state="live",
                 running=False,
                 current_turn_id="",
@@ -296,7 +296,7 @@ class TurnExecutionCoordinator:
             ExecutionStateChanged(
                 running=False,
                 pending_cancel=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
             ),
         )
 
@@ -401,7 +401,7 @@ class TurnExecutionCoordinator:
                     followup_sent=False,
                     followup_text="",
                     terminal_result_text="",
-                    awaiting_reattach_status_settle=False,
+                    awaiting_attach_status_settle=False,
                     runtime_channel_state="live",
                     reset_transcript=True,
                 ),
@@ -413,7 +413,7 @@ class TurnExecutionCoordinator:
                 current_turn_id=normalized_turn_id,
                 running=True,
                 awaiting_local_turn_started=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
             ),
         )
         return TurnStartedTransition(
@@ -444,7 +444,7 @@ class TurnExecutionCoordinator:
                 running=False,
                 pending_cancel=False,
                 awaiting_local_turn_started=False,
-                awaiting_reattach_status_settle=False,
+                awaiting_attach_status_settle=False,
                 current_turn_id="",
             ),
         )

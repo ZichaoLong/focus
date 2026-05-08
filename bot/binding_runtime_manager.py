@@ -15,7 +15,6 @@ from bot.runtime_state import (
     FEISHU_RUNTIME_ATTACHED,
     FEISHU_RUNTIME_DETACHED,
     FEISHU_RUNTIME_NOT_APPLICABLE,
-    FEISHU_RUNTIME_RELEASED,
     RuntimeStateMessage,
     RuntimeStateDict,
     StoredBindingHydrated,
@@ -43,14 +42,14 @@ class ResolvedRuntimeBinding:
 
 
 @dataclass(frozen=True)
-class UnsubscribeThreadResult:
+class DetachThreadResult:
     thread_id: str
     thread_title: str
     working_dir: str
     bound_binding_ids: list[str]
-    released_binding_ids: list[str]
+    detached_binding_ids: list[str]
     changed: bool
-    already_released: bool
+    already_detached: bool
     unsubscribe_thread_id: str = ""
 
 
@@ -160,7 +159,7 @@ class BindingRuntimeManager:
             "followup_text": "",
             "terminal_result_text": "",
             "awaiting_local_turn_started": False,
-            "awaiting_reattach_status_settle": False,
+            "awaiting_attach_status_settle": False,
             "approval_policy": self._default_approval_policy,
             "sandbox": self._default_sandbox,
             "collaboration_mode": self._default_collaboration_mode,
@@ -178,7 +177,7 @@ class BindingRuntimeManager:
         downgraded_attached = False
         if feishu_runtime_state == FEISHU_RUNTIME_ATTACHED:
             # A persisted `attached` only says the previous service connection had
-            # runtime residency. A new process / backend connection must reattach
+            # runtime residency. A new process / backend connection must attach
             # explicitly before it can receive live thread events.
             feishu_runtime_state = FEISHU_RUNTIME_DETACHED
             downgraded_attached = True
@@ -554,13 +553,13 @@ class BindingRuntimeManager:
             "label": holder.holder_id,
         }
 
-    def unsubscribe_feishu_runtime_by_thread_id_locked(
+    def detach_thread_bindings_locked(
         self,
         thread_id: str,
         *,
-        unsubscribe_availability: Callable[[str], tuple[bool, str]],
+        detach_availability: Callable[[str], tuple[bool, str]],
         on_release_binding_state: Callable[[RuntimeStateDict], None] | None = None,
-    ) -> UnsubscribeThreadResult:
+    ) -> DetachThreadResult:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空。")
@@ -569,10 +568,10 @@ class BindingRuntimeManager:
             raise ValueError("当前没有 Feishu 绑定指向该线程。")
         attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
         if attached_bindings:
-            unsubscribe_available, unsubscribe_reason = unsubscribe_availability(normalized_thread_id)
-            if not unsubscribe_available:
-                raise ValueError(unsubscribe_reason)
-        released_binding_ids: list[str] = []
+            detach_available, detach_reason = detach_availability(normalized_thread_id)
+            if not detach_available:
+                raise ValueError(detach_reason)
+        detached_binding_ids: list[str] = []
         for binding in attached_bindings:
             state = self._runtime_state_by_binding.get(binding)
             if state is None:
@@ -586,7 +585,7 @@ class BindingRuntimeManager:
                 state,
                 ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_DETACHED),
             )
-            released_binding_ids.append(format_binding_id(binding))
+            detached_binding_ids.append(format_binding_id(binding))
         unsubscribe_thread_id = ""
         if attached_bindings and not self.attached_bindings_for_thread_locked(normalized_thread_id):
             unsubscribe_thread_id = normalized_thread_id
@@ -598,14 +597,14 @@ class BindingRuntimeManager:
                 continue
             existing_title = existing_title or str(state["current_thread_title"] or "").strip()
             existing_cwd = existing_cwd or str(state["working_dir"] or "").strip()
-        return UnsubscribeThreadResult(
+        return DetachThreadResult(
             thread_id=normalized_thread_id,
             thread_title=existing_title,
             working_dir=existing_cwd,
             bound_binding_ids=[format_binding_id(binding) for binding in bound_bindings],
-            released_binding_ids=released_binding_ids,
-            changed=bool(released_binding_ids),
-            already_released=bool(bound_bindings) and not attached_bindings,
+            detached_binding_ids=detached_binding_ids,
+            changed=bool(detached_binding_ids),
+            already_detached=bool(bound_bindings) and not attached_bindings,
             unsubscribe_thread_id=unsubscribe_thread_id,
         )
 
@@ -657,12 +656,12 @@ class BindingRuntimeManager:
         binding: ChatBindingKey,
         *,
         read_thread_summary_for_status: Callable[[str], tuple[Any, str]],
-        unsubscribe_availability: Callable[[str], tuple[bool, str]],
+        detach_availability: Callable[[str], tuple[bool, str]],
     ) -> dict[str, Any]:
         with self._lock:
             snapshot = self.binding_status_state_snapshot_locked(binding)
         thread_id = str(snapshot["thread_id"] or "").strip()
-        unsubscribe_available, unsubscribe_reason = unsubscribe_availability(thread_id)
+        detach_available, detach_reason = detach_availability(thread_id)
         summary, backend_thread_status = read_thread_summary_for_status(thread_id)
         if summary is not None:
             snapshot["thread_title"] = summary.title or str(snapshot["thread_title"] or "").strip()
@@ -672,8 +671,8 @@ class BindingRuntimeManager:
         snapshot["reprofile_possible"] = bool(
             thread_id and backend_thread_status == BACKEND_THREAD_STATUS_NOT_LOADED
         )
-        snapshot["unsubscribe_available"] = bool(thread_id and unsubscribe_available)
-        snapshot["unsubscribe_reason"] = unsubscribe_reason
+        snapshot["detach_available"] = bool(thread_id and detach_available)
+        snapshot["detach_reason"] = detach_reason
         return snapshot
 
     def binding_status_state_snapshot_locked(self, binding: ChatBindingKey) -> dict[str, Any]:
@@ -708,7 +707,7 @@ class BindingRuntimeManager:
         self,
         thread_id: str,
         *,
-        unsubscribe_availability: Callable[[str], tuple[bool, str]],
+        detach_availability: Callable[[str], tuple[bool, str]],
     ) -> dict[str, Any]:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
@@ -716,21 +715,21 @@ class BindingRuntimeManager:
         bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
         attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
         interaction_owner = self.interaction_owner_snapshot_locked(normalized_thread_id)
-        unsubscribe_available, unsubscribe_reason = unsubscribe_availability(normalized_thread_id)
+        detach_available, detach_reason = detach_availability(normalized_thread_id)
         if not bound_bindings:
-            unsubscribe_available = False
-            unsubscribe_reason = "当前没有 Feishu 绑定指向该线程。"
+            detach_available = False
+            detach_reason = "当前没有 Feishu 绑定指向该线程。"
         attached_binding_set = set(attached_bindings)
         return {
             "thread_id": normalized_thread_id,
             "bound_binding_ids": [format_binding_id(binding) for binding in bound_bindings],
             "attached_binding_ids": [format_binding_id(binding) for binding in attached_bindings],
-            "released_binding_ids": [
+            "detached_binding_ids": [
                 format_binding_id(binding) for binding in bound_bindings if binding not in attached_binding_set
             ],
             "interaction_owner": interaction_owner,
-            "unsubscribe_available": bool(unsubscribe_available and bound_bindings),
-            "unsubscribe_reason": unsubscribe_reason,
+            "detach_available": bool(detach_available and bound_bindings),
+            "detach_reason": detach_reason,
         }
 
     def binding_inventory_locked(self) -> list[dict[str, Any]]:

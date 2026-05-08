@@ -79,7 +79,7 @@ from bot.runtime_card_publisher import (
 from bot.runtime_state import (
     BACKEND_THREAD_STATUS_IDLE,
     FEISHU_RUNTIME_ATTACHED,
-    FEISHU_RUNTIME_RELEASED,
+    FEISHU_RUNTIME_DETACHED,
     UNSET,
     BindingActivated,
     ExecutionStateChanged,
@@ -459,12 +459,12 @@ class CodexHandler(BotHandler):
             load_thread_runtime_lease=lambda thread_id: self._thread_runtime_lease_store.load(thread_id),
             list_pending_interaction_requests=self._interaction_requests.pending_requests_snapshot,
             reset_current_instance_backend=self._reset_current_instance_backend,
-            reattach_binding=self._reattach_binding_for_control,
+            attach_binding=self._attach_binding_for_control,
             load_thread_resume_profile=self._thread_resume_profile_store.load,
             permissions_summary=_permissions_summary,
             thread_image_delivery=self._thread_image_delivery,
             prompt_write_denial_check=self._thread_access_policy.prompt_write_denial_check,
-            released_runtime_reattach_check=self._released_runtime_reattach_check,
+            detached_runtime_attach_check=self._detached_runtime_attach_check,
             resolve_thread_target_for_control_params=self._resolve_thread_target_for_control_params,
             cancel_patch_timer_locked=self._cancel_patch_timer_locked,
             cancel_mirror_watchdog_locked=self._cancel_mirror_watchdog_locked,
@@ -508,7 +508,7 @@ class CodexHandler(BotHandler):
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
                 access_policy=self._thread_access_policy,
-                released_runtime_reattach_check=self._released_runtime_reattach_check,
+                detached_runtime_attach_check=self._detached_runtime_attach_check,
                 acquire_interaction_lease_for_binding=self._acquire_interaction_lease_for_binding,
                 release_interaction_lease_for_binding=self._release_interaction_lease_for_binding,
                 sync_stored_binding_locked=self._sync_stored_binding_locked,
@@ -661,7 +661,7 @@ class CodexHandler(BotHandler):
             updated_at=time.time(),
         )
 
-    def _released_runtime_reattach_check(self, thread_id: str) -> ReasonedCheck:
+    def _detached_runtime_attach_check(self, thread_id: str) -> ReasonedCheck:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             return ReasonedCheck.allow()
@@ -712,7 +712,7 @@ class CodexHandler(BotHandler):
             except Exception:
                 logger.exception("恢复 service thread runtime lease 失败: thread=%s", thread_id[:12])
                 try:
-                    self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)
+                    self._runtime_admin.detach_thread(thread_id)
                 except Exception:
                     logger.exception("将冲突线程 fail-closed 为 detached 失败: thread=%s", thread_id[:12])
 
@@ -1944,8 +1944,8 @@ class CodexHandler(BotHandler):
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
         return self._runtime_admin.handle_attach_command(binding, arg)
 
-    def _unsubscribe_feishu_runtime_by_thread_id(self, thread_id: str) -> dict[str, Any]:
-        return self._runtime_admin.unsubscribe_feishu_runtime_by_thread_id(thread_id)
+    def _detach_thread(self, thread_id: str) -> dict[str, Any]:
+        return self._runtime_admin.detach_thread(thread_id)
 
     def _archive_thread_for_control(
         self,
@@ -1961,36 +1961,32 @@ class CodexHandler(BotHandler):
     def _handle_service_control_request_impl(self, method: str, params: dict[str, Any]) -> Any:
         return self._runtime_admin.handle_service_control_request(method, params)
 
-    def _reattach_binding_for_control(self, binding: ChatBindingKey, thread_id: str) -> ThreadSummary:
+    def _attach_binding_for_control(self, binding: ChatBindingKey, thread_id: str) -> ThreadSummary:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空。")
-        reattach_check = self._released_runtime_reattach_check(normalized_thread_id)
-        if not reattach_check.allowed:
-            raise ValueError(reattach_check.reason_text)
-        try:
-            summary = self._read_thread_summary_authoritatively(
-                normalized_thread_id,
-                original_arg=normalized_thread_id,
-            )
-        except Exception as exc:
-            if not self._is_thread_not_loaded_error(exc):
-                raise
-            fallback_summary = ThreadSummary(
-                thread_id=normalized_thread_id,
-                cwd="",
-                name="",
-                preview="",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status=BACKEND_THREAD_STATUS_IDLE,
-            )
-            summary = self._resume_snapshot_by_id(
-                normalized_thread_id,
-                original_arg=normalized_thread_id,
-                summary=fallback_summary,
-            ).summary
+        attach_check = self._detached_runtime_attach_check(normalized_thread_id)
+        if not attach_check.allowed:
+            raise ValueError(attach_check.reason_text)
+        # `thread/read` can inspect a loaded thread, but it does not establish
+        # the service connection's live thread listener. Control-plane attach
+        # must use `thread/resume` so the backend subscription fact matches the
+        # local `attached` state.
+        fallback_summary = ThreadSummary(
+            thread_id=normalized_thread_id,
+            cwd="",
+            name="",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status=BACKEND_THREAD_STATUS_IDLE,
+        )
+        summary = self._resume_snapshot_by_id(
+            normalized_thread_id,
+            original_arg=normalized_thread_id,
+            summary=fallback_summary,
+        ).summary
         self._bind_thread(binding[0], binding[1], summary)
         return summary
 
@@ -2369,20 +2365,20 @@ class CodexHandler(BotHandler):
         ]
 
         with self._lock:
-            released_binding_ids: list[str] = []
+            detached_binding_ids: list[str] = []
             for thread_id in bound_thread_ids:
-                result = self._binding_runtime.unsubscribe_feishu_runtime_by_thread_id_locked(
+                result = self._binding_runtime.detach_thread_bindings_locked(
                     thread_id,
-                    unsubscribe_availability=lambda _thread_id: (True, ""),
+                    detach_availability=lambda _thread_id: (True, ""),
                     on_release_binding_state=self._cancel_runtime_timers_locked,
                 )
-                released_binding_ids.extend(result.released_binding_ids)
+                detached_binding_ids.extend(result.detached_binding_ids)
                 for binding in self._binding_runtime.bound_bindings_for_thread_locked(thread_id):
                     state = self._get_runtime_state(binding[0], binding[1])
                     self._apply_persisted_runtime_state_message_locked(
                         binding,
                         state,
-                        ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_RELEASED),
+                        ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_DETACHED),
                     )
                     self._sync_stored_binding_locked(binding, state)
 
@@ -2396,7 +2392,7 @@ class CodexHandler(BotHandler):
         self._register_instance_runtime()
         return {
             "force": bool(force),
-            "released_binding_ids": sorted(set(released_binding_ids)),
+            "detached_binding_ids": sorted(set(detached_binding_ids)),
             "interrupted_binding_ids": sorted(set(interrupted_binding_ids)),
             "fail_closed_request_count": fail_closed_request_count,
             "purged_thread_ids": sorted(set(purged_thread_ids)),

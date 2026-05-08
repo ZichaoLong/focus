@@ -9,7 +9,7 @@ from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.reason_codes import (
     PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
     PROMPT_DENIED_BY_INTERACTION_OWNER,
-    UNSUBSCRIBE_BLOCKED_BY_PENDING_REQUEST,
+    DETACH_BLOCKED_BY_PENDING_REQUEST,
     ReasonedCheck,
 )
 from bot.runtime_admin_controller import RuntimeAdminController
@@ -76,7 +76,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             load_thread_runtime_lease=lambda thread_id: None,
             list_pending_interaction_requests=lambda: list(pending_requests),
             reset_current_instance_backend=lambda force: reset_calls.append(bool(force)) or {"force": bool(force)},
-            reattach_binding=lambda binding, thread_id: summaries[thread_id],
+            attach_binding=lambda binding, thread_id: summaries[thread_id],
             load_thread_resume_profile=lambda thread_id: None,
             permissions_summary=lambda approval_policy, sandbox: f"{sandbox}/{approval_policy}",
             thread_image_delivery=ThreadImageDeliveryController(
@@ -86,7 +86,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 path_is_file=lambda path: True,
             ),
             prompt_write_denial_check=lambda binding, chat_id, thread_id, message_id="": ReasonedCheck.allow(),
-            released_runtime_reattach_check=lambda thread_id: ReasonedCheck.allow(),
+            detached_runtime_attach_check=lambda thread_id: ReasonedCheck.allow(),
             resolve_thread_target_for_control_params=lambda params: ThreadSummary(
                 thread_id=str(params.get("thread_id", "") or "").strip(),
                 cwd="/tmp/project",
@@ -131,7 +131,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             )
         return state
 
-    def test_unsubscribe_availability_locked_blocks_on_pending_request(self) -> None:
+    def test_detach_thread_availability_locked_blocks_on_pending_request(self) -> None:
         (
             lock,
             binding_runtime,
@@ -161,12 +161,12 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         )
         pending_by_thread.add("thread-1")
 
-        allowed, reason = controller.unsubscribe_availability_locked("thread-1")
+        allowed, reason = controller.detach_thread_availability_locked("thread-1")
 
         self.assertFalse(allowed)
         self.assertIn("审批或输入请求未处理", reason)
-        check = controller.unsubscribe_check_locked("thread-1")
-        self.assertEqual(check.reason_code, UNSUBSCRIBE_BLOCKED_BY_PENDING_REQUEST)
+        check = controller.detach_thread_check_locked("thread-1")
+        self.assertEqual(check.reason_code, DETACH_BLOCKED_BY_PENDING_REQUEST)
 
     def test_unsubscribe_by_thread_id_marks_binding_detached_and_unsubscribes(self) -> None:
         (
@@ -197,10 +197,10 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             status="notLoaded",
         )
 
-        result = controller.unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        result = controller.detach_thread("thread-1")
 
         self.assertTrue(result["changed"])
-        self.assertEqual(result["released_binding_ids"], ["p2p:ou_user:c1"])
+        self.assertEqual(result["detached_binding_ids"], ["p2p:ou_user:c1"])
         with lock:
             snapshot = binding_runtime.binding_runtime_snapshot_locked(binding)
         assert snapshot is not None
@@ -244,7 +244,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         controller._unsubscribe_thread = _fail_unsubscribe
 
         with self.assertRaisesRegex(RuntimeError, "backend unsubscribe failed"):
-            controller.unsubscribe_feishu_runtime_by_thread_id("thread-1")
+            controller.detach_thread("thread-1")
 
         with lock:
             snapshot = binding_runtime.binding_runtime_snapshot_locked(binding)
@@ -255,7 +255,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(released_runtime_leases, [])
 
         controller._unsubscribe_thread = lambda thread_id: unsubscribed.append(f"retry:{thread_id}")
-        result = controller.unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        result = controller.detach_thread("thread-1")
 
         self.assertTrue(result["changed"])
         with lock:
@@ -499,7 +499,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             source="cli",
             status="notLoaded",
         )
-        controller.unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        controller.detach_thread("thread-1")
 
         plan = controller.plan_thread_reprofile("thread-1")
 
@@ -737,7 +737,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         actions = response.card.data["elements"][-1]["actions"]
         self.assertEqual([action["text"]["content"] for action in actions], ["附着当前实例", "保持 detached"])
 
-    def test_handle_reset_backend_action_offers_current_thread_reattach_after_reset(self) -> None:
+    def test_handle_reset_backend_action_offers_current_thread_attach_after_reset(self) -> None:
         (
             lock,
             binding_runtime,
@@ -777,7 +777,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         )
         self.assertEqual(actions[0]["value"]["thread_id"], "thread-1")
 
-    def test_handle_preflight_command_blocks_released_binding_when_live_runtime_owner_blocks_reattach(self) -> None:
+    def test_handle_preflight_command_blocks_detached_binding_when_live_runtime_owner_blocks_attach(self) -> None:
         (
             lock,
             binding_runtime,
@@ -806,7 +806,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             source="cli",
             status="notLoaded",
         )
-        controller._released_runtime_reattach_check = lambda thread_id: ReasonedCheck.deny(
+        controller._detached_runtime_attach_check = lambda thread_id: ReasonedCheck.deny(
             PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不能自动转移。",
         )
@@ -1049,7 +1049,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             [("c1", "img-key-1"), ("c2", "img-key-1")],
         )
 
-    def test_binding_status_snapshot_includes_prompt_and_unsubscribe_reason_codes(self) -> None:
+    def test_binding_status_snapshot_includes_prompt_and_detach_reason_codes(self) -> None:
         (
             lock,
             binding_runtime,
@@ -1087,8 +1087,8 @@ class RuntimeAdminControllerTests(unittest.TestCase):
 
         self.assertFalse(snapshot["next_prompt_allowed"])
         self.assertEqual(snapshot["next_prompt_reason_code"], PROMPT_DENIED_BY_INTERACTION_OWNER)
-        self.assertFalse(snapshot["unsubscribe_available"])
-        self.assertEqual(snapshot["unsubscribe_reason_code"], UNSUBSCRIBE_BLOCKED_BY_PENDING_REQUEST)
+        self.assertFalse(snapshot["detach_available"])
+        self.assertEqual(snapshot["detach_reason_code"], DETACH_BLOCKED_BY_PENDING_REQUEST)
 
     def test_handle_preflight_command_renders_next_prompt_and_unsubscribe_checks(self) -> None:
         (

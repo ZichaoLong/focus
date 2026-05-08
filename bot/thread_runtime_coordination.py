@@ -200,13 +200,13 @@ def preview_thread_runtime_holder_acquire_conflict(
             ),
         )
 
-    if not owner_status["unsubscribe_available"]:
+    if not owner_status["detach_available"]:
         return ThreadRuntimeAcquirePreview(
             allowed=False,
             reason_code=PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             reason_text=build_runtime_lease_conflict_message(
                 current,
-                reason=f"owner 实例当前不能立即 detach 飞书推送：{owner_status['unsubscribe_reason']}",
+                reason=f"owner 实例当前不能立即 detach 飞书推送：{owner_status['detach_reason']}",
             ),
         )
 
@@ -278,8 +278,8 @@ def _remote_owner_thread_status(owner: InstanceRegistryEntry, thread_id: str) ->
     )
     return {
         "bound_binding_ids": bound_binding_ids,
-        "unsubscribe_available": bool(payload.get("unsubscribe_available")),
-        "unsubscribe_reason": str(payload.get("unsubscribe_reason", "") or "").strip(),
+        "detach_available": bool(payload.get("detach_available")),
+        "detach_reason": str(payload.get("detach_reason", "") or "").strip(),
     }
 
 def _remote_detach_thread(owner: InstanceRegistryEntry, thread_id: str) -> dict:

@@ -185,8 +185,6 @@ class ChatBindingStore:
             if not isinstance(value, str):
                 raise ValueError(f"invalid chat_bindings.json: {key} must be a string")
             normalized[key] = value.strip()
-        if normalized["feishu_runtime_state"] == "released":
-            normalized["feishu_runtime_state"] = "detached"
         normalized["approval_policy"] = normalize_approval_policy(normalized["approval_policy"])
         current_thread_id = normalized["current_thread_id"]
         runtime_state = normalized["feishu_runtime_state"]

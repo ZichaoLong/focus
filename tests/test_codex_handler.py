@@ -968,7 +968,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler2._adapter.create_thread_calls), 0)
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-created")
 
-    def test_p2p_stored_binding_hydrates_detached_and_next_prompt_reattaches(self) -> None:
+    def test_p2p_stored_binding_hydrates_detached_and_next_prompt_attaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -1032,7 +1032,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler2._adapter.create_thread_calls), 0)
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
 
-    def test_group_stored_binding_hydrates_detached_and_next_prompt_reattaches(self) -> None:
+    def test_group_stored_binding_hydrates_detached_and_next_prompt_attaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -2716,7 +2716,7 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         self.assertIn("backend thread status：`idle`", card["elements"][0]["content"])
 
-    def test_detached_binding_hydrates_without_resubscribe_and_next_prompt_reattaches(self) -> None:
+    def test_detached_binding_hydrates_without_resubscribe_and_next_prompt_attaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -2749,7 +2749,7 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.thread_snapshots[(thread_id, None)] = ThreadSnapshot(summary=unloaded)
 
         handler._adapter.unsubscribe_thread = _unsubscribe
-        handler._unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        handler._detach_thread("thread-1")
 
         handler2, _ = self._make_handler(data_dir=data_dir)
         state2 = handler2._get_runtime_state("ou_user", "c1")
@@ -2762,7 +2762,32 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
         self.assertEqual(handler2._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
 
-    def test_persisted_attached_binding_hydrates_as_detached_and_next_prompt_reattaches(self) -> None:
+    def test_attach_command_resumes_loaded_thread_to_restore_service_subscription(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
+
+        handler._detach_thread("thread-1")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
+        self.assertEqual(handler._thread_subscribers("thread-1"), ())
+
+        handler.handle_message("ou_user", "c1", "/attach")
+
+        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
+        self.assertEqual(handler._thread_subscribers("thread-1"), (("ou_user", "c1"),))
+
+    def test_persisted_attached_binding_hydrates_as_detached_and_next_prompt_attaches(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -2807,7 +2832,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
 
         handler._bind_thread("ou_user", "chat-a", thread)
-        handler._unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        handler._detach_thread("thread-1")
         handler._bind_thread("ou_user2", "chat-b", thread)
 
         handler.handle_message("ou_user", "chat-a", "hello again")
@@ -2838,7 +2863,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
 
         handler._bind_thread("ou_user", "c1", thread)
-        handler._unsubscribe_feishu_runtime_by_thread_id("thread-1")
+        handler._detach_thread("thread-1")
         InteractionLeaseStore(data_dir).force_acquire(
             "thread-1",
             make_fcodex_interaction_holder("fcodex:other", owner_pid=os.getpid()),
@@ -3096,7 +3121,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertTrue(result["changed"])
         self.assertEqual(result["thread_id"], "thread-1")
         self.assertEqual(result["backend_thread_status"], "notLoaded")
-        self.assertEqual(result["released_binding_ids"], ["p2p:ou_user:c1"])
+        self.assertEqual(result["detached_binding_ids"], ["p2p:ou_user:c1"])
         self.assertEqual(handler._adapter.unsubscribe_thread_calls, ["thread-1"])
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
 

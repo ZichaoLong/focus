@@ -82,9 +82,9 @@ Status guidance:
 | What Feishu slash commands currently exist, which are reachable from `/help`, who may execute them, what buttons belong to them, and how do they map to local CLIs? | [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md) |
 | What is the current architecture, layering, module split, and repository structure? | [`feishu-codex-design.md`](./architecture/feishu-codex-design.md) |
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |
-| What shared state vocabulary and admin-surface contract apply to `/status`, `/release-runtime`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
+| What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | What do `/threads`, `/resume`, `/profile`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
-| What is the current contract for `/release-runtime`, a thinner `fcodex`, the `feishu-codexctl` split, and thread-wise profile/provider? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
+| What is the current contract for `/detach`, a thinner `fcodex`, the `feishu-codexctl` split, and thread-wise profile/provider? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
 | How do multi-instance `default` / named-instance behavior, shared thread visibility, `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
 | What information architecture and semantic rules does the Feishu `/help` navigation surface follow? | [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md) |
 | What is the formal behavior contract for group activation, group modes, history recovery, and group-command triggering? | [`group-chat-contract.md`](./contracts/group-chat-contract.md) |

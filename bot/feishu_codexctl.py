@@ -185,7 +185,7 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
     print("backend reset: ok")
     print(f"force: {'yes' if result.get('force') else 'no'}")
     print(f"app server: {result.get('app_server_url', '-')}")
-    print(f"detached bindings: {', '.join(result.get('released_binding_ids') or []) or '（无）'}")
+    print(f"detached bindings: {', '.join(result.get('detached_binding_ids') or []) or '（无）'}")
     print(f"interrupted bindings: {', '.join(result.get('interrupted_binding_ids') or []) or '（无）'}")
     print(f"fail-closed requests: {int(result.get('fail_closed_request_count') or 0)}")
     print(f"purged runtime leases: {', '.join(result.get('purged_thread_ids') or []) or '（无）'}")
@@ -200,8 +200,8 @@ def _attach_service(data_dir: pathlib.Path) -> int:
     result = _request(data_dir, "service/attach")
     print("runtime attach: ok")
     print(f"instance: {result.get('instance_name', '-')}")
-    print(f"attached threads: {', '.join(result.get('reattached_thread_ids') or []) or '（无）'}")
-    print(f"attached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    print(f"attached threads: {', '.join(result.get('attached_thread_ids') or []) or '（无）'}")
+    print(f"attached bindings: {', '.join(result.get('attached_binding_ids') or []) or '（无）'}")
     blocked_threads = result.get("blocked_threads") or []
     if blocked_threads:
         print("blocked threads:")
@@ -209,7 +209,7 @@ def _attach_service(data_dir: pathlib.Path) -> int:
             binding_ids = ", ".join(item.get("binding_ids") or []) or "（无 binding）"
             print(f"- {item.get('thread_id', '-')}: {binding_ids} -> {item.get('reason', '（无原因）')}")
         return 1
-    if not result.get("reattached_binding_ids"):
+    if not result.get("attached_binding_ids"):
         print("note: 当前实例没有需要恢复的 detached 推送。")
     return 0
 
@@ -265,12 +265,12 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
         print(f"next prompt reason: {snapshot['next_prompt_reason']}")
     print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
     if snapshot["thread_id"]:
-        availability = "available" if snapshot["unsubscribe_available"] else "blocked"
+        availability = "available" if snapshot["detach_available"] else "blocked"
         print(f"detach: {availability}")
-        if snapshot["unsubscribe_reason_code"]:
-            print(f"detach reason code: {snapshot['unsubscribe_reason_code']}")
-        if snapshot["unsubscribe_reason"]:
-            print(f"detach reason: {snapshot['unsubscribe_reason']}")
+        if snapshot["detach_reason_code"]:
+            print(f"detach reason code: {snapshot['detach_reason_code']}")
+        if snapshot["detach_reason"]:
+            print(f"detach reason: {snapshot['detach_reason']}")
     print(f"approval_policy: {snapshot['approval_policy']}")
     print(f"sandbox: {snapshot['sandbox']}")
     print(f"collaboration_mode: {snapshot['collaboration_mode']}")
@@ -334,15 +334,15 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
     print(f"live runtime holders: {', '.join(live_runtime_holders) or '（无）'}")
     print(f"bound bindings: {', '.join(snapshot['bound_binding_ids']) or '（无）'}")
     print(f"attached bindings: {', '.join(snapshot['attached_binding_ids']) or '（无）'}")
-    print(f"detached bindings: {', '.join(snapshot['released_binding_ids']) or '（无）'}")
+    print(f"detached bindings: {', '.join(snapshot['detached_binding_ids']) or '（无）'}")
     print(f"interaction owner: {snapshot['interaction_owner']['label']}")
     print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
-    availability = "available" if snapshot["unsubscribe_available"] else "blocked"
+    availability = "available" if snapshot["detach_available"] else "blocked"
     print(f"detach: {availability}")
-    if snapshot["unsubscribe_reason_code"]:
-        print(f"detach reason code: {snapshot['unsubscribe_reason_code']}")
-    if snapshot["unsubscribe_reason"]:
-        print(f"detach reason: {snapshot['unsubscribe_reason']}")
+    if snapshot["detach_reason_code"]:
+        print(f"detach reason code: {snapshot['detach_reason_code']}")
+    if snapshot["detach_reason"]:
+        print(f"detach reason: {snapshot['detach_reason']}")
     return 0
 
 
@@ -393,12 +393,12 @@ def _print_thread_list(data_dir: pathlib.Path, *, scope: str, cwd: str) -> int:
 def _detach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
     result = _request(data_dir, "thread/detach", target_params)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
-    print(f"detached bindings: {', '.join(result['released_binding_ids']) or '（无）'}")
+    print(f"detached bindings: {', '.join(result['detached_binding_ids']) or '（无）'}")
     print(f"backend thread status: {result['backend_thread_status']}")
     print(f"re-profile possible: {'yes' if result['reprofile_possible'] else 'no'}")
-    if result.get("unsubscribe_reason_code"):
-        print(f"detach reason code: {result['unsubscribe_reason_code']}")
-    if result["already_released"]:
+    if result.get("detach_reason_code"):
+        print(f"detach reason code: {result['detach_reason_code']}")
+    if result["already_detached"]:
         print("note: Feishu push for this thread was already detached.")
     elif result["backend_still_loaded"]:
         print("note: backend is still loaded; external subscribers are still attached, typically local fcodex.")
@@ -411,7 +411,7 @@ def _attach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int
     result = _request(data_dir, "thread/attach", target_params)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
-    print(f"attached bindings: {', '.join(result.get('reattached_binding_ids') or []) or '（无）'}")
+    print(f"attached bindings: {', '.join(result.get('attached_binding_ids') or []) or '（无）'}")
     if result.get("already_attached_binding_ids"):
         print(f"already attached bindings: {', '.join(result.get('already_attached_binding_ids') or [])}")
     if not result.get("changed"):

@@ -16,9 +16,6 @@ from bot.execution_transcript import ExecutionTranscript
 
 FEISHU_RUNTIME_ATTACHED = "attached"
 FEISHU_RUNTIME_DETACHED = "detached"
-# Back-compat alias for older internal imports; user-facing surfaces should use
-# "detached" terminology.
-FEISHU_RUNTIME_RELEASED = FEISHU_RUNTIME_DETACHED
 FEISHU_RUNTIME_NOT_APPLICABLE = "not-applicable"
 VALID_FEISHU_RUNTIME_STATES = frozenset(
     {
@@ -77,7 +74,7 @@ class RuntimeStateDict(TypedDict):
     followup_text: str
     terminal_result_text: str
     awaiting_local_turn_started: bool
-    awaiting_reattach_status_settle: bool
+    awaiting_attach_status_settle: bool
     approval_policy: str
     sandbox: str
     collaboration_mode: str
@@ -155,7 +152,7 @@ class ExecutionStateChanged(RuntimeStateEvent):
     cancelled: Any = UNSET
     pending_cancel: Any = UNSET
     awaiting_local_turn_started: Any = UNSET
-    awaiting_reattach_status_settle: Any = UNSET
+    awaiting_attach_status_settle: Any = UNSET
     current_turn_id: Any = UNSET
     current_message_id: Any = UNSET
     last_execution_message_id: Any = UNSET
@@ -241,7 +238,7 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             state["current_prompt_reply_in_thread"] = False
             state["current_actor_open_id"] = ""
             state["awaiting_local_turn_started"] = False
-            state["awaiting_reattach_status_settle"] = False
+            state["awaiting_attach_status_settle"] = False
         case ExecutionRetired(runtime_channel_state=runtime_channel_state):
             current_message_id = str(state["current_message_id"] or "").strip()
             if current_message_id:
@@ -262,8 +259,8 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
                 state["pending_cancel"] = change.pending_cancel
             if change.awaiting_local_turn_started is not UNSET:
                 state["awaiting_local_turn_started"] = change.awaiting_local_turn_started
-            if change.awaiting_reattach_status_settle is not UNSET:
-                state["awaiting_reattach_status_settle"] = change.awaiting_reattach_status_settle
+            if change.awaiting_attach_status_settle is not UNSET:
+                state["awaiting_attach_status_settle"] = change.awaiting_attach_status_settle
             if change.current_turn_id is not UNSET:
                 state["current_turn_id"] = change.current_turn_id
             if change.current_message_id is not UNSET:

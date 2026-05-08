@@ -447,12 +447,10 @@ class CodexThreadsUiDomain:
             logger.exception("读取归档目标失败")
             return make_card_response(toast=f"归档线程失败：{exc}", toast_type="warning")
         try:
-            self._owner._adapter.archive_thread(thread.thread_id)
+            self._owner._archive_thread_for_control(thread.thread_id, summary=thread)
         except Exception as exc:
             logger.exception("归档线程失败")
             return make_card_response(toast=f"归档线程失败：{exc}", toast_type="warning")
-        if runtime.current_thread_id == thread.thread_id:
-            self._owner._clear_thread_binding(sender_id, chat_id, message_id=message_id)
         return self._handle_threads_refresh_action(
             sender_id,
             chat_id,

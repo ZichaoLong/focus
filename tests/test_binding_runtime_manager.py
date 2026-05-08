@@ -131,7 +131,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
                 SimpleNamespace(title="Backend title", cwd="/srv/project", status="notLoaded"),
                 "notLoaded",
             ),
-            unsubscribe_availability=lambda thread_id: (True, ""),
+            detach_availability=lambda thread_id: (True, ""),
         )
 
         self.assertEqual(snapshot["binding_id"], "p2p:ou-user:chat-1")
@@ -140,7 +140,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(snapshot["feishu_runtime_state"], "attached")
         self.assertEqual(snapshot["interaction_owner"]["relation"], "current")
         self.assertTrue(snapshot["running_turn"])
-        self.assertTrue(snapshot["unsubscribe_available"])
+        self.assertTrue(snapshot["detach_available"])
         self.assertTrue(snapshot["reprofile_possible"])
 
     def test_interactive_binding_can_adopt_sole_subscriber(self) -> None:
@@ -205,15 +205,15 @@ class BindingRuntimeManagerTests(unittest.TestCase):
             )
             snapshot = manager.thread_binding_snapshot_locked(
                 "thread-1",
-                unsubscribe_availability=lambda thread_id: (True, ""),
+                detach_availability=lambda thread_id: (True, ""),
             )
 
         self.assertEqual(snapshot["thread_id"], "thread-1")
         self.assertEqual(sorted(snapshot["bound_binding_ids"]), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
         self.assertEqual(snapshot["attached_binding_ids"], ["p2p:ou-user-a:chat-a"])
-        self.assertEqual(snapshot["released_binding_ids"], ["p2p:ou-user-b:chat-b"])
+        self.assertEqual(snapshot["detached_binding_ids"], ["p2p:ou-user-b:chat-b"])
         self.assertEqual(snapshot["interaction_owner"]["binding_id"], "p2p:ou-user-a:chat-a")
-        self.assertTrue(snapshot["unsubscribe_available"])
+        self.assertTrue(snapshot["detach_available"])
 
     def test_deactivate_binding_locked_clears_runtime_store_and_leases(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
@@ -363,9 +363,9 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         state_b["current_message_id"] = "card-b"
 
         with manager._lock:
-            result = manager.unsubscribe_feishu_runtime_by_thread_id_locked(
+            result = manager.detach_thread_bindings_locked(
                 "thread-1",
-                unsubscribe_availability=lambda thread_id: (True, ""),
+                detach_availability=lambda thread_id: (True, ""),
                 on_release_binding_state=lambda current_state: current_state.__setitem__("current_message_id", ""),
             )
 
@@ -373,13 +373,13 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         stored_a = store.load(binding_a)
         stored_b = store.load(binding_b)
         self.assertTrue(result.changed)
-        self.assertFalse(result.already_released)
+        self.assertFalse(result.already_detached)
         self.assertEqual(result.thread_id, "thread-1")
         self.assertEqual(result.thread_title, "Demo")
         self.assertEqual(result.working_dir, "/tmp/project")
         self.assertEqual(result.unsubscribe_thread_id, "thread-1")
         self.assertEqual(sorted(result.bound_binding_ids), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
-        self.assertEqual(sorted(result.released_binding_ids), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
+        self.assertEqual(sorted(result.detached_binding_ids), ["p2p:ou-user-a:chat-a", "p2p:ou-user-b:chat-b"])
         self.assertEqual(state_a["feishu_runtime_state"], "detached")
         self.assertEqual(state_b["feishu_runtime_state"], "detached")
         self.assertEqual(state_a["current_message_id"], "")
@@ -402,9 +402,9 @@ class BindingRuntimeManagerTests(unittest.TestCase):
 
         with manager._lock:
             with self.assertRaisesRegex(ValueError, "blocked by controller"):
-                manager.unsubscribe_feishu_runtime_by_thread_id_locked(
+                manager.detach_thread_bindings_locked(
                     "thread-1",
-                    unsubscribe_availability=lambda thread_id: (False, "blocked by controller"),
+                    detach_availability=lambda thread_id: (False, "blocked by controller"),
                 )
 
         stored = ChatBindingStore(data_dir).load(binding)

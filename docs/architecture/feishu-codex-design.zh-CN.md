@@ -115,16 +115,16 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/feishu_codexctl.py` 与 `bot/service_control_plane.py`：本地服务管理 CLI 与运行中服务控制面
 - `bot/instance_layout.py` 与 `bot/instance_resolution.py`：多实例目录布局、当前/目标实例解析
 - `bot/binding_identity.py`：admin-facing binding 标识规范
-- `bot/binding_runtime_manager.py`：binding / subscribe / attach / released 与本地 runtime snapshot 的 owner
+- `bot/binding_runtime_manager.py`：binding / subscribe / attach / detach 与本地 runtime snapshot 的 owner
 - `bot/thread_access_policy.py`：线程共享与 interaction owner 的准入 policy 边界
 - `bot/thread_runtime_coordination.py`：跨实例 live runtime lease 获取、自动转移与拒绝
 - `bot/turn_execution_coordinator.py`、`bot/execution_output_controller.py`、`bot/execution_recovery_controller.py`：turn / execution 生命周期、执行卡片发布、终态结果载体发送、watchdog / reconcile / degrade 处理
 - `bot/generated_image_delivery.py`：基于终态 thread snapshot 的出站图片提取与独立飞书图片消息发送；它不改写权威文本结果合同，也不进入 execution card patch 模型
-- `bot/runtime_admin_controller.py`：`/status`、`/release-runtime`、`/re-attach` 与 control-plane 查询/管理
+- `bot/runtime_admin_controller.py`：`/status`、`/detach`、`/attach` 与 control-plane 查询/管理
 - `bot/inbound_surface_controller.py`：入站命令面、卡片 action 路由、help 卡片命令复用
 - `bot/forward_aggregator.py`：合并转发缓冲、超时分发与转发树文本化；它只持有这组 transport 内部状态机，不再把这部分状态散落在 `FeishuBot` 主体里
 - `bot/group_history_recovery.py`：`assistant` 群模式的历史回捞、实时日志合并、上下文格式化与边界 `message_id` 推导；它不直接依赖飞书 SDK，请求构造与 API 调用仍留在 `FeishuBot` 这一 transport 边界，并通过显式 ports 传入分页结果
-- `bot/prompt_turn_entry_controller.py`：prompt 进入、lease 准入、released -> attached 恢复编排
+- `bot/prompt_turn_entry_controller.py`：prompt 进入、lease 准入、detached -> attached 恢复编排
 - `bot/adapter_notification_controller.py`：adapter notification 的 method 路由、语义解释与下游分发
 - `bot/interaction_request_controller.py`：审批 / 用户输入这类交互请求的 pending 状态与 fail-close 收口
 - `bot/codex_threads_ui_domain.py`：当前目录线程卡片 UI 流程，包括重命名表单这类瞬时 UI 状态，以及通过 `RuntimeLoop` 串行化的 resume 目标解析
@@ -176,7 +176,7 @@ shared backend 与 wrapper 的具体机制，见
 
 当前这一层拆分已经不只是“把 help/settings/group/thread/file 等领域从单体逻辑里抽出去”。历史计划里提出的 ownership 拆分主线，目前已经大体落地：
 
-- `BindingRuntimeManager` 已持有 `binding` / `subscribe` / `attach` / `released` 这一组 Feishu runtime 管理
+- `BindingRuntimeManager` 已持有 `binding` / `subscribe` / `attach` / `detach` 这一组 Feishu runtime 管理
 - `ThreadAccessPolicy` 与 lease store 已持有 interaction owner 的准入规则
 - `TurnExecutionCoordinator`、`ExecutionOutputController`、`ExecutionRecoveryController`、`InteractionRequestController`、`AdapterNotificationController` 已共同持有 turn / execution / request bridge 这一组生命周期状态机
 - `RuntimeAdminController` 已持有 runtime admin / control-plane 查询与管理面
@@ -246,7 +246,7 @@ shared backend 与 wrapper 的具体机制，见
 - 它不应继续以“单独删除 `chat_bindings.json` 文件”的方式被定义为一个独立架构概念
 - 持久化 binding schema 也应 fail-closed；已废弃的 v4 `current_thread_write_owner_thread_id` 字段只作为显式迁移输入被忽略，不再写回
 - 只要 `current_thread_id` 非空，就必须显式写出 `feishu_runtime_state`
-- `feishu_runtime_state` 只能是 `attached` 或 `released`
+- `feishu_runtime_state` 只能是 `attached` 或 `detached`
 - 这类约束若不满足，应直接视为存储损坏并报错，而不是在 load 时静默补成 `attached` 或静默清理
 
 `system.yaml.admin_open_ids` 也遵守单一事实源原则：

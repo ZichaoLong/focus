@@ -57,7 +57,7 @@ class PromptTurnEntryPorts:
     message_reply_in_thread: Callable[[str], bool]
     group_actor_open_id: Callable[[str], str]
     access_policy: _ThreadAccessPolicy
-    released_runtime_reattach_check: Callable[[str], ReasonedCheck]
+    detached_runtime_attach_check: Callable[[str], ReasonedCheck]
     acquire_interaction_lease_for_binding: Callable[[ChatBindingKey, str], Any]
     release_interaction_lease_for_binding: Callable[[ChatBindingKey, str], bool]
     sync_stored_binding_locked: Callable[[ChatBindingKey, RuntimeState], None]
@@ -108,7 +108,7 @@ class PromptTurnEntryController:
         self._message_reply_in_thread = ports.message_reply_in_thread
         self._group_actor_open_id = ports.group_actor_open_id
         self._access_policy = ports.access_policy
-        self._released_runtime_reattach_check = ports.released_runtime_reattach_check
+        self._detached_runtime_attach_check = ports.detached_runtime_attach_check
         self._acquire_interaction_lease_for_binding = ports.acquire_interaction_lease_for_binding
         self._release_interaction_lease_for_binding = ports.release_interaction_lease_for_binding
         self._sync_stored_binding_locked = ports.sync_stored_binding_locked
@@ -287,15 +287,15 @@ class PromptTurnEntryController:
         chat_binding_key = resolved.binding
         with self._lock:
             runtime = build_runtime_view(state)
-        released_thread_id = runtime.current_thread_id.strip()
-        reattach_pending = False
-        preattached_interaction_lease = None
-        if released_thread_id and not runtime.binding.feishu_runtime_attached:
-            reattach_pending = True
+        detached_thread_id = runtime.current_thread_id.strip()
+        attach_pending = False
+        pre_attached_interaction_lease = None
+        if detached_thread_id and not runtime.binding.feishu_runtime_attached:
+            attach_pending = True
             denial_text = self._access_policy.prompt_write_denial_text(
                 chat_binding_key,
                 chat_id,
-                released_thread_id,
+                detached_thread_id,
                 message_id=message_id,
             )
             if denial_text:
@@ -306,24 +306,24 @@ class PromptTurnEntryController:
                     reply_in_thread=self._message_reply_in_thread(message_id),
                 )
                 return False
-            reattach_check = self._released_runtime_reattach_check(released_thread_id)
-            if not reattach_check.allowed:
+            attach_check = self._detached_runtime_attach_check(detached_thread_id)
+            if not attach_check.allowed:
                 self._reply_text(
                     chat_id,
-                    reattach_check.reason_text,
+                    attach_check.reason_text,
                     message_id=message_id,
                     reply_in_thread=self._message_reply_in_thread(message_id),
                 )
                 return False
             with self._lock:
-                preattached_interaction_lease = self._acquire_interaction_lease_for_binding(
+                pre_attached_interaction_lease = self._acquire_interaction_lease_for_binding(
                     chat_binding_key,
-                    released_thread_id,
+                    detached_thread_id,
                 )
-            if not preattached_interaction_lease.granted:
+            if not pre_attached_interaction_lease.granted:
                 self._reply_text(
                     chat_id,
-                    self._access_policy.interaction_denied_text(preattached_interaction_lease.lease),
+                    self._access_policy.interaction_denied_text(pre_attached_interaction_lease.lease),
                     message_id=message_id,
                     reply_in_thread=self._message_reply_in_thread(message_id),
                 )
@@ -332,8 +332,8 @@ class PromptTurnEntryController:
             thread_id = self.ensure_thread(sender_id, chat_id, message_id=message_id)
             thread_id = self.ensure_binding_runtime_attached(sender_id, chat_id, message_id=message_id)
         except Exception as exc:
-            if preattached_interaction_lease is not None and preattached_interaction_lease.acquired:
-                self._release_interaction_lease_for_binding(chat_binding_key, released_thread_id)
+            if pre_attached_interaction_lease is not None and pre_attached_interaction_lease.acquired:
+                self._release_interaction_lease_for_binding(chat_binding_key, detached_thread_id)
             logger.exception("准备线程失败")
             self.render_start_failure(
                 chat_id=chat_id,
@@ -348,8 +348,8 @@ class PromptTurnEntryController:
             message_id=message_id,
         )
         if all_mode_exclusivity_violation:
-            if preattached_interaction_lease is not None and preattached_interaction_lease.acquired:
-                self._release_interaction_lease_for_binding(chat_binding_key, released_thread_id)
+            if pre_attached_interaction_lease is not None and pre_attached_interaction_lease.acquired:
+                self._release_interaction_lease_for_binding(chat_binding_key, detached_thread_id)
             self._reply_text(
                 chat_id,
                 all_mode_exclusivity_violation,
@@ -357,7 +357,7 @@ class PromptTurnEntryController:
                 reply_in_thread=self._message_reply_in_thread(message_id),
             )
             return False
-        interaction_lease = preattached_interaction_lease
+        interaction_lease = pre_attached_interaction_lease
         with self._lock:
             if interaction_lease is None:
                 interaction_lease = self._acquire_interaction_lease_for_binding(chat_binding_key, thread_id)
@@ -381,7 +381,7 @@ class PromptTurnEntryController:
                 prompt_reply_in_thread=prompt_reply_in_thread,
                 actor_open_id=str(actor_open_id or "").strip() or self._group_actor_open_id(message_id),
                 started_at=started_at,
-                awaiting_reattach_status_settle=reattach_pending,
+                awaiting_attach_status_settle=attach_pending,
             )
             self._clear_plan_state(state)
 

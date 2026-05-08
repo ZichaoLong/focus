@@ -58,9 +58,9 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
                     "thread_id": "thread-1",
                     "bound_binding_ids": ["p2p:ou_user:c1"],
                     "attached_binding_ids": ["p2p:ou_user:c1"],
-                    "released_binding_ids": [],
-                    "unsubscribe_available": True,
-                    "unsubscribe_reason": "",
+                    "detached_binding_ids": [],
+                    "detach_available": True,
+                    "detach_reason": "",
                 }
             self.assertEqual(method, "thread/detach")
             lease_store.release("thread-1", "service:one")

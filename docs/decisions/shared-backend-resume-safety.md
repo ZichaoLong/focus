@@ -5,7 +5,7 @@ See also:
 - `docs/architecture/fcodex-shared-backend-runtime.md` for the current shared-backend and
   wrapper runtime model
 - `docs/contracts/runtime-control-surface.md` for the shared state vocabulary used by
-  `/status`, `/release-runtime`, and the local admin surface
+  `/status`, `/detach`, and the local admin surface
 - `docs/contracts/thread-profile-semantics.md` for exact command and wrapper semantics
 - `docs/architecture/feishu-codex-design.md` for architecture and repository boundaries
 
@@ -105,7 +105,7 @@ Properties:
 - automatic transfer now first writes a short-lived machine-level transfer
   reservation for the target instance, then asks the owner instance to release
   Feishu runtime, and finally lets the target acquire the live runtime
-- if the owner instance is idle and reports `unsubscribe_available`,
+- if the owner instance is idle and reports `detach_available`,
   automatic transfer is allowed
 - if the owner instance is still executing or still has pending approval /
   input, the write attempt must reject clearly

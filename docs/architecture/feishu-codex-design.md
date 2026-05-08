@@ -142,7 +142,7 @@ Current module split:
   filesystem layout and current/target instance resolution
 - `bot/binding_identity.py`: stable admin-facing binding identifiers
 - `bot/binding_runtime_manager.py`: owner of `binding` / `subscribe` /
-  `attach` / `released` runtime state and local runtime snapshots
+  `attach` / `detach` runtime state and local runtime snapshots
 - `bot/thread_access_policy.py`: policy boundary for thread sharing and
   interaction-owner admission
 - `bot/thread_runtime_coordination.py`: cross-instance live-runtime lease
@@ -155,8 +155,8 @@ Current module split:
 - `bot/generated_image_delivery.py`: terminal-snapshot-based outbound image
   extraction and separate Feishu image-message delivery; it does not alter the
   authoritative text result contract or execution-card patch model
-- `bot/runtime_admin_controller.py`: `/status`, `/release-runtime`,
-  `/re-attach`, and control-plane status/admin management
+- `bot/runtime_admin_controller.py`: `/status`, `/detach`,
+  `/attach`, and control-plane status/admin management
 - `bot/inbound_surface_controller.py`: inbound command surface, card-action
   routing, and help-card command reuse
 - `bot/forward_aggregator.py`: merged-forward buffering, timeout dispatch, and
@@ -168,7 +168,7 @@ Current module split:
   API calls stay in the `FeishuBot` transport boundary and enter through
   explicit paginated-result ports
 - `bot/prompt_turn_entry_controller.py`: prompt entry orchestration,
-  lease-acquisition, and released -> attached recovery flow
+  lease-acquisition, and detached -> attached recovery flow
 - `bot/adapter_notification_controller.py`: adapter-notification routing,
   interpretation, and downstream dispatch
 - `bot/interaction_request_controller.py`: owns pending approval / user-input
@@ -261,7 +261,7 @@ large flow" exercise. The ownership-decomposition direction described in the
 historical plan has now largely landed:
 
 - `BindingRuntimeManager` now owns Feishu runtime management for `binding` /
-  `subscribe` / `attach` / `released`
+  `subscribe` / `attach` / `detach`
 - `ThreadAccessPolicy` and the lease stores now own the admission rules for
   interaction owner
 - `TurnExecutionCoordinator`, `ExecutionOutputController`,
@@ -345,7 +345,7 @@ So:
   migration input and is not written back
 - whenever `current_thread_id` is non-empty, `feishu_runtime_state`
   must be explicitly present
-- `feishu_runtime_state` may only be `attached` or `released`
+- `feishu_runtime_state` may only be `attached` or `detached`
 - violations should be treated as storage corruption and fail fast instead of
   being silently normalized during load
 

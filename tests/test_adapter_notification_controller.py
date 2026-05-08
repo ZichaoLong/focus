@@ -208,7 +208,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         state["current_message_id"] = "card-1"
         state["running"] = True
         state["awaiting_local_turn_started"] = True
-        state["awaiting_reattach_status_settle"] = True
+        state["awaiting_attach_status_settle"] = True
         state["current_turn_id"] = "turn-1"
 
         controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
@@ -232,7 +232,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         state["current_message_id"] = "card-1"
         state["running"] = True
         state["awaiting_local_turn_started"] = True
-        state["awaiting_reattach_status_settle"] = True
+        state["awaiting_attach_status_settle"] = True
         state["current_turn_id"] = "turn-1"
 
         controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
@@ -256,7 +256,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         state["current_message_id"] = "card-1"
         state["running"] = True
         state["awaiting_local_turn_started"] = True
-        state["awaiting_reattach_status_settle"] = True
+        state["awaiting_attach_status_settle"] = True
         state["current_turn_id"] = "turn-1"
 
         controller, note_events, _, _, _, _, _, _, _, finalizations, _ = self._make_controller(

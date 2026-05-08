@@ -91,6 +91,7 @@ For the Feishu service itself:
 
 - when the first binding on a thread goes from detached to attached, the service must ensure it is subscribed to that thread
 - when the last attached Feishu binding on a thread becomes detached, the service must automatically stop its own Feishu-side subscription for that thread
+- a local `attached` flag is not enough by itself; the service must only mark `attached` after its own backend connection has re-established the real thread subscription fact
 
 This constrains the Feishu service only.
 
@@ -216,8 +217,13 @@ Scopes:
 All attach actions must fail closed when:
 
 - live-runtime lease admission denies them
-- the target thread is no longer reattachable
+- the target thread is no longer attachable
 - the current instance cannot safely acquire the needed runtime
+
+Attach is not a read-only inspection.
+
+- if the thread is already loaded, attach must still re-establish the service connection's backend-side thread subscription
+- it must not flip local state to `attached` based only on a successful `thread/read`
 
 ### 5.5 `/reset-backend`
 

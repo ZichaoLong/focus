@@ -197,7 +197,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
                 message_reply_in_thread=lambda message_id: message_id.startswith("thread-"),
                 group_actor_open_id=lambda message_id: "ou_actor" if message_id else "",
                 access_policy=access_policy,
-                released_runtime_reattach_check=lambda thread_id: ReasonedCheck.allow(),
+                detached_runtime_attach_check=lambda thread_id: ReasonedCheck.allow(),
                 acquire_interaction_lease_for_binding=binding_runtime.acquire_interaction_lease_for_binding,
                 release_interaction_lease_for_binding=binding_runtime.release_interaction_lease_for_binding,
                 sync_stored_binding_locked=binding_runtime.sync_stored_binding_locked,
@@ -293,13 +293,13 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         )
         env["resume_summaries"][thread_id] = thread
         env["bind_thread_fn"]("ou_user", "c1", thread)
-        if runtime_state == "released":
+        if runtime_state == "detached":
             with env["lock"]:
                 env["binding_runtime"].unsubscribe_thread_locked(env["binding"], thread_id)
                 env["binding_runtime"].apply_persisted_runtime_state_message_locked(
                     env["binding"],
                     env["state"],
-                    ThreadStateChanged(feishu_runtime_state="released"),
+                    ThreadStateChanged(feishu_runtime_state="detached"),
                 )
 
     def test_handle_prompt_replies_when_turn_is_already_running(self) -> None:
@@ -331,10 +331,10 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self.assertEqual(env["start_turn_calls"], [])
         self.assertIn("当前线程正由另一飞书会话执行", env["replies"][-1][1])
 
-    def test_start_prompt_turn_rebinds_released_thread_before_starting(self) -> None:
+    def test_start_prompt_turn_rebinds_detached_thread_before_starting(self) -> None:
         env = self._make_controller()
         controller = env["controller"]
-        self._bind_thread(env, thread_id="thread-1", runtime_state="released")
+        self._bind_thread(env, thread_id="thread-1", runtime_state="detached")
 
         controller.start_prompt_turn("ou_user", "c1", "hello", message_id="msg-1")
 
@@ -342,11 +342,11 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self.assertEqual(env["start_turn_calls"][-1]["thread_id"], "thread-1")
         self.assertEqual(env["state"]["feishu_runtime_state"], "attached")
 
-    def test_start_prompt_turn_pure_rejects_released_thread_when_live_runtime_owner_blocks_reattach(self) -> None:
+    def test_start_prompt_turn_pure_rejects_detached_thread_when_live_runtime_owner_blocks_attach(self) -> None:
         env = self._make_controller()
         controller = env["controller"]
-        self._bind_thread(env, thread_id="thread-1", runtime_state="released")
-        controller._released_runtime_reattach_check = lambda thread_id: ReasonedCheck.deny(
+        self._bind_thread(env, thread_id="thread-1", runtime_state="detached")
+        controller._detached_runtime_attach_check = lambda thread_id: ReasonedCheck.deny(
             PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不能自动转移。",
         )
@@ -379,10 +379,10 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self.assertEqual(env["state"]["current_turn_id"], "turn-1")
         self.assertEqual(env["scheduled_watchdogs"], [("ou_user", "c1")])
 
-    def test_start_prompt_turn_releases_preattached_lease_by_released_thread_id_on_all_mode_exclusivity_violation(self) -> None:
+    def test_start_prompt_turn_releases_pre_attached_lease_by_detached_thread_id_on_all_mode_exclusivity_violation(self) -> None:
         env = self._make_controller()
         controller = env["controller"]
-        self._bind_thread(env, thread_id="thread-1", runtime_state="released")
+        self._bind_thread(env, thread_id="thread-1", runtime_state="detached")
 
         controller.ensure_binding_runtime_attached = lambda *args, **kwargs: "thread-2"
         controller._access_policy.all_mode_thread_exclusivity_violation = lambda *args, **kwargs: "sharing denied"

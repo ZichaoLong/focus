@@ -91,6 +91,7 @@
 
 - 第一个 binding 从 detached 变 attached 时，服务必须确保自己已对该 thread 建立订阅
 - 某个 thread 的最后一个 attached Feishu binding 变 detached 时，服务必须自动停止自己对该 thread 的 Feishu-side 订阅
+- 仅有本地 `attached` 标记还不够；只有服务自己的 backend 连接重新建立了真实 thread 订阅事实，才允许把状态记为 `attached`
 
 这条约束只约束 Feishu 服务自己。
 
@@ -218,6 +219,11 @@
 - 如果 live runtime lease 不允许
 - 如果目标 thread 已不再可恢复
 - 如果当前实例无法安全取得所需运行时
+
+attach 不是只读查看动作。
+
+- 即使 thread 当前已经 loaded，attach 也必须重新建立服务连接在 backend 侧的 thread 订阅
+- 不能因为 `thread/read` 成功，就只改本地状态为 `attached`
 
 ### 5.5 `/reset-backend`
 

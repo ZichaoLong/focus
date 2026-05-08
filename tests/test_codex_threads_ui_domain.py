@@ -13,6 +13,7 @@ class _OwnerStub:
         self._lock = threading.RLock()
         self._threads_initial_limit = 5
         self._thread_list_query_limit = 20
+        self.archive_calls: list[tuple[str, ThreadSummary | None]] = []
         self.reply_calls: list[tuple[str, str, str]] = []
         self.resolve_calls: list[str] = []
         self.thread = ThreadSummary(
@@ -96,7 +97,7 @@ class _OwnerStub:
         *,
         summary: ThreadSummary | None = None,
     ) -> dict[str, object]:
-        del summary
+        self.archive_calls.append((thread_id, summary))
         return {"thread_id": thread_id, "cleared_binding_ids": ["p2p:ou_user:chat-a"]}
 
 
@@ -155,6 +156,28 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
         self.assertEqual(kwargs["summary"], owner.thread)
         self.assertEqual(kwargs["message_id"], "msg-1")
         self.assertEqual(kwargs["refresh_threads_message_id"], "msg-session")
+
+    def test_handle_archive_thread_action_uses_control_path(self) -> None:
+        owner = _OwnerStub()
+        domain = CodexThreadsUiDomain(
+            owner,
+            runtime_ports=ThreadsUiRuntimePorts(
+                submit_to_runtime=lambda fn, *args, **kwargs: None,
+                resume_thread_on_runtime=lambda *args, **kwargs: None,
+            ),
+        )
+
+        result = domain.handle_archive_thread_action(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"thread_id": "thread-1"},
+        )
+
+        self.assertEqual(owner.archive_calls, [("thread-1", owner.thread)])
+        self.assertIsNotNone(result.toast)
+        self.assertEqual(result.toast.content, "已归档线程：thread-1…")
+        self.assertEqual(result.toast.type, "success")
 
 
 if __name__ == "__main__":

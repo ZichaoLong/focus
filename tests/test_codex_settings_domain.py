@@ -147,7 +147,7 @@ class _SettingsPortsStub:
         self.reset_backend_calls.append(bool(force))
         return {
             "force": bool(force),
-            "released_binding_ids": ["p2p:ou_user:chat-a"],
+            "detached_binding_ids": ["p2p:ou_user:chat-a"],
             "interrupted_binding_ids": [],
             "fail_closed_request_count": 0,
             "purged_thread_ids": ["thread-1"],
@@ -301,7 +301,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
             )
             return {
                 "force": bool(force),
-                "released_binding_ids": ["p2p:ou_user:chat-a"],
+                "detached_binding_ids": ["p2p:ou_user:chat-a"],
                 "interrupted_binding_ids": [],
                 "fail_closed_request_count": 0,
                 "purged_thread_ids": ["thread-1"],
