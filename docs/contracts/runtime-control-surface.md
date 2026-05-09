@@ -259,12 +259,13 @@ state and control semantics.
 
 ## 7. reset-backend and re-profile
 
-The direct-write rule and reset path for thread-wise profile live in
-`docs/contracts/thread-profile-semantics.md`.
+The direct-write rule and reset path for thread-wise next-load settings
+(currently profile / memory mode) live in
+`docs/contracts/thread-next-load-settings-semantics.md`.
 
 This document keeps only the runtime-control requirement:
 
-- the Feishu-side `/profile <name>` flow should prefer direct write when possible, otherwise “apply and reset backend”
+- the Feishu-side `/profile <name>` / `/memory <...>` flows should prefer direct write when possible, otherwise “apply and reset backend”
 - it should not force ordinary users to understand complex detach / attach / unsubscribe relationships first
 
 ## 8. Bottom line

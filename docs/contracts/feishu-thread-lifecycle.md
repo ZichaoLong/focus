@@ -11,6 +11,7 @@ See also:
 - `docs/architecture/fcodex-shared-backend-runtime.md`
 - `docs/contracts/runtime-control-surface.md`
 - `docs/decisions/shared-backend-resume-safety.md`
+- `docs/contracts/thread-next-load-settings-semantics.md`
 - `docs/contracts/thread-profile-semantics.md`
 
 ## 1. Verified Baseline
@@ -241,7 +242,9 @@ elsewhere:
 
 - pure-reject / attach rules for prompts on `bound + detached` bindings:
   `docs/contracts/runtime-control-surface.md`
-- profile / provider resolution on unloaded-thread restore paths:
+- thread-wise next-load setting semantics on unloaded-thread restore paths:
+  `docs/contracts/thread-next-load-settings-semantics.md`
+- profile / provider specific semantics:
   `docs/contracts/thread-profile-semantics.md`
 - group-chat binding-by-`chat_id` and group session-scope rules:
   `docs/contracts/group-chat-contract.md`

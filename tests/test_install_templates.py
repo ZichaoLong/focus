@@ -72,7 +72,7 @@ class InstallTemplateTests(unittest.TestCase):
             stable_codex.symlink_to(stable_codex_js)
             (nvm_root / "alias" / "default").write_text("v24.15.0\n", encoding="utf-8")
 
-            with patch.dict("os.environ", {"HOME": str(root)}, clear=False):
+            with patch.dict("os.environ", {"HOME": str(root), "FNM_DIR": "", "NVM_DIR": ""}, clear=False):
                 with patch("bot.codex_command_resolver.shutil.which", return_value=None):
                     command = detect_stable_codex_command()
 

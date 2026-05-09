@@ -2,7 +2,9 @@
 
 英文原文：`docs/contracts/thread-memory-semantics.md`
 
-本文只定义 thread-wise memory mode 的生效与切换合同。
+本文只定义 thread-wise memory mode 自身的业务语义与入口合同。
+共享的 next-load 生效与 direct-write / reset-backend 规则，以
+`docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准。
 
 ## 1. 基本事实
 
@@ -46,36 +48,20 @@ thread-wise memory mode 控制的是：
 上游 memory 数据根目录仍是全局 `CODEX_HOME/memories`。
 不同 thread 的差异只体现在“这个 thread 读取 / 生成 memory 的方式”，不是各自拥有隔离存储。
 
-## 3. 何时能直接改
-
-thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，才允许直接写入。
-
-这要求至少同时满足：
-
-- 当前 thread 没有 attached 的 Feishu binding
-- 当前 thread 没有 live runtime lease
-- backend 侧已确认该 thread 不在内存
-
-所以：
-
-- 单纯 `detached` 不够
-- 只关掉一个飞书会话不够
-- 本地 `fcodex` 仍开着时通常也不够
-
-## 4. 飞书侧 `/memory [off|read|read_write]`
+## 3. 飞书侧 `/memory [off|read|read_write]`
 
 `/memory` 是当前 thread 的正式 memory mode 管理入口。
 
-它有三类结果：
+它沿用共享的 next-load 设置规则，因此有三类结果：
 
 1. 直接写入
-   - 当前 thread 已 verifiably globally unloaded
+   - 共享 direct-write 条件已满足
 2. 提供 “应用并重置 backend”
-   - 当前 thread 还没满足直接写入条件，但当前实例可通过 reset-backend 收口
+   - 共享 direct-write 条件未满足，但当前实例可通过 reset-backend 收口
 3. fail-closed
    - live runtime 由别的实例持有，或当前实例无法安全重置
 
-## 5. reset-backend 后的状态
+## 4. reset-backend 后的状态
 
 通过 `/memory` 触发 backend reset 后：
 
@@ -90,7 +76,7 @@ thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，
 - `附着当前实例`
 - `保持 detached`
 
-## 6. 本地行为
+## 5. 本地行为
 
 当前本地命令面没有单独的 thread-wise memory mode 改写命令。
 
@@ -106,7 +92,7 @@ thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，
 - 若 thread 当前仍 loaded，要让新 memory mode 生效，仍应遵循 unload / reset-backend 路径，而不是承诺热更新
 - 裸 `codex` 或其他合同外入口直接改动 runtime / config 所造成的分叉，不由本项目兜底统一
 
-## 7. 与 `/attach`、`/detach` 的关系
+## 6. 与 `/attach`、`/detach` 的关系
 
 - `/detach`
   - 只是暂停某个飞书会话接收推送
@@ -119,7 +105,7 @@ thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，
 
 - memory mode 管理与 attach/detach 是两条不同状态轴
 
-## 8. 不再支持的旧心智
+## 7. 不再支持的旧心智
 
 以下说法当前都不准确：
 
@@ -130,5 +116,4 @@ thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，
 当前准确说法是：
 
 - memory mode 是 thread-wise
-- 是否可写取决于 thread 是否 verifiably globally unloaded
-- 不满足时，应通过 reset-backend 路径收口，而不是要求用户手工理解更多低层动作
+- next-load 生效与 direct-write 规则，以共享合同为准

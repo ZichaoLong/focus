@@ -258,12 +258,12 @@ attach 不是只读查看动作。
 
 ## 7. reset-backend 与 re-profile
 
-thread-wise profile 的直接写入前提与 reset 路径，以
-`docs/contracts/thread-profile-semantics.zh-CN.md` 为准。
+thread-wise next-load 设置（当前包括 profile / memory mode）的直接写入前提与 reset 路径，以
+`docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准。
 
 这里仅保留本运行时控制面的结果要求：
 
-- 飞书侧 `/profile <name>` 应优先给用户走“直接写入”或“应用并重置 backend”
+- 飞书侧 `/profile <name>` / `/memory <...>` 应优先给用户走“直接写入”或“应用并重置 backend”
 - 不应要求用户先理解复杂的 detach / attach / unsubscribe 关系
 
 ## 8. 结论

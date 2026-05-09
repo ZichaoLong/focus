@@ -13,3 +13,7 @@ AGENTS.md
 AGENTS.zh-CN.md
 .backuptodo
 _feishu_attachments/
+thread_memory_modes.lock
+thread_resume_profiles.lock
+thread_runtime_leases.lock
+instance_registry.lock

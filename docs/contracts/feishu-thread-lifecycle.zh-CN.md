@@ -10,6 +10,7 @@
 - `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
 - `docs/contracts/runtime-control-surface.zh-CN.md`
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`
+- `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
 - `docs/contracts/thread-profile-semantics.zh-CN.md`
 
 ## 1. 上游基线
@@ -192,7 +193,8 @@ flowchart TD
 下列规则虽然和生命周期紧密相关，但正式归属不在本文：
 
 - `bound + detached` 下 prompt 的 pure reject / attach 规则：见 `docs/contracts/runtime-control-surface.zh-CN.md`
-- unloaded thread 恢复路径上的 profile / provider 解析合同：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
+- unloaded thread 恢复路径上的 thread-wise next-load 设置合同：见 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
+- profile / provider 自身语义：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
 - 群聊按 `chat_id` 共享 binding 以及群会话范围规则：见 `docs/contracts/group-chat-contract.zh-CN.md`
 
 ## 8. 相关实现文件

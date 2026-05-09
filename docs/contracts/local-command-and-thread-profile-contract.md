@@ -68,13 +68,16 @@ The lower layer may still call:
 
 But that is now an internal service protocol detail, not a user-facing concept.
 
-## 3. Profile is thread-wise, not binding-wise
+## 3. Profile and memory are thread-wise next-load settings
 
 This rule is identical locally and in Feishu:
 
-- for supported resume paths, the same thread should use the same persisted thread-wise profile when it moves from unloaded back to loaded
+- for supported resume paths, the same thread should use the same persisted thread-wise setting when it moves from unloaded back to loaded
 - binding only answers “which thread does this chat remember”
 - attach / detach only answers “does this Feishu chat receive push”
+
+The shared next-load effect and direct-write / reset-backend rules live in
+`docs/contracts/thread-next-load-settings-semantics.md`.
 
 ## 4. How local profile mutation works
 
@@ -88,7 +91,7 @@ New threads may be created through:
 ### 4.2 Existing thread
 
 The direct-write rule for an existing thread is defined in
-`docs/contracts/thread-profile-semantics.md`.
+`docs/contracts/thread-next-load-settings-semantics.md`.
 
 Therefore:
 
@@ -104,7 +107,8 @@ The formal contract is:
 
 - Feishu `/memory [off|read|read_write]` mutates the thread-wise memory mode
 - for supported resume paths, `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
-- the direct-write / reset-backend rule is defined in `docs/contracts/thread-memory-semantics.md`
+- the shared direct-write / reset-backend rule is defined in `docs/contracts/thread-next-load-settings-semantics.md`
+- the memory-mode-specific business semantics are defined in `docs/contracts/thread-memory-semantics.md`
 
 ## 5. reset-backend locally and in Feishu
 
