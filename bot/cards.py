@@ -87,6 +87,29 @@ def build_markdown_card(title: str, content: str, *, template: str = "blue") -> 
     }
 
 
+def build_markdown_action_card(
+    title: str,
+    content: str,
+    *,
+    action_rows: list[dict] | None = None,
+    template: str = "blue",
+) -> dict:
+    elements: list[dict] = [
+        {"tag": "markdown", "content": sanitize_runtime_markdown_for_feishu_card(content)},
+    ]
+    if action_rows:
+        elements.append({"tag": "hr"})
+        elements.extend(action_rows)
+    return {
+        "config": _card_config(),
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": template,
+        },
+        "elements": elements,
+    }
+
+
 def build_terminal_result_card(final_reply_text: str) -> dict:
     """构造终态结果卡。"""
     normalized = sanitize_runtime_markdown_for_feishu_card(final_reply_text)

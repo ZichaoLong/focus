@@ -48,6 +48,10 @@ from bot.codex_config_reader import resolve_profile_from_codex_config
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.codex_protocol.client import CodexRpcError
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
+from bot.codex_advanced_features_domain import (
+    AdvancedFeaturePorts,
+    CodexAdvancedFeaturesDomain,
+)
 from bot.codex_help_domain import CodexHelpDomain
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
 from bot.codex_settings_domain import (
@@ -424,6 +428,22 @@ class CodexHandler(BotHandler):
                 message_id,
             ),
         )
+        self._advanced_features_domain = CodexAdvancedFeaturesDomain(
+            ports=AdvancedFeaturePorts(
+                get_runtime_view=self._get_runtime_view,
+                list_skills=lambda *, cwd, force_reload=False: self._adapter.list_skills(
+                    cwd=cwd,
+                    force_reload=force_reload,
+                ),
+                set_skill_enabled=lambda **kwargs: self._adapter.set_skill_enabled(**kwargs),
+                list_plugins=lambda *, cwd=None: self._adapter.list_plugins(cwd=cwd),
+                read_plugin=lambda plugin_name, **kwargs: self._adapter.read_plugin(plugin_name, **kwargs),
+                set_plugin_enabled=lambda plugin_id, *, enabled: self._adapter.set_plugin_enabled(
+                    plugin_id,
+                    enabled=enabled,
+                ),
+            )
+        )
         self._threads_ui_domain = CodexThreadsUiDomain(
             ports=ThreadsUiPorts(
                 get_runtime_view=self._get_runtime_view,
@@ -435,8 +455,10 @@ class CodexHandler(BotHandler):
                 list_visible_current_dir_threads=self._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=self._read_thread_summary_authoritatively,
                 archive_thread_for_control=self._archive_thread_for_control,
+                compact_thread=lambda thread_id: self._adapter.compact_thread(thread_id),
                 rename_thread=lambda thread_id, name: self._adapter.rename_thread(thread_id, name),
                 patch_message=lambda message_id, content: self.bot.patch_message(message_id, content),
+                is_thread_not_loaded_error=self._is_thread_not_loaded_error,
                 threads_initial_limit=self._threads_initial_limit,
             ),
             runtime_ports=ThreadsUiRuntimePorts(
@@ -1566,8 +1588,27 @@ class CodexHandler(BotHandler):
             "/archive": CommandRoute(
                 handler=self._threads_ui_domain.handle_archive_command,
             ),
+            "/compact": CommandRoute(
+                handler=self._threads_ui_domain.handle_compact_command,
+            ),
             "/rename": CommandRoute(
                 handler=self._threads_ui_domain.handle_rename_command,
+            ),
+            "/skills": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._advanced_features_domain.handle_skills_command(
+                    sender_id,
+                    chat_id,
+                    arg,
+                    message_id=message_id,
+                ),
+            ),
+            "/plugins": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._advanced_features_domain.handle_plugins_command(
+                    sender_id,
+                    chat_id,
+                    arg,
+                    message_id=message_id,
+                ),
             ),
             "/approval": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_approval_command(
@@ -1656,6 +1697,42 @@ class CodexHandler(BotHandler):
             ),
             "cancel_rename": ActionRoute(
                 handler=self._threads_ui_domain.handle_cancel_rename_action,
+                group_guard="group_admin",
+            ),
+            "set_skill_enabled": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._advanced_features_domain.handle_set_skill_enabled(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                    action_value,
+                ),
+                group_guard="group_admin",
+            ),
+            "show_plugins_overview": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._advanced_features_domain.handle_show_plugins_overview_action(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                    action_value,
+                ),
+                group_guard="group_admin",
+            ),
+            "show_plugin_detail": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._advanced_features_domain.handle_show_plugin_detail_action(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                    action_value,
+                ),
+                group_guard="group_admin",
+            ),
+            "set_plugin_enabled": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._advanced_features_domain.handle_set_plugin_enabled(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                    action_value,
+                ),
                 group_guard="group_admin",
             ),
             "set_approval_policy": ActionRoute(

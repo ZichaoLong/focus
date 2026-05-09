@@ -46,6 +46,84 @@ class RuntimeConfigSummary:
     profiles: list[RuntimeProfileSummary] = field(default_factory=list)
 
 
+@dataclass(slots=True)
+class SkillSummary:
+    name: str
+    description: str
+    path: str
+    scope: str
+    enabled: bool
+    short_description: str | None = None
+
+
+@dataclass(slots=True)
+class SkillLoadError:
+    path: str
+    message: str
+
+
+@dataclass(slots=True)
+class SkillsSnapshot:
+    cwd: str
+    skills: list[SkillSummary] = field(default_factory=list)
+    errors: list[SkillLoadError] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PluginSummary:
+    plugin_id: str
+    name: str
+    marketplace_name: str
+    marketplace_path: str | None
+    installed: bool
+    enabled: bool
+    source_type: str
+    availability: str
+    install_policy: str
+    auth_policy: str
+    keywords: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PluginMarketplaceSummary:
+    name: str
+    path: str | None
+    plugins: list[PluginSummary] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class PluginLoadError:
+    marketplace_path: str
+    message: str
+
+
+@dataclass(slots=True)
+class PluginCatalog:
+    marketplaces: list[PluginMarketplaceSummary] = field(default_factory=list)
+    marketplace_load_errors: list[PluginLoadError] = field(default_factory=list)
+    featured_plugin_ids: list[str] = field(default_factory=list)
+
+    def find_plugin(self, plugin_id: str) -> tuple[PluginMarketplaceSummary, PluginSummary] | None:
+        normalized_plugin_id = str(plugin_id or "").strip()
+        if not normalized_plugin_id:
+            return None
+        for marketplace in self.marketplaces:
+            for plugin in marketplace.plugins:
+                if plugin.plugin_id == normalized_plugin_id:
+                    return marketplace, plugin
+        return None
+
+
+@dataclass(slots=True)
+class PluginDetailSummary:
+    plugin: PluginSummary
+    description: str
+    skill_names: list[str] = field(default_factory=list)
+    hook_keys: list[str] = field(default_factory=list)
+    app_names: list[str] = field(default_factory=list)
+    mcp_servers: list[str] = field(default_factory=list)
+
+
 class TextTurnInputItem(TypedDict):
     type: Literal["text"]
     text: str
@@ -126,6 +204,36 @@ class AgentAdapter(ABC):
 
     @abstractmethod
     def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
+        ...
+
+    @abstractmethod
+    def compact_thread(self, thread_id: str) -> None:
+        ...
+
+    @abstractmethod
+    def list_skills(self, *, cwd: str, force_reload: bool = False) -> SkillsSnapshot:
+        ...
+
+    @abstractmethod
+    def set_skill_enabled(self, *, skill_path: str = "", skill_name: str = "", enabled: bool) -> None:
+        ...
+
+    @abstractmethod
+    def list_plugins(self, *, cwd: str | None = None) -> PluginCatalog:
+        ...
+
+    @abstractmethod
+    def read_plugin(
+        self,
+        plugin_name: str,
+        *,
+        marketplace_name: str = "",
+        marketplace_path: str | None = None,
+    ) -> PluginDetailSummary:
+        ...
+
+    @abstractmethod
+    def set_plugin_enabled(self, plugin_id: str, *, enabled: bool) -> None:
         ...
 
     @abstractmethod

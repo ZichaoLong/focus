@@ -9,7 +9,18 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bot.cards import build_ask_user_card, build_execution_card
-from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary, ThreadSnapshot, ThreadSummary
+from bot.adapters.base import (
+    PluginCatalog,
+    PluginDetailSummary,
+    PluginMarketplaceSummary,
+    PluginSummary,
+    RuntimeConfigSummary,
+    RuntimeProfileSummary,
+    SkillSummary,
+    SkillsSnapshot,
+    ThreadSnapshot,
+    ThreadSummary,
+)
 from bot.codex_handler import CodexHandler
 from bot.codex_protocol.client import CodexRpcError
 from bot.execution_transcript import ExecutionReplySegment
@@ -57,8 +68,16 @@ class _FakeAdapter:
         self.archive_thread_calls: list[str] = []
         self.unsubscribe_thread_calls: list[str] = []
         self.set_thread_memory_mode_calls: list[dict] = []
+        self.compact_thread_calls: list[str] = []
+        self.list_skills_calls: list[dict] = []
+        self.set_skill_enabled_calls: list[dict] = []
+        self.list_plugins_calls: list[dict] = []
+        self.set_plugin_enabled_calls: list[dict] = []
         self.read_thread_calls: list[dict] = []
         self.thread_snapshots: dict[tuple[str, bool | None], ThreadSnapshot | Exception] = {}
+        self.skills_snapshots: dict[str, SkillsSnapshot] = {}
+        self.plugin_catalogs: dict[str | None, PluginCatalog] = {}
+        self.plugin_details: dict[tuple[str, str, str | None], PluginDetailSummary] = {}
 
     def stop(self) -> None:
         return None
@@ -169,6 +188,145 @@ class _FakeAdapter:
 
     def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
         self.set_thread_memory_mode_calls.append({"thread_id": thread_id, "mode": mode})
+
+    def compact_thread(self, thread_id: str) -> None:
+        self.compact_thread_calls.append(thread_id)
+
+    def list_skills(self, *, cwd: str, force_reload: bool = False) -> SkillsSnapshot:
+        self.list_skills_calls.append({"cwd": cwd, "force_reload": force_reload})
+        snapshot = self.skills_snapshots.get(cwd)
+        if snapshot is not None:
+            return snapshot
+        return SkillsSnapshot(cwd=cwd)
+
+    def set_skill_enabled(self, *, skill_path: str = "", skill_name: str = "", enabled: bool) -> None:
+        self.set_skill_enabled_calls.append(
+            {
+                "skill_path": skill_path,
+                "skill_name": skill_name,
+                "enabled": enabled,
+            }
+        )
+        for cwd, snapshot in list(self.skills_snapshots.items()):
+            next_skills = []
+            changed = False
+            for skill in snapshot.skills:
+                if skill.path == skill_path or (skill_name and skill.name == skill_name):
+                    next_skills.append(
+                        SkillSummary(
+                            name=skill.name,
+                            description=skill.description,
+                            short_description=skill.short_description,
+                            path=skill.path,
+                            scope=skill.scope,
+                            enabled=enabled,
+                        )
+                    )
+                    changed = True
+                else:
+                    next_skills.append(skill)
+            if changed:
+                self.skills_snapshots[cwd] = SkillsSnapshot(
+                    cwd=snapshot.cwd,
+                    skills=next_skills,
+                    errors=list(snapshot.errors),
+                )
+
+    def list_plugins(self, *, cwd: str | None = None) -> PluginCatalog:
+        self.list_plugins_calls.append({"cwd": cwd})
+        catalog = self.plugin_catalogs.get(cwd)
+        if catalog is not None:
+            return catalog
+        return PluginCatalog()
+
+    def read_plugin(
+        self,
+        plugin_name: str,
+        *,
+        marketplace_name: str = "",
+        marketplace_path: str | None = None,
+    ) -> PluginDetailSummary:
+        detail = self.plugin_details.get((plugin_name, marketplace_name, marketplace_path))
+        if detail is not None:
+            return detail
+        for catalog in self.plugin_catalogs.values():
+            for marketplace in catalog.marketplaces:
+                if marketplace.name != marketplace_name:
+                    continue
+                if (marketplace.path or None) != (marketplace_path or None):
+                    continue
+                for plugin in marketplace.plugins:
+                    if plugin.name == plugin_name:
+                        return PluginDetailSummary(plugin=plugin, description="")
+        raise NotImplementedError
+
+    def set_plugin_enabled(self, plugin_id: str, *, enabled: bool) -> None:
+        self.set_plugin_enabled_calls.append({"plugin_id": plugin_id, "enabled": enabled})
+        for key, catalog in list(self.plugin_catalogs.items()):
+            next_marketplaces: list[PluginMarketplaceSummary] = []
+            changed = False
+            for marketplace in catalog.marketplaces:
+                next_plugins: list[PluginSummary] = []
+                market_changed = False
+                for plugin in marketplace.plugins:
+                    if plugin.plugin_id == plugin_id:
+                        next_plugins.append(
+                            PluginSummary(
+                                plugin_id=plugin.plugin_id,
+                                name=plugin.name,
+                                marketplace_name=plugin.marketplace_name,
+                                marketplace_path=plugin.marketplace_path,
+                                installed=plugin.installed,
+                                enabled=enabled,
+                                source_type=plugin.source_type,
+                                availability=plugin.availability,
+                                install_policy=plugin.install_policy,
+                                auth_policy=plugin.auth_policy,
+                                keywords=list(plugin.keywords),
+                            )
+                        )
+                        market_changed = True
+                        changed = True
+                    else:
+                        next_plugins.append(plugin)
+                next_marketplaces.append(
+                    PluginMarketplaceSummary(
+                        name=marketplace.name,
+                        path=marketplace.path,
+                        plugins=next_plugins,
+                    )
+                )
+                if market_changed:
+                    for detail_key, detail in list(self.plugin_details.items()):
+                        if detail.plugin.plugin_id != plugin_id:
+                            continue
+                        plugin = detail.plugin
+                        self.plugin_details[detail_key] = PluginDetailSummary(
+                            plugin=PluginSummary(
+                                plugin_id=plugin.plugin_id,
+                                name=plugin.name,
+                                marketplace_name=plugin.marketplace_name,
+                                marketplace_path=plugin.marketplace_path,
+                                installed=plugin.installed,
+                                enabled=enabled,
+                                source_type=plugin.source_type,
+                                availability=plugin.availability,
+                                install_policy=plugin.install_policy,
+                                auth_policy=plugin.auth_policy,
+                                keywords=list(plugin.keywords),
+                            ),
+                            description=detail.description,
+                            skill_names=list(detail.skill_names),
+                            hook_keys=list(detail.hook_keys),
+                            app_names=list(detail.app_names),
+                            mcp_servers=list(detail.mcp_servers),
+                        )
+            if changed:
+                self.plugin_catalogs[key] = PluginCatalog(
+                    marketplaces=next_marketplaces,
+                    marketplace_load_errors=list(catalog.marketplace_load_errors),
+                    featured_plugin_ids=list(catalog.featured_plugin_ids),
+                )
 
     def list_threads_all(
         self,
@@ -4716,10 +4874,10 @@ class CodexHandlerTests(unittest.TestCase):
             [item["text"]["content"] for item in action_elements[0]["actions"]],
             ["当前会话", "群聊", "线程"],
         )
-        self.assertEqual(action_elements[1]["layout"], "bisected")
+        self.assertEqual(action_elements[1]["layout"], "trisection")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["运行时", "身份"],
+            ["运行时", "高级功能", "身份"],
         )
 
     def test_commands_lists_common_navigation_commands(self) -> None:
@@ -4732,11 +4890,14 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/commands`", reply)
         self.assertIn("`/status`", reply)
         self.assertIn("`/memory [off|read|read_write]`", reply)
+        self.assertIn("`/compact`", reply)
         self.assertIn("`/detach`", reply)
         self.assertIn("`/attach [binding|thread|service]`", reply)
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
         self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
         self.assertIn("`/reset-backend`", reply)
+        self.assertIn("`/skills`", reply)
+        self.assertIn("`/plugins [plugin_id]`", reply)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
         self.assertNotIn("/debug-contact", reply)
         self.assertNotIn("`/cancel`", reply)
@@ -4747,6 +4908,193 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/commands extra")
 
         self.assertIn("用法：`/commands`", bot.replies[-1][1])
+
+    def test_compact_command_starts_current_thread_compaction(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["current_thread_title"] = "demo"
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertEqual(handler._adapter.compact_thread_calls, ["thread-1"])
+        self.assertEqual(bot.cards[-1][1]["header"]["title"]["content"], "Codex Compact 已开始")
+        self.assertIn("`thread-1", bot.cards[-1][1]["elements"][0]["content"])
+
+    def test_compact_command_surfaces_thread_not_loaded_hint(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+
+        def _raise_not_loaded(thread_id: str) -> None:
+            del thread_id
+            raise CodexRpcError("thread/compact/start", {"message": "thread not loaded: thread-1"})
+
+        handler._adapter.compact_thread = _raise_not_loaded
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertIn("当前 thread 尚未加载到本实例 backend", bot.replies[-1][1])
+        self.assertIn("`/attach`", bot.replies[-1][1])
+
+    def test_skills_command_lists_visible_skills(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["working_dir"] = "/tmp/project"
+        handler._adapter.skills_snapshots["/tmp/project"] = SkillsSnapshot(
+            cwd="/tmp/project",
+            skills=[
+                SkillSummary(
+                    name="feishu-send-image",
+                    description="Send images to attached Feishu chats.",
+                    short_description="Send outbound images.",
+                    path="/tmp/project/.agents/skills/feishu-send-image/SKILL.md",
+                    scope="repo",
+                    enabled=True,
+                )
+            ],
+        )
+
+        handler.handle_message("ou_user", "c1", "/skills")
+
+        card = bot.cards[-1][1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Skills")
+        self.assertIn("`feishu-send-image`", card["elements"][0]["content"])
+        self.assertIn("已发现 skills：`1` 个。", card["elements"][0]["content"])
+
+    def test_skill_toggle_action_updates_card(self) -> None:
+        handler, _ = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["working_dir"] = "/tmp/project"
+        handler._adapter.skills_snapshots["/tmp/project"] = SkillsSnapshot(
+            cwd="/tmp/project",
+            skills=[
+                SkillSummary(
+                    name="demo-skill",
+                    description="Demo skill.",
+                    short_description=None,
+                    path="/tmp/project/.agents/skills/demo/SKILL.md",
+                    scope="repo",
+                    enabled=True,
+                )
+            ],
+        )
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-skill",
+            {
+                "action": "set_skill_enabled",
+                "skill_name": "demo-skill",
+                "skill_path": "/tmp/project/.agents/skills/demo/SKILL.md",
+                "enabled": False,
+            },
+        ))
+
+        self.assertEqual(
+            handler._adapter.set_skill_enabled_calls,
+            [
+                {
+                    "skill_path": "/tmp/project/.agents/skills/demo/SKILL.md",
+                    "skill_name": "",
+                    "enabled": False,
+                }
+            ],
+        )
+        self.assertIn("已禁用 skill：`demo-skill`", response["card"]["elements"][0]["content"])
+
+    def test_plugins_command_lists_installed_plugins(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["working_dir"] = "/tmp/project"
+        handler._adapter.plugin_catalogs["/tmp/project"] = PluginCatalog(
+            marketplaces=[
+                PluginMarketplaceSummary(
+                    name="codex-curated",
+                    path=None,
+                    plugins=[
+                        PluginSummary(
+                            plugin_id="demo@codex-curated",
+                            name="demo",
+                            marketplace_name="codex-curated",
+                            marketplace_path=None,
+                            installed=True,
+                            enabled=True,
+                            source_type="remote",
+                            availability="AVAILABLE",
+                            install_policy="AVAILABLE",
+                            auth_policy="ON_USE",
+                        )
+                    ],
+                )
+            ]
+        )
+
+        handler.handle_message("ou_user", "c1", "/plugins")
+
+        card = bot.cards[-1][1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Plugins")
+        self.assertIn("`demo@codex-curated`", card["elements"][0]["content"])
+        self.assertIn("查看任意 plugin 详情", card["elements"][0]["content"])
+
+    def test_plugins_command_can_show_plugin_detail_and_toggle(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["working_dir"] = "/tmp/project"
+        plugin = PluginSummary(
+            plugin_id="demo@codex-curated",
+            name="demo",
+            marketplace_name="codex-curated",
+            marketplace_path=None,
+            installed=True,
+            enabled=True,
+            source_type="remote",
+            availability="AVAILABLE",
+            install_policy="AVAILABLE",
+            auth_policy="ON_USE",
+        )
+        handler._adapter.plugin_catalogs["/tmp/project"] = PluginCatalog(
+            marketplaces=[
+                PluginMarketplaceSummary(
+                    name="codex-curated",
+                    path=None,
+                    plugins=[plugin],
+                )
+            ]
+        )
+        handler._adapter.plugin_details[("demo", "codex-curated", None)] = PluginDetailSummary(
+            plugin=plugin,
+            description="Demo plugin.",
+            skill_names=["plugin-skill"],
+        )
+
+        handler.handle_message("ou_user", "c1", "/plugins demo@codex-curated")
+
+        detail_card = bot.cards[-1][1]
+        self.assertEqual(detail_card["header"]["title"]["content"], "Codex Plugin Detail")
+        self.assertIn("Demo plugin.", detail_card["elements"][0]["content"])
+        self.assertIn("`demo@codex-curated`", detail_card["elements"][0]["content"])
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-plugin",
+            {
+                "action": "set_plugin_enabled",
+                "plugin_id": "demo@codex-curated",
+                "plugin_name": "demo",
+                "marketplace_name": "codex-curated",
+                "marketplace_path": "",
+                "enabled": False,
+            },
+        ))
+
+        self.assertEqual(
+            handler._adapter.set_plugin_enabled_calls,
+            [{"plugin_id": "demo@codex-curated", "enabled": False}],
+        )
+        self.assertIn("已禁用 plugin：`demo@codex-curated`", response["card"]["elements"][0]["content"])
 
     def test_help_chat_page_mentions_status_preflight_and_cd(self) -> None:
         handler, bot = self._make_handler()
@@ -4798,6 +5146,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/threads`", content)
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", content)
         self.assertIn("`/new`", content)
+        self.assertIn("`/compact`", content)
         self.assertIn("当前线程", content)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", content)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", content)
@@ -4809,6 +5158,25 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
             ["当前线程", "返回帮助"],
+        )
+
+    def test_help_advanced_page_mentions_skills_and_plugins(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/help advanced")
+
+        self.assertEqual(len(bot.cards), 1)
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：高级功能")
+        content = card["elements"][0]["content"]
+        self.assertIn("`/skills`", content)
+        self.assertIn("`/plugins [plugin_id]`", content)
+        self.assertIn("skills 启停", content)
+        self.assertIn("plugin 详情", content)
+        action = self._first_action(card)
+        self.assertEqual(
+            [item["text"]["content"] for item in action["actions"]],
+            ["/skills", "/plugins", "返回帮助"],
         )
 
     def test_help_runtime_mentions_permissions_as_recommended_entry(self) -> None:
@@ -4938,7 +5306,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["运行时", "身份"],
+            ["运行时", "高级功能", "身份"],
         )
 
     def test_help_navigation_actions_are_not_group_admin_only(self) -> None:
@@ -4973,11 +5341,27 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/profile", "/memory", "/archive"],
+            ["/profile", "/memory", "/compact"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["重命名", "返回线程"],
+            ["/archive", "重命名", "返回线程"],
+        )
+
+    def test_help_show_page_action_can_open_advanced_page(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "show_help_page", "page": "advanced"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：高级功能")
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
+            ["/skills", "/plugins", "返回帮助"],
         )
 
     def test_help_show_page_action_can_open_thread_resume_form(self) -> None:

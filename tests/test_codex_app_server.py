@@ -76,6 +76,77 @@ class _FakeRpc:
                     },
                 }
             }
+        if method == "skills/list":
+            return {
+                "data": [
+                    {
+                        "cwd": "/tmp/project",
+                        "skills": [
+                            {
+                                "name": "demo-skill",
+                                "description": "Demo skill",
+                                "shortDescription": "Short demo",
+                                "path": "/tmp/project/.agents/skills/demo/SKILL.md",
+                                "scope": "repo",
+                                "enabled": True,
+                            }
+                        ],
+                        "errors": [
+                            {
+                                "path": "/tmp/project/.agents/skills/bad/SKILL.md",
+                                "message": "broken skill",
+                            }
+                        ],
+                    }
+                ]
+            }
+        if method == "plugin/list":
+            return {
+                "marketplaces": [
+                    {
+                        "name": "codex-curated",
+                        "path": None,
+                        "plugins": [
+                            {
+                                "id": "demo@codex-curated",
+                                "name": "demo",
+                                "installed": True,
+                                "enabled": False,
+                                "source": {"type": "remote"},
+                                "availability": "AVAILABLE",
+                                "installPolicy": "AVAILABLE",
+                                "authPolicy": "ON_USE",
+                                "keywords": ["demo", "test"],
+                            }
+                        ],
+                    }
+                ],
+                "marketplaceLoadErrors": [],
+                "featuredPluginIds": ["demo@codex-curated"],
+            }
+        if method == "plugin/read":
+            return {
+                "plugin": {
+                    "marketplaceName": "codex-curated",
+                    "marketplacePath": None,
+                    "summary": {
+                        "id": "demo@codex-curated",
+                        "name": "demo",
+                        "installed": True,
+                        "enabled": True,
+                        "source": {"type": "remote"},
+                        "availability": "AVAILABLE",
+                        "installPolicy": "AVAILABLE",
+                        "authPolicy": "ON_USE",
+                        "keywords": ["demo"],
+                    },
+                    "description": "Demo plugin",
+                    "skills": [{"name": "plugin-skill", "description": "skill", "shortDescription": None, "path": None, "enabled": True}],
+                    "hooks": [{"key": "post-turn", "eventName": "post_turn"}],
+                    "apps": [{"id": "app-1", "name": "App One", "description": None, "installUrl": None, "needsAuth": False}],
+                    "mcpServers": ["demo-server"],
+                }
+            }
         if method in {"thread/start", "thread/resume"}:
             return {
                 "thread": {
@@ -273,6 +344,126 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 {
                     "threadId": "thread-1",
                     "mode": "enabled",
+                },
+            ),
+        )
+
+    def test_compact_thread_calls_upstream_endpoint(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.compact_thread("thread-1")
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/compact/start",
+                {
+                    "threadId": "thread-1",
+                },
+            ),
+        )
+
+    def test_list_skills_reads_current_cwd_snapshot(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        snapshot = adapter.list_skills(cwd="/tmp/project", force_reload=True)
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "skills/list",
+                {
+                    "cwds": ["/tmp/project"],
+                    "forceReload": True,
+                },
+            ),
+        )
+        self.assertEqual(snapshot.cwd, "/tmp/project")
+        self.assertEqual(snapshot.skills[0].name, "demo-skill")
+        self.assertEqual(snapshot.skills[0].scope, "repo")
+        self.assertTrue(snapshot.skills[0].enabled)
+        self.assertEqual(snapshot.errors[0].message, "broken skill")
+
+    def test_set_skill_enabled_writes_selector_by_path(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.set_skill_enabled(skill_path="/tmp/project/.agents/skills/demo/SKILL.md", enabled=False)
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "skills/config/write",
+                {
+                    "path": "/tmp/project/.agents/skills/demo/SKILL.md",
+                    "enabled": False,
+                },
+            ),
+        )
+
+    def test_list_plugins_reads_marketplaces_for_cwd(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        catalog = adapter.list_plugins(cwd="/tmp/project")
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "plugin/list",
+                {
+                    "cwds": ["/tmp/project"],
+                },
+            ),
+        )
+        self.assertEqual(catalog.marketplaces[0].name, "codex-curated")
+        self.assertEqual(catalog.marketplaces[0].plugins[0].plugin_id, "demo@codex-curated")
+        self.assertEqual(catalog.featured_plugin_ids, ["demo@codex-curated"])
+
+    def test_read_plugin_resolves_detail(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        detail = adapter.read_plugin("demo", marketplace_name="codex-curated")
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "plugin/read",
+                {
+                    "pluginName": "demo",
+                    "remoteMarketplaceName": "codex-curated",
+                },
+            ),
+        )
+        self.assertEqual(detail.plugin.plugin_id, "demo@codex-curated")
+        self.assertEqual(detail.skill_names, ["plugin-skill"])
+        self.assertEqual(detail.hook_keys, ["post-turn"])
+        self.assertEqual(detail.app_names, ["App One"])
+        self.assertEqual(detail.mcp_servers, ["demo-server"])
+
+    def test_set_plugin_enabled_writes_plugin_toggle(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.set_plugin_enabled("demo@codex-curated", enabled=True)
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "config/value/write",
+                {
+                    "keyPath": "plugins.demo@codex-curated",
+                    "value": {"enabled": True},
+                    "mergeStrategy": "upsert",
                 },
             ),
         )

@@ -115,6 +115,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         self.assertIn(f"`{threads_command.feishu_usage}`", thread_markdown)
         self.assertIn(f"`{resume_command.feishu_usage}`", thread_markdown)
         self.assertIn("`/memory`", thread_markdown)
+        self.assertIn("`/compact`", thread_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", thread_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", threads_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", threads_markdown)

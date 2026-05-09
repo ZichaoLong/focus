@@ -27,6 +27,9 @@ _SHARED_DETACH_COMMAND = get_shared_command("detach")
 _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 _SHARED_MEMORY_COMMAND = get_shared_command("memory")
+_SHARED_COMPACT_COMMAND = get_shared_command("compact")
+_SHARED_SKILLS_COMMAND = get_shared_command("skills")
+_SHARED_PLUGINS_COMMAND = get_shared_command("plugins")
 
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
 _LOCAL_THREAD_LIST_GLOBAL = "feishu-codexctl thread list --scope global"
@@ -105,6 +108,7 @@ class CodexHelpDomain:
                     "- `群聊`：当前群的激活、工作态、管理员边界\n"
                     "- `线程`：新建、浏览、恢复、当前 thread 管理\n"
                     "- `运行时`：当前会话设置，以及当前实例 backend reset\n"
+                    "- `高级功能`：skills、plugins 等非 thread/binding 私有能力面\n"
                     f"- `身份`：`/whoami`、`/bot-status`、`{_INIT_COMMAND}`\n\n"
                     f"{self._local_thread_safety_rule}\n\n"
                     "本地继续同一线程请用 "
@@ -124,9 +128,10 @@ class CodexHelpDomain:
                     _HelpActionRowSpec(
                         buttons=(
                             _HelpPageButtonSpec(label="运行时", page="runtime"),
+                            _HelpPageButtonSpec(label="高级功能", page="advanced"),
                             _HelpPageButtonSpec(label="身份", page="identity"),
                         ),
-                        layout="bisected",
+                        layout="trisection",
                     ),
                 ),
             ),
@@ -209,7 +214,8 @@ class CodexHelpDomain:
                     f"- `{_SHARED_THREADS_COMMAND.feishu_usage}`：浏览当前目录线程\n"
                     "- `/new`：立即新建线程\n"
                     f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`：全局精确恢复线程，可填 `thread_id` 或 `thread_name`\n"
-                    "- “当前线程”页：查看 `/profile`、`/memory`、重命名、归档当前绑定 thread\n\n"
+                    f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`：压缩当前绑定 thread 的上下文历史\n"
+                    "- “当前线程”页：查看 `/profile`、`/memory`、`/compact`、重命名、归档当前绑定 thread\n\n"
                     "**本地继续**\n"
                     f"- 需要在本地继续同一 live thread 时，使用 `{_LOCAL_RESUME_COMMAND}`\n"
                     f"- 本地查看当前目录线程请用 `{_LOCAL_THREAD_LIST_CWD}`\n"
@@ -245,6 +251,7 @@ class CodexHelpDomain:
                     "作用对象：**当前绑定 thread**。\n\n"
                     f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`：查看或切换当前 thread 的 resume profile；必要时会提供 reset backend 路径\n"
                     f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`：查看或切换当前 thread 的 thread-wise memory mode；必要时会提供 reset backend 路径\n"
+                    f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`：压缩当前 thread 的上下文历史\n"
                     f"- `{_RENAME_COMMAND}`：重命名当前线程\n"
                     f"- `{_SHARED_ARCHIVE_COMMAND.slash_name}`：归档当前线程\n"
                     "- 当前会话的飞书推送开关请到“当前会话”页\n\n"
@@ -269,19 +276,24 @@ class CodexHelpDomain:
                                 title="Codex Thread Memory Mode",
                             ),
                             _HelpCommandButtonSpec(
-                                label="/archive",
-                                command="/archive",
-                                title="Codex 归档线程",
+                                label="/compact",
+                                command="/compact",
+                                title="Codex Compact",
                             ),
                         ),
                         layout="trisection",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
+                            _HelpCommandButtonSpec(
+                                label="/archive",
+                                command="/archive",
+                                title="Codex 归档线程",
+                            ),
                             _HelpPageButtonSpec(label="重命名", page="thread-rename-current-form"),
                             _HelpPageButtonSpec(label="返回线程", page="thread"),
                         ),
-                        layout="bisected",
+                        layout="trisection",
                     ),
                 ),
             ),
@@ -372,6 +384,35 @@ class CodexHelpDomain:
                     ),
                 ),
             ),
+            "advanced": _HelpPageSpec(
+                title="Codex 帮助：高级功能",
+                markdown=(
+                    "作用对象：**当前目录可见的上游 Codex 高级能力面**。\n\n"
+                    f"- `{_SHARED_SKILLS_COMMAND.feishu_usage}`：查看当前目录可见的 skills，并启用或禁用\n"
+                    f"- `{_SHARED_PLUGINS_COMMAND.feishu_usage}`：查看当前目录可见的 plugins 概览\n"
+                    f"- `{_SHARED_PLUGINS_COMMAND.feishu_usage}`：填入 `plugin_id` 时查看指定 plugin 详情\n"
+                    "- 当前飞书侧第一阶段只支持 skills 启停、plugin 详情与已安装 plugin 启停\n"
+                    "- plugin 安装、卸载、marketplace 管理，以及 agents 观察面，当前不在飞书命令面暴露"
+                ),
+                action_rows=(
+                    _HelpActionRowSpec(
+                        buttons=(
+                            _HelpCommandButtonSpec(
+                                label="/skills",
+                                command="/skills",
+                                title="Codex Skills",
+                            ),
+                            _HelpCommandButtonSpec(
+                                label="/plugins",
+                                command="/plugins",
+                                title="Codex Plugins",
+                            ),
+                            _HelpPageButtonSpec(label="返回帮助", page="overview"),
+                        ),
+                        layout="trisection",
+                    ),
+                ),
+            ),
             "identity": _HelpPageSpec(
                 title="Codex 帮助：身份",
                 markdown=(
@@ -432,6 +473,7 @@ class CodexHelpDomain:
             "group": "group",
             "thread": "thread",
             "runtime": "runtime",
+            "advanced": "advanced",
             "identity": "identity",
         }
 
@@ -654,7 +696,7 @@ class CodexHelpDomain:
             return CommandResult(card=card)
         return CommandResult(
             text=(
-                "帮助主题仅支持：`chat`、`group`、`thread`、`runtime`、`identity`。\n"
+                "帮助主题仅支持：`chat`、`group`、`thread`、`runtime`、`advanced`、`identity`。\n"
                 "发送 `/help` 查看导航入口。"
             )
         )
@@ -666,7 +708,7 @@ class CodexHelpDomain:
             text=(
                 "常用命令列表（按 `/help` 导航分组）：\n\n"
                 "`帮助`\n"
-                "- `/help [chat|group|thread|runtime|identity]`\n"
+                "- `/help [chat|group|thread|runtime|advanced|identity]`\n"
                 "- `/h`\n"
                 f"- `{_SHARED_COMMANDS_COMMAND.feishu_usage}`\n\n"
                 "`当前会话`\n"
@@ -686,6 +728,7 @@ class CodexHelpDomain:
                 f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n"
                 "\n"
@@ -695,6 +738,9 @@ class CodexHelpDomain:
                 "- `/sandbox [read-only|workspace-write|danger-full-access]`\n"
                 "- `/collab-mode [default|plan]`\n"
                 f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`\n\n"
+                "`高级功能`\n"
+                f"- `{_SHARED_SKILLS_COMMAND.feishu_usage}`\n"
+                f"- `{_SHARED_PLUGINS_COMMAND.feishu_usage}`\n\n"
                 "`身份`\n"
                 "- `/whoami`\n"
                 "- `/bot-status`\n"

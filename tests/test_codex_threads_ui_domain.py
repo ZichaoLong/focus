@@ -8,6 +8,7 @@ from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, Th
 class _PortsStub:
     def __init__(self) -> None:
         self.archive_calls: list[tuple[str, ThreadSummary | None]] = []
+        self.compact_calls: list[str] = []
         self.reply_calls: list[tuple[str, str, str]] = []
         self.resolve_calls: list[str] = []
         self.rename_calls: list[tuple[str, str]] = []
@@ -100,6 +101,13 @@ class _PortsStub:
         self.patches.append((message_id, content))
         return True
 
+    def compact_thread(self, thread_id: str) -> None:
+        self.compact_calls.append(thread_id)
+
+    def is_thread_not_loaded_error(self, exc: Exception) -> bool:
+        del exc
+        return False
+
 
 class CodexThreadsUiDomainTests(unittest.TestCase):
     def test_handle_resume_command_dispatches_via_runtime_port(self) -> None:
@@ -117,8 +125,10 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
+                compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
                 patch_message=ports_stub.patch_message,
+                is_thread_not_loaded_error=ports_stub.is_thread_not_loaded_error,
                 threads_initial_limit=5,
             ),
             runtime_ports=ThreadsUiRuntimePorts(
@@ -155,8 +165,10 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
+                compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
                 patch_message=ports_stub.patch_message,
+                is_thread_not_loaded_error=ports_stub.is_thread_not_loaded_error,
                 threads_initial_limit=5,
             ),
             runtime_ports=ThreadsUiRuntimePorts(
@@ -196,8 +208,10 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
+                compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
                 patch_message=ports_stub.patch_message,
+                is_thread_not_loaded_error=ports_stub.is_thread_not_loaded_error,
                 threads_initial_limit=5,
             ),
             runtime_ports=ThreadsUiRuntimePorts(

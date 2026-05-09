@@ -11,8 +11,16 @@ from typing import Any, Callable
 from bot.approval_policy import normalize_approval_policy
 from bot.adapters.base import (
     AgentAdapter,
+    PluginCatalog,
+    PluginDetailSummary,
+    PluginLoadError,
+    PluginMarketplaceSummary,
+    PluginSummary,
     RuntimeConfigSummary,
     RuntimeProfileSummary,
+    SkillLoadError,
+    SkillSummary,
+    SkillsSnapshot,
     ThreadSnapshot,
     ThreadSummary,
     TurnInputItem,
@@ -239,6 +247,92 @@ class CodexAppServerAdapter(AgentAdapter):
             {
                 "threadId": thread_id,
                 "mode": mode,
+            },
+        )
+
+    def compact_thread(self, thread_id: str) -> None:
+        self._rpc.request(
+            "thread/compact/start",
+            {
+                "threadId": thread_id,
+            },
+        )
+
+    def list_skills(self, *, cwd: str, force_reload: bool = False) -> SkillsSnapshot:
+        result = self._rpc.request(
+            "skills/list",
+            _compact(
+                {
+                    "cwds": [cwd] if cwd else None,
+                    "forceReload": True if force_reload else None,
+                }
+            ),
+        )
+        return self._skills_snapshot_from_result(cwd=cwd, result=result)
+
+    def set_skill_enabled(self, *, skill_path: str = "", skill_name: str = "", enabled: bool) -> None:
+        normalized_path = str(skill_path or "").strip()
+        normalized_name = str(skill_name or "").strip()
+        if bool(normalized_path) == bool(normalized_name):
+            raise ValueError("set_skill_enabled 必须且只能指定 skill_path 或 skill_name。")
+        self._rpc.request(
+            "skills/config/write",
+            _compact(
+                {
+                    "path": normalized_path or None,
+                    "name": normalized_name or None,
+                    "enabled": bool(enabled),
+                }
+            ),
+        )
+
+    def list_plugins(self, *, cwd: str | None = None) -> PluginCatalog:
+        result = self._rpc.request(
+            "plugin/list",
+            _compact(
+                {
+                    "cwds": [cwd] if cwd else None,
+                }
+            ),
+        )
+        return self._plugin_catalog_from_result(result)
+
+    def read_plugin(
+        self,
+        plugin_name: str,
+        *,
+        marketplace_name: str = "",
+        marketplace_path: str | None = None,
+    ) -> PluginDetailSummary:
+        normalized_plugin_name = str(plugin_name or "").strip()
+        normalized_marketplace_name = str(marketplace_name or "").strip()
+        normalized_marketplace_path = str(marketplace_path or "").strip() or None
+        if not normalized_plugin_name:
+            raise ValueError("plugin_name 不能为空。")
+        if bool(normalized_marketplace_name) == bool(normalized_marketplace_path):
+            raise ValueError("read_plugin 必须且只能指定 marketplace_name 或 marketplace_path。")
+        result = self._rpc.request(
+            "plugin/read",
+            _compact(
+                {
+                    "pluginName": normalized_plugin_name,
+                    "remoteMarketplaceName": normalized_marketplace_name or None,
+                    "marketplacePath": normalized_marketplace_path,
+                }
+            ),
+        )
+        return self._plugin_detail_from_result(result)
+
+    def set_plugin_enabled(self, plugin_id: str, *, enabled: bool) -> None:
+        normalized_plugin_id = str(plugin_id or "").strip()
+        if not normalized_plugin_id:
+            raise ValueError("plugin_id 不能为空。")
+        self._rpc.request(
+            "config/value/write",
+            {
+                "keyPath": f"plugins.{normalized_plugin_id}",
+                "value": {"enabled": bool(enabled)},
+                "mergeStrategy": "upsert",
             },
         )
 
@@ -470,6 +564,145 @@ class CodexAppServerAdapter(AgentAdapter):
             current_profile=_read_string(config, "profile", "activeProfile", "active_profile"),
             current_model_provider=_read_string(config, "modelProvider", "model_provider"),
             profiles=profiles,
+        )
+
+    @staticmethod
+    def _skills_snapshot_from_result(*, cwd: str, result: dict[str, Any]) -> SkillsSnapshot:
+        data = result.get("data") or []
+        matched = None
+        normalized_cwd = str(cwd or "").strip()
+        for item in data:
+            entry_cwd = str((item or {}).get("cwd", "") or "").strip()
+            if entry_cwd == normalized_cwd:
+                matched = item or {}
+                break
+        if matched is None and len(data) == 1:
+            matched = data[0] or {}
+        matched = matched or {}
+        skills = [
+            SkillSummary(
+                name=str(item.get("name", "") or ""),
+                description=str(item.get("description", "") or ""),
+                short_description=_read_string(item, "shortDescription", "short_description"),
+                path=str(item.get("path", "") or ""),
+                scope=str(item.get("scope", "") or ""),
+                enabled=bool(item.get("enabled")),
+            )
+            for item in (matched.get("skills") or [])
+            if str((item or {}).get("name", "") or "").strip()
+        ]
+        errors = [
+            SkillLoadError(
+                path=str(item.get("path", "") or ""),
+                message=str(item.get("message", "") or ""),
+            )
+            for item in (matched.get("errors") or [])
+            if str((item or {}).get("message", "") or "").strip()
+        ]
+        return SkillsSnapshot(
+            cwd=str(matched.get("cwd", "") or normalized_cwd),
+            skills=skills,
+            errors=errors,
+        )
+
+    @classmethod
+    def _plugin_catalog_from_result(cls, result: dict[str, Any]) -> PluginCatalog:
+        marketplaces = [
+            PluginMarketplaceSummary(
+                name=str(item.get("name", "") or ""),
+                path=_read_string(item, "path"),
+                plugins=[
+                    cls._plugin_summary_from_marketplace_item(
+                        plugin,
+                        marketplace_name=str(item.get("name", "") or ""),
+                        marketplace_path=_read_string(item, "path"),
+                    )
+                    for plugin in (item.get("plugins") or [])
+                    if str((plugin or {}).get("id", "") or "").strip()
+                ],
+            )
+            for item in (result.get("marketplaces") or [])
+            if str((item or {}).get("name", "") or "").strip()
+        ]
+        marketplace_load_errors = [
+            PluginLoadError(
+                marketplace_path=str(item.get("marketplacePath", "") or ""),
+                message=str(item.get("message", "") or ""),
+            )
+            for item in (result.get("marketplaceLoadErrors") or [])
+            if str((item or {}).get("message", "") or "").strip()
+        ]
+        featured_plugin_ids = [
+            str(item).strip()
+            for item in (result.get("featuredPluginIds") or [])
+            if str(item).strip()
+        ]
+        return PluginCatalog(
+            marketplaces=marketplaces,
+            marketplace_load_errors=marketplace_load_errors,
+            featured_plugin_ids=featured_plugin_ids,
+        )
+
+    @classmethod
+    def _plugin_detail_from_result(cls, result: dict[str, Any]) -> PluginDetailSummary:
+        plugin = result.get("plugin") or {}
+        marketplace_name = str(plugin.get("marketplaceName", "") or "")
+        marketplace_path = _read_string(plugin, "marketplacePath")
+        summary = cls._plugin_summary_from_marketplace_item(
+            plugin.get("summary") or {},
+            marketplace_name=marketplace_name,
+            marketplace_path=marketplace_path,
+        )
+        return PluginDetailSummary(
+            plugin=summary,
+            description=str(plugin.get("description", "") or ""),
+            skill_names=[
+                str(item.get("name", "") or "").strip()
+                for item in (plugin.get("skills") or [])
+                if str((item or {}).get("name", "") or "").strip()
+            ],
+            hook_keys=[
+                str(item.get("key", "") or "").strip()
+                for item in (plugin.get("hooks") or [])
+                if str((item or {}).get("key", "") or "").strip()
+            ],
+            app_names=[
+                str(item.get("name", "") or "").strip()
+                for item in (plugin.get("apps") or [])
+                if str((item or {}).get("name", "") or "").strip()
+            ],
+            mcp_servers=[
+                str(item).strip()
+                for item in (plugin.get("mcpServers") or [])
+                if str(item).strip()
+            ],
+        )
+
+    @staticmethod
+    def _plugin_summary_from_marketplace_item(
+        item: dict[str, Any],
+        *,
+        marketplace_name: str,
+        marketplace_path: str | None,
+    ) -> PluginSummary:
+        source = item.get("source") or {}
+        source_type = str((source or {}).get("type", "") or "")
+        return PluginSummary(
+            plugin_id=str(item.get("id", "") or ""),
+            name=str(item.get("name", "") or ""),
+            marketplace_name=marketplace_name,
+            marketplace_path=marketplace_path,
+            installed=bool(item.get("installed")),
+            enabled=bool(item.get("enabled")),
+            source_type=source_type or "unknown",
+            availability=str(item.get("availability", "") or ""),
+            install_policy=str(item.get("installPolicy", "") or ""),
+            auth_policy=str(item.get("authPolicy", "") or ""),
+            keywords=[
+                str(keyword).strip()
+                for keyword in (item.get("keywords") or [])
+                if str(keyword).strip()
+            ],
         )
 
     @staticmethod

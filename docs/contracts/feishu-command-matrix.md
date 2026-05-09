@@ -29,7 +29,7 @@ It does not redefine:
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
-| `/help [chat\|group\|thread\|runtime\|identity]` | Open help navigation or one page directly | yes | admin only | admin only | none |
+| `/help [chat\|group\|thread\|runtime\|advanced\|identity]` | Open help navigation or one page directly | yes | admin only | admin only | none |
 | `/commands` | Show a plain-text list of common commands | no | admin only | admin only | none |
 | `/h` | Alias for `/help` | no | admin only | admin only | none |
 | `/pwd` | Show current working directory | no | admin only | admin only | none |
@@ -41,13 +41,14 @@ It does not redefine:
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `thread` page form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
 | `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `thread -> current thread` | admin only | admin only | there is no direct local mutator yet; `fcodex resume` reuses the persisted mode |
+| `/compact` | Compact the current bound thread's context history | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `thread -> current thread` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `thread -> current thread` | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
 | `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding bookmark | not from the root; exposed as a button on `chat -> current chat` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
 | `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | not a root help command; primary entry is usually a reset result card | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
 
-### 2.2 Runtime and Identity
+### 2.2 Runtime, Advanced, and Identity
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
@@ -56,6 +57,8 @@ It does not redefine:
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `runtime` page | admin only | admin only | none |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy | yes; `runtime` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `runtime` page | admin only | admin only | none |
+| `/skills` | Show the skills visible from the current directory, and enable or disable them | yes; `advanced` page | admin only | admin only | no direct local equivalent |
+| `/plugins [plugin_id]` | Show plugins visible from the current directory; with `plugin_id`, show plugin detail | yes; `advanced` page | admin only | admin only | no direct local equivalent |
 | `/whoami` | Show the caller's identity | yes; `identity` page | anyone | unsupported | none |
 | `/bot-status` | Show bot identity and config probe results | yes; `identity` page | anyone | admin only | none |
 | `/init <token>` | Initialize admins and `bot_open_id` | yes; `identity` page form | anyone | unsupported | `feishu-codex config init-token` only shows the token |
@@ -93,6 +96,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- `/skills` / `/plugins` cards: skill toggles, plugin-detail back navigation, installed-plugin enable/disable
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 
 ## 5. Boundary

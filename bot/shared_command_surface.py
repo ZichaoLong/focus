@@ -46,6 +46,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或切换当前绑定 thread 的 thread-wise memory mode。",
     ),
     SharedCommandSpec(
+        key="compact",
+        slash_name="/compact",
+        feishu_usage="/compact",
+        feishu_summary="压缩当前绑定 thread 的上下文历史。",
+    ),
+    SharedCommandSpec(
         key="reset-backend",
         slash_name="/reset-backend",
         feishu_usage="/reset-backend",
@@ -86,6 +92,18 @@ _SHARED_COMMAND_SPECS = (
         slash_name="/attach",
         feishu_usage="/attach [binding|thread|service]",
         feishu_summary="恢复当前会话、当前线程或当前实例的飞书推送。",
+    ),
+    SharedCommandSpec(
+        key="skills",
+        slash_name="/skills",
+        feishu_usage="/skills",
+        feishu_summary="查看当前目录可见的 skills，并启用或禁用。",
+    ),
+    SharedCommandSpec(
+        key="plugins",
+        slash_name="/plugins",
+        feishu_usage="/plugins [plugin_id]",
+        feishu_summary="查看当前目录可见的 plugins，或查看指定 plugin 详情。",
     ),
 )
 
