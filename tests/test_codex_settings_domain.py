@@ -415,6 +415,9 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertEqual(response.toast.type, "success")
         content = response.card.data["elements"][0]["content"]
         self.assertIn("已替换为新 thread：`thread-2", content)
+        self.assertIn("当前会话已自动附着到新 thread", response.card.data["elements"][-2]["content"])
+        actions = response.card.data["elements"][-1]["actions"]
+        self.assertEqual([action["text"]["content"] for action in actions], ["附着当前实例", "保持当前状态"])
 
     def test_profile_command_rejects_when_unbound(self) -> None:
         stub = _SettingsPortsStub()
@@ -550,6 +553,9 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertEqual(response.toast.type, "success")
         content = response.card.data["elements"][0]["content"]
         self.assertIn("已替换为新 thread：`thread-2", content)
+        self.assertIn("当前会话已自动附着到新 thread", response.card.data["elements"][-2]["content"])
+        actions = response.card.data["elements"][-1]["actions"]
+        self.assertEqual([action["text"]["content"] for action in actions], ["附着当前实例", "保持当前状态"])
 
     def test_apply_memory_mode_with_backend_reset_uses_memory_specific_deny_reason(self) -> None:
         stub = _SettingsPortsStub()

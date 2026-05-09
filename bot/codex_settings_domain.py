@@ -455,6 +455,38 @@ class CodexSettingsDomain:
             },
         ]
 
+    @staticmethod
+    def _post_replacement_attached_action_rows() -> list[dict]:
+        return [
+            {"tag": "hr"},
+            {
+                "tag": "markdown",
+                "content": "当前会话已自动附着到新 thread；如需恢复本实例其他 released 会话的推送，可附着当前实例：",
+            },
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "附着当前实例"},
+                        "type": "default",
+                        "value": {
+                            "action": "attach_runtime",
+                            "scope": "service",
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "保持当前状态"},
+                        "type": "default",
+                        "value": {
+                            "action": "dismiss_attach",
+                        },
+                    },
+                ],
+            },
+        ]
+
     def _build_profile_summary_card(
         self,
         *,
@@ -809,7 +841,7 @@ class CodexSettingsDomain:
                         profile_names=profile_names,
                         plan=fresh_plan,
                         leading_lines=leading_lines + [""],
-                        extra_action_rows=self._post_reset_attach_action_rows(thread_id),
+                        extra_action_rows=self._post_replacement_attached_action_rows(),
                     )
                 ),
                 applied_profile=target_profile,
@@ -1075,7 +1107,7 @@ class CodexSettingsDomain:
                         current_record=updated_record,
                         plan=fresh_plan,
                         leading_lines=leading_lines + [""],
-                        extra_action_rows=self._post_reset_attach_action_rows(thread_id),
+                        extra_action_rows=self._post_replacement_attached_action_rows(),
                     )
                 ),
                 applied_mode=target_mode,

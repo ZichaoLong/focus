@@ -55,6 +55,8 @@ from bot.version import __version__
 class _FakeRpc:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
+        self.default_model = "gpt-5.3-codex"
+        self.stopped = False
 
     def request(self, method: str, params: dict | None = None, *, timeout: float | None = None) -> dict:
         payload = params or {}
@@ -62,7 +64,7 @@ class _FakeRpc:
         if method == "model/list":
             return {
                 "data": [
-                    {"model": "gpt-5.3-codex", "isDefault": True, "hidden": False},
+                    {"model": self.default_model, "isDefault": True, "hidden": False},
                     {"model": "gpt-5.4", "isDefault": False, "hidden": False},
                 ]
             }
@@ -162,6 +164,9 @@ class _FakeRpc:
                 }
             }
         return {"ok": True}
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class CodexAppServerAdapterTests(unittest.TestCase):
@@ -687,6 +692,52 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         )
         self.assertEqual(fake_rpc.calls[1][0], "config/read")
         self.assertEqual(runtime.current_profile, "provider1")
+
+    def test_set_active_profile_invalidates_cached_collaboration_mode_model(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "hello"}],
+            cwd="/tmp",
+        )
+        self.assertEqual(
+            fake_rpc.calls[1][1]["collaborationMode"]["settings"]["model"],
+            "gpt-5.3-codex",
+        )
+
+        fake_rpc.default_model = "gpt-5.5"
+        fake_rpc.calls.clear()
+
+        adapter.set_active_profile("provider2")
+        adapter.start_turn(
+            thread_id="thread-2",
+            input_items=[{"type": "text", "text": "hello again"}],
+            cwd="/tmp",
+        )
+
+        self.assertEqual(fake_rpc.calls[0][0], "config/batchWrite")
+        self.assertEqual(fake_rpc.calls[1][0], "config/read")
+        self.assertEqual(fake_rpc.calls[2][0], "model/list")
+        self.assertEqual(
+            fake_rpc.calls[3][1]["collaborationMode"]["settings"]["model"],
+            "gpt-5.5",
+        )
+
+    def test_stop_clears_cached_models(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+        adapter._collaboration_mode_model = "gpt-stale"
+        adapter._thread_resolved_model["thread-1"] = "thread-model"
+
+        adapter.stop()
+
+        self.assertTrue(fake_rpc.stopped)
+        self.assertIsNone(adapter._collaboration_mode_model)
+        self.assertEqual(adapter._thread_resolved_model, {})
 
     def test_archive_thread_calls_public_archive_api(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())

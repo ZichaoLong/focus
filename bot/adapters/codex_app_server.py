@@ -127,6 +127,7 @@ class CodexAppServerAdapter(AgentAdapter):
 
     def stop(self) -> None:
         self._rpc.stop()
+        self._clear_model_caches()
 
     def current_app_server_url(self) -> str:
         return self._rpc.current_app_server_url()
@@ -239,6 +240,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 "reloadUserConfig": True,
             },
         )
+        self._collaboration_mode_model = None
         return self.read_runtime_config()
 
     def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
@@ -528,6 +530,10 @@ class CodexAppServerAdapter(AgentAdapter):
                 self._collaboration_mode_model = str(item["model"])
                 return self._collaboration_mode_model
         raise RuntimeError("无法解析 Codex 默认模型，无法构造 collaboration mode 参数")
+
+    def _clear_model_caches(self) -> None:
+        self._collaboration_mode_model = None
+        self._thread_resolved_model.clear()
 
     def _cache_thread_model(self, result: dict[str, Any]) -> None:
         thread = result.get("thread") or {}
