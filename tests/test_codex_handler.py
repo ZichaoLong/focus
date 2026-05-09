@@ -3332,6 +3332,77 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(sorted(handler._adapter.unsubscribe_thread_calls), ["thread-a", "thread-b"])
         self.assertEqual(handler._chat_binding_store.load_all(), {})
 
+    def test_service_control_plane_binding_submit_prompt_starts_synthetic_turn(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续分析",
+                "synthetic_source": "schedule",
+            },
+        )
+
+        self.assertTrue(result["started"])
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(result["turn_id"], "turn-1")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["thread_id"], "thread-1")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "继续分析")
+        self.assertEqual(bot.replies, [])
+
+    def test_service_control_plane_binding_submit_prompt_fail_closes_without_chat_reply(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["running_turn"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续分析",
+            },
+        )
+
+        self.assertFalse(result["started"])
+        self.assertEqual(result["reason_code"], "prompt_denied_by_running_turn")
+        self.assertEqual(handler._adapter.start_turn_calls, [])
+        self.assertEqual(bot.replies, [])
+
     def test_service_control_plane_binding_clear_rejects_when_binding_has_pending_request(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)

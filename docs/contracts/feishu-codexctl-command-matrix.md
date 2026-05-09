@@ -29,11 +29,12 @@ It answers:
 
 ## 3. Resource Layers
 
-`feishu-codexctl` is split into five resource groups:
+`feishu-codexctl` is split into six resource groups:
 
 - `instance`
 - `service`
 - `binding`
+- `prompt`
 - `thread`
 - `image`
 
@@ -76,7 +77,19 @@ Do not conflate them.
 - `clear` removes the local bookmark
 - `detach` removes the current Feishu push attachment
 
-### 4.4 `thread`
+### 4.4 `prompt`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> \| --text-file <file>) [--synthetic-source <label>] [--display-mode silent\|announce]` | Use the target instance control plane to synthetically start one new prompt turn on a binding | mutating | none; this is the local control-plane synthetic prompt entry |
+
+Notes:
+
+- `prompt send` is **binding-scoped**, not thread-scoped.
+- Actual execution still goes through the normal running-turn / attach / interaction protections inside the service.
+- When the target binding is not writable, the command must fail closed with a refusal reason instead of silently queueing work.
+
+### 4.5 `thread`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -92,7 +105,7 @@ Implementation note:
 - local `thread detach` goes through the running `feishu-codex` service control plane
 - the lower layer may still call upstream `thread/unsubscribe`, but that is an internal protocol detail, not the user-facing command name
 
-### 4.5 `image`
+### 4.6 `image`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -107,6 +120,7 @@ Implementation note:
 | `binding status <binding_id>` | `/status`, `/preflight` | local output is lower-level and includes binding ids, reason codes, and interaction owner details |
 | `binding attach <binding_id>` | `/attach binding` | local command can target any known binding id directly; Feishu defaults to the current chat binding |
 | `binding detach <binding_id>` | `/detach` | Feishu `/detach` is only current-chat scoped; local command can target any known binding id directly |
+| `prompt send --binding-id <binding_id>` | none | local CLI can synthesize a future or system-triggered prompt through the service control plane; there is no equivalent Feishu slash command today |
 | `thread attach --thread-id/--thread-name` | `/attach thread` | Feishu thread scope is limited to the current chat's current thread; local command can target any thread directly |
 | `thread detach --thread-id/--thread-name` | no exact single Feishu command | Feishu `/detach` is current-binding scoped; the local thread action can affect all currently attached bindings on that thread |
 | `thread list --scope cwd` | `/threads` | Feishu is a chat workflow entry point; local CLI is just thread discovery |

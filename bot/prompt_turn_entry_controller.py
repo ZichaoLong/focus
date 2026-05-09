@@ -20,6 +20,21 @@ logger = logging.getLogger(__name__)
 ChatBindingKey: TypeAlias = tuple[str, str]
 RuntimeState: TypeAlias = RuntimeStateDict
 
+START_FAILURE_PREPARE_THREAD = "prepare_thread_failed"
+START_FAILURE_INTERACTION_DENIED = "interaction_denied"
+START_FAILURE_SHARING_DENIED = "sharing_denied"
+START_FAILURE_EXECUTION_CARD = "execution_card_send_failed"
+START_FAILURE_TURN_START = "turn_start_failed"
+
+
+@dataclass(frozen=True, slots=True)
+class PromptTurnStartResult:
+    started: bool
+    thread_id: str = ""
+    turn_id: str = ""
+    reason_code: str = ""
+    reason_text: str = ""
+
 
 class _ThreadAccessPolicy(Protocol):
     def prompt_write_denial_text(
@@ -280,7 +295,29 @@ class PromptTurnEntryController:
         message_id: str = "",
         actor_open_id: str = "",
         input_items: list[TurnInputItem] | tuple[TurnInputItem, ...] | None = None,
+        surface_failures: bool = True,
     ) -> bool:
+        return self.start_prompt_turn_result(
+            sender_id,
+            chat_id,
+            text,
+            message_id=message_id,
+            actor_open_id=actor_open_id,
+            input_items=input_items,
+            surface_failures=surface_failures,
+        ).started
+
+    def start_prompt_turn_result(
+        self,
+        sender_id: str,
+        chat_id: str,
+        text: str,
+        *,
+        message_id: str = "",
+        actor_open_id: str = "",
+        input_items: list[TurnInputItem] | tuple[TurnInputItem, ...] | None = None,
+        surface_failures: bool = True,
+    ) -> PromptTurnStartResult:
         effective_input_items = list(input_items) if input_items is not None else [{"type": "text", "text": text}]
         resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
         state = resolved.state
@@ -299,35 +336,52 @@ class PromptTurnEntryController:
                 message_id=message_id,
             )
             if denial_text:
-                self._reply_text(
-                    chat_id,
-                    denial_text,
-                    message_id=message_id,
-                    reply_in_thread=self._message_reply_in_thread(message_id),
+                if surface_failures:
+                    self._reply_text(
+                        chat_id,
+                        denial_text,
+                        message_id=message_id,
+                        reply_in_thread=self._message_reply_in_thread(message_id),
+                    )
+                return PromptTurnStartResult(
+                    started=False,
+                    reason_text=denial_text,
                 )
-                return False
             attach_check = self._detached_runtime_attach_check(detached_thread_id)
             if not attach_check.allowed:
-                self._reply_text(
-                    chat_id,
-                    attach_check.reason_text,
-                    message_id=message_id,
-                    reply_in_thread=self._message_reply_in_thread(message_id),
+                if surface_failures:
+                    self._reply_text(
+                        chat_id,
+                        attach_check.reason_text,
+                        message_id=message_id,
+                        reply_in_thread=self._message_reply_in_thread(message_id),
+                    )
+                return PromptTurnStartResult(
+                    started=False,
+                    thread_id=detached_thread_id,
+                    reason_code=attach_check.reason_code,
+                    reason_text=attach_check.reason_text,
                 )
-                return False
             with self._lock:
                 pre_attached_interaction_lease = self._acquire_interaction_lease_for_binding(
                     chat_binding_key,
                     detached_thread_id,
                 )
             if not pre_attached_interaction_lease.granted:
-                self._reply_text(
-                    chat_id,
-                    self._access_policy.interaction_denied_text(pre_attached_interaction_lease.lease),
-                    message_id=message_id,
-                    reply_in_thread=self._message_reply_in_thread(message_id),
+                denial_text = self._access_policy.interaction_denied_text(pre_attached_interaction_lease.lease)
+                if surface_failures:
+                    self._reply_text(
+                        chat_id,
+                        denial_text,
+                        message_id=message_id,
+                        reply_in_thread=self._message_reply_in_thread(message_id),
+                    )
+                return PromptTurnStartResult(
+                    started=False,
+                    thread_id=detached_thread_id,
+                    reason_code=START_FAILURE_INTERACTION_DENIED,
+                    reason_text=denial_text,
                 )
-                return False
         try:
             thread_id = self.ensure_thread(sender_id, chat_id, message_id=message_id)
             thread_id = self.ensure_binding_runtime_attached(sender_id, chat_id, message_id=message_id)
@@ -335,12 +389,19 @@ class PromptTurnEntryController:
             if pre_attached_interaction_lease is not None and pre_attached_interaction_lease.acquired:
                 self._release_interaction_lease_for_binding(chat_binding_key, detached_thread_id)
             logger.exception("准备线程失败")
-            self.render_start_failure(
-                chat_id=chat_id,
-                message_id=message_id,
-                text=f"准备线程失败：{exc}",
+            error_text = f"准备线程失败：{exc}"
+            if surface_failures:
+                self.render_start_failure(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=error_text,
+                )
+            return PromptTurnStartResult(
+                started=False,
+                thread_id=detached_thread_id,
+                reason_code=START_FAILURE_PREPARE_THREAD,
+                reason_text=error_text,
             )
-            return False
 
         all_mode_exclusivity_violation = self._access_policy.all_mode_thread_exclusivity_violation(
             chat_id,
@@ -350,13 +411,19 @@ class PromptTurnEntryController:
         if all_mode_exclusivity_violation:
             if pre_attached_interaction_lease is not None and pre_attached_interaction_lease.acquired:
                 self._release_interaction_lease_for_binding(chat_binding_key, detached_thread_id)
-            self._reply_text(
-                chat_id,
-                all_mode_exclusivity_violation,
-                message_id=message_id,
-                reply_in_thread=self._message_reply_in_thread(message_id),
+            if surface_failures:
+                self._reply_text(
+                    chat_id,
+                    all_mode_exclusivity_violation,
+                    message_id=message_id,
+                    reply_in_thread=self._message_reply_in_thread(message_id),
+                )
+            return PromptTurnStartResult(
+                started=False,
+                thread_id=thread_id,
+                reason_code=START_FAILURE_SHARING_DENIED,
+                reason_text=all_mode_exclusivity_violation,
             )
-            return False
         interaction_lease = pre_attached_interaction_lease
         with self._lock:
             if interaction_lease is None:
@@ -364,13 +431,20 @@ class PromptTurnEntryController:
             if interaction_lease.granted:
                 self._sync_stored_binding_locked(chat_binding_key, state)
         if not interaction_lease.granted:
-            self._reply_text(
-                chat_id,
-                self._access_policy.interaction_denied_text(interaction_lease.lease),
-                message_id=message_id,
-                reply_in_thread=self._message_reply_in_thread(message_id),
+            denial_text = self._access_policy.interaction_denied_text(interaction_lease.lease)
+            if surface_failures:
+                self._reply_text(
+                    chat_id,
+                    denial_text,
+                    message_id=message_id,
+                    reply_in_thread=self._message_reply_in_thread(message_id),
+                )
+            return PromptTurnStartResult(
+                started=False,
+                thread_id=thread_id,
+                reason_code=START_FAILURE_INTERACTION_DENIED,
+                reason_text=denial_text,
             )
-            return False
 
         prompt_reply_in_thread = self._message_reply_in_thread(message_id)
         with self._lock:
@@ -408,13 +482,20 @@ class PromptTurnEntryController:
             ) or ""
         if not card_id:
             self._retire_execution_anchor(sender_id, chat_id)
-            self._reply_text(
-                chat_id,
-                "执行卡片发送失败，未启动 Codex；请稍后重试。",
-                message_id=message_id,
-                reply_in_thread=prompt_reply_in_thread,
+            error_text = "执行卡片发送失败，未启动 Codex；请稍后重试。"
+            if surface_failures:
+                self._reply_text(
+                    chat_id,
+                    error_text,
+                    message_id=message_id,
+                    reply_in_thread=prompt_reply_in_thread,
+                )
+            return PromptTurnStartResult(
+                started=False,
+                thread_id=thread_id,
+                reason_code=START_FAILURE_EXECUTION_CARD,
+                reason_text=error_text,
             )
-            return False
         with self._lock:
             self._apply_runtime_state_message_locked(
                 state,
@@ -458,8 +539,14 @@ class PromptTurnEntryController:
                         message_id=message_id,
                         prompt_reply_in_thread=prompt_reply_in_thread,
                         clear_thread_binding=self._is_thread_not_found_error(retry_exc),
+                        surface_failures=surface_failures,
                     )
-                    return False
+                    return PromptTurnStartResult(
+                        started=False,
+                        thread_id=thread_id,
+                        reason_code=START_FAILURE_TURN_START,
+                        reason_text=f"启动失败：{retry_exc}",
+                    )
             else:
                 logger.exception("启动 turn 失败")
                 self._handle_start_failure(
@@ -471,8 +558,14 @@ class PromptTurnEntryController:
                     message_id=message_id,
                     prompt_reply_in_thread=prompt_reply_in_thread,
                     clear_thread_binding=False,
+                    surface_failures=surface_failures,
                 )
-                return False
+                return PromptTurnStartResult(
+                    started=False,
+                    thread_id=thread_id,
+                    reason_code=START_FAILURE_TURN_START,
+                    reason_text=f"启动失败：{exc}",
+                )
 
         turn_id = self.extract_turn_id_from_start_response(start_response)
         with self._lock:
@@ -492,7 +585,11 @@ class PromptTurnEntryController:
                         ExecutionStateChanged(pending_cancel=False),
                     )
         self._schedule_mirror_watchdog(sender_id, chat_id)
-        return True
+        return PromptTurnStartResult(
+            started=True,
+            thread_id=thread_id,
+            turn_id=turn_id,
+        )
 
     def cancel_current_turn(
         self,
@@ -554,6 +651,7 @@ class PromptTurnEntryController:
         message_id: str,
         prompt_reply_in_thread: bool,
         clear_thread_binding: bool,
+        surface_failures: bool,
     ) -> None:
         with self._lock:
             self._turn_execution.record_start_failure_locked(
@@ -564,7 +662,7 @@ class PromptTurnEntryController:
             self._clear_thread_binding(sender_id, chat_id, message_id=message_id)
         self._flush_execution_card(sender_id, chat_id, immediate=True)
         self._retire_execution_anchor(sender_id, chat_id)
-        if not card_id:
+        if not card_id and surface_failures:
             self._reply_text(
                 chat_id,
                 error_text,

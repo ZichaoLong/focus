@@ -46,6 +46,7 @@
 - [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
 - [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md)
 - [`feishu-advanced-features.zh-CN.md`](./contracts/feishu-advanced-features.zh-CN.md)
+- [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md)
 - [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md)
 - [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md)
 - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
@@ -83,6 +84,7 @@
 | `/threads`、`/resume`、`/profile`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
 | `/memory` 如何映射到上游 memory 配置、何时可直接写入、何时必须 reset-backend？ | [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md) |
 | `/compact`、`/skills`、`/plugins` 在飞书侧当前正式支持到什么程度？哪些高级能力刻意不暴露？ | [`feishu-advanced-features.zh-CN.md`](./contracts/feishu-advanced-features.zh-CN.md) |
+| 如何在未来时点继续当前 Feishu 绑定 thread？`binding/submit-prompt`、`feishu-codexctl prompt send`、Linux `systemd --user` skill 的正式边界是什么？ | [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md) |
 | 本地命令面应如何重划？`/detach`、`fcodex` thin wrapper、`feishu-codexctl` 分工、thread-wise profile/provider 的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
 | 多实例下 `default` / 命名实例、共享 thread 可见面、`fcodex --instance`、全局 runtime lease 怎么工作？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)、[`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md) |
 | 飞书 `/help` 的信息架构、按钮导航与 slash 语义一致性合同是什么？ | [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md) |
@@ -116,6 +118,7 @@
   - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
 - 改本地 `feishu-codexctl` 查看 / 管理面时：
   - [`feishu-codexctl-command-matrix.zh-CN.md`](./contracts/feishu-codexctl-command-matrix.zh-CN.md)
+  - [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md)
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)

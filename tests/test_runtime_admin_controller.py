@@ -9,6 +9,7 @@ from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.reason_codes import (
     PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
     PROMPT_DENIED_BY_INTERACTION_OWNER,
+    PROMPT_DENIED_BY_RUNNING_TURN,
     DETACH_BLOCKED_BY_PENDING_REQUEST,
     ReasonedCheck,
 )
@@ -51,6 +52,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         pending_requests: list[dict[str, object]] = []
         reset_calls: list[bool] = []
         sent_images: list[tuple[str, str]] = []
+        submitted_prompts: list[dict[str, object]] = []
 
         def _read_thread(thread_id: str):
             return ThreadSnapshot(summary=summaries[thread_id])
@@ -86,6 +88,18 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 path_exists=lambda path: True,
                 path_is_file=lambda path: True,
             ),
+            submit_prompt_for_control=lambda binding, **kwargs: submitted_prompts.append(
+                {"binding": binding, **kwargs}
+            ) or {
+                "binding_id": f"p2p:{binding[0]}:{binding[1]}",
+                "thread_id": "thread-1",
+                "started": True,
+                "turn_id": "turn-1",
+                "reason_code": "",
+                "reason": "",
+                "synthetic_source": str(kwargs.get("synthetic_source", "") or ""),
+                "display_mode": str(kwargs.get("display_mode", "silent") or "silent"),
+            },
             prompt_write_denial_check=lambda binding, chat_id, thread_id, message_id="": ReasonedCheck.allow(),
             detached_runtime_attach_check=lambda thread_id: ReasonedCheck.allow(),
             resolve_thread_target_for_control_params=lambda params: ThreadSummary(
@@ -104,6 +118,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             is_thread_not_loaded_error=lambda exc: False,
             reprofile_possible_check=lambda thread_id: (thread_id not in loaded_thread_ids, ""),
         )
+        controller._submitted_prompts = submitted_prompts  # type: ignore[attr-defined]
         return (
             lock,
             binding_runtime,
@@ -1171,6 +1186,98 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             sent_images,
             [("c1", "img-key-1"), ("c2", "img-key-1")],
         )
+
+    def test_handle_service_control_request_binding_submit_prompt_dispatches_callback(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.handle_service_control_request(
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续执行",
+                "synthetic_source": "schedule",
+                "display_mode": "announce",
+            },
+        )
+
+        self.assertTrue(result["started"])
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(result["turn_id"], "turn-1")
+        submitted_prompts = getattr(controller, "_submitted_prompts")
+        self.assertEqual(len(submitted_prompts), 1)
+        self.assertEqual(submitted_prompts[0]["binding"], ("ou_user", "c1"))
+        self.assertEqual(submitted_prompts[0]["text"], "继续执行")
+        self.assertEqual(submitted_prompts[0]["synthetic_source"], "schedule")
+        self.assertEqual(submitted_prompts[0]["display_mode"], "announce")
+
+    def test_handle_service_control_request_binding_submit_prompt_fail_closes_on_preflight_denial(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        state["running"] = True
+        state["current_turn_id"] = "turn-1"
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="active",
+        )
+
+        result = controller.handle_service_control_request(
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续执行",
+            },
+        )
+
+        self.assertFalse(result["started"])
+        self.assertEqual(result["reason_code"], PROMPT_DENIED_BY_RUNNING_TURN)
+        self.assertEqual(getattr(controller, "_submitted_prompts"), [])
 
     def test_binding_status_snapshot_includes_prompt_and_detach_reason_codes(self) -> None:
         (

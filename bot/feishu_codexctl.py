@@ -120,6 +120,21 @@ def _resolve_thread_archive_target(args: argparse.Namespace):
     return bootstrap_target, target_params
 
 
+def _prompt_text_from_args(args: argparse.Namespace) -> str:
+    inline_text = str(getattr(args, "text", "") or "")
+    text_file = str(getattr(args, "text_file", "") or "").strip()
+    if bool(inline_text.strip()) == bool(text_file):
+        raise ValueError("必须且只能提供 --text 或 --text-file。")
+    if text_file:
+        path = pathlib.Path(text_file).expanduser()
+        if not path.exists():
+            raise ValueError(f"prompt 文本文件不存在：{display_path(str(path))}")
+        if not path.is_file():
+            raise ValueError(f"prompt 文本文件不是普通文件：{display_path(str(path))}")
+        return path.read_text(encoding="utf-8")
+    return inline_text
+
+
 def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
     owner = snapshot.get("live_runtime_owner")
     holder_labels = snapshot.get("live_runtime_holder_labels")
@@ -307,6 +322,46 @@ def _clear_all_bindings(data_dir: pathlib.Path) -> int:
     return 0
 
 
+def _send_binding_prompt(
+    data_dir: pathlib.Path,
+    *,
+    binding_id: str,
+    text: str,
+    actor_open_id: str = "",
+    synthetic_source: str = "",
+    display_mode: str = "silent",
+    instance_name: str = "",
+) -> int:
+    result = _request(
+        data_dir,
+        "binding/submit-prompt",
+        {
+            "binding_id": binding_id,
+            "text": text,
+            "actor_open_id": actor_open_id,
+            "synthetic_source": synthetic_source,
+            "display_mode": display_mode,
+        },
+    )
+    if instance_name:
+        print(f"instance: {instance_name}")
+    print(f"binding: {result['binding_id']}")
+    print(f"thread: {result.get('thread_id') or '-'}")
+    print(f"display_mode: {result.get('display_mode') or 'silent'}")
+    if result.get("synthetic_source"):
+        print(f"synthetic_source: {result['synthetic_source']}")
+    if result.get("started"):
+        print("started: yes")
+        print(f"turn_id: {result.get('turn_id') or '-'}")
+        return 0
+    print("started: no")
+    if result.get("reason_code"):
+        print(f"reason code: {result['reason_code']}")
+    if result.get("reason"):
+        print(f"reason: {result['reason']}")
+    return 1
+
+
 def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
     snapshot = _request(data_dir, "thread/status", target_params)
     live_runtime_owner, live_runtime_holders = _live_runtime_summary(snapshot)
@@ -481,6 +536,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl binding status <binding_id>\n"
             "  feishu-codexctl binding attach <binding_id>\n"
             "  feishu-codexctl binding detach <binding_id>\n"
+            "  feishu-codexctl prompt send --binding-id <binding_id> --text '继续执行'\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
@@ -597,6 +653,48 @@ def _build_parser() -> argparse.ArgumentParser:
         help="清除当前实例下全部 binding bookmark。",
         description="清除当前实例下全部 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
+    )
+
+    prompt = subparsers.add_parser(
+        "prompt",
+        help="向某个 binding 合成提交一条新 prompt。",
+        description=(
+            "Prompt 注入管理面。\n"
+            "当前只提供 `send`：直接通过正在运行的 feishu-codex service，"
+            "向目标 binding 对应的 thread 合成发起一轮新 prompt。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    prompt_sub = prompt.add_subparsers(dest="action", required=True, title="prompt commands", metavar="prompt-command")
+    prompt_send = prompt_sub.add_parser(
+        "send",
+        help="向目标 binding 发起一轮 synthetic prompt。",
+        description=(
+            "向目标 binding 发起一轮 synthetic prompt。\n"
+            "这是 binding-scoped 动作；真正执行仍会经过 running-turn / attach / interaction 等保护，"
+            "不可写时 fail-closed 返回拒绝原因。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    prompt_send.add_argument("--binding-id", required=True, help="目标 binding id。")
+    prompt_text_group = prompt_send.add_mutually_exclusive_group(required=True)
+    prompt_text_group.add_argument("--text", help="要提交的 prompt 文本。")
+    prompt_text_group.add_argument("--text-file", help="从本地 UTF-8 文本文件读取 prompt。")
+    prompt_send.add_argument(
+        "--synthetic-source",
+        default="",
+        help="可选 synthetic source 标签，例如 `schedule`。",
+    )
+    prompt_send.add_argument(
+        "--display-mode",
+        choices=("silent", "announce"),
+        default="silent",
+        help="是否先向目标聊天发送一条触发说明。",
+    )
+    prompt_send.add_argument(
+        "--actor-open-id",
+        default="",
+        help="可选 actor_open_id；主要供 group/shared binding 的高级场景使用。",
     )
 
     thread = subparsers.add_parser(
@@ -745,6 +843,18 @@ def main() -> None:
             raise SystemExit(_clear_binding(data_dir, args.binding_id))
         if args.resource == "binding" and args.action == "clear-all":
             raise SystemExit(_clear_all_bindings(data_dir))
+        if args.resource == "prompt" and args.action == "send":
+            raise SystemExit(
+                _send_binding_prompt(
+                    data_dir,
+                    binding_id=args.binding_id,
+                    text=_prompt_text_from_args(args),
+                    actor_open_id=args.actor_open_id,
+                    synthetic_source=args.synthetic_source,
+                    display_mode=args.display_mode,
+                    instance_name=target.instance_name,
+                )
+            )
         if args.resource == "thread" and args.action == "list":
             cwd = str(args.cwd or "").strip() or os.getcwd()
             raise SystemExit(_print_thread_list(data_dir, scope=args.scope, cwd=cwd))

@@ -11,8 +11,10 @@ from bot.feishu_codexctl import (
     _build_parser,
     _image_send_target_params,
     _list_running_instances,
+    _prompt_text_from_args,
     _print_binding_status,
     _send_thread_image,
+    _send_binding_prompt,
     _resolve_thread_archive_target,
     _print_thread_status,
     _thread_target_params,
@@ -34,6 +36,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("常用命令:", rendered)
         self.assertIn("feishu-codexctl --instance corp-a service status", rendered)
         self.assertIn("thread archive --thread-name demo", rendered)
+        self.assertIn("prompt send --binding-id <binding_id>", rendered)
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
         parser = _build_parser()
@@ -187,6 +190,65 @@ class FeishuCodexCtlTests(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaisesRegex(ValueError, "CODEX_THREAD_ID"):
                 _image_send_target_params(args)
+
+    def test_prompt_send_accepts_inline_text(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(
+            ["prompt", "send", "--binding-id", "p2p:ou_user:chat-1", "--text", "继续执行"]
+        )
+
+        self.assertEqual(args.resource, "prompt")
+        self.assertEqual(args.action, "send")
+        self.assertEqual(args.binding_id, "p2p:ou_user:chat-1")
+        self.assertEqual(_prompt_text_from_args(args), "继续执行")
+
+    def test_prompt_send_reads_text_file(self) -> None:
+        parser = _build_parser()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt_file = Path(tmpdir) / "prompt.txt"
+            prompt_file.write_text("继续执行\n", encoding="utf-8")
+
+            args = parser.parse_args(
+                [
+                    "prompt",
+                    "send",
+                    "--binding-id",
+                    "p2p:ou_user:chat-1",
+                    "--text-file",
+                    str(prompt_file),
+                ]
+            )
+
+            self.assertEqual(_prompt_text_from_args(args), "继续执行\n")
+
+    def test_send_binding_prompt_reports_denial(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "binding_id": "p2p:ou_user:chat-1",
+            "thread_id": "thread-1",
+            "started": False,
+            "turn_id": "",
+            "reason_code": "prompt_denied_by_running_turn",
+            "reason": "当前线程仍在执行，请等待结束或先执行 `/cancel`。",
+            "display_mode": "silent",
+            "synthetic_source": "schedule",
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _send_binding_prompt(
+                    Path("/tmp/instance-data"),
+                    binding_id="p2p:ou_user:chat-1",
+                    text="继续执行",
+                    synthetic_source="schedule",
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 1)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("started: no", rendered)
+        self.assertIn("reason code: prompt_denied_by_running_turn", rendered)
 
     def test_parser_accepts_global_instance_selector(self) -> None:
         parser = _build_parser()

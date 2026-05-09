@@ -214,7 +214,7 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("  1. 配置飞书应用、provider 环境变量", summary)
             self.assertIn("    - feishu-codex config --open system", summary)
             self.assertIn("    - feishu-codex config --open env（按需）", summary)
-            self.assertIn("  5. 如需在某个目录下也可直接让 Codex 发图（可选）", summary)
+            self.assertIn("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）", summary)
             self.assertIn("    - 先 cd 到目标目录，再执行 feishu-codex skill install", summary)
 
     def test_ensure_instance_scaffold_writes_detected_initial_codex_command_without_changing_example(self) -> None:
@@ -441,18 +441,25 @@ class ManageCliTests(unittest.TestCase):
                     result = _handle_skill_install()
 
             self.assertEqual(result, 0)
-            target = workspace / ".agents" / "skills" / "feishu-send-image"
-            self.assertTrue((target / "SKILL.md").exists())
-            self.assertTrue((target / "agents" / "openai.yaml").exists())
-            self.assertTrue((target / ".feishu-codex-managed").exists())
+            image_target = workspace / ".agents" / "skills" / "feishu-send-image"
+            schedule_target = workspace / ".agents" / "skills" / "feishu-scheduled-prompts"
+            self.assertTrue((image_target / "SKILL.md").exists())
+            self.assertTrue((image_target / "agents" / "openai.yaml").exists())
+            self.assertTrue((image_target / ".feishu-codex-managed").exists())
+            self.assertTrue((schedule_target / "SKILL.md").exists())
+            self.assertTrue((schedule_target / "agents" / "openai.yaml").exists())
+            self.assertTrue((schedule_target / "scripts" / "manage_scheduled_prompt.py").exists())
+            self.assertTrue((schedule_target / ".feishu-codex-managed").exists())
             rendered = stdout.getvalue()
             self.assertIn("已安装 skill: feishu-send-image", rendered)
-            self.assertIn(str(target), rendered)
+            self.assertIn("已安装 skill: feishu-scheduled-prompts", rendered)
+            self.assertIn(str(image_target), rendered)
+            self.assertIn(str(schedule_target), rendered)
 
     def test_handle_skill_install_refuses_unmanaged_existing_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace = pathlib.Path(tmpdir) / "workspace"
-            target = workspace / ".agents" / "skills" / "feishu-send-image"
+            target = workspace / ".agents" / "skills" / "feishu-scheduled-prompts"
             target.mkdir(parents=True, exist_ok=True)
             (target / "SKILL.md").write_text("manual\n", encoding="utf-8")
 
@@ -481,6 +488,16 @@ class ManageCliTests(unittest.TestCase):
 
         self.assertTrue(_skill_tree_matches_source(repo_skill, _managed_skill_source_dir()))
 
+    def test_packaged_scheduled_prompt_skill_source_matches_repo_workspace_skill(self) -> None:
+        repo_skill = pathlib.Path(__file__).resolve().parent.parent / ".agents" / "skills" / "feishu-scheduled-prompts"
+
+        self.assertTrue(
+            _skill_tree_matches_source(
+                repo_skill,
+                _managed_skill_source_dir("feishu-scheduled-prompts"),
+            )
+        )
+
     def test_handle_skill_uninstall_removes_managed_skill_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             workspace = pathlib.Path(tmpdir) / "workspace"
@@ -492,10 +509,13 @@ class ManageCliTests(unittest.TestCase):
                     result = _handle_skill_uninstall()
 
             self.assertEqual(result, 0)
-            target = workspace / ".agents" / "skills" / "feishu-send-image"
-            self.assertFalse(target.exists())
+            image_target = workspace / ".agents" / "skills" / "feishu-send-image"
+            schedule_target = workspace / ".agents" / "skills" / "feishu-scheduled-prompts"
+            self.assertFalse(image_target.exists())
+            self.assertFalse(schedule_target.exists())
             rendered = stdout.getvalue()
             self.assertIn("已卸载 skill: feishu-send-image", rendered)
+            self.assertIn("已卸载 skill: feishu-scheduled-prompts", rendered)
 
     def test_main_skill_subcommand_rejects_top_level_instance(self) -> None:
         stderr = io.StringIO()

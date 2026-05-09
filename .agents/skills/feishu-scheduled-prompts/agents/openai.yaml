@@ -1,0 +1,4 @@
+interface:
+  display_name: "Feishu Scheduled Prompts"
+  short_description: "Manage Linux systemd timers that send future prompts into attached Feishu chats"
+  default_prompt: "Use $feishu-scheduled-prompts when the user wants a one-shot or recurring future task to continue the current Feishu-bound Codex thread later."

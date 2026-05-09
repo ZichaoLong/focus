@@ -29,11 +29,12 @@
 
 ## 3. 资源层
 
-`feishu-codexctl` 分五类资源：
+`feishu-codexctl` 分六类资源：
 
 - `instance`
 - `service`
 - `binding`
+- `prompt`
 - `thread`
 - `image`
 
@@ -76,7 +77,19 @@
 - `clear` 清的是本地 bookmark
 - `detach` 清的是当前飞书推送附着状态
 
-### 4.4 `thread`
+### 4.4 `prompt`
+
+| 命令 | 作用 | 类型 | 飞书对应 |
+| --- | --- | --- | --- |
+| `feishu-codexctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> \| --text-file <file>) [--synthetic-source <label>] [--display-mode silent\|announce]` | 通过目标实例的 control plane，向某个 binding 合成发起一轮新的 prompt turn | 变更 | 无；这是本地 control-plane synthetic prompt 入口 |
+
+说明：
+
+- `prompt send` 是 **binding-scoped**，不是 thread-scoped。
+- 真正执行仍会经过当前服务内的 running-turn / attach / interaction 等保护。
+- 目标 binding 当前不可写时，命令必须 fail-closed 返回拒绝原因，而不是静默排队。
+
+### 4.5 `thread`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -92,7 +105,7 @@
 - 本地 `thread detach` 走的是正在运行的 `feishu-codex` 服务控制面。
 - 底层实现仍可能调用上游 `thread/unsubscribe`，但这属于内部协议，不再作为用户命令名。
 
-### 4.5 `image`
+### 4.6 `image`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -107,6 +120,7 @@
 | `binding status <binding_id>` | `/status`、`/preflight` | 本地输出更底层，带 binding id、reason code、interaction owner |
 | `binding attach <binding_id>` | `/attach binding` | 本地可直接按任意 binding id 定位；飞书默认作用于当前 chat |
 | `binding detach <binding_id>` | `/detach` | 飞书 `/detach` 只作用于当前 chat；本地可直接按任意 binding id 定位 |
+| `prompt send --binding-id <binding_id>` | 无 | 本地可以从 service control plane 合成一条未来或系统触发的 prompt；飞书侧当前没有等价 slash 命令 |
 | `thread attach --thread-id/--thread-name` | `/attach thread` | 飞书 thread 级动作只能基于当前 chat 当前 thread；本地可直接按任意目标 thread 定位 |
 | `thread detach --thread-id/--thread-name` | 无一条完全等价的飞书命令 | 飞书 `/detach` 是当前 chat binding 级；本地 thread 级动作会批量影响该 thread 当前所有 attached bindings |
 | `thread list --scope cwd` | `/threads` | 飞书是聊天入口；本地只是线程发现面 |

@@ -130,6 +130,7 @@ class RuntimeAdminController:
         load_thread_memory_mode: Callable[[str], Any],
         permissions_summary: Callable[[str, str], str],
         thread_image_delivery: ThreadImageDeliveryController,
+        submit_prompt_for_control: Callable[..., dict[str, Any]],
         prompt_write_denial_check: Callable[[ChatBindingKey, str, str, str], ReasonedCheck],
         detached_runtime_attach_check: Callable[[str], ReasonedCheck],
         resolve_thread_target_for_control_params: Callable[[dict[str, Any]], ThreadSummary],
@@ -161,6 +162,7 @@ class RuntimeAdminController:
         self._load_thread_memory_mode = load_thread_memory_mode
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
+        self._submit_prompt_for_control = submit_prompt_for_control
         self._prompt_write_denial_check = prompt_write_denial_check
         self._detached_runtime_attach_check = detached_runtime_attach_check
         self._resolve_thread_target_for_control_params = resolve_thread_target_for_control_params
@@ -378,6 +380,44 @@ class RuntimeAdminController:
     def binding_prompt_check_locked(self, binding: ChatBindingKey) -> ReasonedCheck:
         snapshot = self._binding_runtime.binding_runtime_snapshot_locked(binding)
         return self._binding_prompt_check_from_snapshot(binding, snapshot)
+
+    def submit_binding_prompt_for_control(
+        self,
+        binding: ChatBindingKey,
+        *,
+        text: str,
+        actor_open_id: str = "",
+        input_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None,
+        synthetic_source: str = "",
+        display_mode: str = "silent",
+    ) -> dict[str, Any]:
+        prompt_text = str(text or "").strip()
+        normalized_input_items = list(input_items or [])
+        if not prompt_text and not normalized_input_items:
+            raise ValueError("binding/submit-prompt 需要 `text` 或 `input_items`。")
+        normalized_display_mode = str(display_mode or "silent").strip().lower() or "silent"
+        if normalized_display_mode not in {"silent", "announce"}:
+            raise ValueError("binding/submit-prompt 的 display_mode 只支持 `silent` 或 `announce`。")
+        check = self.binding_prompt_check(binding)
+        if not check.allowed:
+            return {
+                "binding_id": format_binding_id(binding),
+                "thread_id": "",
+                "started": False,
+                "turn_id": "",
+                "reason_code": check.reason_code,
+                "reason": check.reason_text,
+                "synthetic_source": str(synthetic_source or "").strip(),
+                "display_mode": normalized_display_mode,
+            }
+        return self._submit_prompt_for_control(
+            binding,
+            text=prompt_text,
+            actor_open_id=str(actor_open_id or "").strip(),
+            input_items=normalized_input_items or None,
+            synthetic_source=str(synthetic_source or "").strip(),
+            display_mode=normalized_display_mode,
+        )
 
     def _binding_prompt_check_from_snapshot(
         self,
@@ -1654,6 +1694,29 @@ class RuntimeAdminController:
                 raise ValueError(f"{method} 缺少 binding_id。")
             binding = parse_binding_id(binding_id)
             return self.attach_binding(binding)
+        if method == "binding/submit-prompt":
+            binding_id = str(params.get("binding_id", "") or "").strip()
+            if not binding_id:
+                raise ValueError("binding/submit-prompt 缺少 binding_id。")
+            binding = parse_binding_id(binding_id)
+            raw_input_items = params.get("input_items")
+            input_items: list[dict[str, Any]] | tuple[dict[str, Any], ...] | None = None
+            if raw_input_items is not None:
+                if not isinstance(raw_input_items, list):
+                    raise ValueError("binding/submit-prompt 的 input_items 必须是数组。")
+                input_items = []
+                for item in raw_input_items:
+                    if not isinstance(item, dict):
+                        raise ValueError("binding/submit-prompt 的 input_items 元素必须是对象。")
+                    input_items.append(dict(item))
+            return self.submit_binding_prompt_for_control(
+                binding,
+                text=str(params.get("text", "") or ""),
+                actor_open_id=str(params.get("actor_open_id", "") or ""),
+                input_items=input_items,
+                synthetic_source=str(params.get("synthetic_source", "") or ""),
+                display_mode=str(params.get("display_mode", "silent") or "silent"),
+            )
         if method == "binding/detach":
             binding_id = str(params.get("binding_id", "") or "").strip()
             if not binding_id:

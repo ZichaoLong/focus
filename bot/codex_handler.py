@@ -517,6 +517,7 @@ class CodexHandler(BotHandler):
             load_thread_memory_mode=self._thread_memory_mode_store.load,
             permissions_summary=_permissions_summary,
             thread_image_delivery=self._thread_image_delivery,
+            submit_prompt_for_control=self._submit_prompt_for_control,
             prompt_write_denial_check=self._thread_access_policy.prompt_write_denial_check,
             detached_runtime_attach_check=self._detached_runtime_attach_check,
             resolve_thread_target_for_control_params=self._resolve_thread_target_for_control_params,
@@ -2105,6 +2106,42 @@ class CodexHandler(BotHandler):
 
     def _handle_service_control_request_impl(self, method: str, params: dict[str, Any]) -> Any:
         return self._runtime_admin.handle_service_control_request(method, params)
+
+    def _submit_prompt_for_control(
+        self,
+        binding: ChatBindingKey,
+        *,
+        text: str,
+        actor_open_id: str = "",
+        input_items: list[dict[str, Any]] | None = None,
+        synthetic_source: str = "",
+        display_mode: str = "silent",
+    ) -> dict[str, Any]:
+        binding_id = format_binding_id(binding)
+        normalized_text = str(text or "").strip()
+        normalized_source = str(synthetic_source or "").strip()
+        normalized_display_mode = str(display_mode or "silent").strip().lower() or "silent"
+        if normalized_display_mode == "announce":
+            label = normalized_source or "系统任务"
+            self._reply_text(binding[1], f"{label}触发，开始新一轮执行。", reply_in_thread=False)
+        result = self._prompt_turn_entry.start_prompt_turn_result(
+            binding[0],
+            binding[1],
+            normalized_text,
+            actor_open_id=str(actor_open_id or "").strip(),
+            input_items=list(input_items) if input_items is not None else None,
+            surface_failures=False,
+        )
+        return {
+            "binding_id": binding_id,
+            "thread_id": result.thread_id,
+            "started": result.started,
+            "turn_id": result.turn_id,
+            "reason_code": result.reason_code,
+            "reason": result.reason_text,
+            "synthetic_source": normalized_source,
+            "display_mode": normalized_display_mode,
+        }
 
     def _attach_binding_for_control(self, binding: ChatBindingKey, thread_id: str) -> ThreadSummary:
         normalized_thread_id = str(thread_id or "").strip()
