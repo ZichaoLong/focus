@@ -6,9 +6,17 @@ import unittest
 from unittest.mock import patch
 
 from bot.service_control_plane import ServiceControlError
+from bot.runtime_state import (
+    BACKEND_THREAD_LOOKUP_ERROR,
+    BACKEND_THREAD_STATUS_IDLE,
+    BACKEND_THREAD_STATUS_NOT_LOADED,
+)
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
-from bot.thread_runtime_coordination import acquire_thread_runtime_holder_or_raise
+from bot.thread_runtime_coordination import (
+    acquire_thread_runtime_holder_or_raise,
+    preview_thread_global_loaded_gate,
+)
 
 
 def _holder(*, instance_name: str, holder_id: str, service_token: str) -> ThreadRuntimeLeaseHolder:
@@ -25,6 +33,105 @@ def _holder(*, instance_name: str, holder_id: str, service_token: str) -> Thread
 
 
 class ThreadRuntimeCoordinationTests(unittest.TestCase):
+    def test_global_loaded_gate_allows_when_other_running_instances_report_not_loaded(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        other_data_dir = root_dir / "corp-b-data"
+        other_data_dir.mkdir()
+        registry_store = InstanceRegistryStore(root_dir)
+        registry_store.register(
+            build_instance_registry_entry(
+                instance_name="corp-b",
+                service_token="token-b",
+                control_endpoint="tcp://127.0.0.1:32002",
+                app_server_url="http://127.0.0.1:2234",
+                config_dir=other_data_dir / "config",
+                data_dir=other_data_dir,
+                owner_pid=os.getpid(),
+            )
+        )
+
+        with patch(
+            "bot.thread_runtime_coordination.control_request",
+            return_value={"backend_thread_status": BACKEND_THREAD_STATUS_NOT_LOADED},
+        ):
+            preview = preview_thread_global_loaded_gate(
+                thread_id="thread-1",
+                current_instance_name="corp-a",
+                registry_store=registry_store,
+            )
+
+        self.assertTrue(preview.allowed)
+
+    def test_global_loaded_gate_rejects_when_other_running_instance_reports_loaded(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        other_data_dir = root_dir / "corp-b-data"
+        other_data_dir.mkdir()
+        registry_store = InstanceRegistryStore(root_dir)
+        registry_store.register(
+            build_instance_registry_entry(
+                instance_name="corp-b",
+                service_token="token-b",
+                control_endpoint="tcp://127.0.0.1:32002",
+                app_server_url="http://127.0.0.1:2234",
+                config_dir=other_data_dir / "config",
+                data_dir=other_data_dir,
+                owner_pid=os.getpid(),
+            )
+        )
+
+        with patch(
+            "bot.thread_runtime_coordination.control_request",
+            return_value={"backend_thread_status": BACKEND_THREAD_STATUS_IDLE},
+        ):
+            preview = preview_thread_global_loaded_gate(
+                thread_id="thread-1",
+                current_instance_name="corp-a",
+                registry_store=registry_store,
+            )
+
+        self.assertFalse(preview.allowed)
+        self.assertEqual(preview.blocking_instance, "corp-b")
+        self.assertEqual(preview.blocking_status, BACKEND_THREAD_STATUS_IDLE)
+        self.assertIn("仍由运行中的实例 `corp-b` 保持为 loaded", preview.reason_text)
+
+    def test_global_loaded_gate_rejects_when_other_instance_status_is_unverified(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        other_data_dir = root_dir / "corp-b-data"
+        other_data_dir.mkdir()
+        registry_store = InstanceRegistryStore(root_dir)
+        registry_store.register(
+            build_instance_registry_entry(
+                instance_name="corp-b",
+                service_token="token-b",
+                control_endpoint="tcp://127.0.0.1:32002",
+                app_server_url="http://127.0.0.1:2234",
+                config_dir=other_data_dir / "config",
+                data_dir=other_data_dir,
+                owner_pid=os.getpid(),
+            )
+        )
+
+        with patch(
+            "bot.thread_runtime_coordination.control_request",
+            return_value={"backend_thread_status": BACKEND_THREAD_LOOKUP_ERROR},
+        ):
+            preview = preview_thread_global_loaded_gate(
+                thread_id="thread-1",
+                current_instance_name="corp-a",
+                registry_store=registry_store,
+            )
+
+        self.assertFalse(preview.allowed)
+        self.assertEqual(preview.blocking_instance, "corp-b")
+        self.assertEqual(preview.blocking_status, BACKEND_THREAD_LOOKUP_ERROR)
+        self.assertIn("不可验证的状态", preview.reason_text)
+
     def test_cross_instance_transfer_reserves_handoff_until_target_acquires(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)

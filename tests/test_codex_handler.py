@@ -3067,6 +3067,43 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
         self.assertEqual(handler2._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
 
+    def test_next_prompt_rejects_when_other_running_instance_still_reports_loaded(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
+        handler._detach_thread("thread-1")
+
+        with patch(
+            "bot.codex_handler.preview_thread_global_loaded_gate",
+            return_value=SimpleNamespace(
+                allowed=False,
+                reason_code="prompt_denied_by_live_runtime_owner",
+                reason_text=(
+                    "当前 thread 仍由运行中的实例 `explorer` 保持为 loaded (`idle`)；"
+                    "当前不支持跨实例 hot takeover。"
+                ),
+                blocking_instance="explorer",
+                blocking_status="idle",
+            ),
+        ):
+            handler.handle_message("ou_user", "c1", "hello again")
+
+        self.assertEqual(handler._adapter.resume_thread_calls, [])
+        self.assertEqual(handler._adapter.start_turn_calls, [])
+        self.assertEqual(handler._thread_subscribers("thread-1"), ())
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
+        self.assertIn("不支持跨实例 hot takeover", bot.replies[-1][1])
+
     def test_denied_prompt_keeps_detached_binding_detached_when_all_mode_group_owns_thread(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-a"] = "group"

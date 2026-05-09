@@ -38,7 +38,10 @@ from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
 from bot.thread_memory_mode import build_thread_memory_config_override, deep_merge_config_overrides
-from bot.thread_runtime_coordination import acquire_thread_runtime_holder_or_raise
+from bot.thread_runtime_coordination import (
+    acquire_thread_runtime_holder_or_raise,
+    preview_thread_global_loaded_gate,
+)
 
 _CWD_PROXY_METHODS = {"thread/start"}
 _DEFAULT_IDLE_TIMEOUT_SECONDS = 30.0
@@ -181,6 +184,22 @@ def _thread_became_not_loaded(payload: dict[str, Any]) -> bool:
     return _thread_status_type(payload) == BACKEND_THREAD_STATUS_NOT_LOADED
 
 
+def _assert_thread_global_loaded_gate(
+    *,
+    thread_id: str,
+    current_instance_name: str,
+    registry_store: InstanceRegistryStore,
+) -> None:
+    preview = preview_thread_global_loaded_gate(
+        thread_id=thread_id,
+        current_instance_name=current_instance_name,
+        registry_store=registry_store,
+    )
+    if preview.allowed:
+        return
+    raise RuntimeError(preview.reason_text)
+
+
 class _ProxyRuntimeLeaseKeeper:
     def __init__(
         self,
@@ -221,6 +240,11 @@ class _ProxyRuntimeLeaseKeeper:
         holder = self._runtime_holder()
         if holder is None:
             return
+        _assert_thread_global_loaded_gate(
+            thread_id=normalized_thread_id,
+            current_instance_name=self._instance_name,
+            registry_store=self._instance_registry,
+        )
         acquire_thread_runtime_holder_or_raise(
             thread_id=normalized_thread_id,
             holder=holder,
@@ -343,6 +367,11 @@ class _ProxyInteractionGate:
         holder = self._runtime_holder()
         if holder is None:
             return
+        _assert_thread_global_loaded_gate(
+            thread_id=thread_id,
+            current_instance_name=self._instance_name,
+            registry_store=self._instance_registry,
+        )
         acquire_thread_runtime_holder_or_raise(
             thread_id=thread_id,
             holder=holder,

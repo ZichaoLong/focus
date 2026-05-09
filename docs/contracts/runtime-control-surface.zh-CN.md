@@ -74,6 +74,11 @@
 
 - “当前哪个实例 / 本地前端真正占着这条 live thread？”
 
+它不是跨实例 attach / resume 的唯一安全事实源。
+
+- 跨实例继续前，必须先确认其他运行中实例没有仍把该 thread 保持为 `loaded`
+- 只有这层 loaded gate 通过后，当前实例才可以继续争抢 `ThreadRuntimeLease`
+
 ### 2.5 `interaction owner`
 
 表示当前谁可以对这条 thread 发起下一轮写入、处理中断、审批、补充输入。
@@ -216,9 +221,17 @@
 
 所有 attach 动作都必须 fail-closed：
 
-- 如果 live runtime lease 不允许
+- 如果其他运行中实例仍报告该 thread 为 `loaded`
+- 如果无法验证其他运行中实例是否已完全 `unloaded`
+- 如果 loaded gate 通过后，live runtime lease claim 仍不允许
 - 如果目标 thread 已不再可恢复
 - 如果当前实例无法安全取得所需运行时
+
+`service attach` 还必须满足：
+
+- 实例级批量恢复
+- thread 级 fail-close
+- 不同 thread 间允许部分成功
 
 attach 不是只读查看动作。
 

@@ -1728,6 +1728,37 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("live runtime owner 是 `explorer`", stderr.getvalue())
         self.assertIn("不能显式传 `--instance default`", stderr.getvalue())
 
+    def test_fcodex_resume_rejects_when_other_running_instance_still_reports_loaded(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
+        stderr = StringIO()
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch(
+                "bot.fcodex.resolve_cli_runtime_target",
+                return_value=CliRuntimeTarget(
+                    instance_name="explorer",
+                    data_dir=Path("/tmp/data-explorer"),
+                    app_server_url="ws://127.0.0.1:9102",
+                    service_token="token-explorer",
+                ),
+            ):
+                with patch(
+                    "bot.fcodex.preview_thread_global_loaded_gate",
+                    return_value=Mock(
+                        allowed=False,
+                        reason_text=(
+                            "当前 thread 仍由运行中的实例 `default` 保持为 loaded (`idle`)；"
+                            "当前不支持跨实例 hot takeover。"
+                        ),
+                    ),
+                ):
+                    with patch("bot.fcodex.sys.stderr", stderr):
+                        with patch("sys.argv", ["fcodex", "--instance", "explorer", "resume", thread_id]):
+                            with self.assertRaises(SystemExit) as exc:
+                                fcodex_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("不支持跨实例 hot takeover", stderr.getvalue())
+
     def test_fcodex_resume_name_with_explicit_instance_rejects_conflicting_live_owner(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
         lease = ThreadRuntimeLease(
@@ -2201,6 +2232,48 @@ class ProxyInteractionGateTests(unittest.TestCase):
             error = self._decode_payload(client_ws.sent[-1])
             self.assertEqual(error["id"], 1)
             self.assertIn("当前线程正由其他终端执行", error["error"]["message"])
+
+    def test_thread_resume_gets_local_error_when_other_running_instance_still_reports_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=data_dir,
+                global_data_dir=data_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            with patch(
+                "bot.fcodex_proxy.preview_thread_global_loaded_gate",
+                return_value=Mock(
+                    allowed=False,
+                    reason_text=(
+                        "当前 thread 仍由运行中的实例 `default` 保持为 loaded (`idle`)；"
+                        "当前不支持跨实例 hot takeover。"
+                    ),
+                ),
+            ):
+                gate.handle_client_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "thread/resume",
+                            "params": {"threadId": "thread-1"},
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+
+            self.assertEqual(backend_ws.sent, [])
+            error = self._decode_payload(client_ws.sent[-1])
+            self.assertEqual(error["id"], 1)
+            self.assertIn("不支持跨实例 hot takeover", error["error"]["message"])
 
     def test_local_error_response_requires_request_id(self) -> None:
         from bot.fcodex_proxy import _send_local_error_response

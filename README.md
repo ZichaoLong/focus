@@ -279,6 +279,7 @@ flowchart LR
     Other["尝试 resume / attach<br/>同一 thread"]
   end
 
+  Gate["cross-instance loaded gate"]
   Lease["ThreadRuntimeLease"]
 
   Thread -->|"普通输出广播"| F1
@@ -287,15 +288,18 @@ flowchart LR
 
   Owner -. "独占：下一轮写入 / 审批 / 补充输入 / 中断" .-> Thread
 
-  Lease -. "同一时刻只允许一个实例 backend<br/>live attach 这个 thread" .-> Thread
-  Other -. "跨实例 attach / resume 时先过 lease" .-> Lease
+  Gate -. "先问其他运行中实例：<br/>这个 thread 是否仍 loaded" .-> Thread
+  Lease -. "loaded gate 通过后，原子 claim：<br/>同一时刻只允许一个实例 live continuation" .-> Thread
+  Other -. "跨实例 attach / resume" .-> Gate
+  Gate -. "通过后再拿" .-> Lease
 ```
 
 这张图表达的是当前运行时合同：
 
 - 多个 `attached` 订阅者可以同时收到同一 thread 的 backend 普通消息
 - 多订阅不等于多方都能写；真正的写入与交互控制由 `interaction owner` 独占
-- 不同实例不能同时 live attach 同一个 thread；这由机器级 `ThreadRuntimeLease` 控制
+- 跨实例 attach / resume 会先过 `loaded gate`；若别的运行中实例仍把该 thread 保持为 `loaded`，就直接拒绝
+- 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 
 **补充说明**
 - `permissions` 不是 thread-wise next-load 设置。飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步；由发起 `thread/start` / `turn/start` 的那一端写进 app-server

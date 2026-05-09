@@ -76,8 +76,8 @@
    - 目标 thread 是谁
    - 来源可以是显式 `thread_id`，也可以先把 `thread_name` 解析成真实 `thread_id`
 2. `live runtime owner`
-   - 当前是谁真的持有这个 loaded thread
-   - 唯一事实源是 `ThreadRuntimeLease`
+   - 当前是谁持有 machine-global 的 live runtime claim
+   - 这条 claim 的事实源是 `ThreadRuntimeLease`
 3. `binding bookmark`
    - 某个会话 / 实例“记得自己上次指向过哪个 thread”
    - 只用于诊断与展示，不参与 `fcodex resume` 自动路由
@@ -107,6 +107,10 @@
 - 若不存在 `live runtime owner`，且当前恰好只有一个运行中的实例，则可路由到该实例
 - 若不存在 `live runtime owner`，且运行中的实例不是唯一，就必须拒绝并要求显式 `--instance`
 - 若显式传了 `--instance`，且它与 `live runtime owner` 冲突，也必须拒绝
+- 路由到目标实例后，还必须继续检查其他运行中实例是否仍把该 thread 保持为 `loaded`
+- 只要其他实例仍报告 `loaded`，就必须拒绝；不支持跨实例 hot takeover
+- 如果无法验证其他实例的 thread status，也必须拒绝
+- 只有 loaded gate 通过后，才允许继续争抢 `ThreadRuntimeLease`
 
 ## 4. profile / memory 都属于 thread-wise next-load 设置
 

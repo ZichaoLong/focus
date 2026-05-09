@@ -839,6 +839,67 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         )
         self.assertEqual(actions[0]["value"]["thread_id"], "thread-1")
 
+    def test_attach_service_is_partial_success_by_thread(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding_one = ("ou_user", "c1")
+        binding_two = ("ou_user", "c2")
+        state_one = self._bind_thread(lock, binding_runtime, binding_one, thread_id="thread-1")
+        state_two = self._bind_thread(lock, binding_runtime, binding_two, thread_id="thread-2")
+        with lock:
+            state_one["feishu_runtime_state"] = "detached"
+            state_two["feishu_runtime_state"] = "detached"
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo-1",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        summaries["thread-2"] = ThreadSummary(
+            thread_id="thread-2",
+            cwd="/tmp/project",
+            name="demo-2",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        controller._detached_runtime_attach_check = lambda thread_id: (
+            ReasonedCheck.allow()
+            if thread_id == "thread-1"
+            else ReasonedCheck.deny(
+                PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
+                "当前 thread 仍由运行中的实例 `explorer` 保持为 loaded (`idle`)；当前不支持跨实例 hot takeover。",
+            )
+        )
+
+        result = controller.attach_service()
+
+        self.assertEqual(result["attached_thread_ids"], ["thread-1"])
+        self.assertEqual(result["attached_binding_ids"], ["p2p:ou_user:c1"])
+        self.assertEqual(len(result["blocked_threads"]), 1)
+        self.assertEqual(result["blocked_threads"][0]["thread_id"], "thread-2")
+        self.assertEqual(result["blocked_threads"][0]["binding_ids"], ["p2p:ou_user:c2"])
+        self.assertIn("不支持跨实例 hot takeover", result["blocked_threads"][0]["reason"])
+
     def test_handle_preflight_command_blocks_detached_binding_when_live_runtime_owner_blocks_attach(self) -> None:
         (
             lock,

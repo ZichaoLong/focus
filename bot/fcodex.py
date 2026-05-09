@@ -35,6 +35,7 @@ from bot.thread_resolution import (
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_profile_mutability import check_thread_resume_profile_mutable
+from bot.thread_runtime_coordination import preview_thread_global_loaded_gate
 
 _OPTIONS_WITH_VALUE = {
     "-C",
@@ -186,6 +187,20 @@ def _preferred_resume_instance_for_thread(thread_id: str, *, explicit_instance: 
     if len(running_instances) == 1:
         return running_instances[0].instance_name
     return ""
+
+
+def _assert_cross_instance_resume_loaded_gate(thread_id: str, *, target_instance: str) -> None:
+    normalized_thread_id = str(thread_id or "").strip()
+    if not normalized_thread_id:
+        return
+    preview = preview_thread_global_loaded_gate(
+        thread_id=normalized_thread_id,
+        current_instance_name=target_instance,
+        running_instances=list_running_instances(),
+    )
+    if preview.allowed:
+        return
+    raise ValueError(preview.reason_text)
 
 
 def _resume_lookup_instance_name(cfg: dict) -> str:
@@ -694,6 +709,15 @@ def main() -> None:
         )
         data_dir = resolved_target.data_dir
         app_server_url = resolved_target.app_server_url
+        if thread_target:
+            try:
+                _assert_cross_instance_resume_loaded_gate(
+                    thread_target,
+                    target_instance=resolved_target.instance_name,
+                )
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                raise SystemExit(2)
 
     user_args = list(preprocessed_args)
 

@@ -123,6 +123,7 @@ from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, Thre
 from bot.thread_subscription_registry import ThreadSubscriptionRegistry
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
+    preview_thread_global_loaded_gate,
     preview_thread_runtime_holder_acquire,
 )
 from bot.thread_access_policy import ThreadAccessPolicy
@@ -714,10 +715,26 @@ class CodexHandler(BotHandler):
             updated_at=time.time(),
         )
 
+    def _cross_instance_loaded_gate_check(self, thread_id: str) -> ReasonedCheck:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return ReasonedCheck.allow()
+        preview = preview_thread_global_loaded_gate(
+            thread_id=normalized_thread_id,
+            current_instance_name=self._instance_name,
+            registry_store=self._instance_registry,
+        )
+        if preview.allowed:
+            return ReasonedCheck.allow()
+        return ReasonedCheck.deny(preview.reason_code, preview.reason_text)
+
     def _detached_runtime_attach_check(self, thread_id: str) -> ReasonedCheck:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             return ReasonedCheck.allow()
+        loaded_gate = self._cross_instance_loaded_gate_check(normalized_thread_id)
+        if not loaded_gate.allowed:
+            return loaded_gate
         preview = preview_thread_runtime_holder_acquire(
             thread_id=normalized_thread_id,
             holder=self._service_thread_runtime_holder(),
@@ -732,6 +749,9 @@ class CodexHandler(BotHandler):
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             return False
+        loaded_gate = self._cross_instance_loaded_gate_check(normalized_thread_id)
+        if not loaded_gate.allowed:
+            raise RuntimeError(loaded_gate.reason_text)
         outcome = acquire_thread_runtime_holder_or_raise(
             thread_id=normalized_thread_id,
             holder=self._service_thread_runtime_holder(),

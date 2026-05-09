@@ -74,6 +74,11 @@ It answers:
 
 - “Which instance or local frontend is actually holding this live thread now?”
 
+It is not the only safety fact for cross-instance attach / resume.
+
+- before cross-instance continuation, the system must first verify that no other running instance still keeps the thread `loaded`
+- only after that loaded gate passes may the current instance continue to claim `ThreadRuntimeLease`
+
 ### 2.5 `interaction owner`
 
 Who currently owns write / interrupt / approval / extra-input control for the thread.
@@ -216,9 +221,17 @@ Scopes:
 
 All attach actions must fail closed when:
 
-- live-runtime lease admission denies them
+- another running instance still reports the thread as `loaded`
+- the system cannot verify whether other running instances are fully `unloaded`
+- the loaded gate passes but live-runtime lease claim still denies them
 - the target thread is no longer attachable
 - the current instance cannot safely acquire the needed runtime
+
+`service attach` must also satisfy:
+
+- instance-level batch restore
+- thread-level fail-close
+- partial success across different threads is allowed
 
 Attach is not a read-only inspection.
 

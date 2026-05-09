@@ -76,8 +76,8 @@ But that is now an internal service protocol detail, not a user-facing concept.
    - which thread the user is targeting
    - this may come from an explicit `thread_id`, or from resolving a `thread_name` into a real `thread_id`
 2. `live runtime owner`
-   - which instance actually owns the currently loaded thread
-   - the only fact source is `ThreadRuntimeLease`
+   - which instance currently holds the machine-global live runtime claim
+   - the fact source for that claim is `ThreadRuntimeLease`
 3. `binding bookmark`
    - which thread some chat / instance last remembered
    - this is diagnostics-only and must not participate in `fcodex resume` auto-routing
@@ -107,6 +107,10 @@ For thread-targeted resume:
 - if no `live runtime owner` exists and there is exactly one running instance, routing may target that instance
 - if no `live runtime owner` exists and the running instance is not unique, the command must reject and require explicit `--instance`
 - if an explicit `--instance` conflicts with the `live runtime owner`, the command must reject
+- after routing chooses a target instance, the command must still verify whether any other running instance keeps that thread `loaded`
+- if another instance still reports `loaded`, the command must reject; cross-instance hot takeover is unsupported
+- if the system cannot verify another instance's thread status, it must reject
+- only after the loaded gate passes may the client continue to claim `ThreadRuntimeLease`
 
 ## 4. Profile and memory are thread-wise next-load settings
 
