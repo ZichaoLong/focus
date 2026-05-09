@@ -48,6 +48,7 @@ Status guidance:
 - [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md)
 - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
 - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
+- [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md)
 - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
 - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md)
@@ -85,6 +86,7 @@ Status guidance:
 | What is the current architecture, layering, module split, and repository structure? | [`feishu-codex-design.md`](./architecture/feishu-codex-design.md) |
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |
 | What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
+| For thread-wise next-load settings such as profile and memory mode, when do they take effect, when is direct write allowed, and when is reset-backend required? | [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md) |
 | What do `/threads`, `/resume`, `/profile`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
 | How does `/memory` map to upstream memory configuration, when is direct write allowed, and when is reset-backend required? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md) |
 | What is the current formal Feishu contract for `/compact`, `/skills`, and `/plugins`, and which advanced capabilities are intentionally not exposed? | [`feishu-advanced-features.md`](./contracts/feishu-advanced-features.md) |

@@ -41,6 +41,7 @@
 - [`feishu-command-matrix.zh-CN.md`](./contracts/feishu-command-matrix.zh-CN.md)
 - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
 - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
+- [`thread-next-load-settings-semantics.zh-CN.md`](./contracts/thread-next-load-settings-semantics.zh-CN.md)
 - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
 - [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
 - [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md)
@@ -78,6 +79,7 @@
 | 当前总体架构、分层、模块划分、仓库结构是什么？ | [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md) |
 | 飞书侧线程生命周期是什么？哪些状态绝不能混淆？ | [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md) |
 | `/status`、`/detach`、`feishu-codexctl` 共享的状态词汇与管理面合同是什么？ | [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
+| thread-wise profile / memory 这类 next-load 设置，何时生效、何时可直接写入、何时必须 reset-backend？ | [`thread-next-load-settings-semantics.zh-CN.md`](./contracts/thread-next-load-settings-semantics.zh-CN.md) |
 | `/threads`、`/resume`、`/profile`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
 | `/memory` 如何映射到上游 memory 配置、何时可直接写入、何时必须 reset-backend？ | [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md) |
 | `/compact`、`/skills`、`/plugins` 在飞书侧当前正式支持到什么程度？哪些高级能力刻意不暴露？ | [`feishu-advanced-features.zh-CN.md`](./contracts/feishu-advanced-features.zh-CN.md) |
