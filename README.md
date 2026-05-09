@@ -298,7 +298,5 @@ flowchart LR
 - 不同实例不能同时 live attach 同一个 thread；这由机器级 `ThreadRuntimeLease` 控制
 
 **补充说明**
-- 飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步
-- 新建 thread，或在未加载的 thread 上开始新一轮时，用“发起这一轮的那一端”的权限设置
-- 如果一个 thread 已经在 shared backend 里加载过，后续 attach / resume 可能继续沿用它当前正在生效的权限设置
-- `profile` 属于 thread 本身；切换 `profile` 通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`
+- `permissions` 不是 thread-wise next-load 设置。飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步；由发起 `thread/start` / `turn/start` 的那一端写进 app-server
+- `profile`、`memory` 才是 thread-wise next-load 设置；切换它们通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`

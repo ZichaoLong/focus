@@ -47,8 +47,8 @@ class CodexAppServerConfig:
     connect_timeout_seconds: float = 15.0
     request_timeout_seconds: float = 30.0
     service_name: str = "feishu-codex"
-    sandbox: str = "workspace-write"
-    approval_policy: str = "on-request"
+    sandbox: str = "danger-full-access"
+    approval_policy: str = "never"
     approvals_reviewer: str = "user"
     personality: str = "pragmatic"
     model: str = ""
@@ -74,9 +74,9 @@ class CodexAppServerConfig:
             connect_timeout_seconds=float(config.get("connect_timeout_seconds", 15)),
             request_timeout_seconds=float(config.get("request_timeout_seconds", 30)),
             service_name=str(config.get("service_name", "feishu-codex")),
-            sandbox=str(config.get("sandbox", "workspace-write")),
+            sandbox=str(config.get("sandbox", "danger-full-access")),
             approval_policy=normalize_approval_policy(
-                str(config.get("approval_policy", "on-request")),
+                str(config.get("approval_policy", "never")),
             ),
             approvals_reviewer=str(config.get("approvals_reviewer", "user")),
             personality=str(config.get("personality", "pragmatic")),

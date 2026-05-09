@@ -265,3 +265,25 @@ class ChatBindingStoreTests(unittest.TestCase):
 
         assert loaded is not None
         self.assertEqual(loaded["approval_policy"], "on-request")
+
+    def test_store_keeps_empty_approval_policy_empty(self) -> None:
+        _, store, state_path = self._make_store()
+
+        store.save(
+            ("ou_user", "oc_p2p"),
+            {
+                "working_dir": "/tmp/p2p",
+                "current_thread_id": "",
+                "current_thread_title": "",
+                "feishu_runtime_state": "",
+                "approval_policy": "",
+                "sandbox": "",
+                "collaboration_mode": "",
+            },
+        )
+
+        raw = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["approval_policy"], "")
+        loaded = store.load(("ou_user", "oc_p2p"))
+        assert loaded is not None
+        self.assertEqual(loaded["approval_policy"], "")

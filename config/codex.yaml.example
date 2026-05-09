@@ -27,16 +27,16 @@
 # 线程创建时声明的服务名；默认值：feishu-codex
 # service_name: feishu-codex
 
-# 默认沙箱模式；默认值：workspace-write
+# 默认沙箱模式；默认值：danger-full-access
 # 说明：这是“技术边界”，决定命令和工具最终在什么文件系统 / 网络权限下运行。
 # 可选值：read-only、workspace-write、danger-full-access
-# sandbox: workspace-write
+# sandbox: danger-full-access
 
-# 默认审批策略；默认值：on-request
+# 默认审批策略；默认值：never
 # 说明：这是“审批边界”，决定什么时候需要先经过审批才能继续。
 # 可选值：untrusted、on-request、never
 # 说明：仓库不再暴露 deprecated 的 on-failure；如旧配置里仍写了它，会自动按 on-request 处理。
-# approval_policy: on-request
+# approval_policy: never
 
 # 审批审阅者；默认值：user
 # approvals_reviewer: user

@@ -2887,9 +2887,9 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         self.assertEqual(card["header"]["title"]["content"], "Codex 当前状态")
         content = card["elements"][0]["content"]
-        self.assertIn("权限预设：`Default`", content)
-        self.assertIn("审批策略：`on-request`", content)
-        self.assertIn("沙箱策略：`workspace-write`", content)
+        self.assertIn("权限预设：`Full Access`", content)
+        self.assertIn("审批策略：`never`", content)
+        self.assertIn("沙箱策略：`danger-full-access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertNotIn("新 thread seed profile", content)
         self.assertNotIn("当前 provider", content)
@@ -2921,7 +2921,7 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
         self.assertIn("当前 profile：`provider2`", content)
-        self.assertIn("权限预设：`Default`", content)
+        self.assertIn("权限预设：`Full Access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertNotIn("binding：", content)
         self.assertNotIn("feishu runtime：", content)
