@@ -68,7 +68,34 @@
 
 但这只是服务内部协议实现，不再是用户概念。
 
-## 3. profile / memory 都属于 thread-wise next-load 设置
+## 3. `fcodex` 的本地路由合同
+
+`fcodex` 现在只保留两类路由语义：
+
+1. 带明确 thread 目标的恢复：
+   - `fcodex resume <thread_id|thread_name>`
+2. 不带明确 thread 目标的启动：
+   - `fcodex`
+   - `fcodex <prompt>`
+   - 以及其他非 `resume` 的 TUI 进入路径
+
+正式合同是：
+
+- 带 thread 目标的恢复，不得依赖 `default-running` 兜底
+- 不带 thread 目标的启动，仍可保留便捷兜底：
+  - 显式 `--instance` 优先
+  - 否则唯一运行中的实例优先
+  - 否则运行中的 `default` 可作为兜底
+  - 再否则必须要求显式 `--instance`
+
+对于带 thread 目标的恢复：
+
+- 显式 `--instance` 仍然优先
+- `resume <thread_id>` 应优先使用 live runtime owner
+- `resume <thread_name>` 应先解析出真实 `thread_id`，再基于 thread 事实路由
+- 如果系统仍无法判定唯一明确的目标实例，就必须拒绝并要求显式 `--instance`
+
+## 4. profile / memory 都属于 thread-wise next-load 设置
 
 这条规则在本地与飞书侧完全一致：
 
@@ -79,16 +106,16 @@
 共享 next-load 生效与 direct-write / reset-backend 规则，以
 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准。
 
-## 4. 本地如何改 profile
+## 5. 本地如何改 profile
 
-### 4.1 新线程
+### 5.1 新线程
 
 新线程可以通过：
 
 - `fcodex -p <profile> new`
 - 或飞书 `/new` 后再 `/profile <name>`
 
-### 4.2 已有线程
+### 5.2 已有线程
 
 已有线程的直接改写条件，以
 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准。
@@ -99,7 +126,7 @@
 - 不应要求用户先去理解 release-runtime / unsubscribe
 - 推荐路径应是飞书 `/profile <name>`，必要时走 reset-backend
 
-### 4.3 thread-wise memory mode
+### 5.3 thread-wise memory mode
 
 当前本地命令面没有单独的 thread-wise memory mode 改写命令。
 
@@ -110,7 +137,7 @@
 - 若要理解共享的 direct-write / reset-backend 条件，以 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准
 - memory mode 自身的业务语义，以 `docs/contracts/thread-memory-semantics.zh-CN.md` 为准
 
-## 5. reset-backend 在本地与飞书侧的关系
+## 6. reset-backend 在本地与飞书侧的关系
 
 无论从飞书还是本地 `feishu-codexctl service reset-backend` 触发：
 
@@ -125,7 +152,7 @@
 - 当前实例 attach
 - 保持 detached
 
-## 6. 为什么不用 release-runtime 作为主文案
+## 7. 为什么不用 release-runtime 作为主文案
 
 因为它把三层概念混在了一起：
 

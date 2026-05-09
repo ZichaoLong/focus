@@ -86,6 +86,7 @@ def resolve_cli_instance_target(
     explicit_instance: str | None = None,
     *,
     preferred_running_instance: str = "",
+    allow_default_running_fallback: bool = True,
 ) -> CliInstanceTarget:
     normalized_instance = str(explicit_instance or "").strip()
     if normalized_instance:
@@ -118,13 +119,14 @@ def resolve_cli_instance_target(
             data_dir=pathlib.Path(unique.data_dir),
             running_entry=unique,
         )
-    default = default_running_instance()
-    if default is not None:
-        return CliInstanceTarget(
-            instance_name=default.instance_name,
-            data_dir=pathlib.Path(default.data_dir),
-            running_entry=default,
-        )
+    if allow_default_running_fallback:
+        default = default_running_instance()
+        if default is not None:
+            return CliInstanceTarget(
+                instance_name=default.instance_name,
+                data_dir=pathlib.Path(default.data_dir),
+                running_entry=default,
+            )
     running_instances = list_running_instances()
     if len(running_instances) > 1:
         raise ValueError("检测到多个运行中的实例，请显式传 `--instance <name>`。")
@@ -147,6 +149,7 @@ def resolve_cli_runtime_target(
     configured_app_server_url: str,
     explicit_instance: str | None = None,
     preferred_running_instance: str = "",
+    allow_default_running_fallback: bool = True,
     default_instance_data_dir: pathlib.Path | None = None,
 ) -> CliRuntimeTarget:
     """Resolve one runtime target for local CLI entrypoints.
@@ -156,6 +159,13 @@ def resolve_cli_runtime_target(
     - explicit `--instance` wins
     - otherwise a preferred running owner instance may win
     - otherwise normal CLI instance resolution applies
+
+    `allow_default_running_fallback` lets callers split two public contracts:
+
+    - threadless launches may still treat a running `default` instance as the
+      convenience fallback
+    - thread-targeted resume paths may disable that fallback and fail closed
+      when the target instance is still ambiguous
 
     Wrapper-specific logic such as thread-lease owner discovery stays outside
     this module. Once the caller chooses a preferred owner instance, this helper
@@ -167,6 +177,7 @@ def resolve_cli_runtime_target(
     resolved = _resolve_cli_runtime_base_target(
         explicit_instance=explicit_instance,
         preferred_running_instance=preferred_instance,
+        allow_default_running_fallback=allow_default_running_fallback,
     )
     running_entry = resolved.running_entry
     data_dir = pathlib.Path(running_entry.data_dir) if running_entry is not None else resolved.data_dir
@@ -198,8 +209,10 @@ def _resolve_cli_runtime_base_target(
     *,
     explicit_instance: str | None,
     preferred_running_instance: str,
+    allow_default_running_fallback: bool,
 ) -> CliInstanceTarget:
     return resolve_cli_instance_target(
         explicit_instance,
         preferred_running_instance=preferred_running_instance,
+        allow_default_running_fallback=allow_default_running_fallback,
     )

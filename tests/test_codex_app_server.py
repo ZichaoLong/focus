@@ -1102,6 +1102,7 @@ class FCodexTests(unittest.TestCase):
             patch("bot.instance_resolution.load_running_instance", return_value=None),
             patch("bot.instance_resolution.current_cli_instance_name", return_value="default"),
             patch("bot.fcodex.current_cli_instance_name", return_value="default"),
+            patch("bot.fcodex.list_running_instances", return_value=[]),
         ]
         for patcher in patchers:
             patcher.start()
@@ -1196,7 +1197,7 @@ class FCodexTests(unittest.TestCase):
 
     def test_fcodex_explicit_remote_skips_shared_resolution(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.resolve_resume_name_via_remote_backend") as mock_resolve:
+            with patch("bot.fcodex._resolve_thread_target_via_remote_backend") as mock_resolve:
                 with patch("bot.fcodex.os.execvpe") as mock_exec:
                     with patch("sys.argv", ["fcodex", "--remote", "ws://127.0.0.1:9900", "resume", "demo"]):
                         fcodex_main()
@@ -1230,8 +1231,9 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("不能与显式 `--remote` 同时使用", stderr.getvalue())
 
     def test_fcodex_routes_resume_to_owner_instance(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
         lease = ThreadRuntimeLease(
-            thread_id="thread-1",
+            thread_id=thread_id,
             owner_instance="corp-b",
             owner_service_token="token-b",
             control_endpoint="tcp://127.0.0.1:9102",
@@ -1259,12 +1261,13 @@ class FCodexTests(unittest.TestCase):
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
             with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=lease):
                 with patch("bot.fcodex.resolve_cli_runtime_target", return_value=resolved_target) as mock_resolve_target:
-                    with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9200", Mock())) as mock_proxy:
-                        with patch("bot.fcodex.os.execvpe") as mock_exec:
-                            with patch("sys.argv", ["fcodex", "resume", "thread-1"]):
-                                fcodex_main()
+                        with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9200", Mock())) as mock_proxy:
+                            with patch("bot.fcodex.os.execvpe") as mock_exec:
+                                with patch("sys.argv", ["fcodex", "resume", thread_id]):
+                                    fcodex_main()
 
         self.assertEqual(mock_resolve_target.call_args.kwargs["preferred_running_instance"], "corp-b")
+        self.assertFalse(mock_resolve_target.call_args.kwargs["allow_default_running_fallback"])
         mock_proxy.assert_called_once_with(
             "ws://127.0.0.1:9102",
             os.getcwd(),
@@ -1276,7 +1279,7 @@ class FCodexTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9200", "--cd", os.getcwd(), "resume", "thread-1"],
+            ["codex", "--remote", "ws://127.0.0.1:9200", "--cd", os.getcwd(), "resume", thread_id],
         )
 
     def test_runtime_target_prefers_instance_runtime_store_over_stale_registry_url(self) -> None:
@@ -1348,7 +1351,46 @@ class FCodexTests(unittest.TestCase):
 
         self.assertIn("未发布可用的 app-server 地址", str(exc.exception))
 
+    def test_runtime_target_without_default_fallback_rejects_multiple_running_instances(self) -> None:
+        with patch(
+            "bot.instance_resolution.list_running_instances",
+            return_value=[
+                InstanceRegistryEntry(
+                    instance_name="default",
+                    owner_pid=os.getpid(),
+                    service_token="token-default",
+                    control_endpoint="tcp://127.0.0.1:9101",
+                    app_server_url="ws://127.0.0.1:9101",
+                    config_dir="/tmp/config-default",
+                    data_dir="/tmp/data-default",
+                    started_at=1.0,
+                    updated_at=1.0,
+                ),
+                InstanceRegistryEntry(
+                    instance_name="explorer",
+                    owner_pid=os.getpid(),
+                    service_token="token-explorer",
+                    control_endpoint="tcp://127.0.0.1:9102",
+                    app_server_url="ws://127.0.0.1:9102",
+                    config_dir="/tmp/config-explorer",
+                    data_dir="/tmp/data-explorer",
+                    started_at=1.0,
+                    updated_at=1.0,
+                ),
+            ],
+        ):
+            with patch("bot.instance_resolution.load_running_instance", return_value=None):
+                with patch("bot.instance_resolution.current_cli_instance_name", return_value="default"):
+                    with self.assertRaises(ValueError) as exc:
+                        resolve_cli_runtime_target(
+                            configured_app_server_url="ws://127.0.0.1:8765",
+                            allow_default_running_fallback=False,
+                        )
+
+        self.assertIn("请显式传 `--instance <name>`", str(exc.exception))
+
     def test_fcodex_requires_explicit_instance_when_multiple_instances_are_running(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
         stderr = StringIO()
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
             with patch(
@@ -1357,7 +1399,7 @@ class FCodexTests(unittest.TestCase):
             ):
                 with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=None):
                     with patch("bot.fcodex.sys.stderr", stderr):
-                        with patch("sys.argv", ["fcodex", "resume", "thread-1"]):
+                        with patch("sys.argv", ["fcodex", "resume", thread_id]):
                             with self.assertRaises(SystemExit) as exc:
                                 fcodex_main()
 
@@ -1463,26 +1505,145 @@ class FCodexTests(unittest.TestCase):
 
     def test_fcodex_resume_resolves_name(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.resolve_resume_name_via_remote_backend") as mock_resolve:
-                mock_resolve.return_value = ThreadSummary(
-                    thread_id="019d2e94-a475-7bc1-b2f7-a3ce37628ede",
-                    cwd="/tmp/project",
-                    name="demo",
-                    preview="hello",
-                    created_at=0,
-                    updated_at=0,
-                    source="cli",
-                    status="notLoaded",
-                )
-                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
-                    with patch("bot.fcodex.os.execvpe") as mock_exec:
-                        with patch("sys.argv", ["fcodex", "resume", "demo"]):
-                            fcodex_main()
+            with patch(
+                "bot.fcodex._resolve_resume_lookup_runtime_target",
+                return_value=CliRuntimeTarget(
+                    instance_name="default",
+                    data_dir=_default_data_dir(),
+                    app_server_url="ws://127.0.0.1:8765",
+                ),
+            ):
+                with patch("bot.fcodex._resolve_thread_target_via_remote_backend") as mock_resolve:
+                    mock_resolve.return_value = (
+                        ThreadSummary(
+                            thread_id="019d2e94-a475-7bc1-b2f7-a3ce37628ede",
+                            cwd="/tmp/project",
+                            name="demo",
+                            preview="hello",
+                            created_at=0,
+                            updated_at=0,
+                            source="cli",
+                            status="notLoaded",
+                        ),
+                        None,
+                    )
+                    with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                        with patch("bot.fcodex.os.execvpe") as mock_exec:
+                            with patch("sys.argv", ["fcodex", "resume", "demo"]):
+                                fcodex_main()
 
-        self.assertEqual(mock_resolve.call_args.kwargs["target"], "demo")
+        self.assertEqual(mock_resolve.call_args.args[2], "demo")
         self.assertEqual(
             mock_exec.call_args[0][1],
             ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "resume", "019d2e94-a475-7bc1-b2f7-a3ce37628ede"],
+        )
+
+    def test_fcodex_resume_name_prefers_unique_bound_running_instance_over_default_running(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
+        running_instances = [
+            InstanceRegistryEntry(
+                instance_name="default",
+                owner_pid=111,
+                service_token="token-default",
+                control_endpoint="tcp://127.0.0.1:9101",
+                app_server_url="ws://127.0.0.1:9101",
+                config_dir="/tmp/config-default",
+                data_dir="/tmp/data-default",
+                started_at=1.0,
+                updated_at=1.0,
+            ),
+            InstanceRegistryEntry(
+                instance_name="explorer",
+                owner_pid=222,
+                service_token="token-explorer",
+                control_endpoint="tcp://127.0.0.1:9102",
+                app_server_url="ws://127.0.0.1:9102",
+                config_dir="/tmp/config-explorer",
+                data_dir="/tmp/data-explorer",
+                started_at=1.0,
+                updated_at=1.0,
+            ),
+        ]
+        resolved_target = CliRuntimeTarget(
+            instance_name="explorer",
+            data_dir=Path("/tmp/data-explorer"),
+            app_server_url="ws://127.0.0.1:9102",
+            service_token="token-explorer",
+            running_entry=running_instances[1],
+        )
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch("bot.fcodex.list_running_instances", return_value=running_instances):
+                with patch(
+                    "bot.fcodex._resolve_resume_lookup_runtime_target",
+                    return_value=CliRuntimeTarget(
+                        instance_name="default",
+                        data_dir=Path("/tmp/data-default"),
+                        app_server_url="ws://127.0.0.1:9101",
+                    ),
+                ):
+                    with patch(
+                        "bot.fcodex._resolve_thread_target_via_remote_backend",
+                        return_value=(
+                            ThreadSummary(
+                                thread_id=thread_id,
+                                cwd="/tmp/project",
+                                name="demo",
+                                preview="hello",
+                                created_at=0,
+                                updated_at=0,
+                                source="cli",
+                                status="notLoaded",
+                            ),
+                            None,
+                        ),
+                    ):
+                        with patch(
+                            "bot.fcodex.ChatBindingStore.load_all",
+                            side_effect=[
+                                {},
+                                {
+                                    ("owner", "chat"): {
+                                        "working_dir": "/tmp/project",
+                                        "current_thread_id": thread_id,
+                                        "current_thread_title": "demo",
+                                        "feishu_runtime_state": "detached",
+                                        "approval_policy": "on-request",
+                                        "sandbox": "workspace-write",
+                                        "collaboration_mode": "default",
+                                    }
+                                },
+                            ],
+                        ):
+                            with patch("bot.fcodex.resolve_cli_runtime_target", return_value=resolved_target) as mock_resolve_target:
+                                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9200", Mock())):
+                                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                                        with patch("sys.argv", ["fcodex", "resume", "demo"]):
+                                            fcodex_main()
+
+        self.assertEqual(mock_resolve_target.call_args.kwargs["preferred_running_instance"], "explorer")
+        self.assertFalse(mock_resolve_target.call_args.kwargs["allow_default_running_fallback"])
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            ["codex", "--remote", "ws://127.0.0.1:9200", "--cd", os.getcwd(), "resume", thread_id],
+        )
+
+    def test_fcodex_threadless_launch_keeps_default_running_fallback(self) -> None:
+        resolved_target = CliRuntimeTarget(
+            instance_name="default",
+            data_dir=_default_data_dir(),
+            app_server_url="ws://127.0.0.1:8765",
+        )
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch("bot.fcodex.resolve_cli_runtime_target", return_value=resolved_target) as mock_resolve_target:
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex", "session"]):
+                            fcodex_main()
+
+        self.assertTrue(mock_resolve_target.call_args.kwargs["allow_default_running_fallback"])
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "session"],
         )
 
     def test_fcodex_resume_with_saved_thread_profile_injects_profile(self) -> None:

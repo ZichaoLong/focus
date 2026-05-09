@@ -68,7 +68,34 @@ The lower layer may still call:
 
 But that is now an internal service protocol detail, not a user-facing concept.
 
-## 3. Profile and memory are thread-wise next-load settings
+## 3. Local routing contract for `fcodex`
+
+`fcodex` now has only two routing categories:
+
+1. thread-targeted resume:
+   - `fcodex resume <thread_id|thread_name>`
+2. threadless launch:
+   - `fcodex`
+   - `fcodex <prompt>`
+   - other non-resume TUI entry paths that create or continue from no explicit thread target
+
+The formal routing rule is:
+
+- thread-targeted resume must not rely on `default-running` fallback
+- threadless launch may still use the convenience fallback:
+  - explicit `--instance` wins
+  - otherwise the unique running instance wins
+  - otherwise a running `default` may win
+  - otherwise the command must ask for explicit `--instance`
+
+For thread-targeted resume:
+
+- explicit `--instance` still wins
+- `resume <thread_id>` should prefer the live runtime owner when one exists
+- `resume <thread_name>` should first resolve the real `thread_id`, then route using thread-aware facts
+- if the system still cannot determine one clear target instance, it must reject and ask for explicit `--instance`
+
+## 4. Profile and memory are thread-wise next-load settings
 
 This rule is identical locally and in Feishu:
 
@@ -79,16 +106,16 @@ This rule is identical locally and in Feishu:
 The shared next-load effect and direct-write / reset-backend rules live in
 `docs/contracts/thread-next-load-settings-semantics.md`.
 
-## 4. How local profile mutation works
+## 5. How local profile mutation works
 
-### 4.1 New thread
+### 5.1 New thread
 
 New threads may be created through:
 
 - `fcodex -p <profile> new`
 - or Feishu `/new` followed by `/profile <name>`
 
-### 4.2 Existing thread
+### 5.2 Existing thread
 
 The direct-write rule for an existing thread is defined in
 `docs/contracts/thread-next-load-settings-semantics.md`.
@@ -99,7 +126,7 @@ Therefore:
 - the user should not be forced to reason about release-runtime / unsubscribe first
 - the preferred recovery path is Feishu `/profile <name>`, with reset-backend when needed
 
-### 4.3 Thread-wise memory mode
+### 5.3 Thread-wise memory mode
 
 The local command surface does not currently expose a standalone thread-wise memory-mode mutator.
 
@@ -110,7 +137,7 @@ The formal contract is:
 - the shared direct-write / reset-backend rule is defined in `docs/contracts/thread-next-load-settings-semantics.md`
 - the memory-mode-specific business semantics are defined in `docs/contracts/thread-memory-semantics.md`
 
-## 5. reset-backend locally and in Feishu
+## 6. reset-backend locally and in Feishu
 
 Whether triggered from Feishu or from local `feishu-codexctl service reset-backend`:
 
@@ -125,7 +152,7 @@ After that, if the user wants Feishu push again, they must explicitly choose:
 - attach the current instance
 - or keep detached
 
-## 6. Why release-runtime is no longer the main wording
+## 7. Why release-runtime is no longer the main wording
 
 Because it collapsed three different layers into one fuzzy concept:
 

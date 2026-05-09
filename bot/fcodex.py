@@ -19,8 +19,15 @@ from bot.config import load_config_file
 from bot.constants import DEFAULT_APP_SERVER_URL
 from bot.env_file import load_env_file
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, global_data_dir, validate_instance_name
-from bot.instance_resolution import CliRuntimeTarget, current_cli_instance_name, resolve_cli_runtime_target
+from bot.instance_resolution import (
+    CliRuntimeTarget,
+    current_cli_instance_name,
+    list_running_instances,
+    resolve_cli_runtime_target,
+    resolve_running_instance_app_server_url,
+)
 from bot.platform_paths import default_data_root, is_windows
+from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.thread_resolution import (
     looks_like_thread_id,
@@ -158,20 +165,84 @@ def _lease_owner_instance(thread_id: str) -> str:
     return lease.owner_instance
 
 
+def _configured_app_server_url(cfg: dict) -> str:
+    return str(cfg.get("app_server_url", DEFAULT_APP_SERVER_URL)).strip() or DEFAULT_APP_SERVER_URL
+
+
+def _running_binding_owner_instances(thread_id: str) -> list[str]:
+    normalized_thread_id = str(thread_id or "").strip()
+    if not normalized_thread_id:
+        return []
+    owners: list[str] = []
+    for entry in list_running_instances():
+        bindings = ChatBindingStore(pathlib.Path(entry.data_dir)).load_all()
+        for state in bindings.values():
+            if str(state.get("current_thread_id", "") or "").strip() != normalized_thread_id:
+                continue
+            owners.append(entry.instance_name)
+            break
+    return owners
+
+
+def _preferred_resume_instance_for_thread(thread_id: str) -> str:
+    normalized_thread_id = str(thread_id or "").strip()
+    if not normalized_thread_id:
+        return ""
+    owner_instance = _lease_owner_instance(normalized_thread_id)
+    if owner_instance:
+        return owner_instance
+    binding_owners = _running_binding_owner_instances(normalized_thread_id)
+    if len(binding_owners) > 1:
+        rendered = ", ".join(f"`{item}`" for item in binding_owners)
+        raise ValueError(
+            "目标 thread 当前在多个运行中的实例里都有绑定："
+            f"{rendered}；请显式传 `--instance <name>`。"
+        )
+    if len(binding_owners) == 1:
+        return binding_owners[0]
+    running_instances = list_running_instances()
+    if len(running_instances) == 1:
+        return running_instances[0].instance_name
+    return ""
+
+
+def _resume_lookup_instance_name(cfg: dict) -> str:
+    configured_url = _configured_app_server_url(cfg)
+    running_instances = list_running_instances()
+    if not running_instances:
+        return ""
+    current_instance = current_cli_instance_name()
+    preferred_order = sorted(
+        running_instances,
+        key=lambda entry: (entry.instance_name != current_instance, entry.instance_name),
+    )
+    for entry in preferred_order:
+        app_server_url = resolve_running_instance_app_server_url(
+            entry,
+            configured_app_server_url=configured_url,
+        )
+        if app_server_url:
+            return entry.instance_name
+    raise ValueError("运行中的实例均未发布可用的 app-server 地址；请重启实例后再试。")
+
+
 def _resolve_runtime_target_for_wrapper(
     *,
     cfg: dict,
     explicit_instance: str,
     thread_id: str = "",
+    preferred_running_instance: str = "",
+    allow_default_running_fallback: bool = True,
 ) -> CliRuntimeTarget:
     """Resolve the one shared-backend runtime target for this wrapper launch."""
-    configured_url = str(cfg.get("app_server_url", DEFAULT_APP_SERVER_URL)).strip() or DEFAULT_APP_SERVER_URL
-    preferred_running_instance = _lease_owner_instance(thread_id) if thread_id else ""
+    configured_url = _configured_app_server_url(cfg)
+    preferred_instance = str(preferred_running_instance or "").strip() or (_lease_owner_instance(thread_id) if thread_id else "")
     try:
         return resolve_cli_runtime_target(
             configured_app_server_url=configured_url,
             explicit_instance=explicit_instance or None,
-            preferred_running_instance=preferred_running_instance,
+            preferred_running_instance=preferred_instance,
+            allow_default_running_fallback=allow_default_running_fallback,
             default_instance_data_dir=_default_data_dir(),
         )
     except ValueError as exc:
@@ -225,29 +296,97 @@ def _resolve_thread_target_via_remote_backend(
     return thread, None
 
 
-def _resolve_resume_target_name(
+@dataclass(frozen=True, slots=True)
+class _ResolvedResumeTarget:
+    user_args: list[str]
+    preferred_running_instance: str = ""
+
+
+def _resolve_resume_lookup_runtime_target(
+    cfg: dict,
+    explicit_instance: str,
+) -> CliRuntimeTarget:
+    normalized_explicit = str(explicit_instance or "").strip()
+    if normalized_explicit:
+        return _resolve_runtime_target_for_wrapper(
+            cfg=cfg,
+            explicit_instance=normalized_explicit,
+            allow_default_running_fallback=False,
+        )
+    try:
+        lookup_instance = _resume_lookup_instance_name(cfg)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
+    if lookup_instance:
+        return _resolve_runtime_target_for_wrapper(
+            cfg=cfg,
+            explicit_instance=lookup_instance,
+            allow_default_running_fallback=False,
+        )
+    return _resolve_runtime_target_for_wrapper(
+        cfg=cfg,
+        explicit_instance="",
+        allow_default_running_fallback=False,
+    )
+
+
+def _resolve_resume_target(
     cfg: dict,
     explicit_instance: str,
     user_args: list[str],
-) -> list[str]:
+) -> _ResolvedResumeTarget:
     target_index = _resume_target_index(user_args)
     if target_index is None:
-        return list(user_args)
+        return _ResolvedResumeTarget(user_args=list(user_args))
     target = str(user_args[target_index] or "").strip()
-    if not target or looks_like_thread_id(target):
-        return list(user_args)
-    if _lease_owner_instance(target):
-        return list(user_args)
-    lookup_target = _resolve_runtime_target_for_wrapper(cfg=cfg, explicit_instance=explicit_instance)
-    thread = resolve_resume_name_via_remote_backend(
-        base_config=_remote_adapter_config(cfg, lookup_target.app_server_url),
-        app_server_url=lookup_target.app_server_url,
-        query_limit=int(cfg.get("thread_list_query_limit", 100)),
-        target=target,
+    if not target:
+        return _ResolvedResumeTarget(user_args=list(user_args))
+    if explicit_instance:
+        if looks_like_thread_id(target):
+            return _ResolvedResumeTarget(user_args=list(user_args))
+        lookup_target = _resolve_resume_lookup_runtime_target(cfg, explicit_instance)
+        thread, error = _resolve_thread_target_via_remote_backend(
+            cfg,
+            lookup_target.app_server_url,
+            target,
+        )
+        if thread is None:
+            print(str(error or "未找到匹配的线程。"), file=sys.stderr)
+            raise SystemExit(2)
+        resolved = list(user_args)
+        resolved[target_index] = thread.thread_id
+        return _ResolvedResumeTarget(user_args=resolved)
+    if looks_like_thread_id(target):
+        try:
+            preferred_instance = _preferred_resume_instance_for_thread(target)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2)
+        return _ResolvedResumeTarget(
+            user_args=list(user_args),
+            preferred_running_instance=preferred_instance,
+        )
+    lookup_target = _resolve_resume_lookup_runtime_target(cfg, explicit_instance)
+    thread, error = _resolve_thread_target_via_remote_backend(
+        cfg,
+        lookup_target.app_server_url,
+        target,
     )
+    if thread is None:
+        print(str(error or "未找到匹配的线程。"), file=sys.stderr)
+        raise SystemExit(2)
+    try:
+        preferred_instance = _preferred_resume_instance_for_thread(thread.thread_id)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(2)
     resolved = list(user_args)
     resolved[target_index] = thread.thread_id
-    return resolved
+    return _ResolvedResumeTarget(
+        user_args=resolved,
+        preferred_running_instance=preferred_instance,
+    )
 
 
 def _thread_resume_profile_mutable(cfg: dict, app_server_url: str, thread_id: str) -> tuple[bool, str]:
@@ -396,8 +535,6 @@ def _thread_target_hint(user_args: list[str]) -> str:
         target = str(user_args[target_index] or "").strip()
         if looks_like_thread_id(target):
             return target
-        if _lease_owner_instance(target):
-            return target
     return ""
 
 
@@ -541,9 +678,10 @@ def main() -> None:
     if removed_wrapper_error is not None:
         raise SystemExit(removed_wrapper_error)
 
-    preprocessed_args = list(user_args)
-    if not _has_explicit_remote(preprocessed_args):
-        preprocessed_args = _resolve_resume_target_name(cfg, explicit_instance, preprocessed_args)
+    preprocessed = _ResolvedResumeTarget(user_args=list(user_args))
+    if not _has_explicit_remote(user_args):
+        preprocessed = _resolve_resume_target(cfg, explicit_instance, user_args)
+    preprocessed_args = list(preprocessed.user_args)
 
     if _has_explicit_remote(preprocessed_args):
         data_dir = _default_data_dir()
@@ -559,6 +697,8 @@ def main() -> None:
             cfg=cfg,
             explicit_instance=explicit_instance,
             thread_id=thread_target,
+            preferred_running_instance=preprocessed.preferred_running_instance,
+            allow_default_running_fallback=not bool(thread_target),
         )
         data_dir = resolved_target.data_dir
         app_server_url = resolved_target.app_server_url
