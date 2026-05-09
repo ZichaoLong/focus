@@ -70,6 +70,18 @@ But that is now an internal service protocol detail, not a user-facing concept.
 
 ## 3. Local routing contract for `fcodex`
 
+`fcodex` now separates three different facts explicitly:
+
+1. `thread identity`
+   - which thread the user is targeting
+   - this may come from an explicit `thread_id`, or from resolving a `thread_name` into a real `thread_id`
+2. `live runtime owner`
+   - which instance actually owns the currently loaded thread
+   - the only fact source is `ThreadRuntimeLease`
+3. `binding bookmark`
+   - which thread some chat / instance last remembered
+   - this is diagnostics-only and must not participate in `fcodex resume` auto-routing
+
 `fcodex` now has only two routing categories:
 
 1. thread-targeted resume:
@@ -81,7 +93,7 @@ But that is now an internal service protocol detail, not a user-facing concept.
 
 The formal routing rule is:
 
-- thread-targeted resume must not rely on `default-running` fallback
+- thread-targeted resume must fail closed; it must not infer an instance from binding bookmarks, and it must not rely on `default-running` fallback
 - threadless launch may still use the convenience fallback:
   - explicit `--instance` wins
   - otherwise the unique running instance wins
@@ -90,10 +102,11 @@ The formal routing rule is:
 
 For thread-targeted resume:
 
-- explicit `--instance` still wins
-- `resume <thread_id>` should prefer the live runtime owner when one exists
-- `resume <thread_name>` should first resolve the real `thread_id`, then route using thread-aware facts
-- if the system still cannot determine one clear target instance, it must reject and ask for explicit `--instance`
+- `resume <thread_name>` only performs identity lookup first; once the real `thread_id` is known, routing follows the exact same rules as `resume <thread_id>`
+- if a `live runtime owner` exists, routing may only target that instance
+- if no `live runtime owner` exists and there is exactly one running instance, routing may target that instance
+- if no `live runtime owner` exists and the running instance is not unique, the command must reject and require explicit `--instance`
+- if an explicit `--instance` conflicts with the `live runtime owner`, the command must reject
 
 ## 4. Profile and memory are thread-wise next-load settings
 

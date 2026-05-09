@@ -27,7 +27,6 @@ from bot.instance_resolution import (
     resolve_running_instance_app_server_url,
 )
 from bot.platform_paths import default_data_root, is_windows
-from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.thread_resolution import (
     looks_like_thread_id,
@@ -169,37 +168,20 @@ def _configured_app_server_url(cfg: dict) -> str:
     return str(cfg.get("app_server_url", DEFAULT_APP_SERVER_URL)).strip() or DEFAULT_APP_SERVER_URL
 
 
-def _running_binding_owner_instances(thread_id: str) -> list[str]:
-    normalized_thread_id = str(thread_id or "").strip()
-    if not normalized_thread_id:
-        return []
-    owners: list[str] = []
-    for entry in list_running_instances():
-        bindings = ChatBindingStore(pathlib.Path(entry.data_dir)).load_all()
-        for state in bindings.values():
-            if str(state.get("current_thread_id", "") or "").strip() != normalized_thread_id:
-                continue
-            owners.append(entry.instance_name)
-            break
-    return owners
-
-
-def _preferred_resume_instance_for_thread(thread_id: str) -> str:
+def _preferred_resume_instance_for_thread(thread_id: str, *, explicit_instance: str = "") -> str:
     normalized_thread_id = str(thread_id or "").strip()
     if not normalized_thread_id:
         return ""
     owner_instance = _lease_owner_instance(normalized_thread_id)
+    normalized_explicit = str(explicit_instance or "").strip()
+    if normalized_explicit and owner_instance and owner_instance != normalized_explicit:
+        raise ValueError(
+            f"目标 thread 当前的 live runtime owner 是 `{owner_instance}`；"
+            f"不能显式传 `--instance {normalized_explicit}`。"
+            f"请改用 `--instance {owner_instance}`，或先让该 thread 完全 unloaded 后再试。"
+        )
     if owner_instance:
         return owner_instance
-    binding_owners = _running_binding_owner_instances(normalized_thread_id)
-    if len(binding_owners) > 1:
-        rendered = ", ".join(f"`{item}`" for item in binding_owners)
-        raise ValueError(
-            "目标 thread 当前在多个运行中的实例里都有绑定："
-            f"{rendered}；请显式传 `--instance <name>`。"
-        )
-    if len(binding_owners) == 1:
-        return binding_owners[0]
     running_instances = list_running_instances()
     if len(running_instances) == 1:
         return running_instances[0].instance_name
@@ -344,6 +326,11 @@ def _resolve_resume_target(
         return _ResolvedResumeTarget(user_args=list(user_args))
     if explicit_instance:
         if looks_like_thread_id(target):
+            try:
+                _preferred_resume_instance_for_thread(target, explicit_instance=explicit_instance)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                raise SystemExit(2)
             return _ResolvedResumeTarget(user_args=list(user_args))
         lookup_target = _resolve_resume_lookup_runtime_target(cfg, explicit_instance)
         thread, error = _resolve_thread_target_via_remote_backend(
@@ -353,6 +340,11 @@ def _resolve_resume_target(
         )
         if thread is None:
             print(str(error or "未找到匹配的线程。"), file=sys.stderr)
+            raise SystemExit(2)
+        try:
+            _preferred_resume_instance_for_thread(thread.thread_id, explicit_instance=explicit_instance)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
             raise SystemExit(2)
         resolved = list(user_args)
         resolved[target_index] = thread.thread_id

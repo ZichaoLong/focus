@@ -70,7 +70,19 @@
 
 ## 3. `fcodex` 的本地路由合同
 
-`fcodex` 现在只保留两类路由语义：
+`fcodex` 现在明确拆分三类事实：
+
+1. `thread identity`
+   - 目标 thread 是谁
+   - 来源可以是显式 `thread_id`，也可以先把 `thread_name` 解析成真实 `thread_id`
+2. `live runtime owner`
+   - 当前是谁真的持有这个 loaded thread
+   - 唯一事实源是 `ThreadRuntimeLease`
+3. `binding bookmark`
+   - 某个会话 / 实例“记得自己上次指向过哪个 thread”
+   - 只用于诊断与展示，不参与 `fcodex resume` 自动路由
+
+`fcodex` 只保留两类路由语义：
 
 1. 带明确 thread 目标的恢复：
    - `fcodex resume <thread_id|thread_name>`
@@ -81,7 +93,7 @@
 
 正式合同是：
 
-- 带 thread 目标的恢复，不得依赖 `default-running` 兜底
+- 带 thread 目标的恢复，必须 fail-close；不得使用 binding bookmark 推断实例，也不得依赖 `default-running` 兜底
 - 不带 thread 目标的启动，仍可保留便捷兜底：
   - 显式 `--instance` 优先
   - 否则唯一运行中的实例优先
@@ -90,10 +102,11 @@
 
 对于带 thread 目标的恢复：
 
-- 显式 `--instance` 仍然优先
-- `resume <thread_id>` 应优先使用 live runtime owner
-- `resume <thread_name>` 应先解析出真实 `thread_id`，再基于 thread 事实路由
-- 如果系统仍无法判定唯一明确的目标实例，就必须拒绝并要求显式 `--instance`
+- `resume <thread_name>` 只先做名字解析，得到真实 `thread_id` 后，后续路由规则与 `resume <thread_id>` 完全一致
+- 若存在 `live runtime owner`，只能路由到该实例
+- 若不存在 `live runtime owner`，且当前恰好只有一个运行中的实例，则可路由到该实例
+- 若不存在 `live runtime owner`，且运行中的实例不是唯一，就必须拒绝并要求显式 `--instance`
+- 若显式传了 `--instance`，且它与 `live runtime owner` 冲突，也必须拒绝
 
 ## 4. profile / memory 都属于 thread-wise next-load 设置
 
