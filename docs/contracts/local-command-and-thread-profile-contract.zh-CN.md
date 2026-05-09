@@ -72,7 +72,7 @@
 
 这条规则在本地与飞书侧完全一致：
 
-- 同一个 thread 无论从飞书还是 `fcodex` 恢复，都应看到同一个 thread-wise profile
+- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 thread-wise profile
 - binding 只决定“当前会话记住哪个 thread”
 - attach / detach 只决定“当前飞书会话收不收推送”
 
@@ -103,7 +103,7 @@
 正式合同是：
 
 - 飞书 `/memory [off|read|read_write]` 负责改写 thread-wise memory mode
-- `fcodex resume <thread>` 恢复该 thread 时，会自动沿用已持久化的 memory mode
+- 对受支持的恢复路径，`fcodex resume <thread>` 恢复该 thread 时，会自动沿用已持久化的 memory mode
 - 若要理解 direct-write / reset-backend 条件，以 `docs/contracts/thread-memory-semantics.zh-CN.md` 为准
 
 ## 5. reset-backend 在本地与飞书侧的关系

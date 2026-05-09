@@ -60,6 +60,7 @@ class _SettingsPortsStub:
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
         self.current_thread_memory_mode: ThreadMemoryModeRecord | None = None
         self.thread_profile_mutable = (True, "")
+        self.thread_memory_mode_mutable = (True, "")
         self.thread_reprofile_plan = SimpleNamespace(
             status="direct-write",
             reason_text="",
@@ -147,6 +148,10 @@ class _SettingsPortsStub:
         del thread_id
         return self.thread_profile_mutable
 
+    def check_thread_memory_mode_mutable(self, thread_id: str) -> tuple[bool, str]:
+        del thread_id
+        return self.thread_memory_mode_mutable
+
     def load_thread_memory_mode(self, thread_id: str) -> ThreadMemoryModeRecord | None:
         if self.current_thread_memory_mode is None:
             return None
@@ -226,6 +231,7 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             load_thread_memory_mode=stub.load_thread_memory_mode,
             apply_thread_memory_mode=stub.apply_thread_memory_mode,
             check_thread_resume_profile_mutable=stub.check_thread_resume_profile_mutable,
+            check_thread_memory_mode_mutable=stub.check_thread_memory_mode_mutable,
             plan_thread_reprofile=stub.plan_thread_reprofile,
             plan_thread_memory_mode_update=stub.plan_thread_memory_mode_update,
             reset_current_instance_backend=stub.reset_current_instance_backend,
@@ -544,6 +550,30 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertEqual(response.toast.type, "success")
         content = response.card.data["elements"][0]["content"]
         self.assertIn("已替换为新 thread：`thread-2", content)
+
+    def test_apply_memory_mode_with_backend_reset_uses_memory_specific_deny_reason(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.thread_memory_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 memory mode。",
+            diagnostics=(),
+        )
+        stub.thread_memory_mode_mutable = (
+            False,
+            "当前 thread 仍处于 loaded 状态；当前不能直接改写该 thread 的 memory mode。请改用 `/memory <off|read|read_write>` 配合 reset-backend。",
+        )
+        domain = _make_domain(stub)
+
+        response = domain.handle_apply_memory_mode_with_backend_reset(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"mode": "read", "force": False},
+        )
+
+        content = response.card.data["elements"][0]["content"]
+        self.assertIn("backend 已重置，但当前仍不能写入目标 memory mode。", content)
+        self.assertIn("/memory <off|read|read_write>", content)
 
     def test_approval_command_updates_only_approval_policy(self) -> None:
         stub = _SettingsPortsStub()

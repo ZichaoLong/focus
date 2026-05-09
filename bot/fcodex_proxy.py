@@ -163,14 +163,91 @@ def _send_local_error_response(client_ws: Any, request_id: Any, message: str) ->
     )
 
 
-def _thread_became_non_active(payload: dict[str, Any]) -> bool:
+def _thread_status_type(payload: dict[str, Any]) -> str:
     params = payload.get("params")
     if not isinstance(params, dict):
-        return False
+        return ""
     status = params.get("status")
     if not isinstance(status, dict):
-        return False
-    return str(status.get("type", "") or "").strip() in _NON_ACTIVE_THREAD_STATUS_TYPES
+        return ""
+    return str(status.get("type", "") or "").strip()
+
+
+def _thread_became_non_active(payload: dict[str, Any]) -> bool:
+    return _thread_status_type(payload) in _NON_ACTIVE_THREAD_STATUS_TYPES
+
+
+def _thread_became_not_loaded(payload: dict[str, Any]) -> bool:
+    return _thread_status_type(payload) == BACKEND_THREAD_STATUS_NOT_LOADED
+
+
+class _ProxyRuntimeLeaseKeeper:
+    def __init__(
+        self,
+        *,
+        global_data_dir: pathlib.Path | None = None,
+        instance_name: str = "",
+        service_token: str = "",
+        holder_pid: int,
+    ) -> None:
+        normalized_global_data_dir = pathlib.Path(global_data_dir or ".")
+        self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
+        self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
+        self._instance_name = str(instance_name or "").strip().lower()
+        self._service_token = str(service_token or "").strip()
+        self._holder_id = f"fcodex:{holder_pid}"
+        self._holder_pid = holder_pid
+        self._lock = threading.Lock()
+        self._owned_thread_ids: set[str] = set()
+
+    def _runtime_holder(self) -> ThreadRuntimeLeaseHolder | None:
+        if not self._instance_name or not self._service_token:
+            return None
+        return ThreadRuntimeLeaseHolder(
+            holder_id=self._holder_id,
+            holder_type="fcodex",
+            instance_name=self._instance_name,
+            owner_pid=self._holder_pid,
+            owner_service_token=self._service_token,
+            control_endpoint="",
+            backend_url="",
+            updated_at=time.time(),
+        )
+
+    def acquire(self, thread_id: str) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return
+        holder = self._runtime_holder()
+        if holder is None:
+            return
+        acquire_thread_runtime_holder_or_raise(
+            thread_id=normalized_thread_id,
+            holder=holder,
+            lease_store=self._runtime_lease_store,
+            registry_store=self._instance_registry,
+        )
+        with self._lock:
+            self._owned_thread_ids.add(normalized_thread_id)
+
+    def release(self, thread_id: str) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return
+        with self._lock:
+            self._owned_thread_ids.discard(normalized_thread_id)
+        if not self._service_token:
+            return
+        self._runtime_lease_store.release(normalized_thread_id, self._holder_id)
+
+    def close(self) -> None:
+        if not self._service_token:
+            return
+        with self._lock:
+            owned_thread_ids = tuple(sorted(self._owned_thread_ids))
+            self._owned_thread_ids.clear()
+        for thread_id in owned_thread_ids:
+            self._runtime_lease_store.release(thread_id, self._holder_id)
 
 
 class _ProxyInteractionGate:
@@ -185,6 +262,7 @@ class _ProxyInteractionGate:
         holder_pid: int,
         thread_profile_seed: str = "",
         resume_profile_hint: str = "",
+        runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
     ) -> None:
         self._cwd = cwd
         self._holder = make_fcodex_interaction_holder(
@@ -201,6 +279,7 @@ class _ProxyInteractionGate:
         self._initial_thread_profile_seed = str(thread_profile_seed or "").strip()
         self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed
         self._resume_profile_hint = str(resume_profile_hint or "").strip()
+        self._runtime_lease_keeper = runtime_lease_keeper
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
@@ -237,9 +316,11 @@ class _ProxyInteractionGate:
             self._owned_thread_ids.clear()
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
+            self._pending_thread_request_by_id.clear()
         for thread_id in owned_thread_ids:
             self._lease_store.release(thread_id, self._holder)
-            self._release_runtime_lease(thread_id)
+            if self._runtime_lease_keeper is None:
+                self._release_runtime_lease(thread_id)
 
     def _runtime_holder(self) -> ThreadRuntimeLeaseHolder | None:
         if not self._instance_name or not self._service_token:
@@ -256,6 +337,9 @@ class _ProxyInteractionGate:
         )
 
     def _acquire_runtime_lease(self, thread_id: str) -> None:
+        if self._runtime_lease_keeper is not None:
+            self._runtime_lease_keeper.acquire(thread_id)
+            return
         holder = self._runtime_holder()
         if holder is None:
             return
@@ -268,6 +352,10 @@ class _ProxyInteractionGate:
         self._remember_owned_thread(thread_id)
 
     def _release_runtime_lease(self, thread_id: str) -> None:
+        if self._runtime_lease_keeper is not None:
+            self._runtime_lease_keeper.release(thread_id)
+            self._forget_owned_thread(thread_id)
+            return
         if not self._service_token:
             return
         self._runtime_lease_store.release(thread_id, self._holder.holder_id)
@@ -432,14 +520,19 @@ class _ProxyInteractionGate:
                     self._pending_server_request_thread_by_id.pop(_jsonrpc_id_key(request_id), None)
             thread_id = _payload_thread_id(payload)
             if thread_id:
-                if method in {"turn/completed", "thread/closed"}:
+                if method == "turn/completed":
                     self._lease_store.release(thread_id, self._holder)
-                    if method == "thread/closed":
+                    self._forget_owned_thread(thread_id)
+                elif method == "thread/closed":
+                    self._lease_store.release(thread_id, self._holder)
+                    self._release_runtime_lease(thread_id)
+                    self._forget_owned_thread(thread_id)
+                elif method == "thread/status/changed":
+                    if _thread_became_non_active(payload):
+                        self._lease_store.release(thread_id, self._holder)
+                        self._forget_owned_thread(thread_id)
+                    if _thread_became_not_loaded(payload):
                         self._release_runtime_lease(thread_id)
-                    self._forget_owned_thread(thread_id)
-                elif method == "thread/status/changed" and _thread_became_non_active(payload):
-                    self._lease_store.release(thread_id, self._holder)
-                    self._forget_owned_thread(thread_id)
             client_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
             return
 
@@ -513,6 +606,12 @@ def run_proxy(
     state_lock = threading.Lock()
     active_connections = 0
     idle_deadline = 0.0
+    runtime_lease_keeper = _ProxyRuntimeLeaseKeeper(
+        global_data_dir=pathlib.Path(global_data_dir or "."),
+        instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
+        service_token=service_token,
+        holder_pid=parent_pid or os.getpid(),
+    )
 
     def _shutdown_server() -> None:
         if shutdown_once.is_set():
@@ -575,6 +674,7 @@ def run_proxy(
                     holder_pid=holder_pid,
                     thread_profile_seed=thread_profile_seed,
                     resume_profile_hint=resume_profile_hint,
+                    runtime_lease_keeper=runtime_lease_keeper,
                 )
 
                 def _backend_to_client() -> None:
@@ -613,19 +713,22 @@ def run_proxy(
             if should_arm_idle:
                 _arm_idle_shutdown()
 
-    with serve(_handler, listen_host, listen_port, max_size=None) as server:
-        server_ref["server"] = server
-        actual_port = server.socket.getsockname()[1]
-        listen_url = f"ws://{listen_host}:{actual_port}"
-        if on_listen is not None:
-            on_listen(listen_url)
-        else:
-            print(listen_url, flush=True)
-        _arm_idle_shutdown()
-        threading.Thread(target=_wait_until_idle_deadline, daemon=True).start()
-        if parent_pid is not None:
-            threading.Thread(target=_wait_until_parent_exit, daemon=True).start()
-        server.serve_forever()
+    try:
+        with serve(_handler, listen_host, listen_port, max_size=None) as server:
+            server_ref["server"] = server
+            actual_port = server.socket.getsockname()[1]
+            listen_url = f"ws://{listen_host}:{actual_port}"
+            if on_listen is not None:
+                on_listen(listen_url)
+            else:
+                print(listen_url, flush=True)
+            _arm_idle_shutdown()
+            threading.Thread(target=_wait_until_idle_deadline, daemon=True).start()
+            if parent_pid is not None:
+                threading.Thread(target=_wait_until_parent_exit, daemon=True).start()
+            server.serve_forever()
+    finally:
+        runtime_lease_keeper.close()
 
 
 def main(argv: list[str] | None = None) -> None:

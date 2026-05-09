@@ -62,6 +62,7 @@ class SettingsDomainPorts:
     load_thread_memory_mode: Callable[[str], ThreadMemoryModeRecord | None]
     apply_thread_memory_mode: Callable[[str, str], ThreadMemoryModeRecord]
     check_thread_resume_profile_mutable: Callable[[str], tuple[bool, str]]
+    check_thread_memory_mode_mutable: Callable[[str], tuple[bool, str]]
     plan_thread_reprofile: Callable[[str], Any]
     plan_thread_memory_mode_update: Callable[[str], Any]
     reset_current_instance_backend: Callable[[bool], dict[str, Any]]
@@ -1080,7 +1081,7 @@ class CodexSettingsDomain:
                 applied_mode=target_mode,
             )
 
-        can_write, deny_reason = ports.check_thread_resume_profile_mutable(thread_id)
+        can_write, deny_reason = ports.check_thread_memory_mode_mutable(thread_id)
         if not can_write:
             plan = ports.plan_thread_memory_mode_update(thread_id)
             return MemoryModeCommandOutcome(

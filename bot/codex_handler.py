@@ -60,7 +60,10 @@ from bot.codex_settings_domain import (
     SettingsDomainPorts,
 )
 from bot.reason_codes import ReasonedCheck
-from bot.thread_profile_mutability import check_thread_resume_profile_mutable
+from bot.thread_profile_mutability import (
+    check_thread_resume_memory_mode_mutable,
+    check_thread_resume_profile_mutable,
+)
 from bot.execution_transcript import ExecutionTranscript
 from bot.execution_output_controller import ExecutionOutputController
 from bot.execution_recovery_controller import (
@@ -382,6 +385,7 @@ class CodexHandler(BotHandler):
                 load_thread_memory_mode=self._thread_memory_mode_store.load,
                 apply_thread_memory_mode=self._apply_thread_memory_mode,
                 check_thread_resume_profile_mutable=self._thread_resume_profile_write_check,
+                check_thread_memory_mode_mutable=self._thread_memory_mode_write_check,
                 plan_thread_reprofile=lambda thread_id: self._runtime_admin.plan_thread_reprofile(thread_id),
                 plan_thread_memory_mode_update=lambda thread_id: self._runtime_admin.plan_thread_memory_mode_update(
                     thread_id
@@ -2456,6 +2460,23 @@ class CodexHandler(BotHandler):
                 )
 
         return check_thread_resume_profile_mutable(
+            thread_id,
+            unbound_reason="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
+            has_attached_binding=_has_attached_binding,
+            has_runtime_lease=lambda normalized_thread_id: (
+                self._thread_runtime_lease_store.load(normalized_thread_id) is not None
+            ),
+            list_loaded_thread_ids=self._adapter.list_loaded_thread_ids,
+        )
+
+    def _thread_memory_mode_write_check(self, thread_id: str) -> tuple[bool, str]:
+        def _has_attached_binding(normalized_thread_id: str) -> bool:
+            with self._lock:
+                return bool(
+                    self._binding_runtime.attached_bindings_for_thread_locked(normalized_thread_id)
+                )
+
+        return check_thread_resume_memory_mode_mutable(
             thread_id,
             unbound_reason="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
             has_attached_binding=_has_attached_binding,

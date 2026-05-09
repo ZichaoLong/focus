@@ -7,7 +7,7 @@ This file defines only the contract for thread-wise memory mode behavior.
 ## 1. Basic fact
 
 - memory mode is **thread-wise**, not binding-wise
-- the same thread should observe the same thread-wise memory mode whether it is resumed from Feishu or `fcodex`
+- for supported resume paths, the same thread should use the same persisted thread-wise memory mode when it moves from unloaded back to loaded
 - the project exposes one unified concept, `memory mode`, instead of surfacing upstream's two boolean knobs directly to Feishu users
 
 The formal values are:
@@ -104,6 +104,7 @@ That means:
 
 - once a thread has a persisted memory mode from Feishu, local `fcodex` resume will carry it forward
 - if the thread is still loaded, the new memory mode still follows the unload / reset-backend path rather than promising hot reload
+- divergence caused by bare `codex` or other out-of-contract runtime/config mutations is not normalized by this project
 
 ## 7. Relationship to `/attach` and `/detach`
 

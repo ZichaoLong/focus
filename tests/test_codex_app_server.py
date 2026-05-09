@@ -27,6 +27,7 @@ from bot.fcodex import (
 from bot.fcodex_proxy import (
     _DEFAULT_IDLE_TIMEOUT_SECONDS,
     _ProxyInteractionGate,
+    _ProxyRuntimeLeaseKeeper,
     _relay_messages,
     _rewrite_thread_start_cwd,
     run_proxy,
@@ -42,7 +43,7 @@ from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_e
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
-from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease, ThreadRuntimeLeaseStore
 from bot.thread_resolution import (
     format_thread_match,
     looks_like_thread_id,
@@ -2172,6 +2173,133 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 },
             )
             self.assertEqual(forwarded["params"]["config"]["profiles"]["provider2"]["memories"]["use_memories"], True)
+
+    def test_runtime_lease_survives_lookup_connection_close_until_proxy_shutdown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            keeper = _ProxyRuntimeLeaseKeeper(
+                global_data_dir=root_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+            )
+            first_gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+                runtime_lease_keeper=keeper,
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            first_gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            first_gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": {"thread": {"id": "thread-1"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            first_gate.close()
+
+            self.assertIsNotNone(ThreadRuntimeLeaseStore(root_dir).load("thread-1"))
+
+            second_gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+                runtime_lease_keeper=keeper,
+            )
+            second_gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            self.assertIsNotNone(ThreadRuntimeLeaseStore(root_dir).load("thread-1"))
+
+            second_gate.close()
+            keeper.close()
+            self.assertIsNone(ThreadRuntimeLeaseStore(root_dir).load("thread-1"))
+
+    def test_thread_status_not_loaded_releases_runtime_lease(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            keeper = _ProxyRuntimeLeaseKeeper(
+                global_data_dir=root_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+            )
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                instance_name="explorer",
+                service_token="svc-token",
+                holder_pid=os.getpid(),
+                runtime_lease_keeper=keeper,
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            self.assertIsNotNone(ThreadRuntimeLeaseStore(root_dir).load("thread-1"))
+
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "thread/status/changed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "status": {"type": "notLoaded"},
+                        },
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            self.assertIsNone(ThreadRuntimeLeaseStore(root_dir).load("thread-1"))
 
 
 class SessionResolutionTests(unittest.TestCase):

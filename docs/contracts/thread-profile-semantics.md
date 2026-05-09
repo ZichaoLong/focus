@@ -7,7 +7,7 @@ This file defines only the contract for thread-wise profile behavior.
 ## 1. Basic fact
 
 - profile is **thread-wise**, not binding-wise
-- when a thread is resumed from any frontend, the same thread-wise profile should be observed
+- for supported resume paths, the same thread should use the same persisted thread-wise profile when it moves from unloaded back to loaded
 - the project no longer keeps an “instance-level default profile” as a user-facing concept
 
 ## 2. When direct mutation is allowed
@@ -90,3 +90,4 @@ The accurate contract is:
 - profile is thread-wise
 - writability depends on verifiable global unload
 - if that condition is not met, the system should converge through reset-backend rather than forcing the user to reason about more low-level actions
+- divergence caused by bare `codex` or other out-of-contract runtime/config mutations is not normalized by this project

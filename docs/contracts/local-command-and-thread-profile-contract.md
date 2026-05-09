@@ -72,7 +72,7 @@ But that is now an internal service protocol detail, not a user-facing concept.
 
 This rule is identical locally and in Feishu:
 
-- the same thread must see the same thread-wise profile no matter whether it is resumed from Feishu or `fcodex`
+- for supported resume paths, the same thread should use the same persisted thread-wise profile when it moves from unloaded back to loaded
 - binding only answers “which thread does this chat remember”
 - attach / detach only answers “does this Feishu chat receive push”
 
@@ -103,7 +103,7 @@ The local command surface does not currently expose a standalone thread-wise mem
 The formal contract is:
 
 - Feishu `/memory [off|read|read_write]` mutates the thread-wise memory mode
-- `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
+- for supported resume paths, `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
 - the direct-write / reset-backend rule is defined in `docs/contracts/thread-memory-semantics.md`
 
 ## 5. reset-backend locally and in Feishu

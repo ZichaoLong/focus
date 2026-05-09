@@ -7,7 +7,7 @@
 ## 1. 基本事实
 
 - memory mode 是 **thread-wise** 状态，不是 binding-wise 状态。
-- 同一个 thread 无论从飞书还是 `fcodex` 恢复，都应看到同一个 thread-wise memory mode。
+- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 thread-wise memory mode。
 - 本项目对外只暴露一个统一概念：`memory mode`，不直接把上游的两个布尔旋钮暴露给飞书用户。
 
 当前正式支持三个取值：
@@ -104,6 +104,7 @@ thread-wise memory mode 只有在 thread **verifiably globally unloaded** 时，
 
 - 若某个 thread 已在飞书侧设置过 memory mode，本地 `fcodex` 下次 resume 会沿用它
 - 若 thread 当前仍 loaded，要让新 memory mode 生效，仍应遵循 unload / reset-backend 路径，而不是承诺热更新
+- 裸 `codex` 或其他合同外入口直接改动 runtime / config 所造成的分叉，不由本项目兜底统一
 
 ## 7. 与 `/attach`、`/detach` 的关系
 
