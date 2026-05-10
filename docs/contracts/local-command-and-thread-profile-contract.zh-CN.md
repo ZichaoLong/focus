@@ -140,6 +140,7 @@
 因此：
 
 - `fcodex resume <thread> -p <profile>` 遇到 loaded thread 必须拒绝
+- 该拒绝文案应明确指出：是哪个实例的 backend 仍把该 thread 保持为 loaded，以及若要立即生效，应重置哪个实例的 backend
 - 不应要求用户先去理解 release-runtime / unsubscribe
 - 推荐路径应是飞书 `/profile <name>`，必要时走 reset-backend
 
@@ -151,6 +152,7 @@
 - 本地 `feishu-codexctl thread memory --thread-id <id>` 是正式的独立查看入口
 - 本地 `feishu-codexctl thread memory --thread-id <id> --mode <off|read|read_write>` 是正式的独立改写入口
 - 对受支持的恢复路径，`fcodex resume <thread>` 恢复该 thread 时，会自动沿用已持久化的 memory mode
+- 若 memory mode 改写因 loaded thread 被拒绝，用户面文案也应明确指出目标实例 backend，而不是只说“当前仍处于 loaded 状态”
 - `codex.yaml` 里的 `default_thread_memory_mode` 只是项目支持的新线程创建路径上的 seed
 - 若要理解共享的 direct-write / reset-backend 条件，以 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准
 - memory mode 自身的业务语义，以 `docs/contracts/thread-memory-semantics.zh-CN.md` 为准

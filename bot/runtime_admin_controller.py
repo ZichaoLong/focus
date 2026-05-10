@@ -1553,6 +1553,7 @@ class RuntimeAdminController:
         subject_label: str,
     ) -> ThreadMutationPlan:
         normalized_thread_id = str(thread_id or "").strip()
+        current_instance_label = str(self._instance_name() or "").strip() or "当前实例"
         if not normalized_thread_id:
             return ThreadMutationPlan(
                 status=REPROFILE_STATUS_BLOCKED,
@@ -1620,7 +1621,7 @@ class RuntimeAdminController:
                 reason_code=blocked_by_other_instance_reason_code,
                 reason_text=(
                     f"当前 thread 的 live runtime 仍由实例 `{lease.owner_instance}` 持有；"
-                    "请在该实例侧释放或重置 backend 后再重试。"
+                    f"请优先在实例 `{lease.owner_instance}` 侧释放或重置 backend 后再重试。"
                 ),
                 diagnostics=tuple(diagnostics),
             )
@@ -1662,7 +1663,7 @@ class RuntimeAdminController:
             reason_code=reset_available_reason_code,
             reason_text=(
                 f"当前 thread 尚未满足 verifiably globally unloaded；"
-                f"可通过 reset 当前实例 backend 后再写入 {subject_label}。"
+                f"若要现在生效，可通过重置实例 `{current_instance_label}` 的 backend 后再写入 {subject_label}。"
             ),
             diagnostics=tuple(diagnostics),
         )

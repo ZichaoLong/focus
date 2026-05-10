@@ -63,6 +63,8 @@ from bot.reason_codes import ReasonedCheck
 from bot.thread_profile_mutability import (
     check_thread_resume_memory_mode_mutable,
     check_thread_resume_profile_mutable,
+    format_thread_resume_memory_mode_denial_for_feishu,
+    format_thread_resume_profile_denial_for_feishu,
 )
 from bot.execution_transcript import ExecutionTranscript
 from bot.execution_output_controller import ExecutionOutputController
@@ -2520,7 +2522,7 @@ class CodexHandler(BotHandler):
                     self._binding_runtime.attached_bindings_for_thread_locked(normalized_thread_id)
                 )
 
-        return check_thread_resume_profile_mutable(
+        check = check_thread_resume_profile_mutable(
             thread_id,
             unbound_reason="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
             has_attached_binding=_has_attached_binding,
@@ -2528,6 +2530,13 @@ class CodexHandler(BotHandler):
                 self._thread_runtime_lease_store.load(normalized_thread_id) is not None
             ),
             list_loaded_thread_ids=self._adapter.list_loaded_thread_ids,
+        )
+        return (
+            check.allowed,
+            format_thread_resume_profile_denial_for_feishu(
+                check,
+                instance_name=self._instance_name,
+            ),
         )
 
     def _thread_memory_mode_write_check(self, thread_id: str) -> tuple[bool, str]:
@@ -2537,7 +2546,7 @@ class CodexHandler(BotHandler):
                     self._binding_runtime.attached_bindings_for_thread_locked(normalized_thread_id)
                 )
 
-        return check_thread_resume_memory_mode_mutable(
+        check = check_thread_resume_memory_mode_mutable(
             thread_id,
             unbound_reason="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
             has_attached_binding=_has_attached_binding,
@@ -2545,6 +2554,13 @@ class CodexHandler(BotHandler):
                 self._thread_runtime_lease_store.load(normalized_thread_id) is not None
             ),
             list_loaded_thread_ids=self._adapter.list_loaded_thread_ids,
+        )
+        return (
+            check.allowed,
+            format_thread_resume_memory_mode_denial_for_feishu(
+                check,
+                instance_name=self._instance_name,
+            ),
         )
 
     def _interrupt_binding_execution_for_backend_reset(

@@ -1458,6 +1458,7 @@ class FCodexTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("请显式传 `--instance <name>`", stderr.getvalue())
+        self.assertIn("当前是 `fcodex resume <thread>` 路径", stderr.getvalue())
 
     def test_fcodex_rejects_slash_threads_command(self) -> None:
         stderr = StringIO()
@@ -1713,6 +1714,7 @@ class FCodexTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("请显式传 `--instance <name>`", stderr.getvalue())
+        self.assertIn("当前是 `fcodex resume <thread>` 路径", stderr.getvalue())
 
     def test_fcodex_resume_with_explicit_instance_rejects_conflicting_live_owner(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
@@ -1907,7 +1909,9 @@ class FCodexTests(unittest.TestCase):
                         with self.assertRaises(SystemExit) as exc:
                             fcodex_main()
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("当前 thread 仍处于 loaded 状态", stderr.getvalue())
+        self.assertIn("实例 `default` 的 backend", stderr.getvalue())
+        self.assertIn("thread 级 next-load 设置", stderr.getvalue())
+        self.assertIn("feishu-codexctl --instance default service reset-backend", stderr.getvalue())
 
     def test_fcodex_resume_with_explicit_profile_rejects_when_loaded_state_is_unverifiable(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
@@ -1924,7 +1928,9 @@ class FCodexTests(unittest.TestCase):
                                 fcodex_main()
 
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("无法确认该 thread 是否已完全 unloaded", stderr.getvalue())
+        self.assertIn("无法确认实例 `default` 的 backend", stderr.getvalue())
+        self.assertIn("按 fail-close 拒绝", stderr.getvalue())
+        self.assertIn("feishu-codexctl --instance default service reset-backend", stderr.getvalue())
 
     def test_fcodex_explicit_cd_is_forwarded_to_proxy(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):

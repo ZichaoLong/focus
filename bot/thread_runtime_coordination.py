@@ -81,6 +81,8 @@ def preview_thread_global_loaded_gate(
                 reason_text=(
                     f"无法确认运行中的实例 `{entry.instance_name}` 是否仍将该 thread 保持为 loaded：{exc}。"
                     "当前按 fail-close 拒绝跨实例继续。"
+                    f"请先检查该实例状态；若确认可打断，可执行 "
+                    f"`feishu-codexctl --instance {entry.instance_name} service reset-backend` 后再试。"
                 ),
                 blocking_instance=entry.instance_name,
             )
@@ -91,7 +93,8 @@ def preview_thread_global_loaded_gate(
                 reason_text=(
                     f"当前 thread 仍由运行中的实例 `{entry.instance_name}` 保持为 loaded "
                     f"(`{backend_thread_status}`)；当前不支持跨实例 hot takeover。"
-                    "请先在该实例侧 reset backend，或等待它完全 unloaded 后再试。"
+                    f"请先执行 `feishu-codexctl --instance {entry.instance_name} service reset-backend`，"
+                    "或等待它完全 unloaded 后再试。"
                 ),
                 blocking_instance=entry.instance_name,
                 blocking_status=backend_thread_status,

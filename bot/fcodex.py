@@ -34,7 +34,10 @@ from bot.thread_resolution import (
 )
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
-from bot.thread_profile_mutability import check_thread_resume_profile_mutable
+from bot.thread_profile_mutability import (
+    check_thread_resume_profile_mutable,
+    format_thread_resume_profile_denial_for_local_cli,
+)
 from bot.thread_runtime_coordination import preview_thread_global_loaded_gate
 
 _OPTIONS_WITH_VALUE = {
@@ -243,7 +246,21 @@ def _resolve_runtime_target_for_wrapper(
             default_instance_data_dir=_default_data_dir(),
         )
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
+        error_text = str(exc)
+        if (
+            thread_id
+            and "检测到多个运行中的实例" in error_text
+            and "请显式传 `--instance <name>`" in error_text
+        ):
+            running_names = ", ".join(entry.instance_name for entry in list_running_instances()) or "（无）"
+            error_text = (
+                "当前是 `fcodex resume <thread>` 路径，但该 thread 现在没有唯一可用的实例路由。"
+                f"当前运行中的实例：{running_names}。"
+                "请显式传 `--instance <name>`。"
+                "如果你原本期望沿用某个实例，请先确认该实例是否仍持有该 thread，"
+                "必要时在该实例侧执行 `feishu-codexctl --instance <name> service reset-backend` 后再试。"
+            )
+        print(error_text, file=sys.stderr)
         raise SystemExit(2)
 
 
@@ -396,16 +413,29 @@ def _resolve_resume_target(
     )
 
 
-def _thread_resume_profile_mutable(cfg: dict, app_server_url: str, thread_id: str) -> tuple[bool, str]:
+def _thread_resume_profile_mutable(
+    cfg: dict,
+    app_server_url: str,
+    thread_id: str,
+    *,
+    target_instance_name: str,
+) -> tuple[bool, str]:
     adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
     try:
-        return check_thread_resume_profile_mutable(
+        check = check_thread_resume_profile_mutable(
             thread_id,
             unbound_reason="恢复目标不能为空。",
             has_runtime_lease=lambda normalized_thread_id: (
                 ThreadRuntimeLeaseStore(global_data_dir()).load(normalized_thread_id) is not None
             ),
             list_loaded_thread_ids=adapter.list_loaded_thread_ids,
+        )
+        return (
+            check.allowed,
+            format_thread_resume_profile_denial_for_local_cli(
+                check,
+                instance_name=target_instance_name,
+            ),
         )
     finally:
         adapter.stop()
@@ -462,6 +492,7 @@ def _build_wrapper_profile_launch_plan(
     *,
     cfg: dict,
     app_server_url: str,
+    instance_name: str,
     user_args: list[str],
 ) -> _WrapperProfileLaunchPlan:
     """Plan wrapper-side profile behavior before launching upstream Codex.
@@ -495,7 +526,12 @@ def _build_wrapper_profile_launch_plan(
             finally:
                 adapter.stop()
         if explicit_profile:
-            can_write, deny_reason = _thread_resume_profile_mutable(cfg, app_server_url, resume_thread_id)
+            can_write, deny_reason = _thread_resume_profile_mutable(
+                cfg,
+                app_server_url,
+                resume_thread_id,
+                target_instance_name=instance_name,
+            )
             if not can_write:
                 print(deny_reason, file=sys.stderr)
                 raise SystemExit(2)
@@ -739,6 +775,7 @@ def main() -> None:
         profile_launch_plan = _build_wrapper_profile_launch_plan(
             cfg=cfg,
             app_server_url=app_server_url,
+            instance_name=resolved_target.instance_name,
             user_args=user_args,
         )
         user_args = list(profile_launch_plan.user_args)

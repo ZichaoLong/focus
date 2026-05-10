@@ -456,6 +456,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("requested mode: read", rendered)
         self.assertIn("hint: 当前可改用 `--reset-backend`", rendered)
+        self.assertIn("重置实例 `explorer` 的 backend", rendered)
 
     def test_send_thread_image_reports_partial_delivery(self) -> None:
         stdout = io.StringIO()

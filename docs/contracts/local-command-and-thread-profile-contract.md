@@ -140,6 +140,7 @@ The direct-write rule for an existing thread is defined in
 Therefore:
 
 - `fcodex resume <thread> -p <profile>` must reject while the thread is still loaded
+- that rejection text should explicitly identify which instance backend still keeps the thread loaded, and which instance backend must be reset if the user wants the change to take effect immediately
 - the user should not be forced to reason about release-runtime / unsubscribe first
 - the preferred recovery path is Feishu `/profile <name>`, with reset-backend when needed
 
@@ -151,6 +152,7 @@ The formal contract is:
 - local `feishu-codexctl thread memory --thread-id <id>` is the supported standalone inspection entry
 - local `feishu-codexctl thread memory --thread-id <id> --mode <off|read|read_write>` is the supported standalone mutation entry
 - for supported resume paths, `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
+- if memory-mode mutation is rejected because the thread is still loaded, the user-facing text should also identify the target instance backend instead of only saying “still loaded”
 - `default_thread_memory_mode` in `codex.yaml` is a new-thread seed only for project-supported new-thread creation paths
 - the shared direct-write / reset-backend rule is defined in `docs/contracts/thread-next-load-settings-semantics.md`
 - the memory-mode-specific business semantics are defined in `docs/contracts/thread-memory-semantics.md`

@@ -431,10 +431,13 @@ def _print_thread_memory_result(
         print(f"fail-closed requests: {int(backend_reset_result.get('fail_closed_request_count') or 0)}")
         print(f"purged runtime leases: {', '.join(backend_reset_result.get('purged_thread_ids') or []) or '（无）'}")
     elif requested_mode and not result.get("applied"):
+        instance_label = f"实例 `{instance_name}`" if instance_name else "当前实例"
         if result.get("requires_force_reset_backend"):
-            print("hint: 当前只能改用 `--force-reset-backend`。")
+            print(f"hint: 当前只能改用 `--force-reset-backend`；这会重置{instance_label} 的 backend。")
         elif result.get("requires_reset_backend"):
-            print("hint: 当前可改用 `--reset-backend`。注意这会重置当前实例 backend，而不是只影响该 thread。")
+            print(
+                f"hint: 当前可改用 `--reset-backend`；注意这会重置{instance_label} 的 backend，而不是只影响该 thread。"
+            )
     return 0 if (not requested_mode or result.get("applied")) else 1
 
 
