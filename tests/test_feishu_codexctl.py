@@ -442,6 +442,11 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "requires_force_reset_backend": False,
             "backend_reset_performed": False,
             "backend_reset_result": None,
+            "diagnostics": [
+                "当前 thread：`thread-1…`",
+                "hard blocker：待处理审批/输入请求：`1`",
+                "collateral impact：当前实例 loaded threads：`2`",
+            ],
         }
         with patch("bot.feishu_codexctl._request", return_value=snapshot):
             with redirect_stdout(stdout):
@@ -457,6 +462,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("requested mode: read", rendered)
         self.assertIn("hint: 当前可改用 `--reset-backend`", rendered)
         self.assertIn("重置实例 `explorer` 的 backend", rendered)
+        self.assertIn("diagnostics:", rendered)
+        self.assertIn("- hard blocker：待处理审批/输入请求：`1`", rendered)
+        self.assertIn("- collateral impact：当前实例 loaded threads：`2`", rendered)
 
     def test_send_thread_image_reports_partial_delivery(self) -> None:
         stdout = io.StringIO()

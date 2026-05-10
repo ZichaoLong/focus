@@ -262,6 +262,18 @@ So the result card must directly offer:
 - `Attach Current Instance`
 - `Keep Detached`
 
+Before the reset actually runs, preview / denial wording should split facts into
+two layers:
+
+- `hard blockers`
+  - for example active threads, pending approval/input requests, running Feishu
+    bindings, attached bindings, and live runtime holders
+- `collateral impact`
+  - for example the count and short summary of loaded threads on the current
+    instance that would also be affected
+
+Do not dump every loaded thread into the primary card by default.
+
 ## 6. Local management surface
 
 The formal local `feishu-codexctl` command matrix lives in

@@ -418,6 +418,11 @@ def _print_thread_memory_result(
         print(f"reason code: {result['reason_code']}")
     if result.get("reason"):
         print(f"reason: {result['reason']}")
+    diagnostics = [str(item or "").strip() for item in (result.get("diagnostics") or []) if str(item or "").strip()]
+    if diagnostics:
+        print("diagnostics:")
+        for item in diagnostics:
+            print(f"- {item}")
     requested_mode = str(result.get("requested_mode", "") or "").strip()
     if requested_mode:
         print(f"requested mode: {requested_mode}")

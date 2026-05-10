@@ -795,6 +795,102 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(action["text"]["content"], "强制重置 backend")
         self.assertEqual(action["value"]["force"], True)
 
+    def test_backend_reset_preview_exposes_blockers_and_collateral_summary(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        state["running"] = True
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="active",
+        )
+        summaries["thread-2"] = ThreadSummary(
+            thread_id="thread-2",
+            cwd="/tmp/project",
+            name="other",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        loaded_thread_ids.extend(["thread-1", "thread-2"])
+        pending_requests.append({"request_id": "req-1"})
+
+        preview = controller.backend_reset_preview()
+
+        self.assertEqual(preview.status, "force-only")
+        self.assertEqual(preview.blocking_pending_request_count, 1)
+        self.assertEqual(preview.blocking_active_turn_count, 1)
+        self.assertEqual(preview.attached_binding_ids, ("p2p:ou_user:c1",))
+        self.assertEqual(preview.loaded_thread_preview, ("thread-1", "thread-2"))
+        self.assertEqual(preview.collateral_loaded_thread_count, 2)
+        self.assertEqual(preview.collateral_active_loaded_thread_count, 1)
+        self.assertIn("hard blocker：待处理审批/输入请求：`1`", preview.diagnostics)
+        self.assertIn("collateral impact：当前实例 loaded threads：`2`", preview.diagnostics)
+
+    def test_handle_reset_backend_command_renders_hard_blockers_and_collateral_sections(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        state["running"] = True
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="active",
+        )
+        loaded_thread_ids.append("thread-1")
+        pending_requests.append({"request_id": "req-1"})
+
+        result = controller.handle_reset_backend_command("")
+
+        assert result.card is not None
+        content = result.card["elements"][0]["content"]
+        self.assertIn("**Hard Blockers**", content)
+        self.assertIn("待处理审批/输入请求：`1`", content)
+        self.assertIn("attached Feishu bindings：`p2p:ou_user:c1`", content)
+        self.assertIn("**Collateral Impact**", content)
+        self.assertIn("当前实例 loaded threads：`1`", content)
+
     def test_handle_reset_backend_action_executes_reset_and_returns_result_card(self) -> None:
         (
             _lock,

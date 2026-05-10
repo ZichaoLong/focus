@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, TypeAlias
 
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
@@ -94,6 +94,14 @@ class BackendResetPreview:
     active_loaded_thread_ids: tuple[str, ...] = ()
     loaded_thread_ids: tuple[str, ...] = ()
     runtime_verification_failed: bool = False
+    blocking_holder_labels: tuple[str, ...] = ()
+    attached_binding_ids: tuple[str, ...] = ()
+    loaded_thread_preview: tuple[str, ...] = ()
+    active_loaded_thread_preview: tuple[str, ...] = ()
+    blocking_active_turn_count: int = 0
+    blocking_pending_request_count: int = 0
+    collateral_loaded_thread_count: int = 0
+    collateral_active_loaded_thread_count: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +248,7 @@ class RuntimeAdminController:
         result["backend_thread_status"] = fresh_plan.backend_thread_status
         result["feishu_runtime_state"] = fresh_plan.feishu_runtime_state
         result["live_runtime_owner"] = fresh_plan.live_runtime_owner
+        result["diagnostics"] = list(fresh_plan.diagnostics)
         result["plan_status"] = mutation_status
         result["reason_code"] = ""
         result["reason"] = reason
@@ -717,6 +726,72 @@ class RuntimeAdminController:
         return ", ".join(f"`{binding_id}`" for binding_id in normalized)
 
     @staticmethod
+    def _preview_thread_ids(
+        thread_ids: tuple[str, ...] | list[str],
+        *,
+        limit: int = 3,
+    ) -> tuple[str, ...]:
+        normalized = [str(thread_id or "").strip() for thread_id in thread_ids if str(thread_id or "").strip()]
+        if limit <= 0:
+            return ()
+        return tuple(normalized[:limit])
+
+    @staticmethod
+    def _format_holder_labels(holder_labels: tuple[str, ...] | list[str]) -> str:
+        normalized = [str(label or "").strip() for label in holder_labels if str(label or "").strip()]
+        if not normalized:
+            return "（无）"
+        return ", ".join(f"`{label}`" for label in normalized)
+
+    def _backend_reset_hard_blocker_lines(self, preview: BackendResetPreview) -> list[str]:
+        lines: list[str] = []
+        if preview.blocking_active_turn_count:
+            line = f"backend active threads：`{preview.blocking_active_turn_count}`"
+            if preview.active_loaded_thread_preview:
+                line += f" ({self._short_thread_ids(preview.active_loaded_thread_preview)})"
+            lines.append(line)
+        if preview.blocking_pending_request_count:
+            lines.append(f"待处理审批/输入请求：`{preview.blocking_pending_request_count}`")
+        if preview.running_binding_ids:
+            lines.append("运行中的 Feishu bindings：" + self._format_binding_ids(preview.running_binding_ids))
+        if preview.attached_binding_ids:
+            lines.append("attached Feishu bindings：" + self._format_binding_ids(preview.attached_binding_ids))
+        if preview.blocking_holder_labels:
+            lines.append("live runtime holders：" + self._format_holder_labels(preview.blocking_holder_labels))
+        if preview.runtime_verification_failed:
+            lines.append("backend loaded thread 校验：`unverified`")
+        return lines
+
+    def _backend_reset_collateral_lines(self, preview: BackendResetPreview) -> list[str]:
+        if (
+            preview.status == BACKEND_RESET_STATUS_BLOCKED
+            and not preview.collateral_loaded_thread_count
+            and not preview.collateral_active_loaded_thread_count
+            and not preview.loaded_thread_preview
+            and not preview.runtime_verification_failed
+        ):
+            return []
+        lines = [
+            f"当前实例 loaded threads：`{preview.collateral_loaded_thread_count}`",
+        ]
+        if preview.collateral_active_loaded_thread_count:
+            lines.append(f"其中 active threads：`{preview.collateral_active_loaded_thread_count}`")
+        if preview.loaded_thread_preview:
+            lines.append("preview：" + self._short_thread_ids(preview.loaded_thread_preview))
+        return lines
+
+    def _backend_reset_flat_diagnostics(self, preview: BackendResetPreview) -> tuple[str, ...]:
+        lines = [
+            f"当前实例：`{self._instance_name()}`",
+            f"当前 backend 模式：`{self._app_server_mode() or 'unknown'}`",
+        ]
+        for item in self._backend_reset_hard_blocker_lines(preview):
+            lines.append(f"hard blocker：{item}")
+        for item in self._backend_reset_collateral_lines(preview):
+            lines.append(f"collateral impact：{item}")
+        return tuple(lines)
+
+    @staticmethod
     def _attach_action_rows(*, include_thread: bool, include_service: bool, thread_id: str = "") -> list[dict]:
         actions: list[dict] = []
         if include_thread and str(thread_id or "").strip():
@@ -798,7 +873,15 @@ class RuntimeAdminController:
             lines.append("当前只能显式确认强制重置；这会打断当前实例内尚未完成的工作。")
         elif preview.status == BACKEND_RESET_STATUS_BLOCKED:
             lines.append("当前不能在本实例执行 backend reset。")
-        if preview.diagnostics:
+        hard_blockers = self._backend_reset_hard_blocker_lines(preview)
+        collateral = self._backend_reset_collateral_lines(preview)
+        if hard_blockers:
+            lines.extend(["", "**Hard Blockers**"])
+            lines.extend(f"- {line}" for line in hard_blockers)
+        if collateral:
+            lines.extend(["", "**Collateral Impact**"])
+            lines.extend(f"- {line}" for line in collateral)
+        if preview.status == BACKEND_RESET_STATUS_BLOCKED and preview.diagnostics:
             lines.extend(["", "**诊断**"])
             lines.extend(f"- {line}" for line in preview.diagnostics)
         template = {
@@ -1417,6 +1500,7 @@ class RuntimeAdminController:
                 reason_code=BACKEND_RESET_UNSUPPORTED_REMOTE,
                 reason_text="当前实例是 remote app-server 模式，不拥有 backend 进程，不能执行 reset backend。",
                 diagnostics=(
+                    f"当前实例：`{self._instance_name()}`",
                     f"当前 backend 模式：`{self._app_server_mode() or 'unknown'}`",
                 ),
             )
@@ -1426,9 +1510,19 @@ class RuntimeAdminController:
         with self._lock:
             inventory = self.binding_inventory_locked()
         running_binding_ids = tuple(item["binding_id"] for item in inventory if item["running_turn"])
+        attached_binding_ids = tuple(
+            sorted(
+                str(item["binding_id"] or "").strip()
+                for item in inventory
+                if str(item.get("binding_id") or "").strip()
+                and str(item.get("binding_state") or "").strip() == "bound"
+                and str(item.get("feishu_runtime_state") or "").strip() == FEISHU_RUNTIME_ATTACHED
+            )
+        )
 
         loaded_thread_ids: tuple[str, ...] = ()
         active_loaded_thread_ids: tuple[str, ...] = ()
+        holder_labels: set[str] = set()
         runtime_verification_failed = False
         try:
             loaded_thread_ids = tuple(
@@ -1440,6 +1534,7 @@ class RuntimeAdminController:
             )
             active_loaded: list[str] = []
             for thread_id in loaded_thread_ids:
+                holder_labels.update(self._live_runtime_holder_labels(self._load_thread_runtime_lease(thread_id)))
                 _summary, backend_status = self.read_thread_summary_for_status(thread_id)
                 if backend_status in {
                     BACKEND_THREAD_LOOKUP_ERROR,
@@ -1455,86 +1550,61 @@ class RuntimeAdminController:
             logger.exception("构造 backend reset preview 时读取 loaded thread 失败")
             runtime_verification_failed = True
 
-        diagnostics: list[str] = [
-            f"当前实例：`{self._instance_name()}`",
-            f"当前 backend 模式：`{self._app_server_mode() or 'unknown'}`",
-        ]
-        if loaded_thread_ids:
-            diagnostics.append(
-                "backend loaded threads："
-                + ", ".join(f"`{thread_id[:8]}…`" for thread_id in loaded_thread_ids)
-            )
-        if pending_request_count:
-            diagnostics.append(f"待处理审批/输入请求：`{pending_request_count}`")
-        if running_binding_ids:
-            diagnostics.append("运行中的 Feishu binding：" + ", ".join(f"`{binding_id}`" for binding_id in running_binding_ids))
-        if active_loaded_thread_ids:
-            diagnostics.append(
-                "backend active threads："
-                + ", ".join(f"`{thread_id[:8]}…`" for thread_id in active_loaded_thread_ids)
-            )
-        if runtime_verification_failed:
-            diagnostics.append("当前无法完整确认 backend 是否仍有运行中的 loaded thread。")
+        common_kwargs = {
+            "pending_request_count": pending_request_count,
+            "running_binding_ids": running_binding_ids,
+            "active_loaded_thread_ids": active_loaded_thread_ids,
+            "loaded_thread_ids": loaded_thread_ids,
+            "runtime_verification_failed": runtime_verification_failed,
+            "blocking_holder_labels": tuple(sorted(holder_labels)),
+            "attached_binding_ids": attached_binding_ids,
+            "loaded_thread_preview": self._preview_thread_ids(loaded_thread_ids),
+            "active_loaded_thread_preview": self._preview_thread_ids(active_loaded_thread_ids),
+            "blocking_active_turn_count": len(active_loaded_thread_ids),
+            "blocking_pending_request_count": pending_request_count,
+            "collateral_loaded_thread_count": len(loaded_thread_ids),
+            "collateral_active_loaded_thread_count": len(active_loaded_thread_ids),
+        }
 
         if pending_request_count:
-            return BackendResetPreview(
+            preview = BackendResetPreview(
                 status=BACKEND_RESET_STATUS_FORCE_ONLY,
                 reason_code=BACKEND_RESET_FORCE_ONLY_BY_PENDING_REQUEST,
                 reason_text="当前实例还有待处理审批或输入请求；如确认可打断，可执行 force reset。",
-                diagnostics=tuple(diagnostics),
-                pending_request_count=pending_request_count,
-                running_binding_ids=running_binding_ids,
-                active_loaded_thread_ids=active_loaded_thread_ids,
-                loaded_thread_ids=loaded_thread_ids,
-                runtime_verification_failed=runtime_verification_failed,
+                **common_kwargs,
             )
+            return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
         if running_binding_ids:
-            return BackendResetPreview(
+            preview = BackendResetPreview(
                 status=BACKEND_RESET_STATUS_FORCE_ONLY,
                 reason_code=BACKEND_RESET_FORCE_ONLY_BY_RUNNING_BINDING,
                 reason_text="当前实例仍有运行中的 Feishu turn；如确认可打断，可执行 force reset。",
-                diagnostics=tuple(diagnostics),
-                pending_request_count=pending_request_count,
-                running_binding_ids=running_binding_ids,
-                active_loaded_thread_ids=active_loaded_thread_ids,
-                loaded_thread_ids=loaded_thread_ids,
-                runtime_verification_failed=runtime_verification_failed,
+                **common_kwargs,
             )
+            return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
         if active_loaded_thread_ids:
-            return BackendResetPreview(
+            preview = BackendResetPreview(
                 status=BACKEND_RESET_STATUS_FORCE_ONLY,
                 reason_code=BACKEND_RESET_FORCE_ONLY_BY_ACTIVE_LOADED_THREAD,
                 reason_text="当前 backend 仍有 active thread；如确认可打断，可执行 force reset。",
-                diagnostics=tuple(diagnostics),
-                pending_request_count=pending_request_count,
-                running_binding_ids=running_binding_ids,
-                active_loaded_thread_ids=active_loaded_thread_ids,
-                loaded_thread_ids=loaded_thread_ids,
-                runtime_verification_failed=runtime_verification_failed,
+                **common_kwargs,
             )
+            return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
         if runtime_verification_failed:
-            return BackendResetPreview(
+            preview = BackendResetPreview(
                 status=BACKEND_RESET_STATUS_FORCE_ONLY,
                 reason_code=BACKEND_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
                 reason_text="当前无法完整确认 backend 是否仍有运行中的 thread；如确认可打断，可执行 force reset。",
-                diagnostics=tuple(diagnostics),
-                pending_request_count=pending_request_count,
-                running_binding_ids=running_binding_ids,
-                active_loaded_thread_ids=active_loaded_thread_ids,
-                loaded_thread_ids=loaded_thread_ids,
-                runtime_verification_failed=runtime_verification_failed,
+                **common_kwargs,
             )
-        return BackendResetPreview(
+            return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
+        preview = BackendResetPreview(
             status=BACKEND_RESET_STATUS_AVAILABLE,
             reason_code="",
             reason_text="当前实例 backend 可安全重置。",
-            diagnostics=tuple(diagnostics),
-            pending_request_count=pending_request_count,
-            running_binding_ids=running_binding_ids,
-            active_loaded_thread_ids=active_loaded_thread_ids,
-            loaded_thread_ids=loaded_thread_ids,
-            runtime_verification_failed=runtime_verification_failed,
+            **common_kwargs,
         )
+        return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
 
     def backend_reset_preview(self) -> BackendResetPreview:
         return self._backend_reset_preview()
@@ -1715,6 +1785,7 @@ class RuntimeAdminController:
             "plan_status": plan.status,
             "reason_code": plan.reason_code,
             "reason": plan.reason_text,
+            "diagnostics": list(plan.diagnostics),
             "requested_mode": "",
             "applied": False,
             "requires_reset_backend": self._result_requires_reset_backend(plan.status),

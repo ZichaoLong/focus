@@ -262,6 +262,15 @@ attach 不是只读查看动作。
 - `附着当前实例`
 - `保持 detached`
 
+而在真正执行 reset 之前，preview / 拒绝文案应优先把信息分成两层：
+
+- `hard blockers`
+  - 例如 active thread、待处理审批/输入请求、运行中的 Feishu binding、attached binding、live runtime holders
+- `collateral impact`
+  - 例如当前实例上会被一起影响的 loaded threads 数量与摘要
+
+不要把所有 loaded threads 无差别展开成完整列表洪水。
+
 ## 6. 本地管理面
 
 本地 `feishu-codexctl` 的正式命令矩阵以
