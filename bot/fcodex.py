@@ -514,6 +514,11 @@ def _build_wrapper_profile_launch_plan(
         saved_profile_record = ThreadResumeProfileStore(global_data_dir()).load(resume_thread_id)
         if explicit_profile:
             resume_profile_hint = explicit_profile
+            if saved_profile_record is not None and str(saved_profile_record.profile or "").strip() == explicit_profile:
+                return _WrapperProfileLaunchPlan(
+                    user_args=planned_args,
+                    resume_profile_hint=resume_profile_hint,
+                )
         elif saved_profile_record is not None:
             resume_profile_hint = str(saved_profile_record.profile or "").strip()
         elif ThreadMemoryModeStore(global_data_dir()).load(resume_thread_id) is not None:

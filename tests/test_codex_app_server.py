@@ -1913,6 +1913,32 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("thread 级 next-load 设置", stderr.getvalue())
         self.assertIn("feishu-codexctl --instance default service reset-backend", stderr.getvalue())
 
+    def test_fcodex_resume_with_same_explicit_profile_is_noop_even_when_loaded(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
+        lease = ThreadRuntimeLease(
+            thread_id=thread_id,
+            owner_instance="default",
+            owner_service_token="token-default",
+            control_endpoint="tcp://127.0.0.1:9100",
+            backend_url="ws://127.0.0.1:8765",
+            attached_at=1.0,
+            holders=(),
+        )
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=Mock(profile="provider2")):
+                with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=lease):
+                    with patch("bot.fcodex._thread_resume_profile_mutable", side_effect=AssertionError("should not check mutability")):
+                        with patch("bot.fcodex._persist_thread_resume_profile_for_resume", side_effect=AssertionError("should not persist")):
+                            with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                                with patch("bot.fcodex.os.execvpe") as mock_exec:
+                                    with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
+                                        fcodex_main()
+
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "-p", "provider2", "resume", thread_id],
+        )
+
     def test_fcodex_resume_with_explicit_profile_rejects_when_loaded_state_is_unverifiable(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
         mock_adapter = Mock()
