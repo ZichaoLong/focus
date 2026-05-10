@@ -83,6 +83,7 @@ class ProfileCommandOutcome:
     applied_profile: str = ""
     reset_offered_profile: str = ""
     reset_requires_force: bool = False
+    already_set: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +92,14 @@ class MemoryModeCommandOutcome:
     applied_mode: str = ""
     reset_offered_mode: str = ""
     reset_requires_force: bool = False
+    already_set: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadwiseNoopPlan:
+    reason_text: str
+    status: str = "already-set"
+    diagnostics: tuple[str, ...] = ()
 
 
 class CodexSettingsDomain:
@@ -523,6 +532,8 @@ class CodexSettingsDomain:
             lines.extend(["", "未在当前 Codex 配置中发现可用 profile。"])
         if plan.status == "direct-write":
             lines.append("当前已满足切换条件：thread globally unloaded。")
+        elif plan.status == "already-set":
+            lines.append(plan.reason_text)
         elif plan.status in {"reset-available", "reset-force-only"}:
             lines.append(f"当前不能直接写入：{plan.reason_text}")
         else:
@@ -584,6 +595,8 @@ class CodexSettingsDomain:
             lines.extend(["", f"目标 memory mode：`{reset_target_mode}`"])
         if plan.status == "direct-write":
             lines.append("当前已满足切换条件：thread globally unloaded。")
+        elif plan.status == "already-set":
+            lines.append(plan.reason_text)
         elif plan.status in {"reset-available", "reset-force-only"}:
             lines.append(f"当前不能直接写入：{plan.reason_text}")
         else:
@@ -662,6 +675,21 @@ class CodexSettingsDomain:
                 command_result=CommandResult(
                     text=f"未找到 profile：`{target_profile}`\n用法：`{_PROFILE_WITH_NAME_COMMAND}`\n先发 `/profile` 查看可用 profile。"
                 )
+            )
+        if current_record is not None and str(current_record.profile or "").strip() == target_profile:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile=current_profile,
+                        current_record=current_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=ThreadwiseNoopPlan("目标 profile 已等于当前持久化设置；无需重置 backend。"),
+                        leading_lines=[f"当前 thread 的 profile 已是：`{target_profile}`", ""],
+                    )
+                ),
+                already_set=True,
             )
 
         if plan.status == "direct-write":
@@ -956,6 +984,18 @@ class CodexSettingsDomain:
                         "先发 `/memory` 查看可用模式。"
                     )
                 )
+            )
+        if current_record is not None and str(current_record.mode or "").strip() == normalized_target_mode:
+            return MemoryModeCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_memory_mode_summary_card(
+                        thread_id=thread_id,
+                        current_record=current_record,
+                        plan=ThreadwiseNoopPlan("目标 memory mode 已等于当前持久化设置；无需重置 backend。"),
+                        leading_lines=[f"当前 thread 的 memory mode 已是：`{normalized_target_mode}`", ""],
+                    )
+                ),
+                already_set=True,
             )
 
         if plan.status == "direct-write":
@@ -1387,6 +1427,9 @@ class CodexSettingsDomain:
         if outcome.applied_profile:
             toast = f"已切换当前 thread 的 profile：{target_profile}"
             toast_type = "success"
+        elif outcome.already_set:
+            toast = f"当前 thread 的 profile 已是：{target_profile}"
+            toast_type = "success"
         elif outcome.reset_offered_profile:
             toast = (
                 "当前需要先重置 backend，才能应用该 profile。"
@@ -1429,6 +1472,12 @@ class CodexSettingsDomain:
         if outcome.applied_profile:
             toast = f"已应用 `{target_profile}` 并重置 backend。"
             return make_card_response(card=result.card, toast=toast, toast_type="success")
+        if outcome.already_set:
+            return make_card_response(
+                card=result.card,
+                toast=f"当前 thread 的 profile 已是：{target_profile}",
+                toast_type="success",
+            )
         return make_card_response(
             card=result.card,
             toast=result.text or "当前仍无法应用该 profile。",
@@ -1451,6 +1500,9 @@ class CodexSettingsDomain:
             return make_card_response(toast=result.text or "切换 memory mode 失败", toast_type="warning")
         if outcome.applied_mode:
             toast = f"已切换当前 thread 的 memory mode：{target_mode}"
+            toast_type = "success"
+        elif outcome.already_set:
+            toast = f"当前 thread 的 memory mode 已是：{target_mode}"
             toast_type = "success"
         elif outcome.reset_offered_mode:
             toast = (
@@ -1491,6 +1543,12 @@ class CodexSettingsDomain:
         if outcome.applied_mode:
             toast = f"已应用 `{target_mode}` 并重置 backend。"
             return make_card_response(card=result.card, toast=toast, toast_type="success")
+        if outcome.already_set:
+            return make_card_response(
+                card=result.card,
+                toast=f"当前 thread 的 memory mode 已是：{target_mode}",
+                toast_type="success",
+            )
         return make_card_response(
             card=result.card,
             toast=result.text or "当前仍无法应用该 memory mode。",

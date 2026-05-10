@@ -79,6 +79,8 @@ REPROFILE_STATUS_DIRECT_WRITE = "direct-write"
 REPROFILE_STATUS_RESET_AVAILABLE = "reset-available"
 REPROFILE_STATUS_RESET_FORCE_ONLY = "reset-force-only"
 REPROFILE_STATUS_BLOCKED = "blocked"
+THREAD_MUTATION_STATUS_ALREADY_SET = "already-set"
+THREAD_MUTATION_STATUS_APPLIED = "applied"
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +205,50 @@ class RuntimeAdminController:
             return "（未设置）"
         mode = str(getattr(record, "mode", "") or "").strip()
         return mode or "（未设置）"
+
+    def _load_thread_memory_mode_value(self, thread_id: str) -> str:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return ""
+        try:
+            record = self._load_thread_memory_mode(normalized_thread_id)
+        except Exception:
+            logger.exception("读取 thread-wise memory mode 失败: thread=%s", normalized_thread_id[:12])
+            return ""
+        if record is None:
+            return ""
+        return str(getattr(record, "mode", "") or "").strip()
+
+    @staticmethod
+    def _result_requires_reset_backend(status: str) -> bool:
+        return status in {
+            REPROFILE_STATUS_RESET_AVAILABLE,
+            REPROFILE_STATUS_RESET_FORCE_ONLY,
+        }
+
+    def _refresh_thread_memory_mutation_result(
+        self,
+        result: dict[str, Any],
+        thread_id: str,
+        *,
+        mutation_status: str,
+        reason: str,
+        backend_reset_result: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        fresh_plan = self.plan_thread_memory_mode_update(thread_id)
+        result["thread_memory_mode"] = self._current_thread_memory_mode_text(thread_id)
+        result["backend_thread_status"] = fresh_plan.backend_thread_status
+        result["feishu_runtime_state"] = fresh_plan.feishu_runtime_state
+        result["live_runtime_owner"] = fresh_plan.live_runtime_owner
+        result["plan_status"] = mutation_status
+        result["reason_code"] = ""
+        result["reason"] = reason
+        result["applied"] = True
+        result["requires_reset_backend"] = False
+        result["requires_force_reset_backend"] = False
+        result["backend_reset_performed"] = backend_reset_result is not None
+        result["backend_reset_result"] = backend_reset_result
+        return result
 
     @staticmethod
     def binding_has_inflight_turn_locked(state: RuntimeState) -> bool:
@@ -1670,10 +1716,7 @@ class RuntimeAdminController:
             "reason": plan.reason_text,
             "requested_mode": "",
             "applied": False,
-            "requires_reset_backend": plan.status in {
-                REPROFILE_STATUS_RESET_AVAILABLE,
-                REPROFILE_STATUS_RESET_FORCE_ONLY,
-            },
+            "requires_reset_backend": self._result_requires_reset_backend(plan.status),
             "requires_force_reset_backend": plan.status == REPROFILE_STATUS_RESET_FORCE_ONLY,
             "backend_reset_performed": False,
             "backend_reset_result": None,
@@ -1683,13 +1726,23 @@ class RuntimeAdminController:
 
         normalized_target_mode = normalize_thread_memory_mode(target_mode)
         result["requested_mode"] = normalized_target_mode
+        current_mode = self._load_thread_memory_mode_value(normalized_thread_id)
+        if current_mode and current_mode == normalized_target_mode:
+            return self._refresh_thread_memory_mutation_result(
+                result,
+                normalized_thread_id,
+                mutation_status=THREAD_MUTATION_STATUS_ALREADY_SET,
+                reason="目标 memory mode 已等于当前持久化设置；无需重置 backend。",
+            )
 
         if plan.status == REPROFILE_STATUS_DIRECT_WRITE:
-            record = self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
-            result["thread_memory_mode"] = str(getattr(record, "mode", "") or "").strip() or normalized_target_mode
-            result["applied"] = True
-            result["reason"] = "已直接写入 thread-wise memory mode。"
-            return result
+            self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
+            return self._refresh_thread_memory_mutation_result(
+                result,
+                normalized_thread_id,
+                mutation_status=THREAD_MUTATION_STATUS_APPLIED,
+                reason="已直接写入 thread-wise memory mode。",
+            )
 
         if plan.status not in {
             REPROFILE_STATUS_RESET_AVAILABLE,
@@ -1702,13 +1755,14 @@ class RuntimeAdminController:
             return result
 
         backend_reset_result = self._reset_current_instance_backend(bool(force_reset_backend))
-        record = self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
-        result["thread_memory_mode"] = str(getattr(record, "mode", "") or "").strip() or normalized_target_mode
-        result["applied"] = True
-        result["backend_reset_performed"] = True
-        result["backend_reset_result"] = backend_reset_result
-        result["reason"] = "已通过当前实例 backend reset 后写入 thread-wise memory mode。"
-        return result
+        self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
+        return self._refresh_thread_memory_mutation_result(
+            result,
+            normalized_thread_id,
+            mutation_status=THREAD_MUTATION_STATUS_APPLIED,
+            reason="已通过当前实例 backend reset 后写入 thread-wise memory mode。",
+            backend_reset_result=backend_reset_result,
+        )
 
     def handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         if method == "service/status":

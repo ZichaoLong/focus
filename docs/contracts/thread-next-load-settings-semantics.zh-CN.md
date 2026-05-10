@@ -57,13 +57,22 @@
 
 ## 4. 不满足直接改写时怎么办
 
-如果还没满足直接改写条件，应按当前实例能力收口：
+在进入 direct-write / reset-backend 判断之前，还应先应用一条幂等短路规则：
 
-1. 直接写入
+- 如果请求值已经等于当前 thread 的持久化设置，应直接成功返回
+- 这属于 no-op success，不应再提示 reset-backend，更不应真的执行 reset
+
+只有在“目标值与当前持久化值不同”时，才需要继续判断下面的 direct-write / reset-backend 路径。
+
+因此：
+
+1. no-op success
+   - 目标值已等于当前持久化设置
+2. 直接写入
    - 当前 thread 已 verifiably globally unloaded
-2. 提供 “应用并重置 backend”
+3. 提供 “应用并重置 backend”
    - 当前 thread 还没满足直接写入条件，但当前实例可通过 reset-backend 收口
-3. fail-closed
+4. fail-closed
    - live runtime 由别的实例持有，或当前实例无法安全重置
 
 也就是说：

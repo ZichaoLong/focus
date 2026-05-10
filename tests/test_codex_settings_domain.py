@@ -322,6 +322,31 @@ class CodexSettingsDomainTests(unittest.TestCase):
             ["应用并重置 backend"],
         )
 
+    def test_profile_command_short_circuits_when_target_already_persisted(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_profile = ThreadResumeProfileRecord(
+            thread_id="thread-1",
+            profile="work",
+            model="work-model",
+            model_provider="work-provider",
+            updated_at=1.0,
+        )
+        stub.thread_reprofile_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
+            diagnostics=(),
+        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
+
+        self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertIsNotNone(result.card)
+        content = result.card["elements"][0]["content"]
+        self.assertIn("当前 thread 的 profile 已是：`work`", content)
+        self.assertIn("无需重置 backend", content)
+        self.assertNotIn("应用并重置 backend", content)
+
     def test_apply_profile_with_backend_reset_saves_profile_after_reset(self) -> None:
         stub = _SettingsPortsStub()
         stub.thread_reprofile_plan = SimpleNamespace(
@@ -365,6 +390,33 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIn("已应用 `work` 并重置 backend", response.toast.content)
         self.assertIsNotNone(response.card)
         self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "work", "", "msg-1")])
+
+    def test_apply_profile_with_backend_reset_short_circuits_when_target_already_persisted(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_profile = ThreadResumeProfileRecord(
+            thread_id="thread-1",
+            profile="work",
+            model="work-model",
+            model_provider="work-provider",
+            updated_at=1.0,
+        )
+        stub.thread_reprofile_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
+            diagnostics=(),
+        )
+        domain = _make_domain(stub)
+
+        response = domain.handle_apply_profile_with_backend_reset(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"profile": "work", "force": False},
+        )
+
+        self.assertEqual(stub.reset_backend_calls, [])
+        self.assertEqual(response.toast.type, "success")
+        self.assertIn("当前 thread 的 profile 已是：work", response.toast.content)
 
     def test_apply_profile_with_backend_reset_replaces_provisional_thread(self) -> None:
         stub = _SettingsPortsStub()
@@ -466,6 +518,29 @@ class CodexSettingsDomainTests(unittest.TestCase):
             ["应用并重置 backend"],
         )
 
+    def test_memory_command_short_circuits_when_target_already_persisted(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_memory_mode = ThreadMemoryModeRecord(
+            thread_id="thread-1",
+            mode="read",
+            updated_at=1.0,
+        )
+        stub.thread_memory_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 memory mode。",
+            diagnostics=(),
+        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_memory_command("ou_user", "chat-a", "read", message_id="msg-1")
+
+        self.assertEqual(stub.applied_thread_memory_modes, [])
+        self.assertIsNotNone(result.card)
+        content = result.card["elements"][0]["content"]
+        self.assertIn("当前 thread 的 memory mode 已是：`read`", content)
+        self.assertIn("无需重置 backend", content)
+        self.assertNotIn("应用并重置 backend", content)
+
     def test_apply_memory_mode_with_backend_reset_applies_after_reset(self) -> None:
         stub = _SettingsPortsStub()
         stub.thread_memory_plan = SimpleNamespace(
@@ -505,6 +580,31 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "", "read_write", "msg-1")])
         self.assertEqual(response.toast.type, "success")
         self.assertIn("已应用 `read_write` 并重置 backend", response.toast.content)
+
+    def test_apply_memory_mode_with_backend_reset_short_circuits_when_target_already_persisted(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_memory_mode = ThreadMemoryModeRecord(
+            thread_id="thread-1",
+            mode="read",
+            updated_at=1.0,
+        )
+        stub.thread_memory_plan = SimpleNamespace(
+            status="reset-available",
+            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 memory mode。",
+            diagnostics=(),
+        )
+        domain = _make_domain(stub)
+
+        response = domain.handle_apply_memory_mode_with_backend_reset(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"mode": "read", "force": False},
+        )
+
+        self.assertEqual(stub.reset_backend_calls, [])
+        self.assertEqual(response.toast.type, "success")
+        self.assertIn("当前 thread 的 memory mode 已是：read", response.toast.content)
 
     def test_apply_memory_mode_with_backend_reset_replaces_provisional_thread(self) -> None:
         stub = _SettingsPortsStub()

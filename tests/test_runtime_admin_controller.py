@@ -1188,6 +1188,9 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertTrue(result["applied"])
         self.assertEqual(result["thread_memory_mode"], "read")
         self.assertEqual(controller._thread_memory_modes["thread-1"], "read")  # type: ignore[attr-defined]
+        self.assertEqual(result["plan_status"], "applied")
+        self.assertFalse(result["requires_reset_backend"])
+        self.assertEqual(result["reason_code"], "")
 
     def test_handle_service_control_request_thread_memory_can_reset_backend_then_apply(self) -> None:
         (
@@ -1227,6 +1230,51 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertTrue(result["backend_reset_performed"])
         self.assertEqual(reset_calls, [False])
         self.assertEqual(controller._thread_memory_modes["thread-1"], "read_write")  # type: ignore[attr-defined]
+        self.assertEqual(result["plan_status"], "applied")
+        self.assertEqual(result["reason_code"], "")
+        self.assertFalse(result["requires_reset_backend"])
+
+    def test_handle_service_control_request_thread_memory_short_circuits_when_target_already_persisted(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        controller._thread_memory_modes["thread-1"] = "read"  # type: ignore[attr-defined]
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.handle_service_control_request(
+            "thread/memory",
+            {"thread_id": "thread-1", "mode": "read", "reset_backend": True},
+        )
+
+        self.assertTrue(result["applied"])
+        self.assertEqual(result["plan_status"], "already-set")
+        self.assertEqual(result["reason_code"], "")
+        self.assertFalse(result["backend_reset_performed"])
+        self.assertEqual(reset_calls, [])
+        self.assertFalse(result["requires_reset_backend"])
 
     def test_handle_service_control_request_thread_archive_dispatches_control_action(self) -> None:
         (

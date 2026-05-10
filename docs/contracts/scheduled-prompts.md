@@ -43,8 +43,11 @@ Its contract:
   - `actor_open_id`
   - `synthetic_source`
   - `display_mode`
-- the target binding may currently have no thread; in that case it follows the
-  normal prompt-entry semantics of "create thread first, then start turn"
+- the target binding must already exist; when it does not exist, the control
+  plane must fail closed rather than creating a new binding implicitly
+- the target binding may currently have no thread; this means “an existing
+  binding with no current thread”, and it follows the normal prompt-entry
+  semantics of "create thread first, then start turn"
 - the target binding may currently be `detached`; when attach / resume
   preflight succeeds, it follows the normal binding recovery path
 - all write admission checks must reuse the existing safety boundary rather than

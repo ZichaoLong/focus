@@ -57,13 +57,24 @@ Therefore:
 
 ## 4. What happens when direct mutation is not yet allowed
 
-If direct write is not available yet, the system should converge based on what the current instance can safely do:
+Before evaluating direct-write / reset-backend, one idempotent short-circuit
+must apply:
 
-1. direct write
+- if the requested value already equals the current persisted thread-wise
+  setting, the request should succeed immediately
+- this is a no-op success; it must not offer reset-backend, and it must not
+  actually reset backend
+
+Only when the target value differs from the current persisted setting should the
+system continue into the direct-write / reset-backend decision:
+
+1. no-op success
+   - the target value already matches the persisted setting
+2. direct write
    - the thread is already verifiably globally unloaded
-2. offer “apply and reset backend”
+3. offer “apply and reset backend”
    - the thread is not directly writable yet, but the current instance can converge through reset-backend
-3. fail closed
+4. fail closed
    - live runtime is owned by another instance, or the current instance cannot safely reset
 
 That means:

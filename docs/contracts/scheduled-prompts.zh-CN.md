@@ -40,7 +40,8 @@ control plane 新增：
   - `actor_open_id`
   - `synthetic_source`
   - `display_mode`
-- 允许目标 binding 当前尚未绑定 thread；此时沿用普通 prompt 入口的“先建 thread 再启动 turn”语义
+- 目标 binding 必须已经存在；缺失 binding 时必须 fail-close，不能隐式创建新 binding
+- 允许目标 binding 当前尚未绑定 thread；这里指的是“已有 binding，但当前无 thread”，此时沿用普通 prompt 入口的“先建 thread 再启动 turn”语义
 - 允许目标 binding 当前是 `detached`；若 attach / resume 预检可通过，则按现有绑定恢复路径执行
 - 所有真正写入前的检查都必须复用现有安全边界，而不是旁路
 
