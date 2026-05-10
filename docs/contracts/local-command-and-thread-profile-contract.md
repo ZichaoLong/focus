@@ -145,12 +145,13 @@ Therefore:
 
 ### 5.3 Thread-wise memory mode
 
-The local command surface does not currently expose a standalone thread-wise memory-mode mutator.
-
 The formal contract is:
 
 - Feishu `/memory [off|read|read_write]` mutates the thread-wise memory mode
+- local `feishu-codexctl thread memory --thread-id <id>` is the supported standalone inspection entry
+- local `feishu-codexctl thread memory --thread-id <id> --mode <off|read|read_write>` is the supported standalone mutation entry
 - for supported resume paths, `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
+- `default_thread_memory_mode` in `codex.yaml` is a new-thread seed only for project-supported new-thread creation paths
 - the shared direct-write / reset-backend rule is defined in `docs/contracts/thread-next-load-settings-semantics.md`
 - the memory-mode-specific business semantics are defined in `docs/contracts/thread-memory-semantics.md`
 

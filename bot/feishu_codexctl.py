@@ -20,6 +20,7 @@ from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.service_instance_lease import ServiceInstanceLease
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
+from bot.thread_memory_mode import THREAD_MEMORY_MODES
 from bot.thread_resolution import list_current_dir_threads, list_global_threads
 
 _CODEX_THREAD_ID_ENV_VAR = "CODEX_THREAD_ID"
@@ -388,6 +389,55 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
     return 0
 
 
+def _print_thread_memory_result(
+    data_dir: pathlib.Path,
+    target_params: dict[str, str],
+    *,
+    mode: str = "",
+    reset_backend: bool = False,
+    force_reset_backend: bool = False,
+    instance_name: str = "",
+) -> int:
+    result = _request(
+        data_dir,
+        "thread/memory",
+        {
+            **target_params,
+            "mode": str(mode or "").strip(),
+            "reset_backend": bool(reset_backend or force_reset_backend),
+            "force_reset_backend": bool(force_reset_backend),
+        },
+    )
+    if instance_name:
+        print(f"instance: {instance_name}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    print(f"thread-wise memory mode: {result.get('thread_memory_mode', '（未设置）')}")
+    print(f"mutation plan: {result.get('plan_status', '-')}")
+    if result.get("reason_code"):
+        print(f"reason code: {result['reason_code']}")
+    if result.get("reason"):
+        print(f"reason: {result['reason']}")
+    requested_mode = str(result.get("requested_mode", "") or "").strip()
+    if requested_mode:
+        print(f"requested mode: {requested_mode}")
+        print(f"applied: {'yes' if result.get('applied') else 'no'}")
+    if result.get("backend_reset_performed"):
+        backend_reset_result = result.get("backend_reset_result") or {}
+        print("backend reset: performed on current instance")
+        print(f"force: {'yes' if backend_reset_result.get('force') else 'no'}")
+        print(f"detached bindings: {', '.join(backend_reset_result.get('detached_binding_ids') or []) or '（无）'}")
+        print(f"interrupted bindings: {', '.join(backend_reset_result.get('interrupted_binding_ids') or []) or '（无）'}")
+        print(f"fail-closed requests: {int(backend_reset_result.get('fail_closed_request_count') or 0)}")
+        print(f"purged runtime leases: {', '.join(backend_reset_result.get('purged_thread_ids') or []) or '（无）'}")
+    elif requested_mode and not result.get("applied"):
+        if result.get("requires_force_reset_backend"):
+            print("hint: 当前只能改用 `--force-reset-backend`。")
+        elif result.get("requires_reset_backend"):
+            print("hint: 当前可改用 `--reset-backend`。注意这会重置当前实例 backend，而不是只影响该 thread。")
+    return 0 if (not requested_mode or result.get("applied")) else 1
+
+
 def _print_thread_bindings(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
     result = _request(data_dir, "thread/bindings", target_params)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
@@ -539,6 +589,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl prompt send --binding-id <binding_id> --text '继续执行'\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
+            "  feishu-codexctl thread memory --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
             "  feishu-codexctl thread attach --thread-id <id>\n"
             "  feishu-codexctl thread detach --thread-name <name>\n"
@@ -735,6 +786,34 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_bindings_target = thread_bindings.add_mutually_exclusive_group(required=True)
     thread_bindings_target.add_argument("--thread-id", help="目标 thread id。")
     thread_bindings_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_memory = thread_sub.add_parser(
+        "memory",
+        help="查看或改写某个 thread 的 thread-wise memory mode。",
+        description=(
+            "查看或改写某个 thread 的 thread-wise memory mode。\n"
+            "不带 `--mode` 时仅查看当前模式与改写计划；带 `--mode` 时尝试写入。\n"
+            "如需经 reset-backend 收敛，必须显式加 `--reset-backend` 或 `--force-reset-backend`。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    thread_memory_target = thread_memory.add_mutually_exclusive_group(required=True)
+    thread_memory_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_memory_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_memory.add_argument(
+        "--mode",
+        choices=THREAD_MEMORY_MODES,
+        help="目标 thread-wise memory mode；省略时仅查看当前模式与改写计划。",
+    )
+    thread_memory.add_argument(
+        "--reset-backend",
+        action="store_true",
+        help="若当前实例支持，则通过重置当前实例 backend 收敛后再写入。",
+    )
+    thread_memory.add_argument(
+        "--force-reset-backend",
+        action="store_true",
+        help="允许打断当前实例里的运行中工作后重置 backend，再写入目标 memory mode。",
+    )
     thread_archive = thread_sub.add_parser(
         "archive",
         help="归档某个 thread，并清理当前实例里指向它的 bindings。",
@@ -863,6 +942,17 @@ def main() -> None:
                 _print_thread_status(
                     data_dir,
                     _thread_target_params(args),
+                    instance_name=target.instance_name,
+                )
+            )
+        if args.resource == "thread" and args.action == "memory":
+            raise SystemExit(
+                _print_thread_memory_result(
+                    data_dir,
+                    _thread_target_params(args),
+                    mode=str(args.mode or "").strip(),
+                    reset_backend=bool(args.reset_backend),
+                    force_reset_backend=bool(args.force_reset_backend),
                     instance_name=target.instance_name,
                 )
             )

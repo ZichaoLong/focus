@@ -37,7 +37,11 @@ from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, BACKEND_THREAD_STATUS_
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
-from bot.thread_memory_mode import build_thread_memory_config_override, deep_merge_config_overrides
+from bot.thread_memory_mode import (
+    build_thread_memory_config_override,
+    deep_merge_config_overrides,
+    normalize_thread_memory_mode,
+)
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
     preview_thread_global_loaded_gate,
@@ -285,6 +289,7 @@ class _ProxyInteractionGate:
         service_token: str = "",
         holder_pid: int,
         thread_profile_seed: str = "",
+        thread_memory_mode_seed: str = "",
         resume_profile_hint: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
     ) -> None:
@@ -302,6 +307,8 @@ class _ProxyInteractionGate:
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
         self._initial_thread_profile_seed = str(thread_profile_seed or "").strip()
         self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed
+        self._initial_thread_memory_mode_seed = str(thread_memory_mode_seed or "").strip()
+        self._initial_thread_memory_mode_seed_consumed = not self._initial_thread_memory_mode_seed
         self._resume_profile_hint = str(resume_profile_hint or "").strip()
         self._runtime_lease_keeper = runtime_lease_keeper
         self._lock = threading.Lock()
@@ -419,6 +426,60 @@ class _ProxyInteractionGate:
                 file=sys.stderr,
             )
 
+    def _initial_thread_memory_profile_hint(self, params: dict[str, Any]) -> str:
+        existing_config = params.get("config")
+        if isinstance(existing_config, dict):
+            profile_name = str(existing_config.get("profile", "") or "").strip()
+            if profile_name:
+                return profile_name
+        return self._initial_thread_profile_seed
+
+    def _apply_initial_thread_memory_mode_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return payload
+        with self._lock:
+            if self._initial_thread_memory_mode_seed_consumed or not self._initial_thread_memory_mode_seed:
+                return payload
+            memory_mode = self._initial_thread_memory_mode_seed
+        existing_config = params.get("config")
+        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+        merged_config = deep_merge_config_overrides(
+            normalized_existing_config,
+            build_thread_memory_config_override(
+                memory_mode,
+                profile_name_hint=self._initial_thread_memory_profile_hint(params),
+            ),
+        )
+        updated_payload = dict(payload)
+        updated_params = dict(params)
+        updated_params["config"] = merged_config
+        updated_payload["params"] = updated_params
+        return updated_payload
+
+    def _persist_initial_thread_memory_mode_seed_once(self, thread_id: str) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return
+        with self._lock:
+            if self._initial_thread_memory_mode_seed_consumed or not self._initial_thread_memory_mode_seed:
+                return
+            memory_mode = self._initial_thread_memory_mode_seed
+            self._initial_thread_memory_mode_seed_consumed = True
+        try:
+            ThreadMemoryModeStore(self._global_data_dir).save(
+                normalized_thread_id,
+                mode=normalize_thread_memory_mode(memory_mode),
+            )
+        except Exception as exc:
+            with self._lock:
+                if self._initial_thread_memory_mode_seed == memory_mode:
+                    self._initial_thread_memory_mode_seed_consumed = False
+            print(
+                f"warning: failed to persist initial thread memory mode seed for `{normalized_thread_id}`: {exc}",
+                file=sys.stderr,
+            )
+
     def _apply_saved_thread_memory_mode_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
         thread_id = _payload_thread_id(payload)
         if not thread_id:
@@ -463,6 +524,8 @@ class _ProxyInteractionGate:
         if isinstance(method, str):
             if method == "thread/resume":
                 payload = self._apply_saved_thread_memory_mode_for_resume(payload)
+            elif method == "thread/start":
+                payload = self._apply_initial_thread_memory_mode_seed(payload)
             thread_id = _payload_thread_id(payload)
             request_id = payload.get("id")
             if method == "thread/resume" and thread_id:
@@ -578,6 +641,7 @@ class _ProxyInteractionGate:
                     if started_thread_id:
                         self._acquire_runtime_lease(started_thread_id)
                         self._persist_initial_thread_profile_seed_once(started_thread_id)
+                        self._persist_initial_thread_memory_mode_seed_once(started_thread_id)
                 elif request_method == "thread/unsubscribe" and "error" not in payload:
                     self._release_runtime_lease(thread_id)
             with self._lock:
@@ -623,6 +687,7 @@ def run_proxy(
     instance_name: str = "",
     service_token: str = "",
     thread_profile_seed: str = "",
+    thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
     listen_host: str = "127.0.0.1",
     listen_port: int = 0,
@@ -702,6 +767,7 @@ def run_proxy(
                     service_token=service_token,
                     holder_pid=holder_pid,
                     thread_profile_seed=thread_profile_seed,
+                    thread_memory_mode_seed=thread_memory_mode_seed,
                     resume_profile_hint=resume_profile_hint,
                     runtime_lease_keeper=runtime_lease_keeper,
                 )
@@ -769,6 +835,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--instance", default="")
     parser.add_argument("--service-token", default="")
     parser.add_argument("--thread-profile-seed", default="")
+    parser.add_argument("--thread-memory-mode-seed", default="")
     parser.add_argument("--resume-profile-hint", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=0)
@@ -782,6 +849,7 @@ def main(argv: list[str] | None = None) -> None:
         instance_name=args.instance,
         service_token=args.service_token,
         thread_profile_seed=args.thread_profile_seed,
+        thread_memory_mode_seed=args.thread_memory_mode_seed,
         resume_profile_hint=args.resume_profile_hint,
         listen_host=args.listen_host,
         listen_port=args.listen_port,

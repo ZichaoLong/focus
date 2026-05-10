@@ -23,7 +23,7 @@ It answers:
 - Every command except `instance list` accepts `--instance <name>`.
 - An explicit `--instance` always wins.
 - Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
-- `thread status`, `thread bindings`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
+- `thread status`, `thread bindings`, `thread memory`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
   - `--thread-id <id>`
   - `--thread-name <name>`
 
@@ -96,6 +96,7 @@ Notes:
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | Browse persisted threads; default is current-directory scope | read-only | target-discovery counterpart of Feishu `/threads` |
 | `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show backend status, live runtime owner / holders, and bound / attached / detached bindings for one thread | read-only | no exact single command |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show all bindings currently pointing at one thread | read-only | none |
+| `feishu-codexctl [--instance <name>] thread memory (--thread-id <id> \| --thread-name <name>) [--mode off\|read\|read_write] [--reset-backend\|--force-reset-backend]` | Inspect or mutate one thread's thread-wise memory mode; optional reset converges through current-instance backend reset | read-only without `--mode`; mutating with `--mode` | Feishu `/memory [off\|read\|read_write]` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | Archive a target thread and clear bindings that still point to it in the target instance | mutating | local instance-scoped counterpart of Feishu `/archive` |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |

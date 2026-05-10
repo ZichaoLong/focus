@@ -145,12 +145,13 @@
 
 ### 5.3 thread-wise memory mode
 
-当前本地命令面没有单独的 thread-wise memory mode 改写命令。
-
 正式合同是：
 
 - 飞书 `/memory [off|read|read_write]` 负责改写 thread-wise memory mode
+- 本地 `feishu-codexctl thread memory --thread-id <id>` 是正式的独立查看入口
+- 本地 `feishu-codexctl thread memory --thread-id <id> --mode <off|read|read_write>` 是正式的独立改写入口
 - 对受支持的恢复路径，`fcodex resume <thread>` 恢复该 thread 时，会自动沿用已持久化的 memory mode
+- `codex.yaml` 里的 `default_thread_memory_mode` 只是项目支持的新线程创建路径上的 seed
 - 若要理解共享的 direct-write / reset-backend 条件，以 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准
 - memory mode 自身的业务语义，以 `docs/contracts/thread-memory-semantics.zh-CN.md` 为准
 

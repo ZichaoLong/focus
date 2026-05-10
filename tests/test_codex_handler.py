@@ -3367,6 +3367,61 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "继续分析")
         self.assertEqual(bot.replies, [])
 
+    def test_service_control_plane_binding_submit_prompt_rejects_missing_binding(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_typo:chat-typo",
+                "text": "继续分析",
+            },
+        )
+
+        self.assertFalse(result["started"])
+        self.assertEqual(result["reason_code"], "prompt_denied_binding_not_found")
+        self.assertEqual(result["reason"], "未找到 binding：p2p:ou_typo:chat-typo")
+        self.assertEqual(handler._adapter.start_turn_calls, [])
+        self.assertEqual(bot.replies, [])
+        self.assertEqual(self._binding_keys(handler), ())
+
+    def test_service_control_plane_binding_submit_prompt_announces_only_after_successful_start(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续分析",
+                "synthetic_source": "schedule",
+                "display_mode": "announce",
+            },
+        )
+
+        self.assertTrue(result["started"])
+        self.assertEqual(bot.replies, [("c1", "schedule触发，开始新一轮执行。")])
+
     def test_service_control_plane_binding_submit_prompt_fail_closes_without_chat_reply(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -3401,6 +3456,46 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertFalse(result["started"])
         self.assertEqual(result["reason_code"], "prompt_denied_by_running_turn")
         self.assertEqual(handler._adapter.start_turn_calls, [])
+        self.assertEqual(bot.replies, [])
+
+    def test_service_control_plane_binding_submit_prompt_announce_does_not_reply_when_start_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._prompt_turn_entry.start_prompt_turn_result = lambda *_args, **_kwargs: SimpleNamespace(
+            started=False,
+            thread_id="thread-1",
+            turn_id="",
+            reason_code="execution_card_send_failed",
+            reason_text="execution card failed",
+        )
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:ou_user:c1",
+                "text": "继续分析",
+                "synthetic_source": "schedule",
+                "display_mode": "announce",
+            },
+        )
+
+        self.assertFalse(result["started"])
+        self.assertEqual(result["reason_code"], "execution_card_send_failed")
         self.assertEqual(bot.replies, [])
 
     def test_service_control_plane_binding_clear_rejects_when_binding_has_pending_request(self) -> None:
@@ -3841,6 +3936,25 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
+    def test_new_thread_applies_and_persists_default_thread_memory_mode(self) -> None:
+        handler, _ = self._make_handler({"default_thread_memory_mode": "read"})
+
+        handler.handle_message("ou_user", "c1", "/new")
+
+        self.assertEqual(
+            handler._adapter.create_thread_calls[-1]["config_overrides"],
+            {
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": False,
+                }
+            },
+        )
+        memory_record = handler._thread_memory_mode_store.load("thread-created")
+        self.assertIsNotNone(memory_record)
+        assert memory_record is not None
+        self.assertEqual(memory_record.mode, "read")
+
     def test_prompt_without_threadwise_profile_starts_without_profile_override(self) -> None:
         handler, _ = self._make_handler()
 
@@ -3849,6 +3963,25 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
+
+    def test_prompt_created_thread_applies_and_persists_default_thread_memory_mode(self) -> None:
+        handler, _ = self._make_handler({"default_thread_memory_mode": "read_write"})
+
+        handler.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(
+            handler._adapter.create_thread_calls[-1]["config_overrides"],
+            {
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": True,
+                }
+            },
+        )
+        memory_record = handler._thread_memory_mode_store.load("thread-created")
+        self.assertIsNotNone(memory_record)
+        assert memory_record is not None
+        self.assertEqual(memory_record.mode, "read_write")
 
     def test_prompt_without_configured_default_working_dir_uses_home_directory(self) -> None:
         with patch("bot.codex_handler.default_working_dir", return_value=pathlib.Path("/home/tester")):

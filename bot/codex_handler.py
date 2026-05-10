@@ -515,6 +515,7 @@ class CodexHandler(BotHandler):
             attach_binding=self._attach_binding_for_control,
             load_thread_resume_profile=self._thread_resume_profile_store.load,
             load_thread_memory_mode=self._thread_memory_mode_store.load,
+            apply_thread_memory_mode=self._apply_thread_memory_mode,
             permissions_summary=_permissions_summary,
             thread_image_delivery=self._thread_image_delivery,
             submit_prompt_for_control=self._submit_prompt_for_control,
@@ -558,7 +559,7 @@ class CodexHandler(BotHandler):
                     message_id=message_id,
                 ),
                 resume_snapshot_by_id=self._resume_snapshot_by_id,
-                create_thread=lambda **kwargs: self._adapter.create_thread(**kwargs),
+                create_thread=lambda **kwargs: self._create_thread_with_seeded_memory_mode(**kwargs),
                 thread_resume_profile_for_thread=self._thread_resume_profile,
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
@@ -2024,7 +2025,7 @@ class CodexHandler(BotHandler):
         if runtime.running:
             return CommandResult(text="执行中不能新建线程，请等待结束或先执行 `/cancel`。")
         try:
-            snapshot = self._adapter.create_thread(
+            snapshot = self._create_thread_with_seeded_memory_mode(
                 cwd=runtime.working_dir,
                 approval_policy=runtime.approval_policy or None,
                 sandbox=runtime.sandbox or None,
@@ -2121,9 +2122,6 @@ class CodexHandler(BotHandler):
         normalized_text = str(text or "").strip()
         normalized_source = str(synthetic_source or "").strip()
         normalized_display_mode = str(display_mode or "silent").strip().lower() or "silent"
-        if normalized_display_mode == "announce":
-            label = normalized_source or "系统任务"
-            self._reply_text(binding[1], f"{label}触发，开始新一轮执行。", reply_in_thread=False)
         result = self._prompt_turn_entry.start_prompt_turn_result(
             binding[0],
             binding[1],
@@ -2132,6 +2130,9 @@ class CodexHandler(BotHandler):
             input_items=list(input_items) if input_items is not None else None,
             surface_failures=False,
         )
+        if normalized_display_mode == "announce" and result.started:
+            label = normalized_source or "系统任务"
+            self._reply_text(binding[1], f"{label}触发，开始新一轮执行。", reply_in_thread=False)
         return {
             "binding_id": binding_id,
             "thread_id": result.thread_id,
@@ -2480,6 +2481,9 @@ class CodexHandler(BotHandler):
             return None
         return self._thread_memory_mode_store.load(normalized_thread_id)
 
+    def _default_thread_memory_mode_seed(self) -> str:
+        return str(self._adapter_config.default_thread_memory_mode or "").strip()
+
     def _thread_memory_profile_hint(self, *, profile_name: str = "") -> str:
         normalized_profile_name = str(profile_name or "").strip()
         if normalized_profile_name:
@@ -2709,6 +2713,52 @@ class CodexHandler(BotHandler):
                 f"后续 resume 可能不会沿用这次 profile（{exc}）。"
             )
         return ""
+
+    def _persist_new_thread_memory_mode_seed(self, thread_id: str, mode: str) -> str:
+        normalized_mode = str(mode or "").strip()
+        if not normalized_mode:
+            return ""
+        try:
+            self._save_thread_memory_mode_record(thread_id, normalized_mode)
+        except Exception as exc:
+            logger.exception("持久化新 thread 的默认 memory mode 失败: thread=%s", str(thread_id or "")[:12])
+            return (
+                "警告：thread 已创建，但默认 memory mode 未成功持久化；"
+                f"后续 resume 可能不会沿用这次 memory 设置（{exc}）。"
+            )
+        return ""
+
+    def _create_thread_with_seeded_memory_mode(
+        self,
+        *,
+        cwd: str,
+        profile: str | None = None,
+        approval_policy: str | None = None,
+        sandbox: str | None = None,
+    ) -> ThreadSnapshot:
+        default_memory_mode = self._default_thread_memory_mode_seed()
+        snapshot = self._adapter.create_thread(
+            cwd=cwd,
+            profile=profile,
+            config_overrides=(
+                build_thread_memory_config_override(
+                    default_memory_mode,
+                    profile_name_hint=str(profile or "").strip(),
+                )
+                if default_memory_mode
+                else None
+            ),
+            approval_policy=approval_policy,
+            sandbox=sandbox,
+        )
+        if default_memory_mode:
+            warning_text = self._persist_new_thread_memory_mode_seed(
+                snapshot.summary.thread_id,
+                default_memory_mode,
+            )
+            if warning_text:
+                logger.warning(warning_text)
+        return snapshot
 
     @staticmethod
     def _thread_snapshot_is_provisional(snapshot: ThreadSnapshot) -> bool:

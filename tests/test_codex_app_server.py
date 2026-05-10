@@ -175,6 +175,11 @@ class CodexAppServerAdapterTests(unittest.TestCase):
 
         self.assertEqual(config.approval_policy, "on-request")
 
+    def test_from_dict_normalizes_default_thread_memory_mode(self) -> None:
+        config = CodexAppServerConfig.from_dict({"default_thread_memory_mode": " read_write "})
+
+        self.assertEqual(config.default_thread_memory_mode, "read_write")
+
     def test_create_thread_can_attach_profile_override(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
@@ -1172,6 +1177,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="",
+            thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1193,6 +1199,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="",
+            thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1232,6 +1239,7 @@ class FCodexTests(unittest.TestCase):
             os.getcwd(),
             _default_data_dir(),
             thread_profile_seed="provider1",
+            thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1319,6 +1327,7 @@ class FCodexTests(unittest.TestCase):
             instance_name="corp-b",
             service_token="token-b",
             thread_profile_seed="",
+            thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1929,6 +1938,7 @@ class FCodexTests(unittest.TestCase):
             "/home/tester/project",
             _default_data_dir(),
             thread_profile_seed="",
+            thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -2511,6 +2521,85 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertIsNotNone(first)
             assert first is not None
             self.assertEqual(first.profile, "provider2")
+            self.assertIsNone(second)
+
+    def test_thread_start_request_injects_and_persists_initial_thread_memory_mode_seed_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_memory_mode_seed="read",
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            forwarded = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded["method"], "thread/start")
+            self.assertEqual(
+                forwarded["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": {"thread": {"id": "thread-1"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "result": {"thread": {"id": "thread-2"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            first = ThreadMemoryModeStore(root_dir).load("thread-1")
+            second = ThreadMemoryModeStore(root_dir).load("thread-2")
+
+            self.assertIsNotNone(first)
+            assert first is not None
+            self.assertEqual(first.mode, "read")
             self.assertIsNone(second)
 
     def test_thread_resume_request_injects_saved_thread_memory_mode(self) -> None:

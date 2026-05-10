@@ -28,7 +28,7 @@ from bot.adapters.base import (
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
-from bot.thread_memory_mode import deep_merge_config_overrides
+from bot.thread_memory_mode import deep_merge_config_overrides, normalize_thread_memory_mode
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,7 @@ class CodexAppServerConfig:
     service_tier: str = ""
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
+    default_thread_memory_mode: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
     @classmethod
@@ -63,6 +64,7 @@ class CodexAppServerConfig:
         source_kinds = config.get("source_kinds") or DEFAULT_SOURCE_KINDS
         collaboration_mode = str(config.get("collaboration_mode", "default")).strip().lower() or "default"
         app_server_mode = str(config.get("app_server_mode", DEFAULT_APP_SERVER_MODE)).strip().lower() or DEFAULT_APP_SERVER_MODE
+        raw_default_thread_memory_mode = str(config.get("default_thread_memory_mode", "") or "").strip()
         if collaboration_mode not in {"default", "plan"}:
             raise ValueError("collaboration_mode 仅支持 default 或 plan")
         if app_server_mode not in {"managed", "remote"}:
@@ -85,6 +87,11 @@ class CodexAppServerConfig:
             service_tier=str(config.get("service_tier", "")),
             reasoning_effort=str(config.get("reasoning_effort", "")),
             collaboration_mode=collaboration_mode,
+            default_thread_memory_mode=(
+                normalize_thread_memory_mode(raw_default_thread_memory_mode)
+                if raw_default_thread_memory_mode
+                else ""
+            ),
             source_kinds=[str(item) for item in source_kinds],
         )
 

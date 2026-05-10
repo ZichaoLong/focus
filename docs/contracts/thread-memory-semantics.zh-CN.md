@@ -78,17 +78,18 @@ thread-wise memory mode 控制的是：
 
 ## 5. 本地行为
 
-当前本地命令面没有单独的 thread-wise memory mode 改写命令。
-
 正式合同是：
 
 - 飞书 `/memory` 负责改写 thread-wise memory mode
+- 本地 `feishu-codexctl thread memory` 是正式的独立查看 / 改写入口
 - `fcodex resume <thread>` 在恢复该 thread 时，会自动带上已持久化的 memory mode
-- 新建 thread 当前没有“实例级默认 memory mode”这一层用户概念
+- `codex.yaml` 里的 `default_thread_memory_mode` 是项目支持的新线程创建路径上的 seed
+- `default_thread_memory_mode` 只有在本项目之外已启用上游 Codex memory feature 时才有意义
 
 这意味着：
 
-- 若某个 thread 已在飞书侧设置过 memory mode，本地 `fcodex` 下次 resume 会沿用它
+- 若某个 thread 已在飞书侧或本地控制面设置过 memory mode，本地 `fcodex` 下次 resume 会沿用它
+- 项目支持的新线程创建路径，可以在 thread 第一次创建时立刻种下初始 memory mode
 - 若 thread 当前仍 loaded，要让新 memory mode 生效，仍应遵循 unload / reset-backend 路径，而不是承诺热更新
 - 裸 `codex` 或其他合同外入口直接改动 runtime / config 所造成的分叉，不由本项目兜底统一
 

@@ -35,6 +35,7 @@ from bot.reason_codes import (
     MEMORY_MODE_RESET_AVAILABLE,
     MEMORY_MODE_RESET_FORCE_ONLY,
     MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
+    PROMPT_DENIED_BINDING_NOT_FOUND,
     PROMPT_DENIED_BY_RUNNING_TURN,
     REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
     REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
@@ -62,6 +63,7 @@ from bot.runtime_state import (
     RuntimeStateDict,
 )
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.thread_memory_mode import normalize_thread_memory_mode
 from bot.thread_image_delivery import ThreadImageDeliveryController
 
 logger = logging.getLogger(__name__)
@@ -128,6 +130,7 @@ class RuntimeAdminController:
         attach_binding: Callable[[ChatBindingKey, str], ThreadSummary],
         load_thread_resume_profile: Callable[[str], Any],
         load_thread_memory_mode: Callable[[str], Any],
+        apply_thread_memory_mode: Callable[[str, str], Any],
         permissions_summary: Callable[[str, str], str],
         thread_image_delivery: ThreadImageDeliveryController,
         submit_prompt_for_control: Callable[..., dict[str, Any]],
@@ -160,6 +163,7 @@ class RuntimeAdminController:
         self._attach_binding = attach_binding
         self._load_thread_resume_profile = load_thread_resume_profile
         self._load_thread_memory_mode = load_thread_memory_mode
+        self._apply_thread_memory_mode = apply_thread_memory_mode
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
         self._submit_prompt_for_control = submit_prompt_for_control
@@ -425,7 +429,10 @@ class RuntimeAdminController:
         snapshot: Any,
     ) -> ReasonedCheck:
         if snapshot is None:
-            return ReasonedCheck.allow()
+            return ReasonedCheck.deny(
+                PROMPT_DENIED_BINDING_NOT_FOUND,
+                f"未找到 binding：{format_binding_id(binding)}",
+            )
         has_inflight_turn = bool(
             snapshot.has_inflight_turn
             if hasattr(snapshot, "has_inflight_turn")
@@ -1640,6 +1647,69 @@ class RuntimeAdminController:
             subject_label="memory mode",
         )
 
+    def thread_memory_mode_control_result(
+        self,
+        thread: ThreadSummary,
+        *,
+        target_mode: str = "",
+        reset_backend: bool = False,
+        force_reset_backend: bool = False,
+    ) -> dict[str, Any]:
+        normalized_thread_id = str(thread.thread_id or "").strip()
+        plan = self.plan_thread_memory_mode_update(normalized_thread_id)
+        result: dict[str, Any] = {
+            "thread_id": normalized_thread_id,
+            "thread_title": thread.title,
+            "working_dir": thread.cwd,
+            "thread_memory_mode": self._current_thread_memory_mode_text(normalized_thread_id),
+            "backend_thread_status": plan.backend_thread_status,
+            "feishu_runtime_state": plan.feishu_runtime_state,
+            "live_runtime_owner": plan.live_runtime_owner,
+            "plan_status": plan.status,
+            "reason_code": plan.reason_code,
+            "reason": plan.reason_text,
+            "requested_mode": "",
+            "applied": False,
+            "requires_reset_backend": plan.status in {
+                REPROFILE_STATUS_RESET_AVAILABLE,
+                REPROFILE_STATUS_RESET_FORCE_ONLY,
+            },
+            "requires_force_reset_backend": plan.status == REPROFILE_STATUS_RESET_FORCE_ONLY,
+            "backend_reset_performed": False,
+            "backend_reset_result": None,
+        }
+        if not str(target_mode or "").strip():
+            return result
+
+        normalized_target_mode = normalize_thread_memory_mode(target_mode)
+        result["requested_mode"] = normalized_target_mode
+
+        if plan.status == REPROFILE_STATUS_DIRECT_WRITE:
+            record = self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
+            result["thread_memory_mode"] = str(getattr(record, "mode", "") or "").strip() or normalized_target_mode
+            result["applied"] = True
+            result["reason"] = "已直接写入 thread-wise memory mode。"
+            return result
+
+        if plan.status not in {
+            REPROFILE_STATUS_RESET_AVAILABLE,
+            REPROFILE_STATUS_RESET_FORCE_ONLY,
+        }:
+            return result
+        if not reset_backend:
+            return result
+        if plan.status == REPROFILE_STATUS_RESET_FORCE_ONLY and not force_reset_backend:
+            return result
+
+        backend_reset_result = self._reset_current_instance_backend(bool(force_reset_backend))
+        record = self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
+        result["thread_memory_mode"] = str(getattr(record, "mode", "") or "").strip() or normalized_target_mode
+        result["applied"] = True
+        result["backend_reset_performed"] = True
+        result["backend_reset_result"] = backend_reset_result
+        result["reason"] = "已通过当前实例 backend reset 后写入 thread-wise memory mode。"
+        return result
+
     def handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         if method == "service/status":
             with self._lock:
@@ -1734,6 +1804,7 @@ class RuntimeAdminController:
         if method in {
             "thread/status",
             "thread/bindings",
+            "thread/memory",
             "thread/detach",
             "thread/send-image",
             "thread/attach",
@@ -1768,6 +1839,13 @@ class RuntimeAdminController:
                     thread.thread_id,
                     local_path=local_path,
                     summary=thread,
+                )
+            if method == "thread/memory":
+                return self.thread_memory_mode_control_result(
+                    thread,
+                    target_mode=str(params.get("mode", "") or ""),
+                    reset_backend=bool(params.get("reset_backend")),
+                    force_reset_backend=bool(params.get("force_reset_backend")),
                 )
             if method == "thread/attach":
                 return self.attach_thread(thread.thread_id)

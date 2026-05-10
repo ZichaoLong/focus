@@ -117,6 +117,10 @@ class InstallTemplateTests(unittest.TestCase):
 
         self.assertEqual(rendered, CODEX_YAML_TEMPLATE)
 
+    def test_codex_yaml_template_documents_default_thread_memory_mode(self) -> None:
+        self.assertIn("default_thread_memory_mode", CODEX_YAML_TEMPLATE)
+        self.assertIn("read_write", CODEX_YAML_TEMPLATE)
+
 
 if __name__ == "__main__":
     unittest.main()

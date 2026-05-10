@@ -40,7 +40,7 @@ It does not redefine:
 | `/threads` | Browse threads in the current directory | yes; `thread` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `thread` page form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
-| `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `thread -> current thread` | admin only | admin only | there is no direct local mutator yet; `fcodex resume` reuses the persisted mode |
+| `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `thread -> current thread` | admin only | admin only | `feishu-codexctl thread memory --thread-id/--thread-name`; `fcodex resume` reuses the persisted mode |
 | `/compact` | Compact the current bound thread's context history | yes; `thread -> current thread` | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `thread -> current thread` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `thread -> current thread` | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |

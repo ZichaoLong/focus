@@ -78,17 +78,18 @@ The result card must offer:
 
 ## 5. Local behavior
 
-The local command surface does not currently expose a standalone thread-wise memory-mode mutator.
-
 The formal contract is:
 
-- Feishu `/memory` is the supported way to mutate thread-wise memory mode
+- Feishu `/memory` remains the supported chat-side mutation entry
+- local `feishu-codexctl thread memory` is the supported standalone local inspection / mutation entry
 - `fcodex resume <thread>` automatically applies the persisted memory mode when resuming that thread
-- new threads do not have an “instance-level default memory mode” as a user-facing concept
+- `default_thread_memory_mode` in `codex.yaml` is a new-thread seed for project-supported new-thread creation paths
+- `default_thread_memory_mode` is meaningful only if upstream Codex memory feature is already enabled outside this project
 
 That means:
 
-- once a thread has a persisted memory mode from Feishu, local `fcodex` resume will carry it forward
+- once a thread has a persisted memory mode from Feishu or local control, local `fcodex` resume will carry it forward
+- project-supported new-thread creation paths may seed an initial persisted memory mode immediately
 - if the thread is still loaded, the new memory mode still follows the unload / reset-backend path rather than promising hot reload
 - divergence caused by bare `codex` or other out-of-contract runtime/config mutations is not normalized by this project
 
