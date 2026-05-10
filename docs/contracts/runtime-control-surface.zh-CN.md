@@ -265,9 +265,9 @@ attach 不是只读查看动作。
 而在真正执行 reset 之前，preview / 拒绝文案应优先把信息分成两层：
 
 - `hard blockers`
-  - 例如 active thread、待处理审批/输入请求、运行中的 Feishu binding、attached binding、live runtime holders
+  - 例如 active thread、待处理审批/输入请求、运行中的 Feishu binding
 - `collateral impact`
-  - 例如当前实例上会被一起影响的 loaded threads 数量与摘要
+  - 例如 attached binding、live runtime holders、当前实例上会被一起影响的 loaded threads 数量与摘要
 
 不要把所有 loaded threads 无差别展开成完整列表洪水。
 

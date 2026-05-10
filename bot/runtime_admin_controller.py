@@ -754,10 +754,6 @@ class RuntimeAdminController:
             lines.append(f"待处理审批/输入请求：`{preview.blocking_pending_request_count}`")
         if preview.running_binding_ids:
             lines.append("运行中的 Feishu bindings：" + self._format_binding_ids(preview.running_binding_ids))
-        if preview.attached_binding_ids:
-            lines.append("attached Feishu bindings：" + self._format_binding_ids(preview.attached_binding_ids))
-        if preview.blocking_holder_labels:
-            lines.append("live runtime holders：" + self._format_holder_labels(preview.blocking_holder_labels))
         if preview.runtime_verification_failed:
             lines.append("backend loaded thread 校验：`unverified`")
         return lines
@@ -774,6 +770,10 @@ class RuntimeAdminController:
         lines = [
             f"当前实例 loaded threads：`{preview.collateral_loaded_thread_count}`",
         ]
+        if preview.attached_binding_ids:
+            lines.append("attached Feishu bindings：" + self._format_binding_ids(preview.attached_binding_ids))
+        if preview.blocking_holder_labels:
+            lines.append("live runtime holders：" + self._format_holder_labels(preview.blocking_holder_labels))
         if preview.collateral_active_loaded_thread_count:
             lines.append(f"其中 active threads：`{preview.collateral_active_loaded_thread_count}`")
         if preview.loaded_thread_preview:

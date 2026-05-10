@@ -847,6 +847,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(preview.collateral_loaded_thread_count, 2)
         self.assertEqual(preview.collateral_active_loaded_thread_count, 1)
         self.assertIn("hard blocker：待处理审批/输入请求：`1`", preview.diagnostics)
+        self.assertIn("collateral impact：attached Feishu bindings：`p2p:ou_user:c1`", preview.diagnostics)
         self.assertIn("collateral impact：当前实例 loaded threads：`2`", preview.diagnostics)
 
     def test_handle_reset_backend_command_renders_hard_blockers_and_collateral_sections(self) -> None:
@@ -887,8 +888,8 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         content = result.card["elements"][0]["content"]
         self.assertIn("**Hard Blockers**", content)
         self.assertIn("待处理审批/输入请求：`1`", content)
-        self.assertIn("attached Feishu bindings：`p2p:ou_user:c1`", content)
         self.assertIn("**Collateral Impact**", content)
+        self.assertIn("attached Feishu bindings：`p2p:ou_user:c1`", content)
         self.assertIn("当前实例 loaded threads：`1`", content)
 
     def test_handle_reset_backend_action_executes_reset_and_returns_result_card(self) -> None:

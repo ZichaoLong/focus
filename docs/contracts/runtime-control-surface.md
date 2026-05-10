@@ -266,11 +266,12 @@ Before the reset actually runs, preview / denial wording should split facts into
 two layers:
 
 - `hard blockers`
-  - for example active threads, pending approval/input requests, running Feishu
-    bindings, attached bindings, and live runtime holders
+  - for example active threads, pending approval/input requests, and running
+    Feishu bindings
 - `collateral impact`
-  - for example the count and short summary of loaded threads on the current
-    instance that would also be affected
+  - for example attached bindings, live runtime holders, and the count / short
+    summary of loaded threads on the current instance that would also be
+    affected
 
 Do not dump every loaded thread into the primary card by default.
 
