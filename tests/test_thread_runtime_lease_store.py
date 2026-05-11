@@ -1,3 +1,4 @@
+import json
 import multiprocessing
 import os
 import pathlib
@@ -63,6 +64,33 @@ def _drain_error_queue(error_queue) -> list[str]:
             return errors
 
 
+def _write_raw_lease(
+    root_dir: pathlib.Path,
+    *,
+    thread_id: str,
+    holders: list[dict[str, object]],
+    owner_instance: str,
+    owner_service_token: str,
+    transfer: dict[str, object] | None = None,
+) -> None:
+    now = time.time()
+    payload: dict[str, object] = {
+        "thread_id": thread_id,
+        "owner_instance": owner_instance,
+        "owner_service_token": owner_service_token,
+        "control_endpoint": "tcp://127.0.0.1:9100",
+        "backend_url": "ws://127.0.0.1:9100",
+        "attached_at": now,
+        "holders": holders,
+    }
+    if transfer is not None:
+        payload["transfer"] = transfer
+    (root_dir / "thread_runtime_leases.json").write_text(
+        json.dumps({thread_id: payload}, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+
 class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
     def test_same_instance_can_hold_multiple_holders(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
@@ -125,10 +153,102 @@ class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
         store.acquire("thread-1", _holder(instance_name="corp-a", holder_id="service:one", service_token="token-a"))
         store.acquire("thread-1", _holder(instance_name="corp-a", holder_id="fcodex:123", service_token="token-a"))
 
-        purged = store.purge_instance("thread-1", instance_name="corp-a", owner_service_token="token-a")
+        purged = store.purge_instance("thread-1", instance_name="corp-a")
 
         self.assertTrue(purged)
         self.assertIsNone(store.load("thread-1"))
+
+    def test_purge_instance_also_removes_stale_same_instance_holders(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        store = ThreadRuntimeLeaseStore(root_dir)
+        now = time.time()
+        pid = os.getpid()
+        _write_raw_lease(
+            root_dir,
+            thread_id="thread-1",
+            owner_instance="corp-a",
+            owner_service_token="token-old",
+            holders=[
+                {
+                    "holder_id": "fcodex:123",
+                    "holder_type": "fcodex",
+                    "instance_name": "corp-a",
+                    "owner_pid": pid,
+                    "owner_service_token": "token-old",
+                    "control_endpoint": "tcp://127.0.0.1:9100",
+                    "backend_url": "ws://127.0.0.1:9100",
+                    "updated_at": now,
+                },
+                {
+                    "holder_id": "service:new",
+                    "holder_type": "service",
+                    "instance_name": "corp-a",
+                    "owner_pid": pid,
+                    "owner_service_token": "token-new",
+                    "control_endpoint": "tcp://127.0.0.1:9101",
+                    "backend_url": "ws://127.0.0.1:9101",
+                    "updated_at": now,
+                },
+            ],
+        )
+
+        purged = store.purge_instance("thread-1", instance_name="corp-a")
+
+        self.assertTrue(purged)
+        self.assertIsNone(store.load("thread-1"))
+
+    def test_purge_all_for_instance_removes_stale_holders_and_transfer(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        store = ThreadRuntimeLeaseStore(root_dir)
+        now = time.time()
+        pid = os.getpid()
+        _write_raw_lease(
+            root_dir,
+            thread_id="thread-1",
+            owner_instance="corp-a",
+            owner_service_token="token-old",
+            holders=[
+                {
+                    "holder_id": "fcodex:123",
+                    "holder_type": "fcodex",
+                    "instance_name": "corp-a",
+                    "owner_pid": pid,
+                    "owner_service_token": "token-old",
+                    "control_endpoint": "tcp://127.0.0.1:9100",
+                    "backend_url": "ws://127.0.0.1:9100",
+                    "updated_at": now,
+                },
+                {
+                    "holder_id": "service:new",
+                    "holder_type": "service",
+                    "instance_name": "corp-a",
+                    "owner_pid": pid,
+                    "owner_service_token": "token-new",
+                    "control_endpoint": "tcp://127.0.0.1:9101",
+                    "backend_url": "ws://127.0.0.1:9101",
+                    "updated_at": now,
+                },
+            ],
+            transfer={
+                "thread_id": "thread-1",
+                "owner_instance": "corp-a",
+                "owner_service_token": "token-old",
+                "target_instance": "corp-b",
+                "target_service_token": "token-b",
+                "reserved_at": now,
+                "expires_at": now + 60.0,
+            },
+        )
+
+        removed = store.purge_all_for_instance(instance_name="corp-a")
+
+        self.assertEqual(removed, ["thread-1"])
+        self.assertIsNone(store.load("thread-1"))
+        self.assertIsNone(store.load_transfer_reservation("thread-1"))
 
     def test_concurrent_process_acquire_preserves_all_holders(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

@@ -2599,7 +2599,6 @@ class CodexHandler(BotHandler):
         self._adapter.stop()
         purged_thread_ids = self._thread_runtime_lease_store.purge_all_for_instance(
             instance_name=self._instance_name,
-            owner_service_token=self._service_instance_lease.owner_token,
         )
         self._adapter.start()
         self._register_instance_runtime()

@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import tempfile
@@ -270,6 +271,62 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
 
         self.assertFalse(preview.allowed)
         self.assertIn("owner service 已变化", preview.reason_text)
+
+    def test_new_service_generation_can_recover_after_instance_purge(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        data_dir = root_dir / "corp-a-data"
+        data_dir.mkdir()
+        lease_store = ThreadRuntimeLeaseStore(root_dir)
+        registry_store = InstanceRegistryStore(root_dir)
+        lease_store.acquire(
+            "thread-1",
+            _holder(instance_name="corp-a", holder_id="fcodex:123", service_token="token-old"),
+        )
+        lease_store.acquire(
+            "thread-1",
+            _holder(instance_name="corp-a", holder_id="service:one", service_token="token-old"),
+        )
+        lease_store.release("thread-1", "service:one")
+        # Simulate a historical mixed-generation lease that already persisted
+        # before the acquire-side guard was tightened.
+        raw_path = root_dir / "thread_runtime_leases.json"
+        payload = json.loads(raw_path.read_text(encoding="utf-8"))
+        payload["thread-1"]["holders"].append(
+            {
+                "holder_id": "service:new",
+                "holder_type": "service",
+                "instance_name": "corp-a",
+                "owner_pid": os.getpid(),
+                "owner_service_token": "token-new",
+                "control_endpoint": "tcp://127.0.0.1:32001",
+                "backend_url": "http://127.0.0.1:1234",
+                "updated_at": time.time(),
+            }
+        )
+        raw_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+        lease_store.purge_all_for_instance(instance_name="corp-a")
+        registry_store.register(
+            build_instance_registry_entry(
+                instance_name="corp-a",
+                service_token="token-new",
+                control_endpoint="tcp://127.0.0.1:32001",
+                app_server_url="http://127.0.0.1:1234",
+                config_dir=data_dir / "config",
+                data_dir=data_dir,
+                owner_pid=os.getpid(),
+            )
+        )
+
+        preview = preview_thread_runtime_holder_acquire(
+            thread_id="thread-1",
+            holder=_holder(instance_name="corp-a", holder_id="service:new", service_token="token-new"),
+            lease_store=lease_store,
+            registry_store=registry_store,
+        )
+
+        self.assertTrue(preview.allowed)
 
     def test_transfer_rejects_when_owner_still_has_other_live_holders(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

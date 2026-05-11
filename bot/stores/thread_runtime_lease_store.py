@@ -312,11 +312,9 @@ class ThreadRuntimeLeaseStore:
         thread_id: str,
         *,
         instance_name: str,
-        owner_service_token: str | None = None,
     ) -> bool:
         normalized_thread_id = self._normalize_thread_id(thread_id)
         normalized_instance_name = str(instance_name or "").strip().lower()
-        normalized_token = str(owner_service_token or "").strip()
         if not normalized_thread_id or not normalized_instance_name:
             return False
         with self._locked_data() as data:
@@ -324,19 +322,37 @@ class ThreadRuntimeLeaseStore:
             lease = self._lease_from_data(normalized_thread_id, raw)
             transfer = self._transfer_from_data(normalized_thread_id, raw)
             if lease is None:
-                return False
+                if transfer is None or not self._transfer_touches_instance(
+                    transfer,
+                    normalized_instance_name,
+                ):
+                    return False
+                cleaned = self._serialize_entry(None, None)
+                if cleaned is None:
+                    data.pop(normalized_thread_id, None)
+                else:
+                    data[normalized_thread_id] = cleaned
+                self._write_all_unlocked(data)
+                return True
+            # Purge is instance-scoped cleanup, not token-scoped filtering.
+            # Once a live generation explicitly purges an instance, any
+            # same-instance holder left under another token is stale residue
+            # from an older generation and must be removed as well.
             retained = tuple(
                 holder
                 for holder in lease.holders
-                if not (
-                    holder.instance_name == normalized_instance_name
-                    and (not normalized_token or holder.owner_service_token == normalized_token)
-                )
+                if holder.instance_name != normalized_instance_name
             )
-            if len(retained) == len(lease.holders):
+            cleared_transfer = transfer
+            if transfer is not None and self._transfer_touches_instance(
+                transfer,
+                normalized_instance_name,
+            ):
+                cleared_transfer = None
+            if len(retained) == len(lease.holders) and cleared_transfer is transfer:
                 return False
             if not retained:
-                cleaned = self._serialize_entry(None, transfer)
+                cleaned = self._serialize_entry(None, cleared_transfer)
                 if cleaned is None:
                     data.pop(normalized_thread_id, None)
                 else:
@@ -353,7 +369,7 @@ class ThreadRuntimeLeaseStore:
                         attached_at=lease.attached_at,
                         holders=retained,
                     ),
-                    transfer,
+                    cleared_transfer,
                 )
             self._write_all_unlocked(data)
         return True
@@ -362,10 +378,8 @@ class ThreadRuntimeLeaseStore:
         self,
         *,
         instance_name: str,
-        owner_service_token: str | None = None,
     ) -> list[str]:
         normalized_instance_name = str(instance_name or "").strip().lower()
-        normalized_token = str(owner_service_token or "").strip()
         if not normalized_instance_name:
             return []
         removed_thread_ids: list[str] = []
@@ -383,17 +397,14 @@ class ThreadRuntimeLeaseStore:
                     retained = tuple(
                         holder
                         for holder in lease.holders
-                        if not (
-                            holder.instance_name == normalized_instance_name
-                            and (not normalized_token or holder.owner_service_token == normalized_token)
-                        )
+                        if holder.instance_name != normalized_instance_name
                     )
                     matched = len(retained) != len(lease.holders)
                 cleared_transfer = transfer
-                if transfer is not None and (
-                    transfer.owner_instance == normalized_instance_name
-                    or transfer.target_instance == normalized_instance_name
-                ) and (not normalized_token or transfer.owner_service_token == normalized_token or transfer.target_service_token == normalized_token):
+                if transfer is not None and self._transfer_touches_instance(
+                    transfer,
+                    normalized_instance_name,
+                ):
                     cleared_transfer = None
                     matched = True
                 if not matched:
@@ -605,6 +616,16 @@ class ThreadRuntimeLeaseStore:
         return (
             transfer.target_instance == holder.instance_name
             and transfer.target_service_token == holder.owner_service_token
+        )
+
+    @staticmethod
+    def _transfer_touches_instance(
+        transfer: ThreadRuntimeTransferReservation,
+        instance_name: str,
+    ) -> bool:
+        return (
+            transfer.owner_instance == instance_name
+            or transfer.target_instance == instance_name
         )
 
     @staticmethod
