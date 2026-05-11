@@ -155,6 +155,8 @@ class AgentAdapter(ABC):
         cwd: str,
         profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
+        model: str | None = None,
+        model_provider: str | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:

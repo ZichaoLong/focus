@@ -22,7 +22,6 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from bot.codex_config_reader import resolve_profile_from_codex_config
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 from websockets.sync.server import serve
@@ -41,6 +40,12 @@ from bot.thread_memory_mode import (
     build_thread_memory_config_override,
     deep_merge_config_overrides,
     normalize_thread_memory_mode,
+)
+from bot.thread_resume_profile_setting import (
+    build_thread_resume_profile_setting,
+    format_thread_resume_profile_missing_fields,
+    thread_resume_profile_setting_from_record,
+    thread_resume_profile_setting_missing_fields,
 )
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
@@ -289,6 +294,8 @@ class _ProxyInteractionGate:
         service_token: str = "",
         holder_pid: int,
         thread_profile_seed: str = "",
+        thread_profile_model_seed: str = "",
+        thread_profile_model_provider_seed: str = "",
         thread_memory_mode_seed: str = "",
         resume_profile_hint: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
@@ -305,8 +312,12 @@ class _ProxyInteractionGate:
         self._global_data_dir = normalized_global_data_dir
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
-        self._initial_thread_profile_seed = str(thread_profile_seed or "").strip()
-        self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed
+        self._initial_thread_profile_seed = build_thread_resume_profile_setting(
+            thread_profile_seed,
+            model=thread_profile_model_seed,
+            model_provider=thread_profile_model_provider_seed,
+        )
+        self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed.profile
         self._initial_thread_memory_mode_seed = str(thread_memory_mode_seed or "").strip()
         self._initial_thread_memory_mode_seed_consumed = not self._initial_thread_memory_mode_seed
         self._resume_profile_hint = str(resume_profile_hint or "").strip()
@@ -405,26 +416,49 @@ class _ProxyInteractionGate:
         if not normalized_thread_id:
             return
         with self._lock:
-            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed:
+            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed.profile:
                 return
-            profile = self._initial_thread_profile_seed
+            setting = self._initial_thread_profile_seed
             self._initial_thread_profile_seed_consumed = True
         try:
-            resolved = resolve_profile_from_codex_config(profile)
             ThreadResumeProfileStore(self._global_data_dir).save(
                 normalized_thread_id,
-                profile=profile,
-                model=resolved.model,
-                model_provider=resolved.model_provider,
+                profile=setting.profile,
+                model=setting.model,
+                model_provider=setting.model_provider,
             )
         except Exception as exc:
             with self._lock:
-                if self._initial_thread_profile_seed == profile:
+                if self._initial_thread_profile_seed == setting:
                     self._initial_thread_profile_seed_consumed = False
             print(
                 f"warning: failed to persist initial thread profile seed for `{normalized_thread_id}`: {exc}",
                 file=sys.stderr,
             )
+
+    def _apply_initial_thread_profile_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return payload
+        with self._lock:
+            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed.profile:
+                return payload
+            setting = self._initial_thread_profile_seed
+        existing_config = params.get("config")
+        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+        merged_config = deep_merge_config_overrides(
+            normalized_existing_config,
+            {"profile": setting.profile},
+        )
+        updated_payload = dict(payload)
+        updated_params = dict(params)
+        updated_params["config"] = merged_config
+        if setting.model:
+            updated_params["model"] = setting.model
+        if setting.model_provider:
+            updated_params["modelProvider"] = setting.model_provider
+        updated_payload["params"] = updated_params
+        return updated_payload
 
     def _initial_thread_memory_profile_hint(self, params: dict[str, Any]) -> str:
         existing_config = params.get("config")
@@ -432,7 +466,7 @@ class _ProxyInteractionGate:
             profile_name = str(existing_config.get("profile", "") or "").strip()
             if profile_name:
                 return profile_name
-        return self._initial_thread_profile_seed
+        return self._initial_thread_profile_seed.profile
 
     def _apply_initial_thread_memory_mode_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
         params = payload.get("params")
@@ -480,6 +514,53 @@ class _ProxyInteractionGate:
                 file=sys.stderr,
             )
 
+    def _apply_saved_thread_profile_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
+        # Wrapper launch args are only hints. The persisted thread-wise
+        # next-load profile slice is enforced here at the actual
+        # `thread/resume` RPC boundary so unloaded resume reuses the stored
+        # tuple instead of whatever the local CLI currently resolved.
+        thread_id = _payload_thread_id(payload)
+        if not thread_id:
+            return payload
+        profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+        profile_setting = thread_resume_profile_setting_from_record(profile_record)
+        if profile_setting is None or not str(profile_setting.profile or "").strip():
+            return payload
+        missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
+        if missing_fields:
+            missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+            raise RuntimeError(
+                "当前 thread 已持久化的 thread-wise profile slice 不完整："
+                f"thread=`{thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
+                "当前按 fail-close 拒绝继续。"
+                "请改用飞书 `/profile <name>` 或本地 "
+                "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
+            )
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return payload
+        existing_config = params.get("config")
+        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+        merged_config = deep_merge_config_overrides(
+            normalized_existing_config,
+            {"profile": profile_setting.profile},
+        )
+        updated_payload = dict(payload)
+        updated_params = dict(params)
+        model = profile_setting.model
+        model_provider = profile_setting.model_provider
+        if model:
+            updated_params["model"] = model
+        else:
+            updated_params.pop("model", None)
+        if model_provider:
+            updated_params["modelProvider"] = model_provider
+        else:
+            updated_params.pop("modelProvider", None)
+        updated_params["config"] = merged_config
+        updated_payload["params"] = updated_params
+        return updated_payload
+
     def _apply_saved_thread_memory_mode_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
         thread_id = _payload_thread_id(payload)
         if not thread_id:
@@ -523,8 +604,10 @@ class _ProxyInteractionGate:
         method = payload.get("method")
         if isinstance(method, str):
             if method == "thread/resume":
+                payload = self._apply_saved_thread_profile_for_resume(payload)
                 payload = self._apply_saved_thread_memory_mode_for_resume(payload)
             elif method == "thread/start":
+                payload = self._apply_initial_thread_profile_seed(payload)
                 payload = self._apply_initial_thread_memory_mode_seed(payload)
             thread_id = _payload_thread_id(payload)
             request_id = payload.get("id")
@@ -687,6 +770,8 @@ def run_proxy(
     instance_name: str = "",
     service_token: str = "",
     thread_profile_seed: str = "",
+    thread_profile_model_seed: str = "",
+    thread_profile_model_provider_seed: str = "",
     thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
     listen_host: str = "127.0.0.1",
@@ -767,6 +852,8 @@ def run_proxy(
                     service_token=service_token,
                     holder_pid=holder_pid,
                     thread_profile_seed=thread_profile_seed,
+                    thread_profile_model_seed=thread_profile_model_seed,
+                    thread_profile_model_provider_seed=thread_profile_model_provider_seed,
                     thread_memory_mode_seed=thread_memory_mode_seed,
                     resume_profile_hint=resume_profile_hint,
                     runtime_lease_keeper=runtime_lease_keeper,
@@ -835,6 +922,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--instance", default="")
     parser.add_argument("--service-token", default="")
     parser.add_argument("--thread-profile-seed", default="")
+    parser.add_argument("--thread-profile-model-seed", default="")
+    parser.add_argument("--thread-profile-model-provider-seed", default="")
     parser.add_argument("--thread-memory-mode-seed", default="")
     parser.add_argument("--resume-profile-hint", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
@@ -849,6 +938,8 @@ def main(argv: list[str] | None = None) -> None:
         instance_name=args.instance,
         service_token=args.service_token,
         thread_profile_seed=args.thread_profile_seed,
+        thread_profile_model_seed=args.thread_profile_model_seed,
+        thread_profile_model_provider_seed=args.thread_profile_model_provider_seed,
         thread_memory_mode_seed=args.thread_memory_mode_seed,
         resume_profile_hint=args.resume_profile_hint,
         listen_host=args.listen_host,

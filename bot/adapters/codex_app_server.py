@@ -153,6 +153,8 @@ class CodexAppServerAdapter(AgentAdapter):
         cwd: str,
         profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
+        model: str | None = None,
+        model_provider: str | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
@@ -161,6 +163,8 @@ class CodexAppServerAdapter(AgentAdapter):
             include_service_name=True,
             profile=profile,
             config_overrides=config_overrides,
+            model=model,
+            model_provider=model_provider,
             approval_policy=approval_policy,
             sandbox=sandbox,
         )
@@ -432,6 +436,8 @@ class CodexAppServerAdapter(AgentAdapter):
         include_service_name: bool,
         profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
+        model: str | None = None,
+        model_provider: str | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> dict[str, Any]:
@@ -441,8 +447,8 @@ class CodexAppServerAdapter(AgentAdapter):
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "personality": self._config.personality or None,
-            "model": self._config.model or None,
-            "modelProvider": self._config.model_provider or None,
+            "model": model or self._config.model or None,
+            "modelProvider": model_provider or self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
         merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)

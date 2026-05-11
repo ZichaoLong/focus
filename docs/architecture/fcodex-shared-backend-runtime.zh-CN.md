@@ -188,11 +188,16 @@ fcodex shell wrapper
 - 显式 `-p/--profile` 时，对本次启动创建的首个新 thread 写入一次性 seed
 - 对 `resume`，支持 thread-name 解析与 thread-wise profile 注入 / 持久化
 - 通过一个轻量本地代理修补 cwd
+- 对 wrapper 管辖的显式 profile 路径，profile slice 会先按共享用户级配置
+  解析，再由代理在 `thread/start` / `thread/resume` 上强制带入；当前 cwd /
+  project-local config 不再有权重写既有 thread-wise profile 合同
 
 其中 profile 职责边界是显式的：
 
 - wrapper：对已有 thread 读写 thread-wise resume profile，并决定本次启动是否携带一次性的“新 thread seed”
-- proxy：只在第一次 `thread/start` 成功且返回具体 `thread_id` 后，把这个 seed 精确持久化一次
+- proxy：在实际 `thread/start` / `thread/resume` 边界强制带入这份 seed，
+  并在第一次 `thread/start` 成功且返回具体 `thread_id` 后，把新 thread seed
+  精确持久化一次
 
 但一旦进入运行中的 TUI，命令语义就回到 upstream Codex 的默认行为。
 

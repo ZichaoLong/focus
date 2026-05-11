@@ -219,13 +219,18 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
   that launch
 - thread-name resume resolution plus thread-wise profile injection / persistence
 - cwd patching through a thin local proxy
+- for wrapper-managed explicit profile paths, the profile slice is pinned from
+  the shared user-level config and enforced by the proxy on `thread/start` /
+  `thread/resume`; current cwd / project-local config does not get to redefine
+  an existing thread-wise profile contract
 
 The profile split is explicit:
 
 - wrapper: read/write thread-wise resume profile state for existing threads,
   and decide whether this launch carries an initial new-thread seed
-- proxy: persist that initial seed exactly once, only after the first
-  successful `thread/start` returns a concrete `thread_id`
+- proxy: enforce that seed at the actual `thread/start` / `thread/resume`
+  boundary, then persist the initial new-thread seed exactly once after the
+  first successful `thread/start` returns a concrete `thread_id`
 
 Inside the running TUI, however, command semantics return to upstream Codex
 behavior.

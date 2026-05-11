@@ -88,6 +88,40 @@
 - `live runtime owner` 关注谁持有 live runtime
 - `interaction owner` 关注谁拥有当前这轮交互控制权
 
+### 2.6 binding-wise turn-time settings
+
+当前飞书侧有一类设置，不属于 thread-wise next-load state，也不属于 loaded thread 的永久 snapshot 真相。
+
+它们属于：
+
+- **binding-wise turn-time settings**
+
+当前明确对外的用户面入口包括：
+
+- `/approval`
+- `/sandbox`
+- `/permissions`
+- `/collab-mode`
+
+它们的合同是：
+
+- 设置值持久化在当前 Feishu binding 上
+- 由当前 binding 在创建 thread 或发起 `turn/start` 时注入
+- 若在 turn 开始前改动，这一轮即可生效
+- 若当前 turn 已在运行，则从下一轮生效
+
+它们不是：
+
+- thread-wise next-load state
+- 所有前端共享的一份 thread 级事实源
+- 对 loaded thread 任意时刻都稳定可重读的 live runtime snapshot
+
+因此：
+
+- 一个 Feishu 会话保存的这类设置，不会自动变成另一个 Feishu 会话或本地 `fcodex` 的默认值
+- 另一个前端完全可以在自己的 turn 上注入不同的运行时覆盖项
+- `fcodex` 默认也不参与这套 Feishu binding-wise 持久化模型
+
 ## 3. 强约束
 
 ### 3.1 首次 attach / 最后一次 detach

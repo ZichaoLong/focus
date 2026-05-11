@@ -12,6 +12,11 @@ from bot.execution_transcript import ExecutionTranscript
 from bot.runtime_card_publisher import build_execution_card_model
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, ExecutionStateChanged, RuntimeStateDict
 from bot.runtime_view import build_runtime_view
+from bot.thread_resume_profile_setting import (
+    format_thread_resume_profile_missing_fields,
+    thread_resume_profile_setting_from_record,
+    thread_resume_profile_setting_missing_fields,
+)
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.reason_codes import ReasonedCheck
 
@@ -504,9 +509,20 @@ class PromptTurnEntryController:
 
         def _start_turn_once(bound_thread_id: str) -> dict[str, Any]:
             profile_record = self._thread_resume_profile_for_thread(bound_thread_id)
-            thread_profile = str(getattr(profile_record, "profile", "") or "").strip()
-            thread_model = str(getattr(profile_record, "model", "") or "").strip()
-            thread_model_provider = str(getattr(profile_record, "model_provider", "") or "").strip()
+            profile_setting = thread_resume_profile_setting_from_record(profile_record)
+            missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
+            if profile_setting is not None and missing_fields:
+                missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+                raise ValueError(
+                    "当前 thread 已持久化的 thread-wise profile slice 不完整："
+                    f"thread=`{bound_thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
+                    "当前按 fail-close 拒绝继续。"
+                    "请改用飞书 `/profile <name>` 或本地 "
+                    "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
+                )
+            thread_profile = str(getattr(profile_setting, "profile", "") or "").strip()
+            thread_model = str(getattr(profile_setting, "model", "") or "").strip()
+            thread_model_provider = str(getattr(profile_setting, "model_provider", "") or "").strip()
             return self._start_turn(
                 thread_id=bound_thread_id,
                 input_items=effective_input_items,

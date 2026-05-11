@@ -116,7 +116,10 @@ For thread-targeted resume:
 
 This rule is identical locally and in Feishu:
 
-- for supported resume paths, the same thread should use the same persisted thread-wise setting when it moves from unloaded back to loaded
+- for supported resume paths, the same thread should use the same persisted thread-wise next-load state when it moves from unloaded back to loaded
+- that logical next-load state currently has two slices:
+  - profile slice: `profile`, `model`, `model_provider`
+  - memory slice: `memory mode`
 - binding only answers “which thread does this chat remember”
 - attach / detach only answers “does this Feishu chat receive push”
 
@@ -139,7 +142,20 @@ The direct-write rule for an existing thread is defined in
 
 Therefore:
 
-- `fcodex resume <thread> -p <profile>` must reject while the thread is still loaded
+- for this project, the “effective next-load profile setting” behind explicit
+  profile mutation is resolved from the shared user-level
+  `CODEX_HOME/config.toml` (with runtime provider fallback when needed), not
+  from per-cwd / project-local config
+- if that explicit resolution cannot produce a concrete tuple
+  `profile + model + model_provider`, the command must fail closed
+- `fcodex resume <thread> -p <profile>` must reject while the thread is still loaded, except for the idempotent case where the requested effective next-load profile setting already equals the persisted thread-wise setting for that thread
+- for profile, this equality check covers the full persisted next-load tuple: `profile`, `model`, `model_provider`
+- if the profile name is the same but resolved `model` or `model_provider` differs, that is not no-op reuse; it is still a profile-setting change and must follow the normal direct-write / reset-backend rule
+- for an unloaded thread, plain `fcodex resume <thread>` reuses the persisted thread-wise tuple as-is
+- if that persisted tuple is incomplete, supported local resume paths must fail
+  closed rather than silently refilling it from current config or backend defaults
+- for an unloaded thread, explicit `fcodex resume <thread> -p <profile>` requests the profile name's current effective next-load setting and rewrites the persisted tuple before resume
+- for a loaded thread, plain `fcodex resume <thread>` only joins the live runtime; it does not reconcile persisted-profile drift against current local config
 - that rejection text should explicitly identify which instance backend still keeps the thread loaded, and which instance backend must be reset if the user wants the change to take effect immediately
 - the user should not be forced to reason about release-runtime / unsubscribe first
 - the preferred recovery path is Feishu `/profile <name>`, with reset-backend when needed

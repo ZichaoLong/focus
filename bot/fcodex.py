@@ -32,8 +32,17 @@ from bot.thread_resolution import (
     looks_like_thread_id,
     resolve_resume_name_via_remote_backend,
 )
-from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
+from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord, ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
+from bot.thread_resume_profile_setting import (
+    ThreadResumeProfileSetting,
+    describe_thread_resume_profile_setting_diff,
+    format_thread_resume_profile_missing_fields,
+    resolve_thread_resume_profile_setting,
+    thread_resume_profile_setting_from_record,
+    thread_resume_profile_setting_missing_fields,
+    thread_resume_profile_settings_equal,
+)
 from bot.thread_profile_mutability import (
     check_thread_resume_profile_mutable,
     format_thread_resume_profile_denial_for_local_cli,
@@ -442,32 +451,84 @@ def _thread_resume_profile_mutable(
 
 
 def _persist_thread_resume_profile_for_resume(
+    thread_id: str,
+    setting: ThreadResumeProfileSetting,
+) -> None:
+    ThreadResumeProfileStore(global_data_dir()).save(
+        thread_id,
+        profile=setting.profile,
+        model=setting.model,
+        model_provider=setting.model_provider,
+    )
+
+
+def _runtime_provider_for_profile(
     cfg: dict,
     app_server_url: str,
-    thread_id: str,
     profile: str,
-) -> None:
+) -> str:
     normalized_profile = str(profile or "").strip()
     if not normalized_profile:
-        return
-    runtime_provider = ""
+        return ""
     adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
     try:
         runtime_config = adapter.read_runtime_config()
         for item in runtime_config.profiles:
             if item.name == normalized_profile:
-                runtime_provider = str(item.model_provider or "").strip()
-                break
+                return str(item.model_provider or "").strip()
     except Exception:
-        runtime_provider = ""
+        return ""
     finally:
         adapter.stop()
+    return ""
+
+
+def _resolve_thread_resume_profile_setting_for_resume(
+    cfg: dict,
+    app_server_url: str,
+    profile: str,
+) -> ThreadResumeProfileSetting:
+    normalized_profile = str(profile or "").strip()
+    runtime_provider = _runtime_provider_for_profile(cfg, app_server_url, normalized_profile)
     resolved = resolve_profile_from_codex_config(normalized_profile)
-    ThreadResumeProfileStore(global_data_dir()).save(
-        thread_id,
-        profile=normalized_profile,
-        model=resolved.model,
-        model_provider=resolved.model_provider or runtime_provider,
+    return resolve_thread_resume_profile_setting(
+        normalized_profile,
+        resolved=resolved,
+        runtime_provider=runtime_provider,
+    )
+
+
+def _require_concrete_explicit_profile_setting(
+    setting: ThreadResumeProfileSetting,
+) -> ThreadResumeProfileSetting:
+    missing_fields = thread_resume_profile_setting_missing_fields(setting)
+    if not missing_fields:
+        return setting
+    missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+    raise ValueError(
+        "当前 `-p/--profile` 解析出的 thread-wise profile slice 不完整："
+        f"profile=`{setting.profile or '（未设置）'}`，缺少：{missing_text}。"
+        "本项目显式 profile 改写只读取共享用户级 `CODEX_HOME/config.toml`，"
+        "不读取当前 cwd / 项目本地 config。"
+    )
+
+
+def _require_concrete_persisted_profile_record(
+    thread_id: str,
+    record: ThreadResumeProfileRecord,
+) -> ThreadResumeProfileSetting:
+    setting = thread_resume_profile_setting_from_record(record)
+    missing_fields = thread_resume_profile_setting_missing_fields(setting)
+    if not missing_fields:
+        assert setting is not None
+        return setting
+    missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+    raise ValueError(
+        "当前 thread 已持久化的 thread-wise profile slice 不完整："
+        f"thread=`{thread_id}`，profile=`{record.profile}`，缺少：{missing_text}。"
+        "当前按 fail-close 拒绝继续。"
+        "请显式执行 `fcodex resume <thread> -p <profile>` 重新写入完整设置，"
+        "或改用飞书 `/profile <name>`。"
     )
 
 
@@ -477,13 +538,16 @@ def _inject_saved_thread_resume_profile_if_needed(user_args: list[str], thread_i
     record = ThreadResumeProfileStore(global_data_dir()).load(thread_id)
     if record is None or not record.profile:
         return list(user_args)
+    # Wrapper-side `--profile` is only a CLI hint for upstream TUI/bootstrap.
+    # The real persisted next-load profile slice is enforced later by the
+    # local proxy when it rewrites `thread/resume`.
     return _inject_profile_arg_if_missing(user_args, record.profile)
 
 
 @dataclass(frozen=True, slots=True)
 class _WrapperProfileLaunchPlan:
     user_args: list[str]
-    thread_profile_seed: str = ""
+    thread_profile_seed: ThreadResumeProfileSetting | None = None
     thread_memory_mode_seed: str = ""
     resume_profile_hint: str = ""
 
@@ -502,8 +566,8 @@ def _build_wrapper_profile_launch_plan(
     - existing-thread resume profile read/write
     - deciding whether this launch carries a one-time new-thread seed
 
-    The proxy later owns persisting that seed once the first real `thread_id`
-    is returned by `thread/start`.
+    The proxy later owns enforcing that seed at the actual `thread/start` RPC
+    boundary, then persisting it once the first real `thread_id` is returned.
     """
     planned_args = list(user_args)
     configured_default_thread_memory_mode = CodexAppServerConfig.from_dict(cfg).default_thread_memory_mode
@@ -512,14 +576,31 @@ def _build_wrapper_profile_launch_plan(
     if resume_thread_id:
         resume_profile_hint = ""
         saved_profile_record = ThreadResumeProfileStore(global_data_dir()).load(resume_thread_id)
+        desired_setting: ThreadResumeProfileSetting | None = None
         if explicit_profile:
             resume_profile_hint = explicit_profile
-            if saved_profile_record is not None and str(saved_profile_record.profile or "").strip() == explicit_profile:
+            try:
+                desired_setting = _require_concrete_explicit_profile_setting(
+                    _resolve_thread_resume_profile_setting_for_resume(
+                        cfg,
+                        app_server_url,
+                        explicit_profile,
+                    )
+                )
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                raise SystemExit(2)
+            if thread_resume_profile_settings_equal(saved_profile_record, desired_setting):
                 return _WrapperProfileLaunchPlan(
                     user_args=planned_args,
                     resume_profile_hint=resume_profile_hint,
                 )
         elif saved_profile_record is not None:
+            try:
+                _require_concrete_persisted_profile_record(resume_thread_id, saved_profile_record)
+            except ValueError as exc:
+                print(str(exc), file=sys.stderr)
+                raise SystemExit(2)
             resume_profile_hint = str(saved_profile_record.profile or "").strip()
         elif ThreadMemoryModeStore(global_data_dir()).load(resume_thread_id) is not None:
             adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
@@ -538,13 +619,38 @@ def _build_wrapper_profile_launch_plan(
                 target_instance_name=instance_name,
             )
             if not can_write:
+                if (
+                    saved_profile_record is not None
+                    and str(saved_profile_record.profile or "").strip() == explicit_profile
+                ):
+                    desired_setting = desired_setting or _require_concrete_explicit_profile_setting(
+                        _resolve_thread_resume_profile_setting_for_resume(
+                            cfg,
+                            app_server_url,
+                            explicit_profile,
+                        )
+                    )
+                    diffs = describe_thread_resume_profile_setting_diff(saved_profile_record, desired_setting)
+                    if diffs:
+                        diff_text = "；".join(diffs)
+                        deny_reason = (
+                            "当前 `-p/--profile` 指向同名 profile，但它解析出的 thread 级 next-load 设置已变化："
+                            f"{diff_text}。"
+                            "要让这些变化生效，必须等该 thread truly unloaded，或先 reset backend。"
+                            f"\n{deny_reason}"
+                        )
                 print(deny_reason, file=sys.stderr)
                 raise SystemExit(2)
+            desired_setting = desired_setting or _require_concrete_explicit_profile_setting(
+                _resolve_thread_resume_profile_setting_for_resume(
+                    cfg,
+                    app_server_url,
+                    explicit_profile,
+                )
+            )
             _persist_thread_resume_profile_for_resume(
-                cfg,
-                app_server_url,
                 resume_thread_id,
-                explicit_profile,
+                desired_setting,
             )
             return _WrapperProfileLaunchPlan(
                 user_args=planned_args,
@@ -555,9 +661,20 @@ def _build_wrapper_profile_launch_plan(
             resume_profile_hint=resume_profile_hint,
         )
     if explicit_profile:
+        try:
+            desired_setting = _require_concrete_explicit_profile_setting(
+                _resolve_thread_resume_profile_setting_for_resume(
+                    cfg,
+                    app_server_url,
+                    explicit_profile,
+                )
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            raise SystemExit(2)
         return _WrapperProfileLaunchPlan(
             user_args=planned_args,
-            thread_profile_seed=explicit_profile,
+            thread_profile_seed=desired_setting,
             thread_memory_mode_seed=configured_default_thread_memory_mode,
         )
     return _WrapperProfileLaunchPlan(
@@ -630,6 +747,8 @@ def _launch_local_cwd_proxy(
     instance_name: str = DEFAULT_INSTANCE_NAME,
     service_token: str = "",
     thread_profile_seed: str = "",
+    thread_profile_model_seed: str = "",
+    thread_profile_model_provider_seed: str = "",
     thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
 ) -> tuple[str, subprocess.Popen[str]]:
@@ -651,6 +770,10 @@ def _launch_local_cwd_proxy(
         service_token,
         "--thread-profile-seed",
         thread_profile_seed,
+        "--thread-profile-model-seed",
+        thread_profile_model_seed,
+        "--thread-profile-model-provider-seed",
+        thread_profile_model_provider_seed,
         "--thread-memory-mode-seed",
         thread_memory_mode_seed,
         "--resume-profile-hint",
@@ -773,7 +896,7 @@ def main() -> None:
 
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
-    thread_profile_seed = ""
+    thread_profile_seed: ThreadResumeProfileSetting | None = None
     thread_memory_mode_seed = ""
     resume_profile_hint = ""
     if not _has_explicit_remote(user_args):
@@ -805,7 +928,11 @@ def main() -> None:
                 app_server_url,
                 effective_cwd,
                 data_dir,
-                thread_profile_seed=thread_profile_seed,
+                thread_profile_seed=thread_profile_seed.profile if thread_profile_seed is not None else "",
+                thread_profile_model_seed=thread_profile_seed.model if thread_profile_seed is not None else "",
+                thread_profile_model_provider_seed=(
+                    thread_profile_seed.model_provider if thread_profile_seed is not None else ""
+                ),
                 thread_memory_mode_seed=thread_memory_mode_seed,
                 resume_profile_hint=resume_profile_hint,
                 **proxy_kwargs,

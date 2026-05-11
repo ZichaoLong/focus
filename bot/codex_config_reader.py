@@ -1,11 +1,16 @@
 """
-Read codex config.toml to resolve profile model/model_provider locally.
+Read the shared user-level CODEX_HOME/config.toml for thread-wise profile slices.
 
-Workaround: the app-server's turn/start has no config field for profile,
-and thread/resume's slow path overwrites model from persisted metadata.
-The codex TUI avoids this by sending explicit model + model_provider
-typesafe fields (resolved from its local Config). feishu-codex replicates
-this by reading ~/.codex/config.toml directly.
+This is an intentional feishu-codex contract choice:
+
+- explicit thread-wise profile mutation resolves against the shared user-level
+  config only
+- it deliberately does not follow per-cwd / project-local config layers used by
+  upstream bare Codex
+
+The app-server's thread-start / thread-resume protocol can accept explicit
+`model` + `modelProvider` fields. feishu-codex uses this local reader to pin a
+thread-stable profile slice at those RPC boundaries.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from __future__ import annotations
 import logging
 import os
 import tomllib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -26,7 +32,16 @@ class ResolvedProfileConfig:
 
 
 def resolve_profile_from_codex_config(profile_name: str) -> ResolvedProfileConfig:
-    """Extract model and model_provider for *profile_name* from config.toml."""
+    """Extract the effective model/model_provider for *profile_name*.
+
+    This intentionally mirrors only the shared user-level subset that matters
+    for feishu-codex thread-wise resume persistence:
+
+    - profile.model -> top-level model
+    - profile.model_provider -> top-level model_provider
+
+    It does not load or merge per-project config from cwd.
+    """
     if not profile_name:
         return ResolvedProfileConfig()
     config_path = _codex_config_path()
@@ -42,8 +57,11 @@ def resolve_profile_from_codex_config(profile_name: str) -> ResolvedProfileConfi
     if not isinstance(profile, dict):
         return ResolvedProfileConfig()
     return ResolvedProfileConfig(
-        model=str(profile.get("model", "")),
-        model_provider=str(profile.get("model_provider", "")),
+        model=_read_string(profile, "model") or _read_string(config, "model"),
+        model_provider=(
+            _read_string(profile, "model_provider", "modelProvider")
+            or _read_string(config, "model_provider", "modelProvider")
+        ),
     )
 
 
@@ -52,3 +70,14 @@ def _codex_config_path() -> Path | None:
     codex_home = Path(codex_home_env) if codex_home_env else Path.home() / ".codex"
     config_path = codex_home / "config.toml"
     return config_path if config_path.is_file() else None
+
+
+def _read_string(mapping: Mapping[str, object], *keys: str) -> str:
+    for key in keys:
+        value = mapping.get(key)
+        if value is None:
+            continue
+        normalized = str(value).strip()
+        if normalized:
+            return normalized
+    return ""

@@ -404,6 +404,19 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self.assertEqual(env["thread_profiles"], {})
         self.assertIsNone(env["start_turn_calls"][-1]["profile"])
 
+    def test_start_prompt_turn_rejects_incomplete_persisted_profile_slice(self) -> None:
+        env = self._make_controller()
+        controller = env["controller"]
+        self._bind_thread(env, thread_id="thread-1")
+        env["thread_profiles"]["thread-1"] = "work"
+
+        result = controller.start_prompt_turn_result("ou_user", "c1", "hello", message_id="msg-1")
+
+        self.assertFalse(result.started)
+        self.assertIn("thread-wise profile slice 不完整", result.reason_text)
+        self.assertEqual(env["start_turn_calls"], [])
+        self.assertEqual(env["scheduled_watchdogs"], [])
+
     def test_start_prompt_turn_fails_closed_when_execution_card_cannot_be_sent(self) -> None:
         env = self._make_controller()
         controller = env["controller"]

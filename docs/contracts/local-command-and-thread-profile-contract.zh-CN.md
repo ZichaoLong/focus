@@ -116,7 +116,10 @@
 
 这条规则在本地与飞书侧完全一致：
 
-- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 thread-wise 设置
+- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 thread-wise next-load state
+- 这份逻辑上的 next-load state 当前有两个 slice：
+  - profile slice：`profile`、`model`、`model_provider`
+  - memory slice：`memory mode`
 - binding 只决定“当前会话记住哪个 thread”
 - attach / detach 只决定“当前飞书会话收不收推送”
 
@@ -139,7 +142,20 @@
 
 因此：
 
-- `fcodex resume <thread> -p <profile>` 遇到 loaded thread 必须拒绝
+- 对本项目而言，显式 profile 改写背后的“有效 next-load profile 设置”，
+  来源是共享的用户级 `CODEX_HOME/config.toml`
+  （必要时再用 runtime profile mapping 补 provider），而不是按 cwd /
+  project-local config 动态解析
+- 如果这条显式解析最终得不到完整的
+  `profile + model + model_provider` 三元组，命令必须 fail-close
+- `fcodex resume <thread> -p <profile>` 遇到 loaded thread 原则上必须拒绝，但如果请求的有效 next-load profile 设置已等于该 thread 当前持久化设置，则允许按 no-op reuse 路径继续
+- 对 profile 而言，这里的相等判断覆盖完整的持久化 next-load 三元组：`profile`、`model`、`model_provider`
+- 如果 profile 名字相同，但解析出的 `model` 或 `model_provider` 已不同，这就不属于 no-op reuse；它仍然是 profile 设置变更，必须走正常的 direct-write / reset-backend 规则
+- 对于 unloaded thread，普通 `fcodex resume <thread>` 应原样复用当前已持久化的 thread-wise 三元组
+- 如果这份持久化三元组本身不完整，则本地受支持恢复路径必须 fail-close，
+  不能偷偷拿当前 config 或 backend 默认值补齐
+- 对于 unloaded thread，显式 `fcodex resume <thread> -p <profile>` 则表示请求该 profile 名字当前解析出的有效 next-load 设置，并在 resume 前改写持久化三元组
+- 对于 loaded thread，普通 `fcodex resume <thread>` 只表示接入当前 live runtime；它不会主动拿当前本地配置去对账持久化 profile 漂移
 - 该拒绝文案应明确指出：是哪个实例的 backend 仍把该 thread 保持为 loaded，以及若要立即生效，应重置哪个实例的 backend
 - 不应要求用户先去理解 release-runtime / unsubscribe
 - 推荐路径应是飞书 `/profile <name>`，必要时走 reset-backend

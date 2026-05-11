@@ -31,6 +31,14 @@ from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.runtime_view import RuntimeView
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeRecord
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
+from bot.thread_resume_profile_setting import (
+    ThreadResumeProfileSetting,
+    describe_thread_resume_profile_setting_diff,
+    format_thread_resume_profile_missing_fields,
+    resolve_thread_resume_profile_setting,
+    thread_resume_profile_setting_missing_fields,
+    thread_resume_profile_settings_equal,
+)
 from bot.thread_memory_mode import THREAD_MEMORY_MODES, normalize_thread_memory_mode
 
 logger = logging.getLogger(__name__)
@@ -566,6 +574,46 @@ class CodexSettingsDomain:
         )
 
     @staticmethod
+    def _effective_profile_setting(
+        profile_name: str,
+        *,
+        resolved: ResolvedProfileConfig,
+        runtime_profiles: dict[str, RuntimeProfileSummary],
+    ) -> ThreadResumeProfileSetting:
+        runtime_provider = ""
+        runtime_profile = runtime_profiles.get(profile_name)
+        if runtime_profile is not None:
+            runtime_provider = str(runtime_profile.model_provider or "").strip()
+        setting = resolve_thread_resume_profile_setting(
+            profile_name,
+            resolved=resolved,
+            runtime_provider=runtime_provider,
+        )
+        missing_fields = thread_resume_profile_setting_missing_fields(setting)
+        if missing_fields:
+            missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+            raise ValueError(
+                "目标 profile 解析出的 thread-wise profile slice 不完整："
+                f"profile=`{setting.profile or '（未设置）'}`，缺少：{missing_text}。"
+                "本项目显式 profile 改写只读取共享用户级 `CODEX_HOME/config.toml`，"
+                "不读取当前 cwd / 项目本地 config。"
+            )
+        return setting
+
+    @staticmethod
+    def _profile_setting_change_lines(
+        current_record: ThreadResumeProfileRecord | None,
+        desired_setting: ThreadResumeProfileSetting,
+    ) -> list[str]:
+        diffs = describe_thread_resume_profile_setting_diff(current_record, desired_setting)
+        if not diffs:
+            return []
+        return [
+            "当前同名 profile 的 thread 级 next-load 设置已变化：",
+            *(f"- {line}" for line in diffs),
+        ]
+
+    @staticmethod
     def _memory_mode_display_text(record: ThreadMemoryModeRecord | None) -> str:
         if record is None:
             return "（未设置）"
@@ -676,7 +724,18 @@ class CodexSettingsDomain:
                     text=f"未找到 profile：`{target_profile}`\n用法：`{_PROFILE_WITH_NAME_COMMAND}`\n先发 `/profile` 查看可用 profile。"
                 )
             )
-        if current_record is not None and str(current_record.profile or "").strip() == target_profile:
+        try:
+            resolved_target = ports.resolve_profile_resume_config(target_profile)
+            desired_setting = self._effective_profile_setting(
+                target_profile,
+                resolved=resolved_target,
+                runtime_profiles=profiles,
+            )
+        except ValueError as exc:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text=f"切换 profile 失败：{exc}")
+            )
+        if thread_resume_profile_settings_equal(current_record, desired_setting):
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_profile_summary_card(
@@ -693,13 +752,12 @@ class CodexSettingsDomain:
             )
 
         if plan.status == "direct-write":
-            resolved = ports.resolve_profile_resume_config(target_profile)
             try:
                 ports.save_thread_resume_profile(
                     thread_id,
                     target_profile,
-                    resolved.model,
-                    resolved.model_provider,
+                    desired_setting.model,
+                    desired_setting.model_provider,
                 )
             except Exception as exc:
                 logger.exception("保存 thread-wise profile 失败")
@@ -722,6 +780,15 @@ class CodexSettingsDomain:
             )
 
         if plan.status == "reset-available":
+            leading_lines = []
+            if current_record is not None and str(current_record.profile or "").strip() == target_profile:
+                leading_lines.extend(self._profile_setting_change_lines(current_record, desired_setting))
+            leading_lines.extend(
+                [
+                    f"当前还不能直接切换到 `{target_profile}`。",
+                    "可继续执行：应用该 profile，并重置当前实例 backend。",
+                ]
+            )
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_profile_summary_card(
@@ -731,10 +798,7 @@ class CodexSettingsDomain:
                         profiles=profiles,
                         profile_names=profile_names,
                         plan=plan,
-                        leading_lines=[
-                            f"当前还不能直接切换到 `{target_profile}`。",
-                            "可继续执行：应用该 profile，并重置当前实例 backend。",
-                        ],
+                        leading_lines=leading_lines,
                         reset_target_profile=target_profile,
                         reset_requires_force=False,
                     )
@@ -744,6 +808,16 @@ class CodexSettingsDomain:
             )
 
         if plan.status == "reset-force-only":
+            leading_lines = []
+            if current_record is not None and str(current_record.profile or "").strip() == target_profile:
+                leading_lines.extend(self._profile_setting_change_lines(current_record, desired_setting))
+            leading_lines.extend(
+                [
+                    f"当前还不能直接切换到 `{target_profile}`。",
+                    plan.reason_text,
+                    "如确认可打断，可强制应用该 profile 并重置 backend。",
+                ]
+            )
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_profile_summary_card(
@@ -753,11 +827,7 @@ class CodexSettingsDomain:
                         profiles=profiles,
                         profile_names=profile_names,
                         plan=plan,
-                        leading_lines=[
-                            f"当前还不能直接切换到 `{target_profile}`。",
-                            plan.reason_text,
-                            "如确认可打断，可强制应用该 profile 并重置 backend。",
-                        ],
+                        leading_lines=leading_lines,
                         reset_target_profile=target_profile,
                         reset_requires_force=True,
                     )
@@ -766,6 +836,15 @@ class CodexSettingsDomain:
                 reset_requires_force=True,
             )
 
+        leading_lines = []
+        if current_record is not None and str(current_record.profile or "").strip() == target_profile:
+            leading_lines.extend(self._profile_setting_change_lines(current_record, desired_setting))
+        leading_lines.extend(
+            [
+                f"当前不能切换到 `{target_profile}`。",
+                plan.reason_text,
+            ]
+        )
         return ProfileCommandOutcome(
             command_result=CommandResult(
                 card=self._build_profile_summary_card(
@@ -775,10 +854,7 @@ class CodexSettingsDomain:
                     profiles=profiles,
                     profile_names=profile_names,
                     plan=plan,
-                    leading_lines=[
-                        f"当前不能切换到 `{target_profile}`。",
-                        plan.reason_text,
-                    ],
+                    leading_lines=leading_lines,
                 )
             )
         )
@@ -816,6 +892,26 @@ class CodexSettingsDomain:
             logger.exception("reset backend 失败")
             return ProfileCommandOutcome(
                 command_result=CommandResult(text=f"reset backend 失败：{exc}")
+            )
+
+        refreshed_runtime_config = ports.safe_read_runtime_config()
+        if refreshed_runtime_config is None:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text="reset 完成，但重新读取 Codex 运行时配置失败；无法安全应用目标 profile。"
+                )
+            )
+        profiles = {
+            profile.name: profile
+            for profile in refreshed_runtime_config.profiles
+            if profile.name
+        }
+        profile_names = [profile.name for profile in refreshed_runtime_config.profiles if profile.name]
+        if target_profile not in profiles:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text=f"reset 完成，但当前运行时已不存在 profile：`{target_profile}`；无法继续应用。"
+                )
             )
 
         try:
@@ -895,13 +991,22 @@ class CodexSettingsDomain:
                 )
             )
 
-        resolved = ports.resolve_profile_resume_config(target_profile)
+        try:
+            desired_setting = self._effective_profile_setting(
+                target_profile,
+                resolved=ports.resolve_profile_resume_config(target_profile),
+                runtime_profiles=profiles,
+            )
+        except ValueError as exc:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text=f"reset 完成，但无法写入目标 profile：{exc}")
+            )
         try:
             ports.save_thread_resume_profile(
                 thread_id,
                 target_profile,
-                resolved.model,
-                resolved.model_provider,
+                desired_setting.model,
+                desired_setting.model_provider,
             )
         except Exception as exc:
             logger.exception("reset 后保存 thread-wise profile 失败")

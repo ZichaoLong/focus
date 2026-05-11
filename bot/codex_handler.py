@@ -78,6 +78,13 @@ from bot.file_message_domain import FileMessageDomain, FileMessagePorts, Incomin
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.interaction_request_controller import InteractionRequestController
 from bot.interaction_request_controller import PendingRequestStateDict
+from bot.thread_resume_profile_setting import (
+    ThreadResumeProfileSetting,
+    format_thread_resume_profile_missing_fields,
+    resolve_thread_resume_profile_setting,
+    thread_resume_profile_setting_from_record,
+    thread_resume_profile_setting_missing_fields,
+)
 from bot.inbound_surface_controller import ActionRoute, CommandRoute, InboundSurfaceController
 from bot.prompt_turn_entry_controller import PromptTurnEntryController, PromptTurnEntryPorts
 from bot.runtime_admin_controller import RuntimeAdminController
@@ -132,6 +139,7 @@ from bot.thread_access_policy import ThreadAccessPolicy
 from bot.thread_image_delivery import ThreadImageDeliveryController
 from bot.thread_memory_mode import (
     build_thread_memory_config_override,
+    deep_merge_config_overrides,
     normalize_thread_memory_mode,
     resolve_thread_memory_mode,
 )
@@ -2342,9 +2350,13 @@ class CodexHandler(BotHandler):
     ) -> ThreadSnapshot:
         thread = summary or self._lookup_thread_summary_in_bounded_list(thread_id)
         profile_record = self._thread_resume_profile(thread_id)
-        profile = profile_record.profile if profile_record is not None else ""
-        model = profile_record.model if profile_record is not None else ""
-        model_provider = profile_record.model_provider if profile_record is not None else ""
+        profile_setting = self._require_concrete_persisted_thread_resume_profile_setting(
+            thread_id,
+            profile_record,
+        )
+        profile = profile_setting.profile if profile_setting is not None else ""
+        model = profile_setting.model if profile_setting is not None else ""
+        model_provider = profile_setting.model_provider if profile_setting is not None else ""
         memory_config_overrides = self._thread_memory_config_overrides(
             thread_id,
             profile_name=profile,
@@ -2658,16 +2670,57 @@ class CodexHandler(BotHandler):
             "app_server_url": self._adapter.current_app_server_url(),
         }
 
-    def _persist_thread_resume_profile(self, thread_id: str, profile: str) -> ThreadResumeProfileRecord:
+    def _resolve_thread_resume_profile_setting(self, profile: str) -> ThreadResumeProfileSetting:
         normalized_profile = str(profile or "").strip()
         if not normalized_profile:
             raise ValueError("profile 不能为空。")
+        runtime_provider = ""
+        runtime_config = self._safe_read_runtime_config()
+        if runtime_config is not None:
+            for item in runtime_config.profiles:
+                if item.name == normalized_profile:
+                    runtime_provider = str(item.model_provider or "").strip()
+                    break
         resolved = resolve_profile_from_codex_config(normalized_profile)
-        return self._save_thread_resume_profile_record(
-            thread_id,
+        return resolve_thread_resume_profile_setting(
             normalized_profile,
-            resolved.model,
-            resolved.model_provider,
+            resolved=resolved,
+            runtime_provider=runtime_provider,
+        )
+
+    def _require_concrete_explicit_thread_resume_profile_setting(
+        self,
+        setting: ThreadResumeProfileSetting,
+    ) -> ThreadResumeProfileSetting:
+        missing_fields = thread_resume_profile_setting_missing_fields(setting)
+        if not missing_fields:
+            return setting
+        missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+        raise ValueError(
+            "目标 profile 解析出的 thread-wise profile slice 不完整："
+            f"profile=`{setting.profile or '（未设置）'}`，缺少：{missing_text}。"
+            "本项目显式 profile 改写只读取共享用户级 `CODEX_HOME/config.toml`，"
+            "不读取当前 cwd / 项目本地 config。"
+        )
+
+    def _require_concrete_persisted_thread_resume_profile_setting(
+        self,
+        thread_id: str,
+        record: ThreadResumeProfileRecord | None,
+    ) -> ThreadResumeProfileSetting | None:
+        setting = thread_resume_profile_setting_from_record(record)
+        if setting is None:
+            return None
+        missing_fields = thread_resume_profile_setting_missing_fields(setting)
+        if not missing_fields:
+            return setting
+        missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+        raise ValueError(
+            "当前 thread 已持久化的 thread-wise profile slice 不完整："
+            f"thread=`{thread_id}`，profile=`{setting.profile}`，缺少：{missing_text}。"
+            "当前按 fail-close 拒绝继续。"
+            "请改用飞书 `/profile <name>` 或本地 "
+            "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
         )
 
     def _save_thread_resume_profile_record(
@@ -2686,11 +2739,17 @@ class CodexHandler(BotHandler):
                 if item.name == normalized_profile:
                     runtime_provider = str(item.model_provider or "").strip()
                     break
-        return self._thread_resume_profile_store.save(
-            thread_id,
+        setting = ThreadResumeProfileSetting(
             profile=normalized_profile,
             model=str(model or "").strip(),
             model_provider=normalized_model_provider or runtime_provider,
+        )
+        self._require_concrete_explicit_thread_resume_profile_setting(setting)
+        return self._thread_resume_profile_store.save(
+            thread_id,
+            profile=setting.profile,
+            model=setting.model,
+            model_provider=setting.model_provider,
         )
 
     def _save_thread_memory_mode_record(self, thread_id: str, mode: str) -> ThreadMemoryModeRecord:
@@ -2716,20 +2775,6 @@ class CodexHandler(BotHandler):
             raise
         return record
 
-    def _persist_new_thread_profile_seed(self, thread_id: str, profile: str) -> str:
-        normalized_profile = str(profile or "").strip()
-        if not normalized_profile:
-            return ""
-        try:
-            self._persist_thread_resume_profile(thread_id, normalized_profile)
-        except Exception as exc:
-            logger.exception("持久化新 thread 的显式 profile seed 失败: thread=%s", str(thread_id or "")[:12])
-            return (
-                "警告：thread 已创建，但默认 profile 未成功持久化；"
-                f"后续 resume 可能不会沿用这次 profile（{exc}）。"
-            )
-        return ""
-
     def _persist_new_thread_memory_mode_seed(self, thread_id: str, mode: str) -> str:
         normalized_mode = str(mode or "").strip()
         if not normalized_mode:
@@ -2749,21 +2794,27 @@ class CodexHandler(BotHandler):
         *,
         cwd: str,
         profile: str | None = None,
+        model: str | None = None,
+        model_provider: str | None = None,
+        config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
         default_memory_mode = self._default_thread_memory_mode_seed()
+        seeded_memory_overrides = (
+            build_thread_memory_config_override(
+                default_memory_mode,
+                profile_name_hint=str(profile or "").strip(),
+            )
+            if default_memory_mode
+            else None
+        )
         snapshot = self._adapter.create_thread(
             cwd=cwd,
             profile=profile,
-            config_overrides=(
-                build_thread_memory_config_override(
-                    default_memory_mode,
-                    profile_name_hint=str(profile or "").strip(),
-                )
-                if default_memory_mode
-                else None
-            ),
+            model=model,
+            model_provider=model_provider,
+            config_overrides=deep_merge_config_overrides(seeded_memory_overrides, config_overrides),
             approval_policy=approval_policy,
             sandbox=sandbox,
         )
@@ -2827,9 +2878,23 @@ class CodexHandler(BotHandler):
             provisional_replace = self._thread_snapshot_is_provisional(snapshot)
         if not provisional_replace:
             return None
-        created = self._adapter.create_thread(
+        target_profile_setting: ThreadResumeProfileSetting | None = None
+        if target_profile:
+            target_profile_setting = self._require_concrete_explicit_thread_resume_profile_setting(
+                self._resolve_thread_resume_profile_setting(effective_profile)
+            )
+        elif old_profile_record is not None:
+            target_profile_setting = self._require_concrete_persisted_thread_resume_profile_setting(
+                old_thread_id,
+                old_profile_record,
+            )
+        created = self._create_thread_with_seeded_memory_mode(
             cwd=runtime.working_dir,
-            profile=effective_profile or None,
+            profile=target_profile_setting.profile if target_profile_setting is not None else None,
+            model=target_profile_setting.model if target_profile_setting is not None else None,
+            model_provider=(
+                target_profile_setting.model_provider if target_profile_setting is not None else None
+            ),
             config_overrides=(
                 self._thread_memory_config_overrides(
                     old_thread_id,
@@ -2842,9 +2907,14 @@ class CodexHandler(BotHandler):
             sandbox=runtime.sandbox or None,
         )
         new_thread_id = created.summary.thread_id
-        warning_text = ""
         try:
-            warning_text = self._persist_new_thread_profile_seed(new_thread_id, effective_profile)
+            if target_profile_setting is not None:
+                self._save_thread_resume_profile_record(
+                    new_thread_id,
+                    target_profile_setting.profile,
+                    target_profile_setting.model,
+                    target_profile_setting.model_provider,
+                )
             if effective_memory_mode:
                 self._save_thread_memory_mode_record(new_thread_id, effective_memory_mode)
             self._bind_thread(sender_id, chat_id, created.summary, message_id=message_id)
@@ -2857,7 +2927,6 @@ class CodexHandler(BotHandler):
         return ThreadResetReplacement(
             old_thread_id=old_thread_id,
             new_thread_id=new_thread_id,
-            warning_text=warning_text,
         )
 
     def _extract_history_rounds(self, snapshot: ThreadSnapshot) -> list[tuple[str, str]]:

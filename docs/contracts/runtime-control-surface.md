@@ -88,6 +88,44 @@ It is not identical to `live runtime owner`:
 - `live runtime owner` is about holding live runtime
 - `interaction owner` is about owning the current turn's interaction control
 
+### 2.6 binding-wise turn-time settings
+
+The Feishu side also has a class of settings that do not belong to
+thread-wise next-load state and do not form the permanent snapshot truth of a
+loaded thread.
+
+They are:
+
+- **binding-wise turn-time settings**
+
+The currently explicit user-facing entries include:
+
+- `/approval`
+- `/sandbox`
+- `/permissions`
+- `/collab-mode`
+
+Their contract is:
+
+- the setting value is persisted on the current Feishu binding
+- the current binding injects it when creating a thread or starting `turn/start`
+- if changed before the turn starts, it can affect that turn immediately
+- if the current turn is already running, it affects the next turn instead
+
+They are not:
+
+- thread-wise next-load state
+- one shared thread-level truth across all frontends
+- a live-runtime snapshot that can always be re-read stably for a loaded thread
+
+Therefore:
+
+- one Feishu chat's stored settings do not automatically become the defaults of
+  another Feishu chat or local `fcodex`
+- another frontend may inject different runtime overrides on its own turns
+- `fcodex` does not automatically participate in this Feishu binding-wise
+  persistence model
+
 ## 3. Hard rules
 
 ### 3.1 First attach / last detach
