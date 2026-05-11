@@ -301,24 +301,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
-    def test_set_thread_memory_mode_calls_upstream_endpoint(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        adapter.set_thread_memory_mode("thread-1", mode="enabled")
-
-        self.assertEqual(
-            fake_rpc.calls[0],
-            (
-                "thread/memoryMode/set",
-                {
-                    "threadId": "thread-1",
-                    "mode": "enabled",
-                },
-            ),
-        )
-
     def test_compact_thread_calls_upstream_endpoint(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()

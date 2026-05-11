@@ -91,6 +91,20 @@ class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
         assert result.lease is not None
         self.assertEqual(result.lease.owner_instance, "corp-a")
 
+    def test_same_instance_different_service_token_is_rejected(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        store = ThreadRuntimeLeaseStore(pathlib.Path(tempdir.name))
+
+        store.acquire("thread-1", _holder(instance_name="corp-a", holder_id="fcodex:123", service_token="token-old"))
+        result = store.acquire("thread-1", _holder(instance_name="corp-a", holder_id="service:new", service_token="token-new"))
+
+        self.assertFalse(result.granted)
+        lease = store.load("thread-1")
+        assert lease is not None
+        self.assertEqual(lease.owner_service_token, "token-old")
+        self.assertEqual({item.owner_service_token for item in lease.holders}, {"token-old"})
+
     def test_release_last_holder_clears_lease(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)

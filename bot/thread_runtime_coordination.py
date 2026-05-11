@@ -214,7 +214,10 @@ def preview_thread_runtime_holder_acquire(
             reason_code=PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
             reason_text=build_runtime_lease_conflict_message(None, transfer=current_transfer),
         )
-    if current is None or current.owner_instance == holder.instance_name:
+    if current is None or (
+        current.owner_instance == holder.instance_name
+        and current.owner_service_token == holder.owner_service_token
+    ):
         return ThreadRuntimeAcquirePreview(allowed=True)
     return preview_thread_runtime_holder_acquire_conflict(
         thread_id=thread_id,

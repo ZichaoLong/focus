@@ -137,7 +137,6 @@ from bot.thread_memory_mode import (
     build_thread_memory_config_override,
     deep_merge_config_overrides,
     normalize_thread_memory_mode,
-    resolve_thread_memory_mode,
 )
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.runtime_loop import RuntimeLoop, RuntimeLoopClosedError
@@ -2703,20 +2702,7 @@ class CodexHandler(BotHandler):
 
     def _apply_thread_memory_mode(self, thread_id: str, mode: str) -> ThreadMemoryModeRecord:
         normalized_mode = normalize_thread_memory_mode(mode)
-        previous = self._thread_memory_mode(thread_id)
-        record = self._save_thread_memory_mode_record(thread_id, normalized_mode)
-        try:
-            self._adapter.set_thread_memory_mode(
-                thread_id,
-                mode=resolve_thread_memory_mode(normalized_mode).backend_thread_memory_mode,
-            )
-        except Exception:
-            if previous is None:
-                self._thread_memory_mode_store.clear(thread_id)
-            else:
-                self._thread_memory_mode_store.save(thread_id, mode=previous.mode)
-            raise
-        return record
+        return self._save_thread_memory_mode_record(thread_id, normalized_mode)
 
     def _persist_new_thread_memory_mode_seed(self, thread_id: str, mode: str) -> str:
         normalized_mode = str(mode or "").strip()

@@ -258,15 +258,6 @@ class CodexAppServerAdapter(AgentAdapter):
         self._collaboration_mode_model = None
         return self.read_runtime_config()
 
-    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
-        self._rpc.request(
-            "thread/memoryMode/set",
-            {
-                "threadId": thread_id,
-                "mode": mode,
-            },
-        )
-
     def compact_thread(self, thread_id: str) -> None:
         self._rpc.request(
             "thread/compact/start",

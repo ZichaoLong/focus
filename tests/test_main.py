@@ -1,4 +1,5 @@
 import pathlib
+import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -29,7 +30,10 @@ class MainEntrypointTests(unittest.TestCase):
                         with patch("bot.__main__.configure_logging"):
                             with patch("bot.__main__.ensure_init_token"):
                                 with patch("bot.__main__._suppress_known_third_party_runtime_warnings"):
-                                    with patch("bot.standalone.CodexBot", bot_cls):
+                                    with patch.dict(
+                                        sys.modules,
+                                        {"bot.standalone": SimpleNamespace(CodexBot=bot_cls)},
+                                    ):
                                         main([])
 
         bot_cls.assert_called_once_with(

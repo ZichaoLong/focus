@@ -13,16 +13,11 @@ THREAD_MEMORY_MODES = (
     THREAD_MEMORY_MODE_READ_WRITE,
 )
 
-BACKEND_THREAD_MEMORY_MODE_DISABLED = "disabled"
-BACKEND_THREAD_MEMORY_MODE_ENABLED = "enabled"
-
-
 @dataclass(frozen=True, slots=True)
 class ResolvedThreadMemoryMode:
     mode: str
     use_memories: bool
     generate_memories: bool
-    backend_thread_memory_mode: str
 
 
 def normalize_thread_memory_mode(mode: str) -> str:
@@ -39,20 +34,17 @@ def resolve_thread_memory_mode(mode: str) -> ResolvedThreadMemoryMode:
             mode=normalized,
             use_memories=False,
             generate_memories=False,
-            backend_thread_memory_mode=BACKEND_THREAD_MEMORY_MODE_DISABLED,
         )
     if normalized == THREAD_MEMORY_MODE_READ:
         return ResolvedThreadMemoryMode(
             mode=normalized,
             use_memories=True,
             generate_memories=False,
-            backend_thread_memory_mode=BACKEND_THREAD_MEMORY_MODE_DISABLED,
         )
     return ResolvedThreadMemoryMode(
         mode=normalized,
         use_memories=True,
         generate_memories=True,
-        backend_thread_memory_mode=BACKEND_THREAD_MEMORY_MODE_ENABLED,
     )
 
 

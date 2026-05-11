@@ -23,15 +23,12 @@
 - `off`
   - `memories.use_memories = false`
   - `memories.generate_memories = false`
-  - `thread/memoryMode/set = disabled`
 - `read`
   - `memories.use_memories = true`
   - `memories.generate_memories = false`
-  - `thread/memoryMode/set = disabled`
 - `read_write`
   - `memories.use_memories = true`
   - `memories.generate_memories = true`
-  - `thread/memoryMode/set = enabled`
 
 ## 2. 它控制的是什么
 
@@ -44,6 +41,7 @@ thread-wise memory mode 控制的是：
 
 - 每个 thread 有独立的 memory 仓库
 - binding 可以各自看到不同 memory mode
+- `/memory` 会热更新一个已经 loaded 的 backend thread
 
 上游 memory 数据根目录仍是全局 `CODEX_HOME/memories`。
 不同 thread 的差异只体现在“这个 thread 读取 / 生成 memory 的方式”，不是各自拥有隔离存储。
@@ -60,6 +58,9 @@ thread-wise memory mode 控制的是：
    - 共享 direct-write 条件未满足，但当前实例可通过 reset-backend 收口
 3. fail-closed
    - live runtime 由别的实例持有，或当前实例无法安全重置
+
+这里的“直接写入”与 “reset 后写入”，目标都只是 **thread-wise 持久化设置**。
+它们不会绕过 next-load 合同，去原地热改一个已经 loaded 的 runtime。
 
 ## 4. reset-backend 后的状态
 

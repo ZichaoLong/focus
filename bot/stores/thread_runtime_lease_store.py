@@ -158,6 +158,13 @@ class ThreadRuntimeLeaseStore:
                     lease=current,
                     transfer=transfer,
                 )
+            if current.owner_service_token != normalized_holder.owner_service_token:
+                return ThreadRuntimeLeaseAcquireResult(
+                    granted=False,
+                    acquired=False,
+                    lease=current,
+                    transfer=transfer,
+                )
             holders = {item.holder_id: item for item in current.holders}
             acquired = normalized_holder.holder_id not in holders
             holders[normalized_holder.holder_id] = normalized_holder

@@ -187,6 +187,10 @@ system continue into the direct-write / reset-backend decision:
 4. fail closed
    - live runtime is owned by another instance, or the current instance cannot safely reset
 
+In both the “direct write” and “write after reset” paths, the actual mutation
+target is only the persisted thread-wise next-load state; they must not be
+implemented as an in-place hot patch of an already loaded runtime.
+
 That means:
 
 - users should not have to reason about complex detach / attach / unsubscribe relationships first

@@ -6,6 +6,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
@@ -496,6 +497,21 @@ class ManageCliTests(unittest.TestCase):
                 repo_skill,
                 _managed_skill_source_dir("feishu-scheduled-prompts"),
             )
+        )
+
+    def test_pyproject_includes_scheduled_prompt_skill_payload(self) -> None:
+        pyproject_path = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+        package_data = data["tool"]["setuptools"]["package-data"]
+        self.assertEqual(
+            package_data["bot.managed_skills.feishu_scheduled_prompts"],
+            [
+                "skill/SKILL.md",
+                "skill/agents/openai.yaml",
+                "skill/scripts/__init__.py",
+                "skill/scripts/manage_scheduled_prompt.py",
+            ],
         )
 
     def test_handle_skill_uninstall_removes_managed_skill_only(self) -> None:

@@ -23,15 +23,12 @@ Their upstream mapping is fixed:
 - `off`
   - `memories.use_memories = false`
   - `memories.generate_memories = false`
-  - `thread/memoryMode/set = disabled`
 - `read`
   - `memories.use_memories = true`
   - `memories.generate_memories = false`
-  - `thread/memoryMode/set = disabled`
 - `read_write`
   - `memories.use_memories = true`
   - `memories.generate_memories = true`
-  - `thread/memoryMode/set = enabled`
 
 ## 2. What it controls
 
@@ -44,6 +41,7 @@ It does **not** mean:
 
 - each thread has an isolated memory store
 - different bindings may observe different memory modes
+- that `/memory` hot-updates an already loaded backend thread
 
 Upstream memory data still lives under the global `CODEX_HOME/memories`.
 Different threads only differ in how they read / generate memory, not in owning separate storage.
@@ -60,6 +58,9 @@ It follows the shared next-load-setting rule, so it has three outcomes:
    - the shared direct-write condition is not satisfied yet, but the current instance can converge through reset-backend
 3. fail closed
    - live runtime is owned by another instance, or the current instance cannot safely reset
+
+Both “direct write” and “write after reset” target only the **persisted thread-wise setting**.
+They do not bypass the next-load contract to hot-patch an already loaded runtime in place.
 
 ## 4. State after reset-backend
 

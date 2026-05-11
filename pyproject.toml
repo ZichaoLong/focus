@@ -28,3 +28,9 @@ version = {attr = "bot.version.__version__"}
 
 [tool.setuptools.package-data]
 "bot.managed_skills.feishu_send_image" = ["skill/SKILL.md", "skill/agents/openai.yaml"]
+"bot.managed_skills.feishu_scheduled_prompts" = [
+  "skill/SKILL.md",
+  "skill/agents/openai.yaml",
+  "skill/scripts/__init__.py",
+  "skill/scripts/manage_scheduled_prompt.py",
+]

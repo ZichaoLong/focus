@@ -139,10 +139,6 @@ class AgentAdapter(ABC):
         ...
 
     @abstractmethod
-    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
-        ...
-
-    @abstractmethod
     def compact_thread(self, thread_id: str) -> None:
         ...
 

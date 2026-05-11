@@ -15,6 +15,7 @@ from bot.stores.instance_registry_store import InstanceRegistryStore, build_inst
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
+    preview_thread_runtime_holder_acquire,
     preview_thread_global_loaded_gate,
 )
 
@@ -235,6 +236,40 @@ class ThreadRuntimeCoordinationTests(unittest.TestCase):
         lease = lease_store.load("thread-1")
         assert lease is not None
         self.assertEqual(lease.owner_instance, "corp-a")
+
+    def test_same_instance_new_service_generation_is_denied_fail_closed(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        root_dir = pathlib.Path(tempdir.name)
+        data_dir = root_dir / "corp-a-data"
+        data_dir.mkdir()
+        lease_store = ThreadRuntimeLeaseStore(root_dir)
+        registry_store = InstanceRegistryStore(root_dir)
+        lease_store.acquire(
+            "thread-1",
+            _holder(instance_name="corp-a", holder_id="fcodex:123", service_token="token-old"),
+        )
+        registry_store.register(
+            build_instance_registry_entry(
+                instance_name="corp-a",
+                service_token="token-new",
+                control_endpoint="tcp://127.0.0.1:32001",
+                app_server_url="http://127.0.0.1:1234",
+                config_dir=data_dir / "config",
+                data_dir=data_dir,
+                owner_pid=os.getpid(),
+            )
+        )
+
+        preview = preview_thread_runtime_holder_acquire(
+            thread_id="thread-1",
+            holder=_holder(instance_name="corp-a", holder_id="service:new", service_token="token-new"),
+            lease_store=lease_store,
+            registry_store=registry_store,
+        )
+
+        self.assertFalse(preview.allowed)
+        self.assertIn("owner service 已变化", preview.reason_text)
 
     def test_transfer_rejects_when_owner_still_has_other_live_holders(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

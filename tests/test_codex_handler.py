@@ -3915,6 +3915,18 @@ class CodexHandlerTests(unittest.TestCase):
         assert memory_record is not None
         self.assertEqual(memory_record.mode, "read_write")
 
+    def test_apply_thread_memory_mode_only_persists_next_load_setting(self) -> None:
+        handler, _ = self._make_handler()
+
+        record = handler._apply_thread_memory_mode("thread-1", "read")
+
+        self.assertEqual(record.mode, "read")
+        self.assertEqual(handler._adapter.set_thread_memory_mode_calls, [])
+        stored = handler._thread_memory_mode_store.load("thread-1")
+        self.assertIsNotNone(stored)
+        assert stored is not None
+        self.assertEqual(stored.mode, "read")
+
     def test_prompt_without_configured_default_working_dir_uses_home_directory(self) -> None:
         with patch("bot.codex_handler.default_working_dir", return_value=pathlib.Path("/home/tester")):
             handler, _ = self._make_handler()

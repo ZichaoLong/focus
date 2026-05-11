@@ -178,6 +178,9 @@ load-time observed snapshot。
 4. fail-closed
    - live runtime 由别的实例持有，或当前实例无法安全重置
 
+无论是“直接写入”还是“reset 后写入”，真正被改写的都只是持久化的
+thread-wise next-load state；它们不应被实现成对已 loaded runtime 的原地热改。
+
 也就是说：
 
 - 不要求用户先理解复杂的 detach / attach / unsubscribe 关系
