@@ -5,7 +5,7 @@ Feishu 绑定级持久化状态。
 - 当前工作目录
 - 当前绑定 thread
 - 当前线程标题
-- 当前飞书会话的权限 / 协作模式设置
+- 当前飞书会话的 runtime settings（权限 / 协作模式 / model override）
 
 运行中的 turn、执行卡片、审批请求等瞬时状态不落盘。
 """
@@ -179,6 +179,7 @@ class ChatBindingStore:
             "approval_policy": raw_state.get("approval_policy", ""),
             "sandbox": raw_state.get("sandbox", ""),
             "collaboration_mode": raw_state.get("collaboration_mode", ""),
+            "model": raw_state.get("model", ""),
         }
         normalized: StoredChatBinding = {}
         for key, value in fields.items():

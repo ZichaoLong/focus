@@ -88,16 +88,23 @@
 - `live runtime owner` 关注谁持有 live runtime
 - `interaction owner` 关注谁拥有当前这轮交互控制权
 
-### 2.6 binding-wise turn-time settings
+### 2.6 飞书前端持有的 runtime settings
 
-当前飞书侧有一类设置，不属于 thread-wise next-load state，也不属于 loaded thread 的永久 snapshot 真相。
+更一般地说，当前项目区分两类设置：
 
-它们属于：
+- **thread-wise next-load state**
+- **frontend-owned runtime settings**
+
+飞书侧当前暴露的有一批设置，属于第二类。它们不属于
+thread-wise next-load state，也不属于 loaded thread 的永久 snapshot 真相。
+
+而在飞书前端上，这批 runtime settings 当前采用的持久化策略是：
 
 - **binding-wise turn-time settings**
 
 当前明确对外的用户面入口包括：
 
+- `/model`
 - `/approval`
 - `/sandbox`
 - `/permissions`
@@ -120,7 +127,8 @@
 
 - 一个 Feishu 会话保存的这类设置，不会自动变成另一个 Feishu 会话或本地 `fcodex` 的默认值
 - 另一个前端完全可以在自己的 turn 上注入不同的运行时覆盖项
-- `fcodex` 默认也不参与这套 Feishu binding-wise 持久化模型
+- 这种 binding-wise 持久化只是飞书产品面的选择，不是所有 runtime settings 都必须采用的跨前端统一模型
+- `fcodex` / upstream TUI 默认也不参与这套 Feishu 侧持久化模型
 
 ## 3. 强约束
 
@@ -205,7 +213,7 @@
 - 当前目录
 - 当前线程
 - 当前 thread 的 thread-wise profile
-- 当前飞书会话后续 turn 的权限 / 审批 / 沙箱 / 协作模式
+- 当前飞书会话后续 turn 的 model / 权限 / 审批 / 沙箱 / 协作模式
 
 它不再承担完整调试面。
 

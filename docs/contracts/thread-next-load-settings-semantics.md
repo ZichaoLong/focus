@@ -19,9 +19,25 @@ The current slices of that state are:
 
 Future thread-wise restore settings should reuse this document instead of copying another restore/mutation rule stack.
 
+This contract class is intentionally narrower than “all runtime-mutable
+settings”.
+
+A setting may still be changed on a loaded runtime without belonging to
+thread-wise next-load state.
+
+The contrasting class is:
+
+- **frontend-owned runtime settings**
+
+For example, Feishu may persist some of those runtime settings on a binding,
+while local `fcodex` / upstream TUI may manage comparable runtime settings in a
+different way. That frontend-specific persistence choice is outside the
+thread-wise next-load contract defined here.
+
 ## 1. Basic fact
 
 - these settings are **thread-wise**, not binding-wise
+- they are not the same thing as frontend-owned runtime settings
 - for **supported resume paths**, the contract is: when the same thread moves from unloaded back to loaded, it should use the same persisted thread-wise next-load state
 - that persisted next-load state is the truth for **unloaded** threads
 - they are **not** the hot-update truth for an already loaded runtime

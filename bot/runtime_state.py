@@ -113,6 +113,7 @@ class StoredBindingHydrated(RuntimeStateCommand):
     approval_policy: str
     sandbox: str
     collaboration_mode: str
+    model: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,6 +121,7 @@ class RuntimeSettingsChanged(RuntimeStateCommand):
     approval_policy: Any = UNSET
     sandbox: Any = UNSET
     collaboration_mode: Any = UNSET
+    model: Any = UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,6 +199,7 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             approval_policy=approval_policy,
             sandbox=sandbox,
             collaboration_mode=collaboration_mode,
+            model=model,
         ):
             state["working_dir"] = working_dir
             state["current_thread_id"] = current_thread_id
@@ -205,10 +208,12 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             state["approval_policy"] = approval_policy
             state["sandbox"] = sandbox
             state["collaboration_mode"] = collaboration_mode
+            state["model"] = model
         case RuntimeSettingsChanged(
             approval_policy=approval_policy,
             sandbox=sandbox,
             collaboration_mode=collaboration_mode,
+            model=model,
         ):
             if approval_policy is not UNSET:
                 state["approval_policy"] = approval_policy
@@ -216,6 +221,8 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
                 state["sandbox"] = sandbox
             if collaboration_mode is not UNSET:
                 state["collaboration_mode"] = collaboration_mode
+            if model is not UNSET:
+                state["model"] = model
         case ThreadStateChanged(
             working_dir=working_dir,
             current_thread_id=current_thread_id,

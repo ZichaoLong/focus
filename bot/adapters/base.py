@@ -40,6 +40,14 @@ class RuntimeProfileSummary:
 
 
 @dataclass(slots=True)
+class RuntimeModelSummary:
+    model: str
+    display_name: str | None = None
+    is_default: bool = False
+    hidden: bool = False
+
+
+@dataclass(slots=True)
 class RuntimeConfigSummary:
     current_profile: str | None = None
     current_model_provider: str | None = None
@@ -194,6 +202,10 @@ class AgentAdapter(ABC):
 
     @abstractmethod
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
+        ...
+
+    @abstractmethod
+    def list_models(self, *, include_hidden: bool = False) -> list[RuntimeModelSummary]:
         ...
 
     @abstractmethod

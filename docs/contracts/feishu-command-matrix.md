@@ -54,6 +54,7 @@ It does not redefine:
 | --- | --- | --- | --- | --- | --- |
 | `/reset-backend` | Preview and reset the current instance backend | yes; `runtime` page | admin only | admin only | `feishu-codexctl service reset-backend` |
 | `/permissions [read-only\|default\|full-access]` | Set approval policy and sandbox together | yes; `runtime` page | admin only | admin only | none |
+| `/model [name\|auto]` | Set the current Feishu session's turn-time model override | yes; `runtime` page | admin only | admin only | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `runtime` page | admin only | admin only | none |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy | yes; `runtime` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `runtime` page | admin only | admin only | none |
@@ -96,6 +97,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- `/model` / `/permissions` / `/approval` / `/sandbox` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - `/skills` / `/plugins` cards: skill toggles, plugin-detail back navigation, installed-plugin enable/disable
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 

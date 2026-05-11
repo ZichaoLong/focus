@@ -46,6 +46,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或切换当前绑定 thread 的 thread-wise memory mode。",
     ),
     SharedCommandSpec(
+        key="model",
+        slash_name="/model",
+        feishu_usage="/model [name|auto]",
+        feishu_summary="查看或切换当前飞书会话后续 turn 的 model override。",
+    ),
+    SharedCommandSpec(
         key="compact",
         slash_name="/compact",
         feishu_usage="/compact",

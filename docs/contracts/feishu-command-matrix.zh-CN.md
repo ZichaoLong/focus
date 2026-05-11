@@ -56,6 +56,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `/reset-backend` | 预览并重置当前实例 backend | 是；`runtime` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
 | `/permissions [read-only\|default\|full-access]` | 同时设置审批策略与沙箱策略 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
+| `/model [name\|auto]` | 设置当前飞书会话后续 turn 的 model override | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/approval [untrusted\|on-request\|never]` | 设置审批策略 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | 设置沙箱策略 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/collab-mode [default\|plan]` | 设置当前飞书会话后续 turn 的协作模式 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
@@ -98,6 +99,7 @@
 - 执行卡：`取消执行`
 - `/threads` 列表卡：`恢复/当前`、`归档`、`更多`、`收起`
 - `/profile` / `/memory` / `/reset-backend` 结果卡：`应用并重置 backend`、`强制应用并重置 backend`、`附着当前线程`、`附着当前实例`、`保持 detached`
+- `/model` / `/permissions` / `/approval` / `/sandbox` / `/collab-mode` 卡：turn-time runtime setting 切换按钮
 - `/skills` / `/plugins` 卡：skill 启停、plugin 详情返回、已安装 plugin 启停
 - 审批 / 补充输入卡：按当前请求类型暴露 `允许/拒绝/提交` 等按钮
 

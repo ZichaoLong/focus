@@ -14,12 +14,13 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
+from bot.adapters.base import RuntimeConfigSummary, RuntimeModelSummary, RuntimeProfileSummary
 from bot.cards import (
     CommandResult,
     build_approval_policy_card,
     build_collaboration_mode_card,
     build_memory_mode_card,
+    build_model_card,
     build_profile_card,
     build_permissions_preset_card,
     build_sandbox_policy_card,
@@ -48,6 +49,8 @@ _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
 _MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
+_MODEL_WITH_NAME_COMMAND = feishu_visible_command_syntax("/model <name|auto>")
+_MODEL_AUTO = "auto"
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +86,7 @@ class SettingsDomainPorts:
     get_runtime_view: Callable[[str, str, str], RuntimeView]
     update_runtime_settings: Callable[..., None]
     safe_read_runtime_config: Callable[[], RuntimeConfigSummary | None]
+    list_models: Callable[[], list[RuntimeModelSummary]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +140,7 @@ class CodexSettingsDomain:
         approval_policy: Any = _UNSET,
         sandbox: Any = _UNSET,
         collaboration_mode: Any = _UNSET,
+        model: Any = _UNSET,
     ) -> None:
         changes: dict[str, Any] = {"message_id": message_id}
         if approval_policy is not _UNSET:
@@ -144,6 +149,8 @@ class CodexSettingsDomain:
             changes["sandbox"] = sandbox
         if collaboration_mode is not _UNSET:
             changes["collaboration_mode"] = collaboration_mode
+        if model is not _UNSET:
+            changes["model"] = model
         self._ports.update_runtime_settings(sender_id, chat_id, **changes)
 
     def handle_init_command(
@@ -1311,6 +1318,109 @@ class CodexSettingsDomain:
             applied_mode=target_mode,
         )
 
+    @staticmethod
+    def _runtime_model_display_text(model: str) -> str:
+        normalized = str(model or "").strip()
+        return normalized or _MODEL_AUTO
+
+    @staticmethod
+    def _runtime_model_card_models(
+        models: list[RuntimeModelSummary],
+    ) -> list[tuple[str, str]]:
+        visible: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for item in models:
+            model = str(item.model or "").strip()
+            if not model or model in seen or item.hidden:
+                continue
+            seen.add(model)
+            label = str(item.display_name or "").strip() or model
+            visible.append((model, label))
+        return visible
+
+    def _build_model_summary_card(
+        self,
+        *,
+        runtime: RuntimeView,
+        models: list[RuntimeModelSummary],
+    ) -> dict:
+        current_thread_id = str(runtime.current_thread_id or "").strip()
+        current_profile = ""
+        current_provider = ""
+        if current_thread_id:
+            profile_record = self._ports.load_thread_resume_profile(current_thread_id)
+            if profile_record is not None:
+                current_profile = str(profile_record.profile or "").strip()
+                current_provider = str(profile_record.model_provider or "").strip()
+        lines = [
+            f"当前会话 model override：`{self._runtime_model_display_text(runtime.model)}`",
+            "作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。",
+            "",
+            f"- `{_MODEL_AUTO}`：清除当前会话 override；若当前 thread 有 thread-wise profile，就回到它的 `model / model_provider`；否则回到服务默认 / 上游配置解析结果",
+            "- 显式设置具体 model 时，只覆盖 `model` 名称；不改 thread-wise profile，也不改 provider 归属",
+        ]
+        if current_thread_id:
+            lines.extend(
+                [
+                    "",
+                    f"当前 thread：`{current_thread_id[:8]}…`",
+                    f"当前 thread-wise profile：`{current_profile or '（未设置）'}`",
+                    f"当前 thread-wise provider：`{current_provider or '（未设置）'}`",
+                ]
+            )
+        return build_model_card(
+            current_model=runtime.model,
+            available_models=self._runtime_model_card_models(models),
+            content="\n".join(lines),
+            running=runtime.running,
+        )
+
+    def handle_model_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        try:
+            models = self._ports.list_models()
+        except Exception as exc:
+            logger.exception("读取可用 model 列表失败")
+            return CommandResult(text=f"读取可用 model 列表失败：{exc}")
+        visible_models = {model for model, _label in self._runtime_model_card_models(models)}
+        if not arg:
+            return CommandResult(card=self._build_model_summary_card(runtime=runtime, models=models))
+        target = str(arg or "").strip()
+        if not target:
+            return CommandResult(text=f"用法：`{_MODEL_WITH_NAME_COMMAND}`")
+        normalized_target = target.lower()
+        desired_model = "" if normalized_target == _MODEL_AUTO else target
+        if desired_model and desired_model not in visible_models:
+            return CommandResult(
+                text=(
+                    f"未找到 model：`{target}`\n"
+                    f"用法：`{_MODEL_WITH_NAME_COMMAND}`\n"
+                    "先发 `/model` 查看当前可用 model。"
+                )
+            )
+        if str(runtime.model or "").strip() == desired_model:
+            label = self._runtime_model_display_text(desired_model)
+            return CommandResult(
+                text=(
+                    f"当前会话的 model override 已是：`{label}`\n"
+                    "作用范围：只影响当前飞书会话的后续 turn。"
+                )
+            )
+        self._update_runtime_settings(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+            model=desired_model,
+        )
+        label = self._runtime_model_display_text(desired_model)
+        message = (
+            f"已切换当前会话的 model override：`{label}`\n"
+            "作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。"
+        )
+        if runtime.running:
+            message += "\n如果当前正在执行，新设置从下一轮生效。"
+        return CommandResult(text=message)
+
     def handle_approval_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         runtime = self._runtime_view(sender_id, chat_id, message_id)
         if arg:
@@ -1400,6 +1510,42 @@ class CodexSettingsDomain:
             runtime.collaboration_mode,
             running=runtime.running,
         ))
+
+    def handle_set_model(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict,
+    ) -> P2CardActionTriggerResponse:
+        target_model = str(action_value.get("model", "") or "").strip()
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        try:
+            models = self._ports.list_models()
+        except Exception as exc:
+            logger.exception("读取可用 model 列表失败")
+            return make_card_response(toast=f"读取可用 model 列表失败：{exc}", toast_type="warning")
+        visible_models = {model for model, _label in self._runtime_model_card_models(models)}
+        if target_model and target_model not in visible_models:
+            return make_card_response(toast="非法 model", toast_type="warning")
+        self._update_runtime_settings(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+            model=target_model,
+        )
+        running = runtime.running
+        toast = f"已切换 model override：{self._runtime_model_display_text(target_model)}"
+        if running:
+            toast += "；下一轮生效"
+        return make_card_response(
+            card=self._build_model_summary_card(
+                runtime=self._runtime_view(sender_id, chat_id, message_id),
+                models=models,
+            ),
+            toast=toast,
+            toast_type="success",
+        )
 
     def handle_set_approval_policy(
         self,

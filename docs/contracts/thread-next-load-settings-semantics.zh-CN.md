@@ -19,9 +19,24 @@
 
 未来若还有新的 thread-wise 恢复设置，应默认复用本文，而不是再各自复制一套恢复/改写规则。
 
+这里定义的合同，刻意比“所有可变 runtime 设置”更窄。
+
+有些设置即使能在 loaded runtime 上被改变，也不代表它们属于
+thread-wise next-load state。
+
+与之相对的另一类是：
+
+- **frontend-owned runtime settings**
+
+例如，飞书前端可以把其中一部分 runtime settings 持久化在 binding 上；
+而本地 `fcodex` / upstream TUI 也可以用另一套方式管理同类 runtime
+settings。那种前端自有的持久化策略，不属于本文定义的
+thread-wise next-load 合同。
+
 ## 1. 基本事实
 
 - 这类设置是 **thread-wise**，不是 binding-wise。
+- 它们也不等同于 frontend-owned runtime settings。
 - 它们对外承诺的是：在**受支持的恢复路径**上，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 thread-wise next-load state。
 - 对 **unloaded** thread，持久化的 next-load state 才是事实源。
 - 它们**不是**当前 loaded runtime 的热更新真相。

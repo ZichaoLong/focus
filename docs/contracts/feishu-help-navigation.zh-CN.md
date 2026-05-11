@@ -48,6 +48,7 @@
   - 当前线程页
 - `运行时`
   - `/permissions`
+  - `/model`
   - `/approval`
   - `/sandbox`
   - `/collab-mode`
@@ -109,6 +110,7 @@
 必须提供：
 
 - `/permissions`
+- `/model`
 - `/approval`
 - `/sandbox`
 - `/collab-mode`

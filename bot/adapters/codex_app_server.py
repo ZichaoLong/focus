@@ -17,6 +17,7 @@ from bot.adapters.base import (
     PluginMarketplaceSummary,
     PluginSummary,
     RuntimeConfigSummary,
+    RuntimeModelSummary,
     RuntimeProfileSummary,
     SkillLoadError,
     SkillSummary,
@@ -231,6 +232,17 @@ class CodexAppServerAdapter(AgentAdapter):
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
         result = self._rpc.request("config/read", _compact({"includeLayers": False, "cwd": cwd}))
         return self._runtime_config_from_result(result)
+
+    def list_models(self, *, include_hidden: bool = False) -> list[RuntimeModelSummary]:
+        result = self._rpc.request(
+            "model/list",
+            _compact(
+                {
+                    "includeHidden": True if include_hidden else None,
+                }
+            ),
+        )
+        return self._model_summaries_from_result(result)
 
     def list_loaded_thread_ids(self) -> list[str]:
         result = self._rpc.request("thread/loaded/list", {})
@@ -584,6 +596,26 @@ class CodexAppServerAdapter(AgentAdapter):
             current_model_provider=_read_string(config, "modelProvider", "model_provider"),
             profiles=profiles,
         )
+
+    @staticmethod
+    def _model_summaries_from_result(result: dict[str, Any]) -> list[RuntimeModelSummary]:
+        data = result.get("data") or []
+        models: list[RuntimeModelSummary] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            model = _read_string(item, "model")
+            if not model:
+                continue
+            models.append(
+                RuntimeModelSummary(
+                    model=model,
+                    display_name=_read_string(item, "displayName", "display_name") or None,
+                    is_default=bool(item.get("isDefault")),
+                    hidden=bool(item.get("hidden")),
+                )
+            )
+        return models
 
     @staticmethod
     def _skills_snapshot_from_result(*, cwd: str, result: dict[str, Any]) -> SkillsSnapshot:

@@ -123,6 +123,14 @@ class RuntimeView:
     def collaboration_mode(self) -> str:
         return self.settings.collaboration_mode
 
+    @property
+    def model(self) -> str:
+        return self.settings.model
+
+    @property
+    def reasoning_effort(self) -> str:
+        return self.settings.reasoning_effort
+
 
 def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
     return RuntimeView(

@@ -15,6 +15,7 @@ from bot.adapters.base import (
     PluginMarketplaceSummary,
     PluginSummary,
     RuntimeConfigSummary,
+    RuntimeModelSummary,
     RuntimeProfileSummary,
     SkillSummary,
     SkillsSnapshot,
@@ -79,6 +80,10 @@ class _FakeAdapter:
         self.skills_snapshots: dict[str, SkillsSnapshot] = {}
         self.plugin_catalogs: dict[str | None, PluginCatalog] = {}
         self.plugin_details: dict[tuple[str, str, str | None], PluginDetailSummary] = {}
+        self.models: list[RuntimeModelSummary] = [
+            RuntimeModelSummary(model="gpt-5.5", display_name="gpt-5.5", is_default=True),
+            RuntimeModelSummary(model="gpt-5.4", display_name="gpt-5.4"),
+        ]
 
     def stop(self) -> None:
         return None
@@ -144,6 +149,11 @@ class _FakeAdapter:
                 RuntimeProfileSummary(name="provider2", model_provider="provider2_api"),
             ],
         )
+
+    def list_models(self, *, include_hidden: bool = False) -> list[RuntimeModelSummary]:
+        if include_hidden:
+            return list(self.models)
+        return [item for item in self.models if not item.hidden]
 
     def list_loaded_thread_ids(self) -> list[str]:
         return sorted(
@@ -711,6 +721,26 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("已切换协作模式：`plan`", bot.replies[-1][1])
         self.assertIn("只影响当前飞书会话的后续 turn", bot.replies[-1][1])
 
+    def test_model_command_updates_state(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/model gpt-5.5")
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state["model"], "gpt-5.5")
+        self.assertIn("已切换当前会话的 model override：`gpt-5.5`", bot.replies[-1][1])
+        self.assertIn("只影响当前飞书会话的后续 turn", bot.replies[-1][1])
+
+    def test_model_command_auto_clears_override(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["model"] = "gpt-5.5"
+
+        handler.handle_message("ou_user", "c1", "/model auto")
+
+        self.assertEqual(state["model"], "")
+        self.assertIn("已切换当前会话的 model override：`auto`", bot.replies[-1][1])
+
     def test_on_register_eagerly_starts_adapter(self) -> None:
         handler, bot = self._make_handler()
 
@@ -1140,6 +1170,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler1, _ = self._make_handler(data_dir=data_dir)
         handler1.handle_message("ou_user", "c1", f"/cd {project_dir}")
         handler1.handle_message("ou_user", "c1", "/permissions full-access")
+        handler1.handle_message("ou_user", "c1", "/model gpt-5.5")
         handler1.handle_message("ou_user", "c1", "/collab-mode plan")
         handler1.handle_message("ou_user", "c1", "hello")
 
@@ -1151,6 +1182,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["current_thread_title"], "（无标题）")
         self.assertEqual(state["approval_policy"], "never")
         self.assertEqual(state["sandbox"], "danger-full-access")
+        self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["collaboration_mode"], "plan")
         self.assertFalse(state["running"])
 
@@ -2680,6 +2712,19 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(action_elements[0]["layout"], "trisection")
         self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "返回帮助")
 
+    def test_model_command_without_arg_shows_model_card(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/model")
+
+        self.assertEqual(len(bot.cards), 1)
+        _, card = bot.cards[0]
+        self.assertEqual(card["header"]["title"]["content"], "Codex 模型")
+        self.assertIn("当前会话 model override：`auto`", card["elements"][0]["content"])
+        self.assertIn("不改 thread-wise profile", card["elements"][0]["content"])
+        action_elements = self._action_elements(card)
+        self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "✓ auto")
+
     def test_approval_command_without_arg_shows_approval_boundary(self) -> None:
         handler, bot = self._make_handler()
 
@@ -2706,6 +2751,21 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("plan", response["toast"])
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 协作模式")
         self.assertEqual(self._action_elements(response["card"])[1]["actions"][0]["text"]["content"], "返回帮助")
+
+    def test_model_card_action_updates_state(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "m1",
+            {"action": "set_model", "model": "gpt-5.4"},
+        ))
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["model"], "gpt-5.4")
+        self.assertEqual(response["toast_type"], "success")
+        self.assertIn("gpt-5.4", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型")
 
     def test_sandbox_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
@@ -4043,7 +4103,33 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
 
-    def test_thread_wise_profile_turn_does_not_use_binding_default_model(self) -> None:
+    def test_thread_wise_profile_turn_does_not_use_service_default_model(self) -> None:
+        handler, _ = self._make_handler(cfg={"model": "stale-default-model"})
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._thread_resume_profile_store.save(
+            "thread-1",
+            profile="provider2",
+            model="provider2-model",
+            model_provider="provider2_api",
+        )
+
+        handler.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
+
+    def test_runtime_model_override_can_override_thread_profile_model_without_changing_provider(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -4056,8 +4142,7 @@ class CodexHandlerTests(unittest.TestCase):
             status="idle",
         )
         handler._bind_thread("ou_user", "c1", thread)
-        state = handler._get_runtime_state("ou_user", "c1")
-        state["model"] = "stale-default-model"
+        handler.handle_message("ou_user", "c1", "/model gpt-5.5")
         handler._thread_resume_profile_store.save(
             "thread-1",
             profile="provider2",
@@ -4068,7 +4153,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "hello")
 
         self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
 
     def test_replace_bound_provisional_thread_after_reset_rebinds_and_moves_profile(self) -> None:
@@ -4551,6 +4636,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.create_thread_calls[-1]["sandbox"], "danger-full-access")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["approval_policy"], "never")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["sandbox"], "danger-full-access")
+
+    def test_model_command_applies_to_thread_creation_and_turn_start(self) -> None:
+        handler, _ = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/model gpt-5.5")
+        handler.handle_message("ou_user", "c1", "hello")
+
+        self.assertEqual(handler._adapter.create_thread_calls[-1]["model"], "gpt-5.5")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
 
     def test_resume_thread_id_disconnect_is_not_reported_as_not_found(self) -> None:
         handler, _ = self._make_handler()
@@ -5271,6 +5365,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
         self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
         self.assertIn("`/reset-backend`", reply)
+        self.assertIn("`/model [name|auto]`", reply)
         self.assertIn("`/skills`", reply)
         self.assertIn("`/plugins [plugin_id]`", reply)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
@@ -5565,6 +5660,7 @@ class CodexHandlerTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("`/profile` 属于当前 thread 管理", content)
         self.assertIn("推荐先用 `/permissions`", content)
+        self.assertIn("`/model [name|auto]`", content)
         self.assertIn("`/approval`", content)
         self.assertIn("`/sandbox`", content)
         self.assertIn("`/collab-mode`", content)
@@ -5573,11 +5669,15 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/permissions", "/approval", "/sandbox"],
+            ["/permissions", "/model", "/approval"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/collab-mode", "/reset-backend", "返回帮助"],
+            ["/sandbox", "/collab-mode", "/reset-backend"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["返回帮助"],
         )
 
     def test_help_group_card_has_shortcuts(self) -> None:
@@ -5632,11 +5732,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：运行时")
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
-            ["/permissions", "/approval", "/sandbox"],
+            ["/permissions", "/model", "/approval"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
-            ["/collab-mode", "/reset-backend", "返回帮助"],
+            ["/sandbox", "/collab-mode", "/reset-backend"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[2]["actions"]],
+            ["返回帮助"],
         )
 
     def test_reset_backend_command_returns_preview_card(self) -> None:

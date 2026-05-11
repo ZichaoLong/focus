@@ -129,6 +129,7 @@ class BindingRuntimeManager:
             "approval_policy": "",
             "sandbox": "",
             "collaboration_mode": "",
+            "model": "",
         }
 
     def build_default_runtime_state(self) -> RuntimeStateDict:
@@ -163,7 +164,7 @@ class BindingRuntimeManager:
             "approval_policy": self._default_approval_policy,
             "sandbox": self._default_sandbox,
             "collaboration_mode": self._default_collaboration_mode,
-            "model": self._default_model,
+            "model": "",
             "reasoning_effort": self._default_reasoning_effort,
             "plan_message_id": "",
             "plan_turn_id": "",
@@ -193,6 +194,7 @@ class BindingRuntimeManager:
                 ),
                 sandbox=stored_binding["sandbox"] or self._default_sandbox,
                 collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,
+                model=str(stored_binding.get("model", "") or "").strip(),
             ),
         )
         return downgraded_attached
@@ -331,6 +333,7 @@ class BindingRuntimeManager:
         approval_policy = normalize_approval_policy(str(state["approval_policy"]).strip())
         sandbox = str(state["sandbox"]).strip()
         collaboration_mode = str(state["collaboration_mode"]).strip()
+        model = str(state["model"]).strip()
         return {
             "working_dir": "" if working_dir == self._default_working_dir else working_dir,
             "current_thread_id": current_thread_id,
@@ -343,6 +346,7 @@ class BindingRuntimeManager:
                 if collaboration_mode == self._default_collaboration_mode
                 else collaboration_mode
             ),
+            "model": model,
         }
 
     def sync_stored_binding_locked(self, binding: ChatBindingKey, state: RuntimeStateDict) -> None:
@@ -701,6 +705,7 @@ class BindingRuntimeManager:
             "approval_policy": str(state["approval_policy"] or "").strip(),
             "sandbox": str(state["sandbox"] or "").strip(),
             "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
+            "model": str(state["model"] or "").strip(),
         }
 
     def thread_binding_snapshot_locked(

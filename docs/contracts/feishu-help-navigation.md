@@ -48,6 +48,7 @@ They correspond to:
   - the current-thread page
 - `Runtime`
   - `/permissions`
+  - `/model`
   - `/approval`
   - `/sandbox`
   - `/collab-mode`
@@ -109,6 +110,7 @@ Its body must also state:
 Must provide:
 
 - `/permissions`
+- `/model`
 - `/approval`
 - `/sandbox`
 - `/collab-mode`

@@ -830,6 +830,75 @@ def build_permissions_preset_card(
     }
 
 
+def build_model_card(
+    *,
+    current_model: str,
+    available_models: list[tuple[str, str]],
+    content: str,
+    running: bool = False,
+) -> dict:
+    """构造 model override 选择卡片。"""
+    current_value = str(current_model or "").strip()
+    elements = [
+        {
+            "tag": "markdown",
+            "content": content,
+        },
+        {"tag": "hr"},
+    ]
+    actions = [
+        {
+            "tag": "button",
+            "text": {
+                "tag": "plain_text",
+                "content": f"{'✓ ' if not current_value else ''}auto",
+            },
+            "type": "primary" if not current_value else "default",
+            "value": {
+                "action": "set_model",
+                "model": "",
+            },
+        }
+    ]
+    for model, label in available_models:
+        actions.append(
+            {
+                "tag": "button",
+                "text": {
+                    "tag": "plain_text",
+                    "content": f"{'✓ ' if model == current_value else ''}{label}",
+                },
+                "type": "primary" if model == current_value else "default",
+                "value": {
+                    "action": "set_model",
+                    "model": model,
+                },
+            }
+        )
+    for index in range(0, len(actions), 3):
+        row_actions = actions[index:index + 3]
+        row = {"tag": "action", "actions": row_actions}
+        if len(row_actions) == 3:
+            row["layout"] = "trisection"
+        elements.append(row)
+    if running:
+        elements.append(
+            {
+                "tag": "markdown",
+                "content": "当前若有执行中的 turn，切换仅对下一轮生效。",
+            }
+        )
+    elements.append(_back_to_help_action())
+    return {
+        "config": _card_config(),
+        "header": {
+            "title": {"tag": "plain_text", "content": "Codex 模型"},
+            "template": "blue",
+        },
+        "elements": elements,
+    }
+
+
 def build_collaboration_mode_card(current_mode: str, *, running: bool = False) -> dict:
     """构造协作模式选择卡片。"""
     labels = {

@@ -88,18 +88,25 @@ It is not identical to `live runtime owner`:
 - `live runtime owner` is about holding live runtime
 - `interaction owner` is about owning the current turn's interaction control
 
-### 2.6 binding-wise turn-time settings
+### 2.6 Feishu frontend-owned runtime settings
 
-The Feishu side also has a class of settings that do not belong to
-thread-wise next-load state and do not form the permanent snapshot truth of a
-loaded thread.
+More generally, this project distinguishes two classes:
 
-They are:
+- **thread-wise next-load state**
+- **frontend-owned runtime settings**
+
+The current Feishu surface exposes some runtime settings from the second class.
+They do not belong to thread-wise next-load state and do not form the
+permanent snapshot truth of a loaded thread.
+
+On the Feishu frontend specifically, the current persistence strategy for these
+runtime settings is:
 
 - **binding-wise turn-time settings**
 
 The currently explicit user-facing entries include:
 
+- `/model`
 - `/approval`
 - `/sandbox`
 - `/permissions`
@@ -123,8 +130,10 @@ Therefore:
 - one Feishu chat's stored settings do not automatically become the defaults of
   another Feishu chat or local `fcodex`
 - another frontend may inject different runtime overrides on its own turns
-- `fcodex` does not automatically participate in this Feishu binding-wise
-  persistence model
+- this binding-wise persistence is a Feishu product choice, not a
+  cross-frontend requirement for all runtime settings
+- `fcodex` / upstream TUI do not automatically participate in this
+  Feishu-side persistence model
 
 ## 3. Hard rules
 
@@ -209,7 +218,7 @@ It shows only:
 - current directory
 - current thread
 - the current thread's thread-wise profile
-- the current Feishu session's permissions / approval / sandbox / collaboration settings
+- the current Feishu session's model / permissions / approval / sandbox / collaboration settings
 
 It is no longer the full debugging surface.
 

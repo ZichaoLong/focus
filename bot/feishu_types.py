@@ -76,6 +76,7 @@ class StoredChatBinding(TypedDict):
     approval_policy: str
     sandbox: str
     collaboration_mode: str
+    model: str
 
 
 class ChatBindingsFileData(TypedDict):

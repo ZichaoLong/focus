@@ -98,7 +98,7 @@ class RuntimeStateReducerTests(unittest.TestCase):
 
         apply_runtime_state_message(
             state,
-            RuntimeSettingsChanged(approval_policy="never"),
+            RuntimeSettingsChanged(approval_policy="never", model="gpt-5.5"),
         )
         apply_runtime_state_message(
             state,
@@ -108,6 +108,7 @@ class RuntimeStateReducerTests(unittest.TestCase):
         self.assertEqual(state["approval_policy"], "never")
         self.assertEqual(state["sandbox"], "workspace-write")
         self.assertEqual(state["collaboration_mode"], "default")
+        self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["current_thread_title"], "renamed")
         self.assertEqual(state["working_dir"], "/tmp/project")
         self.assertEqual(state["current_thread_id"], "thread-1")

@@ -14,7 +14,7 @@ from io import StringIO
 from pathlib import Path
 
 from bot import process_utils
-from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary, ThreadSummary
+from bot.adapters.base import RuntimeConfigSummary, RuntimeModelSummary, RuntimeProfileSummary, ThreadSummary
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
 from bot.codex_command_resolver import DEFAULT_CODEX_COMMAND
 from bot.codex_protocol.client import CodexRpcClient
@@ -703,6 +703,22 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(
             [(item.name, item.model_provider) for item in runtime.profiles],
             [("provider1", "provider1_api"), ("provider2", "provider2_api")],
+        )
+
+    def test_list_models_reads_visible_models(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        models = adapter.list_models()
+
+        self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
+        self.assertEqual(
+            models,
+            [
+                RuntimeModelSummary(model="gpt-5.3-codex", display_name=None, is_default=True, hidden=False),
+                RuntimeModelSummary(model="gpt-5.4", display_name=None, is_default=False, hidden=False),
+            ],
         )
 
     def test_set_active_profile_uses_config_batch_write_and_reload(self) -> None:

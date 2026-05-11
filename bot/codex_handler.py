@@ -408,6 +408,7 @@ class CodexHandler(BotHandler):
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
+                list_models=lambda: self._adapter.list_models(),
             ),
             approval_policies=_APPROVAL_POLICIES,
             sandbox_policies=_SANDBOX_POLICIES,
@@ -1162,6 +1163,7 @@ class CodexHandler(BotHandler):
         approval_policy: Any = UNSET,
         sandbox: Any = UNSET,
         collaboration_mode: Any = UNSET,
+        model: Any = UNSET,
     ) -> None:
         resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
         with self._lock:
@@ -1172,6 +1174,7 @@ class CodexHandler(BotHandler):
                     approval_policy=approval_policy,
                     sandbox=sandbox,
                     collaboration_mode=collaboration_mode,
+                    model=model,
                 ),
             )
 
@@ -1661,6 +1664,11 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, arg, message_id=message_id
                 ),
             ),
+            "/model": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_model_command(
+                    sender_id, chat_id, arg, message_id=message_id
+                ),
+            ),
             "/collab-mode": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_collab_mode_command(
                     sender_id, chat_id, arg, message_id=message_id
@@ -1785,6 +1793,12 @@ class CodexHandler(BotHandler):
             ),
             "set_permissions_preset": ActionRoute(
                 handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_permissions_preset(
+                    sender_id, chat_id, message_id, action_value
+                ),
+                group_guard="group_admin",
+            ),
+            "set_model": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_model(
                     sender_id, chat_id, message_id, action_value
                 ),
                 group_guard="group_admin",
@@ -2037,6 +2051,7 @@ class CodexHandler(BotHandler):
         try:
             snapshot = self._create_thread_with_seeded_memory_mode(
                 cwd=runtime.working_dir,
+                model=runtime.model or None,
                 approval_policy=runtime.approval_policy or None,
                 sandbox=runtime.sandbox or None,
             )

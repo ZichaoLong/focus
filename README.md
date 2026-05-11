@@ -303,4 +303,5 @@ flowchart LR
 
 **补充说明**
 - `permissions` 不是 thread-wise next-load 设置。飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步；由发起 `thread/start` / `turn/start` 的那一端写进 app-server
+- `model` 也不是 thread-wise next-load 设置。飞书 `/model` 只覆盖当前会话后续 turn 的 `model` 名称；不改 thread-wise `profile / model_provider`
 - `profile`、`memory` 才是 thread-wise next-load 设置；切换它们通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`
