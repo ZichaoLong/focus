@@ -31,7 +31,7 @@
 
 | 命令 | 作用 | `/help` 可达 | 私聊 | 群聊 | 本地对应 |
 | --- | --- | --- | --- | --- | --- |
-| `/help [chat\|group\|thread\|runtime\|advanced\|identity]` | 打开帮助导航或指定页 | 是 | 仅管理员 | 仅管理员 | 无直接对应 |
+| `/help [chat\|group\|thread\|runtime\|identity]` | 打开帮助导航或指定页 | 是 | 仅管理员 | 仅管理员 | 无直接对应 |
 | `/commands` | 纯文字列出常用命令 | 否 | 仅管理员 | 仅管理员 | 无 |
 | `/h` | `/help` 别名 | 否 | 仅管理员 | 仅管理员 | 无 |
 | `/pwd` | 查看当前目录 | 否 | 仅管理员 | 仅管理员 | 无 |
@@ -50,7 +50,7 @@
 | `/attach [binding\|thread\|service]` | 恢复当前 chat、当前 thread 或当前实例的飞书推送 | 否；高级恢复面，主入口通常是 reset 结果卡按钮 | 仅管理员 | 仅管理员 | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | 取消当前执行 | 否；主入口是执行卡按钮 | 仅管理员 | 仅管理员 | 无 |
 
-### 2.2 运行时、高级功能与身份
+### 2.2 运行时与身份
 
 | 命令 | 作用 | `/help` 可达 | 私聊 | 群聊 | 本地对应 |
 | --- | --- | --- | --- | --- | --- |
@@ -60,8 +60,6 @@
 | `/approval [untrusted\|on-request\|never]` | 设置审批策略 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | 设置沙箱策略 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/collab-mode [default\|plan]` | 设置当前飞书会话后续 turn 的协作模式 | 是；`runtime` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/skills` | 查看当前目录可见的 skills，并启用或禁用 | 是；`advanced` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
-| `/plugins [plugin_id]` | 查看当前目录可见的 plugins；带 `plugin_id` 时查看详情 | 是；`advanced` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/whoami` | 查看自己的身份信息 | 是；`identity` 页 | 任何人 | 不支持 | 无 |
 | `/bot-status` | 查看机器人身份与配置探测结果 | 是；`identity` 页 | 任何人 | 仅管理员 | 无 |
 | `/init <token>` | 初始化管理员与 `bot_open_id` | 是；`identity` 页表单 | 任何人 | 不支持 | `feishu-codex config init-token` 只负责查看 token |
@@ -100,7 +98,6 @@
 - `/threads` 列表卡：`恢复/当前`、`归档`、`更多`、`收起`
 - `/profile` / `/memory` / `/reset-backend` 结果卡：`应用并重置 backend`、`强制应用并重置 backend`、`附着当前线程`、`附着当前实例`、`保持 detached`
 - `/model` / `/permissions` / `/approval` / `/sandbox` / `/collab-mode` 卡：turn-time runtime setting 切换按钮
-- `/skills` / `/plugins` 卡：skill 启停、plugin 详情返回、已安装 plugin 启停
 - 审批 / 补充输入卡：按当前请求类型暴露 `允许/拒绝/提交` 等按钮
 
 ## 5. 边界

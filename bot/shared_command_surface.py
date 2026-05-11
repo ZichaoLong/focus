@@ -99,18 +99,6 @@ _SHARED_COMMAND_SPECS = (
         feishu_usage="/attach [binding|thread|service]",
         feishu_summary="恢复当前会话、当前线程或当前实例的飞书推送。",
     ),
-    SharedCommandSpec(
-        key="skills",
-        slash_name="/skills",
-        feishu_usage="/skills",
-        feishu_summary="查看当前目录可见的 skills，并启用或禁用。",
-    ),
-    SharedCommandSpec(
-        key="plugins",
-        slash_name="/plugins",
-        feishu_usage="/plugins [plugin_id]",
-        feishu_summary="查看当前目录可见的 plugins，或查看指定 plugin 详情。",
-    ),
 )
 
 _SHARED_COMMANDS_BY_KEY = {spec.key: spec for spec in _SHARED_COMMAND_SPECS}

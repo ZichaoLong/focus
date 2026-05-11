@@ -29,7 +29,7 @@ It does not redefine:
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
-| `/help [chat\|group\|thread\|runtime\|advanced\|identity]` | Open help navigation or one page directly | yes | admin only | admin only | none |
+| `/help [chat\|group\|thread\|runtime\|identity]` | Open help navigation or one page directly | yes | admin only | admin only | none |
 | `/commands` | Show a plain-text list of common commands | no | admin only | admin only | none |
 | `/h` | Alias for `/help` | no | admin only | admin only | none |
 | `/pwd` | Show current working directory | no | admin only | admin only | none |
@@ -48,7 +48,7 @@ It does not redefine:
 | `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | not a root help command; primary entry is usually a reset result card | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
 
-### 2.2 Runtime, Advanced, and Identity
+### 2.2 Runtime and Identity
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
@@ -58,8 +58,6 @@ It does not redefine:
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `runtime` page | admin only | admin only | none |
 | `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy | yes; `runtime` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `runtime` page | admin only | admin only | none |
-| `/skills` | Show the skills visible from the current directory, and enable or disable them | yes; `advanced` page | admin only | admin only | no direct local equivalent |
-| `/plugins [plugin_id]` | Show plugins visible from the current directory; with `plugin_id`, show plugin detail | yes; `advanced` page | admin only | admin only | no direct local equivalent |
 | `/whoami` | Show the caller's identity | yes; `identity` page | anyone | unsupported | none |
 | `/bot-status` | Show bot identity and config probe results | yes; `identity` page | anyone | admin only | none |
 | `/init <token>` | Initialize admins and `bot_open_id` | yes; `identity` page form | anyone | unsupported | `feishu-codex config init-token` only shows the token |
@@ -98,7 +96,6 @@ These are part of the formal Feishu user surface and must be maintained together
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
 - `/model` / `/permissions` / `/approval` / `/sandbox` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
-- `/skills` / `/plugins` cards: skill toggles, plugin-detail back navigation, installed-plugin enable/disable
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 
 ## 5. Boundary

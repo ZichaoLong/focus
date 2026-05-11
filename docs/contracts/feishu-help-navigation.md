@@ -22,13 +22,12 @@ Its job is progressive disclosure:
 
 ## 2. Root Navigation
 
-The `/help` root card must expose exactly six topics:
+The `/help` root card must expose exactly five topics:
 
 - `Current Chat`
 - `Group`
 - `Thread`
 - `Runtime`
-- `Advanced`
 - `Identity`
 
 They correspond to:
@@ -53,9 +52,6 @@ They correspond to:
   - `/sandbox`
   - `/collab-mode`
   - `/reset-backend`
-- `Advanced`
-  - `/skills`
-  - `/plugins`
 - `Identity`
   - `/whoami`
   - `/bot-status`
@@ -121,20 +117,7 @@ Its body must also state:
 - after reset, `/attach [binding|thread|service]` can restore push delivery
 - the more common entry point is the attach buttons on the reset result card
 
-### 3.5 Advanced
-
-Must provide:
-
-- `/skills`
-- `/plugins`
-
-Its body must also state:
-
-- `/skills` operates on the skills configuration surface visible from the current directory
-- `/plugins` operates on the plugins visibility and configuration surface visible from the current directory
-- the first Feishu phase supports skill toggles, plugin detail, and installed-plugin enable/disable only
-
-### 3.6 Identity
+### 3.5 Identity
 
 Must provide:
 
@@ -189,4 +172,4 @@ So:
 - seeing navigation is not the same as being authorized to execute it
 - final permission enforcement belongs to backend command handling, not to card visibility alone
 
-If any help page, button, or form entry is added, removed, or renamed, or if the help-page placement of `compact / skills / plugins` changes, this file must be updated with the code.
+If any help page, button, or form entry is added, removed, or renamed, or if the help-page placement of `compact` changes, this file must be updated with the code.
