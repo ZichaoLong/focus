@@ -1,8 +1,9 @@
 """
-Feishu 侧一等 slash 命令事实源。
+Feishu slash 命令共享片段。
 
-这里只定义仓库明确维护的 Feishu slash surface，供 help / cards / tests 复用。
-upstream Codex TUI 内的原生命令不在这里。
+这里只定义 help / cards / tests 复用的那部分命令描述，不是完整命令路由事实源。
+完整 Feishu surface 以 `bot/codex_handler.py` 路由表和 `docs/contracts/feishu-command-matrix.*` 为准。
+upstream Codex TUI 内的原生命令也不在这里。
 """
 
 from __future__ import annotations

@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from typing import Any
 
-from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
+from bot.adapters.base import RuntimeConfigSummary, RuntimeModelSummary, RuntimeProfileSummary
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_settings_domain import (
     CodexSettingsDomain,
@@ -47,6 +47,7 @@ class _SettingsPortsStub:
             approval_policy="on-request",
             sandbox="workspace-write",
             collaboration_mode="default",
+            model="",
             current_thread_id="thread-1",
         )
         self.runtime_config = RuntimeConfigSummary(
@@ -55,6 +56,11 @@ class _SettingsPortsStub:
                 RuntimeProfileSummary(name="work", model_provider="anthropic"),
             ],
         )
+        self.models = [
+            RuntimeModelSummary(model="gpt-5.5", display_name="gpt-5.5", is_default=True),
+            RuntimeModelSummary(model="gpt-5.4", display_name="gpt-5.4"),
+            RuntimeModelSummary(model="hidden-model", display_name="hidden-model", hidden=True),
+        ]
         self.saved_thread_profiles: list[tuple[str, str, str, str]] = []
         self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
@@ -216,6 +222,9 @@ class _SettingsPortsStub:
     def safe_read_runtime_config(self) -> RuntimeConfigSummary | None:
         return self.runtime_config
 
+    def list_models(self) -> list[RuntimeModelSummary]:
+        return list(self.models)
+
 
 def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
     return CodexSettingsDomain(
@@ -241,6 +250,7 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_runtime_view=stub.get_runtime_view,
             update_runtime_settings=stub.update_runtime_settings,
             safe_read_runtime_config=stub.safe_read_runtime_config,
+            list_models=stub.list_models,
         ),
         approval_policies=_APPROVAL_POLICIES,
         sandbox_policies=_SANDBOX_POLICIES,
@@ -664,6 +674,65 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIn("当前 thread 的 memory mode 已是：`read`", content)
         self.assertIn("无需重置 backend", content)
         self.assertNotIn("应用并重置 backend", content)
+
+    def test_model_command_without_arg_shows_model_summary_card(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_profile = ThreadResumeProfileRecord(
+            thread_id="thread-1",
+            profile="work",
+            model="work-model",
+            model_provider="work-provider",
+            updated_at=1.0,
+        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_model_command("ou_user", "chat-a", "", message_id="msg-1")
+
+        self.assertIsNotNone(result.card)
+        self.assertEqual(result.card["header"]["title"]["content"], "Codex 模型")
+        content = result.card["elements"][0]["content"]
+        self.assertIn("当前会话 model override：`auto`", content)
+        self.assertIn("当前 thread-wise profile：`work`", content)
+        self.assertIn("当前 thread-wise provider：`work-provider`", content)
+        action_buttons = result.card["elements"][2]["actions"]
+        self.assertEqual(action_buttons[0]["text"]["content"], "✓ auto")
+
+    def test_model_command_updates_only_runtime_model_override(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_model_command("ou_user", "chat-a", "gpt-5.4", message_id="msg-1")
+
+        self.assertIn("已切换当前会话的 model override：`gpt-5.4`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "model": "gpt-5.4"})],
+        )
+        self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertEqual(stub.applied_thread_memory_modes, [])
+
+    def test_model_command_auto_clears_runtime_override(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime.model = "gpt-5.5"
+        domain = _make_domain(stub)
+
+        result = domain.handle_model_command("ou_user", "chat-a", "auto", message_id="msg-1")
+
+        self.assertIn("已切换当前会话的 model override：`auto`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "model": ""})],
+        )
+
+    def test_model_command_rejects_unknown_model(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_model_command("ou_user", "chat-a", "bad-model", message_id="msg-1")
+
+        self.assertIn("未找到 model：`bad-model`", result.text)
+        self.assertIn("先发 `/model` 查看当前可用 model。", result.text)
+        self.assertEqual(stub.update_calls, [])
 
     def test_apply_memory_mode_with_backend_reset_applies_after_reset(self) -> None:
         stub = _SettingsPortsStub()
