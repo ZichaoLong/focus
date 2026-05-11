@@ -3868,7 +3868,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
-    def test_new_thread_applies_and_persists_default_thread_memory_mode(self) -> None:
+    def test_new_thread_applies_default_thread_memory_mode_and_promotes_after_first_turn(self) -> None:
         handler, _ = self._make_handler({"default_thread_memory_mode": "read"})
 
         handler.handle_message("ou_user", "c1", "/new")
@@ -3883,6 +3883,16 @@ class CodexHandlerTests(unittest.TestCase):
             },
         )
         memory_record = handler._thread_memory_mode_store.load("thread-created")
+        self.assertIsNone(memory_record)
+        pending_record = handler._thread_memory_mode("thread-created")
+        self.assertIsNotNone(pending_record)
+        assert pending_record is not None
+        self.assertEqual(pending_record.mode, "read")
+
+        handler.handle_message("ou_user", "c1", "hello")
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        memory_record = handler._thread_memory_mode_store.load("thread-created")
         self.assertIsNotNone(memory_record)
         assert memory_record is not None
         self.assertEqual(memory_record.mode, "read")
@@ -3896,7 +3906,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
-    def test_prompt_created_thread_applies_and_persists_default_thread_memory_mode(self) -> None:
+    def test_prompt_created_thread_applies_default_thread_memory_mode_and_promotes_after_turn_completed(self) -> None:
         handler, _ = self._make_handler({"default_thread_memory_mode": "read_write"})
 
         handler.handle_message("ou_user", "c1", "hello")
@@ -3910,6 +3920,15 @@ class CodexHandlerTests(unittest.TestCase):
                 }
             },
         )
+        memory_record = handler._thread_memory_mode_store.load("thread-created")
+        self.assertIsNone(memory_record)
+        pending_record = handler._thread_memory_mode("thread-created")
+        self.assertIsNotNone(pending_record)
+        assert pending_record is not None
+        self.assertEqual(pending_record.mode, "read_write")
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
         memory_record = handler._thread_memory_mode_store.load("thread-created")
         self.assertIsNotNone(memory_record)
         assert memory_record is not None
@@ -4070,6 +4089,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.create_thread_calls[-1]["model_provider"], "provider2_api")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
+        pending = handler._thread_resume_profile("thread-created")
+        assert pending is not None
+        self.assertEqual(pending.profile, "provider2")
+        self.assertEqual(pending.model, "provider2-model")
+        self.assertEqual(pending.model_provider, "provider2_api")
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
         saved = handler._thread_resume_profile_store.load("thread-created")
         assert saved is not None
         self.assertEqual(saved.profile, "provider2")
@@ -4164,11 +4192,12 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.create_thread_calls[-1]["model"], "provider2-model")
         self.assertEqual(handler._adapter.create_thread_calls[-1]["model_provider"], "provider2_api")
-        saved = handler._thread_resume_profile_store.load("thread-created")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
-        self.assertEqual(saved.model, "provider2-model")
-        self.assertEqual(saved.model_provider, "provider2_api")
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
+        pending = handler._thread_resume_profile("thread-created")
+        assert pending is not None
+        self.assertEqual(pending.profile, "provider2")
+        self.assertEqual(pending.model, "provider2-model")
+        self.assertEqual(pending.model_provider, "provider2_api")
 
     def test_resume_snapshot_by_id_rejects_incomplete_persisted_profile_slice(self) -> None:
         handler, _ = self._make_handler()

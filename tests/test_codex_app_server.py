@@ -2528,7 +2528,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-    def test_thread_start_response_persists_initial_thread_profile_seed_once(self) -> None:
+    def test_thread_start_response_promotes_initial_thread_profile_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -2566,6 +2566,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 client_ws=client_ws,
                 backend_ws=backend_ws,
             )
+            self.assertIsNone(ThreadResumeProfileStore(root_dir).load("thread-1"))
             gate.handle_client_message(
                 json.dumps(
                     {
@@ -2578,12 +2579,29 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 client_ws=client_ws,
                 backend_ws=backend_ws,
             )
+            forwarded_second = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded_second["method"], "thread/start")
+            self.assertNotIn("config", forwarded_second["params"])
             gate.handle_backend_message(
                 json.dumps(
                     {
                         "jsonrpc": "2.0",
                         "id": 2,
                         "result": {"thread": {"id": "thread-2"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turn": {"id": "turn-1", "status": "completed"},
+                        },
                     }
                 ),
                 client_ws=client_ws,
@@ -2600,7 +2618,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(first.model_provider, "provider2_api")
             self.assertIsNone(second)
 
-    def test_thread_start_request_injects_and_persists_initial_thread_memory_mode_seed_once(self) -> None:
+    def test_thread_start_request_promotes_initial_thread_memory_mode_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -2647,6 +2665,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 client_ws=client_ws,
                 backend_ws=backend_ws,
             )
+            self.assertIsNone(ThreadMemoryModeStore(root_dir).load("thread-1"))
             gate.handle_client_message(
                 json.dumps(
                     {
@@ -2659,12 +2678,29 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 client_ws=client_ws,
                 backend_ws=backend_ws,
             )
+            forwarded_second = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded_second["method"], "thread/start")
+            self.assertNotIn("config", forwarded_second["params"])
             gate.handle_backend_message(
                 json.dumps(
                     {
                         "jsonrpc": "2.0",
                         "id": 2,
                         "result": {"thread": {"id": "thread-2"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turn": {"id": "turn-1", "status": "completed"},
+                        },
                     }
                 ),
                 client_ws=client_ws,
@@ -2720,7 +2756,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": True,
                 },
             )
-            self.assertEqual(forwarded["params"]["config"]["profiles"]["provider2"]["memories"]["use_memories"], True)
+            self.assertNotIn("profiles", forwarded["params"]["config"])
 
     def test_thread_resume_request_injects_saved_thread_profile_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

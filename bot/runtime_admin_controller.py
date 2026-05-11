@@ -63,6 +63,7 @@ from bot.runtime_state import (
     RuntimeStateDict,
 )
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.thread_materialization import thread_summary_is_provisional
 from bot.thread_memory_mode import normalize_thread_memory_mode
 from bot.thread_image_delivery import ThreadImageDeliveryController
 
@@ -1800,6 +1801,20 @@ class RuntimeAdminController:
 
         normalized_target_mode = normalize_thread_memory_mode(target_mode)
         result["requested_mode"] = normalized_target_mode
+        if thread_summary_is_provisional(thread):
+            result["plan_status"] = REPROFILE_STATUS_BLOCKED
+            result["reason_code"] = "memory_mode_blocked_by_provisional_thread"
+            result["reason"] = (
+                "目标 thread 仍是未 materialize 的 provisional shell；"
+                "本地 control-plane 当前按 fail-close 拒绝直接改写该 thread 的 memory mode。"
+                "请先让它完成首个 turn，或回到绑定它的飞书会话继续处理。"
+            )
+            result["requires_reset_backend"] = False
+            result["requires_force_reset_backend"] = False
+            result["diagnostics"] = list(result["diagnostics"]) + [
+                "当前目标 thread 仍是 provisional shell；当前不允许通过本地 control-plane reset 后写入旧壳。",
+            ]
+            return result
         current_mode = self._load_thread_memory_mode_value(normalized_thread_id)
         if current_mode and current_mode == normalized_target_mode:
             return self._refresh_thread_memory_mutation_result(

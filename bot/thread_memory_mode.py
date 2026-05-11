@@ -53,22 +53,15 @@ def build_thread_memory_config_override(
     *,
     profile_name_hint: str = "",
 ) -> dict[str, Any]:
+    del profile_name_hint
     resolved = resolve_thread_memory_mode(mode)
     memories_config = {
         "use_memories": resolved.use_memories,
         "generate_memories": resolved.generate_memories,
     }
-    override: dict[str, Any] = {
+    return {
         "memories": dict(memories_config),
     }
-    normalized_profile = str(profile_name_hint or "").strip()
-    if normalized_profile:
-        override["profiles"] = {
-            normalized_profile: {
-                "memories": dict(memories_config),
-            }
-        }
-    return override
 
 
 def deep_merge_config_overrides(*parts: dict[str, Any] | None) -> dict[str, Any]:

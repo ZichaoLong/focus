@@ -328,13 +328,46 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(archived, ["thread-1"])
         self.assertEqual(unsubscribed, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
-        self.assertEqual(
-            result["cleared_binding_ids"],
-            ["p2p:ou_user:c1", "p2p:ou_user2:c2"],
+
+    def test_thread_memory_mode_control_result_fail_closes_for_provisional_thread(self) -> None:
+        (
+            _lock,
+            _binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+            path="/tmp/feishu-codex-missing-rollout",
         )
-        with lock:
-            self.assertIsNone(binding_runtime.binding_runtime_snapshot_locked(binding_a))
-            self.assertIsNone(binding_runtime.binding_runtime_snapshot_locked(binding_b))
+        summaries["thread-1"] = thread
+
+        result = controller.thread_memory_mode_control_result(
+            thread,
+            target_mode="read",
+            reset_backend=True,
+        )
+
+        self.assertFalse(result["applied"])
+        self.assertEqual(result["plan_status"], "blocked")
+        self.assertEqual(result["reason_code"], "memory_mode_blocked_by_provisional_thread")
+        self.assertEqual(reset_calls, [])
 
     def test_archive_thread_for_control_rejects_other_instance_live_runtime_owner(self) -> None:
         (

@@ -35,6 +35,7 @@ from bot.stores.interaction_lease_store import (
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, BACKEND_THREAD_STATUS_NOT_LOADED
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
+from bot.thread_pending_settings import PendingThreadwiseSeed
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
 from bot.thread_memory_mode import (
     build_thread_memory_config_override,
@@ -326,6 +327,7 @@ class _ProxyInteractionGate:
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
         self._pending_thread_request_by_id: dict[str, tuple[str, str]] = {}
+        self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}
         self._owned_thread_ids: set[str] = set()
 
     def _remember_owned_thread(self, thread_id: str) -> None:
@@ -408,33 +410,100 @@ class _ProxyInteractionGate:
         self._runtime_lease_store.release(thread_id, self._holder.holder_id)
         self._forget_owned_thread(thread_id)
 
-    def _persist_initial_thread_profile_seed_once(self, thread_id: str) -> None:
-        # The wrapper decides whether this launch should seed the first new
-        # thread. The proxy owns only the second half: once a real `thread_id`
-        # exists, persist that one-time seed exactly once.
+    def _pending_threadwise_seed(self, thread_id: str) -> PendingThreadwiseSeed | None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return None
+        with self._lock:
+            return self._pending_threadwise_seed_by_thread_id.get(normalized_thread_id)
+
+    def _replace_pending_threadwise_seed(
+        self,
+        thread_id: str,
+        *,
+        profile: str = "",
+        model: str = "",
+        model_provider: str = "",
+        memory_mode: str = "",
+    ) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        normalized_profile = str(profile or "").strip()
+        normalized_memory_mode = str(memory_mode or "").strip()
+        if not normalized_thread_id:
+            return
+        if normalized_memory_mode:
+            normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
+        seed = PendingThreadwiseSeed(
+            thread_id=normalized_thread_id,
+            profile=normalized_profile,
+            model=str(model or "").strip(),
+            model_provider=str(model_provider or "").strip(),
+            memory_mode=normalized_memory_mode,
+        )
+        with self._lock:
+            if seed.has_any:
+                self._pending_threadwise_seed_by_thread_id[normalized_thread_id] = seed
+            else:
+                self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+
+    def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             return
         with self._lock:
-            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed.profile:
-                return
-            setting = self._initial_thread_profile_seed
-            self._initial_thread_profile_seed_consumed = True
-        try:
-            ThreadResumeProfileStore(self._global_data_dir).save(
-                normalized_thread_id,
-                profile=setting.profile,
-                model=setting.model,
-                model_provider=setting.model_provider,
+            self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+
+    def _bind_initial_thread_seed_once(self, thread_id: str) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return
+        with self._lock:
+            profile_setting = (
+                self._initial_thread_profile_seed
+                if not self._initial_thread_profile_seed_consumed and self._initial_thread_profile_seed.profile
+                else None
             )
+            memory_mode = (
+                self._initial_thread_memory_mode_seed
+                if not self._initial_thread_memory_mode_seed_consumed and self._initial_thread_memory_mode_seed
+                else ""
+            )
+            if profile_setting is None and not memory_mode:
+                return
+            self._initial_thread_profile_seed_consumed = True
+            self._initial_thread_memory_mode_seed_consumed = True
+        self._replace_pending_threadwise_seed(
+            normalized_thread_id,
+            profile=profile_setting.profile if profile_setting is not None else "",
+            model=profile_setting.model if profile_setting is not None else "",
+            model_provider=profile_setting.model_provider if profile_setting is not None else "",
+            memory_mode=memory_mode,
+        )
+
+    def _promote_pending_threadwise_seed(self, thread_id: str) -> None:
+        pending = self._pending_threadwise_seed(thread_id)
+        if pending is None:
+            return
+        try:
+            if pending.has_profile_slice:
+                ThreadResumeProfileStore(self._global_data_dir).save(
+                    pending.thread_id,
+                    profile=pending.profile,
+                    model=pending.model,
+                    model_provider=pending.model_provider,
+                )
+            if pending.has_memory_mode:
+                ThreadMemoryModeStore(self._global_data_dir).save(
+                    pending.thread_id,
+                    mode=pending.memory_mode,
+                )
         except Exception as exc:
-            with self._lock:
-                if self._initial_thread_profile_seed == setting:
-                    self._initial_thread_profile_seed_consumed = False
             print(
-                f"warning: failed to persist initial thread profile seed for `{normalized_thread_id}`: {exc}",
+                f"warning: failed to promote pending thread seed for `{pending.thread_id}`: {exc}",
                 file=sys.stderr,
             )
+            return
+        self._clear_pending_threadwise_seed(pending.thread_id)
 
     def _apply_initial_thread_profile_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
         params = payload.get("params")
@@ -491,29 +560,6 @@ class _ProxyInteractionGate:
         updated_payload["params"] = updated_params
         return updated_payload
 
-    def _persist_initial_thread_memory_mode_seed_once(self, thread_id: str) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return
-        with self._lock:
-            if self._initial_thread_memory_mode_seed_consumed or not self._initial_thread_memory_mode_seed:
-                return
-            memory_mode = self._initial_thread_memory_mode_seed
-            self._initial_thread_memory_mode_seed_consumed = True
-        try:
-            ThreadMemoryModeStore(self._global_data_dir).save(
-                normalized_thread_id,
-                mode=normalize_thread_memory_mode(memory_mode),
-            )
-        except Exception as exc:
-            with self._lock:
-                if self._initial_thread_memory_mode_seed == memory_mode:
-                    self._initial_thread_memory_mode_seed_consumed = False
-            print(
-                f"warning: failed to persist initial thread memory mode seed for `{normalized_thread_id}`: {exc}",
-                file=sys.stderr,
-            )
-
     def _apply_saved_thread_profile_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
         # Wrapper launch args are only hints. The persisted thread-wise
         # next-load profile slice is enforced here at the actual
@@ -522,8 +568,16 @@ class _ProxyInteractionGate:
         thread_id = _payload_thread_id(payload)
         if not thread_id:
             return payload
-        profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-        profile_setting = thread_resume_profile_setting_from_record(profile_record)
+        pending = self._pending_threadwise_seed(thread_id)
+        if pending is not None and pending.has_profile_slice:
+            profile_setting = build_thread_resume_profile_setting(
+                pending.profile,
+                model=pending.model,
+                model_provider=pending.model_provider,
+            )
+        else:
+            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+            profile_setting = thread_resume_profile_setting_from_record(profile_record)
         if profile_setting is None or not str(profile_setting.profile or "").strip():
             return payload
         missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
@@ -565,8 +619,15 @@ class _ProxyInteractionGate:
         thread_id = _payload_thread_id(payload)
         if not thread_id:
             return payload
-        memory_record = ThreadMemoryModeStore(self._global_data_dir).load(thread_id)
-        if memory_record is None:
+        pending = self._pending_threadwise_seed(thread_id)
+        memory_mode = ""
+        if pending is not None and pending.has_memory_mode:
+            memory_mode = pending.memory_mode
+        else:
+            memory_record = ThreadMemoryModeStore(self._global_data_dir).load(thread_id)
+            if memory_record is not None:
+                memory_mode = memory_record.mode
+        if not memory_mode:
             return payload
         params = payload.get("params")
         if not isinstance(params, dict):
@@ -575,15 +636,18 @@ class _ProxyInteractionGate:
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
         profile_name_hint = str(normalized_existing_config.get("profile", "") or "").strip()
         if not profile_name_hint:
-            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-            if profile_record is not None:
-                profile_name_hint = str(profile_record.profile or "").strip()
+            if pending is not None and pending.has_profile_slice:
+                profile_name_hint = pending.profile
+            else:
+                profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+                if profile_record is not None:
+                    profile_name_hint = str(profile_record.profile or "").strip()
         if not profile_name_hint:
             profile_name_hint = self._resume_profile_hint
         merged_config = deep_merge_config_overrides(
             normalized_existing_config,
             build_thread_memory_config_override(
-                memory_record.mode,
+                memory_mode,
                 profile_name_hint=profile_name_hint,
             ),
         )
@@ -696,9 +760,16 @@ class _ProxyInteractionGate:
             thread_id = _payload_thread_id(payload)
             if thread_id:
                 if method == "turn/completed":
+                    turn = params if isinstance(params, dict) else {}
+                    completed = turn.get("turn") if isinstance(turn.get("turn"), dict) else {}
+                    turn_error = completed.get("error") if isinstance(completed, dict) else {}
+                    turn_status = str(completed.get("status", "") or "").strip()
+                    if turn_status == "completed" and not turn_error:
+                        self._promote_pending_threadwise_seed(thread_id)
                     self._lease_store.release(thread_id, self._holder)
                     self._forget_owned_thread(thread_id)
                 elif method == "thread/closed":
+                    self._clear_pending_threadwise_seed(thread_id)
                     self._lease_store.release(thread_id, self._holder)
                     self._release_runtime_lease(thread_id)
                     self._forget_owned_thread(thread_id)
@@ -723,8 +794,7 @@ class _ProxyInteractionGate:
                     started_thread_id = _response_thread_id(payload)
                     if started_thread_id:
                         self._acquire_runtime_lease(started_thread_id)
-                        self._persist_initial_thread_profile_seed_once(started_thread_id)
-                        self._persist_initial_thread_memory_mode_seed_once(started_thread_id)
+                        self._bind_initial_thread_seed_once(started_thread_id)
                 elif request_method == "thread/unsubscribe" and "error" not in payload:
                     self._release_runtime_lease(thread_id)
             with self._lock:

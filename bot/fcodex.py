@@ -567,7 +567,8 @@ def _build_wrapper_profile_launch_plan(
     - deciding whether this launch carries a one-time new-thread seed
 
     The proxy later owns enforcing that seed at the actual `thread/start` RPC
-    boundary, then persisting it once the first real `thread_id` is returned.
+    boundary, then holding it as pending state until the first successful turn
+    materializes that logical thread.
     """
     planned_args = list(user_args)
     configured_default_thread_memory_mode = CodexAppServerConfig.from_dict(cfg).default_thread_memory_mode
