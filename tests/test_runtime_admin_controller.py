@@ -3,6 +3,7 @@ import tempfile
 import threading
 import types
 import unittest
+from unittest.mock import patch
 
 from bot.adapters.base import ThreadSnapshot, ThreadSummary
 from bot.binding_runtime_manager import BindingRuntimeManager
@@ -1196,6 +1197,45 @@ class RuntimeAdminControllerTests(unittest.TestCase):
 
         self.assertIn("p2p:ou_user:c1", str(ctx.exception))
         self.assertIn("不能清除 binding", str(ctx.exception))
+
+    def test_clear_all_bindings_for_control_rolls_back_when_batch_clear_fails(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding_a = ("ou_user", "c1")
+        binding_b = ("ou_user2", "c2")
+        self._bind_thread(lock, binding_runtime, binding_a, thread_id="thread-1")
+        self._bind_thread(lock, binding_runtime, binding_b, thread_id="thread-2")
+
+        with patch.object(
+            binding_runtime._chat_binding_store,
+            "clear",
+            side_effect=[None, RuntimeError("store clear failed")],
+        ):
+            with self.assertRaisesRegex(RuntimeError, "store clear failed"):
+                controller.clear_all_bindings_for_control()
+
+        with lock:
+            snapshot_a = binding_runtime.binding_runtime_snapshot_locked(binding_a)
+            snapshot_b = binding_runtime.binding_runtime_snapshot_locked(binding_b)
+        assert snapshot_a is not None
+        assert snapshot_b is not None
+        self.assertEqual(snapshot_a.feishu_runtime_state, "attached")
+        self.assertEqual(snapshot_b.feishu_runtime_state, "attached")
+        self.assertEqual(unsubscribed, [])
+        self.assertEqual(released_runtime_leases, [])
 
     def test_handle_service_control_request_thread_bindings_reports_attached_and_detached(self) -> None:
         (

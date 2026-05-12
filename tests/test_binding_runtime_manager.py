@@ -235,6 +235,74 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(manager.interaction_owner_snapshot_locked("thread-1")["kind"], "none")
         self.assertIsNone(store.load(binding))
 
+    def test_deactivate_binding_locked_rolls_back_when_store_clear_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding = ("ou-user", "chat-1")
+        state = self._attach_binding(manager, binding)
+        state["current_message_id"] = "card-live"
+
+        with patch.object(manager._chat_binding_store, "clear", side_effect=RuntimeError("store clear failed")):
+            with manager._lock:
+                with self.assertRaisesRegex(RuntimeError, "store clear failed"):
+                    manager.deactivate_binding_locked(
+                        binding,
+                        on_deactivate_state=lambda current_state: current_state.__setitem__("current_message_id", ""),
+                    )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        self.assertEqual(state["current_thread_id"], "thread-1")
+        self.assertEqual(state["feishu_runtime_state"], "attached")
+        self.assertEqual(state["current_message_id"], "card-live")
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-1"), [binding])
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [binding])
+        self.assertEqual(manager.interaction_owner_snapshot_locked("thread-1", current_binding=binding)["relation"], "current")
+        assert stored is not None
+        self.assertEqual(stored["current_thread_id"], "thread-1")
+        self.assertEqual(stored["feishu_runtime_state"], "attached")
+
+    def test_deactivate_bindings_locked_rolls_back_all_bindings_when_batch_clear_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding_a = ("ou-user-a", "chat-a")
+        binding_b = ("ou-user-b", "chat-b")
+        state_a = self._attach_binding(manager, binding_a, thread_id="thread-a", thread_title="Demo A")
+        state_b = self._attach_binding(manager, binding_b, thread_id="thread-b", thread_title="Demo B")
+        state_a["current_message_id"] = "card-a"
+        state_b["current_message_id"] = "card-b"
+
+        with patch.object(
+            manager._chat_binding_store,
+            "clear",
+            side_effect=[None, RuntimeError("store clear failed")],
+        ):
+            with manager._lock:
+                with self.assertRaisesRegex(RuntimeError, "store clear failed"):
+                    manager.deactivate_bindings_locked(
+                        [binding_a, binding_b],
+                        on_deactivate_state=lambda current_state: current_state.__setitem__("current_message_id", ""),
+                    )
+
+        store = ChatBindingStore(data_dir)
+        stored_a = store.load(binding_a)
+        stored_b = store.load(binding_b)
+        self.assertEqual(state_a["current_thread_id"], "thread-a")
+        self.assertEqual(state_b["current_thread_id"], "thread-b")
+        self.assertEqual(state_a["feishu_runtime_state"], "attached")
+        self.assertEqual(state_b["feishu_runtime_state"], "attached")
+        self.assertEqual(state_a["current_message_id"], "card-a")
+        self.assertEqual(state_b["current_message_id"], "card-b")
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-a"), [binding_a])
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-b"), [binding_b])
+        assert stored_a is not None
+        assert stored_b is not None
+        self.assertEqual(stored_a["current_thread_id"], "thread-a")
+        self.assertEqual(stored_b["current_thread_id"], "thread-b")
+
     def test_bind_thread_locked_replaces_old_thread_and_persists_new_attachment(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -424,6 +492,32 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         assert stored is not None
         self.assertEqual(stored["current_thread_id"], "thread-old")
 
+    def test_detach_binding_locked_rolls_back_when_store_save_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding = ("ou-user", "chat-1")
+        state = self._attach_binding(manager, binding)
+        state["current_message_id"] = "card-live"
+
+        with patch.object(manager._chat_binding_store, "save", side_effect=RuntimeError("store save failed")):
+            with manager._lock:
+                with self.assertRaisesRegex(RuntimeError, "store save failed"):
+                    manager.detach_binding_locked(
+                        binding,
+                        on_detach_binding_state=lambda current_state: current_state.__setitem__("current_message_id", ""),
+                    )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        self.assertEqual(state["feishu_runtime_state"], "attached")
+        self.assertEqual(state["current_message_id"], "card-live")
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [binding])
+        self.assertEqual(manager.thread_subscribers("thread-1"), (binding,))
+        self.assertEqual(manager.interaction_owner_snapshot_locked("thread-1", current_binding=binding)["relation"], "current")
+        assert stored is not None
+        self.assertEqual(stored["feishu_runtime_state"], "attached")
+
     def test_hydrate_stored_binding_locked_uses_runtime_defaults_for_empty_overrides(self) -> None:
         manager = self._make_manager()
         state = manager.build_default_runtime_state()
@@ -492,6 +586,55 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         assert stored_b is not None
         self.assertEqual(stored_a["feishu_runtime_state"], "detached")
         self.assertEqual(stored_b["feishu_runtime_state"], "detached")
+
+    def test_detach_thread_bindings_locked_rolls_back_all_bindings_when_store_save_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding_a = ("ou-user-a", "chat-a")
+        binding_b = ("ou-user-b", "chat-b")
+        state_a = self._attach_binding(manager, binding_a)
+        state_b = self._attach_binding(
+            manager,
+            binding_b,
+            acquire_interaction_owner=False,
+        )
+        state_a["current_message_id"] = "card-a"
+        state_b["current_message_id"] = "card-b"
+
+        with patch.object(
+            manager._chat_binding_store,
+            "save",
+            side_effect=[None, RuntimeError("store save failed")],
+        ):
+            with manager._lock:
+                with self.assertRaisesRegex(RuntimeError, "store save failed"):
+                    manager.detach_thread_bindings_locked(
+                        "thread-1",
+                        detach_availability=lambda thread_id: (True, ""),
+                        on_release_binding_state=lambda current_state: current_state.__setitem__(
+                            "current_message_id",
+                            "",
+                        ),
+                    )
+
+        store = ChatBindingStore(data_dir)
+        stored_a = store.load(binding_a)
+        stored_b = store.load(binding_b)
+        self.assertEqual(state_a["feishu_runtime_state"], "attached")
+        self.assertEqual(state_b["feishu_runtime_state"], "attached")
+        self.assertEqual(state_a["current_message_id"], "card-a")
+        self.assertEqual(state_b["current_message_id"], "card-b")
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [binding_a, binding_b])
+        self.assertEqual(
+            manager.interaction_owner_snapshot_locked("thread-1", current_binding=binding_a)["relation"],
+            "current",
+        )
+        assert stored_a is not None
+        assert stored_b is not None
+        self.assertEqual(stored_a["feishu_runtime_state"], "attached")
+        self.assertEqual(stored_b["feishu_runtime_state"], "attached")
 
     def test_unsubscribe_by_thread_id_locked_respects_external_availability_gate(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

@@ -565,12 +565,8 @@ class RuntimeAdminController:
                     blockers.append(f"{format_binding_id(binding)}: {reason}")
             if blockers:
                 raise ValueError("以下 binding 当前不能清除：\n" + "\n".join(blockers))
-            for binding in bindings:
-                unsubscribe_thread_id = self._deactivate_binding_locked(binding)
-                cleared_binding_ids.append(format_binding_id(binding))
-                if unsubscribe_thread_id:
-                    unsubscribe_thread_ids.append(unsubscribe_thread_id)
-            self._clear_all_stored_bindings()
+            unsubscribe_thread_ids.extend(self._binding_runtime.deactivate_bindings_locked(bindings))
+            cleared_binding_ids.extend(format_binding_id(binding) for binding in bindings)
         for unsubscribe_thread_id in sorted(set(unsubscribe_thread_ids)):
             self._unsubscribe_thread(unsubscribe_thread_id)
             self._release_service_thread_runtime_lease(unsubscribe_thread_id)
@@ -1401,13 +1397,13 @@ class RuntimeAdminController:
         cleared_binding_ids: list[str] = []
         unsubscribe_thread_ids: list[str] = []
         with self._lock:
-            for binding in bound_bindings:
-                if self._binding_runtime.binding_runtime_snapshot_locked(binding) is None:
-                    continue
-                unsubscribe_thread_id = self._deactivate_binding_locked(binding)
-                if unsubscribe_thread_id:
-                    unsubscribe_thread_ids.append(unsubscribe_thread_id)
-                cleared_binding_ids.append(format_binding_id(binding))
+            existing_bindings = [
+                binding
+                for binding in bound_bindings
+                if self._binding_runtime.binding_runtime_snapshot_locked(binding) is not None
+            ]
+            unsubscribe_thread_ids.extend(self._binding_runtime.deactivate_bindings_locked(existing_bindings))
+            cleared_binding_ids.extend(format_binding_id(binding) for binding in existing_bindings)
         unique_unsubscribe_thread_ids = sorted(set(unsubscribe_thread_ids))
         for unsubscribe_thread_id in unique_unsubscribe_thread_ids:
             self._unsubscribe_thread(unsubscribe_thread_id)
