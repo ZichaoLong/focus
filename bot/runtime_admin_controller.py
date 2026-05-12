@@ -1474,13 +1474,24 @@ class RuntimeAdminController:
         resolved_summary, backend_thread_status = self.read_thread_summary_for_status(normalized_thread_id)
         lease = self._load_thread_runtime_lease(normalized_thread_id)
         effective_summary = resolved_summary or summary
+        effective_summary_title = ""
+        if effective_summary is not None:
+            effective_summary_title = str(effective_summary.name or effective_summary.preview or "").strip()
+        effective_title = (
+            effective_summary_title or str(snapshot.get("thread_title", "") or "").strip()
+        )
+        effective_working_dir = (
+            effective_summary.cwd
+            if effective_summary is not None and str(effective_summary.cwd or "").strip()
+            else str(snapshot.get("working_dir", "") or "").strip()
+        )
         detach_reason_code = self.detach_thread_check_locked(normalized_thread_id).reason_code
         if not snapshot["bound_binding_ids"]:
             detach_reason_code = DETACH_NOT_APPLICABLE_NO_BINDING
         return {
             "thread_id": snapshot["thread_id"],
-            "thread_title": effective_summary.title if effective_summary is not None else "",
-            "working_dir": effective_summary.cwd if effective_summary is not None else "",
+            "thread_title": effective_title,
+            "working_dir": effective_working_dir,
             "thread_memory_mode": self._current_thread_memory_mode_text(normalized_thread_id),
             "backend_thread_status": backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN,
             "backend_running_turn": backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE,
@@ -1953,7 +1964,21 @@ class RuntimeAdminController:
             "thread/attach",
             "thread/archive",
         }:
-            thread = self._resolve_thread_target_for_control_params(params)
+            thread_id = str(params.get("thread_id", "") or "").strip()
+            thread_name = str(params.get("thread_name", "") or "").strip()
+            if method in {"thread/status", "thread/bindings"} and thread_id and not thread_name:
+                thread = ThreadSummary(
+                    thread_id=thread_id,
+                    cwd="",
+                    name="",
+                    preview="",
+                    created_at=0,
+                    updated_at=0,
+                    source="appServer",
+                    status=BACKEND_THREAD_STATUS_UNKNOWN,
+                )
+            else:
+                thread = self._resolve_thread_target_for_control_params(params)
             if method == "thread/status":
                 return self.thread_status_snapshot(thread.thread_id, summary=thread)
             if method == "thread/bindings":

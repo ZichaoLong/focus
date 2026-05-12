@@ -192,6 +192,11 @@ feishu-codexctl thread status --thread-name <name>
 feishu-codexctl image send --path ./diagram.png
 ```
 
+可选进阶：
+
+- `feishu-codexctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
+- 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `feishu-codexctl image send`，把图片发回当前 thread 当前 attached 的飞书会话。
+
 ### 5. 多机器人多实例
 
 如果你希望配置多个飞书应用及机器人，每个机器人对应不同的 `feishu-codex` 实例，可按下面方式创建命名实例：
@@ -302,6 +307,5 @@ flowchart LR
 - 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 
 **补充说明**
-- `permissions` 不是 thread-wise next-load 设置。飞书会话和本地 `fcodex` 各自保存自己的权限设置，彼此不会自动同步；由发起 `thread/start` / `turn/start` 的那一端写进 app-server
-- `model` 也不是 thread-wise next-load 设置。飞书 `/model` 只覆盖当前会话后续 turn 的 `model` 名称；不改 thread-wise `profile / model_provider`
+- `permissions`、`model` 都属于 frontend-owned runtime settings：由发起该轮 `thread/start` / `turn/start` 的前端在下一轮注入，不是 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
 - `profile`、`memory` 才是 thread-wise next-load 设置；切换它们通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`

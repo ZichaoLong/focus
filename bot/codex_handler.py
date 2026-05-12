@@ -1978,6 +1978,7 @@ class CodexHandler(BotHandler):
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         if runtime.running:
             return CommandResult(text="执行中不能新建线程，请等待结束或先执行 `/cancel`。")
+        snapshot: ThreadSnapshot | None = None
         try:
             snapshot = self._create_thread_with_default_pending_memory_seed(
                 cwd=runtime.working_dir,
@@ -1985,10 +1986,21 @@ class CodexHandler(BotHandler):
                 approval_policy=runtime.approval_policy or None,
                 sandbox=runtime.sandbox or None,
             )
+            self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         except Exception as exc:
             logger.exception("新建线程失败")
+            created_thread_id = snapshot.summary.thread_id if snapshot is not None else ""
+            if created_thread_id:
+                self._clear_pending_threadwise_seed(created_thread_id)
+                try:
+                    self._adapter.unsubscribe_thread(created_thread_id)
+                except Exception:
+                    logger.exception("新建线程失败后回滚 thread 订阅失败: thread=%s", created_thread_id[:12])
+                try:
+                    self._release_service_thread_runtime_lease(created_thread_id)
+                except Exception:
+                    logger.exception("新建线程失败后释放 runtime lease 失败: thread=%s", created_thread_id[:12])
             return CommandResult(text=f"新建线程失败：{exc}")
-        self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         content = (
             f"线程：`{snapshot.summary.thread_id[:8]}…`\n"
             f"目录：`{display_path(snapshot.summary.cwd)}`\n"
@@ -2365,7 +2377,6 @@ class CodexHandler(BotHandler):
             resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
             state = resolved.state
             chat_binding_key = resolved.binding
-            unsubscribe_thread_id: str = ""
             with self._lock:
                 unsubscribe_thread_id = self._binding_runtime.bind_thread_locked(
                     chat_binding_key,
@@ -2376,13 +2387,19 @@ class CodexHandler(BotHandler):
                     on_thread_replaced=self._replace_bound_thread_state_locked,
                     on_after_bind=self._clear_plan_state,
                 )
-            if unsubscribe_thread_id:
-                self._adapter.unsubscribe_thread(unsubscribe_thread_id)
-                self._release_service_thread_runtime_lease(unsubscribe_thread_id)
         except Exception:
             if lease_was_newly_acquired:
                 self._release_service_thread_runtime_lease(thread.thread_id)
             raise
+        if unsubscribe_thread_id:
+            try:
+                self._adapter.unsubscribe_thread(unsubscribe_thread_id)
+            except Exception:
+                logger.exception("切换 binding 后回收旧 thread 订阅失败: thread=%s", unsubscribe_thread_id[:12])
+            try:
+                self._release_service_thread_runtime_lease(unsubscribe_thread_id)
+            except Exception:
+                logger.exception("切换 binding 后释放旧 runtime lease 失败: thread=%s", unsubscribe_thread_id[:12])
 
     def _clear_thread_binding(self, sender_id: str, chat_id: str, *, message_id: str = "") -> None:
         resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)

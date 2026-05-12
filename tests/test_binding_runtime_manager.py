@@ -3,6 +3,7 @@ import tempfile
 import threading
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.runtime_state import ThreadStateChanged
@@ -274,6 +275,49 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(stored["feishu_runtime_state"], "attached")
         self.assertEqual(stored["working_dir"], "/tmp/project-new")
 
+    def test_bind_thread_locked_rolls_back_when_persist_or_after_bind_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding = ("ou-user", "chat-1")
+        state = self._attach_binding(manager, binding, thread_id="thread-old", thread_title="Old")
+        state["current_message_id"] = "card-live"
+        state["current_turn_id"] = "turn-1"
+
+        def _after_bind_failure(_state) -> None:
+            raise RuntimeError("after bind failed")
+
+        with manager._lock:
+            with self.assertRaisesRegex(RuntimeError, "after bind failed"):
+                manager.bind_thread_locked(
+                    binding,
+                    state,
+                    thread_id="thread-new",
+                    thread_title="New",
+                    working_dir="/tmp/project-new",
+                    on_thread_replaced=lambda current_state: (
+                        current_state.__setitem__("current_message_id", ""),
+                        current_state.__setitem__("current_turn_id", ""),
+                    ),
+                    on_after_bind=_after_bind_failure,
+                )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        self.assertEqual(state["current_thread_id"], "thread-old")
+        self.assertEqual(state["current_thread_title"], "Old")
+        self.assertEqual(state["working_dir"], "/tmp/project")
+        self.assertEqual(state["feishu_runtime_state"], "attached")
+        self.assertEqual(state["current_message_id"], "card-live")
+        self.assertEqual(state["current_turn_id"], "turn-1")
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-old"), [binding])
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-new"), [])
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-old"), [binding])
+        self.assertEqual(manager.interaction_owner_snapshot_locked("thread-old", current_binding=binding)["relation"], "current")
+        assert stored is not None
+        self.assertEqual(stored["current_thread_id"], "thread-old")
+        self.assertEqual(stored["feishu_runtime_state"], "attached")
+
     def test_clear_thread_binding_locked_clears_attachment_and_keeps_binding_defaults(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -310,6 +354,37 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(stored["feishu_runtime_state"], "")
         self.assertEqual(stored["working_dir"], "/tmp/project")
 
+    def test_clear_thread_binding_locked_rolls_back_when_persist_or_clear_state_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding = ("ou-user", "chat-1")
+        state = self._attach_binding(manager, binding)
+        state["current_message_id"] = "card-live"
+
+        def _clear_state_failure(_state) -> None:
+            raise RuntimeError("clear state failed")
+
+        with manager._lock:
+            with self.assertRaisesRegex(RuntimeError, "clear state failed"):
+                manager.clear_thread_binding_locked(
+                    binding,
+                    state,
+                    on_clear_state=_clear_state_failure,
+                )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        self.assertEqual(state["current_thread_id"], "thread-1")
+        self.assertEqual(state["current_thread_title"], "Demo")
+        self.assertEqual(state["feishu_runtime_state"], "attached")
+        self.assertEqual(state["current_message_id"], "card-live")
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-1"), [binding])
+        self.assertEqual(manager.attached_bindings_for_thread_locked("thread-1"), [binding])
+        assert stored is not None
+        self.assertEqual(stored["current_thread_id"], "thread-1")
+        self.assertEqual(stored["feishu_runtime_state"], "attached")
+
     def test_sync_stored_binding_locked_clears_fresh_default_binding(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -322,6 +397,32 @@ class BindingRuntimeManagerTests(unittest.TestCase):
             manager.sync_stored_binding_locked(binding, state)
 
         self.assertIsNone(ChatBindingStore(data_dir).load(binding))
+
+    def test_bind_thread_locked_rolls_back_when_store_save_fails(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        manager = self._make_manager(data_dir=data_dir)
+        binding = ("ou-user", "chat-1")
+        state = self._attach_binding(manager, binding, thread_id="thread-old", thread_title="Old")
+
+        with patch.object(manager._chat_binding_store, "save", side_effect=RuntimeError("store save failed")):
+            with manager._lock:
+                with self.assertRaisesRegex(RuntimeError, "store save failed"):
+                    manager.bind_thread_locked(
+                        binding,
+                        state,
+                        thread_id="thread-new",
+                        thread_title="New",
+                        working_dir="/tmp/project-new",
+                    )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        self.assertEqual(state["current_thread_id"], "thread-old")
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-old"), [binding])
+        self.assertEqual(manager.bound_bindings_for_thread_locked("thread-new"), [])
+        assert stored is not None
+        self.assertEqual(stored["current_thread_id"], "thread-old")
 
     def test_hydrate_stored_binding_locked_uses_runtime_defaults_for_empty_overrides(self) -> None:
         manager = self._make_manager()

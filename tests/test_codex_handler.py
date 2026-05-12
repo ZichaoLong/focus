@@ -3180,6 +3180,63 @@ class CodexHandlerTests(unittest.TestCase):
             [{"binding_id": "p2p:ou_user:c1", "feishu_runtime_state": "attached"}],
         )
 
+    def test_service_control_plane_thread_status_thread_id_accepts_not_loaded_thread(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_snapshots[("thread-1", None)] = CodexRpcError(
+            "thread/read",
+            {"message": "thread not loaded: thread-1"},
+        )
+
+        status = control_request(data_dir, "thread/status", {"thread_id": "thread-1"})
+
+        self.assertEqual(status["thread_id"], "thread-1")
+        self.assertEqual(status["backend_thread_status"], "notLoaded")
+        self.assertEqual(status["thread_title"], "demo")
+        self.assertEqual(status["working_dir"], "/tmp/project")
+
+    def test_service_control_plane_thread_bindings_thread_id_accepts_not_loaded_thread(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_snapshots[("thread-1", None)] = CodexRpcError(
+            "thread/read",
+            {"message": "thread not loaded: thread-1"},
+        )
+
+        result = control_request(data_dir, "thread/bindings", {"thread_id": "thread-1"})
+
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(result["thread_title"], "demo")
+        self.assertEqual(result["bindings"], [{"binding_id": "p2p:ou_user:c1", "feishu_runtime_state": "attached"}])
+
     def test_service_control_plane_binding_clear_removes_runtime_state_and_persistence(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -3896,6 +3953,57 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNotNone(memory_record)
         assert memory_record is not None
         self.assertEqual(memory_record.mode, "read")
+
+    def test_new_thread_reports_bind_failure_instead_of_silently_dropping_command(self) -> None:
+        handler, bot = self._make_handler()
+
+        with patch.object(handler, "_bind_thread", side_effect=RuntimeError("bind failed")):
+            handler.handle_message("ou_user", "c1", "/new")
+
+        self.assertIn("新建线程失败：bind failed", bot.replies[-1][1])
+        self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
+
+    def test_new_thread_failure_rolls_back_existing_binding_and_clears_pending_seed(self) -> None:
+        handler, bot = self._make_handler({"default_thread_memory_mode": "read"})
+        old_thread = ThreadSummary(
+            thread_id="thread-old",
+            cwd="/tmp/project",
+            name="old",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", old_thread)
+
+        with patch.object(handler, "_clear_plan_state", side_effect=RuntimeError("clear plan failed")):
+            handler.handle_message("ou_user", "c1", "/new")
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertIn("新建线程失败：clear plan failed", bot.replies[-1][1])
+        self.assertEqual(state["current_thread_id"], "thread-old")
+        self.assertEqual(state["current_thread_title"], "old")
+        self.assertEqual(state["feishu_runtime_state"], "attached")
+        self.assertEqual(handler._thread_subscribers("thread-old"), (("ou_user", "c1"),))
+        self.assertEqual(handler._thread_subscribers("thread-created"), ())
+        self.assertEqual(self._service_runtime_holder_ids(handler, "thread-created"), ())
+        self.assertIsNone(handler._pending_threadwise_seed("thread-created"))
+        self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
+
+    def test_new_thread_failure_without_existing_binding_clears_pending_seed(self) -> None:
+        handler, bot = self._make_handler({"default_thread_memory_mode": "read"})
+
+        with patch.object(handler, "_clear_plan_state", side_effect=RuntimeError("clear plan failed")):
+            handler.handle_message("ou_user", "c1", "/new")
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertIn("新建线程失败：clear plan failed", bot.replies[-1][1])
+        self.assertEqual(state["current_thread_id"], "")
+        self.assertEqual(state["feishu_runtime_state"], "")
+        self.assertEqual(handler._thread_subscribers("thread-created"), ())
+        self.assertEqual(self._service_runtime_holder_ids(handler, "thread-created"), ())
+        self.assertIsNone(handler._pending_threadwise_seed("thread-created"))
 
     def test_prompt_without_threadwise_profile_starts_without_profile_override(self) -> None:
         handler, _ = self._make_handler()
