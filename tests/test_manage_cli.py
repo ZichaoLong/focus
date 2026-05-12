@@ -73,6 +73,7 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("首次安装 / 修复", rendered)
         self.assertIn("bash install.sh", rendered)
         self.assertIn("autostart", rendered)
+        self.assertIn("`uninstall|purge` 只清理本机安装面", rendered)
         self.assertIn("feishu-codex instance create corp-a", rendered)
         self.assertIn("feishu-codex skill install", rendered)
         self.assertIn("feishu-codex --instance default --instance corp-a status", rendered)
@@ -131,6 +132,7 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("skill commands", rendered)
         self.assertIn("install", rendered)
         self.assertIn("uninstall", rendered)
+        self.assertIn("在当前目录 `.agents/skills` 安装或卸载", rendered)
         self.assertIn("不接受顶层 `--instance`", rendered)
 
     def test_public_install_subcommand_is_not_available(self) -> None:
@@ -245,6 +247,8 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("    - feishu-codex config --open env（按需）", summary)
             self.assertIn("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）", summary)
             self.assertIn("    - 先 cd 到目标目录，再执行 feishu-codex skill install", summary)
+            self.assertIn("    - 如需移除，回到同一目录执行 feishu-codex skill uninstall", summary)
+            self.assertIn("    - 注意：feishu-codex uninstall/purge 不会删除各工作区中的 .agents/skills", summary)
             self.assertIn("  6. Shell completion", summary)
             self.assertIn("Bash：新开一个 Bash shell 通常会自动生效", summary)
             self.assertIn("zsh：已写入自动加载钩子", summary)

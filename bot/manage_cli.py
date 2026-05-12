@@ -98,6 +98,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  只刷新 `*.example` 并补齐缺失 scaffold，不覆盖现有配置或数据\n"
             "- `start|stop|restart|status` 只管理当前运行态；`autostart` 单独管理登录后自动启动\n"
             "- 命名实例必须先显式 `instance create`；其他命令不会隐式创建命名实例\n"
+            "- `uninstall|purge` 只清理本机安装面；不会删除你在各工作区安装的 `.agents/skills`\n"
             "- `run` 是跨平台单一 daemon 入口，通常由底层 service manager 调用\n"
         ),
         epilog=(
@@ -284,10 +285,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="安装或卸载 feishu-codex 提供的工作区 skill。",
         description=(
             "Skill 管理。\n"
-            "当前管理 feishu-codex 自带的工作区 skills：`feishu-send-image`、`feishu-scheduled-prompts`，"
-            "安装位置为“当前目录/.agents/skills”。\n"
-            "因此：在 `~` 下执行时，home 下的 Codex 线程都能发现；"
-            "在某个仓库目录下执行时，只对该仓库生效。\n"
+            "在当前目录 `.agents/skills` 安装或卸载 feishu-codex 自带的工作区 skills。\n"
+            "在 `~` 下执行时，home 下线程可发现；在仓库目录下执行时，只对该仓库生效。\n"
             "注意：`feishu-codex skill ...` 不接受顶层 `--instance`。"
         ),
         formatter_class=_HelpFormatter,
@@ -618,6 +617,8 @@ def _print_install_summary(
     print("    - feishu-codex --instance corp-a start|autostart|config ...")
     print("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）")
     print("    - 先 cd 到目标目录，再执行 feishu-codex skill install")
+    print("    - 如需移除，回到同一目录执行 feishu-codex skill uninstall")
+    print("    - 注意：feishu-codex uninstall/purge 不会删除各工作区中的 .agents/skills")
     if (
         completion_result.bash_dir is not None
         or completion_result.zsh_script_path is not None
