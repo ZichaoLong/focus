@@ -2185,6 +2185,114 @@ class FCodexTests(unittest.TestCase):
                 backend_server.shutdown()
             backend_thread.join(timeout=1)
 
+    def test_proxy_fail_closes_new_thread_after_disconnect_with_unknown_seed_outcome(self) -> None:
+        backend_url_queue: queue.Queue[str] = queue.Queue()
+        backend_server_ref: dict[str, object] = {}
+        backend_messages: queue.Queue[dict] = queue.Queue()
+        backend_disconnects: queue.Queue[None] = queue.Queue()
+
+        def _backend_handler(ws) -> None:
+            try:
+                for message in ws:
+                    backend_messages.put(json.loads(message))
+            finally:
+                backend_disconnects.put(None)
+
+        def _backend_main() -> None:
+            with serve(_backend_handler, "127.0.0.1", 0, max_size=None) as server:
+                backend_server_ref["server"] = server
+                port = server.socket.getsockname()[1]
+                backend_url_queue.put(f"ws://127.0.0.1:{port}")
+                server.serve_forever()
+
+        backend_thread = threading.Thread(target=_backend_main, daemon=True)
+        backend_thread.start()
+        backend_url = backend_url_queue.get(timeout=1)
+
+        proxy_url_queue: queue.Queue[str] = queue.Queue()
+        proxy_thread = threading.Thread(
+            target=run_proxy,
+            kwargs={
+                "backend_url": backend_url,
+                "cwd": "/tmp/project",
+                "idle_timeout_seconds": 0.3,
+                "on_listen": proxy_url_queue.put,
+                "thread_profile_seed": "provider2",
+                "thread_profile_model_seed": "provider2-model",
+                "thread_profile_model_provider_seed": "provider2_api",
+                "thread_memory_mode_seed": "read",
+            },
+            daemon=True,
+        )
+        proxy_thread.start()
+        proxy_url = proxy_url_queue.get(timeout=1)
+
+        try:
+            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                ws.send(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "thread/start",
+                            "params": {},
+                        }
+                    )
+                )
+                forwarded = backend_messages.get(timeout=1)
+                self.assertEqual(forwarded["method"], "thread/start")
+                self.assertEqual(forwarded["params"]["cwd"], "/tmp/project")
+                self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+                self.assertEqual(
+                    forwarded["params"]["config"]["memories"],
+                    {
+                        "use_memories": True,
+                        "generate_memories": False,
+                    },
+                )
+                self.assertEqual(forwarded["params"]["model"], "provider2-model")
+                self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+
+            backend_disconnects.get(timeout=1)
+            time.sleep(0.1)
+
+            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                ws.send(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "thread/start",
+                            "params": {},
+                        }
+                    )
+                )
+                self.assertEqual(
+                    json.loads(ws.recv()),
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "error": {
+                            "code": -32002,
+                            "message": (
+                                "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
+                                "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。"
+                            ),
+                        },
+                    },
+                )
+
+            with self.assertRaises(queue.Empty):
+                backend_messages.get_nowait()
+
+            proxy_thread.join(timeout=1)
+            self.assertFalse(proxy_thread.is_alive())
+        finally:
+            backend_server = backend_server_ref.get("server")
+            if backend_server is not None:
+                backend_server.shutdown()
+            backend_thread.join(timeout=1)
+
     def test_proxy_default_idle_timeout_keeps_startup_reconnect_window(self) -> None:
         self.assertGreaterEqual(_DEFAULT_IDLE_TIMEOUT_SECONDS, 30.0)
 
