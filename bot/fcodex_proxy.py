@@ -284,6 +284,152 @@ class _ProxyRuntimeLeaseKeeper:
             self._runtime_lease_store.release(thread_id, self._holder_id)
 
 
+class _ProxyThreadSeedState:
+    def __init__(
+        self,
+        *,
+        thread_profile_seed: str = "",
+        thread_profile_model_seed: str = "",
+        thread_profile_model_provider_seed: str = "",
+        thread_memory_mode_seed: str = "",
+    ) -> None:
+        self._initial_thread_profile_seed = build_thread_resume_profile_setting(
+            thread_profile_seed,
+            model=thread_profile_model_seed,
+            model_provider=thread_profile_model_provider_seed,
+        )
+        self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed.profile
+        self._initial_thread_memory_mode_seed = str(thread_memory_mode_seed or "").strip()
+        self._initial_thread_memory_mode_seed_consumed = not self._initial_thread_memory_mode_seed
+        self._pending_initial_thread_seed_reservation: tuple[str, str] | None = None
+        self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}
+        self._lock = threading.Lock()
+
+    def pending_threadwise_seed(self, thread_id: str) -> PendingThreadwiseSeed | None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return None
+        with self._lock:
+            return self._pending_threadwise_seed_by_thread_id.get(normalized_thread_id)
+
+    def clear_pending_threadwise_seed(self, thread_id: str) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return
+        with self._lock:
+            self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+
+    def initial_thread_profile_seed(self):
+        with self._lock:
+            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed.profile:
+                return None
+            return self._initial_thread_profile_seed
+
+    def initial_thread_memory_mode_seed(self) -> str:
+        with self._lock:
+            if self._initial_thread_memory_mode_seed_consumed or not self._initial_thread_memory_mode_seed:
+                return ""
+            return self._initial_thread_memory_mode_seed
+
+    def _initial_thread_seed_available_unlocked(self) -> bool:
+        return (
+            (
+                not self._initial_thread_profile_seed_consumed
+                and bool(self._initial_thread_profile_seed.profile)
+            )
+            or (
+                not self._initial_thread_memory_mode_seed_consumed
+                and bool(self._initial_thread_memory_mode_seed)
+            )
+        )
+
+    def initial_thread_seed_reservation_state(self, *, owner_key: str, request_id: Any) -> str:
+        request_key = _jsonrpc_id_key(request_id)
+        if not owner_key or not request_key:
+            return "invalid"
+        with self._lock:
+            if not self._initial_thread_seed_available_unlocked():
+                return "exhausted"
+            reservation = self._pending_initial_thread_seed_reservation
+            if reservation is None:
+                return "available"
+            if reservation == (owner_key, request_key):
+                return "owned"
+            return "reserved_by_other"
+
+    def reserve_initial_thread_seed_for_request(self, *, owner_key: str, request_id: Any) -> bool:
+        request_key = _jsonrpc_id_key(request_id)
+        if not owner_key or not request_key:
+            return False
+        with self._lock:
+            if not self._initial_thread_seed_available_unlocked():
+                return False
+            reservation = self._pending_initial_thread_seed_reservation
+            if reservation is not None:
+                return reservation == (owner_key, request_key)
+            self._pending_initial_thread_seed_reservation = (owner_key, request_key)
+            return True
+
+    def release_initial_thread_seed_reservation(self, *, owner_key: str, request_key: str) -> None:
+        if not owner_key or not request_key:
+            return
+        with self._lock:
+            if self._pending_initial_thread_seed_reservation == (owner_key, request_key):
+                self._pending_initial_thread_seed_reservation = None
+
+    def release_initial_thread_seed_reservations_for_owner(self, owner_key: str) -> None:
+        if not owner_key:
+            return
+        with self._lock:
+            reservation = self._pending_initial_thread_seed_reservation
+            if reservation is not None and reservation[0] == owner_key:
+                self._pending_initial_thread_seed_reservation = None
+
+    def bind_initial_thread_seed_once(
+        self,
+        thread_id: str,
+        *,
+        owner_key: str,
+        request_key: str,
+    ) -> None:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            self.release_initial_thread_seed_reservation(owner_key=owner_key, request_key=request_key)
+            return
+        with self._lock:
+            if self._pending_initial_thread_seed_reservation != (owner_key, request_key):
+                return
+            profile_setting = (
+                self._initial_thread_profile_seed
+                if not self._initial_thread_profile_seed_consumed and self._initial_thread_profile_seed.profile
+                else None
+            )
+            memory_mode = (
+                self._initial_thread_memory_mode_seed
+                if not self._initial_thread_memory_mode_seed_consumed and self._initial_thread_memory_mode_seed
+                else ""
+            )
+            self._pending_initial_thread_seed_reservation = None
+            if profile_setting is None and not memory_mode:
+                return
+            self._initial_thread_profile_seed_consumed = True
+            self._initial_thread_memory_mode_seed_consumed = True
+            normalized_memory_mode = str(memory_mode or "").strip()
+            if normalized_memory_mode:
+                normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
+            seed = PendingThreadwiseSeed(
+                thread_id=normalized_thread_id,
+                profile=profile_setting.profile if profile_setting is not None else "",
+                model=profile_setting.model if profile_setting is not None else "",
+                model_provider=profile_setting.model_provider if profile_setting is not None else "",
+                memory_mode=normalized_memory_mode,
+            )
+            if seed.has_any:
+                self._pending_threadwise_seed_by_thread_id[normalized_thread_id] = seed
+            else:
+                self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+
+
 class _ProxyInteractionGate:
     def __init__(
         self,
@@ -300,6 +446,7 @@ class _ProxyInteractionGate:
         thread_memory_mode_seed: str = "",
         resume_profile_hint: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
+        thread_seed_state: _ProxyThreadSeedState | None = None,
     ) -> None:
         self._cwd = cwd
         self._holder = make_fcodex_interaction_holder(
@@ -313,21 +460,19 @@ class _ProxyInteractionGate:
         self._global_data_dir = normalized_global_data_dir
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
-        self._initial_thread_profile_seed = build_thread_resume_profile_setting(
-            thread_profile_seed,
-            model=thread_profile_model_seed,
-            model_provider=thread_profile_model_provider_seed,
+        self._thread_seed_state = thread_seed_state or _ProxyThreadSeedState(
+            thread_profile_seed=thread_profile_seed,
+            thread_profile_model_seed=thread_profile_model_seed,
+            thread_profile_model_provider_seed=thread_profile_model_provider_seed,
+            thread_memory_mode_seed=thread_memory_mode_seed,
         )
-        self._initial_thread_profile_seed_consumed = not self._initial_thread_profile_seed.profile
-        self._initial_thread_memory_mode_seed = str(thread_memory_mode_seed or "").strip()
-        self._initial_thread_memory_mode_seed_consumed = not self._initial_thread_memory_mode_seed
+        self._thread_seed_state_owner_key = f"gate:{id(self)}"
         self._resume_profile_hint = str(resume_profile_hint or "").strip()
         self._runtime_lease_keeper = runtime_lease_keeper
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
-        self._pending_thread_request_by_id: dict[str, tuple[str, str]] = {}
-        self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}
+        self._pending_thread_request_by_id: dict[str, tuple[str, str, bool]] = {}
         self._owned_thread_ids: set[str] = set()
 
     def _remember_owned_thread(self, thread_id: str) -> None:
@@ -361,6 +506,9 @@ class _ProxyInteractionGate:
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
             self._pending_thread_request_by_id.clear()
+        self._thread_seed_state.release_initial_thread_seed_reservations_for_owner(
+            self._thread_seed_state_owner_key
+        )
         for thread_id in owned_thread_ids:
             self._lease_store.release(thread_id, self._holder)
             if self._runtime_lease_keeper is None:
@@ -411,73 +559,34 @@ class _ProxyInteractionGate:
         self._forget_owned_thread(thread_id)
 
     def _pending_threadwise_seed(self, thread_id: str) -> PendingThreadwiseSeed | None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return None
-        with self._lock:
-            return self._pending_threadwise_seed_by_thread_id.get(normalized_thread_id)
-
-    def _replace_pending_threadwise_seed(
-        self,
-        thread_id: str,
-        *,
-        profile: str = "",
-        model: str = "",
-        model_provider: str = "",
-        memory_mode: str = "",
-    ) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        normalized_profile = str(profile or "").strip()
-        normalized_memory_mode = str(memory_mode or "").strip()
-        if not normalized_thread_id:
-            return
-        if normalized_memory_mode:
-            normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
-        seed = PendingThreadwiseSeed(
-            thread_id=normalized_thread_id,
-            profile=normalized_profile,
-            model=str(model or "").strip(),
-            model_provider=str(model_provider or "").strip(),
-            memory_mode=normalized_memory_mode,
-        )
-        with self._lock:
-            if seed.has_any:
-                self._pending_threadwise_seed_by_thread_id[normalized_thread_id] = seed
-            else:
-                self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+        return self._thread_seed_state.pending_threadwise_seed(thread_id)
 
     def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return
-        with self._lock:
-            self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
+        self._thread_seed_state.clear_pending_threadwise_seed(thread_id)
 
-    def _bind_initial_thread_seed_once(self, thread_id: str) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return
-        with self._lock:
-            profile_setting = (
-                self._initial_thread_profile_seed
-                if not self._initial_thread_profile_seed_consumed and self._initial_thread_profile_seed.profile
-                else None
-            )
-            memory_mode = (
-                self._initial_thread_memory_mode_seed
-                if not self._initial_thread_memory_mode_seed_consumed and self._initial_thread_memory_mode_seed
-                else ""
-            )
-            if profile_setting is None and not memory_mode:
-                return
-            self._initial_thread_profile_seed_consumed = True
-            self._initial_thread_memory_mode_seed_consumed = True
-        self._replace_pending_threadwise_seed(
-            normalized_thread_id,
-            profile=profile_setting.profile if profile_setting is not None else "",
-            model=profile_setting.model if profile_setting is not None else "",
-            model_provider=profile_setting.model_provider if profile_setting is not None else "",
-            memory_mode=memory_mode,
+    def _reserve_initial_thread_seed_for_request(self, request_id: Any) -> bool:
+        return self._thread_seed_state.reserve_initial_thread_seed_for_request(
+            owner_key=self._thread_seed_state_owner_key,
+            request_id=request_id,
+        )
+
+    def _initial_thread_seed_reservation_state(self, request_id: Any) -> str:
+        return self._thread_seed_state.initial_thread_seed_reservation_state(
+            owner_key=self._thread_seed_state_owner_key,
+            request_id=request_id,
+        )
+
+    def _release_initial_thread_seed_reservation(self, request_key: str) -> None:
+        self._thread_seed_state.release_initial_thread_seed_reservation(
+            owner_key=self._thread_seed_state_owner_key,
+            request_key=request_key,
+        )
+
+    def _bind_initial_thread_seed_once(self, thread_id: str, *, request_key: str) -> None:
+        self._thread_seed_state.bind_initial_thread_seed_once(
+            thread_id,
+            owner_key=self._thread_seed_state_owner_key,
+            request_key=request_key,
         )
 
     def _promote_pending_threadwise_seed(self, thread_id: str) -> None:
@@ -509,10 +618,9 @@ class _ProxyInteractionGate:
         params = payload.get("params")
         if not isinstance(params, dict):
             return payload
-        with self._lock:
-            if self._initial_thread_profile_seed_consumed or not self._initial_thread_profile_seed.profile:
-                return payload
-            setting = self._initial_thread_profile_seed
+        setting = self._thread_seed_state.initial_thread_profile_seed()
+        if setting is None:
+            return payload
         existing_config = params.get("config")
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
         merged_config = deep_merge_config_overrides(
@@ -535,16 +643,16 @@ class _ProxyInteractionGate:
             profile_name = str(existing_config.get("profile", "") or "").strip()
             if profile_name:
                 return profile_name
-        return self._initial_thread_profile_seed.profile
+        setting = self._thread_seed_state.initial_thread_profile_seed()
+        return str(setting.profile or "").strip() if setting is not None else ""
 
     def _apply_initial_thread_memory_mode_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
         params = payload.get("params")
         if not isinstance(params, dict):
             return payload
-        with self._lock:
-            if self._initial_thread_memory_mode_seed_consumed or not self._initial_thread_memory_mode_seed:
-                return payload
-            memory_mode = self._initial_thread_memory_mode_seed
+        memory_mode = self._thread_seed_state.initial_thread_memory_mode_seed()
+        if not memory_mode:
+            return payload
         existing_config = params.get("config")
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
         merged_config = deep_merge_config_overrides(
@@ -667,14 +775,26 @@ class _ProxyInteractionGate:
 
         method = payload.get("method")
         if isinstance(method, str):
+            request_id = payload.get("id")
+            request_key = _jsonrpc_id_key(request_id)
+            reserved_initial_seed = False
             if method == "thread/resume":
                 payload = self._apply_saved_thread_profile_for_resume(payload)
                 payload = self._apply_saved_thread_memory_mode_for_resume(payload)
             elif method == "thread/start":
-                payload = self._apply_initial_thread_profile_seed(payload)
-                payload = self._apply_initial_thread_memory_mode_seed(payload)
+                if self._initial_thread_seed_reservation_state(request_id) == "reserved_by_other":
+                    _send_local_error_response(
+                        client_ws,
+                        request_id,
+                        "当前 fcodex 启动级 seed 正在等待另一条新建 thread 请求返回；"
+                        "请等待上一条 `thread/start` 完成或失败后再试。",
+                    )
+                    return
+                reserved_initial_seed = self._reserve_initial_thread_seed_for_request(request_id)
+                if reserved_initial_seed:
+                    payload = self._apply_initial_thread_profile_seed(payload)
+                    payload = self._apply_initial_thread_memory_mode_seed(payload)
             thread_id = _payload_thread_id(payload)
-            request_id = payload.get("id")
             if method == "thread/resume" and thread_id:
                 try:
                     self._acquire_runtime_lease(thread_id)
@@ -682,13 +802,13 @@ class _ProxyInteractionGate:
                     _send_local_error_response(client_ws, request_id, str(exc))
                     return
                 with self._lock:
-                    self._pending_thread_request_by_id[_jsonrpc_id_key(request_id)] = (method, thread_id)
+                    self._pending_thread_request_by_id[_jsonrpc_id_key(request_id)] = (method, thread_id, False)
             elif method == "thread/start":
                 with self._lock:
-                    self._pending_thread_request_by_id[_jsonrpc_id_key(request_id)] = (method, "")
+                    self._pending_thread_request_by_id[request_key] = (method, "", reserved_initial_seed)
             elif method == "thread/unsubscribe" and thread_id:
                 with self._lock:
-                    self._pending_thread_request_by_id[_jsonrpc_id_key(request_id)] = (method, thread_id)
+                    self._pending_thread_request_by_id[request_key] = (method, thread_id, False)
             if method in _OWNER_WRITE_METHODS and thread_id:
                 if method == "turn/start":
                     lease = self._lease_store.acquire(thread_id, self._holder)
@@ -784,17 +904,33 @@ class _ProxyInteractionGate:
 
         response_id = payload.get("id")
         if response_id not in (None, ""):
+            request_key = _jsonrpc_id_key(response_id)
             with self._lock:
-                thread_request = self._pending_thread_request_by_id.pop(_jsonrpc_id_key(response_id), None)
+                thread_request = self._pending_thread_request_by_id.pop(request_key, None)
             if thread_request is not None:
-                request_method, thread_id = thread_request
+                request_method, thread_id, reserved_initial_seed = thread_request
                 if request_method == "thread/resume" and "error" in payload:
                     self._release_runtime_lease(thread_id)
-                elif request_method == "thread/start" and "error" not in payload:
-                    started_thread_id = _response_thread_id(payload)
-                    if started_thread_id:
-                        self._acquire_runtime_lease(started_thread_id)
-                        self._bind_initial_thread_seed_once(started_thread_id)
+                elif request_method == "thread/start":
+                    if "error" in payload:
+                        if reserved_initial_seed:
+                            self._release_initial_thread_seed_reservation(request_key)
+                    else:
+                        started_thread_id = _response_thread_id(payload)
+                        if started_thread_id:
+                            try:
+                                self._acquire_runtime_lease(started_thread_id)
+                            except Exception:
+                                if reserved_initial_seed:
+                                    self._release_initial_thread_seed_reservation(request_key)
+                                raise
+                            if reserved_initial_seed:
+                                self._bind_initial_thread_seed_once(
+                                    started_thread_id,
+                                    request_key=request_key,
+                                )
+                        elif reserved_initial_seed:
+                            self._release_initial_thread_seed_reservation(request_key)
                 elif request_method == "thread/unsubscribe" and "error" not in payload:
                     self._release_runtime_lease(thread_id)
             with self._lock:
@@ -860,6 +996,12 @@ def run_proxy(
         instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
         service_token=service_token,
         holder_pid=parent_pid or os.getpid(),
+    )
+    thread_seed_state = _ProxyThreadSeedState(
+        thread_profile_seed=thread_profile_seed,
+        thread_profile_model_seed=thread_profile_model_seed,
+        thread_profile_model_provider_seed=thread_profile_model_provider_seed,
+        thread_memory_mode_seed=thread_memory_mode_seed,
     )
 
     def _shutdown_server() -> None:
@@ -927,6 +1069,7 @@ def run_proxy(
                     thread_memory_mode_seed=thread_memory_mode_seed,
                     resume_profile_hint=resume_profile_hint,
                     runtime_lease_keeper=runtime_lease_keeper,
+                    thread_seed_state=thread_seed_state,
                 )
 
                 def _backend_to_client() -> None:

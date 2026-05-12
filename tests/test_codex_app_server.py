@@ -28,6 +28,7 @@ from bot.fcodex_proxy import (
     _DEFAULT_IDLE_TIMEOUT_SECONDS,
     _ProxyInteractionGate,
     _ProxyRuntimeLeaseKeeper,
+    _ProxyThreadSeedState,
     _relay_messages,
     _rewrite_thread_start_cwd,
     run_proxy,
@@ -2528,6 +2529,332 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
+    def test_concurrent_thread_start_requests_fail_closed_while_initial_seed_is_reserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+                thread_memory_mode_seed="read",
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            forwarded_first = self._decode_payload(backend_ws.sent[0])
+            self.assertEqual(forwarded_first["params"]["config"]["profile"], "provider2")
+            self.assertEqual(
+                forwarded_first["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+            self.assertEqual(forwarded_first["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded_first["params"]["modelProvider"], "provider2_api")
+
+            self.assertEqual(len(backend_ws.sent), 1)
+            self.assertEqual(
+                self._decode_payload(client_ws.sent[-1]),
+                {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": -32002,
+                        "message": (
+                            "当前 fcodex 启动级 seed 正在等待另一条新建 thread 请求返回；"
+                            "请等待上一条 `thread/start` 完成或失败后再试。"
+                        ),
+                    },
+                },
+            )
+
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": {"thread": {"id": "thread-1"}},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turn": {"id": "turn-1", "status": "completed"},
+                        },
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            profile_first = ThreadResumeProfileStore(root_dir).load("thread-1")
+            profile_second = ThreadResumeProfileStore(root_dir).load("thread-2")
+            memory_first = ThreadMemoryModeStore(root_dir).load("thread-1")
+            memory_second = ThreadMemoryModeStore(root_dir).load("thread-2")
+
+            self.assertIsNotNone(profile_first)
+            assert profile_first is not None
+            self.assertEqual(profile_first.profile, "provider2")
+            self.assertEqual(profile_first.model, "provider2-model")
+            self.assertEqual(profile_first.model_provider, "provider2_api")
+            self.assertIsNone(profile_second)
+            self.assertIsNotNone(memory_first)
+            assert memory_first is not None
+            self.assertEqual(memory_first.mode, "read")
+            self.assertIsNone(memory_second)
+
+    def test_concurrent_thread_start_requests_across_connections_fail_closed_while_seed_is_reserved(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            shared_seed_state = _ProxyThreadSeedState(
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+                thread_memory_mode_seed="read",
+            )
+            gate_first = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            gate_second = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            client_ws_first = self._FakeWs()
+            backend_ws_first = self._FakeWs()
+            client_ws_second = self._FakeWs()
+            backend_ws_second = self._FakeWs()
+
+            gate_first.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws_first,
+                backend_ws=backend_ws_first,
+            )
+            gate_second.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws_second,
+                backend_ws=backend_ws_second,
+            )
+
+            forwarded_first = self._decode_payload(backend_ws_first.sent[-1])
+            self.assertEqual(forwarded_first["params"]["config"]["profile"], "provider2")
+            self.assertEqual(
+                forwarded_first["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+            self.assertEqual(forwarded_first["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded_first["params"]["modelProvider"], "provider2_api")
+
+            self.assertEqual(backend_ws_second.sent, [])
+            self.assertEqual(
+                self._decode_payload(client_ws_second.sent[-1]),
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {
+                        "code": -32002,
+                        "message": (
+                            "当前 fcodex 启动级 seed 正在等待另一条新建 thread 请求返回；"
+                            "请等待上一条 `thread/start` 完成或失败后再试。"
+                        ),
+                    },
+                },
+            )
+
+    def test_gate_close_releases_shared_initial_seed_reservation_for_reconnect(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            shared_seed_state = _ProxyThreadSeedState(
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+                thread_memory_mode_seed="read",
+            )
+            gate_first = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            gate_second = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            client_ws_first = self._FakeWs()
+            backend_ws_first = self._FakeWs()
+            client_ws_second = self._FakeWs()
+            backend_ws_second = self._FakeWs()
+
+            gate_first.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws_first,
+                backend_ws=backend_ws_first,
+            )
+            gate_first.close()
+
+            gate_second.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws_second,
+                backend_ws=backend_ws_second,
+            )
+
+            forwarded = self._decode_payload(backend_ws_second.sent[-1])
+            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+            self.assertEqual(
+                forwarded["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+            self.assertEqual(forwarded["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+
+    def test_thread_start_error_releases_initial_seed_reservation_for_later_request(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+                thread_memory_mode_seed="read",
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            gate.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "error": {"code": -32000, "message": "start failed"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            forwarded = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+            self.assertEqual(
+                forwarded["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+            self.assertEqual(forwarded["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+
     def test_thread_start_response_promotes_initial_thread_profile_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
@@ -2617,6 +2944,112 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(first.model, "provider2-model")
             self.assertEqual(first.model_provider, "provider2_api")
             self.assertIsNone(second)
+
+    def test_pending_initial_thread_seed_survives_reconnect_until_first_completed_turn(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            shared_seed_state = _ProxyThreadSeedState(
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+                thread_memory_mode_seed="read",
+            )
+            gate_first = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            gate_second = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=root_dir,
+                global_data_dir=root_dir,
+                holder_pid=os.getpid(),
+                thread_seed_state=shared_seed_state,
+            )
+            client_ws_first = self._FakeWs()
+            backend_ws_first = self._FakeWs()
+            client_ws_second = self._FakeWs()
+            backend_ws_second = self._FakeWs()
+
+            gate_first.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/start",
+                        "params": {"cwd": "/tmp/project"},
+                    }
+                ),
+                client_ws=client_ws_first,
+                backend_ws=backend_ws_first,
+            )
+            gate_first.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "result": {"thread": {"id": "thread-1"}},
+                    }
+                ),
+                client_ws=client_ws_first,
+                backend_ws=backend_ws_first,
+            )
+            gate_first.close()
+
+            gate_second.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                ),
+                client_ws=client_ws_second,
+                backend_ws=backend_ws_second,
+            )
+
+            resumed = self._decode_payload(backend_ws_second.sent[-1])
+            self.assertEqual(resumed["params"]["threadId"], "thread-1")
+            self.assertEqual(resumed["params"]["config"]["profile"], "provider2")
+            self.assertEqual(
+                resumed["params"]["config"]["memories"],
+                {
+                    "use_memories": True,
+                    "generate_memories": False,
+                },
+            )
+            self.assertEqual(resumed["params"]["model"], "provider2-model")
+            self.assertEqual(resumed["params"]["modelProvider"], "provider2_api")
+
+            gate_second.handle_backend_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "method": "turn/completed",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turn": {"id": "turn-1", "status": "completed"},
+                        },
+                    }
+                ),
+                client_ws=client_ws_second,
+                backend_ws=backend_ws_second,
+            )
+
+            profile_record = ThreadResumeProfileStore(root_dir).load("thread-1")
+            memory_record = ThreadMemoryModeStore(root_dir).load("thread-1")
+
+            self.assertIsNotNone(profile_record)
+            assert profile_record is not None
+            self.assertEqual(profile_record.profile, "provider2")
+            self.assertEqual(profile_record.model, "provider2-model")
+            self.assertEqual(profile_record.model_provider, "provider2_api")
+            self.assertIsNotNone(memory_record)
+            assert memory_record is not None
+            self.assertEqual(memory_record.mode, "read")
 
     def test_thread_start_request_promotes_initial_thread_memory_mode_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
