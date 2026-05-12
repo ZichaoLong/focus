@@ -384,20 +384,31 @@ class BindingRuntimeManager:
         if not stored_bindings:
             return
         with self._lock:
-            for binding, stored_binding in sorted(stored_bindings.items()):
-                if binding in self._runtime_state_by_binding:
-                    continue
-                state = self.build_default_runtime_state()
-                downgraded_attached = self.hydrate_stored_binding_locked(state, stored_binding)
-                self._runtime_state_by_binding[binding] = state
-                if downgraded_attached:
-                    self.release_interaction_lease_for_binding(binding, str(state["current_thread_id"] or "").strip())
-                    self.sync_stored_binding_locked(binding, state)
-            for binding, stored_binding in sorted(stored_bindings.items()):
-                state = self._runtime_state_by_binding[binding]
-                current_thread_id = str(state["current_thread_id"] or "").strip()
-                if state["feishu_runtime_state"] == FEISHU_RUNTIME_ATTACHED:
-                    self.subscribe_thread_locked(binding, current_thread_id)
+            self.hydrate_missing_stored_bindings_locked(stored_bindings)
+
+    def hydrate_missing_stored_bindings_locked(
+        self,
+        stored_bindings: dict[ChatBindingKey, dict[str, str]] | None = None,
+    ) -> tuple[ChatBindingKey, ...]:
+        loaded_bindings = stored_bindings if stored_bindings is not None else self._chat_binding_store.load_all()
+        if not loaded_bindings:
+            return ()
+
+        hydrated_bindings: list[ChatBindingKey] = []
+        for binding, stored_binding in sorted(loaded_bindings.items()):
+            if binding in self._runtime_state_by_binding:
+                continue
+            state = self.build_default_runtime_state()
+            downgraded_attached = self.hydrate_stored_binding_locked(state, stored_binding)
+            self._runtime_state_by_binding[binding] = state
+            if downgraded_attached:
+                self.release_interaction_lease_for_binding(binding, str(state["current_thread_id"] or "").strip())
+                self.sync_stored_binding_locked(binding, state)
+            current_thread_id = str(state["current_thread_id"] or "").strip()
+            if state["feishu_runtime_state"] == FEISHU_RUNTIME_ATTACHED:
+                self.subscribe_thread_locked(binding, current_thread_id)
+            hydrated_bindings.append(binding)
+        return tuple(hydrated_bindings)
 
     @staticmethod
     def binding_has_inflight_turn_locked(state: RuntimeStateDict) -> bool:

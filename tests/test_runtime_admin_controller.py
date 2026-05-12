@@ -1237,6 +1237,52 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(unsubscribed, [])
         self.assertEqual(released_runtime_leases, [])
 
+    def test_clear_all_bindings_for_control_clears_store_only_stale_binding(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        live_binding = ("ou_live", "chat-live")
+        stale_binding = ("ou_stale", "chat-stale")
+        self._bind_thread(lock, binding_runtime, live_binding, thread_id="thread-live")
+        binding_runtime._chat_binding_store.save(
+            stale_binding,
+            {
+                "working_dir": "/tmp/stale",
+                "current_thread_id": "thread-stale",
+                "current_thread_title": "Stale",
+                "feishu_runtime_state": "detached",
+                "approval_policy": "never",
+                "sandbox": "danger-full-access",
+                "collaboration_mode": "default",
+                "model": "",
+            },
+        )
+
+        result = controller.clear_all_bindings_for_control()
+
+        self.assertFalse(result["already_empty"])
+        self.assertEqual(
+            result["cleared_binding_ids"],
+            ["p2p:ou_live:chat-live", "p2p:ou_stale:chat-stale"],
+        )
+        with lock:
+            self.assertEqual(binding_runtime.binding_keys_locked(), ())
+        self.assertEqual(unsubscribed, ["thread-live"])
+        self.assertEqual(released_runtime_leases, ["thread-live"])
+        self.assertEqual(binding_runtime._chat_binding_store.load_all(), {})
+
     def test_handle_service_control_request_thread_bindings_reports_attached_and_detached(self) -> None:
         (
             lock,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import pathlib
 import shlex
 import sys
@@ -10,6 +11,7 @@ from dataclasses import dataclass
 
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, list_known_instance_names
 from bot.platform_paths import (
+    default_config_root,
     default_user_bash_completion_dir,
     default_user_powershell_completion_path,
     default_user_powershell_profile_path,
@@ -69,6 +71,7 @@ _ZSH_PROFILE_BLOCK_START = "# >>> feishu-codex zsh completion >>>"
 _ZSH_PROFILE_BLOCK_END = "# <<< feishu-codex zsh completion <<<"
 _POWERSHELL_PROFILE_BLOCK_START = "# >>> feishu-codex PowerShell completion >>>"
 _POWERSHELL_PROFILE_BLOCK_END = "# <<< feishu-codex PowerShell completion <<<"
+_POWERSHELL_COMPLETION_METADATA_FILE = "powershell-install-paths.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +132,67 @@ def powershell_completion_path() -> pathlib.Path | None:
 
 def powershell_profile_path() -> pathlib.Path | None:
     return default_user_powershell_profile_path()
+
+
+def _powershell_completion_metadata_path() -> pathlib.Path:
+    return default_config_root() / "shell-completion" / _POWERSHELL_COMPLETION_METADATA_FILE
+
+
+def _read_powershell_completion_metadata() -> tuple[pathlib.Path | None, pathlib.Path | None]:
+    path = _powershell_completion_metadata_path()
+    if not path.exists():
+        return None, None
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, None
+    if not isinstance(raw, dict):
+        return None, None
+    script_raw = str(raw.get("script_path", "") or "").strip()
+    profile_raw = str(raw.get("profile_path", "") or "").strip()
+    script_path = pathlib.Path(script_raw).expanduser() if script_raw else None
+    profile_path = pathlib.Path(profile_raw).expanduser() if profile_raw else None
+    return script_path, profile_path
+
+
+def _write_powershell_completion_metadata(*, script_path: pathlib.Path, profile_path: pathlib.Path) -> None:
+    path = _powershell_completion_metadata_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "script_path": str(script_path),
+                "profile_path": str(profile_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _remove_powershell_completion_metadata() -> None:
+    path = _powershell_completion_metadata_path()
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _dedupe_paths(*paths: pathlib.Path | None) -> tuple[pathlib.Path, ...]:
+    ordered: list[pathlib.Path] = []
+    seen: set[str] = set()
+    for candidate in paths:
+        if candidate is None:
+            continue
+        normalized = pathlib.Path(candidate).expanduser()
+        key = str(normalized)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(normalized)
+    return tuple(ordered)
 
 
 def render_bash_completion_script(*, venv_python: pathlib.Path) -> str:
@@ -351,6 +415,9 @@ def _install_powershell_completion_files(
     profile_path = powershell_profile_path()
     if script_path is None or profile_path is None:
         return None, None
+    recorded_script_path, recorded_profile_path = _read_powershell_completion_metadata()
+    if recorded_script_path != script_path or recorded_profile_path != profile_path:
+        _remove_powershell_completion_files()
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(render_powershell_completion_script(venv_python=venv_python), encoding="utf-8")
     _upsert_managed_block(
@@ -359,24 +426,24 @@ def _install_powershell_completion_files(
         end_marker=_POWERSHELL_PROFILE_BLOCK_END,
         body=f"if (Test-Path '{_powershell_literal(str(script_path))}') {{ . '{_powershell_literal(str(script_path))}' }}",
     )
+    _write_powershell_completion_metadata(script_path=script_path, profile_path=profile_path)
     return script_path, profile_path
 
 
 def _remove_powershell_completion_files() -> None:
-    profile_path = powershell_profile_path()
-    if profile_path is not None:
+    recorded_script_path, recorded_profile_path = _read_powershell_completion_metadata()
+    for profile_path in _dedupe_paths(recorded_profile_path, powershell_profile_path()):
         _remove_managed_block(
             profile_path,
             start_marker=_POWERSHELL_PROFILE_BLOCK_START,
             end_marker=_POWERSHELL_PROFILE_BLOCK_END,
         )
-    script_path = powershell_completion_path()
-    if script_path is None:
-        return
-    try:
-        script_path.unlink()
-    except FileNotFoundError:
-        return
+    for script_path in _dedupe_paths(recorded_script_path, powershell_completion_path()):
+        try:
+            script_path.unlink()
+        except FileNotFoundError:
+            continue
+    _remove_powershell_completion_metadata()
 
 
 def _upsert_managed_block(

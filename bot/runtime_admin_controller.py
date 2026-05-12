@@ -551,6 +551,7 @@ class RuntimeAdminController:
         unsubscribe_thread_ids: list[str] = []
         cleared_binding_ids: list[str] = []
         with self._lock:
+            self._binding_runtime.hydrate_missing_stored_bindings_locked()
             bindings = list(self._binding_runtime.binding_keys_locked())
             if not bindings:
                 self._clear_all_stored_bindings()

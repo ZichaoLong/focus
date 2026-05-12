@@ -1064,6 +1064,72 @@ class ManageCliTests(unittest.TestCase):
             self.assertFalse(powershell_completion_path.exists())
             self.assertFalse(powershell_profile_path.exists())
 
+    def test_handle_uninstall_removes_powershell_profile_block_without_runtime_env_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            install_profile_path = root / "shells" / "install-profile.ps1"
+            uninstall_profile_path = root / "shells" / "uninstall-profile.ps1"
+            metadata_path = config_root / "shell-completion" / "powershell-install-paths.json"
+            env_file = config_root / "feishu-codex.env"
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+                def uninstall(self, definition) -> None:
+                    del definition
+
+            install_env = {
+                "FC_CONFIG_ROOT": str(config_root),
+                "FC_DATA_ROOT": str(data_root),
+                "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                "FC_BIN_DIR": str(bin_dir),
+                "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                "FC_POWERSHELL_PROFILE_PATH": str(install_profile_path),
+                "FC_ENV_FILE": str(env_file),
+            }
+            uninstall_env = {
+                "FC_CONFIG_ROOT": str(config_root),
+                "FC_DATA_ROOT": str(data_root),
+                "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                "FC_BIN_DIR": str(bin_dir),
+                "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                "FC_POWERSHELL_PROFILE_PATH": str(uninstall_profile_path),
+                "FC_ENV_FILE": str(env_file),
+            }
+
+            with patch.dict(os.environ, install_env, clear=False):
+                _ensure_instance_scaffold("corp-a")
+                with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                    self.assertEqual(_handle_bootstrap_install(), 0)
+
+            self.assertTrue(powershell_completion_path.exists())
+            self.assertTrue(install_profile_path.exists())
+            self.assertTrue(metadata_path.exists())
+
+            with patch.dict(os.environ, uninstall_env, clear=False):
+                os.environ.pop("FC_POWERSHELL_PROFILE_PATH", None)
+                with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                    self.assertEqual(_handle_uninstall(purge=False), 0)
+
+            self.assertFalse(powershell_completion_path.exists())
+            self.assertFalse(install_profile_path.exists())
+            self.assertFalse(metadata_path.exists())
+            self.assertFalse(uninstall_profile_path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
