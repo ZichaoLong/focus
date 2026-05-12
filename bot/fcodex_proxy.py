@@ -343,7 +343,7 @@ class _ProxyThreadSeedState:
             )
         )
 
-    def initial_thread_seed_reservation_state(self, *, owner_key: str, request_id: Any) -> str:
+    def reserve_initial_thread_seed_for_request(self, *, owner_key: str, request_id: Any) -> str:
         request_key = _jsonrpc_id_key(request_id)
         if not owner_key or not request_key:
             return "invalid"
@@ -352,23 +352,11 @@ class _ProxyThreadSeedState:
                 return "exhausted"
             reservation = self._pending_initial_thread_seed_reservation
             if reservation is None:
-                return "available"
+                self._pending_initial_thread_seed_reservation = (owner_key, request_key)
+                return "reserved"
             if reservation == (owner_key, request_key):
                 return "owned"
             return "reserved_by_other"
-
-    def reserve_initial_thread_seed_for_request(self, *, owner_key: str, request_id: Any) -> bool:
-        request_key = _jsonrpc_id_key(request_id)
-        if not owner_key or not request_key:
-            return False
-        with self._lock:
-            if not self._initial_thread_seed_available_unlocked():
-                return False
-            reservation = self._pending_initial_thread_seed_reservation
-            if reservation is not None:
-                return reservation == (owner_key, request_key)
-            self._pending_initial_thread_seed_reservation = (owner_key, request_key)
-            return True
 
     def release_initial_thread_seed_reservation(self, *, owner_key: str, request_key: str) -> None:
         if not owner_key or not request_key:
@@ -564,14 +552,8 @@ class _ProxyInteractionGate:
     def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
         self._thread_seed_state.clear_pending_threadwise_seed(thread_id)
 
-    def _reserve_initial_thread_seed_for_request(self, request_id: Any) -> bool:
+    def _reserve_initial_thread_seed_for_request(self, request_id: Any) -> str:
         return self._thread_seed_state.reserve_initial_thread_seed_for_request(
-            owner_key=self._thread_seed_state_owner_key,
-            request_id=request_id,
-        )
-
-    def _initial_thread_seed_reservation_state(self, request_id: Any) -> str:
-        return self._thread_seed_state.initial_thread_seed_reservation_state(
             owner_key=self._thread_seed_state_owner_key,
             request_id=request_id,
         )
@@ -782,7 +764,8 @@ class _ProxyInteractionGate:
                 payload = self._apply_saved_thread_profile_for_resume(payload)
                 payload = self._apply_saved_thread_memory_mode_for_resume(payload)
             elif method == "thread/start":
-                if self._initial_thread_seed_reservation_state(request_id) == "reserved_by_other":
+                reservation_state = self._reserve_initial_thread_seed_for_request(request_id)
+                if reservation_state == "reserved_by_other":
                     _send_local_error_response(
                         client_ws,
                         request_id,
@@ -790,7 +773,7 @@ class _ProxyInteractionGate:
                         "请等待上一条 `thread/start` 完成或失败后再试。",
                     )
                     return
-                reserved_initial_seed = self._reserve_initial_thread_seed_for_request(request_id)
+                reserved_initial_seed = reservation_state in {"reserved", "owned"}
                 if reserved_initial_seed:
                     payload = self._apply_initial_thread_profile_seed(payload)
                     payload = self._apply_initial_thread_memory_mode_seed(payload)

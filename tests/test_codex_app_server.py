@@ -2529,7 +2529,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-    def test_concurrent_thread_start_requests_fail_closed_while_initial_seed_is_reserved(self) -> None:
+    def test_sequential_second_thread_start_request_fails_closed_while_initial_seed_is_reserved(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -2669,50 +2671,75 @@ class ProxyInteractionGateTests(unittest.TestCase):
             backend_ws_first = self._FakeWs()
             client_ws_second = self._FakeWs()
             backend_ws_second = self._FakeWs()
+            reserve_barrier = threading.Barrier(2)
+            original_reserve = shared_seed_state.reserve_initial_thread_seed_for_request
 
-            gate_first.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/start",
-                        "params": {"cwd": "/tmp/project"},
-                    }
-                ),
-                client_ws=client_ws_first,
-                backend_ws=backend_ws_first,
-            )
-            gate_second.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/start",
-                        "params": {"cwd": "/tmp/project"},
-                    }
-                ),
-                client_ws=client_ws_second,
-                backend_ws=backend_ws_second,
-            )
+            def synchronized_reserve(*, owner_key: str, request_id: object) -> str:
+                reserve_barrier.wait(timeout=1)
+                return original_reserve(owner_key=owner_key, request_id=request_id)
 
-            forwarded_first = self._decode_payload(backend_ws_first.sent[-1])
-            self.assertEqual(forwarded_first["params"]["config"]["profile"], "provider2")
+            shared_seed_state.reserve_initial_thread_seed_for_request = synchronized_reserve  # type: ignore[method-assign]
+
+            def _start_thread(gate: _ProxyInteractionGate, client_ws, backend_ws, request_id: int) -> None:
+                gate.handle_client_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "method": "thread/start",
+                            "params": {"cwd": "/tmp/project"},
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+
+            first_thread = threading.Thread(
+                target=_start_thread,
+                args=(gate_first, client_ws_first, backend_ws_first, 1),
+            )
+            second_thread = threading.Thread(
+                target=_start_thread,
+                args=(gate_second, client_ws_second, backend_ws_second, 2),
+            )
+            first_thread.start()
+            second_thread.start()
+            first_thread.join(timeout=1)
+            second_thread.join(timeout=1)
+
+            self.assertFalse(first_thread.is_alive())
+            self.assertFalse(second_thread.is_alive())
+
+            backend_payloads = [
+                self._decode_payload(payload)
+                for ws in (backend_ws_first, backend_ws_second)
+                for payload in ws.sent
+            ]
+            self.assertEqual(len(backend_payloads), 1)
+
+            forwarded = backend_payloads[0]
+            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
             self.assertEqual(
-                forwarded_first["params"]["config"]["memories"],
+                forwarded["params"]["config"]["memories"],
                 {
                     "use_memories": True,
                     "generate_memories": False,
                 },
             )
-            self.assertEqual(forwarded_first["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded_first["params"]["modelProvider"], "provider2_api")
+            self.assertEqual(forwarded["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-            self.assertEqual(backend_ws_second.sent, [])
+            client_payloads = [
+                self._decode_payload(payload)
+                for ws in (client_ws_first, client_ws_second)
+                for payload in ws.sent
+            ]
+            self.assertEqual(len(client_payloads), 1)
             self.assertEqual(
-                self._decode_payload(client_ws_second.sent[-1]),
+                client_payloads[0],
                 {
                     "jsonrpc": "2.0",
-                    "id": 1,
+                    "id": 1 if backend_ws_second.sent else 2,
                     "error": {
                         "code": -32002,
                         "message": (
