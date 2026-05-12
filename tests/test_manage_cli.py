@@ -150,7 +150,11 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             bin_dir = root / "bin"
-            completion_dir = root / "completion"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
             ensured_definitions: list[object] = []
 
@@ -165,7 +169,11 @@ class ManageCliTests(unittest.TestCase):
                     "FC_DATA_ROOT": str(data_root),
                     "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(completion_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
@@ -188,10 +196,14 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue((bin_dir / "feishu-codexd").exists())
             self.assertTrue((bin_dir / "feishu-codexctl").exists())
             self.assertTrue((bin_dir / "fcodex").exists())
-            self.assertTrue((completion_dir / "feishu-codex").exists())
-            self.assertTrue((completion_dir / "feishu-codexd").exists())
-            self.assertTrue((completion_dir / "feishu-codexctl").exists())
-            self.assertTrue((completion_dir / "fcodex").exists())
+            self.assertTrue((bash_completion_dir / "feishu-codex").exists())
+            self.assertTrue((bash_completion_dir / "feishu-codexd").exists())
+            self.assertTrue((bash_completion_dir / "feishu-codexctl").exists())
+            self.assertTrue((bash_completion_dir / "fcodex").exists())
+            self.assertTrue(zsh_completion_path.exists())
+            self.assertTrue(zsh_rc_path.exists())
+            self.assertTrue(powershell_completion_path.exists())
+            self.assertTrue(powershell_profile_path.exists())
             self.assertEqual(stat.S_IMODE((config_root / "system.yaml").stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE((config_root / "init.token").stat().st_mode), 0o600)
             self.assertEqual(stat.S_IMODE(env_file.stat().st_mode), 0o600)
@@ -215,11 +227,16 @@ class ManageCliTests(unittest.TestCase):
                 f'exec "{data_root / ".venv" / "bin" / "python"}" -c \'from bot.manage_cli import main; main()\' "$@"',
                 rendered,
             )
-            rendered_completion = (completion_dir / "feishu-codex").read_text(encoding="utf-8")
-            self.assertIn("-m bot.bash_completion complete", rendered_completion)
+            rendered_completion = (bash_completion_dir / "feishu-codex").read_text(encoding="utf-8")
+            self.assertIn("-m bot.shell_completion complete", rendered_completion)
             self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codex feishu-codex", rendered_completion)
+            self.assertIn('source "', zsh_rc_path.read_text(encoding="utf-8"))
+            self.assertIn("Register-ArgumentCompleter", powershell_completion_path.read_text(encoding="utf-8"))
+            self.assertIn("Test-Path", powershell_profile_path.read_text(encoding="utf-8"))
             summary = stdout.getvalue()
-            self.assertIn(f"Bash completion: {completion_dir}", summary)
+            self.assertIn(f"Bash completion: {bash_completion_dir}", summary)
+            self.assertIn(f"zsh completion: {zsh_completion_path}", summary)
+            self.assertIn(f"PowerShell completion: {powershell_completion_path}", summary)
             self.assertIn("已重建实例: corp-a, default。不覆盖各实例现有用户配置", summary)
             self.assertIn("  - 本地服务进程管理 feishu-codex --help", summary)
             self.assertIn("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help", summary)
@@ -228,8 +245,10 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("    - feishu-codex config --open env（按需）", summary)
             self.assertIn("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）", summary)
             self.assertIn("    - 先 cd 到目标目录，再执行 feishu-codex skill install", summary)
-            self.assertIn("  6. Bash completion", summary)
-            self.assertIn("新开一个 Bash shell 通常会自动生效", summary)
+            self.assertIn("  6. Shell completion", summary)
+            self.assertIn("Bash：新开一个 Bash shell 通常会自动生效", summary)
+            self.assertIn("zsh：已写入自动加载钩子", summary)
+            self.assertIn("PowerShell：已写入自动加载 profile", summary)
 
     def test_ensure_instance_scaffold_writes_detected_initial_codex_command_without_changing_example(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -264,7 +283,11 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             bin_dir = root / "bin"
-            completion_dir = root / "completion"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
 
             class _DummyManager:
@@ -278,7 +301,11 @@ class ManageCliTests(unittest.TestCase):
                     "FC_DATA_ROOT": str(data_root),
                     "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(completion_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
@@ -305,7 +332,11 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(data_marker.read_text(encoding="utf-8"), "preserve me\n")
             self.assertEqual((paths.config_dir / "system.yaml.example").read_text(encoding="utf-8"), SYSTEM_YAML_TEMPLATE)
             self.assertEqual((paths.config_dir / "codex.yaml.example").read_text(encoding="utf-8"), CODEX_YAML_TEMPLATE)
-            self.assertTrue((completion_dir / "feishu-codex").exists())
+            self.assertTrue((bash_completion_dir / "feishu-codex").exists())
+            self.assertTrue(zsh_completion_path.exists())
+            self.assertTrue(zsh_rc_path.exists())
+            self.assertTrue(powershell_completion_path.exists())
+            self.assertTrue(powershell_profile_path.exists())
 
     def test_write_wrapper_creates_windows_cmd_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -978,13 +1009,17 @@ class ManageCliTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "仍有运行中的 service owner"):
                         _handle_instance_remove("corp-a")
 
-    def test_handle_uninstall_removes_bash_completion_files(self) -> None:
+    def test_handle_uninstall_removes_shell_completion_files(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
             bin_dir = root / "bin"
-            completion_dir = root / "completion"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
 
             class _DummyManager:
@@ -1001,7 +1036,11 @@ class ManageCliTests(unittest.TestCase):
                     "FC_DATA_ROOT": str(data_root),
                     "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
                     "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(completion_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
@@ -1009,13 +1048,21 @@ class ManageCliTests(unittest.TestCase):
                 _ensure_instance_scaffold("corp-a")
                 with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
                     self.assertEqual(_handle_bootstrap_install(), 0)
-                    self.assertTrue((completion_dir / "feishu-codex").exists())
+                    self.assertTrue((bash_completion_dir / "feishu-codex").exists())
+                    self.assertTrue(zsh_completion_path.exists())
+                    self.assertTrue(zsh_rc_path.exists())
+                    self.assertTrue(powershell_completion_path.exists())
+                    self.assertTrue(powershell_profile_path.exists())
                     self.assertEqual(_handle_uninstall(purge=False), 0)
 
-            self.assertFalse((completion_dir / "feishu-codex").exists())
-            self.assertFalse((completion_dir / "feishu-codexd").exists())
-            self.assertFalse((completion_dir / "feishu-codexctl").exists())
-            self.assertFalse((completion_dir / "fcodex").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codex").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codexd").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codexctl").exists())
+            self.assertFalse((bash_completion_dir / "fcodex").exists())
+            self.assertFalse(zsh_completion_path.exists())
+            self.assertFalse(zsh_rc_path.exists())
+            self.assertFalse(powershell_completion_path.exists())
+            self.assertFalse(powershell_profile_path.exists())
 
 
 if __name__ == "__main__":

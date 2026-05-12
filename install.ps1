@@ -2,15 +2,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$env:FC_POWERSHELL_PROFILE_PATH = $PROFILE.CurrentUserAllHosts
 
-if (Get-Command py -ErrorAction SilentlyContinue) {
-  & py -3.11 "$scriptDir\install.py"
-  exit $LASTEXITCODE
+try {
+  if (Get-Command py -ErrorAction SilentlyContinue) {
+    & py -3.11 "$scriptDir\install.py"
+    exit $LASTEXITCODE
+  }
+
+  if (Get-Command python -ErrorAction SilentlyContinue) {
+    & python "$scriptDir\install.py"
+    exit $LASTEXITCODE
+  }
+
+  Write-Error "需要 Python 3.11 或更高版本。"
 }
-
-if (Get-Command python -ErrorAction SilentlyContinue) {
-  & python "$scriptDir\install.py"
-  exit $LASTEXITCODE
+finally {
+  Remove-Item Env:FC_POWERSHELL_PROFILE_PATH -ErrorAction SilentlyContinue
 }
-
-Write-Error "需要 Python 3.11 或更高版本。"

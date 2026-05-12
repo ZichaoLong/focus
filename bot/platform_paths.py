@@ -94,6 +94,42 @@ def default_user_bash_completion_dir() -> pathlib.Path | None:
     return pathlib.Path.home() / ".local" / "share" / "bash-completion" / "completions"
 
 
+def default_user_zsh_completion_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_ZSH_COMPLETION_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    return default_config_root() / "shell-completion" / "feishu-codex.zsh"
+
+
+def default_user_zsh_rc_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_ZSH_RC_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    return pathlib.Path.home() / ".zshrc"
+
+
+def default_user_powershell_profile_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_POWERSHELL_PROFILE_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if not is_windows():
+        return None
+    return pathlib.Path.home() / "Documents" / "PowerShell" / "profile.ps1"
+
+
+def default_user_powershell_completion_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_POWERSHELL_COMPLETION_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if default_user_powershell_profile_path() is None:
+        return None
+    return default_config_root() / "shell-completion" / "feishu-codex.ps1"
+
+
 def default_env_file() -> pathlib.Path:
     raw = os.environ.get("FC_ENV_FILE", "").strip()
     if raw:

@@ -4,10 +4,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from bot.bash_completion import complete_words, render_bash_completion_script
+from bot.shell_completion import (
+    complete_words,
+    render_bash_completion_script,
+    render_powershell_completion_script,
+    render_zsh_completion_script,
+)
 
 
-class BashCompletionTests(unittest.TestCase):
+class ShellCompletionTests(unittest.TestCase):
     def test_rendered_script_embeds_python_path_and_registrations(self) -> None:
         rendered = render_bash_completion_script(venv_python=pathlib.Path("/tmp/venv/bin/python"))
 
@@ -16,6 +21,22 @@ class BashCompletionTests(unittest.TestCase):
         self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codexctl feishu-codexctl", rendered)
         self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codexd feishu-codexd", rendered)
         self.assertIn("complete -o bashdefault -o default -F _fc_complete_fcodex fcodex", rendered)
+
+    def test_rendered_zsh_script_embeds_python_path_and_compdef(self) -> None:
+        rendered = render_zsh_completion_script(venv_python=pathlib.Path("/tmp/venv/bin/python"))
+
+        self.assertIn("/tmp/venv/bin/python", rendered)
+        self.assertIn("autoload -Uz compinit", rendered)
+        self.assertIn("compdef _fc_complete_feishu_codex feishu-codex", rendered)
+        self.assertIn("compdef _fc_complete_fcodex fcodex", rendered)
+
+    def test_rendered_powershell_script_embeds_python_path_and_registrations(self) -> None:
+        rendered = render_powershell_completion_script(venv_python=pathlib.Path("/tmp/venv/Scripts/python.exe"))
+
+        self.assertIn("/tmp/venv/Scripts/python.exe", rendered)
+        self.assertIn("Register-ArgumentCompleter -Native -CommandName $commandName", rendered)
+        self.assertIn("bot.shell_completion complete", rendered)
+        self.assertIn("feishu-codexctl", rendered)
 
     def test_feishu_codex_completes_instance_option_and_remove_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

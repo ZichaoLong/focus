@@ -17,7 +17,6 @@ import sys
 import time
 from dataclasses import dataclass
 
-from bot.bash_completion import install_bash_completion_files, remove_bash_completion_files
 from bot.env_file import ensure_env_template
 from bot.file_permissions import ensure_private_file_permissions
 from bot.instance_layout import (
@@ -36,6 +35,7 @@ from bot.platform_paths import (
     default_user_bin_dir,
     is_windows,
 )
+from bot.shell_completion import CompletionInstallResult, install_shell_completion_files, remove_shell_completion_files
 from bot.service_manager import ServiceManagerError, build_service_definition, current_service_manager
 from bot.stores.service_instance_lease import ServiceInstanceLease
 
@@ -585,14 +585,18 @@ def _print_install_summary(
     bin_dir: pathlib.Path,
     rebuilt_instances: list[str],
     *,
-    bash_completion_dir: pathlib.Path | None,
+    completion_result: CompletionInstallResult,
 ) -> None:
     print("安装完成。")
     print(f"配置根目录: {default_config_root()}")
     print(f"数据根目录: {default_data_root()}")
     print(f"命令目录: {bin_dir}")
-    if bash_completion_dir is not None:
-        print(f"Bash completion: {bash_completion_dir}")
+    if completion_result.bash_dir is not None:
+        print(f"Bash completion: {completion_result.bash_dir}")
+    if completion_result.zsh_script_path is not None:
+        print(f"zsh completion: {completion_result.zsh_script_path}")
+    if completion_result.powershell_script_path is not None:
+        print(f"PowerShell completion: {completion_result.powershell_script_path}")
     print("  - 本地服务进程管理 feishu-codex --help")
     print("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
     print(f"已重建实例: {', '.join(rebuilt_instances)}。不覆盖各实例现有用户配置")
@@ -614,10 +618,26 @@ def _print_install_summary(
     print("    - feishu-codex --instance corp-a start|autostart|config ...")
     print("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）")
     print("    - 先 cd 到目标目录，再执行 feishu-codex skill install")
-    if bash_completion_dir is not None:
-        print("  6. Bash completion")
-        print("    - 新开一个 Bash shell 通常会自动生效")
-        print(f"    - 当前 shell 也可手动执行 source {bash_completion_dir / 'feishu-codex'}")
+    if (
+        completion_result.bash_dir is not None
+        or completion_result.zsh_script_path is not None
+        or completion_result.powershell_script_path is not None
+    ):
+        print("  6. Shell completion")
+        if completion_result.bash_dir is not None:
+            print("    - Bash：新开一个 Bash shell 通常会自动生效")
+            print(f"    - 当前 shell 也可手动执行 source {completion_result.bash_dir / 'feishu-codex'}")
+        if completion_result.zsh_script_path is not None:
+            if completion_result.zsh_rc_path is not None:
+                print(f"    - zsh：已写入自动加载钩子 {completion_result.zsh_rc_path}；新开 shell 即可生效")
+            print(f"    - zsh：当前 shell 也可手动执行 source {completion_result.zsh_script_path}")
+        if completion_result.powershell_script_path is not None:
+            if completion_result.powershell_profile_path is not None:
+                print(
+                    "    - PowerShell：已写入自动加载 profile "
+                    f"{completion_result.powershell_profile_path}；重开 PowerShell 即可生效"
+                )
+            print(f"    - PowerShell：当前 shell 也可手动执行 . '{completion_result.powershell_script_path}'")
 
 
 def _handle_bootstrap_install() -> int:
@@ -625,14 +645,14 @@ def _handle_bootstrap_install() -> int:
     for instance_name in instance_names:
         _ensure_instance_scaffold(instance_name)
     bin_dir = _install_wrappers()
-    bash_completion_dir = install_bash_completion_files(venv_python=_venv_python())
+    completion_result = install_shell_completion_files(venv_python=_venv_python())
     manager = current_service_manager()
     for instance_name in instance_names:
         manager.ensure_service(_service_definition(instance_name))
     _print_install_summary(
         bin_dir,
         instance_names,
-        bash_completion_dir=bash_completion_dir,
+        completion_result=completion_result,
     )
     return 0
 
@@ -785,7 +805,7 @@ def _remove_wrappers() -> None:
                 (bin_dir / name).unlink()
             except FileNotFoundError:
                 pass
-    remove_bash_completion_files()
+    remove_shell_completion_files()
 
 
 def _handle_uninstall(*, purge: bool) -> int:
