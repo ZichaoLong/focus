@@ -97,7 +97,7 @@ class InstanceRegistryStoreTests(unittest.TestCase):
         self.addCleanup(tempdir.cleanup)
         root_dir = pathlib.Path(tempdir.name)
         store = InstanceRegistryStore(root_dir)
-        ctx = multiprocessing.get_context("fork")
+        ctx = multiprocessing.get_context("spawn")
         start_event = ctx.Event()
         error_queue = ctx.Queue()
         parent_pid = os.getpid()

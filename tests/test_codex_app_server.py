@@ -832,12 +832,27 @@ class CodexRpcClientTests(unittest.TestCase):
             "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js"
         )
 
+        class _Proc:
+            stdout = StringIO("")
+            stderr = StringIO("")
+
+            def poll(self):
+                return None
+
+        class _ThreadStub:
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def start(self) -> None:
+                return None
+
         with patch(
             "bot.codex_protocol.client.resolve_managed_codex_command",
             return_value=stable_command,
         ):
-            with patch("bot.codex_protocol.client.subprocess.Popen") as mock_popen:
-                client._launch_managed_process_locked("ws://127.0.0.1:8765")
+            with patch("bot.codex_protocol.client.subprocess.Popen", return_value=_Proc()) as mock_popen:
+                with patch("bot.codex_protocol.client.threading.Thread", _ThreadStub):
+                    client._launch_managed_process_locked("ws://127.0.0.1:8765")
 
         launched = mock_popen.call_args.args[0]
         self.assertEqual(
