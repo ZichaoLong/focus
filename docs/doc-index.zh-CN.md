@@ -57,6 +57,7 @@
 
 ### 决策记录
 
+- [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)
 - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
 - [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md)
 - [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md)
@@ -93,6 +94,7 @@
 | 飞书附件 / 文件消息应如何进入本地工作区？哪些类型支持下载、哪些行为不由本仓库负责？ | [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md) |
 | 飞书卡片消息的文本投影、终态 `final_reply_text`、以及普通卡片的 best-effort 文本提取边界是什么？ | [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md) |
 | 飞书出站生成图片的当前边界是什么？文本为何必须先于图片送达？为什么任意工作区图片不在范围内？ | [`feishu-output-images.zh-CN.md`](./decisions/feishu-output-images.zh-CN.md) |
+| 跨实例 `attach / resume` 之前到底要遵守什么安全准入规则？为什么不能只看 `ThreadRuntimeLease`？ | [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)、[`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | 群聊相关功能需要做哪些手工回归检查？ | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |
 | `CodexHandler` ownership 拆分当时的 rollout 计划是什么？ | [`codex-handler-decomposition-plan.zh-CN.md`](./archive/codex-handler-decomposition-plan.zh-CN.md) |
 
@@ -127,6 +129,7 @@
 - 改多实例、共享 thread 可见面、`feishu-codexctl --instance` 或跨实例 runtime lease 相关逻辑时：
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
+  - [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)
   - [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)
   - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
 - 改飞书附件、文件消息、本地暂存、图片输入升级相关逻辑时：

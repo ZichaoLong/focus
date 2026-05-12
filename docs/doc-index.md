@@ -64,6 +64,7 @@ Status guidance:
 
 ### Decisions
 
+- [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md)
 - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md)
 - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
@@ -100,6 +101,7 @@ Status guidance:
 | What boundary should Feishu attachment / file-message support follow, including what gets downloaded and what remains outside this repository? | [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md) |
 | What is the boundary for Feishu card text projection, terminal `final_reply_text`, and best-effort extraction from ordinary cards? | [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md) |
 | What is the current boundary for Feishu outbound generated images, including text-before-image ordering and why arbitrary workspace images are out of scope? | [`feishu-output-images.md`](./decisions/feishu-output-images.md) |
+| What cross-instance safety rule applies before attach / resume, and why is `ThreadRuntimeLease` alone not enough? | [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md), [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | What should be covered in manual group-chat regression testing? | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |
 | What historical rollout plan was used to decompose `CodexHandler` ownership? | [`codex-handler-decomposition-plan.md`](./archive/codex-handler-decomposition-plan.md) |
 
@@ -135,6 +137,7 @@ Status guidance:
   or cross-instance runtime lease work:
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
+  - [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md)
   - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - For Feishu attachment ingress, file messages, local staging, or image-input
