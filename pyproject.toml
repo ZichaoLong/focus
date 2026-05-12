@@ -34,3 +34,7 @@ version = {attr = "bot.version.__version__"}
   "skill/scripts/__init__.py",
   "skill/scripts/manage_scheduled_prompt.py",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
