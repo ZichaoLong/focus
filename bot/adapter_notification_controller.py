@@ -8,6 +8,7 @@ from bot.constants import display_path
 from bot.execution_transcript import ExecutionTranscript
 from bot.runtime_state import (
     BACKEND_THREAD_STATUS_ACTIVE,
+    BACKEND_THREAD_STATUS_SYSTEM_ERROR,
     ExecutionStateChanged,
     RuntimeStateDict,
     RuntimeStateMessage,
@@ -157,6 +158,12 @@ class AdapterNotificationController:
             if awaiting_started:
                 continue
             if status_type != BACKEND_THREAD_STATUS_ACTIVE and (current_turn_id or current_message_id):
+                # Upstream can emit `thread/status=systemError` before the paired
+                # `error` and `turn/completed(status=failed)` notifications.
+                # Finalizing here would retire the execution anchor too early and
+                # drop the real failure text, leaving Feishu with an empty card.
+                if status_type == BACKEND_THREAD_STATUS_SYSTEM_ERROR:
+                    continue
                 self._finalize_execution_from_terminal_signal(
                     binding[0],
                     binding[1],

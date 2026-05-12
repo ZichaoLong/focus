@@ -314,6 +314,78 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             ],
         )
 
+    def test_handle_thread_status_changed_system_error_waits_for_error_or_turn_completed(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "systemError"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_message_id"], "card-1")
+        self.assertEqual(state["current_turn_id"], "turn-1")
+
+    def test_system_error_followed_by_error_and_turn_completed_preserves_failure_text(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, _, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "systemError"}})
+        controller.handle_notification(
+            "error",
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "willRetry": False,
+                "error": {
+                    "message": "Missing environment variable: `CODEX_ZH_API_KEY`.",
+                },
+            },
+        )
+        controller.handle_turn_completed(
+            {
+                "threadId": "thread-1",
+                "turn": {
+                    "id": "turn-1",
+                    "status": "failed",
+                    "error": {"message": "Missing environment variable: `CODEX_ZH_API_KEY`."},
+                },
+            }
+        )
+
+        self.assertEqual(
+            note_events,
+            [binding, binding, binding],
+        )
+        self.assertEqual(
+            updates,
+            [binding],
+        )
+        self.assertEqual(
+            state["execution_transcript"].reply_text(),
+            "Missing environment variable: `CODEX_ZH_API_KEY`.",
+        )
+        self.assertEqual(finalizations, [("ou_user", "chat-1", "thread-1", "turn-1")])
+
     def test_handle_error_notification_uses_non_retry_error_as_fallback_reply(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()

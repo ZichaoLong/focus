@@ -708,6 +708,59 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         self.assertEqual(delivered_images[0]["turn_id"], "turn-1")
         self.assertEqual(delivered_images[0]["prompt_message_id"], "msg-1")
 
+    def test_reconcile_execution_snapshot_uses_turn_error_when_failed_turn_has_no_agent_reply(self) -> None:
+        state = self._make_state()
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)
+        state["running"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "card-1"
+        state["current_prompt_message_id"] = "msg-1"
+
+        snapshots.append(
+            ThreadSnapshot(
+                summary=ThreadSummary(
+                    thread_id="thread-1",
+                    cwd="/tmp/project",
+                    name="demo",
+                    preview="",
+                    created_at=0,
+                    updated_at=0,
+                    source="cli",
+                    status="systemError",
+                ),
+                turns=[
+                    {
+                        "id": "turn-1",
+                        "items": [],
+                        "status": "failed",
+                        "error": {"message": "Missing environment variable: `CODEX_ZH_API_KEY`."},
+                    }
+                ],
+            )
+        )
+
+        finalized_now = controller.reconcile_execution_snapshot(
+            "ou_user",
+            "c1",
+            thread_id="thread-1",
+            turn_id="turn-1",
+        )
+
+        self.assertTrue(finalized_now)
+        self.assertEqual(finalized, [("ou_user", "c1")])
+        self.assertEqual(
+            terminal_results,
+            [
+                {
+                    "chat_id": "c1",
+                    "final_reply_text": "Missing environment variable: `CODEX_ZH_API_KEY`.",
+                    "prompt_message_id": "msg-1",
+                    "prompt_reply_in_thread": False,
+                }
+            ],
+        )
+        self.assertEqual(delivered_images, [])
+
     def test_reconcile_execution_snapshot_skips_generated_images_when_terminal_text_publish_fails(self) -> None:
         state = self._make_state()
         controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)

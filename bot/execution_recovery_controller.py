@@ -830,6 +830,21 @@ class ExecutionRecoveryController:
                     final_reply_text=parts[-1],
                     reply_items=items,
                 )
+            error = turn.get("error") or {}
+            error_message = str(error.get("message", "") or "").strip()
+            additional_details = str(error.get("additionalDetails", "") or "").strip()
+            if additional_details:
+                error_message = (
+                    f"{error_message}\n{additional_details}".strip()
+                    if error_message
+                    else additional_details
+                )
+            if error_message:
+                return SnapshotReplyProjection(
+                    full_reply_text=error_message,
+                    final_reply_text=error_message,
+                    reply_items=items,
+                )
         return SnapshotReplyProjection(
             full_reply_text="",
             final_reply_text="",
