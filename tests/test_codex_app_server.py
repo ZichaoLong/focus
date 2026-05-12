@@ -2750,7 +2750,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 },
             )
 
-    def test_gate_close_releases_shared_initial_seed_reservation_for_reconnect(self) -> None:
+    def test_gate_close_marks_shared_initial_seed_outcome_unknown_for_reconnect(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
@@ -2805,17 +2805,21 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 backend_ws=backend_ws_second,
             )
 
-            forwarded = self._decode_payload(backend_ws_second.sent[-1])
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+            self.assertEqual(backend_ws_second.sent, [])
             self.assertEqual(
-                forwarded["params"]["config"]["memories"],
+                self._decode_payload(client_ws_second.sent[-1]),
                 {
-                    "use_memories": True,
-                    "generate_memories": False,
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "error": {
+                        "code": -32002,
+                        "message": (
+                            "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
+                            "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。"
+                        ),
+                    },
                 },
             )
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
     def test_thread_start_error_releases_initial_seed_reservation_for_later_request(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

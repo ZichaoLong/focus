@@ -88,6 +88,14 @@
 
 这份 seed 目前由 proxy 进程级共享状态持有，而不是挂在某个单独 gate 上。
 
+如果连接在这个阶段关闭，还要继续区分两种子情况：
+
+- `thread/start` 明确失败或明确没有拿到有效 `thread_id`
+- `thread/start` 是否已被 backend 接收、但本地在断连前没观察到结果
+
+前者可以安全释放 seed；
+后者属于 outcome unknown，当前合同按 fail-close 处理。
+
 ### 4.2 `pending threadwise seed`
 
 当某个 `thread/start` 成功返回并带回 `thread_id` 后：
@@ -199,8 +207,17 @@ launch seed 的 reservation 属于：
 下列情况应释放 reservation：
 
 1. 对应的 `thread/start` 返回 error
-2. 连接在 seed 绑定到 `thread_id` 之前就关闭，gate 被销毁
-3. `thread/start` 响应没有拿到有效 `thread_id`
+2. `thread/start` 响应没有拿到有效 `thread_id`
+
+如果连接在 seed 绑定到 `thread_id` 之前就关闭，不能一概而论地释放 reservation。
+
+这时要分两种情况：
+
+1. 能明确确认这条 `thread/start` 没有成功落到 backend
+   - 才允许释放
+2. 结果未知
+   - 则把当前 proxy 会话标记为 outcome unknown
+   - 后续对这份 one-shot seed 按 fail-close 阻断
 
 ### 6.3 reservation 的消费
 
@@ -218,8 +235,25 @@ reservation 才会真正被消费，并把 seed 绑定成 pending threadwise see
 如果连接在 `thread/start` 成功返回前断开：
 
 - launch seed 仍然是 unbound
-- reservation 应释放
-- 后续重连 / 再次 `thread/start` 可以重新竞争这份 seed
+
+不能直接假设：
+
+- reservation 一定可以安全释放
+
+因为这时可能出现：
+
+- backend 已经接收并处理了带 seed 的 `thread/start`
+- 但本地在断连前没有看到响应
+
+因此当前合同是：
+
+1. 如果结果可确认失败
+   - 释放 reservation
+   - 后续 `thread/start` 可以重新竞争 seed
+2. 如果结果未知
+   - 当前 proxy 会话进入 outcome unknown
+   - 后续新建 thread 对这份 seed 按 fail-close 拒绝
+   - 用户需要退出并重新启动 `fcodex`，而不是在同一 proxy 会话里重试复用
 
 ### 7.2 绑定后断连
 
@@ -283,8 +317,9 @@ reservation 才会真正被消费，并把 seed 绑定成 pending threadwise see
 2. 顺序第二次 `thread/start` 不会再次继承首个 thread 的 launch seed
 3. 并发 `thread/start` 在 seed 尚未绑定时会 fail-close，本地返回错误
 4. `thread/start` 报错会释放 reservation
-5. 绑定成 pending seed 后，即使 websocket 断开，重连后 `thread/resume` 仍可继续使用该 pending seed
-6. 只有首个成功 `turn/completed` 才会把 seed promote 到正式 stores
+5. 如果连接在 `thread/start` 结果未知时关闭，当前 proxy 会话会进入 outcome unknown，并阻断后续 seed 复用
+6. 绑定成 pending seed 后，即使 websocket 断开，重连后 `thread/resume` 仍可继续使用该 pending seed
+7. 只有首个成功 `turn/completed` 才会把 seed promote 到正式 stores
 
 ## 10. 仍未被本文一并解决的更大系统问题
 
@@ -307,4 +342,5 @@ reservation 才会真正被消费，并把 seed 绑定成 pending threadwise see
 > `feishu-codex` 的 `profile` / `memory` 是 thread-owned next-load state；
 > 但只有 materialized logical thread 才拥有正式的 thread-wise persist state。
 > `fcodex` 在 provisional 阶段只允许持有 proxy 会话级 pending seed；
-> 并发新建 thread 时按 fail-close 处理，直到 seed 完成绑定或失败释放。
+> 并发新建 thread 时按 fail-close 处理；
+> 如果连接在 `thread/start` 结果未知时关闭，也按 fail-close 阻断当前 proxy 会话继续复用这份 one-shot seed。

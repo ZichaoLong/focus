@@ -302,6 +302,7 @@ class _ProxyThreadSeedState:
         self._initial_thread_memory_mode_seed = str(thread_memory_mode_seed or "").strip()
         self._initial_thread_memory_mode_seed_consumed = not self._initial_thread_memory_mode_seed
         self._pending_initial_thread_seed_reservation: tuple[str, str] | None = None
+        self._initial_thread_seed_outcome_unknown = False
         self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}
         self._lock = threading.Lock()
 
@@ -350,6 +351,8 @@ class _ProxyThreadSeedState:
         with self._lock:
             if not self._initial_thread_seed_available_unlocked():
                 return "exhausted"
+            if self._initial_thread_seed_outcome_unknown:
+                return "outcome_unknown"
             reservation = self._pending_initial_thread_seed_reservation
             if reservation is None:
                 self._pending_initial_thread_seed_reservation = (owner_key, request_key)
@@ -372,6 +375,17 @@ class _ProxyThreadSeedState:
             reservation = self._pending_initial_thread_seed_reservation
             if reservation is not None and reservation[0] == owner_key:
                 self._pending_initial_thread_seed_reservation = None
+
+    def mark_initial_thread_seed_outcome_unknown_for_owner(self, owner_key: str) -> None:
+        if not owner_key:
+            return
+        with self._lock:
+            reservation = self._pending_initial_thread_seed_reservation
+            if reservation is None or reservation[0] != owner_key:
+                return
+            self._pending_initial_thread_seed_reservation = None
+            if self._initial_thread_seed_available_unlocked():
+                self._initial_thread_seed_outcome_unknown = True
 
     def bind_initial_thread_seed_once(
         self,
@@ -402,6 +416,7 @@ class _ProxyThreadSeedState:
                 return
             self._initial_thread_profile_seed_consumed = True
             self._initial_thread_memory_mode_seed_consumed = True
+            self._initial_thread_seed_outcome_unknown = False
             normalized_memory_mode = str(memory_mode or "").strip()
             if normalized_memory_mode:
                 normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
@@ -493,10 +508,20 @@ class _ProxyInteractionGate:
             self._owned_thread_ids.clear()
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
+            pending_thread_requests = list(self._pending_thread_request_by_id.values())
             self._pending_thread_request_by_id.clear()
-        self._thread_seed_state.release_initial_thread_seed_reservations_for_owner(
-            self._thread_seed_state_owner_key
+        reserved_thread_start_outcome_unknown = any(
+            request_method == "thread/start" and reserved_initial_seed
+            for request_method, _, reserved_initial_seed in pending_thread_requests
         )
+        if reserved_thread_start_outcome_unknown:
+            self._thread_seed_state.mark_initial_thread_seed_outcome_unknown_for_owner(
+                self._thread_seed_state_owner_key
+            )
+        else:
+            self._thread_seed_state.release_initial_thread_seed_reservations_for_owner(
+                self._thread_seed_state_owner_key
+            )
         for thread_id in owned_thread_ids:
             self._lease_store.release(thread_id, self._holder)
             if self._runtime_lease_keeper is None:
@@ -771,6 +796,14 @@ class _ProxyInteractionGate:
                         request_id,
                         "当前 fcodex 启动级 seed 正在等待另一条新建 thread 请求返回；"
                         "请等待上一条 `thread/start` 完成或失败后再试。",
+                    )
+                    return
+                if reservation_state == "outcome_unknown":
+                    _send_local_error_response(
+                        client_ws,
+                        request_id,
+                        "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
+                        "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。",
                     )
                     return
                 reserved_initial_seed = reservation_state in {"reserved", "owned"}
