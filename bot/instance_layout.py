@@ -128,6 +128,21 @@ def resolve_instance_paths(instance_name: str) -> InstancePaths:
     )
 
 
+def list_known_instance_names() -> list[str]:
+    names = {DEFAULT_INSTANCE_NAME}
+    for root in (default_config_root() / _INSTANCES_SEGMENT, default_data_root() / _INSTANCES_SEGMENT):
+        if not root.exists():
+            continue
+        for child in root.iterdir():
+            if not child.is_dir():
+                continue
+            try:
+                names.add(validate_instance_name(child.name))
+            except ValueError:
+                continue
+    return sorted(names)
+
+
 def apply_instance_environment(instance_name: str) -> InstancePaths:
     paths = resolve_instance_paths(instance_name)
     os.environ["FC_INSTANCE"] = paths.instance_name

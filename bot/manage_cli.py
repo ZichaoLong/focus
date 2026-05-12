@@ -17,12 +17,25 @@ import sys
 import time
 from dataclasses import dataclass
 
+from bot.bash_completion import install_bash_completion_files, remove_bash_completion_files
 from bot.env_file import ensure_env_template
 from bot.file_permissions import ensure_private_file_permissions
-from bot.instance_layout import DEFAULT_INSTANCE_NAME, apply_instance_environment, resolve_instance_paths, validate_instance_name
+from bot.instance_layout import (
+    DEFAULT_INSTANCE_NAME,
+    apply_instance_environment,
+    list_known_instance_names,
+    resolve_instance_paths,
+    validate_instance_name,
+)
 from bot.install_templates import CODEX_YAML_TEMPLATE, SYSTEM_YAML_TEMPLATE, render_initial_codex_yaml
 from bot.instance_resolution import list_running_instances
-from bot.platform_paths import default_config_root, default_data_root, default_log_file, default_user_bin_dir, is_windows
+from bot.platform_paths import (
+    default_config_root,
+    default_data_root,
+    default_log_file,
+    default_user_bin_dir,
+    is_windows,
+)
 from bot.service_manager import ServiceManagerError, build_service_definition, current_service_manager
 from bot.stores.service_instance_lease import ServiceInstanceLease
 
@@ -568,27 +581,18 @@ def _load_daemon_entry():
     return importlib.import_module("bot.__main__")
 
 
-def _known_instance_names() -> list[str]:
-    names = {DEFAULT_INSTANCE_NAME}
-    config_root = default_config_root()
-    data_root = default_data_root()
-    for root in (config_root / "instances", data_root / "instances"):
-        if not root.exists():
-            continue
-        for child in root.iterdir():
-            if child.is_dir():
-                try:
-                    names.add(validate_instance_name(child.name))
-                except ValueError:
-                    continue
-    return sorted(names)
-
-
-def _print_install_summary(bin_dir: pathlib.Path, rebuilt_instances: list[str]) -> None:
+def _print_install_summary(
+    bin_dir: pathlib.Path,
+    rebuilt_instances: list[str],
+    *,
+    bash_completion_dir: pathlib.Path | None,
+) -> None:
     print("安装完成。")
     print(f"配置根目录: {default_config_root()}")
     print(f"数据根目录: {default_data_root()}")
     print(f"命令目录: {bin_dir}")
+    if bash_completion_dir is not None:
+        print(f"Bash completion: {bash_completion_dir}")
     print("  - 本地服务进程管理 feishu-codex --help")
     print("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
     print(f"已重建实例: {', '.join(rebuilt_instances)}。不覆盖各实例现有用户配置")
@@ -610,17 +614,26 @@ def _print_install_summary(bin_dir: pathlib.Path, rebuilt_instances: list[str]) 
     print("    - feishu-codex --instance corp-a start|autostart|config ...")
     print("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）")
     print("    - 先 cd 到目标目录，再执行 feishu-codex skill install")
+    if bash_completion_dir is not None:
+        print("  6. Bash completion")
+        print("    - 新开一个 Bash shell 通常会自动生效")
+        print(f"    - 当前 shell 也可手动执行 source {bash_completion_dir / 'feishu-codex'}")
 
 
 def _handle_bootstrap_install() -> int:
-    instance_names = _known_instance_names()
+    instance_names = list_known_instance_names()
     for instance_name in instance_names:
         _ensure_instance_scaffold(instance_name)
     bin_dir = _install_wrappers()
+    bash_completion_dir = install_bash_completion_files(venv_python=_venv_python())
     manager = current_service_manager()
     for instance_name in instance_names:
         manager.ensure_service(_service_definition(instance_name))
-    _print_install_summary(bin_dir, instance_names)
+    _print_install_summary(
+        bin_dir,
+        instance_names,
+        bash_completion_dir=bash_completion_dir,
+    )
     return 0
 
 
@@ -766,12 +779,13 @@ def _remove_wrappers() -> None:
                 (bin_dir / f"{name}.cmd").unlink()
             except FileNotFoundError:
                 pass
-        return
-    for name in ("feishu-codex", "feishu-codexd", "feishu-codexctl", "fcodex"):
-        try:
-            (bin_dir / name).unlink()
-        except FileNotFoundError:
-            pass
+    else:
+        for name in ("feishu-codex", "feishu-codexd", "feishu-codexctl", "fcodex"):
+            try:
+                (bin_dir / name).unlink()
+            except FileNotFoundError:
+                pass
+    remove_bash_completion_files()
 
 
 def _handle_uninstall(*, purge: bool) -> int:
@@ -779,7 +793,7 @@ def _handle_uninstall(*, purge: bool) -> int:
         manager = current_service_manager()
     except ServiceManagerError:
         manager = None
-    for instance_name in _known_instance_names():
+    for instance_name in list_known_instance_names():
         definition = _service_definition(instance_name)
         if manager is not None:
             try:
@@ -816,7 +830,7 @@ def _handle_instance_create(instance_name: str) -> int:
 
 def _handle_instance_list() -> int:
     running_entries = {entry.instance_name: entry for entry in list_running_instances()}
-    instance_names = sorted(set(_known_instance_names()) | set(running_entries))
+    instance_names = sorted(set(list_known_instance_names()) | set(running_entries))
     print("instance\tstate\tconfig_dir\tdata_dir")
     for instance_name in instance_names:
         paths = resolve_instance_paths(instance_name)

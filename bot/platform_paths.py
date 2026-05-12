@@ -82,6 +82,18 @@ def default_user_bin_dir() -> pathlib.Path:
     return home / ".local" / "bin"
 
 
+def default_user_bash_completion_dir() -> pathlib.Path | None:
+    raw = os.environ.get("FC_BASH_COMPLETION_DIR", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    raw_user_dir = os.environ.get("BASH_COMPLETION_USER_DIR", "").strip()
+    if raw_user_dir:
+        return pathlib.Path(raw_user_dir).expanduser() / "completions"
+    return pathlib.Path.home() / ".local" / "share" / "bash-completion" / "completions"
+
+
 def default_env_file() -> pathlib.Path:
     raw = os.environ.get("FC_ENV_FILE", "").strip()
     if raw:
