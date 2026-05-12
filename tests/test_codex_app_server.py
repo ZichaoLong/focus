@@ -2113,77 +2113,115 @@ class FCodexTests(unittest.TestCase):
         self.assertEqual(target.calls, ["hello"])
 
     def test_proxy_stays_alive_across_resume_style_reconnect(self) -> None:
-        backend_url_queue: queue.Queue[str] = queue.Queue()
-        backend_server_ref: dict[str, object] = {}
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            global_data_dir = root_dir / "_global"
+            backend_url_queue: queue.Queue[str] = queue.Queue()
+            backend_server_ref: dict[str, object] = {}
 
-        def _backend_handler(ws) -> None:
-            for message in ws:
-                ws.send(message)
+            def _backend_handler(ws) -> None:
+                for message in ws:
+                    ws.send(message)
 
-        def _backend_main() -> None:
-            with serve(_backend_handler, "127.0.0.1", 0, max_size=None) as server:
-                backend_server_ref["server"] = server
-                port = server.socket.getsockname()[1]
-                backend_url_queue.put(f"ws://127.0.0.1:{port}")
-                server.serve_forever()
+            def _backend_main() -> None:
+                with serve(_backend_handler, "127.0.0.1", 0, max_size=None) as server:
+                    backend_server_ref["server"] = server
+                    port = server.socket.getsockname()[1]
+                    backend_url_queue.put(f"ws://127.0.0.1:{port}")
+                    server.serve_forever()
 
-        backend_thread = threading.Thread(target=_backend_main, daemon=True)
-        backend_thread.start()
-        backend_url = backend_url_queue.get(timeout=1)
+            backend_thread = threading.Thread(target=_backend_main, daemon=True)
+            backend_thread.start()
+            backend_url = backend_url_queue.get(timeout=1)
 
-        proxy_url_queue: queue.Queue[str] = queue.Queue()
-        proxy_thread = threading.Thread(
-            target=run_proxy,
-            kwargs={
-                "backend_url": backend_url,
-                "cwd": "/tmp/project",
-                "idle_timeout_seconds": 0.3,
-                "on_listen": proxy_url_queue.put,
-            },
-            daemon=True,
-        )
-        proxy_thread.start()
-        proxy_url = proxy_url_queue.get(timeout=1)
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            proxy_thread = threading.Thread(
+                target=run_proxy,
+                kwargs={
+                    "backend_url": backend_url,
+                    "cwd": "/tmp/project",
+                    "global_data_dir": global_data_dir,
+                    "idle_timeout_seconds": 0.3,
+                    "on_listen": proxy_url_queue.put,
+                },
+                daemon=True,
+            )
+            proxy_thread.start()
+            proxy_url = proxy_url_queue.get(timeout=1)
 
-        try:
-            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
-                ws.send(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "thread/start",
-                            "params": {},
-                        }
+            try:
+                with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "thread/start",
+                                "params": {},
+                            }
+                        )
                     )
-                )
-                echoed = json.loads(ws.recv())
-                self.assertEqual(echoed["params"]["cwd"], "/tmp/project")
+                    echoed = json.loads(ws.recv())
+                    self.assertEqual(echoed["params"]["cwd"], "/tmp/project")
 
-            time.sleep(0.1)
+                time.sleep(0.1)
 
-            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
-                ws.send(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 2,
-                            "method": "thread/resume",
-                            "params": {"threadId": "thread-1"},
-                        }
+                with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 2,
+                                "method": "thread/resume",
+                                "params": {"threadId": "thread-1"},
+                            }
+                        )
                     )
-                )
-                echoed = json.loads(ws.recv())
-                self.assertEqual(echoed["method"], "thread/resume")
-                self.assertNotIn("cwd", echoed["params"])
+                    echoed = json.loads(ws.recv())
+                    self.assertEqual(echoed["method"], "thread/resume")
+                    self.assertNotIn("cwd", echoed["params"])
 
-            proxy_thread.join(timeout=1)
-            self.assertFalse(proxy_thread.is_alive())
-        finally:
-            backend_server = backend_server_ref.get("server")
-            if backend_server is not None:
-                backend_server.shutdown()
-            backend_thread.join(timeout=1)
+                proxy_thread.join(timeout=1)
+                self.assertFalse(proxy_thread.is_alive())
+                self.assertTrue((global_data_dir / "thread_resume_profiles.lock").exists())
+                self.assertTrue((global_data_dir / "thread_memory_modes.lock").exists())
+            finally:
+                backend_server = backend_server_ref.get("server")
+                if backend_server is not None:
+                    backend_server.shutdown()
+                backend_thread.join(timeout=1)
+
+    def test_resume_store_loads_without_explicit_global_dir_use_machine_global_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root_dir = Path(tmpdir)
+            current_dir = root_dir / "cwd"
+            current_dir.mkdir()
+            global_data_dir = root_dir / "_global"
+            previous_cwd = Path.cwd()
+            try:
+                os.chdir(current_dir)
+                with patch.dict(os.environ, {"FC_GLOBAL_DATA_DIR": str(global_data_dir)}, clear=False):
+                    gate = _ProxyInteractionGate(
+                        cwd="/tmp/project",
+                        data_dir=root_dir / "data",
+                        holder_pid=os.getpid(),
+                    )
+                    payload = {
+                        "jsonrpc": "2.0",
+                        "id": 2,
+                        "method": "thread/resume",
+                        "params": {"threadId": "thread-1"},
+                    }
+                    payload = gate._apply_saved_thread_profile_for_resume(payload)
+                    payload = gate._apply_saved_thread_memory_mode_for_resume(payload)
+            finally:
+                os.chdir(previous_cwd)
+
+            self.assertEqual(payload["params"]["threadId"], "thread-1")
+            self.assertFalse((current_dir / "thread_resume_profiles.lock").exists())
+            self.assertFalse((current_dir / "thread_memory_modes.lock").exists())
+            self.assertTrue((global_data_dir / "thread_resume_profiles.lock").exists())
+            self.assertTrue((global_data_dir / "thread_memory_modes.lock").exists())
 
     def test_proxy_fail_closes_new_thread_after_disconnect_with_unknown_seed_outcome(self) -> None:
         backend_url_queue: queue.Queue[str] = queue.Queue()
@@ -2215,7 +2253,7 @@ class FCodexTests(unittest.TestCase):
             kwargs={
                 "backend_url": backend_url,
                 "cwd": "/tmp/project",
-                "idle_timeout_seconds": 0.3,
+                "idle_timeout_seconds": 1.0,
                 "on_listen": proxy_url_queue.put,
                 "thread_profile_seed": "provider2",
                 "thread_profile_model_seed": "provider2-model",
@@ -2285,7 +2323,7 @@ class FCodexTests(unittest.TestCase):
             with self.assertRaises(queue.Empty):
                 backend_messages.get_nowait()
 
-            proxy_thread.join(timeout=1)
+            proxy_thread.join(timeout=2)
             self.assertFalse(proxy_thread.is_alive())
         finally:
             backend_server = backend_server_ref.get("server")

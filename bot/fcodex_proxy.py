@@ -26,6 +26,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 from websockets.sync.server import serve
 
+from bot.instance_layout import global_data_dir as default_global_data_dir
 from bot.process_utils import process_exists
 from bot.stores.instance_registry_store import InstanceRegistryStore
 from bot.stores.interaction_lease_store import (
@@ -143,6 +144,13 @@ def _payload_thread_id(payload: dict[str, Any]) -> str:
     return str(params.get("threadId", "") or "").strip()
 
 
+def _effective_global_data_dir(path: str | pathlib.Path | None) -> pathlib.Path:
+    normalized = pathlib.Path(path).expanduser() if path else None
+    if normalized is not None and str(normalized).strip():
+        return normalized
+    return default_global_data_dir()
+
+
 def _response_thread_id(payload: dict[str, Any]) -> str:
     result = payload.get("result")
     if not isinstance(result, dict):
@@ -219,7 +227,7 @@ class _ProxyRuntimeLeaseKeeper:
         service_token: str = "",
         holder_pid: int,
     ) -> None:
-        normalized_global_data_dir = pathlib.Path(global_data_dir or ".")
+        normalized_global_data_dir = _effective_global_data_dir(global_data_dir)
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
         self._instance_name = str(instance_name or "").strip().lower()
@@ -459,7 +467,7 @@ class _ProxyInteractionGate:
         self._instance_name = str(instance_name or "").strip().lower()
         self._service_token = str(service_token or "").strip()
         self._lease_store = InteractionLeaseStore(data_dir)
-        normalized_global_data_dir = pathlib.Path(global_data_dir or ".")
+        normalized_global_data_dir = _effective_global_data_dir(global_data_dir)
         self._global_data_dir = normalized_global_data_dir
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
@@ -1008,7 +1016,7 @@ def run_proxy(
     active_connections = 0
     idle_deadline = 0.0
     runtime_lease_keeper = _ProxyRuntimeLeaseKeeper(
-        global_data_dir=pathlib.Path(global_data_dir or "."),
+        global_data_dir=global_data_dir,
         instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
         service_token=service_token,
         holder_pid=parent_pid or os.getpid(),
@@ -1075,7 +1083,7 @@ def run_proxy(
                 gate = _ProxyInteractionGate(
                     cwd=cwd,
                     data_dir=pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or "."),
-                    global_data_dir=pathlib.Path(global_data_dir or "."),
+                    global_data_dir=global_data_dir,
                     instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
                     service_token=service_token,
                     holder_pid=holder_pid,
