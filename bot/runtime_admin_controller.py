@@ -1737,6 +1737,34 @@ class RuntimeAdminController:
                 reason_text=reset_preview.reason_text,
                 diagnostics=tuple(diagnostics),
             )
+        target_attached_binding_ids = {
+            format_binding_id(binding)
+            for binding in attached_bindings
+        }
+        collateral_loaded_thread_ids = tuple(
+            thread_id
+            for thread_id in reset_preview.loaded_thread_ids
+            if thread_id and thread_id != normalized_thread_id
+        )
+        collateral_attached_binding_ids = tuple(
+            binding_id
+            for binding_id in reset_preview.attached_binding_ids
+            if binding_id and binding_id not in target_attached_binding_ids
+        )
+        if collateral_loaded_thread_ids or collateral_attached_binding_ids:
+            return ThreadMutationPlan(
+                status=REPROFILE_STATUS_RESET_FORCE_ONLY,
+                thread_id=normalized_thread_id,
+                backend_thread_status=backend_thread_status,
+                feishu_runtime_state=feishu_runtime_state,
+                live_runtime_owner=live_runtime_owner,
+                reason_code=reset_force_only_reason_code,
+                reason_text=(
+                    "当前实例 backend reset 还会影响当前目标之外的其他 loaded thread"
+                    " 或 attached Feishu binding；为避免误打断，当前只允许 force reset。"
+                ),
+                diagnostics=tuple(diagnostics),
+            )
         return ThreadMutationPlan(
             status=REPROFILE_STATUS_RESET_AVAILABLE,
             thread_id=normalized_thread_id,

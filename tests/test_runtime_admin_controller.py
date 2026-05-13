@@ -655,6 +655,52 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(plan.status, "reset-available")
         self.assertEqual(plan.backend_thread_status, "notLoaded")
 
+    def test_plan_thread_reprofile_requires_force_when_reset_would_hit_other_loaded_threads(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        summaries["thread-2"] = ThreadSummary(
+            thread_id="thread-2",
+            cwd="/tmp/project",
+            name="other",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        loaded_thread_ids.extend(["thread-1", "thread-2"])
+
+        plan = controller.plan_thread_reprofile("thread-1")
+
+        self.assertEqual(plan.status, "reset-force-only")
+        self.assertEqual(plan.reason_code, "reprofile_reset_force_only")
+        self.assertIn("其他 loaded thread", plan.reason_text)
+
     def test_plan_thread_reprofile_blocks_when_live_runtime_owned_by_other_instance(self) -> None:
         (
             lock,
