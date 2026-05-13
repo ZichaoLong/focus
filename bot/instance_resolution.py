@@ -9,6 +9,7 @@ import pathlib
 from dataclasses import dataclass
 
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, current_instance_name, resolve_instance_paths, validate_instance_name
+from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import (
     AppServerRuntimeStore,
     resolve_effective_app_server_url,
@@ -48,12 +49,25 @@ def current_cli_instance_paths():
     return resolve_instance_paths(current_cli_instance_name())
 
 
+def _resolve_running_instance_app_server_url_via_control_plane(data_dir: pathlib.Path) -> str:
+    try:
+        result = control_request(pathlib.Path(data_dir), "service/status")
+    except ServiceControlError:
+        return ""
+    if not isinstance(result, dict):
+        return ""
+    return str(result.get("app_server_url", "") or "").strip()
+
+
 def resolve_running_instance_app_server_url(
     entry: InstanceRegistryEntry,
     *,
     configured_app_server_url: str = "",
 ) -> str:
     data_dir = pathlib.Path(entry.data_dir)
+    control_plane_url = _resolve_running_instance_app_server_url_via_control_plane(data_dir)
+    if control_plane_url:
+        return control_plane_url
     runtime = AppServerRuntimeStore(data_dir).load_managed_runtime()
     if runtime is not None and str(runtime.active_url or "").strip():
         return str(runtime.active_url).strip()

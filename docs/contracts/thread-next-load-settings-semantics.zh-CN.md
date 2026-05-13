@@ -33,6 +33,11 @@ thread-wise next-load state。
 settings。那种前端自有的持久化策略，不属于本文定义的
 thread-wise next-load 合同。
 
+关于“写时解析源 / 写后持久源 / 应用边界 / 读侧视图 / 生效判定 /
+provisional 阶段”的统一分析框架，见：
+
+- `docs/contracts/runtime-settings-fact-sources.zh-CN.md`
+
 ## 1. 基本事实
 
 - 这类设置是 **thread-wise**，不是 binding-wise。

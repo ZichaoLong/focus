@@ -17,8 +17,10 @@ from bot.feishu_codexctl import (
     _send_thread_image,
     _send_binding_prompt,
     _resolve_thread_archive_target,
+    _remote_adapter,
     _print_thread_status,
     _thread_target_params,
+    main as feishu_codexctl_main,
 )
 from bot.instance_resolution import CliInstanceTarget
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
@@ -142,6 +144,61 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertEqual(args.scope, "global")
         self.assertEqual(args.cwd, "/tmp/project")
+
+    def test_remote_adapter_prefers_running_instance_resolution(self) -> None:
+        entry = InstanceRegistryEntry(
+            instance_name="aft",
+            owner_pid=1234,
+            service_token="token-aft",
+            control_endpoint="tcp://127.0.0.1:9000",
+            app_server_url="ws://127.0.0.1:8765",
+            config_dir="/tmp/config-aft",
+            data_dir="/tmp/data-aft",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+        with patch("bot.feishu_codexctl.load_config_file", return_value={"app_server_url": "ws://127.0.0.1:8765"}):
+            with patch(
+                "bot.feishu_codexctl.resolve_running_instance_app_server_url",
+                return_value="ws://127.0.0.1:43210",
+            ) as mock_resolve:
+                adapter, _, app_server_url = _remote_adapter(Path("/tmp/data-aft"), running_entry=entry)
+
+        self.assertEqual(app_server_url, "ws://127.0.0.1:43210")
+        self.assertEqual(mock_resolve.call_args.args[0], entry)
+        self.assertEqual(mock_resolve.call_args.kwargs["configured_app_server_url"], "ws://127.0.0.1:8765")
+        adapter.stop()
+
+    def test_main_thread_list_passes_running_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            entry = InstanceRegistryEntry(
+                instance_name="aft",
+                owner_pid=1234,
+                service_token="token-aft",
+                control_endpoint="tcp://127.0.0.1:9000",
+                app_server_url="ws://127.0.0.1:8765",
+                config_dir="/tmp/config-aft",
+                data_dir=tmpdir,
+                started_at=1.0,
+                updated_at=1.0,
+            )
+            target = CliInstanceTarget(
+                instance_name="aft",
+                data_dir=Path(tmpdir),
+                running_entry=entry,
+            )
+            with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+                with patch("bot.feishu_codexctl._print_thread_list", return_value=0) as mock_print:
+                    with patch(
+                        "bot.feishu_codexctl.sys.argv",
+                        ["feishu-codexctl", "--instance", "aft", "thread", "list"],
+                    ):
+                        with self.assertRaises(SystemExit) as exc:
+                            feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(mock_print.call_args.kwargs["scope"], "cwd")
+        self.assertEqual(mock_print.call_args.kwargs["running_entry"], entry)
 
     def test_thread_detach_accepts_explicit_thread_id(self) -> None:
         parser = _build_parser()

@@ -39,6 +39,7 @@ from bot.instance_resolution import (
     resolve_cli_runtime_target,
     resolve_running_instance_app_server_url,
 )
+from bot.service_control_plane import ServiceControlError
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
@@ -723,6 +724,35 @@ class AppServerRuntimeStoreTests(unittest.TestCase):
                 "ws://127.0.0.1:43210",
             )
 
+    def test_resolve_running_instance_app_server_url_prefers_control_plane_status(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            entry = InstanceRegistryEntry(
+                instance_name="explorer",
+                owner_pid=os.getpid(),
+                service_token="token-explorer",
+                control_endpoint="tcp://127.0.0.1:9393",
+                app_server_url="ws://127.0.0.1:8765",
+                config_dir="/tmp/config-explorer",
+                data_dir=str(data_dir),
+                started_at=1.0,
+                updated_at=1.0,
+            )
+
+            with patch(
+                "bot.instance_resolution.control_request",
+                return_value={"app_server_url": "ws://127.0.0.1:45555"},
+            ) as mock_control_request:
+                self.assertEqual(
+                    resolve_running_instance_app_server_url(
+                        entry,
+                        configured_app_server_url="ws://127.0.0.1:8765",
+                    ),
+                    "ws://127.0.0.1:45555",
+                )
+
+            self.assertEqual(mock_control_request.call_args.args[1], "service/status")
+
     def test_resolve_running_instance_app_server_url_fails_closed_without_live_default_runtime(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
@@ -745,6 +775,40 @@ class AppServerRuntimeStoreTests(unittest.TestCase):
                 ),
                 "",
             )
+
+    def test_resolve_running_instance_app_server_url_falls_back_after_control_plane_error(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            store = AppServerRuntimeStore(data_dir)
+            store.save_managed_runtime(
+                configured_url="ws://127.0.0.1:8765",
+                active_url="ws://127.0.0.1:43210",
+                owner_pid=os.getpid(),
+                app_server_pid=os.getpid(),
+            )
+            entry = InstanceRegistryEntry(
+                instance_name="explorer",
+                owner_pid=os.getpid(),
+                service_token="token-explorer",
+                control_endpoint="tcp://127.0.0.1:9393",
+                app_server_url="ws://127.0.0.1:8765",
+                config_dir="/tmp/config-explorer",
+                data_dir=str(data_dir),
+                started_at=1.0,
+                updated_at=1.0,
+            )
+
+            with patch(
+                "bot.instance_resolution.control_request",
+                side_effect=ServiceControlError("boom"),
+            ):
+                self.assertEqual(
+                    resolve_running_instance_app_server_url(
+                        entry,
+                        configured_app_server_url="ws://127.0.0.1:8765",
+                    ),
+                    "ws://127.0.0.1:43210",
+                )
 
 
 class ProcessUtilsTests(unittest.TestCase):

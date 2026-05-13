@@ -48,6 +48,7 @@ Status guidance:
 - [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md)
 - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
 - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
+- [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
 - [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md)
 - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
 - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
@@ -87,6 +88,7 @@ Status guidance:
 | What is the current architecture, layering, module split, and repository structure? | [`feishu-codex-design.md`](./architecture/feishu-codex-design.md) |
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |
 | What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
+| How should questions like “what was just set”, “what is persisted now”, “when does it actually take effect”, and “does provisional state already have a formal fact source” be separated for runtime settings? | [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md), [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | For thread-wise next-load settings such as profile and memory mode, when do they take effect, when is direct write allowed, and when is reset-backend required? | [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md) |
 | What do `/threads`, `/resume`, `/profile`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
 | How does `/memory` map to upstream memory configuration, when is direct write allowed, and when is reset-backend required? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md) |
@@ -113,6 +115,7 @@ Status guidance:
 - For session or runtime bugs:
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
+  - [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
   - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
@@ -127,6 +130,7 @@ Status guidance:
   - [`scheduled-prompts.md`](./contracts/scheduled-prompts.md)
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
+  - [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
   - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - For wrapper or backend work:

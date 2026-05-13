@@ -4,6 +4,12 @@ Chinese original: `docs/contracts/runtime-control-surface.zh-CN.md`
 
 This file is the authoritative contract for the current runtime vocabulary and control actions.
 
+For the shared frame of write-time resolution, persisted fact source,
+application boundary, read-side view, effectivity judgment, and provisional
+stages, see:
+
+- `docs/contracts/runtime-settings-fact-sources.md`
+
 ## 1. Three-layer mental model
 
 The product now exposes only three user-facing layers:

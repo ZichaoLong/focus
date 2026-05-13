@@ -4,6 +4,11 @@
 
 本文是当前运行时词汇与控制动作的权威合同。
 
+关于“写时解析源 / 写后持久源 / 应用边界 / 读侧视图 / 生效判定 /
+provisional 阶段”的统一分析框架，见：
+
+- `docs/contracts/runtime-settings-fact-sources.zh-CN.md`
+
 ## 1. 三层心智模型
 
 当前系统对外只保留三层心智模型：

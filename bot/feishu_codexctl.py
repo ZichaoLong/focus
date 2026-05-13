@@ -19,6 +19,7 @@ from bot.platform_paths import default_data_root
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.service_instance_lease import ServiceInstanceLease
+from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_memory_mode import THREAD_MEMORY_MODES
 from bot.thread_resolution import list_current_dir_threads, list_global_threads
@@ -52,10 +53,24 @@ def _request(data_dir: pathlib.Path, method: str, params: dict[str, Any] | None 
     return control_request(data_dir, method, params)
 
 
-def _remote_adapter(data_dir: pathlib.Path) -> tuple[CodexAppServerAdapter, dict[str, Any], str]:
+def _remote_adapter(
+    data_dir: pathlib.Path,
+    *,
+    running_entry: InstanceRegistryEntry | None = None,
+) -> tuple[CodexAppServerAdapter, dict[str, Any], str]:
     cfg = load_config_file("codex")
     configured_url = str(cfg.get("app_server_url", "ws://127.0.0.1:8765")).strip() or "ws://127.0.0.1:8765"
-    app_server_url = resolve_effective_app_server_url(configured_url, data_dir=data_dir)
+    if running_entry is not None:
+        app_server_url = resolve_running_instance_app_server_url(
+            running_entry,
+            configured_app_server_url=configured_url,
+        )
+        if not app_server_url:
+            raise ValueError(
+                f"运行中的实例 `{running_entry.instance_name}` 未发布可用的 app-server 地址；请重启该实例后再试。"
+            )
+    else:
+        app_server_url = resolve_effective_app_server_url(configured_url, data_dir=data_dir)
     config = replace(
         CodexAppServerConfig.from_dict(cfg),
         app_server_mode="remote",
@@ -460,8 +475,14 @@ def _print_thread_bindings(data_dir: pathlib.Path, target_params: dict[str, str]
     return 0
 
 
-def _print_thread_list(data_dir: pathlib.Path, *, scope: str, cwd: str) -> int:
-    adapter, cfg, app_server_url = _remote_adapter(data_dir)
+def _print_thread_list(
+    data_dir: pathlib.Path,
+    *,
+    scope: str,
+    cwd: str,
+    running_entry: InstanceRegistryEntry | None = None,
+) -> int:
+    adapter, cfg, app_server_url = _remote_adapter(data_dir, running_entry=running_entry)
     del app_server_url
     try:
         limit = int(cfg.get("thread_list_query_limit", 100))
@@ -944,7 +965,14 @@ def main() -> None:
             )
         if args.resource == "thread" and args.action == "list":
             cwd = str(args.cwd or "").strip() or os.getcwd()
-            raise SystemExit(_print_thread_list(data_dir, scope=args.scope, cwd=cwd))
+            raise SystemExit(
+                _print_thread_list(
+                    data_dir,
+                    scope=args.scope,
+                    cwd=cwd,
+                    running_entry=target.running_entry,
+                )
+            )
         if args.resource == "thread" and args.action == "status":
             raise SystemExit(
                 _print_thread_status(

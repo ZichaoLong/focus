@@ -34,6 +34,12 @@ while local `fcodex` / upstream TUI may manage comparable runtime settings in a
 different way. That frontend-specific persistence choice is outside the
 thread-wise next-load contract defined here.
 
+For the shared frame of write-time resolution, persisted fact source,
+application boundary, read-side view, effectivity judgment, and provisional
+stages, see:
+
+- `docs/contracts/runtime-settings-fact-sources.md`
+
 ## 1. Basic fact
 
 - these settings are **thread-wise**, not binding-wise
