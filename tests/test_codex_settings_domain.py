@@ -732,6 +732,16 @@ class CodexSettingsDomainTests(unittest.TestCase):
             [("ou_user", "chat-a", {"message_id": "msg-1", "model": "glm-4.5"})],
         )
 
+    def test_resolve_runtime_settings_form_submit_payload_recognizes_model_form(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        payload = domain.resolve_runtime_settings_form_submit_payload(
+            {"_form_value": {"model_override": "glm-4.5"}}
+        )
+
+        self.assertEqual(payload, {"action": "submit_model_override"})
+
     def test_effort_command_without_arg_shows_combined_card(self) -> None:
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)

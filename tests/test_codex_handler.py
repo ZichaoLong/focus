@@ -2666,6 +2666,21 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("glm-4.5", response["toast"])
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
 
+    def test_model_form_value_only_callback_updates_state(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "m1",
+            {"_form_value": {"model_override": "glm-4.5"}},
+        ))
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["model"], "glm-4.5")
+        self.assertEqual(response["toast_type"], "success")
+        self.assertIn("glm-4.5", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
+
     def test_effort_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
 

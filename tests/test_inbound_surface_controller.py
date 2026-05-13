@@ -30,6 +30,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         action_calls: list[tuple[str, str, str, dict]] = []
         prefixed_calls: list[tuple[str, str, str, dict]] = []
         help_fallback_calls: list[tuple[str, str, str, dict]] = []
+        settings_fallback_calls: list[tuple[str, str, str, dict]] = []
 
         controller = InboundSurfaceController(
             keyword="CODEX",
@@ -62,6 +63,10 @@ class InboundSurfaceControllerTests(unittest.TestCase):
             handle_rename_form_fallback=lambda *args: None,
             handle_help_form_fallback=lambda sender_id, chat_id, message_id, action_value: (
                 help_fallback_calls.append((sender_id, chat_id, message_id, action_value)),
+                None,
+            )[1],
+            handle_settings_form_fallback=lambda sender_id, chat_id, message_id, action_value: (
+                settings_fallback_calls.append((sender_id, chat_id, message_id, action_value)),
                 None,
             )[1],
             handle_user_input_form_fallback=lambda *args: None,
@@ -102,7 +107,18 @@ class InboundSurfaceControllerTests(unittest.TestCase):
                 )
             ],
         )
-        return controller, activated, prompts, replies, cards, command_calls, action_calls, prefixed_calls, help_fallback_calls
+        return (
+            controller,
+            activated,
+            prompts,
+            replies,
+            cards,
+            command_calls,
+            action_calls,
+            prefixed_calls,
+            help_fallback_calls,
+            settings_fallback_calls,
+        )
 
     def test_blank_message_dispatches_help_and_activates_binding(self) -> None:
         controller, activated, prompts, replies, *_ = self._make_controller()
@@ -142,7 +158,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         self.assertEqual(response["toast_type"], "warning")
 
     def test_group_action_guard_denies_non_admin_actor(self) -> None:
-        controller, *_rest, action_calls, _prefixed_calls, _help_fallback_calls = self._make_controller()
+        controller, _, _, _, _, _, action_calls, _, _, _ = self._make_controller()
 
         response = self._unpack_card_response(
             controller.handle_card_action(
@@ -158,7 +174,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         self.assertEqual(action_calls, [])
 
     def test_prefixed_action_routes_dispatch_to_matching_handler(self) -> None:
-        controller, *_rest, prefixed_calls, _help_fallback_calls = self._make_controller()
+        controller, _, _, _, _, _, _, prefixed_calls, _, _ = self._make_controller()
 
         response = controller.handle_card_action(
             "ou_user",
@@ -174,7 +190,7 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         )
 
     def test_form_value_only_callback_checks_help_fallback_before_stale_warning(self) -> None:
-        controller, *_rest, help_fallback_calls = self._make_controller()
+        controller, *_rest, help_fallback_calls, settings_fallback_calls = self._make_controller()
 
         response = self._unpack_card_response(
             controller.handle_card_action(
@@ -189,8 +205,70 @@ class InboundSurfaceControllerTests(unittest.TestCase):
             help_fallback_calls,
             [("ou_user", "c1", "msg-help", {"_form_value": {"cd_path": "/tmp"}})],
         )
+        self.assertEqual(
+            settings_fallback_calls,
+            [("ou_user", "c1", "msg-help", {"_form_value": {"cd_path": "/tmp"}})],
+        )
         self.assertEqual(response["toast"], "表单已失效或未找到对应问题，请重新触发该请求。")
         self.assertEqual(response["toast_type"], "warning")
+
+    def test_form_value_only_callback_checks_settings_fallback_before_stale_warning(self) -> None:
+        controller, activated, prompts, replies, cards, command_calls, action_calls, prefixed_calls, help_fallback_calls, _ = self._make_controller()
+        settings_fallback_calls: list[tuple[str, str, str, dict]] = []
+        controller = InboundSurfaceController(
+            keyword="CODEX",
+            activate_binding_if_needed=lambda sender_id, chat_id, message_id: activated.append(
+                (sender_id, chat_id, message_id)
+            ),
+            help_reply=lambda chat_id, message_id: CommandResult(text=f"help:{chat_id}:{message_id}"),
+            handle_prompt=lambda sender_id, chat_id, text, message_id: prompts.append(
+                (sender_id, chat_id, text, message_id)
+            ),
+            reply_text=lambda chat_id, text, **kwargs: replies.append(
+                (chat_id, text, str(kwargs.get("message_id", "") or ""))
+            ),
+            reply_card=lambda chat_id, card, **kwargs: cards.append(
+                (chat_id, card, str(kwargs.get("message_id", "") or ""))
+            ),
+            resolve_chat_type=lambda chat_id, message_id: "group" if chat_id.startswith("group") else "p2p",
+            group_command_admin_denial_text=lambda chat_id, message_id, sender_id: (
+                "admin only" if chat_id.startswith("group") and sender_id != "ou_admin" else ""
+            ),
+            is_group_chat=lambda chat_id, message_id: chat_id.startswith("group"),
+            is_group_admin_actor=lambda chat_id, **kwargs: str(kwargs.get("operator_open_id", "") or "").strip()
+            == "ou_admin",
+            is_group_turn_actor=lambda chat_id, **kwargs: str(kwargs.get("operator_open_id", "") or "").strip()
+            in {"ou_admin", "ou_actor"},
+            is_group_request_actor_or_admin=lambda chat_id, **kwargs: str(
+                kwargs.get("operator_open_id", "") or ""
+            ).strip()
+            in {"ou_admin", "ou_actor"},
+            handle_rename_form_fallback=lambda *args: None,
+            handle_help_form_fallback=lambda sender_id, chat_id, message_id, action_value: (
+                help_fallback_calls.append((sender_id, chat_id, message_id, action_value)),
+                None,
+            )[1],
+            handle_settings_form_fallback=lambda sender_id, chat_id, message_id, action_value: (
+                settings_fallback_calls.append((sender_id, chat_id, message_id, action_value)),
+                {},
+            )[1],
+            handle_user_input_form_fallback=lambda *args: None,
+        )
+
+        response = self._unpack_card_response(
+            controller.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-model",
+                {"_form_value": {"model_override": "glm-4.5"}},
+            )
+        )
+
+        self.assertEqual(
+            settings_fallback_calls,
+            [("ou_user", "c1", "msg-model", {"_form_value": {"model_override": "glm-4.5"}})],
+        )
+        self.assertEqual(response, {})
 
 
 if __name__ == "__main__":

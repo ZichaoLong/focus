@@ -1593,6 +1593,14 @@ class CodexSettingsDomain:
             toast_type="success",
         )
 
+    def resolve_runtime_settings_form_submit_payload(self, action_value: dict[str, Any]) -> dict[str, str] | None:
+        form_value = action_value.get("_form_value") or {}
+        if not isinstance(form_value, dict) or not form_value:
+            return None
+        if "model_override" in form_value:
+            return {"action": "submit_model_override"}
+        return None
+
     def handle_set_reasoning_effort(
         self,
         sender_id: str,

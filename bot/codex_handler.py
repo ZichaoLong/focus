@@ -608,6 +608,7 @@ class CodexHandler(BotHandler):
             is_group_request_actor_or_admin=self._is_group_request_actor_or_admin,
             handle_rename_form_fallback=self._threads_ui_domain.handle_rename_form_fallback,
             handle_help_form_fallback=self._handle_help_form_fallback,
+            handle_settings_form_fallback=self._handle_settings_form_fallback,
             handle_user_input_form_fallback=self._handle_user_input_form_fallback,
         )
         self._inbound_surface.install_routes(
@@ -896,6 +897,25 @@ class CodexHandler(BotHandler):
         merged_action_value = dict(action_value)
         merged_action_value.update(payload)
         return self._handle_help_submit_command_action(
+            sender_id,
+            chat_id,
+            message_id,
+            merged_action_value,
+        )
+
+    def _handle_settings_form_fallback(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict[str, Any],
+    ) -> P2CardActionTriggerResponse | None:
+        payload = self._settings_domain.resolve_runtime_settings_form_submit_payload(action_value)
+        if payload is None:
+            return None
+        merged_action_value = dict(action_value)
+        merged_action_value.update(payload)
+        return self._handle_card_action_impl(
             sender_id,
             chat_id,
             message_id,
