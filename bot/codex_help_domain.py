@@ -112,7 +112,7 @@ class CodexHelpDomain:
         return (
             _HelpActionRowSpec(
                 buttons=(
-                    _HelpPageButtonSpec(label="开始切换", page="start-switch"),
+                    _HelpPageButtonSpec(label="开始", page="start-switch"),
                     _HelpPageButtonSpec(label="线程设置", page="thread-settings"),
                 ),
                 layout="bisected",
@@ -149,7 +149,7 @@ class CodexHelpDomain:
                 action_rows=self._home_action_rows(),
             ),
             "start-switch": _HelpPageSpec(
-                title="Codex 工作台：开始切换",
+                title="Codex 工作台：开始",
                 markdown=(
                     "处理开新线程、恢复旧线程、浏览线程与切换目录。\n\n"
                     f"{self._local_thread_safety_rule}\n\n"
@@ -225,7 +225,7 @@ class CodexHelpDomain:
                 title="Codex 工作台：线程设置",
                 markdown=(
                     "处理当前绑定 thread 的 profile、memory、压缩、重命名与归档。\n\n"
-                    "新建、恢复、浏览线程与切换目录，请到“开始切换”。\n\n"
+                    "新建、恢复、浏览线程与切换目录，请到“开始”。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
                     f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
                 ),
@@ -365,7 +365,7 @@ class CodexHelpDomain:
                 markdown=(
                     "查看当前状态、发送前检查，以及当前会话是否继续接收飞书推送。\n\n"
                     "最常见的恢复动作是附着整个实例，所以这里直接提供“附着当前实例”。\n\n"
-                    "切换线程或目录，请到“开始切换”。"
+                    "切换线程或目录，请到“开始”。"
                 ),
             ),
             "connection-status-attach-more": _HelpPageSpec(
@@ -576,6 +576,26 @@ class CodexHelpDomain:
         return f"{normalized_sandbox or '-'} / {normalized_approval or '-'}"
 
     @staticmethod
+    def _overview_permissions_label(approval_policy: str, sandbox: str) -> str:
+        summary = CodexHelpDomain._permissions_summary(approval_policy, sandbox)
+        if summary == "read-only":
+            return "只读"
+        if summary == "default":
+            return "Default"
+        if summary == "full-access":
+            return "Full"
+        return "Custom"
+
+    @staticmethod
+    def _overview_effort_label(reasoning_effort: str) -> str:
+        normalized = str(reasoning_effort or "").strip()
+        if not normalized:
+            return "Auto"
+        if normalized == "xhigh":
+            return "XHigh"
+        return normalized.capitalize()
+
+    @staticmethod
     def _thread_summary(state: dict[str, Any]) -> str:
         thread_id = str(state.get("current_thread_id", "") or "").strip()
         thread_title = str(state.get("current_thread_title", "") or "").strip()
@@ -597,18 +617,25 @@ class CodexHelpDomain:
         working_dir = display_path(str(state.get("working_dir", "") or "")) or "."
         thread_summary = self._thread_summary(state)
         push_state = str(state.get("feishu_runtime_state", "") or "").strip() or "detached"
-        permissions = self._permissions_summary(
+        permissions = self._overview_permissions_label(
             str(state.get("approval_policy", "") or ""),
             str(state.get("sandbox", "") or ""),
         )
-        model = str(state.get("model", "") or "").strip() or "auto"
-        effort = str(state.get("reasoning_effort", "") or "").strip() or "auto"
+        model = str(state.get("model", "") or "").strip() or "Auto"
+        effort = self._overview_effort_label(str(state.get("reasoning_effort", "") or ""))
         collaboration_mode = str(state.get("collaboration_mode", "") or "").strip() or "default"
+        turn_parts = [
+            f"权限 `{permissions}`",
+            f"模型 `{model}`",
+            f"推理 `{effort}`",
+        ]
+        if collaboration_mode == "plan":
+            turn_parts.append("`Plan模式`")
         lines = [
             f"- 目录：`{working_dir}`",
             f"- 线程：`{thread_summary}`",
             f"- 推送：`{push_state}`",
-            f"- 本轮：`{permissions}` / `{model}` / `{effort}` / `{collaboration_mode}`",
+            f"- 本轮：{' | '.join(turn_parts)}",
         ]
         if (
             self._is_group_chat is not None
@@ -902,7 +929,7 @@ class CodexHelpDomain:
                 "- `/help [overview|start|thread-settings|turn|connection|group|more]`\n"
                 "- `/h`\n"
                 f"- `{_SHARED_COMMANDS_COMMAND.feishu_usage}`\n\n"
-                "`开始切换`\n"
+                "`开始`\n"
                 "- `/new`\n"
                 f"- `{_SHARED_THREADS_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"

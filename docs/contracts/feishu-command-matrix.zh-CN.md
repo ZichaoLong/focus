@@ -25,7 +25,7 @@
 
 ## 2. 命令表
 
-### 2.1 导航、开始切换、线程设置、连接状态
+### 2.1 导航、开始、线程设置、连接状态
 
 | 命令 | 作用 | `/help` 可达 | 私聊 | 群聊 | 本地对应 |
 | --- | --- | --- | --- | --- | --- |
@@ -35,10 +35,10 @@
 | `/pwd` | 查看当前目录 | 否 | 仅管理员 | 仅管理员 | 无 |
 | `/status` | 查看当前 chat 的目录、当前线程与当前会话设置摘要 | 是；`连接状态` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl binding status <binding_id>` 可看更细诊断 |
 | `/preflight` | dry-run 下一条普通消息与当前 chat 的 detach 可用性 | 是；`连接状态` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl binding status <binding_id>` 部分覆盖 |
-| `/cd [path]` | 查看或切换当前目录；切目录会清空当前线程绑定 | 是；`开始切换` 页表单 | 仅管理员 | 仅管理员 | 无 |
-| `/new` | 新建当前线程 | 是；`开始切换` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/threads` | 浏览当前目录线程 | 是；`开始切换` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread list --scope cwd` |
-| `/resume <thread_id\|thread_name>` | 恢复目标线程到当前 chat | 是；`开始切换` 页表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 应使用 `fcodex resume <thread_id\|thread_name>` |
+| `/cd [path]` | 查看或切换当前目录；切目录会清空当前线程绑定 | 是；`开始` 页表单 | 仅管理员 | 仅管理员 | 无 |
+| `/new` | 新建当前线程 | 是；`开始` 页 | 仅管理员 | 仅管理员 | 无 |
+| `/threads` | 浏览当前目录线程 | 是；`开始` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread list --scope cwd` |
+| `/resume <thread_id\|thread_name>` | 恢复目标线程到当前 chat | 是；`开始` 页表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 应使用 `fcodex resume <thread_id\|thread_name>` |
 | `/profile [name]` | 查看或切换当前 thread 的 thread-wise profile | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/memory [off\|read\|read_write]` | 查看或切换当前 thread 的 thread-wise memory mode | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread memory --thread-id/--thread-name`；`fcodex resume` 会沿用已持久化模式 |
 | `/compact` | 压缩当前绑定 thread 的上下文历史 | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |

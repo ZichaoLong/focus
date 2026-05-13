@@ -120,7 +120,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         threads_markdown = threads_card["elements"][0]["content"]
 
         self.assertIn("线程：`未绑定`", overview_markdown)
-        self.assertIn("本轮：`default` / `auto` / `auto` / `default`", overview_markdown)
+        self.assertIn("本轮：权限 `Default` | 模型 `Auto` | 推理 `Auto`", overview_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", start_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", start_markdown)
         self.assertIn("测试规则", start_markdown)
@@ -139,6 +139,28 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(execution_card["header"]["title"]["content"], "Codex 执行过程（执行中）")
         self.assertNotIn("`/help`", json.dumps(execution_card, ensure_ascii=False))
+
+    def test_help_overview_turn_summary_uses_labeled_segments(self) -> None:
+        help_domain = CodexHelpDomain(
+            local_thread_safety_rule="测试规则",
+            get_runtime_state=lambda sender_id, chat_id, message_id="": {
+                "working_dir": "/tmp/project",
+                "current_thread_id": "",
+                "feishu_runtime_state": "attached",
+                "approval_policy": "never",
+                "sandbox": "danger-full-access",
+                "collaboration_mode": "plan",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
+            },
+        )
+
+        overview_markdown = help_domain.reply_help("chat-1").card["elements"][0]["content"]
+
+        self.assertIn(
+            "本轮：权限 `Full` | 模型 `gpt-5.5` | 推理 `High` | `Plan模式`",
+            overview_markdown,
+        )
 
     def test_generated_cards_do_not_emit_plugin_payload_keys(self) -> None:
         help_domain = CodexHelpDomain(

@@ -25,6 +25,7 @@ from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.service_instance_lease import ServiceInstanceLease, ServiceInstanceLeaseError
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
+from bot.thread_resume_profile_setting import ThreadResumeProfileSetting
 
 _DISPLAY_INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DISPLAY_DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
@@ -2927,6 +2928,35 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertNotIn("unsubscribe：", content)
         self.assertNotIn("当前直接提问：", content)
 
+    def test_status_prefers_pending_threadwise_profile_over_store(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
+        handler._replace_pending_threadwise_seed(
+            "thread-1",
+            profile_setting=ThreadResumeProfileSetting(
+                profile="provider2",
+                model="provider2-model",
+                model_provider="provider2_api",
+            ),
+        )
+
+        handler.handle_message("ou_user", "c1", "/status")
+
+        _, card = bot.cards[-1]
+        content = card["elements"][0]["content"]
+        self.assertIn("当前 profile：`provider2`", content)
+
     def test_detach_command_detaches_current_binding_and_keeps_other_binding_attached(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
@@ -5411,12 +5441,12 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("目录：", content)
         self.assertIn("线程：`未绑定`", content)
         self.assertIn("推送：`", content)
-        self.assertIn("本轮：`", content)
+        self.assertIn("本轮：权限 `Full` | 模型 `Auto` | 推理 `Auto`", content)
         action_elements = self._action_elements(card)
         self.assertEqual(action_elements[0]["layout"], "bisected")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["开始切换", "线程设置"],
+            ["开始", "线程设置"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
@@ -5496,7 +5526,7 @@ class CodexHandlerTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("查看当前状态、发送前检查", content)
         self.assertIn("附着当前实例", content)
-        self.assertIn("切换线程或目录，请到“开始切换”", content)
+        self.assertIn("切换线程或目录，请到“开始”", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
@@ -5536,7 +5566,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：开始切换")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：开始")
         content = card["elements"][0]["content"]
         self.assertIn("同一线程允许多端订阅观察", content)
         self.assertIn("同一 live turn 只有一个交互 owner", content)
@@ -5705,7 +5735,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(action_elements[0]["layout"], "bisected")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["开始切换", "线程设置"],
+            ["开始", "线程设置"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
@@ -5740,7 +5770,7 @@ class CodexHandlerTests(unittest.TestCase):
         ))
 
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：线程设置")
-        self.assertIn("“开始切换”", response["card"]["elements"][0]["content"])
+        self.assertIn("“开始”", response["card"]["elements"][0]["content"])
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],

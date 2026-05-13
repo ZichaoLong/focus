@@ -25,7 +25,7 @@ It does not redefine:
 
 ## 2. Commands
 
-### 2.1 Navigation, Start / Switch, Thread Settings, and Connection Status
+### 2.1 Navigation, Start, Thread Settings, and Connection Status
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
@@ -35,10 +35,10 @@ It does not redefine:
 | `/pwd` | Show current working directory | no | admin only | admin only | none |
 | `/status` | Show current chat directory, current thread, and current-session settings summary | yes; `Connection Status` page | admin only | admin only | `feishu-codexctl binding status <binding_id>` for deeper diagnostics |
 | `/preflight` | Dry-run the next plain message and current-chat detach availability | yes; `Connection Status` page | admin only | admin only | partly overlaps `feishu-codexctl binding status <binding_id>` |
-| `/cd [path]` | Show or switch current directory; switching clears the current thread binding | yes; `Start / Switch` form | admin only | admin only | none |
-| `/new` | Create a new current thread | yes; `Start / Switch` page | admin only | admin only | none |
-| `/threads` | Browse threads in the current directory | yes; `Start / Switch` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
-| `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start / Switch` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
+| `/cd [path]` | Show or switch current directory; switching clears the current thread binding | yes; `Start` form | admin only | admin only | none |
+| `/new` | Create a new current thread | yes; `Start` page | admin only | admin only | none |
+| `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
+| `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `Thread Settings` page | admin only | admin only | `feishu-codexctl thread memory --thread-id/--thread-name`; `fcodex resume` reuses the persisted mode |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |

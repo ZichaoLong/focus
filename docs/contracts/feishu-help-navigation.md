@@ -38,6 +38,11 @@ The home summary must at least include:
 - current push state
 - current turn-setting summary
 
+The current turn-setting summary must use explicit labels:
+
+- `Permissions <value> | Model <value> | Reasoning <value>`
+- append `| Plan Mode` only when plan mode is enabled
+
 In a group-chat context, when group state can be read safely, it should also include:
 
 - whether the current group is enabled
@@ -47,7 +52,7 @@ In a group-chat context, when group state can be read safely, it should also inc
 
 The home must expose exactly these six workspaces:
 
-- `Start / Switch`
+- `Start`
 - `Thread Settings`
 - `Turn Settings`
 - `Connection Status`
@@ -88,7 +93,7 @@ These legacy aliases must remain compatible:
 - every lower-level page must expose only `Back`
 - every back button must occupy its own row
 
-### 3.2 Start / Switch
+### 3.2 Start
 
 This page owns:
 
@@ -116,7 +121,7 @@ This page must provide:
 
 Its body must also state:
 
-- thread creation, resuming, browsing, and directory switching belong to `Start / Switch`
+- thread creation, resuming, browsing, and directory switching belong to `Start`
 - direct re-profiling should prefer `/profile <name>`
 - direct memory-mode changes should prefer `/memory <off|read|read_write>`
 
