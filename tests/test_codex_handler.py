@@ -5406,27 +5406,25 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台")
         content = card["elements"][0]["content"]
-        self.assertIn("`当前会话`", content)
-        self.assertIn("`群聊`", content)
-        self.assertIn("`线程`", content)
-        self.assertIn("`运行时`", content)
-        self.assertIn("`身份`", content)
-        self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", content)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", content)
-        self.assertIn("同一线程允许多端订阅观察", content)
-        self.assertIn("同一 live turn 只有一个交互 owner", content)
+        self.assertIn("目录：", content)
+        self.assertIn("线程：`未绑定`", content)
+        self.assertIn("推送：`", content)
+        self.assertIn("本轮：`", content)
         action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[0]["layout"], "trisection")
+        self.assertEqual(action_elements[0]["layout"], "bisected")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["当前会话", "群聊", "线程"],
+            ["开始切换", "线程设置"],
         )
-        self.assertEqual(action_elements[1]["layout"], "bisected")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["运行时", "身份"],
+            ["本轮设置", "连接状态"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["群聊设置", "更多"],
         )
 
     def test_commands_lists_common_navigation_commands(self) -> None:
@@ -5437,6 +5435,7 @@ class CodexHandlerTests(unittest.TestCase):
         reply = bot.replies[-1][1]
         self.assertIn("常用命令列表", reply)
         self.assertIn("`/commands`", reply)
+        self.assertIn("`/help [overview|start|thread-settings|turn|connection|group|more]`", reply)
         self.assertIn("`/status`", reply)
         self.assertIn("`/memory [off|read|read_write]`", reply)
         self.assertIn("`/compact`", reply)
@@ -5448,7 +5447,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/model [name|auto]`", reply)
         self.assertIn("`/effort [auto|none|minimal|low|medium|high|xhigh]`", reply)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
-        self.assertNotIn("/debug-contact", reply)
+        self.assertIn(f"`{_DISPLAY_DEBUG_CONTACT_COMMAND}`", reply)
         self.assertNotIn("`/cancel`", reply)
 
     def test_commands_rejects_extra_args(self) -> None:
@@ -5493,21 +5492,27 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：当前会话")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：连接状态")
         content = card["elements"][0]["content"]
-        self.assertIn("`/status`", content)
-        self.assertIn("`/preflight`", content)
-        self.assertIn("`/detach` / `/attach`", content)
-        self.assertIn(f"`{_DISPLAY_CD_COMMAND}`", content)
-        self.assertIn("`/pwd` 不再作为主导航入口", content)
+        self.assertIn("查看当前状态、发送前检查", content)
+        self.assertIn("附着当前实例", content)
+        self.assertIn("切换线程或目录，请到“开始切换”", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/status", "/preflight", "切换目录"],
+            ["当前状态", "发送前检查"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/detach", "线程", "返回帮助"],
+            ["暂停推送", "附着当前实例"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["更多附着方式"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["返回首页"],
         )
 
     def test_help_chat_page_switches_toggle_to_attach_when_binding_detached(self) -> None:
@@ -5521,7 +5526,7 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/attach", "线程", "返回帮助"],
+            ["恢复当前会话", "附着当前实例"],
         )
 
     def test_help_thread_page_mentions_resume_scope_and_local_resume(self) -> None:
@@ -5531,23 +5536,24 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：线程")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：开始切换")
         content = card["elements"][0]["content"]
-        self.assertIn("`/threads`", content)
-        self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", content)
-        self.assertIn("`/new`", content)
-        self.assertIn("`/compact`", content)
-        self.assertIn("当前线程", content)
+        self.assertIn("同一线程允许多端订阅观察", content)
+        self.assertIn("同一 live turn 只有一个交互 owner", content)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", content)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/threads", "/new", "恢复线程"],
+            ["新建线程", "恢复线程"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["当前线程", "返回帮助"],
+            ["浏览线程", "切换目录"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["返回首页"],
         )
 
     def test_help_runtime_mentions_permissions_as_recommended_entry(self) -> None:
@@ -5557,29 +5563,26 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：运行时")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：本轮设置")
         content = card["elements"][0]["content"]
-        self.assertIn("`/profile` 属于当前 thread 管理", content)
-        self.assertIn("推荐先用 `/permissions`", content)
-        self.assertIn("`/model [name|auto]`", content)
-        self.assertIn("`/effort [auto|none|minimal|low|medium|high|xhigh]`", content)
-        self.assertIn("`/approval`", content)
-        self.assertIn("`/sandbox`", content)
-        self.assertIn("`/collab-mode`", content)
-        self.assertIn("`/reset-backend`", content)
-        self.assertIn("如果当前正在执行，新设置从下一轮生效。", content)
+        self.assertIn("推荐先用“权限预设”", content)
+        self.assertIn("实例级 backend reset 在“更多 -> 高级操作”", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/permissions", "/model", "/effort"],
+            ["权限预设", "模型"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/approval", "/sandbox", "/collab-mode"],
+            ["推理强度", "审批策略"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
-            ["/reset-backend", "返回帮助"],
+            ["沙箱策略", "协作模式"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["返回首页"],
         )
 
     def test_help_group_card_has_shortcuts(self) -> None:
@@ -5589,14 +5592,22 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：群聊")
-        self.assertIn("/group activate", card["elements"][0]["content"])
-        self.assertIn("`assistant`", card["elements"][0]["content"])
-        self.assertIn("`mention-only`", card["elements"][0]["content"])
-        self.assertIn("`all`", card["elements"][0]["content"])
-        self.assertIn("自己发起 turn 的审批", card["elements"][0]["content"])
-        action = self._first_action(card)
-        self.assertEqual([item["text"]["content"] for item in action["actions"]], ["/group", "/group-mode", "返回帮助"])
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：群聊设置")
+        self.assertIn("未启用群里，非管理员不能使用机器人", card["elements"][0]["content"])
+        self.assertIn("`all` 风险最高", card["elements"][0]["content"])
+        action_elements = self._action_elements(card)
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[0]["actions"]],
+            ["群聊启用状态", "启用本群"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[1]["actions"]],
+            ["停用本群", "群工作模式"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["返回首页"],
+        )
 
     def test_help_identity_page_has_bootstrap_shortcuts(self) -> None:
         handler, bot = self._make_handler()
@@ -5605,20 +5616,27 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 帮助：身份")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：更多")
         content = card["elements"][0]["content"]
         self.assertIn("`/whoami`", content)
-        self.assertIn("`/bot-status`", content)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", content)
         self.assertNotIn("/debug-contact", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/whoami", "/bot-status", "初始化"],
+            ["身份信息", "机器人状态"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["返回帮助"],
+            ["初始化", "命令索引"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["高级操作"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["返回首页"],
         )
 
     def test_help_page_action_returns_runtime_card(self) -> None:
@@ -5631,18 +5649,22 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "runtime"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：运行时")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：本轮设置")
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
-            ["/permissions", "/model", "/effort"],
+            ["权限预设", "模型"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
-            ["/approval", "/sandbox", "/collab-mode"],
+            ["推理强度", "审批策略"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[2]["actions"]],
-            ["/reset-backend", "返回帮助"],
+            ["沙箱策略", "协作模式"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[3]["actions"]],
+            ["返回首页"],
         )
 
     def test_reset_backend_command_returns_preview_card(self) -> None:
@@ -5678,16 +5700,20 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "overview"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台")
         action_elements = self._action_elements(response["card"])
-        self.assertEqual(action_elements[0]["layout"], "trisection")
+        self.assertEqual(action_elements[0]["layout"], "bisected")
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["当前会话", "群聊", "线程"],
+            ["开始切换", "线程设置"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["运行时", "身份"],
+            ["本轮设置", "连接状态"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["群聊设置", "更多"],
         )
 
     def test_help_navigation_actions_are_not_group_admin_only(self) -> None:
@@ -5701,7 +5727,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "overview", "_operator_open_id": "ou_user"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台")
 
     def test_help_show_page_action_can_open_current_thread_page(self) -> None:
         handler, _ = self._make_handler()
@@ -5713,20 +5739,24 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "thread-current"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：当前线程")
-        self.assertIn(
-            _DISPLAY_LOCAL_THREAD_UNSUBSCRIBE,
-            response["card"]["elements"][0]["content"],
-        )
-        self.assertIn("“当前会话”页", response["card"]["elements"][0]["content"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：线程设置")
+        self.assertIn("“开始切换”", response["card"]["elements"][0]["content"])
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/profile", "/memory", "/compact"],
+            ["改 Profile", "改 Memory"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/archive", "重命名", "返回线程"],
+            ["压缩上下文", "重命名"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
+            ["归档当前", "按目标归档"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["返回首页"],
         )
 
     def test_help_show_page_action_can_open_thread_resume_form(self) -> None:
@@ -5739,7 +5769,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "thread-resume-form"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：恢复线程")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：恢复线程")
         self.assertTrue(any(element.get("tag") == "form" for element in response["card"]["elements"]))
         self.assertEqual(self._action_elements(response["card"])[0]["actions"][0]["text"]["content"], "返回上一页")
 
@@ -5753,7 +5783,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "chat-cd-form"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：切换目录")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：切换目录")
         self.assertTrue(any(element.get("tag") == "form" for element in response["card"]["elements"]))
         self.assertIn(_DISPLAY_CD_COMMAND, response["card"]["elements"][0]["content"])
 
@@ -5767,7 +5797,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "thread-rename-current-form"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：重命名当前线程")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：重命名")
         self.assertTrue(any(element.get("tag") == "form" for element in response["card"]["elements"]))
         self.assertIn(_DISPLAY_RENAME_COMMAND, response["card"]["elements"][0]["content"])
 
@@ -5781,12 +5811,12 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "identity"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：身份")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：更多")
         self.assertNotIn("/debug-contact", response["card"]["elements"][0]["content"])
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/whoami", "/bot-status", "初始化"],
+            ["身份信息", "机器人状态"],
         )
 
     def test_help_show_page_action_can_open_identity_init_form(self) -> None:
@@ -5799,9 +5829,63 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "show_help_page", "page": "identity-init-form"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：初始化")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：初始化")
         self.assertTrue(any(element.get("tag") == "form" for element in response["card"]["elements"]))
         self.assertIn(_DISPLAY_INIT_COMMAND, response["card"]["elements"][0]["content"])
+
+    def test_help_show_page_action_can_open_attach_more_page(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "show_help_page", "page": "connection-status-attach-more"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：更多附着方式")
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
+            ["附着当前线程", "附着当前会话"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
+            ["返回上一页"],
+        )
+
+    def test_help_show_page_action_can_open_more_advanced_page(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "show_help_page", "page": "more-advanced"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：高级操作")
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
+            ["重置 backend", "联系人排障"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
+            ["返回上一页"],
+        )
+
+    def test_help_show_page_action_can_open_debug_contact_form(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "show_help_page", "page": "more-debug-contact-form"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：联系人排障")
+        self.assertTrue(any(element.get("tag") == "form" for element in response["card"]["elements"]))
+        self.assertIn(_DISPLAY_DEBUG_CONTACT_COMMAND, response["card"]["elements"][0]["content"])
 
     def test_help_show_page_action_returns_warning_for_unknown_page(self) -> None:
         handler, _ = self._make_handler()
@@ -5821,7 +5905,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "/help nonsense")
 
-        self.assertIn("帮助主题仅支持", bot.replies[-1][1])
+        self.assertIn("帮助主题支持", bot.replies[-1][1])
 
     def test_unknown_command_mentions_help_and_commands(self) -> None:
         handler, bot = self._make_handler()

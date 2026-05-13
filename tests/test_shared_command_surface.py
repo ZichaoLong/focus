@@ -81,12 +81,20 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         help_domain = CodexHelpDomain(
             local_thread_safety_rule="测试规则",
             get_runtime_state=lambda sender_id, chat_id, message_id="": {
+                "working_dir": "/tmp/project",
+                "current_thread_id": "",
                 "feishu_runtime_state": "attached",
+                "approval_policy": "on-request",
+                "sandbox": "workspace-write",
+                "collaboration_mode": "",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
 
         overview = help_domain.reply_help("chat-1").card
-        thread_help = help_domain.reply_help("chat-1", "thread").card
+        start_help = help_domain.reply_help("chat-1", "thread").card
+        thread_settings_help = help_domain.reply_help("chat-1", "thread-settings").card
         threads_card = build_threads_card(
             threads=[
                 {
@@ -107,19 +115,28 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         execution_card = build_execution_card("log", [], running=True)
 
         overview_markdown = overview["elements"][0]["content"]
-        thread_markdown = thread_help["elements"][0]["content"]
+        start_markdown = start_help["elements"][0]["content"]
+        thread_settings_markdown = thread_settings_help["elements"][0]["content"]
         threads_markdown = threads_card["elements"][0]["content"]
 
-        self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", overview_markdown)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", overview_markdown)
-        self.assertIn(f"`{threads_command.feishu_usage}`", thread_markdown)
-        self.assertIn(f"`{resume_command.feishu_usage}`", thread_markdown)
-        self.assertIn("`/memory`", thread_markdown)
-        self.assertIn("`/compact`", thread_markdown)
-        self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", thread_markdown)
+        self.assertIn("线程：`未绑定`", overview_markdown)
+        self.assertIn("本轮：`default` / `auto` / `auto` / `default`", overview_markdown)
+        self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", start_markdown)
+        self.assertIn("`feishu-codexctl thread list --scope cwd`", start_markdown)
+        self.assertIn("测试规则", start_markdown)
+        self.assertIn("`/profile", thread_settings_markdown)
+        self.assertIn("`/memory", thread_settings_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", threads_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", threads_markdown)
         self.assertIn(f"`{resume_command.feishu_usage}`", threads_markdown)
+        self.assertEqual(
+            [item["text"]["content"] for item in start_help["elements"][2]["actions"]],
+            ["新建线程", "恢复线程"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in thread_settings_help["elements"][2]["actions"]],
+            ["改 Profile", "改 Memory"],
+        )
         self.assertEqual(execution_card["header"]["title"]["content"], "Codex 执行过程（执行中）")
         self.assertNotIn("`/help`", json.dumps(execution_card, ensure_ascii=False))
 
@@ -127,7 +144,14 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         help_domain = CodexHelpDomain(
             local_thread_safety_rule="测试规则",
             get_runtime_state=lambda sender_id, chat_id, message_id="": {
+                "working_dir": "/tmp/project",
+                "current_thread_id": "",
                 "feishu_runtime_state": "attached",
+                "approval_policy": "on-request",
+                "sandbox": "workspace-write",
+                "collaboration_mode": "",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
         cards = [

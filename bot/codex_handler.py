@@ -439,6 +439,9 @@ class CodexHandler(BotHandler):
                 chat_id,
                 message_id,
             ),
+            is_group_chat=lambda chat_id, message_id="": self._is_group_chat(chat_id, message_id),
+            get_group_mode=lambda chat_id: self.bot.get_group_mode(chat_id),
+            get_group_activation_snapshot=lambda chat_id: self.bot.get_group_activation_snapshot(chat_id),
         )
         self._threads_ui_domain = CodexThreadsUiDomain(
             ports=ThreadsUiPorts(
