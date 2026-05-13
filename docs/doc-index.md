@@ -67,6 +67,7 @@ Status guidance:
 
 - [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md)
 - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
+- [`managed-backend-startup-profile.md`](./decisions/managed-backend-startup-profile.md)
 - [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md)
 - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
 - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
@@ -95,6 +96,7 @@ Status guidance:
 | What is the formal boundary for continuing a Feishu-bound thread later, including `binding/submit-prompt`, `feishu-codexctl prompt send`, and the Linux `systemd --user` skill? | [`scheduled-prompts.md`](./contracts/scheduled-prompts.md) |
 | What is the current contract for `/detach`, a thinner `fcodex`, the `feishu-codexctl` split, and thread-wise profile/provider? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
 | How do multi-instance `default` / named-instance behavior, shared thread visibility, `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
+| How should provider-specific catalogs, `remote`, and a future `managed backend startup profile` be chosen between, and why is that not an “instance-level default profile”? | [`managed-backend-startup-profile.md`](./decisions/managed-backend-startup-profile.md), [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md) |
 | What information architecture and semantic rules does the Feishu `/help` navigation surface follow? | [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md) |
 | What is the formal behavior contract for group activation, group modes, history recovery, and group-command triggering? | [`group-chat-contract.md`](./contracts/group-chat-contract.md) |
 | How do approval, sandbox, writable roots, and protected paths behave? | [`codex-permissions-model.md`](./contracts/codex-permissions-model.md) |
@@ -136,6 +138,7 @@ Status guidance:
 - For wrapper or backend work:
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)
+  - [`managed-backend-startup-profile.md`](./decisions/managed-backend-startup-profile.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - For multi-instance behavior, shared thread visibility, `feishu-codexctl --instance`,
   or cross-instance runtime lease work:

@@ -84,8 +84,8 @@ The formal contract is:
 - Feishu `/memory` remains the supported chat-side mutation entry
 - local `feishu-codexctl thread memory` is the supported standalone local inspection / mutation entry
 - `fcodex resume <thread>` automatically applies the persisted memory mode when resuming that thread
-- `default_thread_memory_mode` in `codex.yaml` is a new-thread seed for project-supported new-thread creation paths
-- `default_thread_memory_mode` is meaningful only if upstream Codex memory feature is already enabled outside this project
+- `new_thread_memory_mode_seed` in `codex.yaml` is a new-thread seed for project-supported new-thread creation paths
+- `new_thread_memory_mode_seed` is meaningful only if upstream Codex memory feature is already enabled outside this project
 
 That means:
 

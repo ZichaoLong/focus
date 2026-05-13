@@ -56,7 +56,9 @@ class _SettingsPortsStub:
                 RuntimeProfileSummary(name="default", model_provider="openai"),
                 RuntimeProfileSummary(name="work", model_provider="anthropic"),
             ],
+            current_memory_mode="read",
         )
+        self.new_thread_memory_mode_seed = "read"
         self.saved_thread_profiles: list[tuple[str, str, str, str]] = []
         self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
@@ -218,6 +220,9 @@ class _SettingsPortsStub:
     def safe_read_runtime_config(self) -> RuntimeConfigSummary | None:
         return self.runtime_config
 
+    def get_new_thread_memory_mode_seed(self) -> str:
+        return self.new_thread_memory_mode_seed
+
 
 def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
     return CodexSettingsDomain(
@@ -242,6 +247,7 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_runtime_view=stub.get_runtime_view,
             update_runtime_settings=stub.update_runtime_settings,
             safe_read_runtime_config=stub.safe_read_runtime_config,
+            get_new_thread_memory_mode_seed=stub.get_new_thread_memory_mode_seed,
         ),
         approval_policies=_APPROVAL_POLICIES,
         sandbox_policies=_SANDBOX_POLICIES,
@@ -665,6 +671,26 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIn("当前 thread 的 memory mode 已是：`read`", content)
         self.assertIn("无需重置 backend", content)
         self.assertNotIn("应用并重置 backend", content)
+
+    def test_memory_command_without_arg_shows_effective_codex_memory_mode_when_threadwise_unset(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.current_thread_memory_mode = None
+        stub.runtime_config = RuntimeConfigSummary(
+            profiles=[
+                RuntimeProfileSummary(name="default", model_provider="openai"),
+                RuntimeProfileSummary(name="work", model_provider="anthropic"),
+            ],
+            current_memory_mode="read_write",
+        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_memory_command("ou_user", "chat-a", "", message_id="msg-1")
+
+        self.assertIsNotNone(result.card)
+        content = result.card["elements"][0]["content"]
+        self.assertIn("当前 thread-wise memory mode：`（未设置）`", content)
+        self.assertIn("当前 thread 未设置时，沿用当前 Codex memory 配置：`read_write`。", content)
+        self.assertIn("本实例 `new_thread_memory_mode_seed`：`read`（仅新建 thread 时注入）。", content)
 
     def test_model_command_without_arg_shows_model_summary_card(self) -> None:
         stub = _SettingsPortsStub()

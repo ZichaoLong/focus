@@ -21,7 +21,11 @@ from bot.adapters.base import (
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
-from bot.thread_memory_mode import deep_merge_config_overrides, normalize_thread_memory_mode
+from bot.thread_memory_mode import (
+    deep_merge_config_overrides,
+    normalize_thread_memory_mode,
+    thread_memory_mode_from_memories_config,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +53,7 @@ class CodexAppServerConfig:
     service_tier: str = ""
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
-    default_thread_memory_mode: str = ""
+    new_thread_memory_mode_seed: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
     @classmethod
@@ -57,7 +61,9 @@ class CodexAppServerConfig:
         source_kinds = config.get("source_kinds") or DEFAULT_SOURCE_KINDS
         collaboration_mode = str(config.get("collaboration_mode", "default")).strip().lower() or "default"
         app_server_mode = str(config.get("app_server_mode", DEFAULT_APP_SERVER_MODE)).strip().lower() or DEFAULT_APP_SERVER_MODE
-        raw_default_thread_memory_mode = str(config.get("default_thread_memory_mode", "") or "").strip()
+        if "default_thread_memory_mode" in config:
+            raise ValueError("`default_thread_memory_mode` 已移除；请改用 `new_thread_memory_mode_seed`。")
+        raw_new_thread_memory_mode_seed = str(config.get("new_thread_memory_mode_seed", "") or "").strip()
         if collaboration_mode not in {"default", "plan"}:
             raise ValueError("collaboration_mode 仅支持 default 或 plan")
         if app_server_mode not in {"managed", "remote"}:
@@ -80,9 +86,9 @@ class CodexAppServerConfig:
             service_tier=str(config.get("service_tier", "")),
             reasoning_effort=str(config.get("reasoning_effort", "")),
             collaboration_mode=collaboration_mode,
-            default_thread_memory_mode=(
-                normalize_thread_memory_mode(raw_default_thread_memory_mode)
-                if raw_default_thread_memory_mode
+            new_thread_memory_mode_seed=(
+                normalize_thread_memory_mode(raw_new_thread_memory_mode_seed)
+                if raw_new_thread_memory_mode_seed
                 else ""
             ),
             source_kinds=[str(item) for item in source_kinds],
@@ -480,6 +486,7 @@ class CodexAppServerAdapter(AgentAdapter):
     def _runtime_config_from_result(result: dict[str, Any]) -> RuntimeConfigSummary:
         config = result.get("config") or {}
         profiles_raw = config.get("profiles") or {}
+        memories_raw = config.get("memories") or {}
         profiles: list[RuntimeProfileSummary] = []
         if isinstance(profiles_raw, dict):
             for name in sorted(profiles_raw):
@@ -496,6 +503,9 @@ class CodexAppServerAdapter(AgentAdapter):
         return RuntimeConfigSummary(
             current_profile=_read_string(config, "profile", "activeProfile", "active_profile"),
             current_model_provider=_read_string(config, "modelProvider", "model_provider"),
+            current_memory_mode=thread_memory_mode_from_memories_config(
+                memories_raw if isinstance(memories_raw, dict) else None
+            ),
             profiles=profiles,
         )
 

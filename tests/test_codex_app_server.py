@@ -76,6 +76,10 @@ class _FakeRpc:
                 "config": {
                     "profile": "provider1",
                     "modelProvider": "provider1_api",
+                    "memories": {
+                        "use_memories": True,
+                        "generate_memories": False,
+                    },
                     "profiles": {
                         "provider1": {"modelProvider": "provider1_api"},
                         "provider2": {"modelProvider": "provider2_api"},
@@ -107,10 +111,14 @@ class CodexAppServerAdapterTests(unittest.TestCase):
 
         self.assertEqual(config.approval_policy, "on-request")
 
-    def test_from_dict_normalizes_default_thread_memory_mode(self) -> None:
-        config = CodexAppServerConfig.from_dict({"default_thread_memory_mode": " read_write "})
+    def test_from_dict_normalizes_new_thread_memory_mode_seed(self) -> None:
+        config = CodexAppServerConfig.from_dict({"new_thread_memory_mode_seed": " read_write "})
 
-        self.assertEqual(config.default_thread_memory_mode, "read_write")
+        self.assertEqual(config.new_thread_memory_mode_seed, "read_write")
+
+    def test_from_dict_rejects_removed_default_thread_memory_mode(self) -> None:
+        with self.assertRaisesRegex(ValueError, "default_thread_memory_mode"):
+            CodexAppServerConfig.from_dict({"default_thread_memory_mode": "read"})
 
     def test_create_thread_can_attach_profile_override(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -520,7 +528,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
-    def test_read_runtime_config_parses_profiles(self) -> None:
+    def test_read_runtime_config_parses_profiles_and_memory_mode(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -529,6 +537,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
 
         self.assertEqual(runtime.current_profile, "provider1")
         self.assertEqual(runtime.current_model_provider, "provider1_api")
+        self.assertEqual(runtime.current_memory_mode, "read")
         self.assertEqual(
             [(item.name, item.model_provider) for item in runtime.profiles],
             [("provider1", "provider1_api"), ("provider2", "provider2_api")],
@@ -1130,10 +1139,10 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             os.getcwd(),
             _default_data_dir(),
-            thread_profile_seed="",
-            thread_profile_model_seed="",
-            thread_profile_model_provider_seed="",
-            thread_memory_mode_seed="",
+            new_thread_profile_seed="",
+            new_thread_profile_model_seed="",
+            new_thread_profile_model_provider_seed="",
+            new_thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1154,10 +1163,10 @@ class FCodexTests(unittest.TestCase):
             fallback_url,
             os.getcwd(),
             _default_data_dir(),
-            thread_profile_seed="",
-            thread_profile_model_seed="",
-            thread_profile_model_provider_seed="",
-            thread_memory_mode_seed="",
+            new_thread_profile_seed="",
+            new_thread_profile_model_seed="",
+            new_thread_profile_model_provider_seed="",
+            new_thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1204,10 +1213,10 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             os.getcwd(),
             _default_data_dir(),
-            thread_profile_seed="provider1",
-            thread_profile_model_seed="gpt-5.4",
-            thread_profile_model_provider_seed="provider1_api",
-            thread_memory_mode_seed="",
+            new_thread_profile_seed="provider1",
+            new_thread_profile_model_seed="gpt-5.4",
+            new_thread_profile_model_provider_seed="provider1_api",
+            new_thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -1294,10 +1303,10 @@ class FCodexTests(unittest.TestCase):
             Path("/tmp/data-b"),
             instance_name="corp-b",
             service_token="token-b",
-            thread_profile_seed="",
-            thread_profile_model_seed="",
-            thread_profile_model_provider_seed="",
-            thread_memory_mode_seed="",
+            new_thread_profile_seed="",
+            new_thread_profile_model_seed="",
+            new_thread_profile_model_provider_seed="",
+            new_thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -2069,10 +2078,10 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             "/home/tester/project",
             _default_data_dir(),
-            thread_profile_seed="",
-            thread_profile_model_seed="",
-            thread_profile_model_provider_seed="",
-            thread_memory_mode_seed="",
+            new_thread_profile_seed="",
+            new_thread_profile_model_seed="",
+            new_thread_profile_model_provider_seed="",
+            new_thread_memory_mode_seed="",
             resume_profile_hint="",
         )
         self.assertEqual(
@@ -2353,10 +2362,10 @@ class FCodexTests(unittest.TestCase):
                 "cwd": "/tmp/project",
                 "idle_timeout_seconds": 1.0,
                 "on_listen": proxy_url_queue.put,
-                "thread_profile_seed": "provider2",
-                "thread_profile_model_seed": "provider2-model",
-                "thread_profile_model_provider_seed": "provider2_api",
-                "thread_memory_mode_seed": "read",
+                "new_thread_profile_seed": "provider2",
+                "new_thread_profile_model_seed": "provider2-model",
+                "new_thread_profile_model_provider_seed": "provider2_api",
+                "new_thread_memory_mode_seed": "read",
             },
             daemon=True,
         )
@@ -2578,9 +2587,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=data_dir,
                 global_data_dir=data_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -2660,9 +2669,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=data_dir,
                 global_data_dir=data_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -2940,9 +2949,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -2980,10 +2989,10 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
-                thread_memory_mode_seed="read",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
+                new_thread_memory_mode_seed="read",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -3089,10 +3098,10 @@ class ProxyInteractionGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
-                thread_memory_mode_seed="read",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
+                new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -3113,13 +3122,13 @@ class ProxyInteractionGateTests(unittest.TestCase):
             client_ws_second = self._FakeWs()
             backend_ws_second = self._FakeWs()
             reserve_barrier = threading.Barrier(2)
-            original_reserve = shared_seed_state.reserve_initial_thread_seed_for_request
+            original_reserve = shared_seed_state.reserve_new_thread_seed_for_request
 
             def synchronized_reserve(*, owner_key: str, request_id: object) -> str:
                 reserve_barrier.wait(timeout=1)
                 return original_reserve(owner_key=owner_key, request_id=request_id)
 
-            shared_seed_state.reserve_initial_thread_seed_for_request = synchronized_reserve  # type: ignore[method-assign]
+            shared_seed_state.reserve_new_thread_seed_for_request = synchronized_reserve  # type: ignore[method-assign]
 
             def _start_thread(gate: _ProxyInteractionGate, client_ws, backend_ws, request_id: int) -> None:
                 gate.handle_client_message(
@@ -3195,10 +3204,10 @@ class ProxyInteractionGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
-                thread_memory_mode_seed="read",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
+                new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -3270,10 +3279,10 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
-                thread_memory_mode_seed="read",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
+                new_thread_memory_mode_seed="read",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -3327,7 +3336,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-    def test_thread_start_response_promotes_initial_thread_profile_seed_after_first_completed_turn(self) -> None:
+    def test_thread_start_response_promotes_new_thread_profile_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -3335,9 +3344,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
@@ -3417,14 +3426,14 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(first.model_provider, "provider2_api")
             self.assertIsNone(second)
 
-    def test_pending_initial_thread_seed_survives_reconnect_until_first_completed_turn(self) -> None:
+    def test_pending_new_thread_seed_survives_reconnect_until_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                thread_profile_seed="provider2",
-                thread_profile_model_seed="provider2-model",
-                thread_profile_model_provider_seed="provider2_api",
-                thread_memory_mode_seed="read",
+                new_thread_profile_seed="provider2",
+                new_thread_profile_model_seed="provider2-model",
+                new_thread_profile_model_provider_seed="provider2_api",
+                new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -3523,7 +3532,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             assert memory_record is not None
             self.assertEqual(memory_record.mode, "read")
 
-    def test_thread_start_request_promotes_initial_thread_memory_mode_seed_after_first_completed_turn(self) -> None:
+    def test_thread_start_request_promotes_new_thread_memory_mode_seed_after_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -3531,7 +3540,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                thread_memory_mode_seed="read",
+                new_thread_memory_mode_seed="read",
             )
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()

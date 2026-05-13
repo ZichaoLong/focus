@@ -547,8 +547,8 @@ def _inject_saved_thread_resume_profile_if_needed(user_args: list[str], thread_i
 @dataclass(frozen=True, slots=True)
 class _WrapperProfileLaunchPlan:
     user_args: list[str]
-    thread_profile_seed: ThreadResumeProfileSetting | None = None
-    thread_memory_mode_seed: str = ""
+    new_thread_profile_seed: ThreadResumeProfileSetting | None = None
+    new_thread_memory_mode_seed: str = ""
     resume_profile_hint: str = ""
 
 
@@ -571,7 +571,7 @@ def _build_wrapper_profile_launch_plan(
     materializes that logical thread.
     """
     planned_args = list(user_args)
-    configured_default_thread_memory_mode = CodexAppServerConfig.from_dict(cfg).default_thread_memory_mode
+    configured_new_thread_memory_mode_seed = CodexAppServerConfig.from_dict(cfg).new_thread_memory_mode_seed
     resume_thread_id = _thread_target_hint(planned_args)
     explicit_profile = _extract_option_value(planned_args, ("-p", "--profile")).strip()
     if resume_thread_id:
@@ -675,12 +675,12 @@ def _build_wrapper_profile_launch_plan(
             raise SystemExit(2)
         return _WrapperProfileLaunchPlan(
             user_args=planned_args,
-            thread_profile_seed=desired_setting,
-            thread_memory_mode_seed=configured_default_thread_memory_mode,
+            new_thread_profile_seed=desired_setting,
+            new_thread_memory_mode_seed=configured_new_thread_memory_mode_seed,
         )
     return _WrapperProfileLaunchPlan(
         user_args=planned_args,
-        thread_memory_mode_seed=configured_default_thread_memory_mode,
+        new_thread_memory_mode_seed=configured_new_thread_memory_mode_seed,
     )
 
 
@@ -747,10 +747,10 @@ def _launch_local_cwd_proxy(
     *,
     instance_name: str = DEFAULT_INSTANCE_NAME,
     service_token: str = "",
-    thread_profile_seed: str = "",
-    thread_profile_model_seed: str = "",
-    thread_profile_model_provider_seed: str = "",
-    thread_memory_mode_seed: str = "",
+    new_thread_profile_seed: str = "",
+    new_thread_profile_model_seed: str = "",
+    new_thread_profile_model_provider_seed: str = "",
+    new_thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
 ) -> tuple[str, subprocess.Popen[str]]:
     cmd = [
@@ -769,14 +769,14 @@ def _launch_local_cwd_proxy(
         str(global_data_dir()),
         "--service-token",
         service_token,
-        "--thread-profile-seed",
-        thread_profile_seed,
-        "--thread-profile-model-seed",
-        thread_profile_model_seed,
-        "--thread-profile-model-provider-seed",
-        thread_profile_model_provider_seed,
-        "--thread-memory-mode-seed",
-        thread_memory_mode_seed,
+        "--new-thread-profile-seed",
+        new_thread_profile_seed,
+        "--new-thread-profile-model-seed",
+        new_thread_profile_model_seed,
+        "--new-thread-profile-model-provider-seed",
+        new_thread_profile_model_provider_seed,
+        "--new-thread-memory-mode-seed",
+        new_thread_memory_mode_seed,
         "--resume-profile-hint",
         resume_profile_hint,
         "--parent-pid",
@@ -897,8 +897,8 @@ def main() -> None:
 
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
-    thread_profile_seed: ThreadResumeProfileSetting | None = None
-    thread_memory_mode_seed = ""
+    new_thread_profile_seed: ThreadResumeProfileSetting | None = None
+    new_thread_memory_mode_seed = ""
     resume_profile_hint = ""
     if not _has_explicit_remote(user_args):
         profile_launch_plan = _build_wrapper_profile_launch_plan(
@@ -908,8 +908,8 @@ def main() -> None:
             user_args=user_args,
         )
         user_args = list(profile_launch_plan.user_args)
-        thread_profile_seed = profile_launch_plan.thread_profile_seed
-        thread_memory_mode_seed = profile_launch_plan.thread_memory_mode_seed
+        new_thread_profile_seed = profile_launch_plan.new_thread_profile_seed
+        new_thread_memory_mode_seed = profile_launch_plan.new_thread_memory_mode_seed
         resume_profile_hint = profile_launch_plan.resume_profile_hint
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
@@ -929,12 +929,12 @@ def main() -> None:
                 app_server_url,
                 effective_cwd,
                 data_dir,
-                thread_profile_seed=thread_profile_seed.profile if thread_profile_seed is not None else "",
-                thread_profile_model_seed=thread_profile_seed.model if thread_profile_seed is not None else "",
-                thread_profile_model_provider_seed=(
-                    thread_profile_seed.model_provider if thread_profile_seed is not None else ""
+                new_thread_profile_seed=new_thread_profile_seed.profile if new_thread_profile_seed is not None else "",
+                new_thread_profile_model_seed=new_thread_profile_seed.model if new_thread_profile_seed is not None else "",
+                new_thread_profile_model_provider_seed=(
+                    new_thread_profile_seed.model_provider if new_thread_profile_seed is not None else ""
                 ),
-                thread_memory_mode_seed=thread_memory_mode_seed,
+                new_thread_memory_mode_seed=new_thread_memory_mode_seed,
                 resume_profile_hint=resume_profile_hint,
                 **proxy_kwargs,
             )

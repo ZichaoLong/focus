@@ -51,6 +51,7 @@ class RuntimeModelSummary:
 class RuntimeConfigSummary:
     current_profile: str | None = None
     current_model_provider: str | None = None
+    current_memory_mode: str | None = None
     profiles: list[RuntimeProfileSummary] = field(default_factory=list)
 
 

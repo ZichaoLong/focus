@@ -84,8 +84,8 @@ thread-wise memory mode 控制的是：
 - 飞书 `/memory` 负责改写 thread-wise memory mode
 - 本地 `feishu-codexctl thread memory` 是正式的独立查看 / 改写入口
 - `fcodex resume <thread>` 在恢复该 thread 时，会自动带上已持久化的 memory mode
-- `codex.yaml` 里的 `default_thread_memory_mode` 是项目支持的新线程创建路径上的 seed
-- `default_thread_memory_mode` 只有在本项目之外已启用上游 Codex memory feature 时才有意义
+- `codex.yaml` 里的 `new_thread_memory_mode_seed` 是项目支持的新线程创建路径上的 seed
+- `new_thread_memory_mode_seed` 只有在本项目之外已启用上游 Codex memory feature 时才有意义
 
 这意味着：
 

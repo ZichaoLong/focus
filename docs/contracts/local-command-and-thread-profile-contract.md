@@ -169,7 +169,7 @@ The formal contract is:
 - local `feishu-codexctl thread memory --thread-id <id> --mode <off|read|read_write>` is the supported standalone mutation entry
 - for supported resume paths, `fcodex resume <thread>` automatically reuses the persisted memory mode when resuming that thread
 - if memory-mode mutation is rejected because the thread is still loaded, the user-facing text should also identify the target instance backend instead of only saying “still loaded”
-- `default_thread_memory_mode` in `codex.yaml` is a new-thread seed only for project-supported new-thread creation paths
+- `new_thread_memory_mode_seed` in `codex.yaml` is a new-thread seed only for project-supported new-thread creation paths
 - the shared direct-write / reset-backend rule is defined in `docs/contracts/thread-next-load-settings-semantics.md`
 - the memory-mode-specific business semantics are defined in `docs/contracts/thread-memory-semantics.md`
 

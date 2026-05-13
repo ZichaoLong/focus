@@ -88,6 +88,7 @@ class SettingsDomainPorts:
     get_runtime_view: Callable[[str, str, str], RuntimeView]
     update_runtime_settings: Callable[..., None]
     safe_read_runtime_config: Callable[[], RuntimeConfigSummary | None]
+    get_new_thread_memory_mode_seed: Callable[[], str]
 
 
 @dataclass(frozen=True, slots=True)
@@ -630,6 +631,18 @@ class CodexSettingsDomain:
             return "（未设置）"
         return str(record.mode or "").strip() or "（未设置）"
 
+    def _runtime_memory_mode_display_text(self) -> str:
+        runtime_config = self._ports.safe_read_runtime_config()
+        if runtime_config is None:
+            return ""
+        return str(runtime_config.current_memory_mode or "").strip()
+
+    def _new_thread_memory_mode_seed_display_text(self) -> str:
+        configured_seed = str(self._ports.get_new_thread_memory_mode_seed() or "").strip()
+        if not configured_seed:
+            return "（未设置）"
+        return normalize_thread_memory_mode(configured_seed)
+
     def _build_memory_mode_summary_card(
         self,
         *,
@@ -642,14 +655,19 @@ class CodexSettingsDomain:
         extra_action_rows: list[dict] | None = None,
     ) -> dict:
         current_mode = self._memory_mode_display_text(current_record)
+        runtime_memory_mode = self._runtime_memory_mode_display_text()
+        new_thread_memory_mode_seed = self._new_thread_memory_mode_seed_display_text()
         lines = list(leading_lines or [])
-        lines.extend(
-            [
-                f"当前 thread：`{thread_id[:8]}…`",
-                f"当前 thread-wise memory mode：`{current_mode}`",
-                "未设置时，沿用当前 Codex 配置。",
-            ]
-        )
+        lines.extend([f"当前 thread：`{thread_id[:8]}…`", f"当前 thread-wise memory mode：`{current_mode}`"])
+        if current_record is None:
+            if runtime_memory_mode:
+                lines.append(f"当前 thread 未设置时，沿用当前 Codex memory 配置：`{runtime_memory_mode}`。")
+            else:
+                lines.append("当前 thread 未设置时，沿用当前 Codex 配置。")
+            lines.append(
+                "本实例 `new_thread_memory_mode_seed`："
+                f"`{new_thread_memory_mode_seed}`（仅新建 thread 时注入）。"
+            )
         if reset_target_mode:
             lines.extend(["", f"目标 memory mode：`{reset_target_mode}`"])
         if plan.status == "direct-write":

@@ -4035,8 +4035,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
-    def test_new_thread_applies_default_thread_memory_mode_and_promotes_after_first_turn(self) -> None:
-        handler, _ = self._make_handler({"default_thread_memory_mode": "read"})
+    def test_new_thread_applies_new_thread_memory_mode_seed_and_promotes_after_first_turn(self) -> None:
+        handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read"})
 
         handler.handle_message("ou_user", "c1", "/new")
 
@@ -4074,7 +4074,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
 
     def test_new_thread_failure_rolls_back_existing_binding_and_clears_pending_seed(self) -> None:
-        handler, bot = self._make_handler({"default_thread_memory_mode": "read"})
+        handler, bot = self._make_handler({"new_thread_memory_mode_seed": "read"})
         old_thread = ThreadSummary(
             thread_id="thread-old",
             cwd="/tmp/project",
@@ -4102,7 +4102,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
 
     def test_new_thread_failure_without_existing_binding_clears_pending_seed(self) -> None:
-        handler, bot = self._make_handler({"default_thread_memory_mode": "read"})
+        handler, bot = self._make_handler({"new_thread_memory_mode_seed": "read"})
 
         with patch.object(handler, "_clear_plan_state", side_effect=RuntimeError("clear plan failed")):
             handler.handle_message("ou_user", "c1", "/new")
@@ -4124,8 +4124,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
-    def test_prompt_created_thread_applies_default_thread_memory_mode_and_promotes_after_turn_completed(self) -> None:
-        handler, _ = self._make_handler({"default_thread_memory_mode": "read_write"})
+    def test_prompt_created_thread_applies_new_thread_memory_mode_seed_and_promotes_after_turn_completed(self) -> None:
+        handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read_write"})
 
         handler.handle_message("ou_user", "c1", "hello")
 

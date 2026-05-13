@@ -405,6 +405,7 @@ class CodexHandler(BotHandler):
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
+                get_new_thread_memory_mode_seed=self._new_thread_memory_mode_seed,
             ),
             approval_policies=_APPROVAL_POLICIES,
             sandbox_policies=_SANDBOX_POLICIES,
@@ -553,7 +554,7 @@ class CodexHandler(BotHandler):
                     message_id=message_id,
                 ),
                 resume_snapshot_by_id=self._resume_snapshot_by_id,
-                create_thread=lambda **kwargs: self._create_thread_with_default_pending_memory_seed(**kwargs),
+                create_thread=lambda **kwargs: self._create_thread_with_pending_new_thread_memory_seed(**kwargs),
                 thread_resume_profile_for_thread=self._thread_resume_profile,
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
@@ -2020,7 +2021,7 @@ class CodexHandler(BotHandler):
             return CommandResult(text="执行中不能新建线程，请等待结束或先执行 `/cancel`。")
         snapshot: ThreadSnapshot | None = None
         try:
-            snapshot = self._create_thread_with_default_pending_memory_seed(
+            snapshot = self._create_thread_with_pending_new_thread_memory_seed(
                 cwd=runtime.working_dir,
                 model=runtime.model or None,
                 approval_policy=runtime.approval_policy or None,
@@ -2600,8 +2601,8 @@ class CodexHandler(BotHandler):
                 return pending_record
         return self._thread_memory_mode_store.load(normalized_thread_id)
 
-    def _default_thread_memory_mode_seed(self) -> str:
-        return str(self._adapter_config.default_thread_memory_mode or "").strip()
+    def _new_thread_memory_mode_seed(self) -> str:
+        return str(self._adapter_config.new_thread_memory_mode_seed or "").strip()
 
     def _thread_memory_profile_hint(self, *, profile_name: str = "") -> str:
         normalized_profile_name = str(profile_name or "").strip()
@@ -2878,7 +2879,7 @@ class CodexHandler(BotHandler):
         except Exception as exc:
             logger.exception("记录新 thread 的 pending memory mode 失败: thread=%s", str(thread_id or "")[:12])
             return (
-                "警告：thread 已创建，但默认 memory mode 未成功记录为 pending seed；"
+                "警告：thread 已创建，但新线程 memory mode seed 未成功记录为 pending seed；"
                 f"后续 resume 可能不会沿用这次 memory 设置（{exc}）。"
             )
         return ""
@@ -2894,13 +2895,13 @@ class CodexHandler(BotHandler):
         approval_policy: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
-        default_memory_mode = self._default_thread_memory_mode_seed()
+        new_thread_memory_mode_seed = self._new_thread_memory_mode_seed()
         seeded_memory_overrides = (
             build_thread_memory_config_override(
-                default_memory_mode,
+                new_thread_memory_mode_seed,
                 profile_name_hint=str(profile or "").strip(),
             )
-            if default_memory_mode
+            if new_thread_memory_mode_seed
             else None
         )
         snapshot = self._adapter.create_thread(
@@ -2914,7 +2915,7 @@ class CodexHandler(BotHandler):
         )
         return snapshot
 
-    def _create_thread_with_default_pending_memory_seed(
+    def _create_thread_with_pending_new_thread_memory_seed(
         self,
         *,
         cwd: str,
@@ -2934,11 +2935,11 @@ class CodexHandler(BotHandler):
             approval_policy=approval_policy,
             sandbox=sandbox,
         )
-        default_memory_mode = self._default_thread_memory_mode_seed()
-        if default_memory_mode:
+        new_thread_memory_mode_seed = self._new_thread_memory_mode_seed()
+        if new_thread_memory_mode_seed:
             warning_text = self._register_pending_new_thread_memory_mode_seed(
                 snapshot.summary.thread_id,
-                default_memory_mode,
+                new_thread_memory_mode_seed,
             )
             if warning_text:
                 logger.warning(warning_text)

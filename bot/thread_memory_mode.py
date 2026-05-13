@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Mapping
 from typing import Any
 
 THREAD_MEMORY_MODE_OFF = "off"
@@ -62,6 +63,22 @@ def build_thread_memory_config_override(
     return {
         "memories": dict(memories_config),
     }
+
+
+def thread_memory_mode_from_memories_config(memories_config: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(memories_config, Mapping):
+        return None
+    use_memories = memories_config.get("use_memories")
+    generate_memories = memories_config.get("generate_memories")
+    if not isinstance(use_memories, bool) or not isinstance(generate_memories, bool):
+        return None
+    if not use_memories and not generate_memories:
+        return THREAD_MEMORY_MODE_OFF
+    if use_memories and not generate_memories:
+        return THREAD_MEMORY_MODE_READ
+    if use_memories and generate_memories:
+        return THREAD_MEMORY_MODE_READ_WRITE
+    return None
 
 
 def deep_merge_config_overrides(*parts: dict[str, Any] | None) -> dict[str, Any]:
