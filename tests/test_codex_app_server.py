@@ -424,7 +424,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(params["collaborationMode"]["mode"], "default")
         self.assertEqual(params["collaborationMode"]["settings"]["model"], "gpt-5.3-codex")
 
-    def test_start_turn_can_attach_profile_override(self) -> None:
+    def test_start_turn_drops_unsupported_profile_override(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -438,9 +438,10 @@ class CodexAppServerAdapterTests(unittest.TestCase):
 
         self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
         self.assertEqual(fake_rpc.calls[1][0], "turn/start")
-        self.assertEqual(fake_rpc.calls[1][1]["config"], {"profile": "provider2"})
+        self.assertNotIn("config", fake_rpc.calls[1][1])
+        self.assertNotIn("modelProvider", fake_rpc.calls[1][1])
 
-    def test_start_turn_can_attach_profile_model_provider_override(self) -> None:
+    def test_start_turn_uses_model_but_drops_profile_and_provider_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -457,8 +458,26 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(fake_rpc.calls[0][0], "turn/start")
         params = fake_rpc.calls[0][1]
         self.assertEqual(params["model"], "provider2-model")
-        self.assertEqual(params["modelProvider"], "provider2_api")
-        self.assertEqual(params["config"], {"profile": "provider2"})
+        self.assertNotIn("modelProvider", params)
+        self.assertNotIn("config", params)
+        self.assertEqual(params["collaborationMode"]["settings"]["model"], "provider2-model")
+
+    def test_start_turn_uses_cached_thread_model_for_collaboration_mode(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+        adapter._thread_resolved_model["thread-1"] = "provider2-model"
+
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "hello"}],
+            cwd="/tmp",
+        )
+
+        self.assertEqual(len(fake_rpc.calls), 1)
+        method, params = fake_rpc.calls[0]
+        self.assertEqual(method, "turn/start")
+        self.assertNotIn("model", params)
         self.assertEqual(params["collaborationMode"]["settings"]["model"], "provider2-model")
 
     def test_start_turn_can_override_sandbox_policy(self) -> None:
@@ -2440,7 +2459,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(error["id"], 1)
             self.assertIn("当前线程正由其他终端执行", error["error"]["message"])
 
-    def test_turn_start_injects_saved_thread_profile_into_model_and_collaboration_mode(self) -> None:
+    def test_turn_start_injects_saved_thread_model_without_profile_or_provider(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
             ThreadResumeProfileStore(data_dir).save(
@@ -2479,15 +2498,15 @@ class ProxyInteractionGateTests(unittest.TestCase):
             )
 
             forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("config", forwarded["params"])
+            self.assertNotIn("modelProvider", forwarded["params"])
             self.assertEqual(
                 forwarded["params"]["collaborationMode"]["settings"]["model"],
                 "provider2-model",
             )
 
-    def test_model_list_response_injects_launch_profile_metadata_as_default(self) -> None:
+    def test_model_list_response_rewrites_existing_launch_profile_item_as_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -2529,7 +2548,30 @@ class ProxyInteractionGateTests(unittest.TestCase):
                             "id": 1,
                             "result": {
                                 "data": [
-                                    {"model": "gpt-5.4", "isDefault": True, "hidden": False},
+                                    {
+                                        "id": "openai/gpt-5.4",
+                                        "model": "gpt-5.4",
+                                        "displayName": "GPT-5.4",
+                                        "description": "OpenAI model",
+                                        "hidden": False,
+                                        "supportedReasoningEfforts": [],
+                                        "defaultReasoningEffort": "medium",
+                                        "inputModalities": ["text"],
+                                        "serviceTiers": [],
+                                        "isDefault": True,
+                                    },
+                                    {
+                                        "id": "provider2/provider2-model",
+                                        "model": "provider2-model",
+                                        "displayName": "Old Provider Two",
+                                        "description": "Provider Two model",
+                                        "hidden": False,
+                                        "supportedReasoningEfforts": [],
+                                        "defaultReasoningEffort": "medium",
+                                        "inputModalities": ["text"],
+                                        "serviceTiers": [],
+                                        "isDefault": False,
+                                    },
                                 ]
                             },
                         }
@@ -2539,11 +2581,80 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 )
 
             forwarded = self._decode_payload(client_ws.sent[-1])
-            self.assertEqual(forwarded["result"]["data"][0]["model"], "provider2-model")
-            self.assertEqual(forwarded["result"]["data"][0]["displayName"], "Provider Two")
+            self.assertEqual(forwarded["result"]["data"][0]["model"], "gpt-5.4")
+            self.assertFalse(forwarded["result"]["data"][0]["isDefault"])
+            self.assertEqual(forwarded["result"]["data"][1]["id"], "provider2/provider2-model")
+            self.assertEqual(forwarded["result"]["data"][1]["model"], "provider2-model")
+            self.assertEqual(forwarded["result"]["data"][1]["displayName"], "Provider Two")
+            self.assertTrue(forwarded["result"]["data"][1]["isDefault"])
+
+    def test_model_list_response_does_not_inject_incomplete_synthetic_launch_profile_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=data_dir,
+                global_data_dir=data_dir,
+                holder_pid=os.getpid(),
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            with patch(
+                "bot.fcodex_proxy.resolve_profile_model_metadata",
+                return_value={
+                    "model": "provider2-model",
+                    "displayName": "Provider Two",
+                    "supports_reasoning_summaries": False,
+                },
+            ):
+                gate.handle_client_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "model/list",
+                            "params": {},
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+                gate.handle_backend_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "result": {
+                                "data": [
+                                    {
+                                        "id": "openai/gpt-5.4",
+                                        "model": "gpt-5.4",
+                                        "displayName": "GPT-5.4",
+                                        "description": "OpenAI model",
+                                        "hidden": False,
+                                        "supportedReasoningEfforts": [],
+                                        "defaultReasoningEffort": "medium",
+                                        "inputModalities": ["text"],
+                                        "serviceTiers": [],
+                                        "isDefault": True,
+                                    },
+                                ]
+                            },
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+
+            forwarded = self._decode_payload(client_ws.sent[-1])
+            self.assertEqual(len(forwarded["result"]["data"]), 1)
+            self.assertEqual(forwarded["result"]["data"][0]["id"], "openai/gpt-5.4")
+            self.assertEqual(forwarded["result"]["data"][0]["model"], "gpt-5.4")
             self.assertTrue(forwarded["result"]["data"][0]["isDefault"])
-            self.assertEqual(forwarded["result"]["data"][1]["model"], "gpt-5.4")
-            self.assertFalse(forwarded["result"]["data"][1]["isDefault"])
 
     def test_thread_resume_gets_local_error_when_other_running_instance_still_reports_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

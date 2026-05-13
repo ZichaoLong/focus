@@ -820,23 +820,13 @@ class _ProxyInteractionGate:
         params = payload.get("params")
         if not isinstance(params, dict):
             return payload
-        existing_config = params.get("config")
-        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
         updated_payload = dict(payload)
         updated_params = dict(params)
-        if not str(normalized_existing_config.get("profile", "") or "").strip():
-            updated_params["config"] = deep_merge_config_overrides(
-                normalized_existing_config,
-                {"profile": profile_setting.profile},
-            )
         explicit_model = str(updated_params.get("model", "") or "").strip()
-        explicit_provider = str(updated_params.get("modelProvider", "") or "").strip()
         effective_model = explicit_model
         if not explicit_model and profile_setting.model:
             updated_params["model"] = profile_setting.model
             effective_model = profile_setting.model
-        if not explicit_model and not explicit_provider and profile_setting.model_provider:
-            updated_params["modelProvider"] = profile_setting.model_provider
         collaboration = updated_params.get("collaborationMode")
         normalized_collaboration = collaboration if isinstance(collaboration, dict) else {}
         settings = normalized_collaboration.get("settings")
@@ -878,22 +868,29 @@ class _ProxyInteractionGate:
         normalized_metadata["isDefault"] = True
         normalized_metadata.setdefault("hidden", False)
 
+        matched_indexes: list[int] = []
+        for index, item in enumerate(data):
+            if not isinstance(item, dict):
+                continue
+            item_model = str(item.get("model", "") or item.get("slug", "") or "").strip()
+            if item_model == model_name:
+                matched_indexes.append(index)
+        if not matched_indexes:
+            return payload
+
         updated_data: list[Any] = []
-        found = False
-        for item in data:
+        target_index = matched_indexes[0]
+        for index, item in enumerate(data):
             if not isinstance(item, dict):
                 updated_data.append(item)
                 continue
-            item_model = str(item.get("model", "") or item.get("slug", "") or "").strip()
             updated_item = dict(item)
+            item_model = str(updated_item.get("model", "") or updated_item.get("slug", "") or "").strip()
             if updated_item.get("isDefault") and item_model != model_name:
                 updated_item["isDefault"] = False
-            if item_model == model_name and not found:
+            if index == target_index:
                 updated_item.update(normalized_metadata)
-                found = True
             updated_data.append(updated_item)
-        if not found:
-            updated_data.insert(0, normalized_metadata)
 
         updated_payload = dict(payload)
         updated_result = dict(result)

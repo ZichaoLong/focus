@@ -521,17 +521,13 @@ class PromptTurnEntryController:
                     "请改用飞书 `/profile <name>` 或本地 "
                     "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
                 )
-            thread_profile = str(getattr(profile_setting, "profile", "") or "").strip()
             thread_model = str(getattr(profile_setting, "model", "") or "").strip()
-            thread_model_provider = str(getattr(profile_setting, "model_provider", "") or "").strip()
             runtime_model = str(state["model"] or "").strip()
             return self._start_turn(
                 thread_id=bound_thread_id,
                 input_items=effective_input_items,
                 cwd=state["working_dir"],
                 model=runtime_model or thread_model or None,
-                model_provider=thread_model_provider or None,
-                profile=thread_profile or None,
                 approval_policy=state["approval_policy"] or None,
                 sandbox=state["sandbox"] or None,
                 reasoning_effort=state["reasoning_effort"] or None,

@@ -103,12 +103,12 @@ class CodexAppServerAdapter(AgentAdapter):
     ) -> None:
         self._config = config
         self._collaboration_mode_model: str | None = None
-        # Workaround: collaborationMode.settings.model 会覆盖线程级 profile
-        # 解析出的 model（上游 turn/start 协议没有 config 字段，无法传递
-        # profile；而 collaborationMode.settings.model 是必填字段）。
-        # 缓存 thread/start 和 thread/resume 响应里后端解析好的 model，
-        # 作为 collaborationMode.settings.model 的 fallback，避免用
-        # model/list 的全局默认值覆盖 profile 指定的 model。
+        # Workaround: turn/start 的稳定上游覆盖面里只有 model /
+        # collaborationMode；thread-wise profile/provider 只在
+        # thread/start、thread/resume 这类线程边界请求上传递。
+        # 因此缓存 thread/start 和 thread/resume 响应里后端解析好的
+        # model，作为 collaborationMode.settings.model 的 fallback，
+        # 避免后续 turn 退回到 model/list 的全局默认值。
         self._thread_resolved_model: dict[str, str] = {}
         self._rpc = CodexRpcClient(
             codex_command=config.codex_command,
@@ -294,7 +294,6 @@ class CodexAppServerAdapter(AgentAdapter):
             "input": [dict(item) for item in input_items],
             "cwd": cwd,
             "model": effective_model,
-            "modelProvider": model_provider or None,
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "sandboxPolicy": self._sandbox_policy_payload(sandbox or self._config.sandbox),
@@ -302,8 +301,6 @@ class CodexAppServerAdapter(AgentAdapter):
             "personality": self._config.personality or None,
             "serviceTier": self._config.service_tier or None,
         }
-        if profile:
-            params["config"] = {"profile": profile}
         params["collaborationMode"] = self._collaboration_mode_payload(
             effective_collaboration_mode,
             model=effective_model,

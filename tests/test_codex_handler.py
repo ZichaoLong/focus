@@ -4199,9 +4199,9 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["model_provider"], "provider2_api")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
 
     def test_thread_wise_profile_turn_does_not_use_service_default_model(self) -> None:
         handler, _ = self._make_handler(cfg={"model": "stale-default-model"})
@@ -4225,11 +4225,11 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "hello")
 
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
 
-    def test_runtime_model_override_can_override_thread_profile_model_without_changing_provider(self) -> None:
+    def test_runtime_model_override_can_override_thread_profile_model_at_turn_start(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -4252,9 +4252,9 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "hello")
 
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["profile"], "provider2")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model_provider"], "provider2_api")
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
 
     def test_replace_bound_provisional_thread_after_reset_rebinds_and_moves_profile(self) -> None:
         handler, _ = self._make_handler()

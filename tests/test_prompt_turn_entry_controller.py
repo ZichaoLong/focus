@@ -402,7 +402,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
 
         self.assertTrue(started)
         self.assertEqual(env["thread_profiles"], {})
-        self.assertIsNone(env["start_turn_calls"][-1]["profile"])
+        self.assertNotIn("profile", env["start_turn_calls"][-1])
 
     def test_start_prompt_turn_rejects_incomplete_persisted_profile_slice(self) -> None:
         env = self._make_controller()
