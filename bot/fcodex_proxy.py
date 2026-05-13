@@ -26,6 +26,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import connect
 from websockets.sync.server import serve
 
+from bot.codex_config_reader import resolve_profile_model_metadata
 from bot.instance_layout import global_data_dir as default_global_data_dir
 from bot.process_utils import process_exists
 from bot.stores.instance_registry_store import InstanceRegistryStore
@@ -483,6 +484,7 @@ class _ProxyInteractionGate:
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
+        self._pending_model_list_request_ids: set[str] = set()
         self._pending_thread_request_by_id: dict[str, tuple[str, str, bool]] = {}
         self._owned_thread_ids: set[str] = set()
 
@@ -516,6 +518,7 @@ class _ProxyInteractionGate:
             self._owned_thread_ids.clear()
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
+            self._pending_model_list_request_ids.clear()
             pending_thread_requests = list(self._pending_thread_request_by_id.values())
             self._pending_thread_request_by_id.clear()
         reserved_thread_start_outcome_unknown = any(
@@ -584,6 +587,23 @@ class _ProxyInteractionGate:
 
     def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
         self._thread_seed_state.clear_pending_threadwise_seed(thread_id)
+
+    def _thread_profile_setting(self, thread_id: str):
+        pending = self._pending_threadwise_seed(thread_id)
+        if pending is not None and pending.has_profile_slice:
+            return build_thread_resume_profile_setting(
+                pending.profile,
+                model=pending.model,
+                model_provider=pending.model_provider,
+            )
+        profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+        return thread_resume_profile_setting_from_record(profile_record)
+
+    def _launch_profile_name_hint(self) -> str:
+        initial = self._thread_seed_state.initial_thread_profile_seed()
+        if initial is not None and str(initial.profile or "").strip():
+            return str(initial.profile or "").strip()
+        return self._resume_profile_hint
 
     def _reserve_initial_thread_seed_for_request(self, request_id: Any) -> str:
         return self._thread_seed_state.reserve_initial_thread_seed_for_request(
@@ -780,6 +800,107 @@ class _ProxyInteractionGate:
         updated_payload["params"] = updated_params
         return updated_payload
 
+    def _apply_saved_thread_profile_for_turn(self, payload: dict[str, Any]) -> dict[str, Any]:
+        thread_id = _payload_thread_id(payload)
+        if not thread_id:
+            return payload
+        profile_setting = self._thread_profile_setting(thread_id)
+        if profile_setting is None or not str(profile_setting.profile or "").strip():
+            return payload
+        missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
+        if missing_fields:
+            missing_text = format_thread_resume_profile_missing_fields(missing_fields)
+            raise RuntimeError(
+                "当前 thread 已持久化的 thread-wise profile slice 不完整："
+                f"thread=`{thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
+                "当前按 fail-close 拒绝继续。"
+                "请改用飞书 `/profile <name>` 或本地 "
+                "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
+            )
+        params = payload.get("params")
+        if not isinstance(params, dict):
+            return payload
+        existing_config = params.get("config")
+        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+        updated_payload = dict(payload)
+        updated_params = dict(params)
+        if not str(normalized_existing_config.get("profile", "") or "").strip():
+            updated_params["config"] = deep_merge_config_overrides(
+                normalized_existing_config,
+                {"profile": profile_setting.profile},
+            )
+        explicit_model = str(updated_params.get("model", "") or "").strip()
+        explicit_provider = str(updated_params.get("modelProvider", "") or "").strip()
+        effective_model = explicit_model
+        if not explicit_model and profile_setting.model:
+            updated_params["model"] = profile_setting.model
+            effective_model = profile_setting.model
+        if not explicit_model and not explicit_provider and profile_setting.model_provider:
+            updated_params["modelProvider"] = profile_setting.model_provider
+        collaboration = updated_params.get("collaborationMode")
+        normalized_collaboration = collaboration if isinstance(collaboration, dict) else {}
+        settings = normalized_collaboration.get("settings")
+        normalized_settings = settings if isinstance(settings, dict) else {}
+        if effective_model:
+            updated_settings = dict(normalized_settings)
+            updated_settings["model"] = effective_model
+            updated_collaboration = dict(normalized_collaboration)
+            updated_collaboration["settings"] = updated_settings
+            updated_params["collaborationMode"] = updated_collaboration
+        updated_payload["params"] = updated_params
+        return updated_payload
+
+    def _rewrite_model_list_response_for_launch_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
+        profile_name = self._launch_profile_name_hint()
+        if not profile_name:
+            return payload
+        metadata = resolve_profile_model_metadata(profile_name)
+        if not isinstance(metadata, dict):
+            return payload
+        model_name = str(metadata.get("model", "") or metadata.get("slug", "") or "").strip()
+        if not model_name:
+            return payload
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            return payload
+        data = result.get("data")
+        if not isinstance(data, list):
+            return payload
+
+        normalized_metadata = dict(metadata)
+        normalized_metadata["model"] = model_name
+        display_name = str(
+            normalized_metadata.get("displayName", "") or normalized_metadata.get("display_name", "") or ""
+        ).strip()
+        if display_name:
+            normalized_metadata["displayName"] = display_name
+            normalized_metadata["display_name"] = display_name
+        normalized_metadata["isDefault"] = True
+        normalized_metadata.setdefault("hidden", False)
+
+        updated_data: list[Any] = []
+        found = False
+        for item in data:
+            if not isinstance(item, dict):
+                updated_data.append(item)
+                continue
+            item_model = str(item.get("model", "") or item.get("slug", "") or "").strip()
+            updated_item = dict(item)
+            if updated_item.get("isDefault") and item_model != model_name:
+                updated_item["isDefault"] = False
+            if item_model == model_name and not found:
+                updated_item.update(normalized_metadata)
+                found = True
+            updated_data.append(updated_item)
+        if not found:
+            updated_data.insert(0, normalized_metadata)
+
+        updated_payload = dict(payload)
+        updated_result = dict(result)
+        updated_result["data"] = updated_data
+        updated_payload["result"] = updated_result
+        return updated_payload
+
     def handle_client_message(self, message: str | bytes, *, client_ws: Any, backend_ws: Any) -> None:
         rewritten = _rewrite_thread_start_cwd(message, self._cwd)
         parsed = _parse_jsonrpc_message(rewritten)
@@ -818,6 +939,8 @@ class _ProxyInteractionGate:
                 if reserved_initial_seed:
                     payload = self._apply_initial_thread_profile_seed(payload)
                     payload = self._apply_initial_thread_memory_mode_seed(payload)
+            elif method == "turn/start":
+                payload = self._apply_saved_thread_profile_for_turn(payload)
             thread_id = _payload_thread_id(payload)
             if method == "thread/resume" and thread_id:
                 try:
@@ -833,6 +956,9 @@ class _ProxyInteractionGate:
             elif method == "thread/unsubscribe" and thread_id:
                 with self._lock:
                     self._pending_thread_request_by_id[request_key] = (method, thread_id, False)
+            elif method == "model/list":
+                with self._lock:
+                    self._pending_model_list_request_ids.add(request_key)
             if method in _OWNER_WRITE_METHODS and thread_id:
                 if method == "turn/start":
                     lease = self._lease_store.acquire(thread_id, self._holder)
@@ -931,6 +1057,9 @@ class _ProxyInteractionGate:
             request_key = _jsonrpc_id_key(response_id)
             with self._lock:
                 thread_request = self._pending_thread_request_by_id.pop(request_key, None)
+                rewrite_model_list = request_key in self._pending_model_list_request_ids
+                if rewrite_model_list:
+                    self._pending_model_list_request_ids.discard(request_key)
             if thread_request is not None:
                 request_method, thread_id, reserved_initial_seed = thread_request
                 if request_method == "thread/resume" and "error" in payload:
@@ -964,6 +1093,8 @@ class _ProxyInteractionGate:
                 if request_method == "turn/start" and acquired and "error" in payload:
                     self._lease_store.release(thread_id, self._holder)
                     self._forget_owned_thread(thread_id)
+            if rewrite_model_list and "result" in payload:
+                payload = self._rewrite_model_list_response_for_launch_profile(payload)
         client_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
 
 

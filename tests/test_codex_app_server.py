@@ -2440,6 +2440,111 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(error["id"], 1)
             self.assertIn("当前线程正由其他终端执行", error["error"]["message"])
 
+    def test_turn_start_injects_saved_thread_profile_into_model_and_collaboration_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            ThreadResumeProfileStore(data_dir).save(
+                "thread-1",
+                profile="provider2",
+                model="provider2-model",
+                model_provider="provider2_api",
+            )
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=data_dir,
+                global_data_dir=data_dir,
+                holder_pid=os.getpid(),
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "turn/start",
+                        "params": {
+                            "threadId": "thread-1",
+                            "input": [{"type": "text", "text": "hello"}],
+                            "collaborationMode": {
+                                "mode": "default",
+                                "settings": {"model": "gpt-5.4"},
+                            },
+                        },
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+
+            forwarded = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+            self.assertEqual(forwarded["params"]["model"], "provider2-model")
+            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+            self.assertEqual(
+                forwarded["params"]["collaborationMode"]["settings"]["model"],
+                "provider2-model",
+            )
+
+    def test_model_list_response_injects_launch_profile_metadata_as_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            gate = _ProxyInteractionGate(
+                cwd="/tmp/project",
+                data_dir=data_dir,
+                global_data_dir=data_dir,
+                holder_pid=os.getpid(),
+                thread_profile_seed="provider2",
+                thread_profile_model_seed="provider2-model",
+                thread_profile_model_provider_seed="provider2_api",
+            )
+            client_ws = self._FakeWs()
+            backend_ws = self._FakeWs()
+
+            with patch(
+                "bot.fcodex_proxy.resolve_profile_model_metadata",
+                return_value={
+                    "model": "provider2-model",
+                    "displayName": "Provider Two",
+                    "supports_reasoning_summaries": False,
+                },
+            ):
+                gate.handle_client_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "model/list",
+                            "params": {},
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+                gate.handle_backend_message(
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "result": {
+                                "data": [
+                                    {"model": "gpt-5.4", "isDefault": True, "hidden": False},
+                                ]
+                            },
+                        }
+                    ),
+                    client_ws=client_ws,
+                    backend_ws=backend_ws,
+                )
+
+            forwarded = self._decode_payload(client_ws.sent[-1])
+            self.assertEqual(forwarded["result"]["data"][0]["model"], "provider2-model")
+            self.assertEqual(forwarded["result"]["data"][0]["displayName"], "Provider Two")
+            self.assertTrue(forwarded["result"]["data"][0]["isDefault"])
+            self.assertEqual(forwarded["result"]["data"][1]["model"], "gpt-5.4")
+            self.assertFalse(forwarded["result"]["data"][1]["isDefault"])
+
     def test_thread_resume_gets_local_error_when_other_running_instance_still_reports_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
