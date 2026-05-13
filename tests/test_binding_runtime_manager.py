@@ -112,6 +112,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         stored = ChatBindingStore(data_dir).load(binding)
         assert stored is not None
         self.assertEqual(stored["feishu_runtime_state"], "detached")
+        self.assertEqual(stored["reasoning_effort"], "")
 
     def test_binding_status_snapshot_uses_manager_owned_state(self) -> None:
         manager = self._make_manager()

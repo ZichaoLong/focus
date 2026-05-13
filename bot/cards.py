@@ -830,53 +830,108 @@ def build_permissions_preset_card(
     }
 
 
-def build_model_card(
+def build_model_effort_card(
     *,
     current_model: str,
-    available_models: list[tuple[str, str]],
+    current_reasoning_effort: str,
     content: str,
     running: bool = False,
 ) -> dict:
-    """构造 model override 选择卡片。"""
-    current_value = str(current_model or "").strip()
+    """构造 model / effort 联合运行时设置卡片。"""
+    current_model_value = str(current_model or "").strip()
+    current_effort_value = str(current_reasoning_effort or "").strip()
     elements = [
         {
             "tag": "markdown",
             "content": content,
         },
         {"tag": "hr"},
-    ]
-    actions = [
         {
-            "tag": "button",
-            "text": {
-                "tag": "plain_text",
-                "content": f"{'✓ ' if not current_value else ''}auto",
-            },
-            "type": "primary" if not current_value else "default",
-            "value": {
-                "action": "set_model",
-                "model": "",
-            },
-        }
+            "tag": "markdown",
+            "content": (
+                "**model override**\n"
+                "输入任意非空 model 名称即可；如需回到默认解析结果，请点 `auto`。"
+            ),
+        },
+        {
+            "tag": "form",
+            "name": "model_override_form",
+            "elements": [
+                {
+                    "tag": "input",
+                    "name": "model_override",
+                    "placeholder": {
+                        "tag": "plain_text",
+                        "content": "输入 model 名称，例如 gpt-5.5 或 glm-4.5…",
+                    },
+                    "default_value": current_model_value,
+                },
+                {
+                    "tag": "button",
+                    "name": "submit_model_override",
+                    "text": {"tag": "plain_text", "content": "保存 model"},
+                    "type": "primary",
+                    "form_action_type": "submit",
+                    "value": {
+                        "action": "submit_model_override",
+                    },
+                },
+            ],
+        },
+        {
+            "tag": "action",
+            "actions": [
+                {
+                    "tag": "button",
+                    "text": {
+                        "tag": "plain_text",
+                        "content": f"{'✓ ' if not current_model_value else ''}auto",
+                    },
+                    "type": "primary" if not current_model_value else "default",
+                    "value": {
+                        "action": "set_model",
+                        "model": "",
+                    },
+                }
+            ],
+        },
+        {"tag": "hr"},
+        {
+            "tag": "markdown",
+            "content": (
+                "**effort override**\n"
+                "`auto` 表示清除 override，回到默认；`none` 表示显式不用 reasoning effort。"
+            ),
+        },
     ]
-    for model, label in available_models:
-        actions.append(
+    effort_actions = [
+        ("auto", ""),
+        ("none", "none"),
+        ("minimal", "minimal"),
+        ("low", "low"),
+        ("medium", "medium"),
+        ("high", "high"),
+        ("xhigh", "xhigh"),
+    ]
+    buttons = []
+    for label, value in effort_actions:
+        selected = (not current_effort_value and not value) or current_effort_value == value
+        buttons.append(
             {
                 "tag": "button",
                 "text": {
                     "tag": "plain_text",
-                    "content": f"{'✓ ' if model == current_value else ''}{label}",
+                    "content": f"{'✓ ' if selected else ''}{label}",
                 },
-                "type": "primary" if model == current_value else "default",
+                "type": "primary" if selected else "default",
                 "value": {
-                    "action": "set_model",
-                    "model": model,
+                    "action": "set_reasoning_effort",
+                    "reasoning_effort": value,
                 },
             }
         )
-    for index in range(0, len(actions), 3):
-        row_actions = actions[index:index + 3]
+    for index in range(0, len(buttons), 3):
+        row_actions = buttons[index:index + 3]
         row = {"tag": "action", "actions": row_actions}
         if len(row_actions) == 3:
             row["layout"] = "trisection"
@@ -892,7 +947,7 @@ def build_model_card(
     return {
         "config": _card_config(),
         "header": {
-            "title": {"tag": "plain_text", "content": "Codex 模型"},
+            "title": {"tag": "plain_text", "content": "Codex 模型 / Effort"},
             "template": "blue",
         },
         "elements": elements,

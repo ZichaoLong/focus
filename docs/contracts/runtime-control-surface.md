@@ -107,6 +107,7 @@ runtime settings is:
 The currently explicit user-facing entries include:
 
 - `/model`
+- `/effort`
 - `/approval`
 - `/sandbox`
 - `/permissions`
@@ -218,7 +219,7 @@ It shows only:
 - current directory
 - current thread
 - the current thread's thread-wise profile
-- the current Feishu session's model / permissions / approval / sandbox / collaboration settings
+- the current Feishu session's model / effort / permissions / approval / sandbox / collaboration settings
 
 It is no longer the full debugging surface.
 

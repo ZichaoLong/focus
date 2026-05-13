@@ -141,6 +141,7 @@ class BindingRuntimeManager:
             "sandbox": "",
             "collaboration_mode": "",
             "model": "",
+            "reasoning_effort": "",
         }
 
     def build_default_runtime_state(self) -> RuntimeStateDict:
@@ -176,7 +177,7 @@ class BindingRuntimeManager:
             "sandbox": self._default_sandbox,
             "collaboration_mode": self._default_collaboration_mode,
             "model": "",
-            "reasoning_effort": self._default_reasoning_effort,
+            "reasoning_effort": "",
             "plan_message_id": "",
             "plan_turn_id": "",
             "plan_explanation": "",
@@ -206,6 +207,7 @@ class BindingRuntimeManager:
                 sandbox=stored_binding["sandbox"] or self._default_sandbox,
                 collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,
                 model=str(stored_binding.get("model", "") or "").strip(),
+                reasoning_effort=str(stored_binding.get("reasoning_effort", "") or "").strip(),
             ),
         )
         return downgraded_attached
@@ -345,6 +347,7 @@ class BindingRuntimeManager:
         sandbox = str(state["sandbox"]).strip()
         collaboration_mode = str(state["collaboration_mode"]).strip()
         model = str(state["model"]).strip()
+        reasoning_effort = str(state["reasoning_effort"]).strip()
         return {
             "working_dir": "" if working_dir == self._default_working_dir else working_dir,
             "current_thread_id": current_thread_id,
@@ -358,6 +361,7 @@ class BindingRuntimeManager:
                 else collaboration_mode
             ),
             "model": model,
+            "reasoning_effort": reasoning_effort,
         }
 
     def sync_stored_binding_locked(self, binding: ChatBindingKey, state: RuntimeStateDict) -> None:
@@ -951,6 +955,7 @@ class BindingRuntimeManager:
             "sandbox": str(state["sandbox"] or "").strip(),
             "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
             "model": str(state["model"] or "").strip(),
+            "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
         }
 
     def thread_binding_snapshot_locked(
@@ -1013,6 +1018,8 @@ class BindingRuntimeManager:
                     "approval_policy": str(state["approval_policy"] or "").strip(),
                     "sandbox": str(state["sandbox"] or "").strip(),
                     "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
+                    "model": str(state["model"] or "").strip(),
+                    "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
                 }
             )
         return items

@@ -402,11 +402,9 @@ class CodexHandler(BotHandler):
                 reset_current_instance_backend=self._reset_current_instance_backend,
                 replace_bound_provisional_thread_after_reset=self._replace_bound_provisional_thread_after_reset,
                 resolve_profile_resume_config=resolve_profile_from_codex_config,
-                adapter_model_provider=str(self._adapter_config.model_provider or "").strip(),
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
-                list_models=lambda: self._adapter.list_models(),
             ),
             approval_policies=_APPROVAL_POLICIES,
             sandbox_policies=_SANDBOX_POLICIES,
@@ -1146,6 +1144,7 @@ class CodexHandler(BotHandler):
         sandbox: Any = UNSET,
         collaboration_mode: Any = UNSET,
         model: Any = UNSET,
+        reasoning_effort: Any = UNSET,
     ) -> None:
         resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
         with self._lock:
@@ -1157,6 +1156,7 @@ class CodexHandler(BotHandler):
                     sandbox=sandbox,
                     collaboration_mode=collaboration_mode,
                     model=model,
+                    reasoning_effort=reasoning_effort,
                 ),
             )
 
@@ -1635,6 +1635,11 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, arg, message_id=message_id
                 ),
             ),
+            "/effort": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_effort_command(
+                    sender_id, chat_id, arg, message_id=message_id
+                ),
+            ),
             "/collab-mode": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_collab_mode_command(
                     sender_id, chat_id, arg, message_id=message_id
@@ -1729,6 +1734,18 @@ class CodexHandler(BotHandler):
             ),
             "set_model": ActionRoute(
                 handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_model(
+                    sender_id, chat_id, message_id, action_value
+                ),
+                group_guard="group_admin",
+            ),
+            "submit_model_override": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_submit_model_override(
+                    sender_id, chat_id, message_id, action_value
+                ),
+                group_guard="group_admin",
+            ),
+            "set_reasoning_effort": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_reasoning_effort(
                     sender_id, chat_id, message_id, action_value
                 ),
                 group_guard="group_admin",

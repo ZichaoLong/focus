@@ -48,6 +48,7 @@
 - `运行时`
   - `/permissions`
   - `/model`
+  - `/effort`
   - `/approval`
   - `/sandbox`
   - `/collab-mode`
@@ -107,6 +108,7 @@
 
 - `/permissions`
 - `/model`
+- `/effort`
 - `/approval`
 - `/sandbox`
 - `/collab-mode`

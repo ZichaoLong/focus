@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from typing import Any
 
-from bot.adapters.base import RuntimeConfigSummary, RuntimeModelSummary, RuntimeProfileSummary
+from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_settings_domain import (
     CodexSettingsDomain,
@@ -48,6 +48,7 @@ class _SettingsPortsStub:
             sandbox="workspace-write",
             collaboration_mode="default",
             model="",
+            reasoning_effort="",
             current_thread_id="thread-1",
         )
         self.runtime_config = RuntimeConfigSummary(
@@ -56,11 +57,6 @@ class _SettingsPortsStub:
                 RuntimeProfileSummary(name="work", model_provider="anthropic"),
             ],
         )
-        self.models = [
-            RuntimeModelSummary(model="gpt-5.5", display_name="gpt-5.5", is_default=True),
-            RuntimeModelSummary(model="gpt-5.4", display_name="gpt-5.4"),
-            RuntimeModelSummary(model="hidden-model", display_name="hidden-model", hidden=True),
-        ]
         self.saved_thread_profiles: list[tuple[str, str, str, str]] = []
         self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
@@ -222,9 +218,6 @@ class _SettingsPortsStub:
     def safe_read_runtime_config(self) -> RuntimeConfigSummary | None:
         return self.runtime_config
 
-    def list_models(self) -> list[RuntimeModelSummary]:
-        return list(self.models)
-
 
 def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
     return CodexSettingsDomain(
@@ -246,11 +239,9 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             reset_current_instance_backend=stub.reset_current_instance_backend,
             replace_bound_provisional_thread_after_reset=stub.replace_bound_provisional_thread_after_reset,
             resolve_profile_resume_config=stub.resolve_profile_resume_config,
-            adapter_model_provider="",
             get_runtime_view=stub.get_runtime_view,
             update_runtime_settings=stub.update_runtime_settings,
             safe_read_runtime_config=stub.safe_read_runtime_config,
-            list_models=stub.list_models,
         ),
         approval_policies=_APPROVAL_POLICIES,
         sandbox_policies=_SANDBOX_POLICIES,
@@ -689,12 +680,17 @@ class CodexSettingsDomainTests(unittest.TestCase):
         result = domain.handle_model_command("ou_user", "chat-a", "", message_id="msg-1")
 
         self.assertIsNotNone(result.card)
-        self.assertEqual(result.card["header"]["title"]["content"], "Codex 模型")
+        self.assertEqual(result.card["header"]["title"]["content"], "Codex 模型 / Effort")
         content = result.card["elements"][0]["content"]
         self.assertIn("当前会话 model override：`auto`", content)
+        self.assertIn("当前会话 effort override：`auto`", content)
         self.assertIn("当前 thread-wise profile：`work`", content)
         self.assertIn("当前 thread-wise provider：`work-provider`", content)
-        action_buttons = result.card["elements"][2]["actions"]
+        action_buttons = next(
+            element["actions"]
+            for element in result.card["elements"]
+            if isinstance(element, dict) and element.get("tag") == "action"
+        )
         self.assertEqual(action_buttons[0]["text"]["content"], "✓ auto")
 
     def test_model_command_updates_only_runtime_model_override(self) -> None:
@@ -724,14 +720,60 @@ class CodexSettingsDomainTests(unittest.TestCase):
             [("ou_user", "chat-a", {"message_id": "msg-1", "model": ""})],
         )
 
-    def test_model_command_rejects_unknown_model(self) -> None:
+    def test_model_command_accepts_arbitrary_non_empty_model_name(self) -> None:
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)
 
-        result = domain.handle_model_command("ou_user", "chat-a", "bad-model", message_id="msg-1")
+        result = domain.handle_model_command("ou_user", "chat-a", "glm-4.5", message_id="msg-1")
 
-        self.assertIn("未找到 model：`bad-model`", result.text)
-        self.assertIn("先发 `/model` 查看当前可用 model。", result.text)
+        self.assertIn("已切换当前会话的 model override：`glm-4.5`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "model": "glm-4.5"})],
+        )
+
+    def test_effort_command_without_arg_shows_combined_card(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_effort_command("ou_user", "chat-a", "", message_id="msg-1")
+
+        self.assertIsNotNone(result.card)
+        self.assertEqual(result.card["header"]["title"]["content"], "Codex 模型 / Effort")
+        self.assertIn("当前会话 effort override：`auto`", result.card["elements"][0]["content"])
+
+    def test_effort_command_updates_runtime_override(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_effort_command("ou_user", "chat-a", "high", message_id="msg-1")
+
+        self.assertIn("已切换当前会话的 effort override：`high`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "reasoning_effort": "high"})],
+        )
+
+    def test_effort_command_auto_clears_runtime_override(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime.reasoning_effort = "medium"
+        domain = _make_domain(stub)
+
+        result = domain.handle_effort_command("ou_user", "chat-a", "auto", message_id="msg-1")
+
+        self.assertIn("已切换当前会话的 effort override：`auto`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "reasoning_effort": ""})],
+        )
+
+    def test_effort_command_rejects_unknown_value(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_effort_command("ou_user", "chat-a", "extreme", message_id="msg-1")
+
+        self.assertIn("非法 reasoning effort：`extreme`", result.text)
         self.assertEqual(stub.update_calls, [])
 
     def test_apply_memory_mode_with_backend_reset_applies_after_reset(self) -> None:

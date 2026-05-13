@@ -592,6 +592,26 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["model"], "")
         self.assertIn("已切换当前会话的 model override：`auto`", bot.replies[-1][1])
 
+    def test_effort_command_updates_state(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/effort high")
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state["reasoning_effort"], "high")
+        self.assertIn("已切换当前会话的 effort override：`high`", bot.replies[-1][1])
+        self.assertIn("只影响当前飞书会话的后续 turn", bot.replies[-1][1])
+
+    def test_effort_command_auto_clears_override(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["reasoning_effort"] = "medium"
+
+        handler.handle_message("ou_user", "c1", "/effort auto")
+
+        self.assertEqual(state["reasoning_effort"], "")
+        self.assertIn("已切换当前会话的 effort override：`auto`", bot.replies[-1][1])
+
     def test_on_register_eagerly_starts_adapter(self) -> None:
         handler, bot = self._make_handler()
 
@@ -1022,6 +1042,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler1.handle_message("ou_user", "c1", f"/cd {project_dir}")
         handler1.handle_message("ou_user", "c1", "/permissions full-access")
         handler1.handle_message("ou_user", "c1", "/model gpt-5.5")
+        handler1.handle_message("ou_user", "c1", "/effort high")
         handler1.handle_message("ou_user", "c1", "/collab-mode plan")
         handler1.handle_message("ou_user", "c1", "hello")
 
@@ -1034,6 +1055,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["approval_policy"], "never")
         self.assertEqual(state["sandbox"], "danger-full-access")
         self.assertEqual(state["model"], "gpt-5.5")
+        self.assertEqual(state["reasoning_effort"], "high")
         self.assertEqual(state["collaboration_mode"], "plan")
         self.assertFalse(state["running"])
 
@@ -2570,11 +2592,22 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[0]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 模型")
+        self.assertEqual(card["header"]["title"]["content"], "Codex 模型 / Effort")
         self.assertIn("当前会话 model override：`auto`", card["elements"][0]["content"])
+        self.assertIn("当前会话 effort override：`auto`", card["elements"][0]["content"])
         self.assertIn("不改 thread-wise profile", card["elements"][0]["content"])
         action_elements = self._action_elements(card)
         self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "✓ auto")
+
+    def test_effort_command_without_arg_shows_combined_runtime_card(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/effort")
+
+        self.assertEqual(len(bot.cards), 1)
+        _, card = bot.cards[0]
+        self.assertEqual(card["header"]["title"]["content"], "Codex 模型 / Effort")
+        self.assertIn("当前会话 effort override：`auto`", card["elements"][0]["content"])
 
     def test_approval_command_without_arg_shows_approval_boundary(self) -> None:
         handler, bot = self._make_handler()
@@ -2616,7 +2649,37 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["model"], "gpt-5.4")
         self.assertEqual(response["toast_type"], "success")
         self.assertIn("gpt-5.4", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
+
+    def test_model_form_action_updates_state(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "m1",
+            {"action": "submit_model_override", "_form_value": {"model_override": "glm-4.5"}},
+        ))
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["model"], "glm-4.5")
+        self.assertEqual(response["toast_type"], "success")
+        self.assertIn("glm-4.5", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
+
+    def test_effort_card_action_updates_state(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "m1",
+            {"action": "set_reasoning_effort", "reasoning_effort": "high"},
+        ))
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["reasoning_effort"], "high")
+        self.assertEqual(response["toast_type"], "success")
+        self.assertIn("high", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
 
     def test_sandbox_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
@@ -2807,6 +2870,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("审批策略：`never`", content)
         self.assertIn("沙箱策略：`danger-full-access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
+        self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("新 thread seed profile", content)
         self.assertNotIn("当前 provider", content)
         self.assertNotIn("binding：", content)
@@ -2839,6 +2903,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("当前 profile：`provider2`", content)
         self.assertIn("权限预设：`Full Access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
+        self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("binding：", content)
         self.assertNotIn("feishu runtime：", content)
         self.assertNotIn("backend thread status：", content)
@@ -5366,6 +5431,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
         self.assertIn("`/reset-backend`", reply)
         self.assertIn("`/model [name|auto]`", reply)
+        self.assertIn("`/effort [auto|none|minimal|low|medium|high|xhigh]`", reply)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
         self.assertNotIn("/debug-contact", reply)
         self.assertNotIn("`/cancel`", reply)
@@ -5481,6 +5547,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/profile` 属于当前 thread 管理", content)
         self.assertIn("推荐先用 `/permissions`", content)
         self.assertIn("`/model [name|auto]`", content)
+        self.assertIn("`/effort [auto|none|minimal|low|medium|high|xhigh]`", content)
         self.assertIn("`/approval`", content)
         self.assertIn("`/sandbox`", content)
         self.assertIn("`/collab-mode`", content)
@@ -5489,15 +5556,15 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["/permissions", "/model", "/approval"],
+            ["/permissions", "/model", "/effort"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["/sandbox", "/collab-mode", "/reset-backend"],
+            ["/approval", "/sandbox", "/collab-mode"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
-            ["返回帮助"],
+            ["/reset-backend", "返回帮助"],
         )
 
     def test_help_group_card_has_shortcuts(self) -> None:
@@ -5552,15 +5619,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 帮助：运行时")
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
-            ["/permissions", "/model", "/approval"],
+            ["/permissions", "/model", "/effort"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
-            ["/sandbox", "/collab-mode", "/reset-backend"],
+            ["/approval", "/sandbox", "/collab-mode"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[2]["actions"]],
-            ["返回帮助"],
+            ["/reset-backend", "返回帮助"],
         )
 
     def test_reset_backend_command_returns_preview_card(self) -> None:

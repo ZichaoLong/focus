@@ -28,6 +28,7 @@ _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 _SHARED_MEMORY_COMMAND = get_shared_command("memory")
 _SHARED_MODEL_COMMAND = get_shared_command("model")
+_SHARED_EFFORT_COMMAND = get_shared_command("effort")
 _SHARED_COMPACT_COMMAND = get_shared_command("compact")
 
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
@@ -344,7 +345,8 @@ class CodexHelpDomain:
                     "作用对象：**当前飞书会话** 与 **当前实例 backend**。\n\n"
                     "- `/profile` 属于当前 thread 管理，入口在“线程 -> 当前线程”\n"
                     "- 推荐先用 `/permissions`；它会同时设置审批策略与沙箱\n"
-                    f"- `{_SHARED_MODEL_COMMAND.feishu_usage}`：设置当前飞书会话后续 turn 的 model override；`auto` 表示回到 thread/profile 或服务默认\n"
+                    f"- `{_SHARED_MODEL_COMMAND.feishu_usage}`：设置当前飞书会话后续 turn 的 model override；无参数时会打开 model/effort 联合卡片\n"
+                    f"- `{_SHARED_EFFORT_COMMAND.feishu_usage}`：设置当前飞书会话后续 turn 的 effort override；`auto` 表示回到默认，`none` 表示显式不用 reasoning effort\n"
                     "- `/approval`、`/sandbox`：单独调整审批或沙箱\n"
                     "- `/collab-mode`：切换当前飞书会话后续 turn 的协作模式\n"
                     f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`：管理员预览并重置当前实例 backend；这是实例级管理动作，不是当前 thread 命令\n"
@@ -359,29 +361,32 @@ class CodexHelpDomain:
                                 command="/permissions",
                                 title="Codex 权限预设",
                             ),
-                            _HelpCommandButtonSpec(label="/model", command="/model", title="Codex 模型"),
-                            _HelpCommandButtonSpec(label="/approval", command="/approval", title="Codex 审批策略"),
+                            _HelpCommandButtonSpec(label="/model", command="/model", title="Codex 模型 / Effort"),
+                            _HelpCommandButtonSpec(label="/effort", command="/effort", title="Codex 模型 / Effort"),
                         ),
                         layout="trisection",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
+                            _HelpCommandButtonSpec(label="/approval", command="/approval", title="Codex 审批策略"),
                             _HelpCommandButtonSpec(label="/sandbox", command="/sandbox", title="Codex 沙箱策略"),
                             _HelpCommandButtonSpec(
                                 label="/collab-mode",
                                 command="/collab-mode",
                                 title="Codex 协作模式",
                             ),
+                        ),
+                        layout="trisection",
+                    ),
+                    _HelpActionRowSpec(
+                        buttons=(
                             _HelpCommandButtonSpec(
                                 label="/reset-backend",
                                 command="/reset-backend",
                                 title="Codex Backend Reset",
                             ),
+                            _HelpPageButtonSpec(label="返回帮助", page="overview"),
                         ),
-                        layout="trisection",
-                    ),
-                    _HelpActionRowSpec(
-                        buttons=(_HelpPageButtonSpec(label="返回帮助", page="overview"),),
                     ),
                 ),
             ),
@@ -706,6 +711,7 @@ class CodexHelpDomain:
                 "`运行时`\n"
                 "- `/permissions [read-only|default|full-access]`\n"
                 "- `/model [name|auto]`\n"
+                "- `/effort [auto|none|minimal|low|medium|high|xhigh]`\n"
                 "- `/approval [untrusted|on-request|never]`\n"
                 "- `/sandbox [read-only|workspace-write|danger-full-access]`\n"
                 "- `/collab-mode [default|plan]`\n"

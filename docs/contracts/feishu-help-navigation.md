@@ -48,6 +48,7 @@ They correspond to:
 - `Runtime`
   - `/permissions`
   - `/model`
+  - `/effort`
   - `/approval`
   - `/sandbox`
   - `/collab-mode`
@@ -107,6 +108,7 @@ Must provide:
 
 - `/permissions`
 - `/model`
+- `/effort`
 - `/approval`
 - `/sandbox`
 - `/collab-mode`

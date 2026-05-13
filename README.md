@@ -307,5 +307,5 @@ flowchart LR
 - 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 
 **补充说明**
-- `permissions`、`model` 都属于 frontend-owned runtime settings：由发起该轮 `thread/start` / `turn/start` 的前端在下一轮注入，不是 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
+- `permissions`、`model`、`effort`、`collab-mode` 都属于 frontend-owned runtime settings：由发起该轮 `thread/start` / `turn/start` 的前端在下一轮注入，不是 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
 - `profile`、`memory` 才是 thread-wise next-load 设置；切换它们通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`

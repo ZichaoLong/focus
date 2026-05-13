@@ -77,6 +77,7 @@ class StoredChatBinding(TypedDict):
     sandbox: str
     collaboration_mode: str
     model: str
+    reasoning_effort: str
 
 
 class ChatBindingsFileData(TypedDict):

@@ -626,6 +626,7 @@ class RuntimeAdminController:
                     f"沙箱策略：`{snapshot['sandbox']}`",
                     f"Codex 协作模式：`{snapshot['collaboration_mode']}`",
                     f"Codex model override：`{snapshot['model'] or 'auto'}`",
+                    f"Codex effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",
                 ]
             )
         template = "turquoise" if snapshot["running_turn"] else "blue"
@@ -692,6 +693,7 @@ class RuntimeAdminController:
                     f"沙箱策略：`{snapshot['sandbox']}`",
                     f"协作模式：`{snapshot['collaboration_mode']}`",
                     f"model override：`{snapshot['model'] or 'auto'}`",
+                    f"effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",
                 ]
             )
         if thread_id and snapshot["feishu_runtime_state"] == FEISHU_RUNTIME_DETACHED:

@@ -58,6 +58,7 @@ class RuntimeViewTests(unittest.TestCase):
         self.assertEqual(view.approval_policy, "on-request")
         self.assertEqual(view.sandbox, "workspace-write")
         self.assertEqual(view.collaboration_mode, "default")
+        self.assertEqual(view.reasoning_effort, "high")
         self.assertEqual(view.execution.effective_message_id, "card-1")
         self.assertTrue(view.execution.current_prompt_reply_in_thread)
         self.assertTrue(view.execution.has_execution_anchor)

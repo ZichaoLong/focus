@@ -114,6 +114,7 @@ class StoredBindingHydrated(RuntimeStateCommand):
     sandbox: str
     collaboration_mode: str
     model: str
+    reasoning_effort: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +123,7 @@ class RuntimeSettingsChanged(RuntimeStateCommand):
     sandbox: Any = UNSET
     collaboration_mode: Any = UNSET
     model: Any = UNSET
+    reasoning_effort: Any = UNSET
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,6 +202,7 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             sandbox=sandbox,
             collaboration_mode=collaboration_mode,
             model=model,
+            reasoning_effort=reasoning_effort,
         ):
             state["working_dir"] = working_dir
             state["current_thread_id"] = current_thread_id
@@ -209,11 +212,13 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             state["sandbox"] = sandbox
             state["collaboration_mode"] = collaboration_mode
             state["model"] = model
+            state["reasoning_effort"] = reasoning_effort
         case RuntimeSettingsChanged(
             approval_policy=approval_policy,
             sandbox=sandbox,
             collaboration_mode=collaboration_mode,
             model=model,
+            reasoning_effort=reasoning_effort,
         ):
             if approval_policy is not UNSET:
                 state["approval_policy"] = approval_policy
@@ -223,6 +228,8 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
                 state["collaboration_mode"] = collaboration_mode
             if model is not UNSET:
                 state["model"] = model
+            if reasoning_effort is not UNSET:
+                state["reasoning_effort"] = reasoning_effort
         case ThreadStateChanged(
             working_dir=working_dir,
             current_thread_id=current_thread_id,

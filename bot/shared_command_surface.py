@@ -53,6 +53,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或切换当前飞书会话后续 turn 的 model override。",
     ),
     SharedCommandSpec(
+        key="effort",
+        slash_name="/effort",
+        feishu_usage="/effort [auto|none|minimal|low|medium|high|xhigh]",
+        feishu_summary="查看或切换当前飞书会话后续 turn 的 effort override。",
+    ),
+    SharedCommandSpec(
         key="compact",
         slash_name="/compact",
         feishu_usage="/compact",

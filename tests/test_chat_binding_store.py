@@ -27,6 +27,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
                 "collaboration_mode": "default",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
             },
         )
         store.save(
@@ -40,6 +42,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "never",
                 "sandbox": "danger-full-access",
                 "collaboration_mode": "plan",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
 
@@ -47,6 +51,7 @@ class ChatBindingStoreTests(unittest.TestCase):
         self.assertEqual(raw["schema_version"], CHAT_BINDING_STORE_SCHEMA_VERSION)
         self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["current_thread_id"], "thread-p2p")
         self.assertNotIn("current_thread_write_owner_thread_id", raw["p2p_bindings"]["oc_p2p"]["ou_user"])
+        self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["reasoning_effort"], "high")
         self.assertEqual(raw["group_bindings"]["oc_group"]["current_thread_id"], "thread-group")
 
         self.assertEqual(store.load(("ou_user", "oc_p2p"))["current_thread_title"], "p2p title")
@@ -66,6 +71,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
                 "collaboration_mode": "default",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
             },
         )
         store.save(
@@ -79,6 +86,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "never",
                 "sandbox": "danger-full-access",
                 "collaboration_mode": "plan",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
 
@@ -86,6 +95,7 @@ class ChatBindingStoreTests(unittest.TestCase):
 
         self.assertNotIn("current_thread_write_owner_thread_id", loaded[("ou_user", "oc_p2p")])
         self.assertEqual(loaded[("__group__", "oc_group")]["current_thread_title"], "group title")
+        self.assertEqual(loaded[("ou_user", "oc_p2p")]["reasoning_effort"], "high")
 
     def test_clear_all_removes_state_file(self) -> None:
         _, store, state_path = self._make_store()
@@ -101,6 +111,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
                 "collaboration_mode": "default",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
         self.assertTrue(state_path.exists())
@@ -162,6 +174,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
                                 "collaboration_mode": "default",
+                                "model": "",
+                                "reasoning_effort": "",
                             }
                         }
                     },
@@ -192,6 +206,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
                                 "collaboration_mode": "default",
+                                "model": "",
+                                "reasoning_effort": "",
                             }
                         }
                     },
@@ -222,6 +238,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
                                 "collaboration_mode": "default",
+                                "model": "",
+                                "reasoning_effort": "",
                             }
                         }
                     },
@@ -251,6 +269,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "approval_policy": "on-failure",
                                 "sandbox": "workspace-write",
                                 "collaboration_mode": "default",
+                                "model": "",
+                                "reasoning_effort": "",
                             }
                         }
                     },
@@ -279,6 +299,8 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "approval_policy": "",
                 "sandbox": "",
                 "collaboration_mode": "",
+                "model": "",
+                "reasoning_effort": "",
             },
         )
 
