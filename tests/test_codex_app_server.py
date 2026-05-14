@@ -2418,29 +2418,57 @@ class FCodexTests(unittest.TestCase):
         self.assertEqual(target.calls, ["hello"])
 
     def test_proxy_rejects_unauthorized_websocket_upgrade(self) -> None:
-        proxy_url_queue: queue.Queue[str] = queue.Queue()
-        proxy_thread = threading.Thread(
-            target=run_proxy,
-            kwargs={
-                "backend_url": "ws://127.0.0.1:8765",
-                "cwd": "/tmp/project",
-                "proxy_auth_token": "proxy-auth-token",
-                "idle_timeout_seconds": 0.2,
-                "on_listen": proxy_url_queue.put,
-            },
-            daemon=True,
-        )
-        proxy_thread.start()
-        proxy_url = proxy_url_queue.get(timeout=1)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+            AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            proxy_thread = threading.Thread(
+                target=run_proxy,
+                kwargs={
+                    "backend_url": "ws://127.0.0.1:8765",
+                    "cwd": "/tmp/project",
+                    "proxy_auth_token": "proxy-auth-token",
+                    "data_dir": data_dir,
+                    "idle_timeout_seconds": 0.2,
+                    "on_listen": proxy_url_queue.put,
+                },
+                daemon=True,
+            )
+            proxy_thread.start()
+            proxy_url = proxy_url_queue.get(timeout=1)
 
-        response: Response
-        with self.assertRaises(InvalidStatus) as exc:
-            connect(proxy_url, open_timeout=1, max_size=None)
-        response = exc.exception.args[0]
-        self.assertEqual(response.status_code, 401)
+            response: Response
+            with self.assertRaises(InvalidStatus) as exc:
+                connect(proxy_url, open_timeout=1, max_size=None)
+            response = exc.exception.args[0]
+            self.assertEqual(response.status_code, 401)
 
-        proxy_thread.join(timeout=1)
-        self.assertFalse(proxy_thread.is_alive())
+            proxy_thread.join(timeout=1)
+            self.assertFalse(proxy_thread.is_alive())
+
+    def test_proxy_fails_closed_when_backend_token_file_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+
+            with self.assertRaisesRegex(RuntimeError, "backend websocket auth token 不存在"):
+                run_proxy(
+                    backend_url="ws://127.0.0.1:8765",
+                    cwd="/tmp/project",
+                    proxy_auth_token="proxy-auth-token",
+                    data_dir=data_dir,
+                    idle_timeout_seconds=0.1,
+                )
+
+    def test_proxy_fails_closed_when_backend_auth_data_dir_is_missing(self) -> None:
+        with patch.dict(os.environ, {"FC_DATA_DIR": ""}, clear=False):
+            with self.assertRaisesRegex(RuntimeError, "requires instance data dir"):
+                run_proxy(
+                    backend_url="ws://127.0.0.1:8765",
+                    cwd="/tmp/project",
+                    proxy_auth_token="proxy-auth-token",
+                    data_dir=None,
+                    idle_timeout_seconds=0.1,
+                )
 
     def test_proxy_forwards_backend_bearer_auth_from_data_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2534,6 +2562,8 @@ class FCodexTests(unittest.TestCase):
     def test_proxy_stays_alive_across_resume_style_reconnect(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
+            data_dir = root_dir / "instance"
+            AppServerWebsocketAuthTokenStore(data_dir).ensure()
             global_data_dir = root_dir / "_global"
             backend_url_queue: queue.Queue[str] = queue.Queue()
             backend_server_ref: dict[str, object] = {}
@@ -2560,6 +2590,7 @@ class FCodexTests(unittest.TestCase):
                     "backend_url": backend_url,
                     "cwd": "/tmp/project",
                     "proxy_auth_token": "proxy-auth-token",
+                    "data_dir": data_dir,
                     "global_data_dir": global_data_dir,
                     "idle_timeout_seconds": 0.3,
                     "on_listen": proxy_url_queue.put,
@@ -2654,170 +2685,182 @@ class FCodexTests(unittest.TestCase):
             self.assertTrue((global_data_dir / "thread_memory_modes.lock").exists())
 
     def test_proxy_fail_closes_new_thread_after_disconnect_with_unknown_seed_outcome(self) -> None:
-        backend_url_queue: queue.Queue[str] = queue.Queue()
-        backend_server_ref: dict[str, object] = {}
-        backend_messages: queue.Queue[dict] = queue.Queue()
-        backend_disconnects: queue.Queue[None] = queue.Queue()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+            AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            backend_url_queue: queue.Queue[str] = queue.Queue()
+            backend_server_ref: dict[str, object] = {}
+            backend_messages: queue.Queue[dict] = queue.Queue()
+            backend_disconnects: queue.Queue[None] = queue.Queue()
 
-        def _backend_handler(ws) -> None:
+            def _backend_handler(ws) -> None:
+                try:
+                    for message in ws:
+                        backend_messages.put(json.loads(message))
+                finally:
+                    backend_disconnects.put(None)
+
+            def _backend_main() -> None:
+                with serve(_backend_handler, "127.0.0.1", 0, max_size=None) as server:
+                    backend_server_ref["server"] = server
+                    port = server.socket.getsockname()[1]
+                    backend_url_queue.put(f"ws://127.0.0.1:{port}")
+                    server.serve_forever()
+
+            backend_thread = threading.Thread(target=_backend_main, daemon=True)
+            backend_thread.start()
+            backend_url = backend_url_queue.get(timeout=1)
+
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            proxy_thread = threading.Thread(
+                target=run_proxy,
+                kwargs={
+                    "backend_url": backend_url,
+                    "cwd": "/tmp/project",
+                    "proxy_auth_token": "proxy-auth-token",
+                    "data_dir": data_dir,
+                    "idle_timeout_seconds": 1.0,
+                    "on_listen": proxy_url_queue.put,
+                    "new_thread_profile_seed": "provider2",
+                    "new_thread_profile_model_seed": "provider2-model",
+                    "new_thread_profile_model_provider_seed": "provider2_api",
+                    "new_thread_memory_mode_seed": "read",
+                },
+                daemon=True,
+            )
+            proxy_thread.start()
+            proxy_url = proxy_url_queue.get(timeout=1)
+
             try:
-                for message in ws:
-                    backend_messages.put(json.loads(message))
-            finally:
-                backend_disconnects.put(None)
-
-        def _backend_main() -> None:
-            with serve(_backend_handler, "127.0.0.1", 0, max_size=None) as server:
-                backend_server_ref["server"] = server
-                port = server.socket.getsockname()[1]
-                backend_url_queue.put(f"ws://127.0.0.1:{port}")
-                server.serve_forever()
-
-        backend_thread = threading.Thread(target=_backend_main, daemon=True)
-        backend_thread.start()
-        backend_url = backend_url_queue.get(timeout=1)
-
-        proxy_url_queue: queue.Queue[str] = queue.Queue()
-        proxy_thread = threading.Thread(
-            target=run_proxy,
-            kwargs={
-                "backend_url": backend_url,
-                "cwd": "/tmp/project",
-                "proxy_auth_token": "proxy-auth-token",
-                "idle_timeout_seconds": 1.0,
-                "on_listen": proxy_url_queue.put,
-                "new_thread_profile_seed": "provider2",
-                "new_thread_profile_model_seed": "provider2-model",
-                "new_thread_profile_model_provider_seed": "provider2_api",
-                "new_thread_memory_mode_seed": "read",
-            },
-            daemon=True,
-        )
-        proxy_thread.start()
-        proxy_url = proxy_url_queue.get(timeout=1)
-
-        try:
-            with connect(
-                proxy_url,
-                open_timeout=1,
-                max_size=None,
-                additional_headers={"Authorization": "Bearer proxy-auth-token"},
-            ) as ws:
-                ws.send(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "thread/start",
-                            "params": {},
-                        }
+                with connect(
+                    proxy_url,
+                    open_timeout=1,
+                    max_size=None,
+                    additional_headers={"Authorization": "Bearer proxy-auth-token"},
+                ) as ws:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "thread/start",
+                                "params": {},
+                            }
+                        )
                     )
-                )
-                forwarded = backend_messages.get(timeout=1)
-                self.assertEqual(forwarded["method"], "thread/start")
-                self.assertEqual(forwarded["params"]["cwd"], "/tmp/project")
-                self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
-                self.assertEqual(
-                    forwarded["params"]["config"]["memories"],
-                    {
-                        "use_memories": True,
-                        "generate_memories": False,
-                    },
-                )
-                self.assertEqual(forwarded["params"]["model"], "provider2-model")
-                self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+                    forwarded = backend_messages.get(timeout=1)
+                    self.assertEqual(forwarded["method"], "thread/start")
+                    self.assertEqual(forwarded["params"]["cwd"], "/tmp/project")
+                    self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+                    self.assertEqual(
+                        forwarded["params"]["config"]["memories"],
+                        {
+                            "use_memories": True,
+                            "generate_memories": False,
+                        },
+                    )
+                    self.assertEqual(forwarded["params"]["model"], "provider2-model")
+                    self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-            backend_disconnects.get(timeout=1)
-            time.sleep(0.1)
+                backend_disconnects.get(timeout=1)
+                time.sleep(0.1)
 
-            with connect(
-                proxy_url,
-                open_timeout=1,
-                max_size=None,
-                additional_headers={"Authorization": "Bearer proxy-auth-token"},
-            ) as ws:
-                ws.send(
-                    json.dumps(
+                with connect(
+                    proxy_url,
+                    open_timeout=1,
+                    max_size=None,
+                    additional_headers={"Authorization": "Bearer proxy-auth-token"},
+                ) as ws:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 2,
+                                "method": "thread/start",
+                                "params": {},
+                            }
+                        )
+                    )
+                    self.assertEqual(
+                        json.loads(ws.recv()),
                         {
                             "jsonrpc": "2.0",
                             "id": 2,
-                            "method": "thread/start",
-                            "params": {},
-                        }
-                    )
-                )
-                self.assertEqual(
-                    json.loads(ws.recv()),
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "error": {
-                            "code": -32002,
-                            "message": (
-                                "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
-                                "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。"
-                            ),
+                            "error": {
+                                "code": -32002,
+                                "message": (
+                                    "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
+                                    "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。"
+                                ),
+                            },
                         },
-                    },
-                )
+                    )
 
-            with self.assertRaises(queue.Empty):
-                backend_messages.get_nowait()
+                with self.assertRaises(queue.Empty):
+                    backend_messages.get_nowait()
 
-            proxy_thread.join(timeout=2)
-            self.assertFalse(proxy_thread.is_alive())
-        finally:
-            backend_server = backend_server_ref.get("server")
-            if backend_server is not None:
-                backend_server.shutdown()
-            backend_thread.join(timeout=1)
+                proxy_thread.join(timeout=2)
+                self.assertFalse(proxy_thread.is_alive())
+            finally:
+                backend_server = backend_server_ref.get("server")
+                if backend_server is not None:
+                    backend_server.shutdown()
+                backend_thread.join(timeout=1)
 
     def test_proxy_default_idle_timeout_keeps_startup_reconnect_window(self) -> None:
         self.assertGreaterEqual(_DEFAULT_IDLE_TIMEOUT_SECONDS, 30.0)
 
     def test_proxy_exits_when_parent_process_disappears(self) -> None:
-        proxy_url_queue: queue.Queue[str] = queue.Queue()
-        with patch("bot.fcodex_proxy.process_exists", return_value=False) as mock_process_exists:
-            proxy_thread = threading.Thread(
-                target=run_proxy,
-                kwargs={
-                    "backend_url": "ws://127.0.0.1:8765",
-                    "cwd": "/tmp/project",
-                    "proxy_auth_token": "proxy-auth-token",
-                    "parent_pid": 4321,
-                    "on_listen": proxy_url_queue.put,
-                },
-                daemon=True,
-            )
-            proxy_thread.start()
-            proxy_url = proxy_url_queue.get(timeout=1)
-            self.assertTrue(proxy_url.startswith("ws://127.0.0.1:"))
-            proxy_thread.join(timeout=1)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+            AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            with patch("bot.fcodex_proxy.process_exists", return_value=False) as mock_process_exists:
+                proxy_thread = threading.Thread(
+                    target=run_proxy,
+                    kwargs={
+                        "backend_url": "ws://127.0.0.1:8765",
+                        "cwd": "/tmp/project",
+                        "proxy_auth_token": "proxy-auth-token",
+                        "data_dir": data_dir,
+                        "parent_pid": 4321,
+                        "on_listen": proxy_url_queue.put,
+                    },
+                    daemon=True,
+                )
+                proxy_thread.start()
+                proxy_url = proxy_url_queue.get(timeout=1)
+                self.assertTrue(proxy_url.startswith("ws://127.0.0.1:"))
+                proxy_thread.join(timeout=1)
 
-        self.assertFalse(proxy_thread.is_alive())
-        self.assertEqual(mock_process_exists.call_args_list[0].args, (4321,))
+            self.assertFalse(proxy_thread.is_alive())
+            self.assertEqual(mock_process_exists.call_args_list[0].args, (4321,))
 
     def test_proxy_parent_pid_mode_still_honors_idle_shutdown(self) -> None:
-        proxy_url_queue: queue.Queue[str] = queue.Queue()
-        with patch("bot.fcodex_proxy.process_exists", return_value=True):
-            proxy_thread = threading.Thread(
-                target=run_proxy,
-                kwargs={
-                    "backend_url": "ws://127.0.0.1:8765",
-                    "cwd": "/tmp/project",
-                    "proxy_auth_token": "proxy-auth-token",
-                    "parent_pid": 4321,
-                    "idle_timeout_seconds": 0.1,
-                    "on_listen": proxy_url_queue.put,
-                },
-                daemon=True,
-            )
-            proxy_thread.start()
-            proxy_url = proxy_url_queue.get(timeout=1)
-            self.assertTrue(proxy_url.startswith("ws://127.0.0.1:"))
-            proxy_thread.join(timeout=1)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+            AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            with patch("bot.fcodex_proxy.process_exists", return_value=True):
+                proxy_thread = threading.Thread(
+                    target=run_proxy,
+                    kwargs={
+                        "backend_url": "ws://127.0.0.1:8765",
+                        "cwd": "/tmp/project",
+                        "proxy_auth_token": "proxy-auth-token",
+                        "data_dir": data_dir,
+                        "parent_pid": 4321,
+                        "idle_timeout_seconds": 0.1,
+                        "on_listen": proxy_url_queue.put,
+                    },
+                    daemon=True,
+                )
+                proxy_thread.start()
+                proxy_url = proxy_url_queue.get(timeout=1)
+                self.assertTrue(proxy_url.startswith("ws://127.0.0.1:"))
+                proxy_thread.join(timeout=1)
 
-        self.assertFalse(proxy_thread.is_alive())
+            self.assertFalse(proxy_thread.is_alive())
 
 
 class ProxyInteractionGateTests(unittest.TestCase):

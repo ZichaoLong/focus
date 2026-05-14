@@ -163,9 +163,18 @@ def _effective_global_data_dir(path: str | pathlib.Path | None) -> pathlib.Path:
     return default_global_data_dir()
 
 
-def _load_backend_auth_headers(data_dir: str | pathlib.Path | None) -> dict[str, str]:
-    normalized_data_dir = pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or ".")
-    token = AppServerWebsocketAuthTokenStore(normalized_data_dir).load()
+def _require_backend_auth_data_dir(data_dir: str | pathlib.Path | None) -> pathlib.Path:
+    normalized = str(data_dir or os.environ.get("FC_DATA_DIR", "") or "").strip()
+    if not normalized:
+        raise RuntimeError(
+            "fcodex proxy backend websocket auth requires instance data dir；"
+            "请通过 `--data-dir` 或 `FC_DATA_DIR` 指定目标实例数据目录。"
+        )
+    return pathlib.Path(normalized)
+
+
+def _load_backend_auth_headers(data_dir: pathlib.Path) -> dict[str, str]:
+    token = AppServerWebsocketAuthTokenStore(data_dir).require()
     return build_bearer_authorization_headers(token)
 
 
@@ -1174,7 +1183,7 @@ def run_proxy(
     normalized_proxy_auth_token = str(proxy_auth_token or "").strip()
     if not normalized_proxy_auth_token:
         raise RuntimeError("proxy auth token must not be empty")
-    effective_data_dir = pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or ".")
+    effective_data_dir = _require_backend_auth_data_dir(data_dir)
     backend_auth_headers = _load_backend_auth_headers(effective_data_dir)
     server_ref: dict[str, Any] = {}
     shutdown_once = threading.Event()
