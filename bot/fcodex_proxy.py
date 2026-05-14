@@ -16,18 +16,28 @@ import argparse
 import json
 import os
 import pathlib
+import secrets
 import sys
 import threading
 import time
 from collections.abc import Callable
 from typing import Any
 
+from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
 from websockets.sync.client import connect
 from websockets.sync.server import serve
 
 from bot.codex_config_reader import resolve_profile_model_metadata
 from bot.instance_layout import global_data_dir as default_global_data_dir
+from bot.local_websocket_auth import (
+    AppServerWebsocketAuthTokenStore,
+    FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+    FCODEX_SERVICE_TOKEN_ENV_VAR,
+    build_bearer_authorization_headers,
+    parse_bearer_authorization_header,
+)
 from bot.process_utils import process_exists
 from bot.stores.instance_registry_store import InstanceRegistryStore
 from bot.stores.interaction_lease_store import (
@@ -75,6 +85,7 @@ _NON_ACTIVE_THREAD_STATUS_TYPES = {
     "archived",
     BACKEND_THREAD_STATUS_NOT_LOADED,
 }
+_UNAUTHORIZED_RESPONSE_BODY = b"missing or invalid websocket bearer token\n"
 
 
 def _rewrite_thread_start_cwd(message: str | bytes, cwd: str) -> str | bytes:
@@ -150,6 +161,27 @@ def _effective_global_data_dir(path: str | pathlib.Path | None) -> pathlib.Path:
     if normalized is not None and str(normalized).strip():
         return normalized
     return default_global_data_dir()
+
+
+def _load_backend_auth_headers(data_dir: str | pathlib.Path | None) -> dict[str, str]:
+    normalized_data_dir = pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or ".")
+    token = AppServerWebsocketAuthTokenStore(normalized_data_dir).load()
+    return build_bearer_authorization_headers(token)
+
+
+def _proxy_upgrade_auth_response(expected_token: str, request: Request) -> Response | None:
+    normalized_expected = str(expected_token or "").strip()
+    if not normalized_expected:
+        raise RuntimeError("proxy auth token must not be empty")
+    actual_token = parse_bearer_authorization_header(request.headers.get("Authorization"))
+    if actual_token and secrets.compare_digest(actual_token, normalized_expected):
+        return None
+    return Response(
+        401,
+        "Unauthorized",
+        Headers([("Content-Type", "text/plain; charset=utf-8")]),
+        _UNAUTHORIZED_RESPONSE_BODY,
+    )
 
 
 def _response_thread_id(payload: dict[str, Any]) -> str:
@@ -1123,6 +1155,7 @@ def run_proxy(
     *,
     backend_url: str,
     cwd: str,
+    proxy_auth_token: str,
     data_dir: str | pathlib.Path | None = None,
     global_data_dir: str | pathlib.Path | None = None,
     instance_name: str = "",
@@ -1138,6 +1171,11 @@ def run_proxy(
     parent_pid: int | None = None,
     on_listen: Callable[[str], None] | None = None,
 ) -> None:
+    normalized_proxy_auth_token = str(proxy_auth_token or "").strip()
+    if not normalized_proxy_auth_token:
+        raise RuntimeError("proxy auth token must not be empty")
+    effective_data_dir = pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or ".")
+    backend_auth_headers = _load_backend_auth_headers(effective_data_dir)
     server_ref: dict[str, Any] = {}
     shutdown_once = threading.Event()
     state_lock = threading.Lock()
@@ -1200,17 +1238,26 @@ def run_proxy(
                 return
             time.sleep(0.25)
 
+    def _process_request(_connection: Any, request: Request) -> Response | None:
+        return _proxy_upgrade_auth_response(normalized_proxy_auth_token, request)
+
     def _handler(client_ws: Any) -> None:
         nonlocal active_connections
         with state_lock:
             active_connections += 1
         _cancel_idle_shutdown()
         try:
-            with connect(backend_url, max_size=None, proxy=None) as backend_ws:
+            backend_connect_kwargs: dict[str, Any] = {
+                "max_size": None,
+                "proxy": None,
+            }
+            if backend_auth_headers:
+                backend_connect_kwargs["additional_headers"] = backend_auth_headers
+            with connect(backend_url, **backend_connect_kwargs) as backend_ws:
                 holder_pid = parent_pid or os.getpid()
                 gate = _ProxyInteractionGate(
                     cwd=cwd,
-                    data_dir=pathlib.Path(data_dir or os.environ.get("FC_DATA_DIR") or "."),
+                    data_dir=effective_data_dir,
                     global_data_dir=global_data_dir,
                     instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
                     service_token=service_token,
@@ -1261,7 +1308,13 @@ def run_proxy(
                 _arm_idle_shutdown()
 
     try:
-        with serve(_handler, listen_host, listen_port, max_size=None) as server:
+        with serve(
+            _handler,
+            listen_host,
+            listen_port,
+            max_size=None,
+            process_request=_process_request,
+        ) as server:
             server_ref["server"] = server
             actual_port = server.socket.getsockname()[1]
             listen_url = f"ws://{listen_host}:{actual_port}"
@@ -1295,13 +1348,22 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--parent-pid", type=int, default=0)
     args = parser.parse_args(argv)
+    proxy_auth_token = str(os.environ.get(FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, "")).strip()
+    if not proxy_auth_token:
+        print(
+            f"缺少 proxy websocket 鉴权环境变量 `{FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR}`。",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    service_token = str(args.service_token or os.environ.get(FCODEX_SERVICE_TOKEN_ENV_VAR, "")).strip()
     run_proxy(
         backend_url=args.backend_url,
         cwd=args.cwd,
+        proxy_auth_token=proxy_auth_token,
         data_dir=args.data_dir or None,
         global_data_dir=args.global_data_dir or None,
         instance_name=args.instance,
-        service_token=args.service_token,
+        service_token=service_token,
         new_thread_profile_seed=args.new_thread_profile_seed,
         new_thread_profile_model_seed=args.new_thread_profile_model_seed,
         new_thread_profile_model_provider_seed=args.new_thread_profile_model_provider_seed,

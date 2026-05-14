@@ -60,6 +60,13 @@ The important points are:
   instance's `8765`
 - if Feishu and `fcodex` should safely continue the same live thread, they are
   expected to talk to the same instance backend
+- the instance-local shared app-server websocket surface now requires a
+  capability token; that token lives in a private file under the instance's
+  `FC_DATA_DIR`, and service / `feishu-codexctl` / `fcodex` backend clients
+  send it via `Authorization: Bearer ...`
+- the local `fcodex` proxy websocket surface uses its own one-shot bearer
+  token; that token only travels through parent-child process environment
+  variables, not command-line arguments, and it isn't the service token
 
 ## 3. Why `fcodex` Exists
 
@@ -156,6 +163,8 @@ The local proxy fixes that specific gap:
 - when it sees `thread/start` with missing or empty `params.cwd`, it injects the
   effective cwd chosen by the wrapper
 - all other traffic is forwarded unchanged
+- its own websocket upgrade must pass a local bearer-token check before the
+  client can reach the backend
 
 This keeps the patch very narrow.
 
@@ -219,6 +228,8 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
   that launch
 - thread-name resume resolution plus thread-wise profile injection / persistence
 - cwd patching through a thin local proxy
+- websocket auth hardening on the shared-backend path: backend and proxy each
+  own separate tokens, and neither reuses the service token
 - for wrapper-managed explicit profile paths, the profile slice is pinned from
   the shared user-level config and enforced by the proxy on `thread/start` /
   `thread/resume`; current cwd / project-local config does not get to redefine

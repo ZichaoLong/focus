@@ -106,6 +106,9 @@ Current runtime behavior:
   - service owner
   - control plane
   - managed `codex app-server` backend
+- each instance's managed `codex app-server` websocket surface requires an
+  instance-private capability token; that token belongs to the backend-connect
+  layer, not the control-plane token
 - in this repository, `shared backend` means an instance-local shared backend,
   not one global backend for the whole machine
 - one instance backend prefers `ws://127.0.0.1:8765`
@@ -115,7 +118,8 @@ Current runtime behavior:
 - `fcodex` first chooses the target instance, then discovers that instance's
   active backend endpoint and attaches to that same instance backend
 - `fcodex` adds a thin local websocket proxy only when it needs shared-backend
-  cwd correction for upstream remote-mode behavior
+  cwd correction for upstream remote-mode behavior; that proxy also gets its
+  own per-launch bearer token injected into upstream Codex through wrapper env
 - the machine also maintains two global coordination facts:
   - the running-instance registry
   - the thread live-runtime lease
@@ -314,6 +318,7 @@ Codex remains the authority for:
 
 - machine-global thread-wise resume profile
 - per-instance runtime shared-backend discovery state
+- per-instance shared-backend websocket capability token files
 - p2p thread bindings and group-shared thread bindings keyed by `chat_id`
 - group-chat mode, group activation state, group context logs, and boundary state
 - transient approval, rename, and card state
@@ -326,6 +331,16 @@ There are also two machine-global coordination states:
 They live under shared `FC_GLOBAL_DATA_DIR`.
 They are neither Feishu-chat state nor Codex-owned thread metadata; they exist
 only for local CLI discovery and multi-instance runtime coordination.
+
+This token boundary also needs to stay explicit:
+
+- the control-plane / service token is only for local service control and
+  ownership coordination
+- the backend websocket token is only for connecting to an instance app-server
+- the proxy websocket token is only for one wrapper-launched local `fcodex`
+  proxy
+- these three tokens must not be reused, and they shouldn't be exposed on
+  command lines again for convenience
 
 Within that set, `binding` is intentionally a restart-persistent local bookmark:
 

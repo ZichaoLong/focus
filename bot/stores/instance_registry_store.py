@@ -17,6 +17,7 @@ from dataclasses import asdict, dataclass
 from typing import Iterator
 
 from bot.file_lock import acquire_file_lock, release_file_lock
+from bot.file_permissions import ensure_private_file_permissions
 from bot.instance_layout import global_data_dir
 from bot.process_utils import process_exists
 
@@ -159,6 +160,7 @@ class InstanceRegistryStore:
         tmp_path = path.with_suffix(".json.tmp")
         rendered = {str(key): value for key, value in sorted(data.items())}
         tmp_path.write_text(json.dumps(rendered, ensure_ascii=False, indent=2), encoding="utf-8")
+        ensure_private_file_permissions(tmp_path)
         os.replace(tmp_path, path)
 
 

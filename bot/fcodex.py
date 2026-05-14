@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import secrets
 import shlex
 import subprocess
 import sys
@@ -26,6 +27,7 @@ from bot.instance_resolution import (
     resolve_cli_runtime_target,
     resolve_running_instance_app_server_url,
 )
+from bot.local_websocket_auth import FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, FCODEX_SERVICE_TOKEN_ENV_VAR
 from bot.platform_paths import default_data_root, is_windows
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.thread_resolution import (
@@ -95,6 +97,10 @@ def _has_explicit_remote(user_args: list[str]) -> bool:
 
 def _has_explicit_profile(user_args: list[str]) -> bool:
     return _has_option(user_args, ("-p", "--profile"))
+
+
+def _has_explicit_remote_auth_token_env(user_args: list[str]) -> bool:
+    return _has_option(user_args, ("--remote-auth-token-env",))
 
 
 def _has_explicit_cwd(user_args: list[str]) -> bool:
@@ -285,21 +291,32 @@ def _inject_default_cwd(user_args: list[str]) -> list[str]:
     return ["--cd", os.getcwd(), *user_args]
 
 
-def _remote_adapter_config(cfg: dict, app_server_url: str) -> CodexAppServerConfig:
+def _remote_adapter_config(
+    cfg: dict,
+    app_server_url: str,
+    *,
+    data_dir: pathlib.Path | None = None,
+) -> CodexAppServerConfig:
     config = CodexAppServerConfig.from_dict(cfg)
-    return replace(config, app_server_mode="remote", app_server_url=app_server_url)
+    return replace(
+        config,
+        app_server_mode="remote",
+        app_server_url=app_server_url,
+        app_server_data_dir=str(data_dir) if data_dir is not None else "",
+    )
 
 
 def _resolve_thread_target_via_remote_backend(
     cfg: dict,
     app_server_url: str,
+    data_dir: pathlib.Path,
     target: str,
 ) -> tuple[ThreadSummary | None, str | None]:
     cleaned = target.strip()
     if not cleaned:
         return None, "目标不能为空"
     if looks_like_thread_id(cleaned):
-        config = _remote_adapter_config(cfg, app_server_url)
+        config = _remote_adapter_config(cfg, app_server_url, data_dir=data_dir)
         adapter = CodexAppServerAdapter(config)
         try:
             return adapter.read_thread(cleaned, include_turns=False).summary, None
@@ -309,7 +326,7 @@ def _resolve_thread_target_via_remote_backend(
             adapter.stop()
     try:
         thread = resolve_resume_name_via_remote_backend(
-            base_config=_remote_adapter_config(cfg, app_server_url),
+            base_config=_remote_adapter_config(cfg, app_server_url, data_dir=data_dir),
             app_server_url=app_server_url,
             query_limit=int(cfg.get("thread_list_query_limit", 100)),
             target=cleaned,
@@ -377,6 +394,7 @@ def _resolve_resume_target(
         thread, error = _resolve_thread_target_via_remote_backend(
             cfg,
             lookup_target.app_server_url,
+            lookup_target.data_dir,
             target,
         )
         if thread is None:
@@ -404,6 +422,7 @@ def _resolve_resume_target(
     thread, error = _resolve_thread_target_via_remote_backend(
         cfg,
         lookup_target.app_server_url,
+        lookup_target.data_dir,
         target,
     )
     if thread is None:
@@ -425,11 +444,12 @@ def _resolve_resume_target(
 def _thread_resume_profile_mutable(
     cfg: dict,
     app_server_url: str,
+    data_dir: pathlib.Path,
     thread_id: str,
     *,
     target_instance_name: str,
 ) -> tuple[bool, str]:
-    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
+    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url, data_dir=data_dir))
     try:
         check = check_thread_resume_profile_mutable(
             thread_id,
@@ -465,12 +485,13 @@ def _persist_thread_resume_profile_for_resume(
 def _runtime_provider_for_profile(
     cfg: dict,
     app_server_url: str,
+    data_dir: pathlib.Path,
     profile: str,
 ) -> str:
     normalized_profile = str(profile or "").strip()
     if not normalized_profile:
         return ""
-    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
+    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url, data_dir=data_dir))
     try:
         runtime_config = adapter.read_runtime_config()
         for item in runtime_config.profiles:
@@ -486,10 +507,11 @@ def _runtime_provider_for_profile(
 def _resolve_thread_resume_profile_setting_for_resume(
     cfg: dict,
     app_server_url: str,
+    data_dir: pathlib.Path,
     profile: str,
 ) -> ThreadResumeProfileSetting:
     normalized_profile = str(profile or "").strip()
-    runtime_provider = _runtime_provider_for_profile(cfg, app_server_url, normalized_profile)
+    runtime_provider = _runtime_provider_for_profile(cfg, app_server_url, data_dir, normalized_profile)
     resolved = resolve_profile_from_codex_config(normalized_profile)
     return resolve_thread_resume_profile_setting(
         normalized_profile,
@@ -556,6 +578,7 @@ def _build_wrapper_profile_launch_plan(
     *,
     cfg: dict,
     app_server_url: str,
+    data_dir: pathlib.Path,
     instance_name: str,
     user_args: list[str],
 ) -> _WrapperProfileLaunchPlan:
@@ -585,6 +608,7 @@ def _build_wrapper_profile_launch_plan(
                     _resolve_thread_resume_profile_setting_for_resume(
                         cfg,
                         app_server_url,
+                        data_dir,
                         explicit_profile,
                     )
                 )
@@ -604,7 +628,7 @@ def _build_wrapper_profile_launch_plan(
                 raise SystemExit(2)
             resume_profile_hint = str(saved_profile_record.profile or "").strip()
         elif ThreadMemoryModeStore(global_data_dir()).load(resume_thread_id) is not None:
-            adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url))
+            adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url, data_dir=data_dir))
             try:
                 runtime_config = adapter.read_runtime_config()
                 resume_profile_hint = str(runtime_config.current_profile or "").strip()
@@ -616,6 +640,7 @@ def _build_wrapper_profile_launch_plan(
             can_write, deny_reason = _thread_resume_profile_mutable(
                 cfg,
                 app_server_url,
+                data_dir,
                 resume_thread_id,
                 target_instance_name=instance_name,
             )
@@ -628,6 +653,7 @@ def _build_wrapper_profile_launch_plan(
                         _resolve_thread_resume_profile_setting_for_resume(
                             cfg,
                             app_server_url,
+                            data_dir,
                             explicit_profile,
                         )
                     )
@@ -646,6 +672,7 @@ def _build_wrapper_profile_launch_plan(
                 _resolve_thread_resume_profile_setting_for_resume(
                     cfg,
                     app_server_url,
+                    data_dir,
                     explicit_profile,
                 )
             )
@@ -667,6 +694,7 @@ def _build_wrapper_profile_launch_plan(
                 _resolve_thread_resume_profile_setting_for_resume(
                     cfg,
                     app_server_url,
+                    data_dir,
                     explicit_profile,
                 )
             )
@@ -752,6 +780,7 @@ def _launch_local_cwd_proxy(
     new_thread_profile_model_provider_seed: str = "",
     new_thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
+    proxy_auth_token: str,
 ) -> tuple[str, subprocess.Popen[str]]:
     cmd = [
         sys.executable,
@@ -767,8 +796,6 @@ def _launch_local_cwd_proxy(
         instance_name,
         "--global-data-dir",
         str(global_data_dir()),
-        "--service-token",
-        service_token,
         "--new-thread-profile-seed",
         new_thread_profile_seed,
         "--new-thread-profile-model-seed",
@@ -782,6 +809,10 @@ def _launch_local_cwd_proxy(
         "--parent-pid",
         str(os.getpid()),
     ]
+    env = os.environ.copy()
+    env[FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
+    if service_token:
+        env[FCODEX_SERVICE_TOKEN_ENV_VAR] = service_token
     process = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -789,7 +820,7 @@ def _launch_local_cwd_proxy(
         stderr=None,
         text=True,
         bufsize=1,
-        env=os.environ.copy(),
+        env=env,
     )
     try:
         ready_line = _read_subprocess_ready_line(process).strip()
@@ -855,6 +886,9 @@ def main() -> None:
     if explicit_instance and _has_explicit_remote(user_args):
         print("`--instance` 不能与显式 `--remote` 同时使用。", file=sys.stderr)
         raise SystemExit(2)
+    if not _has_explicit_remote(user_args) and _has_explicit_remote_auth_token_env(user_args):
+        print("wrapper 自建 proxy 路径不接受显式 `--remote-auth-token-env`；该参数仅用于显式 `--remote`。", file=sys.stderr)
+        raise SystemExit(2)
     removed_wrapper_error = _removed_wrapper_command_error(user_args)
     if removed_wrapper_error is not None:
         raise SystemExit(removed_wrapper_error)
@@ -904,6 +938,7 @@ def main() -> None:
         profile_launch_plan = _build_wrapper_profile_launch_plan(
             cfg=cfg,
             app_server_url=app_server_url,
+            data_dir=data_dir,
             instance_name=resolved_target.instance_name,
             user_args=user_args,
         )
@@ -913,6 +948,7 @@ def main() -> None:
         resume_profile_hint = profile_launch_plan.resume_profile_hint
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
+    proxy_auth_token = ""
     if not _has_explicit_remote(user_args):
         try:
             # Upstream Codex TUI omits `cwd` on `thread/start` in `--remote` mode.
@@ -925,6 +961,7 @@ def main() -> None:
                     "instance_name": resolved_target.instance_name,
                     "service_token": resolved_target.service_token,
                 }
+            proxy_auth_token = secrets.token_urlsafe(32)
             proxy_url, proxy_process = _launch_local_cwd_proxy(
                 app_server_url,
                 effective_cwd,
@@ -936,16 +973,19 @@ def main() -> None:
                 ),
                 new_thread_memory_mode_seed=new_thread_memory_mode_seed,
                 resume_profile_hint=resume_profile_hint,
+                proxy_auth_token=proxy_auth_token,
                 **proxy_kwargs,
             )
         except Exception as exc:
             print(f"启动 fcodex 本地 cwd proxy 失败：{exc}", file=sys.stderr)
             raise SystemExit(2)
-        argv.extend(["--remote", proxy_url])
+        argv.extend(["--remote", proxy_url, "--remote-auth-token-env", FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR])
     argv.extend(user_args)
     env = os.environ.copy()
     env["FC_DATA_DIR"] = str(data_dir)
     env["FC_INSTANCE"] = resolved_target.instance_name
+    if proxy_auth_token:
+        env[FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
     exit_code = _run_upstream_codex(argv, env, proxy_process=proxy_process)
     if exit_code is not None:
         raise SystemExit(exit_code)

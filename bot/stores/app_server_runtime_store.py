@@ -16,6 +16,7 @@ import time
 from dataclasses import dataclass
 
 from bot.constants import DEFAULT_APP_SERVER_URL
+from bot.file_permissions import ensure_private_file_permissions
 from bot.process_utils import process_exists
 
 
@@ -129,6 +130,7 @@ class AppServerRuntimeStore:
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        ensure_private_file_permissions(tmp_path)
         os.replace(str(tmp_path), str(path))
 
     def _delete_file(self) -> None:

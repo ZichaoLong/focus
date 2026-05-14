@@ -52,6 +52,8 @@ fcodex shell wrapper
 - 多个实例共享的是 `CODEX_HOME`，不是同一个 live app-server backend
 - managed backend 启动会经过机器级协调；即使多个实例在同一条命令里几乎同时启动，也必须各自落到独立的 live backend URL，而不能误连到别的实例已经占住的 `8765`
 - 飞书和 `fcodex` 如果要安全继续同一个 live thread，预期应连接到同一个**实例 backend**
+- 实例内 shared app-server 的 websocket 面现在默认要求 capability token；token 放在该实例 `FC_DATA_DIR` 下的私有文件里，由 service / `feishu-codexctl` / `fcodex` 作为 backend client 读取并通过 `Authorization: Bearer ...` 发送
+- `fcodex` 本地代理的 websocket 面使用**独立的**一次性 bearer token；该 token 只通过父子进程环境变量传递，不复用 service token，也不出现在命令行参数里
 
 ## 3. 为什么需要 `fcodex`
 
@@ -132,6 +134,7 @@ fcodex shell wrapper
 - 它把 websocket 流量转发到 shared backend
 - 当它看到 `thread/start` 且 `params.cwd` 缺失或为空时，会注入 wrapper 选定的最终 cwd
 - 其它流量原样透传
+- 它自己的升级握手必须先通过本地 bearer token 鉴权，然后才允许接入 backend
 
 这样可以把补丁面控制得非常窄。
 
@@ -188,6 +191,7 @@ fcodex shell wrapper
 - 显式 `-p/--profile` 时，对本次启动创建的首个新 thread 写入一次性 seed
 - 对 `resume`，支持 thread-name 解析与 thread-wise profile 注入 / 持久化
 - 通过一个轻量本地代理修补 cwd
+- 对 shared-backend 路径上的 websocket 面做本地鉴权收口：backend 与 proxy 各自持有独立 token，且都不再复用 service token
 - 对 wrapper 管辖的显式 profile 路径，profile slice 会先按共享用户级配置
   解析，再由代理在 `thread/start` / `thread/resume` 上强制带入；当前 cwd /
   project-local config 不再有权重写既有 thread-wise profile 合同

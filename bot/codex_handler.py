@@ -371,6 +371,10 @@ class CodexHandler(BotHandler):
                     data_dir=self._data_dir,
                 ),
             )
+        self._adapter_config = replace(
+            self._adapter_config,
+            app_server_data_dir=str(self._data_dir),
+        )
         self._thread_resume_profile_store = ThreadResumeProfileStore(self._global_data_dir)
         self._thread_memory_mode_store = ThreadMemoryModeStore(self._global_data_dir)
         self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}

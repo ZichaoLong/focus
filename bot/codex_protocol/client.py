@@ -23,6 +23,7 @@ from websockets.sync.client import connect
 
 from bot.file_lock import acquire_file_lock, release_file_lock
 from bot.instance_layout import global_data_dir
+from bot.local_websocket_auth import AppServerWebsocketAuthTokenStore, build_bearer_authorization_headers
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, uses_default_app_server_url
 from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.version import __version__
@@ -66,6 +67,7 @@ class CodexRpcClient:
         on_disconnect: Callable[[], None] | None = None,
         app_server_runtime_store: AppServerRuntimeStore | None = None,
         managed_startup_lock_path: pathlib.Path | str | None = None,
+        app_server_data_dir: pathlib.Path | str | None = None,
     ) -> None:
         self._codex_command = codex_command
         self._app_server_mode = app_server_mode
@@ -79,6 +81,12 @@ class CodexRpcClient:
         self._app_server_runtime_store = app_server_runtime_store
         self._managed_startup_lock_path = (
             pathlib.Path(managed_startup_lock_path) if managed_startup_lock_path is not None else None
+        )
+        self._app_server_data_dir = pathlib.Path(app_server_data_dir) if app_server_data_dir is not None else None
+        self._app_server_ws_auth_store = (
+            AppServerWebsocketAuthTokenStore(self._app_server_data_dir)
+            if self._app_server_data_dir is not None
+            else None
         )
 
         self._lock = threading.RLock()
@@ -219,7 +227,16 @@ class CodexRpcClient:
         effective_codex_command = resolve_managed_codex_command(self._codex_command)
         if effective_codex_command != self._codex_command:
             logger.info("默认 codex 命令不可用，回退到稳定启动命令: %s", effective_codex_command)
-        cmd = [*shlex.split(effective_codex_command), "app-server", "--listen", self._app_server_url]
+        cmd = [
+            *shlex.split(effective_codex_command),
+            "app-server",
+            "--listen",
+            self._app_server_url,
+            "--ws-auth",
+            "capability-token",
+            "--ws-token-file",
+            str(self._managed_ws_auth_token_file()),
+        ]
         logger.info("启动 Codex app-server: %s", cmd)
         self._process = subprocess.Popen(
             cmd,
@@ -294,11 +311,14 @@ class CodexRpcClient:
                 # Codex can return multi-megabyte frames for thread/read(thread.turns)
                 # and thread/resume. The default websocket 1 MiB limit breaks valid
                 # resume flows for longer sessions, so disable the per-frame cap here.
-                self._ws = connect(
-                    self._app_server_url,
-                    open_timeout=self._connect_timeout_seconds,
-                    max_size=None,
-                )
+                connect_kwargs: dict[str, Any] = {
+                    "open_timeout": self._connect_timeout_seconds,
+                    "max_size": None,
+                }
+                auth_headers = self._websocket_auth_headers_for_connect()
+                if auth_headers:
+                    connect_kwargs["additional_headers"] = auth_headers
+                self._ws = connect(self._app_server_url, **connect_kwargs)
                 return
             except Exception as exc:
                 last_error = exc
@@ -421,6 +441,21 @@ class CodexRpcClient:
             text = line.rstrip()
             if text:
                 logger.log(level, "[codex app-server %s] %s", name, text)
+
+    def _managed_ws_auth_token_file(self) -> pathlib.Path:
+        if self._app_server_ws_auth_store is None:
+            raise RuntimeError("managed app-server websocket auth requires app_server_data_dir")
+        self._app_server_ws_auth_store.ensure()
+        return self._app_server_ws_auth_store.path
+
+    def _websocket_auth_headers_for_connect(self) -> dict[str, str]:
+        if self._app_server_ws_auth_store is None:
+            return {}
+        if self._app_server_mode == "managed":
+            token = self._app_server_ws_auth_store.ensure()
+        else:
+            token = self._app_server_ws_auth_store.require()
+        return build_bearer_authorization_headers(token)
 
     def _record_managed_runtime_state(self) -> None:
         if self._app_server_mode != "managed" or self._app_server_runtime_store is None:

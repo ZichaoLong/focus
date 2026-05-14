@@ -54,6 +54,7 @@ class CodexAppServerConfig:
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
     new_thread_memory_mode_seed: str = ""
+    app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
     @classmethod
@@ -126,6 +127,7 @@ class CodexAppServerAdapter(AgentAdapter):
             on_request=on_request,
             on_disconnect=on_disconnect,
             app_server_runtime_store=app_server_runtime_store,
+            app_server_data_dir=config.app_server_data_dir or None,
         )
 
     def start(self) -> None:

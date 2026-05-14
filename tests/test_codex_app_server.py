@@ -6,10 +6,12 @@ import threading
 import time
 import unittest
 from typing import get_type_hints
-from websockets.exceptions import ConnectionClosedOK
+from websockets.datastructures import Headers
+from websockets.exceptions import ConnectionClosedOK, InvalidStatus
+from websockets.http11 import Response
 from websockets.sync.client import connect
 from websockets.sync.server import serve
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 from io import StringIO
 from pathlib import Path
 
@@ -38,6 +40,11 @@ from bot.instance_resolution import (
     CliRuntimeTarget,
     resolve_cli_runtime_target,
     resolve_running_instance_app_server_url,
+)
+from bot.local_websocket_auth import (
+    AppServerWebsocketAuthTokenStore,
+    FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+    FCODEX_SERVICE_TOKEN_ENV_VAR,
 )
 from bot.service_control_plane import ServiceControlError
 from bot.stores.instance_registry_store import InstanceRegistryEntry
@@ -917,8 +924,25 @@ class CodexRpcClientTests(unittest.TestCase):
         self.assertEqual(kwargs["open_timeout"], client._connect_timeout_seconds)
         self.assertIsNone(kwargs["max_size"])
 
+    def test_connect_ws_uses_bearer_auth_for_remote_backend_when_token_file_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            token = AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            client = CodexRpcClient(
+                app_server_mode="remote",
+                app_server_data_dir=data_dir,
+                connect_timeout_seconds=0.1,
+            )
+            client._app_server_url = "ws://127.0.0.1:12345"
+
+            with patch("bot.codex_protocol.client.connect", return_value="ws-obj") as mock_connect:
+                client._connect_ws_locked()
+
+        self.assertEqual(client._ws, "ws-obj")
+        _, kwargs = mock_connect.call_args
+        self.assertEqual(kwargs["additional_headers"], {"Authorization": f"Bearer {token}"})
+
     def test_launch_managed_process_uses_resolved_stable_codex_command_when_default_missing(self) -> None:
-        client = CodexRpcClient(codex_command=DEFAULT_CODEX_COMMAND)
         stable_command = (
             "/home/bot/.nvm/versions/node/v24.15.0/bin/node "
             "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js"
@@ -938,25 +962,37 @@ class CodexRpcClientTests(unittest.TestCase):
             def start(self) -> None:
                 return None
 
-        with patch(
-            "bot.codex_protocol.client.resolve_managed_codex_command",
-            return_value=stable_command,
-        ):
-            with patch("bot.codex_protocol.client.subprocess.Popen", return_value=_Proc()) as mock_popen:
-                with patch("bot.codex_protocol.client.threading.Thread", _ThreadStub):
-                    client._launch_managed_process_locked("ws://127.0.0.1:8765")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            client = CodexRpcClient(
+                codex_command=DEFAULT_CODEX_COMMAND,
+                app_server_data_dir=data_dir,
+            )
 
-        launched = mock_popen.call_args.args[0]
-        self.assertEqual(
-            launched,
-            [
-                "/home/bot/.nvm/versions/node/v24.15.0/bin/node",
-                "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js",
-                "app-server",
-                "--listen",
-                "ws://127.0.0.1:8765",
-            ],
-        )
+            with patch(
+                "bot.codex_protocol.client.resolve_managed_codex_command",
+                return_value=stable_command,
+            ):
+                with patch("bot.codex_protocol.client.subprocess.Popen", return_value=_Proc()) as mock_popen:
+                    with patch("bot.codex_protocol.client.threading.Thread", _ThreadStub):
+                        client._launch_managed_process_locked("ws://127.0.0.1:8765")
+
+            launched = mock_popen.call_args.args[0]
+            self.assertEqual(
+                launched,
+                [
+                    "/home/bot/.nvm/versions/node/v24.15.0/bin/node",
+                    "/home/bot/.nvm/versions/node/v24.15.0/lib/node_modules/@openai/codex/bin/codex.js",
+                    "app-server",
+                    "--listen",
+                    "ws://127.0.0.1:8765",
+                    "--ws-auth",
+                    "capability-token",
+                    "--ws-token-file",
+                    str(AppServerWebsocketAuthTokenStore(data_dir).path),
+                ],
+            )
+            self.assertTrue(AppServerWebsocketAuthTokenStore(data_dir).path.exists())
 
     def test_start_locked_reuses_existing_managed_process(self) -> None:
         client = CodexRpcClient()
@@ -989,6 +1025,7 @@ class CodexRpcClientTests(unittest.TestCase):
             client = CodexRpcClient(
                 app_server_runtime_store=store,
                 managed_startup_lock_path=Path(tmpdir) / "startup.lock",
+                app_server_data_dir=Path(tmpdir),
             )
 
             class _Proc:
@@ -1014,7 +1051,8 @@ class CodexRpcClientTests(unittest.TestCase):
                                 client._start_locked()
 
             self.assertEqual(client.current_app_server_url(), fallback_url)
-            self.assertEqual(mock_popen.call_args[0][0][-1], fallback_url)
+            launched = mock_popen.call_args.args[0]
+            self.assertEqual(launched[launched.index("--listen") + 1], fallback_url)
             self.assertEqual(
                 resolve_effective_app_server_url("ws://127.0.0.1:8765", data_dir=Path(tmpdir)),
                 fallback_url,
@@ -1028,6 +1066,7 @@ class CodexRpcClientTests(unittest.TestCase):
             client = CodexRpcClient(
                 app_server_runtime_store=store,
                 managed_startup_lock_path=Path(tmpdir) / "startup.lock",
+                app_server_data_dir=Path(tmpdir),
             )
 
             class _ProcDead:
@@ -1067,8 +1106,10 @@ class CodexRpcClientTests(unittest.TestCase):
                                 with patch("bot.codex_protocol.client.threading.Thread", _ThreadStub):
                                     client._start_locked()
 
-            self.assertEqual(mock_popen.call_args_list[0].args[0][-1], default_url)
-            self.assertEqual(mock_popen.call_args_list[1].args[0][-1], fallback_url)
+            first_launch = mock_popen.call_args_list[0].args[0]
+            second_launch = mock_popen.call_args_list[1].args[0]
+            self.assertEqual(first_launch[first_launch.index("--listen") + 1], default_url)
+            self.assertEqual(second_launch[second_launch.index("--listen") + 1], fallback_url)
             self.assertEqual(client.current_app_server_url(), fallback_url)
             self.assertEqual(
                 resolve_effective_app_server_url("ws://127.0.0.1:8765", data_dir=Path(tmpdir)),
@@ -1144,10 +1185,25 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_model_provider_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
+            proxy_auth_token=ANY,
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "resume", "019d2e94-a475-7bc1-b2f7-a3ce37628ede"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                "019d2e94-a475-7bc1-b2f7-a3ce37628ede",
+            ],
+        )
+        self.assertEqual(
+            mock_exec.call_args.args[2][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            mock_proxy.call_args.kwargs["proxy_auth_token"],
         )
 
     def test_fcodex_uses_runtime_resolved_backend_url(self) -> None:
@@ -1168,10 +1224,21 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_model_provider_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
+            proxy_auth_token=ANY,
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "resume", "019d2e94-a475-7bc1-b2f7-a3ce37628ede"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                "019d2e94-a475-7bc1-b2f7-a3ce37628ede",
+            ],
         )
 
     def test_fcodex_does_not_inject_instance_default_profile_for_new_thread(self) -> None:
@@ -1187,6 +1254,8 @@ class FCodexTests(unittest.TestCase):
                 "codex",
                 "--remote",
                 "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
             ],
@@ -1218,10 +1287,21 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_model_provider_seed="provider1_api",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
+            proxy_auth_token=ANY,
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "-p", "provider1"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "-p",
+                "provider1",
+            ],
         )
 
     def test_fcodex_explicit_remote_skips_shared_resolution(self) -> None:
@@ -1258,6 +1338,17 @@ class FCodexTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("不能与显式 `--remote` 同时使用", stderr.getvalue())
+
+    def test_fcodex_rejects_remote_auth_token_env_without_explicit_remote(self) -> None:
+        stderr = StringIO()
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch("bot.fcodex.sys.stderr", stderr):
+                with patch("sys.argv", ["fcodex", "--remote-auth-token-env", "USER_TOKEN_ENV"]):
+                    with self.assertRaises(SystemExit) as exc:
+                        fcodex_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("wrapper 自建 proxy 路径不接受显式 `--remote-auth-token-env`", stderr.getvalue())
 
     def test_fcodex_routes_resume_to_owner_instance(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
@@ -1308,10 +1399,21 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_model_provider_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
+            proxy_auth_token=ANY,
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9200", "--cd", os.getcwd(), "resume", thread_id],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9200",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                thread_id,
+            ],
         )
 
     def test_runtime_target_prefers_instance_runtime_store_over_stale_registry_url(self) -> None:
@@ -1511,7 +1613,16 @@ class FCodexTests(unittest.TestCase):
 
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "session"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "session",
+            ],
         )
 
     def test_fcodex_rejects_wrapper_command_mixed_with_prefix_flags(self) -> None:
@@ -1565,10 +1676,20 @@ class FCodexTests(unittest.TestCase):
                             with patch("sys.argv", ["fcodex", "resume", "demo"]):
                                 fcodex_main()
 
-        self.assertEqual(mock_resolve.call_args.args[2], "demo")
+        self.assertEqual(mock_resolve.call_args.args[3], "demo")
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "resume", "019d2e94-a475-7bc1-b2f7-a3ce37628ede"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                "019d2e94-a475-7bc1-b2f7-a3ce37628ede",
+            ],
         )
 
     def test_fcodex_resume_name_routes_to_unique_running_instance_without_live_owner(self) -> None:
@@ -1629,7 +1750,17 @@ class FCodexTests(unittest.TestCase):
         self.assertFalse(mock_resolve_target.call_args.kwargs["allow_default_running_fallback"])
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9200", "--cd", os.getcwd(), "resume", thread_id],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9200",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                thread_id,
+            ],
         )
 
     def test_fcodex_resume_name_requires_explicit_instance_when_running_instance_is_ambiguous(self) -> None:
@@ -1812,7 +1943,16 @@ class FCodexTests(unittest.TestCase):
         self.assertTrue(mock_resolve_target.call_args.kwargs["allow_default_running_fallback"])
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "session"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "session",
+            ],
         )
 
     def test_fcodex_resume_with_saved_thread_profile_injects_profile(self) -> None:
@@ -1837,6 +1977,8 @@ class FCodexTests(unittest.TestCase):
                 "codex",
                 "--remote",
                 "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "--profile",
@@ -1895,7 +2037,19 @@ class FCodexTests(unittest.TestCase):
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "-p", "provider2", "resume", thread_id],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "-p",
+                "provider2",
+                "resume",
+                thread_id,
+            ],
         )
 
     def test_fcodex_resume_with_explicit_profile_rejects_when_profile_slice_is_incomplete(self) -> None:
@@ -1997,7 +2151,19 @@ class FCodexTests(unittest.TestCase):
         mock_save.assert_not_called()
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9100", "--cd", os.getcwd(), "-p", "provider2", "resume", thread_id],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "-p",
+                "provider2",
+                "resume",
+                thread_id,
+            ],
         )
 
     def test_fcodex_resume_with_same_profile_name_but_changed_setting_rejects_when_loaded(self) -> None:
@@ -2083,10 +2249,19 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_model_provider_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
+            proxy_auth_token=ANY,
         )
         self.assertEqual(
             mock_exec.call_args[0][1],
-            ["codex", "--remote", "ws://127.0.0.1:9101", "--cd", "/home/tester/project"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9101",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                "/home/tester/project",
+            ],
         )
 
     def test_fcodex_uses_subprocess_on_windows_and_cleans_proxy(self) -> None:
@@ -2097,7 +2272,7 @@ class FCodexTests(unittest.TestCase):
         child_process.poll.return_value = 7
         with patch("bot.fcodex.is_windows", return_value=True):
             with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9101", proxy_process)):
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9101", proxy_process)) as mock_proxy:
                     with patch("bot.fcodex.subprocess.Popen", return_value=child_process) as mock_popen:
                         with patch("sys.argv", ["fcodex", "--cd", "/home/tester/project"]):
                             with self.assertRaises(SystemExit) as exc:
@@ -2106,10 +2281,22 @@ class FCodexTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 7)
         self.assertEqual(
             mock_popen.call_args.args[0],
-            ["codex", "--remote", "ws://127.0.0.1:9101", "--cd", "/home/tester/project"],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9101",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                "/home/tester/project",
+            ],
         )
         self.assertEqual(mock_popen.call_args.kwargs["env"]["FC_INSTANCE"], "default")
         self.assertEqual(mock_popen.call_args.kwargs["env"]["FC_DATA_DIR"], str(_default_data_dir()))
+        self.assertEqual(
+            mock_popen.call_args.kwargs["env"][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            mock_proxy.call_args.kwargs["proxy_auth_token"],
+        )
         proxy_process.terminate.assert_called_once_with()
         proxy_process.wait.assert_called_once_with(timeout=1.0)
 
@@ -2143,6 +2330,8 @@ class FCodexTests(unittest.TestCase):
                     "ws://127.0.0.1:8765",
                     "/tmp/project",
                     Path("/tmp/fcodex-data"),
+                    service_token="svc-token",
+                    proxy_auth_token="proxy-auth-token",
                 )
 
         self.assertEqual(proxy_url, "ws://127.0.0.1:9100")
@@ -2151,6 +2340,15 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("/tmp/fcodex-data", cmd)
         self.assertIn("--parent-pid", cmd)
         self.assertIn("4321", cmd)
+        self.assertNotIn("--service-token", cmd)
+        self.assertEqual(
+            mock_popen.call_args.kwargs["env"][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            "proxy-auth-token",
+        )
+        self.assertEqual(
+            mock_popen.call_args.kwargs["env"][FCODEX_SERVICE_TOKEN_ENV_VAR],
+            "svc-token",
+        )
 
     def test_thread_start_proxy_rewrites_only_missing_cwd(self) -> None:
         rewritten = _rewrite_thread_start_cwd(
@@ -2219,6 +2417,120 @@ class FCodexTests(unittest.TestCase):
         _relay_messages(_Source(), target)
         self.assertEqual(target.calls, ["hello"])
 
+    def test_proxy_rejects_unauthorized_websocket_upgrade(self) -> None:
+        proxy_url_queue: queue.Queue[str] = queue.Queue()
+        proxy_thread = threading.Thread(
+            target=run_proxy,
+            kwargs={
+                "backend_url": "ws://127.0.0.1:8765",
+                "cwd": "/tmp/project",
+                "proxy_auth_token": "proxy-auth-token",
+                "idle_timeout_seconds": 0.2,
+                "on_listen": proxy_url_queue.put,
+            },
+            daemon=True,
+        )
+        proxy_thread.start()
+        proxy_url = proxy_url_queue.get(timeout=1)
+
+        response: Response
+        with self.assertRaises(InvalidStatus) as exc:
+            connect(proxy_url, open_timeout=1, max_size=None)
+        response = exc.exception.args[0]
+        self.assertEqual(response.status_code, 401)
+
+        proxy_thread.join(timeout=1)
+        self.assertFalse(proxy_thread.is_alive())
+
+    def test_proxy_forwards_backend_bearer_auth_from_data_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir) / "instance"
+            backend_token = AppServerWebsocketAuthTokenStore(data_dir).ensure()
+            backend_url_queue: queue.Queue[str] = queue.Queue()
+            backend_server_ref: dict[str, object] = {}
+            backend_auth_headers: queue.Queue[str | None] = queue.Queue()
+
+            def _backend_process_request(_connection, request) -> Response | None:
+                header = request.headers.get("Authorization")
+                backend_auth_headers.put(header)
+                if header == f"Bearer {backend_token}":
+                    return None
+                return Response(
+                    401,
+                    "Unauthorized",
+                    Headers([("Content-Type", "text/plain; charset=utf-8")]),
+                    b"missing backend token\n",
+                )
+
+            def _backend_handler(ws) -> None:
+                for message in ws:
+                    ws.send(message)
+
+            def _backend_main() -> None:
+                with serve(
+                    _backend_handler,
+                    "127.0.0.1",
+                    0,
+                    max_size=None,
+                    process_request=_backend_process_request,
+                ) as server:
+                    backend_server_ref["server"] = server
+                    port = server.socket.getsockname()[1]
+                    backend_url_queue.put(f"ws://127.0.0.1:{port}")
+                    server.serve_forever()
+
+            backend_thread = threading.Thread(target=_backend_main, daemon=True)
+            backend_thread.start()
+            backend_url = backend_url_queue.get(timeout=1)
+
+            proxy_url_queue: queue.Queue[str] = queue.Queue()
+            proxy_thread = threading.Thread(
+                target=run_proxy,
+                kwargs={
+                    "backend_url": backend_url,
+                    "cwd": "/tmp/project",
+                    "data_dir": data_dir,
+                    "proxy_auth_token": "proxy-auth-token",
+                    "idle_timeout_seconds": 0.2,
+                    "on_listen": proxy_url_queue.put,
+                },
+                daemon=True,
+            )
+            proxy_thread.start()
+            proxy_url = proxy_url_queue.get(timeout=1)
+
+            try:
+                with connect(
+                    proxy_url,
+                    open_timeout=1,
+                    max_size=None,
+                    additional_headers={"Authorization": "Bearer proxy-auth-token"},
+                ) as ws:
+                    ws.send(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 1,
+                                "method": "thread/start",
+                                "params": {},
+                            }
+                        )
+                    )
+                    echoed = json.loads(ws.recv())
+                    self.assertEqual(echoed["params"]["cwd"], "/tmp/project")
+
+                self.assertEqual(
+                    backend_auth_headers.get(timeout=1),
+                    f"Bearer {backend_token}",
+                )
+                proxy_thread.join(timeout=1)
+                self.assertFalse(proxy_thread.is_alive())
+            finally:
+                backend_server = backend_server_ref.get("server")
+                if backend_server is not None:
+                    backend_server.shutdown()
+                backend_thread.join(timeout=1)
+
     def test_proxy_stays_alive_across_resume_style_reconnect(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
@@ -2247,6 +2559,7 @@ class FCodexTests(unittest.TestCase):
                 kwargs={
                     "backend_url": backend_url,
                     "cwd": "/tmp/project",
+                    "proxy_auth_token": "proxy-auth-token",
                     "global_data_dir": global_data_dir,
                     "idle_timeout_seconds": 0.3,
                     "on_listen": proxy_url_queue.put,
@@ -2257,7 +2570,12 @@ class FCodexTests(unittest.TestCase):
             proxy_url = proxy_url_queue.get(timeout=1)
 
             try:
-                with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                with connect(
+                    proxy_url,
+                    open_timeout=1,
+                    max_size=None,
+                    additional_headers={"Authorization": "Bearer proxy-auth-token"},
+                ) as ws:
                     ws.send(
                         json.dumps(
                             {
@@ -2273,7 +2591,12 @@ class FCodexTests(unittest.TestCase):
 
                 time.sleep(0.1)
 
-                with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+                with connect(
+                    proxy_url,
+                    open_timeout=1,
+                    max_size=None,
+                    additional_headers={"Authorization": "Bearer proxy-auth-token"},
+                ) as ws:
                     ws.send(
                         json.dumps(
                             {
@@ -2360,6 +2683,7 @@ class FCodexTests(unittest.TestCase):
             kwargs={
                 "backend_url": backend_url,
                 "cwd": "/tmp/project",
+                "proxy_auth_token": "proxy-auth-token",
                 "idle_timeout_seconds": 1.0,
                 "on_listen": proxy_url_queue.put,
                 "new_thread_profile_seed": "provider2",
@@ -2373,7 +2697,12 @@ class FCodexTests(unittest.TestCase):
         proxy_url = proxy_url_queue.get(timeout=1)
 
         try:
-            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+            with connect(
+                proxy_url,
+                open_timeout=1,
+                max_size=None,
+                additional_headers={"Authorization": "Bearer proxy-auth-token"},
+            ) as ws:
                 ws.send(
                     json.dumps(
                         {
@@ -2401,7 +2730,12 @@ class FCodexTests(unittest.TestCase):
             backend_disconnects.get(timeout=1)
             time.sleep(0.1)
 
-            with connect(proxy_url, open_timeout=1, max_size=None) as ws:
+            with connect(
+                proxy_url,
+                open_timeout=1,
+                max_size=None,
+                additional_headers={"Authorization": "Bearer proxy-auth-token"},
+            ) as ws:
                 ws.send(
                     json.dumps(
                         {
@@ -2449,6 +2783,7 @@ class FCodexTests(unittest.TestCase):
                 kwargs={
                     "backend_url": "ws://127.0.0.1:8765",
                     "cwd": "/tmp/project",
+                    "proxy_auth_token": "proxy-auth-token",
                     "parent_pid": 4321,
                     "on_listen": proxy_url_queue.put,
                 },
@@ -2470,6 +2805,7 @@ class FCodexTests(unittest.TestCase):
                 kwargs={
                     "backend_url": "ws://127.0.0.1:8765",
                     "cwd": "/tmp/project",
+                    "proxy_auth_token": "proxy-auth-token",
                     "parent_pid": 4321,
                     "idle_timeout_seconds": 0.1,
                     "on_listen": proxy_url_queue.put,

@@ -75,6 +75,7 @@ def _remote_adapter(
         CodexAppServerConfig.from_dict(cfg),
         app_server_mode="remote",
         app_server_url=app_server_url,
+        app_server_data_dir=str(data_dir),
     )
     return CodexAppServerAdapter(config), cfg, app_server_url
 

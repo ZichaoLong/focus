@@ -90,11 +90,12 @@
   - service owner
   - control plane
   - managed `codex app-server` backend
+- 每个实例的 managed `codex app-server` websocket 面都要求实例私有 capability token；该 token 属于 backend 连接层，不属于 control-plane token
 - `shared backend` 在当前仓库里表示“实例内共享 backend”，不是“全系统只存在一个 backend”
 - 某实例的 backend 默认优先 `ws://127.0.0.1:8765`
 - 如果默认端口不可用，该实例 service 会自动切到空闲本地端口，并把当前实际地址写入该实例自己的运行时状态
 - `fcodex` 会先选择目标实例，再发现该实例的实际 backend 地址，并附着到同一个实例 backend
-- 当 upstream remote 模式需要 cwd 修正时，`fcodex` 会额外加一个很薄的本地 websocket 代理
+- 当 upstream remote 模式需要 cwd 修正时，`fcodex` 会额外加一个很薄的本地 websocket 代理；该代理也有独立的 per-launch bearer token，并通过 wrapper 环境变量注入给 upstream Codex
 - 机器级还维护两份全局协调状态：
   - 运行中实例注册表
   - thread live runtime lease
@@ -219,6 +220,7 @@ shared backend 与 wrapper 的具体机制，见
 
 - 机器级共享的 thread-wise resume profile
 - 每实例 shared backend 的运行时地址发现状态
+- 每实例 shared backend websocket capability token 文件
 - 私聊当前绑定到哪个 thread，以及群聊按 `chat_id` 共享绑定到哪个 thread
 - 群聊工作态、群激活状态、群上下文日志与上下文边界状态
 - 审批、重命名、卡片等临时 UI 状态
@@ -231,6 +233,13 @@ shared backend 与 wrapper 的具体机制，见
 它们都位于共享的 `FC_GLOBAL_DATA_DIR` 下。
 这两份状态不属于任何单个 Feishu chat，也不属于 Codex 线程元数据；
 它们只用于本地 CLI 和多实例运行时协调。
+
+这里还需要保持一个明确边界：
+
+- control-plane / service token 只用于本地服务控制与 ownership 协调
+- backend websocket token 只用于连接实例 app-server
+- proxy websocket token 只用于单次 `fcodex` wrapper 启动出的本地代理
+- 这三类 token 不应复用，也不应为了图省事而重新暴露在命令行参数上
 
 其中，`binding` 默认是跨重启保留的本地 bookmark：
 
