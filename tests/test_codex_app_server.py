@@ -33,6 +33,7 @@ from bot.fcodex_proxy import (
     _ProxyThreadSeedState,
     _relay_messages,
     _rewrite_thread_start_cwd,
+    main as fcodex_proxy_main,
     run_proxy,
 )
 from bot.instance_resolution import (
@@ -45,6 +46,7 @@ from bot.local_websocket_auth import (
     AppServerWebsocketAuthTokenStore,
     FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
     FCODEX_SERVICE_TOKEN_ENV_VAR,
+    MissingAppServerWebsocketAuthTokenError,
 )
 from bot.service_control_plane import ServiceControlError
 from bot.stores.instance_registry_store import InstanceRegistryEntry
@@ -941,6 +943,27 @@ class CodexRpcClientTests(unittest.TestCase):
         self.assertEqual(client._ws, "ws-obj")
         _, kwargs = mock_connect.call_args
         self.assertEqual(kwargs["additional_headers"], {"Authorization": f"Bearer {token}"})
+
+    def test_connect_ws_fails_immediately_for_remote_backend_when_token_file_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data_dir = Path(tmpdir)
+            client = CodexRpcClient(
+                app_server_mode="remote",
+                app_server_data_dir=data_dir,
+                connect_timeout_seconds=5.0,
+            )
+            client._app_server_url = "ws://127.0.0.1:12345"
+
+            with patch("bot.codex_protocol.client.time.sleep") as mock_sleep:
+                with patch("bot.codex_protocol.client.connect", return_value="ws-obj") as mock_connect:
+                    with self.assertRaisesRegex(
+                        MissingAppServerWebsocketAuthTokenError,
+                        "backend websocket auth token 不存在",
+                    ):
+                        client._connect_ws_locked()
+
+        mock_connect.assert_not_called()
+        mock_sleep.assert_not_called()
 
     def test_launch_managed_process_uses_resolved_stable_codex_command_when_default_missing(self) -> None:
         stable_command = (
@@ -2349,6 +2372,24 @@ class FCodexTests(unittest.TestCase):
             mock_popen.call_args.kwargs["env"][FCODEX_SERVICE_TOKEN_ENV_VAR],
             "svc-token",
         )
+
+    def test_fcodex_proxy_rejects_service_token_cli_arg(self) -> None:
+        stderr = StringIO()
+        with patch("bot.fcodex_proxy.sys.stderr", stderr):
+            with self.assertRaises(SystemExit) as exc:
+                fcodex_proxy_main(
+                    [
+                        "--backend-url",
+                        "ws://127.0.0.1:8765",
+                        "--cwd",
+                        "/tmp/project",
+                        "--service-token",
+                        "svc-token",
+                    ]
+                )
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("unrecognized arguments: --service-token svc-token", stderr.getvalue())
 
     def test_thread_start_proxy_rewrites_only_missing_cwd(self) -> None:
         rewritten = _rewrite_thread_start_cwd(

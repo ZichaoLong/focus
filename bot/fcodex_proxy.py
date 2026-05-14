@@ -1347,7 +1347,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--data-dir", default="")
     parser.add_argument("--global-data-dir", default="")
     parser.add_argument("--instance", default="")
-    parser.add_argument("--service-token", default="")
     parser.add_argument("--new-thread-profile-seed", default="")
     parser.add_argument("--new-thread-profile-model-seed", default="")
     parser.add_argument("--new-thread-profile-model-provider-seed", default="")
@@ -1364,7 +1363,7 @@ def main(argv: list[str] | None = None) -> None:
             file=sys.stderr,
         )
         raise SystemExit(2)
-    service_token = str(args.service_token or os.environ.get(FCODEX_SERVICE_TOKEN_ENV_VAR, "")).strip()
+    service_token = str(os.environ.get(FCODEX_SERVICE_TOKEN_ENV_VAR, "")).strip()
     run_proxy(
         backend_url=args.backend_url,
         cwd=args.cwd,

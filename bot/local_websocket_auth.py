@@ -19,6 +19,10 @@ FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR = "FCODEX_REMOTE_AUTH_TOKEN"
 FCODEX_SERVICE_TOKEN_ENV_VAR = "FCODEX_SERVICE_TOKEN"
 
 
+class MissingAppServerWebsocketAuthTokenError(RuntimeError):
+    """Raised when a remote app-server websocket token is required but missing."""
+
+
 def build_bearer_authorization_headers(token: str) -> dict[str, str]:
     normalized = str(token or "").strip()
     if not normalized:
@@ -64,7 +68,7 @@ class AppServerWebsocketAuthTokenStore:
         token = self.load()
         if token:
             return token
-        raise RuntimeError(
+        raise MissingAppServerWebsocketAuthTokenError(
             "backend websocket auth token 不存在；"
             f"请确认目标实例已升级并重启，然后重试。缺失文件：{self.path}"
         )

@@ -23,7 +23,11 @@ from websockets.sync.client import connect
 
 from bot.file_lock import acquire_file_lock, release_file_lock
 from bot.instance_layout import global_data_dir
-from bot.local_websocket_auth import AppServerWebsocketAuthTokenStore, build_bearer_authorization_headers
+from bot.local_websocket_auth import (
+    AppServerWebsocketAuthTokenStore,
+    MissingAppServerWebsocketAuthTokenError,
+    build_bearer_authorization_headers,
+)
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, uses_default_app_server_url
 from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.version import __version__
@@ -320,6 +324,8 @@ class CodexRpcClient:
                     connect_kwargs["additional_headers"] = auth_headers
                 self._ws = connect(self._app_server_url, **connect_kwargs)
                 return
+            except MissingAppServerWebsocketAuthTokenError:
+                raise
             except Exception as exc:
                 last_error = exc
                 time.sleep(0.1)
