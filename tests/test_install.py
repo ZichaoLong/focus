@@ -1,5 +1,6 @@
 import pathlib
 import subprocess
+import tempfile
 import unittest
 from io import StringIO
 from unittest.mock import patch
@@ -125,3 +126,59 @@ class InstallTests(unittest.TestCase):
                 install._ensure_venv_pip(venv_python)
 
         self.assertIn("venv/ensurepip", str(raised.exception))
+        self.assertIn("删除受管 .venv 后重试", str(raised.exception))
+
+    def test_main_recreates_incomplete_managed_venv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            data_root = root / "data"
+            venv_dir = data_root / ".venv"
+            incomplete_python = install._venv_python_path(venv_dir)
+            incomplete_python.parent.mkdir(parents=True)
+            incomplete_python.write_text("", encoding="utf-8")
+            recreated_python = install._venv_python_path(venv_dir)
+            install_dir = root / "repo"
+            install_dir.mkdir()
+            install_script = install_dir / "install.py"
+            install_script.write_text("# stub\n", encoding="utf-8")
+            recreated_calls: list[pathlib.Path] = []
+            pip_calls: list[tuple[pathlib.Path, tuple[str, ...]]] = []
+            checked_calls: list[list[str]] = []
+
+            def fake_recreate(target: pathlib.Path) -> None:
+                recreated_calls.append(target)
+                if target.exists():
+                    import shutil
+
+                    shutil.rmtree(target)
+                recreated_python.parent.mkdir(parents=True)
+                (target / "pyvenv.cfg").write_text("home = C:\\Python314\n", encoding="utf-8")
+                recreated_python.write_text("", encoding="utf-8")
+
+            def fake_run_pip_install(venv_python: pathlib.Path, *args: str) -> None:
+                pip_calls.append((venv_python, tuple(args)))
+
+            def fake_run_checked(command: list[str]) -> None:
+                checked_calls.append(list(command))
+
+            with patch("install.default_data_root", return_value=data_root):
+                with patch("install._ensure_supported_python"):
+                    with patch("install.pathlib.Path.resolve", return_value=install_script):
+                        with patch("install._recreate_venv", side_effect=fake_recreate):
+                            with patch("install._ensure_venv_pip"):
+                                with patch("install._run_pip_install", side_effect=fake_run_pip_install):
+                                    with patch("install._run_checked", side_effect=fake_run_checked):
+                                        install.main()
+
+        self.assertEqual(recreated_calls, [venv_dir])
+        self.assertEqual(
+            pip_calls,
+            [
+                (recreated_python, ("setuptools<81", "wheel")),
+                (recreated_python, ("--no-build-isolation", str(install_dir))),
+            ],
+        )
+        self.assertEqual(
+            checked_calls,
+            [[str(recreated_python), "-m", "bot.manage_cli", "bootstrap-install"]],
+        )

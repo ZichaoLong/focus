@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import venv
@@ -25,6 +26,21 @@ def _venv_python_path(venv_dir: pathlib.Path) -> pathlib.Path:
     if os.name == "nt":
         return venv_dir / "Scripts" / "python.exe"
     return venv_dir / "bin" / "python"
+
+
+def _venv_cfg_path(venv_dir: pathlib.Path) -> pathlib.Path:
+    return venv_dir / "pyvenv.cfg"
+
+
+def _venv_is_complete(venv_dir: pathlib.Path) -> bool:
+    return _venv_cfg_path(venv_dir).exists() and _venv_python_path(venv_dir).exists()
+
+
+def _recreate_venv(venv_dir: pathlib.Path) -> None:
+    if venv_dir.exists():
+        shutil.rmtree(venv_dir)
+    venv_dir.parent.mkdir(parents=True, exist_ok=True)
+    venv.EnvBuilder(with_pip=True).create(venv_dir)
 
 
 def _run_checked(command: list[str]) -> None:
@@ -74,7 +90,9 @@ def _ensure_venv_pip(venv_python: pathlib.Path) -> None:
         _run_checked([str(venv_python), "-m", "ensurepip", "--upgrade"])
     except subprocess.CalledProcessError as exc:
         raise SystemExit(
-            "当前 Python 无法在受管 .venv 中引导 pip；请确认已安装该 Python 对应的 venv/ensurepip 组件。"
+            "当前 Python 无法在受管 .venv 中引导 pip；"
+            "请确认已安装该 Python 对应的 venv/ensurepip 组件，"
+            "或删除受管 .venv 后重试。"
         ) from exc
     if not _venv_has_pip(venv_python):
         raise SystemExit("已尝试使用 ensurepip 修复受管 .venv，但其中仍然缺少 pip。")
@@ -84,9 +102,8 @@ def main() -> None:
     _ensure_supported_python()
     install_dir = pathlib.Path(__file__).resolve().parent
     venv_dir = default_data_root() / ".venv"
-    if not venv_dir.exists():
-        venv_dir.parent.mkdir(parents=True, exist_ok=True)
-        venv.EnvBuilder(with_pip=True).create(venv_dir)
+    if not _venv_is_complete(venv_dir):
+        _recreate_venv(venv_dir)
     venv_python = _venv_python_path(venv_dir)
     if not venv_python.exists():
         raise SystemExit(f"受管 .venv 不完整，缺少解释器：{venv_python}")
