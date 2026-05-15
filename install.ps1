@@ -24,6 +24,21 @@ function Test-SupportedPython {
   return $LASTEXITCODE -eq 0
 }
 
+function Get-PersistentExecutionPolicy {
+  foreach ($scope in @("MachinePolicy", "UserPolicy", "CurrentUser", "LocalMachine")) {
+    $policy = Get-ExecutionPolicy -Scope $scope -ErrorAction SilentlyContinue
+    if ($policy -and $policy -ne "Undefined") {
+      return [string]$policy
+    }
+  }
+
+  return "Restricted"
+}
+
+function Test-PowerShellProfileAutoloadAllowed {
+  return @("Bypass", "Unrestricted", "RemoteSigned") -contains (Get-PersistentExecutionPolicy)
+}
+
 try {
   $pythonCommand = $null
   $pythonArgs = @()
@@ -43,9 +58,14 @@ try {
     Write-Error "需要 Python 3.11 或更高版本。"
   }
 
+  if (-not (Test-PowerShellProfileAutoloadAllowed)) {
+    $env:FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD = "1"
+  }
+
   & $pythonCommand @pythonArgs "$scriptDir\install.py"
   exit $LASTEXITCODE
 }
 finally {
+  Remove-Item Env:FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD -ErrorAction SilentlyContinue
   Remove-Item Env:FC_POWERSHELL_PROFILE_PATH -ErrorAction SilentlyContinue
 }

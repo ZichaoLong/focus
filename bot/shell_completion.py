@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import shlex
 import sys
@@ -155,14 +156,18 @@ def _read_powershell_completion_metadata() -> tuple[pathlib.Path | None, pathlib
     return script_path, profile_path
 
 
-def _write_powershell_completion_metadata(*, script_path: pathlib.Path, profile_path: pathlib.Path) -> None:
+def _write_powershell_completion_metadata(
+    *,
+    script_path: pathlib.Path,
+    profile_path: pathlib.Path | None,
+) -> None:
     path = _powershell_completion_metadata_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
                 "script_path": str(script_path),
-                "profile_path": str(profile_path),
+                "profile_path": str(profile_path) if profile_path is not None else "",
             },
             ensure_ascii=False,
             indent=2,
@@ -170,6 +175,11 @@ def _write_powershell_completion_metadata(*, script_path: pathlib.Path, profile_
         + "\n",
         encoding="utf-8",
     )
+
+
+def _powershell_profile_autoload_disabled() -> bool:
+    raw = os.environ.get("FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD", "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def _remove_powershell_completion_metadata() -> None:
@@ -420,6 +430,14 @@ def _install_powershell_completion_files(
         _remove_powershell_completion_files()
     script_path.parent.mkdir(parents=True, exist_ok=True)
     script_path.write_text(render_powershell_completion_script(venv_python=venv_python), encoding="utf-8")
+    if _powershell_profile_autoload_disabled():
+        _remove_managed_block(
+            profile_path,
+            start_marker=_POWERSHELL_PROFILE_BLOCK_START,
+            end_marker=_POWERSHELL_PROFILE_BLOCK_END,
+        )
+        _write_powershell_completion_metadata(script_path=script_path, profile_path=None)
+        return script_path, None
     _upsert_managed_block(
         profile_path,
         start_marker=_POWERSHELL_PROFILE_BLOCK_START,

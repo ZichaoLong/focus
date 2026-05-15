@@ -821,6 +821,9 @@ def _print_install_summary(
                     "    - PowerShell：已写入自动加载 profile "
                     f"{completion_result.powershell_profile_path}；重开 PowerShell 即可生效"
                 )
+            else:
+                print("    - PowerShell：当前执行策略禁止自动加载本地 profile 脚本；未写入自动加载钩子")
+                print("    - PowerShell：如需自动生效，可先执行 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned")
             print(f"    - PowerShell：当前 shell 也可手动执行 . '{completion_result.powershell_script_path}'")
 
 
