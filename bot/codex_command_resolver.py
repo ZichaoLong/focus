@@ -8,6 +8,10 @@ import shutil
 DEFAULT_CODEX_COMMAND = "codex"
 
 
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
 def _resolve_existing_path(raw: str | None) -> pathlib.Path | None:
     if not raw:
         return None
@@ -22,6 +26,10 @@ def _current_command_path(command: str) -> pathlib.Path | None:
     if not resolved:
         return None
     return pathlib.Path(resolved).expanduser()
+
+
+def _render_windows_command_path(path: pathlib.Path | str) -> str:
+    return str(pathlib.Path(path)).replace("\\", "/")
 
 
 def _is_path_within(path: pathlib.Path, root: pathlib.Path) -> bool:
@@ -69,6 +77,40 @@ def _node_launcher_command(
     return None
 
 
+def _fnm_default_launcher_command(
+    *,
+    fallback_node: pathlib.Path | None = None,
+    fallback_codex: pathlib.Path | None = None,
+) -> str | None:
+    for fnm_root in _candidate_fnm_roots():
+        default_installation_root = fnm_root / "aliases" / "default"
+        if not default_installation_root.exists():
+            continue
+
+        default_node_candidates = [
+            default_installation_root / "bin" / "node",
+            default_installation_root / "bin" / "node.exe",
+        ]
+        default_codex_candidates = [
+            default_installation_root / "bin" / "codex",
+            default_installation_root / "bin" / "codex.cmd",
+            default_installation_root / "bin" / "codex.exe",
+        ]
+        default_codex_js = default_installation_root / "lib" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+
+        stable_node = next((candidate for candidate in default_node_candidates if candidate.exists()), fallback_node)
+        stable_codex = next(
+            (candidate for candidate in default_codex_candidates if candidate.exists()),
+            default_codex_js if default_codex_js.exists() else fallback_codex,
+        )
+        if stable_node is None or stable_codex is None:
+            continue
+        if not stable_node.exists() or not stable_codex.exists():
+            continue
+        return shlex.join([str(stable_node), str(stable_codex)])
+    return None
+
+
 def _candidate_fnm_roots() -> list[pathlib.Path]:
     roots: list[pathlib.Path] = []
     for raw in (
@@ -97,38 +139,100 @@ def _candidate_nvm_roots() -> list[pathlib.Path]:
     return roots
 
 
+def _detect_windows_node_executable() -> pathlib.Path | None:
+    current_node = _current_command_path("node")
+    resolved_node = _resolve_existing_path(str(current_node)) if current_node is not None else None
+    if resolved_node is not None:
+        return resolved_node
+    home = _home_dir()
+    candidates = [
+        pathlib.Path(os.environ.get("ProgramFiles") or "") / "nodejs" / "node.exe",
+        pathlib.Path(os.environ.get("ProgramFiles(x86)") or "") / "nodejs" / "node.exe",
+        home / "AppData" / "Local" / "Programs" / "nodejs" / "node.exe",
+    ]
+    for candidate in candidates:
+        resolved = _resolve_existing_path(str(candidate))
+        if resolved is not None:
+            return resolved
+    return None
+
+
+def _windows_npm_codex_command_for_wrapper(wrapper_path: pathlib.Path) -> str | None:
+    resolved_wrapper = _resolve_existing_path(str(wrapper_path))
+    if resolved_wrapper is None:
+        return None
+    npm_dir = resolved_wrapper.parent
+    codex_js = npm_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+    node = _detect_windows_node_executable()
+    if node is not None and codex_js.exists():
+        return shlex.join([
+            _render_windows_command_path(node),
+            _render_windows_command_path(codex_js),
+        ])
+    return _render_windows_command_path(resolved_wrapper)
+
+
+def _windows_npm_stable_codex_command_for_wrapper(wrapper_path: pathlib.Path) -> str | None:
+    resolved_wrapper = _resolve_existing_path(str(wrapper_path))
+    if resolved_wrapper is None:
+        return None
+    npm_dir = resolved_wrapper.parent
+    codex_js = npm_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+    node = _detect_windows_node_executable()
+    if node is None or not codex_js.exists():
+        return None
+    return shlex.join([
+        _render_windows_command_path(node),
+        _render_windows_command_path(codex_js),
+    ])
+
+
+def _detect_windows_npm_global_codex_command() -> str | None:
+    appdata = os.environ.get("APPDATA", "").strip()
+    home = _home_dir()
+    npm_dirs = []
+    if appdata:
+        npm_dirs.append(pathlib.Path(appdata).expanduser() / "npm")
+    npm_dirs.append(home / "AppData" / "Roaming" / "npm")
+    seen: set[str] = set()
+    for npm_dir in npm_dirs:
+        key = str(npm_dir)
+        if key in seen:
+            continue
+        seen.add(key)
+        for candidate in (npm_dir / "codex.cmd", npm_dir / "codex"):
+            command = _windows_npm_codex_command_for_wrapper(candidate)
+            if command is not None:
+                return command
+    return None
+
+
+def _detect_windows_npm_global_stable_codex_command() -> str | None:
+    appdata = os.environ.get("APPDATA", "").strip()
+    home = _home_dir()
+    npm_dirs = []
+    if appdata:
+        npm_dirs.append(pathlib.Path(appdata).expanduser() / "npm")
+    npm_dirs.append(home / "AppData" / "Roaming" / "npm")
+    seen: set[str] = set()
+    for npm_dir in npm_dirs:
+        key = str(npm_dir)
+        if key in seen:
+            continue
+        seen.add(key)
+        for candidate in (npm_dir / "codex.cmd", npm_dir / "codex"):
+            command = _windows_npm_stable_codex_command_for_wrapper(candidate)
+            if command is not None:
+                return command
+    return None
+
+
 def _detect_fnm_stable_codex_command() -> str | None:
     current_codex = _current_command_path("codex")
     current_node = _current_command_path("node")
     resolved_node = _resolve_existing_path(str(current_node)) if current_node is not None else None
     resolved_codex = _resolve_existing_path(str(current_codex)) if current_codex is not None else None
-    for fnm_root in _candidate_fnm_roots():
-        default_installation_root = fnm_root / "aliases" / "default"
-        if not default_installation_root.exists():
-            continue
-
-        default_node_candidates = [
-            default_installation_root / "bin" / "node",
-            default_installation_root / "bin" / "node.exe",
-        ]
-        default_codex_candidates = [
-            default_installation_root / "bin" / "codex",
-            default_installation_root / "bin" / "codex.cmd",
-            default_installation_root / "bin" / "codex.exe",
-        ]
-        default_codex_js = default_installation_root / "lib" / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
-
-        stable_node = next((candidate for candidate in default_node_candidates if candidate.exists()), resolved_node)
-        stable_codex = next(
-            (candidate for candidate in default_codex_candidates if candidate.exists()),
-            default_codex_js if default_codex_js.exists() else resolved_codex,
-        )
-        if stable_node is None or stable_codex is None:
-            continue
-        if not stable_node.exists() or not stable_codex.exists():
-            continue
-        return shlex.join([str(stable_node), str(stable_codex)])
-    return None
+    return _fnm_default_launcher_command(fallback_node=resolved_node, fallback_codex=resolved_codex)
 
 
 def _resolve_nvm_alias(root: pathlib.Path, name: str, *, seen: set[str] | None = None) -> str | None:
@@ -190,6 +294,10 @@ def _normalize_explicit_managed_command(configured_command: str) -> str | None:
     explicit_path = _resolve_existing_path(parts[0])
     if explicit_path is None or explicit_path.name.startswith("node"):
         return None
+    if "fnm_multishells" in explicit_path.parts:
+        command = _fnm_default_launcher_command(fallback_codex=pathlib.Path(parts[0]).expanduser())
+        if command is not None:
+            return command
     installation_root = _nvm_installation_root_for_path(explicit_path)
     if installation_root is None:
         return None
@@ -197,6 +305,19 @@ def _normalize_explicit_managed_command(configured_command: str) -> str | None:
 
 
 def detect_stable_codex_command() -> str | None:
+    if _is_windows():
+        current_codex = _current_command_path(DEFAULT_CODEX_COMMAND)
+        if current_codex is not None:
+            rendered_current = _render_windows_command_path(current_codex)
+            return (
+                _normalize_explicit_managed_command(rendered_current)
+                or _windows_npm_stable_codex_command_for_wrapper(current_codex)
+            )
+        return (
+            _detect_windows_npm_global_stable_codex_command()
+            or _detect_fnm_stable_codex_command()
+            or _detect_nvm_stable_codex_command()
+        )
     return _detect_fnm_stable_codex_command() or _detect_nvm_stable_codex_command()
 
 
@@ -204,6 +325,16 @@ def resolve_managed_codex_command(configured_command: str) -> str:
     normalized = str(configured_command or "").strip() or DEFAULT_CODEX_COMMAND
     if normalized != DEFAULT_CODEX_COMMAND:
         return _normalize_explicit_managed_command(normalized) or normalized
+    if _is_windows():
+        current_codex = _current_command_path(DEFAULT_CODEX_COMMAND)
+        if current_codex is not None:
+            rendered_current = _render_windows_command_path(current_codex)
+            return (
+                _normalize_explicit_managed_command(rendered_current)
+                or _windows_npm_codex_command_for_wrapper(current_codex)
+                or rendered_current
+            )
+        return detect_stable_codex_command() or DEFAULT_CODEX_COMMAND
     if shutil.which(DEFAULT_CODEX_COMMAND):
         return DEFAULT_CODEX_COMMAND
     return detect_stable_codex_command() or DEFAULT_CODEX_COMMAND
