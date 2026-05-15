@@ -17,7 +17,7 @@
 在仓库根目录执行：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q tests
+python -m pytest -q tests
 ```
 
 结果：
@@ -39,12 +39,12 @@ python3 -m unittest tests.test_main.MainEntrypointTests.test_main_uses_five_seco
 
 重点复核了以下位置：
 
-- [bot/stores/thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/bot/stores/thread_runtime_lease_store.py:121)
-- [bot/thread_runtime_coordination.py](/home/zlong/llm/feishu-codex/bot/thread_runtime_coordination.py:303)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2600)
-- [pyproject.toml](/home/zlong/llm/feishu-codex/pyproject.toml:29)
-- [tests/test_main.py](/home/zlong/llm/feishu-codex/tests/test_main.py:12)
-- [bot/shared_command_surface.py](/home/zlong/llm/feishu-codex/bot/shared_command_surface.py:1)
+- [bot/stores/thread_runtime_lease_store.py](../../bot/stores/thread_runtime_lease_store.py:121)
+- [bot/thread_runtime_coordination.py](../../bot/thread_runtime_coordination.py:303)
+- [bot/codex_handler.py](../../bot/codex_handler.py:2600)
+- [pyproject.toml](../../pyproject.toml:29)
+- [tests/test_main.py](../../tests/test_main.py:12)
+- [bot/shared_command_surface.py](../../bot/shared_command_surface.py:1)
 
 ### 2.3 最小复现
 
@@ -71,10 +71,10 @@ purge_all_for_instance(instance_name="default", owner_service_token="token-new")
 
 相关位置：
 
-- [bot/stores/thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/bot/stores/thread_runtime_lease_store.py:310)
-- [bot/stores/thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/bot/stores/thread_runtime_lease_store.py:361)
-- [bot/thread_runtime_coordination.py](/home/zlong/llm/feishu-codex/bot/thread_runtime_coordination.py:314)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2600)
+- [bot/stores/thread_runtime_lease_store.py](../../bot/stores/thread_runtime_lease_store.py:310)
+- [bot/stores/thread_runtime_lease_store.py](../../bot/stores/thread_runtime_lease_store.py:361)
+- [bot/thread_runtime_coordination.py](../../bot/thread_runtime_coordination.py:314)
+- [bot/codex_handler.py](../../bot/codex_handler.py:2600)
 
 问题本质：
 
@@ -141,11 +141,11 @@ purge_all_for_instance(instance_name="default", owner_service_token="token-new")
 下列旧审计结论在当前工作树里已失效，不应再当成现状引用：
 
 1. `feishu-scheduled-prompts` 打包资源缺失
-   - 当前 [pyproject.toml](/home/zlong/llm/feishu-codex/pyproject.toml:29) 已声明该 skill 的 package data。
+   - 当前 [pyproject.toml](../../pyproject.toml:29) 已声明该 skill 的 package data。
    - 当前 `feishu_codex.egg-info/SOURCES.txt` 也已包含相关资源。
 
 2. `tests/test_main.py` 默认超时测试失效
-   - 当前 [tests/test_main.py](/home/zlong/llm/feishu-codex/tests/test_main.py:12) 可通过。
+   - 当前 [tests/test_main.py](../../tests/test_main.py:12) 可通过。
    - `bot/__main__.py` 里默认值仍正确读取 `DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS`。
 
 3. `shared_command_surface.py` 自称完整事实源

@@ -55,8 +55,8 @@
 
 因此应保留：
 
-- [bot/manage_cli.py](/home/zlong/llm/feishu-codex/bot/manage_cli.py)
-- [/home/zlong/llm/feishu-codex/.agents/skills](/home/zlong/llm/feishu-codex/.agents/skills)
+- [bot/manage_cli.py](../../bot/manage_cli.py)
+- [.agents/skills](../../.agents/skills)
 
 ## 3. 现状判断
 
@@ -64,10 +64,10 @@
 
 当前飞书侧 `/skills` 是一套独立产品面：
 
-- slash 路由见 [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py)
-- 帮助与导航见 [bot/codex_help_domain.py](/home/zlong/llm/feishu-codex/bot/codex_help_domain.py)
-- 领域逻辑见 [bot/codex_advanced_features_domain.py](/home/zlong/llm/feishu-codex/bot/codex_advanced_features_domain.py)
-- adapter 接口与解析见 [bot/adapters/base.py](/home/zlong/llm/feishu-codex/bot/adapters/base.py)、[bot/adapters/codex_app_server.py](/home/zlong/llm/feishu-codex/bot/adapters/codex_app_server.py)
+- slash 路由见 [bot/codex_handler.py](../../bot/codex_handler.py)
+- 帮助与导航见 [bot/codex_help_domain.py](../../bot/codex_help_domain.py)
+- 领域逻辑见 [bot/codex_advanced_features_domain.py](../../bot/codex_advanced_features_domain.py)
+- adapter 接口与解析见 [bot/adapters/base.py](../../bot/adapters/base.py)、[bot/adapters/codex_app_server.py](../../bot/adapters/codex_app_server.py)
 
 但普通飞书 prompt 链路当前并不会主动构造结构化 `skill` input item。
 它主要只发：
@@ -81,8 +81,8 @@
 
 当前飞书侧 `/plugins` 同样是一套独立产品面：
 
-- slash 路由与 action 路由都在 [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py)
-- 领域逻辑同样集中在 [bot/codex_advanced_features_domain.py](/home/zlong/llm/feishu-codex/bot/codex_advanced_features_domain.py)
+- slash 路由与 action 路由都在 [bot/codex_handler.py](../../bot/codex_handler.py)
+- 领域逻辑同样集中在 [bot/codex_advanced_features_domain.py](../../bot/codex_advanced_features_domain.py)
 - adapter 暴露了 `plugin/list`、`plugin/read`、`config/value/write`
 
 但普通飞书 prompt 链路当前也没有发送结构化 `mention` item。
@@ -97,8 +97,8 @@
 
 对应文件：
 
-- [bot/interaction_request_controller.py](/home/zlong/llm/feishu-codex/bot/interaction_request_controller.py)
-- [bot/fcodex_proxy.py](/home/zlong/llm/feishu-codex/bot/fcodex_proxy.py)
+- [bot/interaction_request_controller.py](../../bot/interaction_request_controller.py)
+- [bot/fcodex_proxy.py](../../bot/fcodex_proxy.py)
 
 因此所谓“MCP 移除”，不应理解为删除所有 `mcp` 字样代码，而应理解为：
 
@@ -120,13 +120,13 @@
 
 主要文件：
 
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py)
+- [bot/codex_handler.py](../../bot/codex_handler.py)
 
 ### 4.2 领域层
 
 应整体删除：
 
-- [bot/codex_advanced_features_domain.py](/home/zlong/llm/feishu-codex/bot/codex_advanced_features_domain.py)
+- [bot/codex_advanced_features_domain.py](../../bot/codex_advanced_features_domain.py)
 
 这是本次移除的中心文件。其职责几乎完全就是：
 
@@ -142,7 +142,7 @@
 
 主要文件：
 
-- [bot/shared_command_surface.py](/home/zlong/llm/feishu-codex/bot/shared_command_surface.py)
+- [bot/shared_command_surface.py](../../bot/shared_command_surface.py)
 
 ### 4.4 adapter 抽象与 app-server 适配层
 
@@ -165,8 +165,8 @@
 
 主要文件：
 
-- [bot/adapters/base.py](/home/zlong/llm/feishu-codex/bot/adapters/base.py)
-- [bot/adapters/codex_app_server.py](/home/zlong/llm/feishu-codex/bot/adapters/codex_app_server.py)
+- [bot/adapters/base.py](../../bot/adapters/base.py)
+- [bot/adapters/codex_app_server.py](../../bot/adapters/codex_app_server.py)
 
 `codex_app_server.py` 中可一并删除：
 
@@ -194,8 +194,8 @@
 
 必须保留：
 
-- [bot/interaction_request_controller.py](/home/zlong/llm/feishu-codex/bot/interaction_request_controller.py) 中对 `mcpServer/elicitation/request` 的取消逻辑
-- [bot/fcodex_proxy.py](/home/zlong/llm/feishu-codex/bot/fcodex_proxy.py) 中把它视为 interactive server request 的处理
+- [bot/interaction_request_controller.py](../../bot/interaction_request_controller.py) 中对 `mcpServer/elicitation/request` 的取消逻辑
+- [bot/fcodex_proxy.py](../../bot/fcodex_proxy.py) 中把它视为 interactive server request 的处理
 
 原因：
 
@@ -221,8 +221,8 @@
 
 应移除或归档：
 
-- [docs/contracts/feishu-advanced-features.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-advanced-features.md)
-- [docs/contracts/feishu-advanced-features.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-advanced-features.zh-CN.md)
+- [docs/contracts/feishu-advanced-features.md](../../docs/contracts/feishu-advanced-features.md)
+- [docs/contracts/feishu-advanced-features.zh-CN.md](../../docs/contracts/feishu-advanced-features.zh-CN.md)
 
 建议：
 
@@ -231,12 +231,12 @@
 
 应更新：
 
-- [docs/contracts/feishu-help-navigation.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-help-navigation.md)
-- [docs/contracts/feishu-help-navigation.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-help-navigation.zh-CN.md)
-- [docs/contracts/feishu-command-matrix.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-command-matrix.md)
-- [docs/contracts/feishu-command-matrix.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-command-matrix.zh-CN.md)
-- [docs/doc-index.md](/home/zlong/llm/feishu-codex/docs/doc-index.md)
-- [docs/doc-index.zh-CN.md](/home/zlong/llm/feishu-codex/docs/doc-index.zh-CN.md)
+- [docs/contracts/feishu-help-navigation.md](../../docs/contracts/feishu-help-navigation.md)
+- [docs/contracts/feishu-help-navigation.zh-CN.md](../../docs/contracts/feishu-help-navigation.zh-CN.md)
+- [docs/contracts/feishu-command-matrix.md](../../docs/contracts/feishu-command-matrix.md)
+- [docs/contracts/feishu-command-matrix.zh-CN.md](../../docs/contracts/feishu-command-matrix.zh-CN.md)
+- [docs/doc-index.md](../../docs/doc-index.md)
+- [docs/doc-index.zh-CN.md](../../docs/doc-index.zh-CN.md)
 
 ### 6.2 不应误删的文档
 
@@ -254,8 +254,8 @@
 
 应删除：
 
-- [tests/test_codex_handler.py](/home/zlong/llm/feishu-codex/tests/test_codex_handler.py) 中 `/skills`、`/plugins`、`advanced` 帮助页相关测试
-- [tests/test_codex_app_server.py](/home/zlong/llm/feishu-codex/tests/test_codex_app_server.py) 中 `skills/plugin` adapter 方法测试
+- [tests/test_codex_handler.py](../../tests/test_codex_handler.py) 中 `/skills`、`/plugins`、`advanced` 帮助页相关测试
+- [tests/test_codex_app_server.py](../../tests/test_codex_app_server.py) 中 `skills/plugin` adapter 方法测试
 
 并同步简化：
 
@@ -321,10 +321,10 @@
 建议至少跑：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest \
-  /home/zlong/llm/feishu-codex/tests/test_codex_handler.py \
-  /home/zlong/llm/feishu-codex/tests/test_codex_app_server.py \
-  /home/zlong/llm/feishu-codex/tests/test_manage_cli.py
+python -m pytest \
+  tests/test_codex_handler.py \
+  tests/test_codex_app_server.py \
+  tests/test_manage_cli.py
 ```
 
 如阶段 1 已删掉相应测试，可改成剩余相关测试文件。

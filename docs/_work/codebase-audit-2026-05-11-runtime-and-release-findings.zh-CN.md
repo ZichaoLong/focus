@@ -73,18 +73,18 @@ python3 -m unittest discover -s tests -q
 
 涉及代码：
 
-- [bot/stores/thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/bot/stores/thread_runtime_lease_store.py:121)
-- [bot/stores/thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/bot/stores/thread_runtime_lease_store.py:354)
-- [bot/thread_runtime_coordination.py](/home/zlong/llm/feishu-codex/bot/thread_runtime_coordination.py:300)
+- [bot/stores/thread_runtime_lease_store.py](../../bot/stores/thread_runtime_lease_store.py:121)
+- [bot/stores/thread_runtime_lease_store.py](../../bot/stores/thread_runtime_lease_store.py:354)
+- [bot/thread_runtime_coordination.py](../../bot/thread_runtime_coordination.py:300)
 
 当前行为链路：
 
 1. `ThreadRuntimeLeaseStore.acquire()` 只要 `instance_name` 相同，就允许追加 holder。
 2. 这里不会检查 `owner_service_token` 是否也相同。
 3. 于是“旧 service token 下的 `fcodex` holder”与“新 service token 下的 service holder”会被写进同一条 lease。
-4. 后续 backend reset 时，[bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2601) 只会按**当前** `owner_token` 调 `purge_all_for_instance()`。
+4. 后续 backend reset 时，[bot/codex_handler.py](../../bot/codex_handler.py:2601) 只会按**当前** `owner_token` 调 `purge_all_for_instance()`。
 5. 结果是新 token 对应的 holder 被清掉，但旧 token holder 仍残留。
-6. 而自动转移路径又要求 registry token 与 lease token 完全一致，[bot/thread_runtime_coordination.py](/home/zlong/llm/feishu-codex/bot/thread_runtime_coordination.py:311) 会把这种状态判定为“记录中的 owner service 已变化”。
+6. 而自动转移路径又要求 registry token 与 lease token 完全一致，[bot/thread_runtime_coordination.py](../../bot/thread_runtime_coordination.py:311) 会把这种状态判定为“记录中的 owner service 已变化”。
 
 我实际做过的最小复现：
 
@@ -129,9 +129,9 @@ python3 -m unittest discover -s tests -q
 
 涉及代码：
 
-- [bot/runtime_admin_controller.py](/home/zlong/llm/feishu-codex/bot/runtime_admin_controller.py:1666)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2704)
-- [bot/thread_memory_mode.py](/home/zlong/llm/feishu-codex/bot/thread_memory_mode.py:35)
+- [bot/runtime_admin_controller.py](../../bot/runtime_admin_controller.py:1666)
+- [bot/codex_handler.py](../../bot/codex_handler.py:2704)
+- [bot/thread_memory_mode.py](../../bot/thread_memory_mode.py:35)
 
 当前语义冲突点：
 
@@ -144,7 +144,7 @@ python3 -m unittest discover -s tests -q
 
 这和“thread-wise next-load 设置”的合同不一致。
 
-更严重的是，[bot/thread_memory_mode.py](/home/zlong/llm/feishu-codex/bot/thread_memory_mode.py:35) 里：
+更严重的是，[bot/thread_memory_mode.py](../../bot/thread_memory_mode.py:35) 里：
 
 - `off -> disabled`
 - `read -> disabled`
@@ -175,10 +175,10 @@ python3 -m unittest discover -s tests -q
 
 涉及代码与元数据：
 
-- [pyproject.toml](/home/zlong/llm/feishu-codex/pyproject.toml:29)
-- [bot/manage_cli.py](/home/zlong/llm/feishu-codex/bot/manage_cli.py:341)
-- [install.py](/home/zlong/llm/feishu-codex/install.py:83)
-- [feishu_codex.egg-info/SOURCES.txt](/home/zlong/llm/feishu-codex/feishu_codex.egg-info/SOURCES.txt:70)
+- [pyproject.toml](../../pyproject.toml:29)
+- [bot/manage_cli.py](../../bot/manage_cli.py:341)
+- [install.py](../../install.py:83)
+- [feishu_codex.egg-info/SOURCES.txt](../../feishu_codex.egg-info/SOURCES.txt:70)
 
 当前问题链路：
 
@@ -191,7 +191,7 @@ python3 -m unittest discover -s tests -q
 3. 但 `feishu-codex skill install` 的源目录解析逻辑是：
    - import 已安装包
    - 再从包目录下取 `skill/`
-4. 官方安装入口 [install.py](/home/zlong/llm/feishu-codex/install.py:95) 又正是把当前仓库 `pip install` 到受管 `.venv`
+4. 官方安装入口 [install.py](../../install.py:95) 又正是把当前仓库 `pip install` 到受管 `.venv`
 
 当前仓库里现成的 `egg-info/SOURCES.txt` 已经显示：
 
@@ -202,7 +202,7 @@ python3 -m unittest discover -s tests -q
 
 为什么这是发布面问题：
 
-- 在源码树里运行测试时，[tests/test_manage_cli.py](/home/zlong/llm/feishu-codex/tests/test_manage_cli.py:491) 会通过，因为它直接从当前仓库取文件。
+- 在源码树里运行测试时，[tests/test_manage_cli.py](../../tests/test_manage_cli.py:491) 会通过，因为它直接从当前仓库取文件。
 - 但真实用户安装后运行 `feishu-codex skill install`，依赖的是“安装包里是否带上了这些资源”。
 - 这两条路径现在并不等价。
 
@@ -219,7 +219,7 @@ python3 -m unittest discover -s tests -q
 
 涉及代码：
 
-- [tests/test_main.py](/home/zlong/llm/feishu-codex/tests/test_main.py:11)
+- [tests/test_main.py](../../tests/test_main.py:11)
 
 当前现象：
 
@@ -254,7 +254,7 @@ python3 -m unittest tests.test_main.MainEntrypointTests.test_main_uses_five_seco
 
 本轮还确认了两件事：
 
-1. [tests/test_thread_runtime_lease_store.py](/home/zlong/llm/feishu-codex/tests/test_thread_runtime_lease_store.py:1) 和 [tests/test_thread_runtime_coordination.py](/home/zlong/llm/feishu-codex/tests/test_thread_runtime_coordination.py:1) 当前都没有覆盖“同实例不同 token”的场景。
+1. [tests/test_thread_runtime_lease_store.py](../../tests/test_thread_runtime_lease_store.py:1) 和 [tests/test_thread_runtime_coordination.py](../../tests/test_thread_runtime_coordination.py:1) 当前都没有覆盖“同实例不同 token”的场景。
 2. `python3 -m unittest discover -s tests -q` 在当前解释器里还有一批导入错误，主要来自缺少 `lark_oapi` / `websockets`，所以本轮结论不依赖这些测试是否能在此环境跑通。
 
 ## 6. 建议优先级

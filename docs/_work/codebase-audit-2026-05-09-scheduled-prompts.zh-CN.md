@@ -116,12 +116,12 @@
 
 解释器：
 
-- `/home/zlong/anaconda3/bin/python`
+- `python`
 
 已执行测试：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q \
+python -m pytest -q \
   tests/test_feishu_codexctl.py \
   tests/test_manage_cli.py \
   tests/test_scheduled_prompt_skill.py \
@@ -136,7 +136,7 @@
 另执行：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q tests/test_prompt_turn_entry_controller.py
+python -m pytest -q tests/test_prompt_turn_entry_controller.py
 ```
 
 结果：

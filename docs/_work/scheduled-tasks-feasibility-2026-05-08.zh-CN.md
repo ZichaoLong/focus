@@ -111,7 +111,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 本机安装位置示例：
 
-- `/home/zlong/.local/share/fnm/node-versions/v25.9.0/installation/bin/lark-cli`
+- `lark-cli`
 
 ### 3.2 但当前不应把 `lark-cli` 当主触发面
 

@@ -61,8 +61,8 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 相关参考：
 
-- [docs/contracts/scheduled-prompts.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/scheduled-prompts.zh-CN.md)
-- [docs/contracts/feishu-codexctl-command-matrix.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-codexctl-command-matrix.zh-CN.md)
+- [docs/contracts/scheduled-prompts.zh-CN.md](../../docs/contracts/scheduled-prompts.zh-CN.md)
+- [docs/contracts/feishu-codexctl-command-matrix.zh-CN.md](../../docs/contracts/feishu-codexctl-command-matrix.zh-CN.md)
 
 ### 3.2 上游已具备 thread 级执行原语
 
@@ -83,8 +83,8 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 相关参考：
 
-- `~/llm/codex/codex-rs/docs/codex_mcp_interface.md`
-- [docs/contracts/feishu-thread-lifecycle.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-thread-lifecycle.zh-CN.md)
+- `codex-rs/docs/codex_mcp_interface.md`
+- [docs/contracts/feishu-thread-lifecycle.zh-CN.md](../../docs/contracts/feishu-thread-lifecycle.zh-CN.md)
 
 ### 3.3 当前项目已有 thread 安全边界
 
@@ -98,8 +98,8 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 相关参考：
 
-- [docs/contracts/runtime-control-surface.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/runtime-control-surface.zh-CN.md)
-- [docs/contracts/local-command-and-thread-profile-contract.zh-CN.md](/home/zlong/llm/feishu-codex/docs/contracts/local-command-and-thread-profile-contract.zh-CN.md)
+- [docs/contracts/runtime-control-surface.zh-CN.md](../../docs/contracts/runtime-control-surface.zh-CN.md)
+- [docs/contracts/local-command-and-thread-profile-contract.zh-CN.md](../../docs/contracts/local-command-and-thread-profile-contract.zh-CN.md)
 
 ## 4. 设计收敛结论
 

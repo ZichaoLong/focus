@@ -11,10 +11,11 @@ It exists for two reasons:
 Upstream baseline:
 
 - Codex source repository: [`openai/codex`](https://github.com/openai/codex.git)
-- Current local validation baseline: `codex-cli 0.118.0` (checked on 2026-04-03)
-- File/line references below are implementation breadcrumbs verified locally
-  against that baseline; they are useful for orientation, not guaranteed stable
-  permalinks
+- Current local validation baseline: `codex-cli 0.118.0`, resolved locally to
+  upstream tag `rust-v0.118.0`
+  (`b630ce9a4e754d35a1f33e4366ba638d18626142`) and checked on 2026-04-03
+- Upstream file/line references below are pinned to that commit so later
+  readers can recover the exact source snapshot discussed here
 
 ## 1. The Three Layers
 
@@ -55,8 +56,8 @@ accurate for current product behavior.
 
 Relevant upstream references:
 
-- [`protocol.rs:627`](/home/zlong/llm/codex/codex-rs/protocol/src/protocol.rs)
-- [`codex.yaml.example:35`](/home/zlong/llm/feishu-codex/config/codex.yaml.example)
+- [`codex-rs/protocol/src/protocol.rs:L627`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/protocol/src/protocol.rs#L627)
+- [`codex.yaml.example:35`](../../config/codex.yaml.example)
 
 ### 2.2 Sandbox is not a different toolset
 
@@ -97,8 +98,8 @@ it to `on-request`.
 
 Relevant upstream references:
 
-- [`protocol.rs:627`](/home/zlong/llm/codex/codex-rs/protocol/src/protocol.rs)
-- [`codex.rs:1648`](/home/zlong/llm/codex/codex-rs/core/src/codex.rs)
+- [`codex-rs/protocol/src/protocol.rs:L627`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/protocol/src/protocol.rs#L627)
+- [`codex-rs/core/src/codex.rs:L1648`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/core/src/codex.rs#L1648)
 
 Wording to avoid:
 
@@ -118,12 +119,12 @@ The platform sandbox selection is explicit upstream:
 
 Relevant upstream references:
 
-- [`manager.rs:49`](/home/zlong/llm/codex/codex-rs/sandboxing/src/manager.rs)
-- [`linux-sandbox/lib.rs:1`](/home/zlong/llm/codex/codex-rs/linux-sandbox/src/lib.rs)
-- [`seatbelt.rs:1`](/home/zlong/llm/codex/codex-rs/core/src/seatbelt.rs)
-- [`features/lib.rs:110`](/home/zlong/llm/codex/codex-rs/features/src/lib.rs)
-- [`command_runner_win.rs:1`](/home/zlong/llm/codex/codex-rs/windows-sandbox-rs/src/elevated/command_runner_win.rs)
-- [`token.rs:307`](/home/zlong/llm/codex/codex-rs/windows-sandbox-rs/src/token.rs)
+- [`codex-rs/sandboxing/src/manager.rs:L49`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/sandboxing/src/manager.rs#L49)
+- [`codex-rs/linux-sandbox/src/lib.rs:L1`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/linux-sandbox/src/lib.rs#L1)
+- [`codex-rs/core/src/seatbelt.rs:L1`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/core/src/seatbelt.rs#L1)
+- [`codex-rs/features/src/lib.rs:L110`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/features/src/lib.rs#L110)
+- [`codex-rs/windows-sandbox-rs/src/elevated/command_runner_win.rs:L1`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/windows-sandbox-rs/src/elevated/command_runner_win.rs#L1)
+- [`codex-rs/windows-sandbox-rs/src/token.rs:L308`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/windows-sandbox-rs/src/token.rs#L308)
 
 This is why Docker is only a loose analogy.
 Codex does not primarily switch to a separate image or alternate rootfs model.
@@ -170,7 +171,7 @@ Upstream currently protects at least:
 
 Relevant upstream reference:
 
-- [`permissions.rs:1098`](/home/zlong/llm/codex/codex-rs/protocol/src/permissions.rs)
+- [`codex-rs/protocol/src/permissions.rs:L1098`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/protocol/src/permissions.rs#L1098)
 
 This distinction matters because it explains why an agent can often edit project
 files while still being blocked from repo metadata or Codex metadata.
@@ -214,7 +215,7 @@ Upstream CLI includes explicit sandbox debugging subcommands:
 
 Relevant upstream reference:
 
-- [`main.rs:252`](/home/zlong/llm/codex/codex-rs/cli/src/main.rs)
+- [`codex-rs/cli/src/main.rs:L252`](https://github.com/openai/codex/blob/b630ce9a4e754d35a1f33e4366ba638d18626142/codex-rs/cli/src/main.rs#L252)
 
 Recommended troubleshooting flow:
 

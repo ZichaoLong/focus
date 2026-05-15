@@ -23,7 +23,11 @@
 上游基线：
 
 - Codex 源码仓库：[`openai/codex`](https://github.com/openai/codex.git)
-- 当前本地验证基线：`codex-cli 0.118.0`（2026-04-03）
+- 当前本地验证基线：`codex-cli 0.118.0`，本地可解析到上游 tag
+  `rust-v0.118.0`（commit
+  `b630ce9a4e754d35a1f33e4366ba638d18626142`），核对日期为 2026-04-03
+- 如果本文后续需要引用具体上游源码位置，应优先使用绑定到该基线
+  commit 的 `openai/codex` permalink，而不是开发者本机 checkout 路径
 
 本项目的当前设计，建立在这些 Codex 能力之上：
 

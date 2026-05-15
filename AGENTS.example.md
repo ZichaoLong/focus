@@ -128,4 +128,5 @@ When Codex app-server behavior or frontend / backend behavior matters:
 - treat upstream code and public documentation as the source of truth
 - inspect upstream code first when behavior is defined more clearly in
   implementation than in secondary descriptions
-- the upstream codebase is located at `~/llm/codex`
+- if the local upstream checkout path matters, record it in the real
+  repository-specific `AGENTS.md` instead of hard-coding it in this example

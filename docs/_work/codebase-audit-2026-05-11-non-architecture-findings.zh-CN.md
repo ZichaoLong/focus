@@ -20,20 +20,20 @@
 
 ### 2.1 使用的解释器
 
-- `/home/zlong/anaconda3/bin/python`
+- `python`
 
 ### 2.2 执行过的测试
 
 全量：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q tests
+python -m pytest -q tests
 ```
 
 单文件复核：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q tests/test_codex_settings_domain.py
+python -m pytest -q tests/test_codex_settings_domain.py
 ```
 
 ## 3. 结论摘要
@@ -47,9 +47,9 @@
 
 本轮核对下列三份内容后，没有发现实际命令集合不一致：
 
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:1480) 中的路由表
-- [docs/contracts/feishu-command-matrix.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-command-matrix.md:30)
-- [bot/codex_help_domain.py](/home/zlong/llm/feishu-codex/bot/codex_help_domain.py:675) 中的 `/commands`
+- [bot/codex_handler.py](../../bot/codex_handler.py:1480) 中的路由表
+- [docs/contracts/feishu-command-matrix.md](../../docs/contracts/feishu-command-matrix.md:30)
+- [bot/codex_help_domain.py](../../bot/codex_help_domain.py:675) 中的 `/commands`
 
 也就是说，当前问题更像是：
 
@@ -70,9 +70,9 @@
 
 相关位置：
 
-- [bot/codex_settings_domain.py](/home/zlong/llm/feishu-codex/bot/codex_settings_domain.py:64)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:382)
-- [tests/test_codex_settings_domain.py](/home/zlong/llm/feishu-codex/tests/test_codex_settings_domain.py:220)
+- [bot/codex_settings_domain.py](../../bot/codex_settings_domain.py:64)
+- [bot/codex_handler.py](../../bot/codex_handler.py:382)
+- [tests/test_codex_settings_domain.py](../../tests/test_codex_settings_domain.py:220)
 
 这不是纯粹的“测试文件忘记更新”。
 失效的正好是当前最敏感的一组合同：
@@ -91,7 +91,7 @@
 
 补充观察：
 
-我在 `tests/test_codex_settings_domain.py` 里没有看到针对 `handle_model_command` / `handle_set_model` 的直接单测；当前 `/model` 主要依赖 [tests/test_codex_handler.py](/home/zlong/llm/feishu-codex/tests/test_codex_handler.py) 做表层覆盖。
+我在 `tests/test_codex_settings_domain.py` 里没有看到针对 `handle_model_command` / `handle_set_model` 的直接单测；当前 `/model` 主要依赖 [tests/test_codex_handler.py](../../tests/test_codex_handler.py) 做表层覆盖。
 
 ### 4.2 中优先级：`shared_command_surface` 的定位写得过满
 
@@ -101,7 +101,7 @@
 
 相关位置：
 
-- [bot/shared_command_surface.py](/home/zlong/llm/feishu-codex/bot/shared_command_surface.py:2)
+- [bot/shared_command_surface.py](../../bot/shared_command_surface.py:2)
 
 但它当前只覆盖一部分命令，例如未覆盖：
 
@@ -118,8 +118,8 @@
 
 真正的完整正式命令集合目前仍在：
 
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:1480)
-- [docs/contracts/feishu-command-matrix.md](/home/zlong/llm/feishu-codex/docs/contracts/feishu-command-matrix.md:30)
+- [bot/codex_handler.py](../../bot/codex_handler.py:1480)
+- [docs/contracts/feishu-command-matrix.md](../../docs/contracts/feishu-command-matrix.md:30)
 
 因此这里的问题不是功能错误，而是**命名/注释让维护者产生错误预期**。
 
@@ -171,12 +171,12 @@
 
 ### 5.1 建议立刻做
 
-1. 修复 [tests/test_codex_settings_domain.py](/home/zlong/llm/feishu-codex/tests/test_codex_settings_domain.py:220) 的 `SettingsDomainPorts` 构造。
+1. 修复 [tests/test_codex_settings_domain.py](../../tests/test_codex_settings_domain.py:220) 的 `SettingsDomainPorts` 构造。
 2. 给 `CodexSettingsDomain` 补 `/model` 直接单测。
 
 ### 5.2 建议随后做
 
-1. 收窄 [bot/shared_command_surface.py](/home/zlong/llm/feishu-codex/bot/shared_command_surface.py:2) 的注释/命名，避免继续误导。
+1. 收窄 [bot/shared_command_surface.py](../../bot/shared_command_surface.py:2) 的注释/命名，避免继续误导。
 2. 如仍保留这层抽象，可在文件或合同文档里明确：
    - 它不是完整命令事实源
    - 它只服务于 help / card / copy 复用

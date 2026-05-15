@@ -415,14 +415,14 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 ## 8. 关键源码参考
 
-- `~/llm/codex/codex-rs/tui/src/slash_command.rs`
-- `~/llm/codex/codex-rs/tui/src/chatwidget/slash_dispatch.rs`
-- `~/llm/codex/codex-rs/tui/src/chatwidget/skills.rs`
-- `~/llm/codex/codex-rs/core-skills/src/loader.rs`
-- `~/llm/codex/codex-rs/app-server/src/request_processors/catalog_processor.rs`
-- `~/llm/codex/codex-rs/core/src/session/turn_context.rs`
-- `~/llm/codex/codex-rs/tui/src/chatwidget/plugins.rs`
-- `~/llm/codex/codex-rs/app-server-protocol/src/protocol/v2/plugin.rs`
-- `~/llm/codex/codex-rs/app-server/src/request_processors/plugins.rs`
-- `~/llm/codex/codex-rs/core/src/tools/handlers/multi_agents_spec.rs`
-- `~/llm/codex/codex-rs/app-server-protocol/src/protocol/common.rs`
+- `codex-rs/tui/src/slash_command.rs`
+- `codex-rs/tui/src/chatwidget/slash_dispatch.rs`
+- `codex-rs/tui/src/chatwidget/skills.rs`
+- `codex-rs/core-skills/src/loader.rs`
+- `codex-rs/app-server/src/request_processors/catalog_processor.rs`
+- `codex-rs/core/src/session/turn_context.rs`
+- `codex-rs/tui/src/chatwidget/plugins.rs`
+- `codex-rs/app-server-protocol/src/protocol/v2/plugin.rs`
+- `codex-rs/app-server/src/request_processors/plugins.rs`
+- `codex-rs/core/src/tools/handlers/multi_agents_spec.rs`
+- `codex-rs/app-server-protocol/src/protocol/common.rs`

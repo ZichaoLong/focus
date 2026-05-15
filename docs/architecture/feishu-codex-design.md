@@ -25,8 +25,12 @@ Historical context still matters:
 Upstream baseline:
 
 - Codex source repository: [`openai/codex`](https://github.com/openai/codex.git)
-- Current local validation baseline: `codex-cli 0.118.0` (checked on
-  2026-04-03)
+- Current local validation baseline: `codex-cli 0.118.0`, resolved locally to
+  upstream tag `rust-v0.118.0`
+  (`b630ce9a4e754d35a1f33e4366ba638d18626142`) and checked on 2026-04-03
+- If later revisions of this document need specific upstream source references,
+  prefer commit-pinned `openai/codex` permalinks against that baseline instead
+  of developer-local checkout paths
 
 The design is based on current Codex capabilities that are useful to a Feishu
 bridge:

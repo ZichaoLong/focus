@@ -27,11 +27,11 @@
 
 涉及代码：
 
-- [bot/thread_memory_mode.py](/home/zlong/llm/feishu-codex/bot/thread_memory_mode.py:51)
-- [bot/fcodex_proxy.py](/home/zlong/llm/feishu-codex/bot/fcodex_proxy.py:576)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2467)
-- [bot/codex_handler.py](/home/zlong/llm/feishu-codex/bot/codex_handler.py:2733)
-- [codex-rs/config/src/profile_toml.rs](/home/zlong/llm/codex/codex-rs/config/src/profile_toml.rs:22)
+- [bot/thread_memory_mode.py](../../bot/thread_memory_mode.py:51)
+- [bot/fcodex_proxy.py](../../bot/fcodex_proxy.py:576)
+- [bot/codex_handler.py](../../bot/codex_handler.py:2467)
+- [bot/codex_handler.py](../../bot/codex_handler.py:2733)
+- `codex-rs/config/src/profile_toml.rs:22`
 
 当前行为：
 
@@ -233,12 +233,12 @@
 
 解释器：
 
-- `/home/zlong/anaconda3/bin/python`
+- `python`
 
 已执行测试：
 
 ```bash
-/home/zlong/anaconda3/bin/python -m pytest -q \
+python -m pytest -q \
   tests/test_codex_app_server.py \
   tests/test_codex_handler.py \
   tests/test_feishu_codexctl.py \
