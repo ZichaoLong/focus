@@ -276,6 +276,43 @@ class ServiceManagerTests(unittest.TestCase):
             create_calls = [call for call, _ in calls if call[:2] == ("schtasks", "/Create")]
             self.assertGreaterEqual(len(create_calls), 3)
 
+    def test_windows_autostart_enable_access_denied_surfaces_admin_delete_hint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            definition = _definition(root)
+            manager = WindowsTaskSchedulerServiceManager()
+
+            enabled_xml = """<?xml version="1.0"?>
+<Task xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Settings />
+</Task>
+"""
+
+            def _ensure_run(*args, **kwargs):
+                if args[:2] == ("schtasks", "/Query") and "/XML" in args:
+                    return subprocess.CompletedProcess(args, 1, stdout="", stderr="not found")
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+            with patch.object(manager, "_run", side_effect=_ensure_run):
+                manager.ensure_service(definition)
+
+            def _autostart_run(*args, **kwargs):
+                if args[:2] == ("schtasks", "/Query") and "/XML" in args:
+                    return subprocess.CompletedProcess(args, 0, stdout=enabled_xml, stderr="")
+                if args[:2] == ("schtasks", "/Create"):
+                    raise ServiceManagerError("错误: 拒绝访问。")
+                return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+            with patch.object(manager, "_run", side_effect=_autostart_run):
+                with self.assertRaises(ServiceManagerError) as raised:
+                    manager.autostart_enable(definition)
+
+        rendered = str(raised.exception)
+        self.assertIn("当前 PowerShell 中删除旧任务", rendered)
+        self.assertIn("管理员 PowerShell", rendered)
+        self.assertIn("schtasks /Delete /TN feishu-codex-corp-a /F", rendered)
+        self.assertIn("feishu-codex --instance corp-a autostart enable", rendered)
+
     def test_systemd_start_requires_installed_unit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)

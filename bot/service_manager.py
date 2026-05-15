@@ -456,6 +456,23 @@ class WindowsTaskSchedulerServiceManager(ServiceManager):
     def _task_xml_path(self, definition: ServiceDefinition) -> pathlib.Path:
         return definition.paths.data_dir / "service-task.xml"
 
+    @staticmethod
+    def _is_access_denied_error(message: str) -> bool:
+        normalized = str(message or "").strip().lower()
+        if not normalized:
+            return False
+        return "access is denied" in normalized or "拒绝访问" in normalized
+
+    def _rewrite_existing_task_access_denied_message(self, definition: ServiceDefinition, original_message: str) -> str:
+        task_name = self._task_name(definition)
+        return (
+            "Task Scheduler 拒绝改写现有任务；这通常表示该任务是由不同权限上下文创建的旧任务。\n"
+            "请先在当前 PowerShell 中删除旧任务；如果仍然提示拒绝访问，再改用管理员 PowerShell：\n"
+            f"  schtasks /Delete /TN {task_name} /F\n"
+            f"  feishu-codex --instance {definition.instance_name} autostart enable\n"
+            f"原始错误：{original_message}"
+        )
+
     def _require_installed(self, definition: ServiceDefinition) -> pathlib.Path:
         launcher_path = self._launcher_path(definition)
         if not launcher_path.exists():
@@ -534,15 +551,22 @@ class WindowsTaskSchedulerServiceManager(ServiceManager):
     def _register_task(self, definition: ServiceDefinition, *, autostart_enabled: bool) -> None:
         xml_path = self._task_xml_path(definition)
         xml_path.write_bytes(self._task_xml_bytes(definition, autostart_enabled=autostart_enabled))
-        self._run(
-            "schtasks",
-            "/Create",
-            "/TN",
-            self._task_name(definition),
-            "/XML",
-            str(xml_path),
-            "/F",
-        )
+        try:
+            self._run(
+                "schtasks",
+                "/Create",
+                "/TN",
+                self._task_name(definition),
+                "/XML",
+                str(xml_path),
+                "/F",
+            )
+        except ServiceManagerError as exc:
+            if self._is_access_denied_error(str(exc)) and self._query_task_xml(definition) is not None:
+                raise ServiceManagerError(
+                    self._rewrite_existing_task_access_denied_message(definition, str(exc))
+                ) from exc
+            raise
 
     def ensure_service(self, definition: ServiceDefinition) -> None:
         definition.paths.data_dir.mkdir(parents=True, exist_ok=True)
