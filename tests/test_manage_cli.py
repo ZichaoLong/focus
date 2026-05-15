@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import pathlib
 import shutil
@@ -158,6 +159,8 @@ class ManageCliTests(unittest.TestCase):
             powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
             ensured_definitions: list[object] = []
 
             class _DummyManager:
@@ -253,6 +256,260 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn("Bash：新开一个 Bash shell 通常会自动生效", summary)
             self.assertIn("zsh：已写入自动加载钩子", summary)
             self.assertIn("PowerShell：已写入自动加载 profile", summary)
+
+    def test_handle_bootstrap_install_on_windows_adds_bin_dir_to_user_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
+            env_file = config_root / "feishu-codex.env"
+            metadata_path = config_root / "install-state" / "windows-user-path.json"
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(config_root),
+                    "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FC_BIN_DIR": str(bin_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FC_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                stdout = io.StringIO()
+                with patch("bot.manage_cli.is_windows", return_value=True):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli._read_windows_user_path_value",
+                            return_value=(user_path_state["raw"], user_path_state["type"]),
+                        ):
+                            with patch(
+                                "bot.manage_cli._write_windows_user_path_value",
+                                side_effect=lambda raw_path, *, value_type: user_path_state.update(
+                                    {"raw": raw_path, "type": value_type}
+                                ),
+                            ):
+                                with patch("bot.manage_cli.shutil.which", return_value=None):
+                                    with patch(
+                                        "bot.manage_cli.detect_stable_codex_command",
+                                        return_value="C:/stable/node C:/stable/codex.js",
+                                    ):
+                                        with redirect_stdout(stdout):
+                                            self.assertEqual(_handle_bootstrap_install(), 0)
+
+            self.assertIn(str(bin_dir), user_path_state["raw"])
+            self.assertTrue(metadata_path.exists())
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["bin_dir"], str(bin_dir))
+            self.assertTrue(metadata["added_to_user_path"])
+            rendered = stdout.getvalue()
+            self.assertIn("Windows 用户 PATH: 已确保包含命令目录", rendered)
+            self.assertNotIn("警告: 未检测到 `codex` 命令", rendered)
+            self.assertNotIn("PowerShell completion:", rendered)
+            self.assertNotIn("Shell completion", rendered)
+
+    def test_handle_bootstrap_install_on_windows_removes_existing_shell_completion_artifacts(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
+            env_file = config_root / "feishu-codex.env"
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(config_root),
+                    "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FC_BIN_DIR": str(bin_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FC_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                powershell_completion_path.parent.mkdir(parents=True, exist_ok=True)
+                powershell_completion_path.write_text("Register-ArgumentCompleter\n", encoding="utf-8")
+                powershell_profile_path.parent.mkdir(parents=True, exist_ok=True)
+                powershell_profile_path.write_text(
+                    "\n".join(
+                        [
+                            "# >>> feishu-codex PowerShell completion >>>",
+                            f"if (Test-Path '{powershell_completion_path}') {{ . '{powershell_completion_path}' }}",
+                            "# <<< feishu-codex PowerShell completion <<<",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
+                stdout = io.StringIO()
+                with patch("bot.manage_cli.is_windows", return_value=True):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli._read_windows_user_path_value",
+                            return_value=(user_path_state["raw"], user_path_state["type"]),
+                        ):
+                            with patch(
+                                "bot.manage_cli._write_windows_user_path_value",
+                                side_effect=lambda raw_path, *, value_type: user_path_state.update(
+                                    {"raw": raw_path, "type": value_type}
+                                ),
+                            ):
+                                with redirect_stdout(stdout):
+                                    result = _handle_bootstrap_install()
+
+            self.assertEqual(result, 0)
+            self.assertFalse(powershell_profile_path.exists())
+            self.assertFalse(powershell_completion_path.exists())
+            self.assertNotIn("PowerShell completion:", stdout.getvalue())
+
+    def test_handle_uninstall_on_windows_removes_only_managed_user_path_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
+            env_file = config_root / "feishu-codex.env"
+            metadata_path = config_root / "install-state" / "windows-user-path.json"
+            original_user_path = r"C:\Windows\System32"
+            user_path_state = {"raw": original_user_path, "type": 2}
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+                def uninstall(self, definition) -> None:
+                    del definition
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(config_root),
+                    "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FC_BIN_DIR": str(bin_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FC_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                with patch("bot.manage_cli.is_windows", return_value=True):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli._read_windows_user_path_value",
+                            side_effect=lambda: (user_path_state["raw"], user_path_state["type"]),
+                        ):
+                            with patch(
+                                "bot.manage_cli._write_windows_user_path_value",
+                                side_effect=lambda raw_path, *, value_type: user_path_state.update(
+                                    {"raw": raw_path, "type": value_type}
+                                ),
+                            ):
+                                self.assertEqual(_handle_bootstrap_install(), 0)
+                                self.assertTrue(metadata_path.exists())
+                                self.assertIn(str(bin_dir), user_path_state["raw"])
+                                self.assertEqual(_handle_uninstall(purge=False), 0)
+
+            self.assertEqual(user_path_state["raw"], original_user_path)
+            self.assertFalse(metadata_path.exists())
+
+    def test_handle_uninstall_on_windows_preserves_preexisting_user_path_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
+            env_file = config_root / "feishu-codex.env"
+            metadata_path = config_root / "install-state" / "windows-user-path.json"
+            original_user_path = f"{bin_dir};C:\\Windows\\System32"
+            user_path_state = {"raw": original_user_path, "type": 2}
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+                def uninstall(self, definition) -> None:
+                    del definition
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(config_root),
+                    "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FC_BIN_DIR": str(bin_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FC_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                with patch("bot.manage_cli.is_windows", return_value=True):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli._read_windows_user_path_value",
+                            side_effect=lambda: (user_path_state["raw"], user_path_state["type"]),
+                        ):
+                            with patch(
+                                "bot.manage_cli._write_windows_user_path_value",
+                                side_effect=lambda raw_path, *, value_type: user_path_state.update(
+                                    {"raw": raw_path, "type": value_type}
+                                ),
+                            ):
+                                self.assertEqual(_handle_bootstrap_install(), 0)
+                                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                                self.assertFalse(metadata["added_to_user_path"])
+                                self.assertEqual(_handle_uninstall(purge=False), 0)
+
+            self.assertEqual(user_path_state["raw"], original_user_path)
+            self.assertFalse(metadata_path.exists())
 
     def test_ensure_instance_scaffold_writes_detected_initial_codex_command_without_changing_example(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

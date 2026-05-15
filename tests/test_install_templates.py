@@ -78,6 +78,52 @@ class InstallTemplateTests(unittest.TestCase):
 
         self.assertEqual(command, shlex.join([str(stable_node), str(stable_codex_js)]))
 
+    def test_detect_stable_codex_command_on_windows_supports_global_npm_installation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            appdata = root / "AppData" / "Roaming"
+            npm_dir = appdata / "npm"
+            wrapper = npm_dir / "codex.cmd"
+            wrapper.parent.mkdir(parents=True)
+            wrapper.write_text("@echo off\r\n", encoding="utf-8")
+            codex_js = npm_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+            codex_js.parent.mkdir(parents=True)
+            codex_js.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            node = root / "Program Files" / "nodejs" / "node.exe"
+            node.parent.mkdir(parents=True)
+            node.write_text("", encoding="utf-8")
+
+            def _which(name: str) -> str | None:
+                if name == "codex":
+                    return str(wrapper)
+                if name == "node":
+                    return str(node)
+                return None
+
+            with patch("bot.codex_command_resolver._is_windows", return_value=True):
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "APPDATA": str(appdata),
+                        "ProgramFiles": str(root / "Program Files"),
+                        "ProgramFiles(x86)": "",
+                        "HOME": str(root),
+                    },
+                    clear=False,
+                ):
+                    with patch("bot.codex_command_resolver.shutil.which", side_effect=_which):
+                        command = detect_stable_codex_command()
+
+        self.assertEqual(
+            command,
+            shlex.join(
+                [
+                    str(node).replace("\\", "/"),
+                    str(codex_js).replace("\\", "/"),
+                ]
+            ),
+        )
+
     def test_resolve_managed_codex_command_normalizes_explicit_nvm_wrapper(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
@@ -95,11 +141,101 @@ class InstallTemplateTests(unittest.TestCase):
 
         self.assertEqual(command, shlex.join([str(node), str(codex_js)]))
 
+    def test_resolve_managed_codex_command_on_windows_prefers_current_npm_wrapper_with_explicit_node(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            appdata = root / "AppData" / "Roaming"
+            npm_dir = appdata / "npm"
+            wrapper = npm_dir / "codex.cmd"
+            wrapper.parent.mkdir(parents=True)
+            wrapper.write_text("@echo off\r\n", encoding="utf-8")
+            codex_js = npm_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+            codex_js.parent.mkdir(parents=True)
+            codex_js.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            node = root / "Program Files" / "nodejs" / "node.exe"
+            node.parent.mkdir(parents=True)
+            node.write_text("", encoding="utf-8")
+
+            def _which(name: str) -> str | None:
+                if name == "codex":
+                    return str(wrapper)
+                if name == "node":
+                    return str(node)
+                return None
+
+            with patch("bot.codex_command_resolver._is_windows", return_value=True):
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "APPDATA": str(appdata),
+                        "ProgramFiles": str(root / "Program Files"),
+                        "ProgramFiles(x86)": "",
+                        "HOME": str(root),
+                    },
+                    clear=False,
+                ):
+                    with patch("bot.codex_command_resolver.shutil.which", side_effect=_which):
+                        command = resolve_managed_codex_command("codex")
+
+        self.assertEqual(
+            command,
+            shlex.join(
+                [
+                    str(node).replace("\\", "/"),
+                    str(codex_js).replace("\\", "/"),
+                ]
+            ),
+        )
+
+    def test_resolve_managed_codex_command_on_windows_falls_back_to_appdata_npm_wrapper(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            appdata = root / "AppData" / "Roaming"
+            npm_dir = appdata / "npm"
+            wrapper = npm_dir / "codex.cmd"
+            wrapper.parent.mkdir(parents=True)
+            wrapper.write_text("@echo off\r\n", encoding="utf-8")
+            codex_js = npm_dir / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+            codex_js.parent.mkdir(parents=True)
+            codex_js.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            node = root / "Program Files" / "nodejs" / "node.exe"
+            node.parent.mkdir(parents=True)
+            node.write_text("", encoding="utf-8")
+
+            def _which(name: str) -> str | None:
+                if name == "node":
+                    return str(node)
+                return None
+
+            with patch("bot.codex_command_resolver._is_windows", return_value=True):
+                with patch.dict(
+                    "os.environ",
+                    {
+                        "APPDATA": str(appdata),
+                        "ProgramFiles": str(root / "Program Files"),
+                        "ProgramFiles(x86)": "",
+                        "HOME": str(root),
+                    },
+                    clear=False,
+                ):
+                    with patch("bot.codex_command_resolver.shutil.which", side_effect=_which):
+                        command = resolve_managed_codex_command("codex")
+
+        self.assertEqual(
+            command,
+            shlex.join(
+                [
+                    str(node).replace("\\", "/"),
+                    str(codex_js).replace("\\", "/"),
+                ]
+            ),
+        )
+
     def test_render_initial_codex_yaml_embeds_detected_stable_command(self) -> None:
         with patch("bot.install_templates.detect_stable_codex_command", return_value="/stable/node /stable/codex"):
             rendered = render_initial_codex_yaml()
 
-        self.assertIn("已自动探测到稳定的 Node 管理器 Codex 启动命令", rendered)
+        self.assertIn("已自动探测到稳定的 Codex 启动命令", rendered)
         self.assertIn("codex_command: /stable/node /stable/codex", rendered)
         active_lines = [
             line

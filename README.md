@@ -51,6 +51,14 @@ cd \path\to\feishu-codex
 .\install.ps1
 ```
 
+Windows 安装会把 `%LOCALAPPDATA%\feishu-codex\bin` 写入当前用户的 `PATH`；
+通常新开一个 PowerShell / cmd 后即可直接发现 `feishu-codex`、`feishu-codexd`、
+`feishu-codexctl`、`fcodex`。`feishu-codex uninstall` / `purge` 会对称移除
+安装器自己加入的这一路径项。
+若检测到稳定的 Codex 启动命令（如 `fnm` / `nvm`，或 Windows 上 `npm -g install @openai/codex`），
+安装器也会把对应的 `codex_command` 自动写入真实 `codex.yaml`。
+Windows 当前不安装 shell completion。
+
 不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `feishu-codex uninstall/purge` 覆盖的残留命令入口。
 
 ### 2. 配置飞书应用

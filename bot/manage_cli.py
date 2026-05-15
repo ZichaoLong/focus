@@ -7,6 +7,8 @@ from __future__ import annotations
 import argparse
 import filecmp
 import importlib
+import json
+import ntpath
 import os
 import pathlib
 import secrets
@@ -19,6 +21,7 @@ from dataclasses import dataclass
 
 from bot.env_file import ensure_env_template
 from bot.file_permissions import ensure_private_file_permissions
+from bot.codex_command_resolver import detect_stable_codex_command
 from bot.instance_layout import (
     DEFAULT_INSTANCE_NAME,
     apply_instance_environment,
@@ -60,6 +63,7 @@ class _ArgumentParser(argparse.ArgumentParser):
 
 
 _MANAGED_SKILL_MARKER = ".feishu-codex-managed"
+_WINDOWS_USER_PATH_METADATA_FILE = "windows-user-path.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +77,183 @@ _MANAGED_SKILLS: tuple[_ManagedSkillSpec, ...] = (
     _ManagedSkillSpec(name="feishu-scheduled-prompts", package="bot.managed_skills.feishu_scheduled_prompts"),
 )
 _DEFAULT_MANAGED_SKILL_NAME = _MANAGED_SKILLS[0].name
+
+
+def _windows_user_path_metadata_path() -> pathlib.Path:
+    return default_config_root() / "install-state" / _WINDOWS_USER_PATH_METADATA_FILE
+
+
+def _read_windows_user_path_metadata() -> tuple[pathlib.Path | None, bool]:
+    path = _windows_user_path_metadata_path()
+    if not path.exists():
+        return None, False
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, False
+    if not isinstance(raw, dict):
+        return None, False
+    bin_dir_raw = str(raw.get("bin_dir", "") or "").strip()
+    bin_dir = pathlib.Path(bin_dir_raw).expanduser() if bin_dir_raw else None
+    return bin_dir, bool(raw.get("added_to_user_path", False))
+
+
+def _write_windows_user_path_metadata(*, bin_dir: pathlib.Path, added_to_user_path: bool) -> None:
+    path = _windows_user_path_metadata_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "bin_dir": str(pathlib.Path(bin_dir)),
+                "added_to_user_path": bool(added_to_user_path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _remove_windows_user_path_metadata() -> None:
+    path = _windows_user_path_metadata_path()
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        return
+
+
+def _normalize_windows_path_entry(value: pathlib.Path | str) -> str:
+    text = str(value or "").strip().strip('"')
+    if not text:
+        return ""
+    return ntpath.normcase(ntpath.normpath(text))
+
+
+def _split_windows_path_entries(raw_path: str) -> list[str]:
+    return [entry.strip() for entry in str(raw_path or "").split(";") if entry.strip()]
+
+
+def _windows_path_contains_entry(entries: list[str], entry: pathlib.Path | str) -> bool:
+    target = _normalize_windows_path_entry(entry)
+    if not target:
+        return False
+    return any(_normalize_windows_path_entry(item) == target for item in entries)
+
+
+def _append_windows_path_entry(raw_path: str, entry: pathlib.Path | str) -> tuple[str, bool]:
+    entries = _split_windows_path_entries(raw_path)
+    rendered_entry = str(pathlib.Path(entry))
+    if _windows_path_contains_entry(entries, rendered_entry):
+        return ";".join(entries), False
+    entries.append(rendered_entry)
+    return ";".join(entries), True
+
+
+def _remove_windows_path_entry(raw_path: str, entry: pathlib.Path | str) -> tuple[str, bool]:
+    entries = _split_windows_path_entries(raw_path)
+    target = _normalize_windows_path_entry(entry)
+    if not target:
+        return ";".join(entries), False
+    kept_entries: list[str] = []
+    removed = False
+    for item in entries:
+        if not removed and _normalize_windows_path_entry(item) == target:
+            removed = True
+            continue
+        kept_entries.append(item)
+    return ";".join(kept_entries), removed
+
+
+def _read_windows_user_path_value() -> tuple[str, int | None]:
+    if not is_windows():
+        return "", None
+    import winreg
+
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Environment") as key:
+        try:
+            value, value_type = winreg.QueryValueEx(key, "Path")
+        except FileNotFoundError:
+            return "", winreg.REG_EXPAND_SZ
+    return str(value or ""), int(value_type)
+
+
+def _notify_windows_environment_changed() -> None:
+    if not is_windows():
+        return
+    try:
+        import ctypes
+
+        HWND_BROADCAST = 0xFFFF
+        WM_SETTINGCHANGE = 0x001A
+        SMTO_ABORTIFHUNG = 0x0002
+        result = ctypes.c_void_p()
+        ctypes.windll.user32.SendMessageTimeoutW(
+            HWND_BROADCAST,
+            WM_SETTINGCHANGE,
+            0,
+            "Environment",
+            SMTO_ABORTIFHUNG,
+            5000,
+            ctypes.byref(result),
+        )
+    except Exception:
+        return
+
+
+def _write_windows_user_path_value(raw_path: str, *, value_type: int | None) -> None:
+    if not is_windows():
+        return
+    import winreg
+
+    normalized_type = value_type if value_type in (winreg.REG_SZ, winreg.REG_EXPAND_SZ) else winreg.REG_EXPAND_SZ
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Environment") as key:
+        if raw_path:
+            winreg.SetValueEx(key, "Path", 0, normalized_type, str(raw_path))
+        else:
+            try:
+                winreg.DeleteValue(key, "Path")
+            except FileNotFoundError:
+                pass
+    _notify_windows_environment_changed()
+
+
+def _ensure_windows_user_path(bin_dir: pathlib.Path) -> None:
+    if not is_windows():
+        return
+    recorded_bin_dir, recorded_added = _read_windows_user_path_metadata()
+    same_recorded_bin = (
+        recorded_bin_dir is not None
+        and _normalize_windows_path_entry(recorded_bin_dir) == _normalize_windows_path_entry(bin_dir)
+    )
+    raw_user_path, value_type = _read_windows_user_path_value()
+    updated_user_path = raw_user_path
+    changed = False
+    if recorded_added and recorded_bin_dir is not None and not same_recorded_bin:
+        updated_user_path, removed = _remove_windows_path_entry(updated_user_path, recorded_bin_dir)
+        changed = changed or removed
+    updated_user_path, added = _append_windows_path_entry(updated_user_path, bin_dir)
+    changed = changed or added
+    if changed:
+        _write_windows_user_path_value(updated_user_path, value_type=value_type)
+    _write_windows_user_path_metadata(
+        bin_dir=bin_dir,
+        added_to_user_path=bool(added or (recorded_added and same_recorded_bin)),
+    )
+
+
+def _remove_windows_user_path() -> None:
+    if not is_windows():
+        return
+    recorded_bin_dir, recorded_added = _read_windows_user_path_metadata()
+    try:
+        if recorded_added and recorded_bin_dir is not None:
+            raw_user_path, value_type = _read_windows_user_path_value()
+            updated_user_path, removed = _remove_windows_path_entry(raw_user_path, recorded_bin_dir)
+            if removed:
+                _write_windows_user_path_value(updated_user_path, value_type=value_type)
+    finally:
+        _remove_windows_user_path_metadata()
 
 
 def _hide_subcommand_from_help(
@@ -599,8 +780,10 @@ def _print_install_summary(
     print("  - 本地服务进程管理 feishu-codex --help")
     print("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
     print(f"已重建实例: {', '.join(rebuilt_instances)}。不覆盖各实例现有用户配置")
-    if not shutil.which("codex"):
+    if not (shutil.which("codex") or detect_stable_codex_command()):
         print("警告: 未检测到 `codex` 命令，请先安装 Codex CLI。")
+    if is_windows():
+        print("Windows 用户 PATH: 已确保包含命令目录；新开 PowerShell / cmd 后应可直接发现命令。")
     print("")
     print("下一步:")
     print("  1. 配置飞书应用、provider 环境变量")
@@ -638,6 +821,9 @@ def _print_install_summary(
                     "    - PowerShell：已写入自动加载 profile "
                     f"{completion_result.powershell_profile_path}；重开 PowerShell 即可生效"
                 )
+            else:
+                print("    - PowerShell：当前执行策略禁止自动加载本地 profile 脚本；未写入自动加载钩子")
+                print("    - PowerShell：如需自动生效，可先执行 Set-ExecutionPolicy -Scope CurrentUser RemoteSigned")
             print(f"    - PowerShell：当前 shell 也可手动执行 . '{completion_result.powershell_script_path}'")
 
 
@@ -646,7 +832,12 @@ def _handle_bootstrap_install() -> int:
     for instance_name in instance_names:
         _ensure_instance_scaffold(instance_name)
     bin_dir = _install_wrappers()
-    completion_result = install_shell_completion_files(venv_python=_venv_python())
+    _ensure_windows_user_path(bin_dir)
+    if is_windows():
+        remove_shell_completion_files()
+        completion_result = CompletionInstallResult()
+    else:
+        completion_result = install_shell_completion_files(venv_python=_venv_python())
     manager = current_service_manager()
     for instance_name in instance_names:
         manager.ensure_service(_service_definition(instance_name))
@@ -800,6 +991,7 @@ def _remove_wrappers() -> None:
                 (bin_dir / f"{name}.cmd").unlink()
             except FileNotFoundError:
                 pass
+        _remove_windows_user_path()
     else:
         for name in ("feishu-codex", "feishu-codexd", "feishu-codexctl", "fcodex"):
             try:
