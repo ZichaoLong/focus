@@ -159,6 +159,8 @@ class ManageCliTests(unittest.TestCase):
             powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
             ensured_definitions: list[object] = []
 
             class _DummyManager:
@@ -316,10 +318,13 @@ class ManageCliTests(unittest.TestCase):
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             self.assertEqual(metadata["bin_dir"], str(bin_dir))
             self.assertTrue(metadata["added_to_user_path"])
-            self.assertIn("Windows 用户 PATH: 已确保包含命令目录", stdout.getvalue())
-            self.assertNotIn("警告: 未检测到 `codex` 命令", stdout.getvalue())
+            rendered = stdout.getvalue()
+            self.assertIn("Windows 用户 PATH: 已确保包含命令目录", rendered)
+            self.assertNotIn("警告: 未检测到 `codex` 命令", rendered)
+            self.assertNotIn("PowerShell completion:", rendered)
+            self.assertNotIn("Shell completion", rendered)
 
-    def test_handle_bootstrap_install_skips_powershell_profile_autoload_when_disabled(self) -> None:
+    def test_handle_bootstrap_install_on_windows_removes_existing_shell_completion_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
@@ -331,6 +336,7 @@ class ManageCliTests(unittest.TestCase):
             powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "feishu-codex.env"
+            user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -348,25 +354,44 @@ class ManageCliTests(unittest.TestCase):
                     "FC_ZSH_RC_PATH": str(zsh_rc_path),
                     "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
                     "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD": "1",
                     "FC_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
+                powershell_completion_path.parent.mkdir(parents=True, exist_ok=True)
+                powershell_completion_path.write_text("Register-ArgumentCompleter\n", encoding="utf-8")
+                powershell_profile_path.parent.mkdir(parents=True, exist_ok=True)
+                powershell_profile_path.write_text(
+                    "\n".join(
+                        [
+                            "# >>> feishu-codex PowerShell completion >>>",
+                            f"if (Test-Path '{powershell_completion_path}') {{ . '{powershell_completion_path}' }}",
+                            "# <<< feishu-codex PowerShell completion <<<",
+                            "",
+                        ]
+                    ),
+                    encoding="utf-8",
+                )
                 stdout = io.StringIO()
-                with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
-                    with redirect_stdout(stdout):
-                        result = _handle_bootstrap_install()
+                with patch("bot.manage_cli.is_windows", return_value=True):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli._read_windows_user_path_value",
+                            return_value=(user_path_state["raw"], user_path_state["type"]),
+                        ):
+                            with patch(
+                                "bot.manage_cli._write_windows_user_path_value",
+                                side_effect=lambda raw_path, *, value_type: user_path_state.update(
+                                    {"raw": raw_path, "type": value_type}
+                                ),
+                            ):
+                                with redirect_stdout(stdout):
+                                    result = _handle_bootstrap_install()
 
             self.assertEqual(result, 0)
-            self.assertTrue(powershell_completion_path.exists())
             self.assertFalse(powershell_profile_path.exists())
-            summary = stdout.getvalue()
-            self.assertIn("PowerShell：当前执行策略禁止自动加载本地 profile 脚本", summary)
-            self.assertIn(
-                f"PowerShell：当前 shell 也可手动执行 . '{powershell_completion_path}'",
-                summary,
-            )
+            self.assertFalse(powershell_completion_path.exists())
+            self.assertNotIn("PowerShell completion:", stdout.getvalue())
 
     def test_handle_uninstall_on_windows_removes_only_managed_user_path_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

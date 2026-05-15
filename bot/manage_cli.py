@@ -833,7 +833,11 @@ def _handle_bootstrap_install() -> int:
         _ensure_instance_scaffold(instance_name)
     bin_dir = _install_wrappers()
     _ensure_windows_user_path(bin_dir)
-    completion_result = install_shell_completion_files(venv_python=_venv_python())
+    if is_windows():
+        remove_shell_completion_files()
+        completion_result = CompletionInstallResult()
+    else:
+        completion_result = install_shell_completion_files(venv_python=_venv_python())
     manager = current_service_manager()
     for instance_name in instance_names:
         manager.ensure_service(_service_definition(instance_name))

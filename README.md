@@ -57,8 +57,7 @@ Windows 安装会把 `%LOCALAPPDATA%\feishu-codex\bin` 写入当前用户的 `PA
 安装器自己加入的这一路径项。
 若检测到稳定的 Codex 启动命令（如 `fnm` / `nvm`，或 Windows 上 `npm -g install @openai/codex`），
 安装器也会把对应的 `codex_command` 自动写入真实 `codex.yaml`。
-PowerShell 自动补全依赖 profile 脚本；若当前用户的执行策略禁止本地脚本，
-安装器会保留 completion 脚本但跳过 profile 自动加载，不会让新开 PowerShell 因 profile 报错。
+Windows 当前不安装 shell completion。
 
 不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `feishu-codex uninstall/purge` 覆盖的残留命令入口。
 
