@@ -6,6 +6,7 @@ import argparse
 import os
 import pathlib
 import sys
+import unicodedata
 from dataclasses import replace
 from typing import Any
 
@@ -162,6 +163,46 @@ def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
     return "none", []
 
 
+def _terminal_display_width(text: str) -> int:
+    total = 0
+    for ch in str(text):
+        if ch in "\r\n":
+            continue
+        if unicodedata.combining(ch):
+            continue
+        if unicodedata.category(ch) == "Cf":
+            continue
+        total += 2 if unicodedata.east_asian_width(ch) in {"W", "F"} else 1
+    return total
+
+
+def _render_table(headers: list[str], rows: list[list[str]], *, gap: int = 2) -> list[str]:
+    if not headers:
+        return []
+    normalized_rows = [[str(cell) for cell in row] for row in rows]
+    widths = [_terminal_display_width(str(cell)) for cell in headers]
+    for row in normalized_rows:
+        if len(row) != len(headers):
+            raise ValueError("表格列数不一致。")
+        for index, cell in enumerate(row):
+            widths[index] = max(widths[index], _terminal_display_width(cell))
+
+    def _pad(cell: str, width: int) -> str:
+        padding = max(width - _terminal_display_width(cell), 0)
+        return cell + (" " * padding)
+
+    rendered: list[str] = []
+    for row in [headers, *normalized_rows]:
+        parts: list[str] = []
+        for index, cell in enumerate(row):
+            if index == len(headers) - 1:
+                parts.append(cell)
+                continue
+            parts.append(_pad(cell, widths[index]) + (" " * gap))
+        rendered.append("".join(parts).rstrip())
+    return rendered
+
+
 def _print_service_status(data_dir: pathlib.Path) -> int:
     metadata = ServiceInstanceLease(data_dir).load_metadata()
     published_endpoint = metadata.control_endpoint if metadata is not None else ""
@@ -238,22 +279,22 @@ def _print_binding_list(data_dir: pathlib.Path) -> int:
     if not bindings:
         print("当前没有可见 binding。")
         return 0
-    print("BINDING_ID\tKIND\tSTATE\tRUNTIME\tTHREAD\tCWD")
+    rows: list[list[str]] = []
     for item in bindings:
         thread = item["thread_id"][:8] + "…" if item["thread_id"] else "-"
         cwd = display_path(str(item["working_dir"] or ""))
-        print(
-            "\t".join(
-                [
-                    item["binding_id"],
-                    item["binding_kind"],
-                    item["binding_state"],
-                    item["feishu_runtime_state"],
-                    thread,
-                    cwd,
-                ]
-            )
+        rows.append(
+            [
+                item["binding_id"],
+                item["binding_kind"],
+                item["binding_state"],
+                item["feishu_runtime_state"],
+                thread,
+                cwd,
+            ]
         )
+    for line in _render_table(["BINDING_ID", "KIND", "STATE", "RUNTIME", "THREAD", "CWD"], rows):
+        print(line)
     return 0
 
 
@@ -497,18 +538,18 @@ def _print_thread_list(
     if not threads:
         print("当前没有可见线程。")
         return 0
-    print("THREAD_ID\tPROVIDER\tCWD\tTITLE")
+    rows: list[list[str]] = []
     for item in threads:
-        print(
-            "\t".join(
-                [
-                    item.thread_id,
-                    str(item.model_provider or "-"),
-                    display_path(item.cwd),
-                    item.title,
-                ]
-            )
+        rows.append(
+            [
+                item.thread_id,
+                str(item.model_provider or "-"),
+                display_path(item.cwd),
+                item.title,
+            ]
         )
+    for line in _render_table(["THREAD_ID", "PROVIDER", "CWD", "TITLE"], rows):
+        print(line)
     return 0
 
 
@@ -586,11 +627,13 @@ def _list_running_instances() -> int:
     if not instances:
         print("当前没有运行中的实例。")
         return 0
-    print("INSTANCE\tPID\tCONTROL\tAPP_SERVER")
+    rows: list[list[str]] = []
     for item in instances:
         control = item.control_endpoint
         app_server = resolve_running_instance_app_server_url(item) or "-"
-        print(f"{item.instance_name}\t{item.owner_pid}\t{control}\t{app_server}")
+        rows.append([item.instance_name, str(item.owner_pid), control, app_server])
+    for line in _render_table(["INSTANCE", "PID", "CONTROL", "APP_SERVER"], rows):
+        print(line)
     return 0
 
 

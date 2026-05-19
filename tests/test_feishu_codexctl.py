@@ -6,18 +6,23 @@ from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import patch
 
+from bot.adapters.base import ThreadSummary
 from bot.feishu_codexctl import (
     _archive_thread,
     _build_parser,
     _image_send_target_params,
     _list_running_instances,
+    _print_binding_list,
     _print_thread_memory_result,
+    _print_thread_list,
     _prompt_text_from_args,
     _print_binding_status,
+    _render_table,
     _send_thread_image,
     _send_binding_prompt,
     _resolve_thread_archive_target,
     _remote_adapter,
+    _terminal_display_width,
     _print_thread_status,
     _thread_target_params,
     main as feishu_codexctl_main,
@@ -28,6 +33,16 @@ from bot.stores.instance_registry_store import InstanceRegistryEntry
 
 
 class FeishuCodexCtlTests(unittest.TestCase):
+    def _visual_cell_starts(self, line: str, cells: list[str]) -> list[int]:
+        starts: list[int] = []
+        offset = 0
+        for cell in cells:
+            start = line.find(cell, offset)
+            self.assertNotEqual(start, -1)
+            starts.append(_terminal_display_width(line[:start]))
+            offset = start + len(cell)
+        return starts
+
     def test_top_level_help_includes_operator_guidance(self) -> None:
         parser = _build_parser()
         rendered = parser.format_help()
@@ -382,6 +397,104 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(result, 0)
         rendered = stdout.getvalue()
         self.assertIn("ws://127.0.0.1:43210", rendered)
+
+    def test_render_table_aligns_wide_characters(self) -> None:
+        headers = ["THREAD_ID", "PROVIDER", "CWD", "TITLE"]
+        rows = [
+            ["thread-1", "openai", "/tmp/项目", "修复对齐"],
+            ["thread-22", "-", "/tmp/demo", "ascii title"],
+        ]
+
+        rendered = _render_table(headers, rows)
+
+        self.assertEqual(_terminal_display_width("项目"), 4)
+        self.assertEqual(_terminal_display_width("e\u0301"), 1)
+        self.assertNotIn("\t", "\n".join(rendered))
+        header_starts = self._visual_cell_starts(rendered[0], headers)
+        self.assertEqual(self._visual_cell_starts(rendered[1], rows[0]), header_starts)
+        self.assertEqual(self._visual_cell_starts(rendered[2], rows[1]), header_starts)
+
+    def test_thread_list_renders_aligned_columns_without_tabs(self) -> None:
+        threads = [
+            ThreadSummary(
+                thread_id="thread-1",
+                cwd="/tmp/项目一",
+                name="修复对齐",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="cli",
+                status="idle",
+                model_provider="openai",
+            ),
+            ThreadSummary(
+                thread_id="thread-22",
+                cwd="/tmp/demo",
+                name="ascii title",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="cli",
+                status="idle",
+                model_provider=None,
+            ),
+        ]
+
+        class _FakeAdapter:
+            def stop(self) -> None:
+                return None
+
+        stdout = io.StringIO()
+        with patch("bot.feishu_codexctl._remote_adapter", return_value=(_FakeAdapter(), {"thread_list_query_limit": 100}, "ws://127.0.0.1:8765")):
+            with patch("bot.feishu_codexctl.list_global_threads", return_value=threads):
+                with redirect_stdout(stdout):
+                    result = _print_thread_list(Path("/tmp/instance-data"), scope="global", cwd="")
+
+        self.assertEqual(result, 0)
+        lines = stdout.getvalue().splitlines()
+        self.assertNotIn("\t", "\n".join(lines))
+        header = ["THREAD_ID", "PROVIDER", "CWD", "TITLE"]
+        row1 = ["thread-1", "openai", "/tmp/项目一", "修复对齐"]
+        row2 = ["thread-22", "-", "/tmp/demo", "ascii title"]
+        header_starts = self._visual_cell_starts(lines[0], header)
+        self.assertEqual(self._visual_cell_starts(lines[1], row1), header_starts)
+        self.assertEqual(self._visual_cell_starts(lines[2], row2), header_starts)
+
+    def test_binding_list_renders_aligned_columns_without_tabs(self) -> None:
+        snapshot = {
+            "bindings": [
+                {
+                    "binding_id": "p2p:ou_user:chat-1",
+                    "binding_kind": "p2p",
+                    "binding_state": "bound",
+                    "feishu_runtime_state": "attached",
+                    "thread_id": "thread-1234567890",
+                    "working_dir": "/tmp/项目二",
+                },
+                {
+                    "binding_id": "group:chat-2",
+                    "binding_kind": "group",
+                    "binding_state": "detached",
+                    "feishu_runtime_state": "idle",
+                    "thread_id": "",
+                    "working_dir": "/tmp/demo",
+                },
+            ]
+        }
+        stdout = io.StringIO()
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _print_binding_list(Path("/tmp/instance-data"))
+
+        self.assertEqual(result, 0)
+        lines = stdout.getvalue().splitlines()
+        self.assertNotIn("\t", "\n".join(lines))
+        header = ["BINDING_ID", "KIND", "STATE", "RUNTIME", "THREAD", "CWD"]
+        row1 = ["p2p:ou_user:chat-1", "p2p", "bound", "attached", "thread-1…", "/tmp/项目二"]
+        row2 = ["group:chat-2", "group", "detached", "idle", "-", "/tmp/demo"]
+        header_starts = self._visual_cell_starts(lines[0], header)
+        self.assertEqual(self._visual_cell_starts(lines[1], row1), header_starts)
+        self.assertEqual(self._visual_cell_starts(lines[2], row2), header_starts)
 
     def test_binding_status_renders_resolved_instance_name(self) -> None:
         stdout = io.StringIO()
