@@ -23,7 +23,7 @@ It answers:
 - Every command except `instance list` accepts `--instance <name>`.
 - An explicit `--instance` always wins.
 - Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
-- `thread status`, `thread bindings`, `thread memory`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
+- `thread status`, `thread bindings`, `thread goal`, `thread memory`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
   - `--thread-id <id>`
   - `--thread-name <name>`
 
@@ -96,6 +96,11 @@ Notes:
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | Browse persisted threads; default is current-directory scope | read-only | target-discovery counterpart of Feishu `/threads` |
 | `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show backend status, live runtime owner / holders, and bound / attached / detached bindings for one thread | read-only | no exact single command |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show all bindings currently pointing at one thread | read-only | none |
+| `feishu-codexctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | Show the current goal for one thread; this is the default show form | read-only | Feishu `/goal` |
+| `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | Set or debug one thread goal; at least one of `--objective` or `--status` is required | mutating | Feishu `/goal set <objective>`, plus local debug-oriented status updates |
+| `feishu-codexctl [--instance <name>] thread goal pause (--thread-id <id> \| --thread-name <name>)` | Set one thread goal to `paused` | mutating | Feishu `/goal pause` |
+| `feishu-codexctl [--instance <name>] thread goal resume (--thread-id <id> \| --thread-name <name>)` | Resume one thread goal back to `active` | mutating | Feishu `/goal resume` |
+| `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | Clear the current goal on one thread | mutating | Feishu `/goal clear` |
 | `feishu-codexctl [--instance <name>] thread memory (--thread-id <id> \| --thread-name <name>) [--mode off\|read\|read_write] [--reset-backend\|--force-reset-backend]` | Inspect or mutate one thread's thread-wise memory mode; optional reset converges through current-instance backend reset | read-only without `--mode`; mutating with `--mode` | Feishu `/memory [off\|read\|read_write]` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | Archive a target thread and clear bindings that still point to it in the target instance | mutating | local instance-scoped counterpart of Feishu `/archive` |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
@@ -124,6 +129,8 @@ Implementation note:
 | `prompt send --binding-id <binding_id>` | none | local CLI can synthesize a future or system-triggered prompt through the service control plane; there is no equivalent Feishu slash command today |
 | `thread attach --thread-id/--thread-name` | `/attach thread` | Feishu thread scope is limited to the current chat's current thread; local command can target any thread directly |
 | `thread detach --thread-id/--thread-name` | no exact single Feishu command | Feishu `/detach` is current-binding scoped; the local thread action can affect all currently attached bindings on that thread |
+| `thread goal --thread-id/--thread-name` | `/goal` | Feishu only operates on the current chat's current thread; local CLI is a thread-scoped debugging / ops surface and can read any explicit target thread goal |
+| `thread goal set/pause/resume/clear` | `/goal set`, `/goal pause`, `/goal resume`, `/goal clear` | Feishu commands only affect the current chat's current thread; local CLI can perform the same style of operation on any explicit target thread for debugging |
 | `thread list --scope cwd` | `/threads` | Feishu is a chat workflow entry point; local CLI is just thread discovery |
 | `thread status` | lower-level diagnostics behind `/status`, `/preflight`, `/attach`, `/detach` | local CLI is a thread-scoped debugging surface |
 

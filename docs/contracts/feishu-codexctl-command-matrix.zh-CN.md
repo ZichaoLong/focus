@@ -23,7 +23,7 @@
 - 除 `instance list` 外，其余命令都可加 `--instance <name>`。
 - 显式 `--instance` 始终优先。
 - 省略时按 `preferred-running -> unique-running -> default-running -> current-instance-paths` 规则解析。
-- `thread status`、`thread bindings`、`thread memory`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
+- `thread status`、`thread bindings`、`thread goal`、`thread memory`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
   - `--thread-id <id>`
   - `--thread-name <name>`
 
@@ -96,6 +96,11 @@
 | `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | 浏览 persisted thread；默认按当前目录过滤 | 只读 | 飞书 `/threads` 的目标发现面 |
 | `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 的 backend 状态、live runtime owner / holders、bound / attached / detached bindings | 只读 | 无一条完全等价命令 |
 | `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前关联的 binding 列表 | 只读 | 无 |
+| `feishu-codexctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前 goal；这是默认 show 形态 | 只读 | 飞书 `/goal` |
+| `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | 设置或调试某个 thread goal；至少提供 `--objective` 或 `--status` 之一 | 变更 | 飞书 `/goal set <objective>`，以及本地调试用状态改写 |
+| `feishu-codexctl [--instance <name>] thread goal pause (--thread-id <id> \| --thread-name <name>)` | 把某个 thread goal 置为 `paused` | 变更 | 飞书 `/goal pause` |
+| `feishu-codexctl [--instance <name>] thread goal resume (--thread-id <id> \| --thread-name <name>)` | 把某个 thread goal 恢复为 `active` | 变更 | 飞书 `/goal resume` |
+| `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | 清除某个 thread 当前 goal | 变更 | 飞书 `/goal clear` |
 | `feishu-codexctl [--instance <name>] thread memory (--thread-id <id> \| --thread-name <name>) [--mode off\|read\|read_write] [--reset-backend\|--force-reset-backend]` | 查看或改写某个 thread 的 thread-wise memory mode；可选 reset 会通过“当前实例 backend reset”收敛 | 不带 `--mode` 时只读；带 `--mode` 时变更 | 飞书 `/memory [off\|read\|read_write]` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | 归档目标 thread，并清理当前目标实例里仍指向它的 bindings | 变更 | 飞书 `/archive` 的本地实例级对应 |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | 恢复某个 thread 当前所有 detached bindings 的飞书推送 | 变更 | 飞书 `/attach thread`，以及 reset 结果卡里的“附着当前线程” |
@@ -124,6 +129,8 @@
 | `prompt send --binding-id <binding_id>` | 无 | 本地可以从 service control plane 合成一条未来或系统触发的 prompt；飞书侧当前没有等价 slash 命令 |
 | `thread attach --thread-id/--thread-name` | `/attach thread` | 飞书 thread 级动作只能基于当前 chat 当前 thread；本地可直接按任意目标 thread 定位 |
 | `thread detach --thread-id/--thread-name` | 无一条完全等价的飞书命令 | 飞书 `/detach` 是当前 chat binding 级；本地 thread 级动作会批量影响该 thread 当前所有 attached bindings |
+| `thread goal --thread-id/--thread-name` | `/goal` | 飞书只作用于当前 chat 当前 thread；本地 CLI 是 thread-scoped 调试 / 运维面，可直接读取任意目标 thread 的 goal |
+| `thread goal set/pause/resume/clear` | `/goal set`、`/goal pause`、`/goal resume`、`/goal clear` | 飞书命令面只覆盖当前 chat 当前 thread；本地 CLI 可以对任意显式目标 thread 做调试性操作 |
 | `thread list --scope cwd` | `/threads` | 飞书是聊天入口；本地只是线程发现面 |
 | `thread status` | `/status`、`/preflight`、`/attach`/`/detach` 的底层诊断 | 本地是 thread-scoped 调试面 |
 

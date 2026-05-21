@@ -9,7 +9,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.adapters.base import ThreadSummary
+from bot.adapters.base import ThreadGoalSummary, ThreadSummary
 from bot.binding_identity import format_binding_id, parse_binding_id
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.cards import (
@@ -145,6 +145,9 @@ class RuntimeAdminController:
         apply_thread_memory_mode: Callable[[str, str], Any],
         permissions_summary: Callable[[str, str], str],
         thread_image_delivery: ThreadImageDeliveryController,
+        get_thread_goal: Callable[[str], ThreadGoalSummary | None],
+        set_thread_goal: Callable[..., ThreadGoalSummary],
+        clear_thread_goal: Callable[[str], bool],
         submit_prompt_for_control: Callable[..., dict[str, Any]],
         prompt_write_denial_check: Callable[[ChatBindingKey, str, str, str], ReasonedCheck],
         detached_runtime_attach_check: Callable[[str], ReasonedCheck],
@@ -178,6 +181,9 @@ class RuntimeAdminController:
         self._apply_thread_memory_mode = apply_thread_memory_mode
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
+        self._get_thread_goal = get_thread_goal
+        self._set_thread_goal = set_thread_goal
+        self._clear_thread_goal = clear_thread_goal
         self._submit_prompt_for_control = submit_prompt_for_control
         self._prompt_write_denial_check = prompt_write_denial_check
         self._detached_runtime_attach_check = detached_runtime_attach_check
@@ -641,6 +647,74 @@ class RuntimeAdminController:
             )
         template = "turquoise" if snapshot["running_turn"] else "blue"
         return "\n".join(lines), template
+
+    @staticmethod
+    def _thread_goal_snapshot(goal: ThreadGoalSummary | None) -> dict[str, Any] | None:
+        if goal is None:
+            return None
+        return {
+            "thread_id": goal.thread_id,
+            "objective": goal.objective,
+            "status": goal.status,
+            "token_budget": goal.token_budget,
+            "tokens_used": goal.tokens_used,
+            "time_used_seconds": goal.time_used_seconds,
+            "created_at": goal.created_at,
+            "updated_at": goal.updated_at,
+        }
+
+    @staticmethod
+    def _thread_identity_snapshot(summary: ThreadSummary) -> dict[str, Any]:
+        return {
+            "thread_id": summary.thread_id,
+            "thread_title": summary.title,
+            "working_dir": summary.cwd,
+        }
+
+    def thread_goal_snapshot(self, thread_id: str, *, summary: ThreadSummary) -> dict[str, Any]:
+        goal = self._get_thread_goal(thread_id)
+        return {
+            **self._thread_identity_snapshot(summary),
+            "goal": self._thread_goal_snapshot(goal),
+        }
+
+    def set_thread_goal_for_control(
+        self,
+        thread_id: str,
+        *,
+        summary: ThreadSummary,
+        objective: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        normalized_objective = None
+        if objective is not None:
+            normalized_objective = str(objective or "").strip()
+            if not normalized_objective:
+                raise ValueError("thread/goal/set 的 objective 不能为空。")
+        normalized_status = None
+        if status is not None:
+            normalized_status = str(status or "").strip()
+            if not normalized_status:
+                raise ValueError("thread/goal/set 的 status 不能为空。")
+        if normalized_objective is None and normalized_status is None:
+            raise ValueError("thread/goal/set 至少需要 `objective` 或 `status`。")
+        goal = self._set_thread_goal(
+            thread_id,
+            objective=normalized_objective,
+            status=normalized_status,
+        )
+        return {
+            **self._thread_identity_snapshot(summary),
+            "goal": self._thread_goal_snapshot(goal),
+        }
+
+    def clear_thread_goal_for_control(self, thread_id: str, *, summary: ThreadSummary) -> dict[str, Any]:
+        cleared = self._clear_thread_goal(thread_id)
+        return {
+            **self._thread_identity_snapshot(summary),
+            "goal": None,
+            "cleared": bool(cleared),
+        }
 
     def handle_status_command(self, binding: ChatBindingKey) -> CommandResult:
         snapshot = self.binding_status_snapshot(binding)
@@ -1995,6 +2069,11 @@ class RuntimeAdminController:
         if method in {
             "thread/status",
             "thread/bindings",
+            "thread/goal",
+            "thread/goal/set",
+            "thread/goal/clear",
+            "thread/goal/pause",
+            "thread/goal/resume",
             "thread/memory",
             "thread/detach",
             "thread/send-image",
@@ -2036,6 +2115,31 @@ class RuntimeAdminController:
                         for binding_id in snapshot["bound_binding_ids"]
                     ],
                 }
+            if method == "thread/goal":
+                return self.thread_goal_snapshot(thread.thread_id, summary=thread)
+            if method == "thread/goal/set":
+                objective = params.get("objective")
+                status = params.get("status")
+                return self.set_thread_goal_for_control(
+                    thread.thread_id,
+                    summary=thread,
+                    objective=None if objective is None else str(objective),
+                    status=None if status is None else str(status),
+                )
+            if method == "thread/goal/clear":
+                return self.clear_thread_goal_for_control(thread.thread_id, summary=thread)
+            if method == "thread/goal/pause":
+                return self.set_thread_goal_for_control(
+                    thread.thread_id,
+                    summary=thread,
+                    status="paused",
+                )
+            if method == "thread/goal/resume":
+                return self.set_thread_goal_for_control(
+                    thread.thread_id,
+                    summary=thread,
+                    status="active",
+                )
             if method == "thread/send-image":
                 local_path = str(params.get("local_path", "") or "").strip()
                 if not local_path:

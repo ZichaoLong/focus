@@ -12,7 +12,7 @@ from typing import Any
 
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
 from bot.config import load_config_file
-from bot.constants import display_path
+from bot.constants import display_path, format_timestamp
 from bot.env_file import load_env_file
 from bot.instance_layout import global_data_dir
 from bot.instance_resolution import list_running_instances, resolve_cli_instance_target, resolve_running_instance_app_server_url
@@ -201,6 +201,27 @@ def _render_table(headers: list[str], rows: list[list[str]], *, gap: int = 2) ->
             parts.append(_pad(cell, widths[index]) + (" " * gap))
         rendered.append("".join(parts).rstrip())
     return rendered
+
+
+def _format_goal_ts_seconds(value: Any) -> str:
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if timestamp <= 0:
+        return "-"
+    return format_timestamp(timestamp)
+
+
+def _goal_status_label(status: str) -> str:
+    return {
+        "active": "进行中",
+        "paused": "已暂停",
+        "blocked": "已阻塞",
+        "usageLimited": "触发 usage 限制",
+        "budgetLimited": "触发预算限制",
+        "complete": "已完成",
+    }.get(str(status or "").strip(), "未知")
 
 
 def _print_service_status(data_dir: pathlib.Path) -> int:
@@ -517,6 +538,76 @@ def _print_thread_bindings(data_dir: pathlib.Path, target_params: dict[str, str]
     return 0
 
 
+def _print_thread_goal_result(result: dict[str, Any], *, instance_name: str = "", note: str = "") -> int:
+    goal = result.get("goal")
+    if instance_name:
+        print(f"instance: {instance_name}")
+    print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+    print(f"working_dir: {display_path(result['working_dir'])}")
+    if note:
+        print(f"note: {note}")
+    if not isinstance(goal, dict):
+        print("goal: （无）")
+        return 0
+    objective = str(goal.get("objective", "") or "").strip()
+    status = str(goal.get("status", "") or "").strip()
+    print(f"objective: {objective or '-'}")
+    print(f"status: {status or '-'} ({_goal_status_label(status)})")
+    token_budget = goal.get("token_budget")
+    print(f"token budget: {token_budget if token_budget is not None else '-'}")
+    print(f"tokens used: {int(goal.get('tokens_used') or 0)}")
+    print(f"time used: {int(goal.get('time_used_seconds') or 0)}s")
+    print(f"created_at: {_format_goal_ts_seconds(goal.get('created_at'))}")
+    print(f"updated_at: {_format_goal_ts_seconds(goal.get('updated_at'))}")
+    return 0
+
+
+def _print_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
+    result = _request(data_dir, "thread/goal", target_params)
+    return _print_thread_goal_result(result, instance_name=instance_name)
+
+
+def _set_thread_goal(
+    data_dir: pathlib.Path,
+    target_params: dict[str, str],
+    *,
+    objective: str = "",
+    status: str = "",
+    instance_name: str = "",
+) -> int:
+    normalized_objective = str(objective or "").strip()
+    normalized_status = str(status or "").strip()
+    if not normalized_objective and not normalized_status:
+        raise ValueError("thread goal set 至少需要 `--objective` 或 `--status`。")
+    params: dict[str, Any] = dict(target_params)
+    if normalized_objective:
+        params["objective"] = normalized_objective
+    if normalized_status:
+        params["status"] = normalized_status
+    result = _request(
+        data_dir,
+        "thread/goal/set",
+        params,
+    )
+    return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已更新。")
+
+
+def _pause_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
+    result = _request(data_dir, "thread/goal/pause", target_params)
+    return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已暂停。")
+
+
+def _resume_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
+    result = _request(data_dir, "thread/goal/resume", target_params)
+    return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已恢复。")
+
+
+def _clear_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
+    result = _request(data_dir, "thread/goal/clear", target_params)
+    note = "当前 thread goal 已清除。" if result.get("cleared") else "当前 thread 原本就没有 goal。"
+    return _print_thread_goal_result(result, instance_name=instance_name, note=note)
+
+
 def _print_thread_list(
     data_dir: pathlib.Path,
     *,
@@ -662,6 +753,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl prompt send --binding-id <binding_id> --text '继续执行'\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
+            "  feishu-codexctl thread goal --thread-id <id>\n"
             "  feishu-codexctl thread memory --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
             "  feishu-codexctl thread attach --thread-id <id>\n"
@@ -828,6 +920,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Thread 管理面。\n"
             "- `list` 默认列当前目录线程；也支持 `--scope global`\n"
             "- 其他 thread 子命令必须显式指定 `--thread-id` 或 `--thread-name`\n"
+            "- `goal` 是 thread-scoped 的本地调试 / 运维面，默认查看，也支持 set/pause/resume/clear\n"
             "- 所有实例共享同一套 persisted thread 发现面；实例差异主要体现在 live runtime 持有"
         ),
         formatter_class=_HelpFormatter,
@@ -859,6 +952,73 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_bindings_target = thread_bindings.add_mutually_exclusive_group(required=True)
     thread_bindings_target.add_argument("--thread-id", help="目标 thread id。")
     thread_bindings_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal = thread_sub.add_parser(
+        "goal",
+        help="查看或调试某个 thread 的 goal。",
+        description=(
+            "Thread goal 调试面。\n"
+            "默认直接查看当前 goal，也支持 `show` / `set` / `pause` / `resume` / `clear`。\n"
+            "这是本地 CLI 调试 / 运维面，直接经由 service control plane 调用 goal RPC。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_target = thread_goal.add_mutually_exclusive_group(required=False)
+    thread_goal_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal_sub = thread_goal.add_subparsers(dest="goal_action", required=False, title="goal commands", metavar="goal-command")
+    thread_goal.set_defaults(goal_action="show")
+    thread_goal_show = thread_goal_sub.add_parser(
+        "show",
+        help="查看某个 thread 当前 goal。",
+        description="查看某个 thread 当前 goal；等价于省略 `show` 直接执行 `thread goal`。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_show_target = thread_goal_show.add_mutually_exclusive_group(required=True)
+    thread_goal_show_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_show_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal_set = thread_goal_sub.add_parser(
+        "set",
+        help="设置或调试某个 thread 的 goal。",
+        description="设置或调试某个 thread 的 goal；至少提供 `--objective` 或 `--status` 之一。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_set_target = thread_goal_set.add_mutually_exclusive_group(required=True)
+    thread_goal_set_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_set_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal_set.add_argument("--objective", default="", help="新的 goal objective。")
+    thread_goal_set.add_argument(
+        "--status",
+        choices=("active", "paused"),
+        default="",
+        help="可选 goal 状态；主要供本地调试使用。",
+    )
+    thread_goal_pause = thread_goal_sub.add_parser(
+        "pause",
+        help="把某个 thread goal 置为 paused。",
+        description="把某个 thread 当前 goal 置为 `paused`。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_pause_target = thread_goal_pause.add_mutually_exclusive_group(required=True)
+    thread_goal_pause_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_pause_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal_resume = thread_goal_sub.add_parser(
+        "resume",
+        help="把某个 thread goal 置为 active。",
+        description="把某个 thread 当前 goal 恢复为 `active`。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_resume_target = thread_goal_resume.add_mutually_exclusive_group(required=True)
+    thread_goal_resume_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_resume_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_goal_clear = thread_goal_sub.add_parser(
+        "clear",
+        help="清除某个 thread 当前 goal。",
+        description="清除某个 thread 当前 goal。",
+        formatter_class=_HelpFormatter,
+    )
+    thread_goal_clear_target = thread_goal_clear.add_mutually_exclusive_group(required=True)
+    thread_goal_clear_target.add_argument("--thread-id", help="目标 thread id。")
+    thread_goal_clear_target.add_argument("--thread-name", help="目标 thread 名称。")
     thread_memory = thread_sub.add_parser(
         "memory",
         help="查看或改写某个 thread 的 thread-wise memory mode。",
@@ -1025,6 +1185,50 @@ def main() -> None:
                     instance_name=target.instance_name,
                 )
             )
+        if args.resource == "thread" and args.action == "goal":
+            goal_action = str(getattr(args, "goal_action", "") or "show").strip() or "show"
+            if goal_action == "show":
+                raise SystemExit(
+                    _print_thread_goal(
+                        data_dir,
+                        _thread_target_params(args),
+                        instance_name=target.instance_name,
+                    )
+                )
+            if goal_action == "set":
+                raise SystemExit(
+                    _set_thread_goal(
+                        data_dir,
+                        _thread_target_params(args),
+                        objective=str(args.objective or ""),
+                        status=str(args.status or ""),
+                        instance_name=target.instance_name,
+                    )
+                )
+            if goal_action == "pause":
+                raise SystemExit(
+                    _pause_thread_goal(
+                        data_dir,
+                        _thread_target_params(args),
+                        instance_name=target.instance_name,
+                    )
+                )
+            if goal_action == "resume":
+                raise SystemExit(
+                    _resume_thread_goal(
+                        data_dir,
+                        _thread_target_params(args),
+                        instance_name=target.instance_name,
+                    )
+                )
+            if goal_action == "clear":
+                raise SystemExit(
+                    _clear_thread_goal(
+                        data_dir,
+                        _thread_target_params(args),
+                        instance_name=target.instance_name,
+                    )
+                )
         if args.resource == "thread" and args.action == "memory":
             raise SystemExit(
                 _print_thread_memory_result(

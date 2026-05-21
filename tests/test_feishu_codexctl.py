@@ -10,18 +10,23 @@ from bot.adapters.base import ThreadSummary
 from bot.feishu_codexctl import (
     _archive_thread,
     _build_parser,
+    _clear_thread_goal,
     _image_send_target_params,
     _list_running_instances,
     _print_binding_list,
+    _print_thread_goal,
     _print_thread_memory_result,
     _print_thread_list,
     _prompt_text_from_args,
     _print_binding_status,
     _render_table,
+    _resume_thread_goal,
     _send_thread_image,
     _send_binding_prompt,
+    _set_thread_goal,
     _resolve_thread_archive_target,
     _remote_adapter,
+    _pause_thread_goal,
     _terminal_display_width,
     _print_thread_status,
     _thread_target_params,
@@ -140,6 +145,52 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         args = parser.parse_args(["thread", "bindings", "--thread-name", "demo"])
 
+        self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
+
+    def test_thread_goal_defaults_to_show(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "goal", "--thread-id", "thread-1"])
+
+        self.assertEqual(args.goal_action, "show")
+        self.assertEqual(_thread_target_params(args), {"thread_id": "thread-1"})
+
+    def test_thread_goal_show_accepts_explicit_thread_name(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "goal", "show", "--thread-name", "demo"])
+
+        self.assertEqual(args.goal_action, "show")
+        self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
+
+    def test_thread_goal_set_accepts_objective_and_status(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(
+            [
+                "thread",
+                "goal",
+                "set",
+                "--thread-id",
+                "thread-1",
+                "--objective",
+                "ship goal support",
+                "--status",
+                "paused",
+            ]
+        )
+
+        self.assertEqual(args.goal_action, "set")
+        self.assertEqual(_thread_target_params(args), {"thread_id": "thread-1"})
+        self.assertEqual(args.objective, "ship goal support")
+        self.assertEqual(args.status, "paused")
+
+    def test_thread_goal_pause_accepts_explicit_thread_name(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "goal", "pause", "--thread-name", "demo"])
+
+        self.assertEqual(args.goal_action, "pause")
         self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
 
     def test_thread_list_defaults_to_cwd_scope(self) -> None:
@@ -635,6 +686,132 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("diagnostics:", rendered)
         self.assertIn("- hard blocker：待处理审批/输入请求：`1`", rendered)
         self.assertIn("- collateral impact：当前实例 loaded threads：`2`", rendered)
+
+    def test_print_thread_goal_renders_goal_snapshot(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "goal": {
+                "thread_id": "thread-1",
+                "objective": "ship goal support",
+                "status": "active",
+                "token_budget": 100,
+                "tokens_used": 12,
+                "time_used_seconds": 34,
+                "created_at": 1712476800,
+                "updated_at": 1712476801,
+            },
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _print_thread_goal(
+                    Path("/tmp/instance-data"),
+                    {"thread_id": "thread-1"},
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("thread: thread-1 demo", rendered)
+        self.assertIn("objective: ship goal support", rendered)
+        self.assertIn("status: active (进行中)", rendered)
+        self.assertIn("token budget: 100", rendered)
+        self.assertIn("tokens used: 12", rendered)
+
+    def test_set_thread_goal_compacts_empty_fields(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "goal": {
+                "thread_id": "thread-1",
+                "objective": "ship goal support",
+                "status": "paused",
+                "token_budget": None,
+                "tokens_used": 12,
+                "time_used_seconds": 34,
+                "created_at": 1712476800,
+                "updated_at": 1712476801,
+            },
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot) as mock_request:
+            with redirect_stdout(stdout):
+                result = _set_thread_goal(
+                    Path("/tmp/instance-data"),
+                    {"thread_id": "thread-1"},
+                    status="paused",
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            mock_request.call_args.args,
+            (
+                Path("/tmp/instance-data"),
+                "thread/goal/set",
+                {
+                    "thread_id": "thread-1",
+                    "status": "paused",
+                },
+            ),
+        )
+        self.assertIn("note: 当前 thread goal 已更新。", stdout.getvalue())
+
+    def test_pause_resume_and_clear_thread_goal_render_operation_notes(self) -> None:
+        stdout = io.StringIO()
+        paused = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "goal": {
+                "thread_id": "thread-1",
+                "objective": "ship goal support",
+                "status": "paused",
+                "token_budget": None,
+                "tokens_used": 12,
+                "time_used_seconds": 34,
+                "created_at": 1712476800,
+                "updated_at": 1712476801,
+            },
+        }
+        resumed = {
+            **paused,
+            "goal": {
+                **paused["goal"],
+                "status": "active",
+            },
+        }
+        cleared = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "goal": None,
+            "cleared": True,
+        }
+        with patch("bot.feishu_codexctl._request", side_effect=[paused, resumed, cleared]):
+            with redirect_stdout(stdout):
+                self.assertEqual(
+                    _pause_thread_goal(Path("/tmp/instance-data"), {"thread_id": "thread-1"}, instance_name="explorer"),
+                    0,
+                )
+                self.assertEqual(
+                    _resume_thread_goal(Path("/tmp/instance-data"), {"thread_id": "thread-1"}, instance_name="explorer"),
+                    0,
+                )
+                self.assertEqual(
+                    _clear_thread_goal(Path("/tmp/instance-data"), {"thread_id": "thread-1"}, instance_name="explorer"),
+                    0,
+                )
+
+        rendered = stdout.getvalue()
+        self.assertIn("note: 当前 thread goal 已暂停。", rendered)
+        self.assertIn("note: 当前 thread goal 已恢复。", rendered)
+        self.assertIn("note: 当前 thread goal 已清除。", rendered)
+        self.assertIn("goal: （无）", rendered)
 
     def test_send_thread_image_reports_partial_delivery(self) -> None:
         stdout = io.StringIO()

@@ -5,7 +5,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from bot.adapters.base import ThreadSnapshot, ThreadSummary
+from bot.adapters.base import ThreadGoalSummary, ThreadSnapshot, ThreadSummary
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.reason_codes import (
     PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
@@ -56,9 +56,38 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         sent_images: list[tuple[str, str]] = []
         submitted_prompts: list[dict[str, object]] = []
         thread_memory_modes: dict[str, str] = {}
+        thread_goals: dict[str, ThreadGoalSummary] = {}
 
         def _read_thread(thread_id: str):
             return ThreadSnapshot(summary=summaries[thread_id])
+
+        def _set_thread_goal(
+            thread_id: str,
+            objective: str | None = None,
+            status: str | None = None,
+        ) -> ThreadGoalSummary:
+            existing = thread_goals.get(thread_id)
+            goal = ThreadGoalSummary(
+                thread_id=thread_id,
+                objective=(
+                    str(objective or "").strip()
+                    if objective is not None
+                    else (existing.objective if existing is not None else "")
+                ),
+                status=(
+                    str(status or "").strip()
+                    if status is not None
+                    else (existing.status if existing is not None else "active")
+                )
+                or "active",
+                token_budget=existing.token_budget if existing is not None else None,
+                tokens_used=existing.tokens_used if existing is not None else 0,
+                time_used_seconds=existing.time_used_seconds if existing is not None else 0,
+                created_at=existing.created_at if existing is not None else 0,
+                updated_at=existing.updated_at if existing is not None else 0,
+            )
+            thread_goals[thread_id] = goal
+            return goal
 
         controller = RuntimeAdminController(
             lock=lock,
@@ -99,6 +128,9 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 path_exists=lambda path: True,
                 path_is_file=lambda path: True,
             ),
+            get_thread_goal=lambda thread_id: thread_goals.get(thread_id),
+            set_thread_goal=_set_thread_goal,
+            clear_thread_goal=lambda thread_id: thread_goals.pop(thread_id, None) is not None,
             submit_prompt_for_control=lambda binding, **kwargs: submitted_prompts.append(
                 {"binding": binding, **kwargs}
             ) or {
@@ -131,6 +163,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         )
         controller._submitted_prompts = submitted_prompts  # type: ignore[attr-defined]
         controller._thread_memory_modes = thread_memory_modes  # type: ignore[attr-defined]
+        controller._thread_goals = thread_goals  # type: ignore[attr-defined]
         return (
             lock,
             binding_runtime,
@@ -1377,6 +1410,132 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 {"binding_id": "p2p:ou_user2:c2", "feishu_runtime_state": "detached"},
             ],
         )
+
+    def test_handle_service_control_request_thread_goal_reads_current_goal(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        self._bind_thread(lock, binding_runtime, ("ou_user", "c1"), thread_id="thread-1")
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        controller._thread_goals["thread-1"] = ThreadGoalSummary(  # type: ignore[attr-defined]
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+
+        result = controller.handle_service_control_request("thread/goal", {"thread_id": "thread-1"})
+
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(result["thread_title"], "demo")
+        self.assertEqual(result["goal"]["objective"], "ship goal support")
+        self.assertEqual(result["goal"]["status"], "active")
+        self.assertEqual(result["goal"]["token_budget"], 100)
+
+    def test_handle_service_control_request_thread_goal_set_updates_goal(self) -> None:
+        (
+            _lock,
+            _binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.handle_service_control_request(
+            "thread/goal/set",
+            {
+                "thread_id": "thread-1",
+                "objective": "ship goal support",
+                "status": "paused",
+            },
+        )
+
+        self.assertEqual(result["goal"]["objective"], "ship goal support")
+        self.assertEqual(result["goal"]["status"], "paused")
+
+    def test_handle_service_control_request_thread_goal_pause_resume_and_clear(self) -> None:
+        (
+            _lock,
+            _binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        controller._thread_goals["thread-1"] = ThreadGoalSummary(  # type: ignore[attr-defined]
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+        )
+
+        paused = controller.handle_service_control_request("thread/goal/pause", {"thread_id": "thread-1"})
+        resumed = controller.handle_service_control_request("thread/goal/resume", {"thread_id": "thread-1"})
+        cleared = controller.handle_service_control_request("thread/goal/clear", {"thread_id": "thread-1"})
+
+        self.assertEqual(paused["goal"]["status"], "paused")
+        self.assertEqual(resumed["goal"]["status"], "active")
+        self.assertIsNone(cleared["goal"])
+        self.assertTrue(cleared["cleared"])
 
     def test_handle_service_control_request_thread_memory_reports_plan_without_mutation(self) -> None:
         (
