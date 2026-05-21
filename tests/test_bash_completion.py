@@ -68,6 +68,33 @@ class ShellCompletionTests(unittest.TestCase):
 
         self.assertEqual(matches, ["read", "read_write"])
 
+    def test_feishu_codexctl_completes_thread_goal_subcommands(self) -> None:
+        matches = complete_words(
+            "feishu-codexctl",
+            ["feishu-codexctl", "thread", "goal", ""],
+            3,
+        )
+
+        self.assertEqual(matches, ["show", "set", "pause", "resume", "clear"])
+
+    def test_feishu_codexctl_completes_thread_goal_set_options_and_status(self) -> None:
+        option_matches = complete_words(
+            "feishu-codexctl",
+            ["feishu-codexctl", "thread", "goal", "set", "--"],
+            4,
+        )
+        status_matches = complete_words(
+            "feishu-codexctl",
+            ["feishu-codexctl", "thread", "goal", "set", "--status", "p"],
+            5,
+        )
+
+        self.assertEqual(
+            option_matches,
+            ["--thread-id", "--thread-name", "--objective", "--status", "--help"],
+        )
+        self.assertEqual(status_matches, ["paused"])
+
     def test_fcodex_skips_known_upstream_option_values_when_completing_resume(self) -> None:
         matches = complete_words(
             "fcodex",

@@ -59,6 +59,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("常用命令:", rendered)
         self.assertIn("feishu-codexctl --instance corp-a service status", rendered)
         self.assertIn("thread archive --thread-name demo", rendered)
+        self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
@@ -74,6 +75,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("`list` 默认列当前目录线程", rendered)
         self.assertIn("`--thread-id` 或 `--thread-name`", rendered)
         self.assertIn("thread commands", rendered)
+        self.assertIn("goal", rendered)
         self.assertIn("archive", rendered)
         self.assertIn("detach", rendered)
         self.assertIn("attach", rendered)
@@ -265,6 +267,26 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_print.call_args.kwargs["scope"], "cwd")
         self.assertEqual(mock_print.call_args.kwargs["running_entry"], entry)
+
+    def test_main_thread_goal_show_dispatches_to_goal_printer(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = CliInstanceTarget(
+                instance_name="aft",
+                data_dir=Path(tmpdir),
+            )
+            with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+                with patch("bot.feishu_codexctl._print_thread_goal", return_value=0) as mock_print:
+                    with patch(
+                        "bot.feishu_codexctl.sys.argv",
+                        ["feishu-codexctl", "--instance", "aft", "thread", "goal", "--thread-id", "thread-1"],
+                    ):
+                        with self.assertRaises(SystemExit) as exc:
+                            feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(mock_print.call_args.args[0], Path(tmpdir))
+        self.assertEqual(mock_print.call_args.args[1], {"thread_id": "thread-1"})
+        self.assertEqual(mock_print.call_args.kwargs["instance_name"], "aft")
 
     def test_thread_detach_accepts_explicit_thread_id(self) -> None:
         parser = _build_parser()

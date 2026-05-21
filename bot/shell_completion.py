@@ -590,6 +590,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         ("--display-mode", ["silent", "announce"]),
         ("--scope", ["cwd", "global"]),
         ("--mode", list(_THREAD_MEMORY_MODES)),
+        ("--status", ["active", "paused"]),
     ):
         matches = _complete_choice_option(context, option_name, choices)
         if matches is not None:
@@ -649,10 +650,14 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         return []
     if resource == "thread":
         if positional_index == 1:
-            return _complete_candidates(current, ["list", "status", "bindings", "memory", "archive", "attach", "detach"])
+            return _complete_candidates(
+                current,
+                ["list", "status", "bindings", "goal", "memory", "archive", "attach", "detach"],
+            )
         if len(positionals) < 2:
             return []
         action = positionals[1]
+        goal_subaction = positionals[2] if len(positionals) >= 3 else ""
         if current.startswith("-"):
             if action == "list":
                 return _complete_candidates(current, ["--scope", "--cwd", "--help", "-h"])
@@ -669,8 +674,26 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
                         "-h",
                     ],
                 )
+            if action == "goal":
+                if goal_subaction == "set":
+                    return _complete_candidates(
+                        current,
+                        [
+                            "--thread-id",
+                            "--thread-name",
+                            "--objective",
+                            "--status",
+                            "--help",
+                            "-h",
+                        ],
+                    )
+                if goal_subaction in {"show", "pause", "resume", "clear"}:
+                    return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
+                return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
             if action in {"status", "bindings", "archive", "attach", "detach"}:
                 return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
+        if action == "goal" and positional_index == 2:
+            return _complete_candidates(current, ["show", "set", "pause", "resume", "clear"])
         return []
     if resource == "image":
         if positional_index == 1:

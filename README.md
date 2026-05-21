@@ -197,6 +197,7 @@ feishu-codexctl service status
 feishu-codexctl binding list
 feishu-codexctl thread list
 feishu-codexctl thread status --thread-name <name>
+feishu-codexctl thread goal --thread-name <name>
 feishu-codexctl image send --path ./diagram.png
 ```
 
