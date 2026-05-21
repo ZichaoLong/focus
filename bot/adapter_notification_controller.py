@@ -12,6 +12,8 @@ from bot.runtime_state import (
     ExecutionStateChanged,
     RuntimeStateDict,
     RuntimeStateMessage,
+    ThreadGoalCleared,
+    ThreadGoalStateChanged,
     ThreadStateChanged,
 )
 from bot.runtime_view import build_runtime_view
@@ -79,6 +81,8 @@ class AdapterNotificationController:
             "thread/status/changed": self.handle_thread_status_changed,
             "thread/closed": self.handle_thread_closed,
             "thread/name/updated": self.handle_thread_name_updated,
+            "thread/goal/updated": self.handle_thread_goal_updated,
+            "thread/goal/cleared": self.handle_thread_goal_cleared,
             "turn/started": self.handle_turn_started,
             "turn/plan/updated": self.handle_turn_plan_updated,
             "item/started": self.handle_item_started,
@@ -228,6 +232,46 @@ class AdapterNotificationController:
                     state,
                     ThreadStateChanged(current_thread_title=resolved_title),
                 )
+
+    def handle_thread_goal_updated(self, params: dict[str, Any]) -> None:
+        thread_id = str(params.get("threadId", "") or "").strip()
+        bindings = self._bindings_for_thread(thread_id)
+        if not bindings:
+            return
+        goal = params.get("goal") or {}
+        for binding in bindings:
+            self._note_runtime_event(*binding)
+            state = self._get_runtime_state(*binding)
+            with self._lock:
+                runtime = build_runtime_view(state)
+                if runtime.current_thread_id.strip() != thread_id:
+                    continue
+                self._apply_runtime_state_message_locked(
+                    state,
+                    ThreadGoalStateChanged(
+                        goal_objective=str(goal.get("objective", "") or "").strip(),
+                        goal_status=str(goal.get("status", "") or "").strip(),
+                        goal_token_budget=goal.get("tokenBudget"),
+                        goal_tokens_used=int(goal.get("tokensUsed") or 0),
+                        goal_time_used_seconds=int(goal.get("timeUsedSeconds") or 0),
+                        goal_created_at=int(goal.get("createdAt") or 0),
+                        goal_updated_at=int(goal.get("updatedAt") or 0),
+                    ),
+                )
+
+    def handle_thread_goal_cleared(self, params: dict[str, Any]) -> None:
+        thread_id = str(params.get("threadId", "") or "").strip()
+        bindings = self._bindings_for_thread(thread_id)
+        if not bindings:
+            return
+        for binding in bindings:
+            self._note_runtime_event(*binding)
+            state = self._get_runtime_state(*binding)
+            with self._lock:
+                runtime = build_runtime_view(state)
+                if runtime.current_thread_id.strip() != thread_id:
+                    continue
+                self._apply_runtime_state_message_locked(state, ThreadGoalCleared())
 
     def handle_turn_started(self, params: dict[str, Any]) -> None:
         thread_id = str(params.get("threadId", "") or "").strip()

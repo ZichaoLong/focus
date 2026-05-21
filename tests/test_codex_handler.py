@@ -11,6 +11,7 @@ from unittest.mock import patch
 from bot.cards import build_ask_user_card, build_execution_card
 from bot.adapters.base import (
     RuntimeConfigSummary,
+    ThreadGoalSummary,
     RuntimeModelSummary,
     RuntimeProfileSummary,
     ThreadSnapshot,
@@ -68,6 +69,7 @@ class _FakeAdapter:
         self.compact_thread_calls: list[str] = []
         self.read_thread_calls: list[dict] = []
         self.thread_snapshots: dict[tuple[str, bool | None], ThreadSnapshot | Exception] = {}
+        self.thread_goals: dict[str, ThreadGoalSummary] = {}
         self.models: list[RuntimeModelSummary] = [
             RuntimeModelSummary(model="gpt-5.5", display_name="gpt-5.5", is_default=True),
             RuntimeModelSummary(model="gpt-5.4", display_name="gpt-5.4"),
@@ -127,6 +129,48 @@ class _FakeAdapter:
         if isinstance(snapshot, Exception):
             raise snapshot
         return snapshot
+
+    def get_thread_goal(self, thread_id: str) -> ThreadGoalSummary | None:
+        return self.thread_goals.get(thread_id)
+
+    def set_thread_goal(
+        self,
+        thread_id: str,
+        *,
+        objective: str | None = None,
+        status: str | None = None,
+        token_budget: int | None = None,
+    ) -> ThreadGoalSummary:
+        existing = self.thread_goals.get(thread_id)
+        if existing is None:
+            if not objective:
+                raise ValueError("cannot update goal when no goal exists")
+            goal = ThreadGoalSummary(
+                thread_id=thread_id,
+                objective=objective,
+                status=status or "active",
+                token_budget=token_budget,
+                tokens_used=0,
+                time_used_seconds=0,
+                created_at=1712476800,
+                updated_at=1712476800,
+            )
+        else:
+            goal = ThreadGoalSummary(
+                thread_id=thread_id,
+                objective=objective or existing.objective,
+                status=status or existing.status,
+                token_budget=token_budget if token_budget is not None else existing.token_budget,
+                tokens_used=existing.tokens_used,
+                time_used_seconds=existing.time_used_seconds,
+                created_at=existing.created_at,
+                updated_at=1712476801,
+            )
+        self.thread_goals[thread_id] = goal
+        return goal
+
+    def clear_thread_goal(self, thread_id: str) -> bool:
+        return self.thread_goals.pop(thread_id, None) is not None
 
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
         return RuntimeConfigSummary(
@@ -2928,6 +2972,148 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertNotIn("unsubscribe：", content)
         self.assertNotIn("当前直接提问：", content)
 
+    def test_bind_thread_backfills_goal_projection_from_backend(self) -> None:
+        handler, _ = self._make_handler()
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+
+        handler._bind_thread("ou_user", "c1", thread)
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state["goal_objective"], "ship goal support")
+        self.assertEqual(state["goal_status"], "active")
+        self.assertEqual(state["goal_token_budget"], 100)
+
+    def test_status_shows_goal_summary_when_available(self) -> None:
+        handler, bot = self._make_handler()
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+
+        handler._bind_thread("ou_user", "c1", thread)
+        handler.handle_message("ou_user", "c1", "/status")
+
+        _, card = bot.cards[-1]
+        content = card["elements"][0]["content"]
+        self.assertIn("当前 goal：`active`", content)
+        self.assertIn("goal 摘要：预算：`100`；已用 tokens：`12`；时长：`34s`", content)
+
+    def test_goal_command_supports_show_set_pause_resume_and_clear(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        handler.handle_message("ou_user", "c1", "/goal")
+        _, show_card = bot.cards[-1]
+        self.assertIn("当前 thread 暂无 goal。", show_card["elements"][0]["content"])
+
+        handler.handle_message("ou_user", "c1", "/goal set ship goal support")
+        _, set_card = bot.cards[-1]
+        self.assertIn("已设置当前 thread goal。", set_card["elements"][0]["content"])
+        self.assertIn("目标：ship goal support", set_card["elements"][0]["content"])
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertEqual(state["goal_objective"], "ship goal support")
+        self.assertEqual(state["goal_status"], "active")
+
+        handler.handle_message("ou_user", "c1", "/goal pause")
+        _, pause_card = bot.cards[-1]
+        self.assertIn("状态：`paused`", pause_card["elements"][0]["content"])
+        self.assertEqual(state["goal_status"], "paused")
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+        _, resume_card = bot.cards[-1]
+        self.assertIn("状态：`active`", resume_card["elements"][0]["content"])
+        self.assertEqual(state["goal_status"], "active")
+
+        handler.handle_message("ou_user", "c1", "/goal clear")
+        _, clear_card = bot.cards[-1]
+        self.assertIn("已清除当前 thread goal。", clear_card["elements"][0]["content"])
+        self.assertEqual(state["goal_objective"], "")
+        self.assertEqual(state["goal_status"], "")
+
+    def test_goal_card_action_can_pause_and_clear_goal(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        handler._refresh_bound_thread_goal_projection("ou_user", "c1", "thread-1")
+
+        pause_response = self._unpack_card_response(
+            handler.handle_card_action("ou_user", "c1", "msg-goal", {"action": "goal_pause"})
+        )
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "paused")
+        self.assertEqual(pause_response["toast"], "已暂停 goal。")
+        self.assertIn("状态：`paused`", pause_response["card"]["elements"][0]["content"])
+
+        clear_response = self._unpack_card_response(
+            handler.handle_card_action("ou_user", "c1", "msg-goal", {"action": "goal_clear"})
+        )
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_objective"], "")
+        self.assertEqual(clear_response["toast"], "已清除 goal。")
+        self.assertIn("当前 thread 暂无 goal。", clear_response["card"]["elements"][0]["content"])
+
     def test_status_prefers_pending_threadwise_profile_over_store(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
@@ -5467,6 +5653,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/commands`", reply)
         self.assertIn("`/help [overview|start|thread-settings|turn|connection|group|more]`", reply)
         self.assertIn("`/status`", reply)
+        self.assertIn("`/goal [show|set 〈objective〉|pause|resume|clear]`", reply)
         self.assertIn("`/memory [off|read|read_write]`", reply)
         self.assertIn("`/compact`", reply)
         self.assertIn("`/detach`", reply)
@@ -5584,6 +5771,21 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
             ["返回首页"],
+        )
+
+    def test_help_thread_settings_page_exposes_goal_entry(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/help thread-settings")
+
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：线程设置")
+        content = card["elements"][0]["content"]
+        self.assertIn("当前 goal 可通过 `/goal` 查看", content)
+        action_elements = self._action_elements(card)
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[0]["actions"]],
+            ["查看 Goal", "改 Profile"],
         )
 
     def test_help_runtime_mentions_permissions_as_recommended_entry(self) -> None:
@@ -5774,18 +5976,22 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["改 Profile", "改 Memory"],
+            ["查看 Goal", "改 Profile"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["压缩上下文", "重命名"],
+            ["改 Memory", "压缩上下文"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
-            ["归档当前", "按目标归档"],
+            ["重命名", "归档当前"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["按目标归档"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[4]["actions"]],
             ["返回首页"],
         )
 

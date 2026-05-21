@@ -53,6 +53,13 @@ class RuntimeStateDict(TypedDict):
     current_thread_id: str
     current_thread_title: str
     feishu_runtime_state: str
+    goal_objective: str
+    goal_status: str
+    goal_token_budget: int | None
+    goal_tokens_used: int
+    goal_time_used_seconds: int
+    goal_created_at: int
+    goal_updated_at: int
     current_turn_id: str
     running: bool
     cancelled: bool
@@ -132,6 +139,22 @@ class ThreadStateChanged(RuntimeStateCommand):
     current_thread_id: Any = UNSET
     current_thread_title: Any = UNSET
     feishu_runtime_state: Any = UNSET
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadGoalStateChanged(RuntimeStateEvent):
+    goal_objective: Any = UNSET
+    goal_status: Any = UNSET
+    goal_token_budget: Any = UNSET
+    goal_tokens_used: Any = UNSET
+    goal_time_used_seconds: Any = UNSET
+    goal_created_at: Any = UNSET
+    goal_updated_at: Any = UNSET
+
+
+@dataclass(frozen=True, slots=True)
+class ThreadGoalCleared(RuntimeStateEvent):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -244,6 +267,29 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
                 state["current_thread_title"] = current_thread_title
             if feishu_runtime_state is not UNSET:
                 state["feishu_runtime_state"] = feishu_runtime_state
+        case ThreadGoalStateChanged() as change:
+            if change.goal_objective is not UNSET:
+                state["goal_objective"] = change.goal_objective
+            if change.goal_status is not UNSET:
+                state["goal_status"] = change.goal_status
+            if change.goal_token_budget is not UNSET:
+                state["goal_token_budget"] = change.goal_token_budget
+            if change.goal_tokens_used is not UNSET:
+                state["goal_tokens_used"] = change.goal_tokens_used
+            if change.goal_time_used_seconds is not UNSET:
+                state["goal_time_used_seconds"] = change.goal_time_used_seconds
+            if change.goal_created_at is not UNSET:
+                state["goal_created_at"] = change.goal_created_at
+            if change.goal_updated_at is not UNSET:
+                state["goal_updated_at"] = change.goal_updated_at
+        case ThreadGoalCleared():
+            state["goal_objective"] = ""
+            state["goal_status"] = ""
+            state["goal_token_budget"] = None
+            state["goal_tokens_used"] = 0
+            state["goal_time_used_seconds"] = 0
+            state["goal_created_at"] = 0
+            state["goal_updated_at"] = 0
         case ExecutionAnchorCleared(clear_card_message=clear_card_message):
             if clear_card_message:
                 state["current_message_id"] = ""

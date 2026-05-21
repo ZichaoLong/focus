@@ -34,6 +34,18 @@ class ThreadSnapshot:
 
 
 @dataclass(slots=True)
+class ThreadGoalSummary:
+    thread_id: str
+    objective: str
+    status: str
+    token_budget: int | None = None
+    tokens_used: int = 0
+    time_used_seconds: int = 0
+    created_at: int = 0
+    updated_at: int = 0
+
+
+@dataclass(slots=True)
 class RuntimeProfileSummary:
     name: str
     model_provider: str | None = None
@@ -121,6 +133,25 @@ class AgentAdapter(ABC):
 
     @abstractmethod
     def read_thread(self, thread_id: str, *, include_turns: bool = False) -> ThreadSnapshot:
+        ...
+
+    @abstractmethod
+    def get_thread_goal(self, thread_id: str) -> ThreadGoalSummary | None:
+        ...
+
+    @abstractmethod
+    def set_thread_goal(
+        self,
+        thread_id: str,
+        *,
+        objective: str | None = None,
+        status: str | None = None,
+        token_budget: int | None = None,
+    ) -> ThreadGoalSummary:
+        ...
+
+    @abstractmethod
+    def clear_thread_goal(self, thread_id: str) -> bool:
         ...
 
     @abstractmethod

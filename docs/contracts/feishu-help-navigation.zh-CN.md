@@ -112,6 +112,7 @@
 
 必须提供：
 
+- `/goal`
 - `/profile`
 - `/memory`
 - `/compact`
@@ -121,6 +122,7 @@
 
 正文里还必须明确：
 
+- 当前 thread goal 使用 `/goal` 与 `/goal set <objective>`
 - 新建、恢复、浏览线程与切目录不在这里，而在“开始”
 - 如果只是为了 re-profile，优先直接走 `/profile <name>`
 - 如果只是为了切 memory mode，优先直接走 `/memory <off|read|read_write>`

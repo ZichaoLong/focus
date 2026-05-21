@@ -39,6 +39,7 @@ It does not redefine:
 | `/new` | Create a new current thread | yes; `Start` page | admin only | admin only | none |
 | `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
+| `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
 | `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `Thread Settings` page | admin only | admin only | `feishu-codexctl thread memory --thread-id/--thread-name`; `fcodex resume` reuses the persisted mode |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
@@ -96,6 +97,7 @@ These are part of the formal Feishu user surface and must be maintained together
 
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
+- `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
 - `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
 - shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/sandbox` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons

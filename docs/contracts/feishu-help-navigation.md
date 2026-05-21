@@ -112,6 +112,7 @@ Its body must also state:
 
 This page must provide:
 
+- `/goal`
 - `/profile`
 - `/memory`
 - `/compact`
@@ -121,6 +122,7 @@ This page must provide:
 
 Its body must also state:
 
+- the current thread goal uses `/goal` and `/goal set <objective>`
 - thread creation, resuming, browsing, and directory switching belong to `Start`
 - direct re-profiling should prefer `/profile <name>`
 - direct memory-mode changes should prefer `/memory <off|read|read_write>`

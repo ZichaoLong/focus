@@ -183,6 +183,8 @@ Current module split:
   request state and fail-closed handling for interactive requests
 - `bot/codex_threads_ui_domain.py`: owns thread-list card UI flows, including
   transient rename-form state and RuntimeLoop-submitted resume target resolution
+- `bot/codex_goal_domain.py`: owns the thread-level `/goal` read/write surface,
+  goal-card rendering flow, and local goal projection updates for the current binding
 - `bot/codex_settings_domain.py`: owns user-facing settings and identity
   commands such as `/profile`, `/approval`, `/sandbox`, `/permissions`,
   `/collab-mode`, `/whoami`, and `/init`; it crosses bot/runtime/profile boundaries

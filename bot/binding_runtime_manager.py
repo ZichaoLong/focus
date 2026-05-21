@@ -151,6 +151,13 @@ class BindingRuntimeManager:
             "current_thread_id": "",
             "current_thread_title": "",
             "feishu_runtime_state": "",
+            "goal_objective": "",
+            "goal_status": "",
+            "goal_token_budget": None,
+            "goal_tokens_used": 0,
+            "goal_time_used_seconds": 0,
+            "goal_created_at": 0,
+            "goal_updated_at": 0,
             "current_turn_id": "",
             "running": False,
             "cancelled": False,
@@ -956,6 +963,13 @@ class BindingRuntimeManager:
             "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
             "model": str(state["model"] or "").strip(),
             "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
+            "goal_objective": str(state.get("goal_objective") or "").strip(),
+            "goal_status": str(state.get("goal_status") or "").strip(),
+            "goal_token_budget": state.get("goal_token_budget"),
+            "goal_tokens_used": int(state.get("goal_tokens_used") or 0),
+            "goal_time_used_seconds": int(state.get("goal_time_used_seconds") or 0),
+            "goal_created_at": int(state.get("goal_created_at") or 0),
+            "goal_updated_at": int(state.get("goal_updated_at") or 0),
         }
 
     def thread_binding_snapshot_locked(

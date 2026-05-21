@@ -47,6 +47,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或切换当前绑定 thread 的 thread-wise memory mode。",
     ),
     SharedCommandSpec(
+        key="goal",
+        slash_name="/goal",
+        feishu_usage=feishu_visible_command_syntax("/goal [show|set <objective>|pause|resume|clear]"),
+        feishu_summary="查看或管理当前绑定 thread 的 goal。",
+    ),
+    SharedCommandSpec(
         key="model",
         slash_name="/model",
         feishu_usage="/model [name|auto]",

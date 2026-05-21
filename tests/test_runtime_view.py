@@ -12,6 +12,14 @@ def _build_state() -> dict[str, object]:
         "working_dir": "/tmp/project",
         "current_thread_id": "thread-1",
         "current_thread_title": "demo",
+        "feishu_runtime_state": "attached",
+        "goal_objective": "ship goal support",
+        "goal_status": "active",
+        "goal_token_budget": 100,
+        "goal_tokens_used": 12,
+        "goal_time_used_seconds": 34,
+        "goal_created_at": 1712476800,
+        "goal_updated_at": 1712476801,
         "current_turn_id": "turn-1",
         "running": True,
         "cancelled": False,
@@ -59,6 +67,9 @@ class RuntimeViewTests(unittest.TestCase):
         self.assertEqual(view.sandbox, "workspace-write")
         self.assertEqual(view.collaboration_mode, "default")
         self.assertEqual(view.reasoning_effort, "high")
+        self.assertTrue(view.goal.exists)
+        self.assertEqual(view.goal.objective, "ship goal support")
+        self.assertEqual(view.goal.status, "active")
         self.assertEqual(view.execution.effective_message_id, "card-1")
         self.assertTrue(view.execution.current_prompt_reply_in_thread)
         self.assertTrue(view.execution.has_execution_anchor)

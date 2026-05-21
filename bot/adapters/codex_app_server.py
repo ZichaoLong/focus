@@ -14,6 +14,7 @@ from bot.adapters.base import (
     RuntimeConfigSummary,
     RuntimeModelSummary,
     RuntimeProfileSummary,
+    ThreadGoalSummary,
     ThreadSnapshot,
     ThreadSummary,
     TurnInputItem,
@@ -228,6 +229,38 @@ class CodexAppServerAdapter(AgentAdapter):
             {"threadId": thread_id, "includeTurns": include_turns},
         )
         return self._snapshot_from_thread(result["thread"])
+
+    def get_thread_goal(self, thread_id: str) -> ThreadGoalSummary | None:
+        result = self._rpc.request("thread/goal/get", {"threadId": thread_id})
+        goal = result.get("goal")
+        if not isinstance(goal, dict):
+            return None
+        return self._goal_from_result(goal)
+
+    def set_thread_goal(
+        self,
+        thread_id: str,
+        *,
+        objective: str | None = None,
+        status: str | None = None,
+        token_budget: int | None = None,
+    ) -> ThreadGoalSummary:
+        result = self._rpc.request(
+            "thread/goal/set",
+            _compact(
+                {
+                    "threadId": thread_id,
+                    "objective": objective,
+                    "status": status,
+                    "tokenBudget": token_budget,
+                }
+            ),
+        )
+        return self._goal_from_result(result["goal"])
+
+    def clear_thread_goal(self, thread_id: str) -> bool:
+        result = self._rpc.request("thread/goal/clear", {"threadId": thread_id})
+        return bool(result.get("cleared"))
 
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
         result = self._rpc.request("config/read", _compact({"includeLayers": False, "cwd": cwd}))
@@ -528,8 +561,21 @@ class CodexAppServerAdapter(AgentAdapter):
                     is_default=bool(item.get("isDefault")),
                     hidden=bool(item.get("hidden")),
                 )
-            )
+                )
         return models
+
+    @staticmethod
+    def _goal_from_result(goal: dict[str, Any]) -> ThreadGoalSummary:
+        return ThreadGoalSummary(
+            thread_id=str(goal.get("threadId", "") or "").strip(),
+            objective=str(goal.get("objective", "") or "").strip(),
+            status=str(goal.get("status", "") or "").strip(),
+            token_budget=int(goal["tokenBudget"]) if goal.get("tokenBudget") is not None else None,
+            tokens_used=int(goal.get("tokensUsed") or 0),
+            time_used_seconds=int(goal.get("timeUsedSeconds") or 0),
+            created_at=int(goal.get("createdAt") or 0),
+            updated_at=int(goal.get("updatedAt") or 0),
+        )
 
     @staticmethod
     def _summary_from_thread(thread: dict[str, Any]) -> ThreadSummary:

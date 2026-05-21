@@ -16,6 +16,7 @@ from bot.cards import (
     CommandResult,
     build_backend_reset_card,
     build_markdown_card,
+    format_goal_summary_markdown,
     make_card_response,
 )
 from bot.constants import display_path
@@ -615,6 +616,15 @@ class RuntimeAdminController:
             f"目录：`{display_path(snapshot['working_dir'])}`",
             thread_line,
         ]
+        lines.extend(
+            format_goal_summary_markdown(
+                objective=str(snapshot.get("goal_objective", "") or ""),
+                status=str(snapshot.get("goal_status", "") or ""),
+                token_budget=snapshot.get("goal_token_budget"),
+                tokens_used=int(snapshot.get("goal_tokens_used") or 0),
+                time_used_seconds=int(snapshot.get("goal_time_used_seconds") or 0),
+            )
+        )
         if include_profile_lines:
             current_profile = self._current_thread_profile_text(thread_id)
             if current_profile:

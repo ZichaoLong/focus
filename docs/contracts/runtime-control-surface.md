@@ -224,12 +224,33 @@ It shows only:
 
 - current directory
 - current thread
+- the current thread's goal summary when known
 - the current thread's thread-wise profile
 - the current Feishu session's model / effort / permissions / approval / sandbox / collaboration settings
 
 It is no longer the full debugging surface.
 
-### 5.2 `/preflight`
+### 5.2 `/goal`
+
+`/goal` is the thread-scoped goal control surface for the current binding.
+
+Stable Feishu-side subcommands are:
+
+- `/goal`
+- `/goal show`
+- `/goal set <objective>`
+- `/goal pause`
+- `/goal resume`
+- `/goal clear`
+
+Contract boundaries:
+
+- `/goal` without arguments is the same as `/goal show`
+- this surface depends on app-server `thread/goal/*` RPCs rather than mirroring the TUI slash UX
+- goal state is thread-level, separate from execution cards
+- if one goal drives multiple turns, Feishu still shows normal per-turn execution-card lifecycle
+
+### 5.3 `/preflight`
 
 `/preflight` is a chat-scoped dry-run.
 
@@ -244,7 +265,7 @@ It must not:
 - call resume
 - change binding / attached / detached / owner state
 
-### 5.3 `/detach`
+### 5.4 `/detach`
 
 `/detach` applies only to the current chat binding.
 
@@ -260,7 +281,7 @@ It does not:
 - clear the binding
 - force the backend to unload
 
-### 5.4 `/attach [binding|thread|service]`
+### 5.5 `/attach [binding|thread|service]`
 
 This is the recovery action.
 

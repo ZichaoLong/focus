@@ -14,6 +14,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     CallBackToast,
 )
 
+from bot.adapters.base import ThreadGoalSummary
 from bot.card_text_projection import (
     TERMINAL_RESULT_CARD_TITLE,
     render_final_reply_text_block,
@@ -55,6 +56,7 @@ class CommandResult:
 
 _HISTORY_TEXT_MAX = 300
 _PLAN_CONTENT_MAX = 4000
+_GOAL_OBJECTIVE_MAX = 400
 _SHARED_RESUME_COMMAND = get_shared_command("resume")
 _SHARED_RESET_BACKEND_COMMAND = get_shared_command("reset-backend")
 _LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
@@ -73,6 +75,65 @@ def _format_ts_ms(value: int) -> str:
     if timestamp <= 0:
         return "（未知）"
     return format_timestamp(timestamp)
+
+
+def _format_ts_seconds(value: int) -> str:
+    try:
+        timestamp = float(value)
+    except (TypeError, ValueError):
+        return "（未知）"
+    if timestamp <= 0:
+        return "（未知）"
+    return format_timestamp(timestamp)
+
+
+def goal_status_label(status: str) -> str:
+    return {
+        "active": "进行中",
+        "paused": "已暂停",
+        "blocked": "已阻塞",
+        "usageLimited": "触发 usage 限制",
+        "budgetLimited": "触发预算限制",
+        "complete": "已完成",
+    }.get(str(status or "").strip(), "未知")
+
+
+def goal_template(status: str, *, has_goal: bool) -> str:
+    if not has_goal:
+        return "blue"
+    normalized = str(status or "").strip()
+    if normalized == "active":
+        return "turquoise"
+    if normalized == "paused":
+        return "grey"
+    if normalized == "complete":
+        return "green"
+    if normalized in {"blocked", "usageLimited", "budgetLimited"}:
+        return "orange"
+    return "blue"
+
+
+def format_goal_summary_markdown(
+    *,
+    objective: str,
+    status: str,
+    token_budget: int | None,
+    tokens_used: int,
+    time_used_seconds: int,
+) -> list[str]:
+    normalized_objective = str(objective or "").strip()
+    if not normalized_objective:
+        return []
+    lines = [
+        f"当前 goal：`{str(status or '').strip() or 'unknown'}` ({goal_status_label(status)}) {shorten(normalized_objective, 120)}"
+    ]
+    metrics: list[str] = []
+    if token_budget is not None:
+        metrics.append(f"预算：`{int(token_budget)}`")
+    metrics.append(f"已用 tokens：`{int(tokens_used or 0)}`")
+    metrics.append(f"时长：`{int(time_used_seconds or 0)}s`")
+    lines.append("goal 摘要：" + "；".join(metrics))
+    return lines
 
 
 def build_markdown_card(title: str, content: str, *, template: str = "blue") -> dict:
@@ -258,6 +319,113 @@ def build_backend_reset_card(
         "header": {
             "title": {"tag": "plain_text", "content": title},
             "template": template,
+        },
+        "elements": elements,
+    }
+
+
+def build_goal_card(
+    *,
+    thread_id: str,
+    thread_title: str,
+    goal: ThreadGoalSummary | None,
+    notice: str = "",
+) -> dict:
+    has_goal = goal is not None and bool(str(goal.objective or "").strip())
+    normalized_thread_id = str(thread_id or "").strip()
+    normalized_thread_title = str(thread_title or "").strip()
+    elements: list[dict] = []
+
+    lines = [
+        (
+            f"线程：`{normalized_thread_id[:8]}…` {normalized_thread_title or '（无标题）'}"
+            if normalized_thread_id
+            else "线程：-"
+        )
+    ]
+    if notice:
+        lines.extend(["", notice])
+    if has_goal and goal is not None:
+        lines.extend(
+            [
+                "",
+                f"目标：{shorten(goal.objective, _GOAL_OBJECTIVE_MAX)}",
+                f"状态：`{goal.status}` ({goal_status_label(goal.status)})",
+                (
+                    f"Token Budget：`{goal.token_budget}`"
+                    if goal.token_budget is not None
+                    else "Token Budget：`未设置`"
+                ),
+                f"已用 Tokens：`{goal.tokens_used}`",
+                f"已用时长：`{goal.time_used_seconds}s`",
+                f"创建时间：`{_format_ts_seconds(goal.created_at)}`",
+                f"更新时间：`{_format_ts_seconds(goal.updated_at)}`",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "当前 thread 暂无 goal。",
+                f"设置方式：`{feishu_visible_command_syntax('/goal set <objective>')}`",
+            ]
+        )
+    elements.append(
+        {
+            "tag": "markdown",
+            "content": sanitize_runtime_markdown_for_feishu_card("\n".join(lines)),
+        }
+    )
+
+    actions: list[dict] = [
+        {
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "刷新"},
+            "type": "default",
+            "value": {"action": "goal_refresh"},
+        }
+    ]
+    if has_goal and goal is not None:
+        if goal.status == "active":
+            actions.insert(
+                0,
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "暂停"},
+                    "type": "default",
+                    "value": {"action": "goal_pause"},
+                },
+            )
+        elif goal.status == "paused":
+            actions.insert(
+                0,
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "恢复"},
+                    "type": "primary",
+                    "value": {"action": "goal_resume"},
+                },
+            )
+        actions.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "清除"},
+                "type": "danger",
+                "value": {"action": "goal_clear"},
+            }
+        )
+    elements.extend(
+        [
+            {"tag": "hr"},
+            {"tag": "action", "actions": actions},
+        ]
+    )
+
+    return {
+        "config": _card_config(),
+        "header": {
+            "title": {"tag": "plain_text", "content": "Codex Goal"},
+            "template": goal_template(goal.status if goal is not None else "", has_goal=has_goal),
         },
         "elements": elements,
     }

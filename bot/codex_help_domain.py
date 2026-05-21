@@ -29,6 +29,7 @@ _SHARED_DETACH_COMMAND = get_shared_command("detach")
 _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 _SHARED_MEMORY_COMMAND = get_shared_command("memory")
+_SHARED_GOAL_COMMAND = get_shared_command("goal")
 _SHARED_MODEL_COMMAND = get_shared_command("model")
 _SHARED_EFFORT_COMMAND = get_shared_command("effort")
 _SHARED_COMPACT_COMMAND = get_shared_command("compact")
@@ -224,8 +225,10 @@ class CodexHelpDomain:
             "thread-settings": _HelpPageSpec(
                 title="Codex 工作台：线程设置",
                 markdown=(
-                    "处理当前绑定 thread 的 profile、memory、压缩、重命名与归档。\n\n"
+                    "处理当前绑定 thread 的 goal、profile、memory、压缩、重命名与归档。\n\n"
                     "新建、恢复、浏览线程与切换目录，请到“开始”。\n\n"
+                    f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
+                    f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
                     f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
                 ),
@@ -233,39 +236,48 @@ class CodexHelpDomain:
                     _HelpActionRowSpec(
                         buttons=(
                             _HelpCommandButtonSpec(
+                                label="查看 Goal",
+                                command="/goal",
+                                title="Codex Goal",
+                            ),
+                            _HelpCommandButtonSpec(
                                 label="改 Profile",
                                 command="/profile",
                                 title="Codex Thread Profile",
                             ),
+                        ),
+                        layout="bisected",
+                    ),
+                    _HelpActionRowSpec(
+                        buttons=(
                             _HelpCommandButtonSpec(
                                 label="改 Memory",
                                 command="/memory",
                                 title="Codex Thread Memory Mode",
                             ),
-                        ),
-                        layout="bisected",
-                    ),
-                    _HelpActionRowSpec(
-                        buttons=(
                             _HelpCommandButtonSpec(
                                 label="压缩上下文",
                                 command="/compact",
                                 title="Codex Compact",
                             ),
-                            _HelpPageButtonSpec(label="重命名", page="thread-settings-rename-form"),
                         ),
                         layout="bisected",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
+                            _HelpPageButtonSpec(label="重命名", page="thread-settings-rename-form"),
                             _HelpCommandButtonSpec(
                                 label="归档当前",
                                 command="/archive",
                                 title="Codex 归档线程",
                             ),
-                            _HelpPageButtonSpec(label="按目标归档", page="thread-settings-archive-form"),
                         ),
                         layout="bisected",
+                    ),
+                    _HelpActionRowSpec(
+                        buttons=(
+                            _HelpPageButtonSpec(label="按目标归档", page="thread-settings-archive-form"),
+                        ),
                     ),
                     self._return_home_row(),
                 ),
@@ -935,6 +947,7 @@ class CodexHelpDomain:
                 f"- `{_SHARED_RESUME_COMMAND.feishu_usage}`\n"
                 "- `/cd [path]`\n\n"
                 "`线程设置`\n"
+                f"- `{_SHARED_GOAL_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`\n"

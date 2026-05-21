@@ -88,9 +88,25 @@ class PlanView:
 
 
 @dataclass(frozen=True, slots=True)
+class GoalView:
+    objective: str
+    status: str
+    token_budget: int | None
+    tokens_used: int
+    time_used_seconds: int
+    created_at: int
+    updated_at: int
+
+    @property
+    def exists(self) -> bool:
+        return bool(self.objective)
+
+
+@dataclass(frozen=True, slots=True)
 class RuntimeView:
     active: bool
     binding: ThreadBindingView
+    goal: GoalView
     execution: ExecutionView
     settings: RuntimeSettingsView
     plan: PlanView
@@ -140,6 +156,19 @@ def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
             thread_id=str(state["current_thread_id"] or ""),
             title=str(state["current_thread_title"] or ""),
             feishu_runtime_state=str(state.get("feishu_runtime_state") or ""),
+        ),
+        goal=GoalView(
+            objective=str(state.get("goal_objective") or ""),
+            status=str(state.get("goal_status") or ""),
+            token_budget=(
+                int(state["goal_token_budget"])
+                if state.get("goal_token_budget") is not None
+                else None
+            ),
+            tokens_used=int(state.get("goal_tokens_used") or 0),
+            time_used_seconds=int(state.get("goal_time_used_seconds") or 0),
+            created_at=int(state.get("goal_created_at") or 0),
+            updated_at=int(state.get("goal_updated_at") or 0),
         ),
         execution=ExecutionView(
             running=bool(state["running"]),

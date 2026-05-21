@@ -6,6 +6,8 @@ from bot.runtime_state import (
     ExecutionStateChanged,
     PlanStateChanged,
     RuntimeSettingsChanged,
+    ThreadGoalCleared,
+    ThreadGoalStateChanged,
     ThreadStateChanged,
     apply_runtime_state_message,
 )
@@ -18,6 +20,13 @@ def _build_state() -> dict[str, object]:
         "current_thread_id": "thread-1",
         "current_thread_title": "demo",
         "feishu_runtime_state": "attached",
+        "goal_objective": "",
+        "goal_status": "",
+        "goal_token_budget": None,
+        "goal_tokens_used": 0,
+        "goal_time_used_seconds": 0,
+        "goal_created_at": 0,
+        "goal_updated_at": 0,
         "current_turn_id": "turn-1",
         "running": True,
         "cancelled": False,
@@ -124,6 +133,29 @@ class RuntimeStateReducerTests(unittest.TestCase):
         self.assertEqual(state["plan_explanation"], "")
         self.assertEqual(state["plan_steps"], [])
         self.assertEqual(state["plan_text"], "")
+
+    def test_goal_projection_can_update_and_clear(self) -> None:
+        state = _build_state()
+
+        apply_runtime_state_message(
+            state,
+            ThreadGoalStateChanged(
+                goal_objective="ship goal support",
+                goal_status="active",
+                goal_token_budget=100,
+                goal_tokens_used=12,
+                goal_time_used_seconds=34,
+                goal_created_at=1712476800,
+                goal_updated_at=1712476801,
+            ),
+        )
+        apply_runtime_state_message(state, ThreadGoalCleared())
+
+        self.assertEqual(state["goal_objective"], "")
+        self.assertEqual(state["goal_status"], "")
+        self.assertIsNone(state["goal_token_budget"])
+        self.assertEqual(state["goal_tokens_used"], 0)
+        self.assertEqual(state["goal_time_used_seconds"], 0)
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 
 from bot.approval_policy import USER_SELECTABLE_APPROVAL_POLICIES
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
-from bot.adapters.base import RuntimeConfigSummary, ThreadSnapshot, ThreadSummary
+from bot.adapters.base import RuntimeConfigSummary, ThreadGoalSummary, ThreadSnapshot, ThreadSummary
 from bot.adapter_notification_controller import AdapterNotificationController
 from bot.cards import (
     CommandResult,
@@ -47,6 +47,7 @@ from bot.instance_layout import current_instance_name, global_data_dir
 from bot.codex_config_reader import resolve_profile_from_codex_config
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.codex_protocol.client import CodexRpcError
+from bot.codex_goal_domain import CodexGoalDomain, GoalDomainPorts
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 from bot.codex_help_domain import CodexHelpDomain
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
@@ -98,6 +99,8 @@ from bot.runtime_state import (
     RuntimeSettingsChanged,
     RuntimeStateDict,
     RuntimeStateMessage,
+    ThreadGoalCleared,
+    ThreadGoalStateChanged,
     ThreadStateChanged,
     apply_runtime_state_message,
 )
@@ -435,6 +438,19 @@ class CodexHandler(BotHandler):
                     mode,
                     message_id=message_id,
                 ),
+            )
+        )
+        self._goal_domain = CodexGoalDomain(
+            ports=GoalDomainPorts(
+                get_runtime_view=lambda sender_id, chat_id, message_id="": self._get_runtime_view(
+                    sender_id,
+                    chat_id,
+                    message_id,
+                ),
+                get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
+                set_thread_goal=lambda thread_id, **kwargs: self._adapter.set_thread_goal(thread_id, **kwargs),
+                clear_thread_goal=lambda thread_id: self._adapter.clear_thread_goal(thread_id),
+                update_runtime_goal_projection=self._update_runtime_goal_projection,
             )
         )
         self._help_domain = CodexHelpDomain(
@@ -1235,10 +1251,35 @@ class CodexHandler(BotHandler):
     def _replace_bound_thread_state_locked(self, state: RuntimeStateDict) -> None:
         self._cancel_runtime_timers_locked(state)
         self._reset_execution_context_locked(state, clear_card_message=True)
+        self._clear_thread_goal_state_locked(state)
 
     def _clear_bound_thread_state_locked(self, state: RuntimeStateDict) -> None:
         self._replace_bound_thread_state_locked(state)
         self._clear_plan_state(state)
+
+    def _apply_thread_goal_projection_locked(
+        self,
+        state: RuntimeStateDict,
+        goal: ThreadGoalSummary | None,
+    ) -> None:
+        if goal is None:
+            self._apply_runtime_state_message_locked(state, ThreadGoalCleared())
+            return
+        self._apply_runtime_state_message_locked(
+            state,
+            ThreadGoalStateChanged(
+                goal_objective=goal.objective,
+                goal_status=goal.status,
+                goal_token_budget=goal.token_budget,
+                goal_tokens_used=goal.tokens_used,
+                goal_time_used_seconds=goal.time_used_seconds,
+                goal_created_at=goal.created_at,
+                goal_updated_at=goal.updated_at,
+            ),
+        )
+
+    def _clear_thread_goal_state_locked(self, state: RuntimeStateDict) -> None:
+        self._apply_runtime_state_message_locked(state, ThreadGoalCleared())
 
     def _reset_execution_context_locked(self, state: RuntimeStateDict, *, clear_card_message: bool) -> None:
         self._turn_execution.reset_execution_context_locked(
@@ -1555,6 +1596,14 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, message_id=message_id
                 ),
             ),
+            "/goal": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._handle_goal_command(
+                    sender_id,
+                    chat_id,
+                    arg,
+                    message_id=message_id,
+                ),
+            ),
             "/preflight": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._handle_preflight_command(
                     sender_id,
@@ -1703,6 +1752,22 @@ class CodexHandler(BotHandler):
             ),
             "resume_thread": ActionRoute(
                 handler=self._threads_ui_domain.handle_resume_thread_action,
+                group_guard="group_admin",
+            ),
+            "goal_refresh": ActionRoute(
+                handler=self._goal_domain.handle_goal_action,
+                group_guard="group_admin",
+            ),
+            "goal_pause": ActionRoute(
+                handler=self._goal_domain.handle_goal_action,
+                group_guard="group_admin",
+            ),
+            "goal_resume": ActionRoute(
+                handler=self._goal_domain.handle_goal_action,
+                group_guard="group_admin",
+            ),
+            "goal_clear": ActionRoute(
+                handler=self._goal_domain.handle_goal_action,
                 group_guard="group_admin",
             ),
             "show_more_threads": ActionRoute(
@@ -2069,6 +2134,9 @@ class CodexHandler(BotHandler):
     def _handle_status_command(self, sender_id: str, chat_id: str, *, message_id: str = "") -> CommandResult:
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
         return self._runtime_admin.handle_status_command(binding)
+
+    def _handle_goal_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
+        return self._goal_domain.handle_goal_command(sender_id, chat_id, arg, message_id=message_id)
 
     def _handle_preflight_command(
         self,
@@ -2445,6 +2513,12 @@ class CodexHandler(BotHandler):
                 self._release_service_thread_runtime_lease(unsubscribe_thread_id)
             except Exception:
                 logger.exception("切换 binding 后释放旧 runtime lease 失败: thread=%s", unsubscribe_thread_id[:12])
+        self._refresh_bound_thread_goal_projection(
+            sender_id,
+            chat_id,
+            thread.thread_id,
+            message_id=message_id,
+        )
 
     def _clear_thread_binding(self, sender_id: str, chat_id: str, *, message_id: str = "") -> None:
         resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
@@ -2460,6 +2534,38 @@ class CodexHandler(BotHandler):
         if unsubscribe_thread_id:
             self._adapter.unsubscribe_thread(unsubscribe_thread_id)
             self._release_service_thread_runtime_lease(unsubscribe_thread_id)
+
+    def _update_runtime_goal_projection(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        goal: ThreadGoalSummary | None,
+    ) -> None:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        state = resolved.state
+        with self._lock:
+            self._apply_thread_goal_projection_locked(state, goal)
+
+    def _refresh_bound_thread_goal_projection(
+        self,
+        sender_id: str,
+        chat_id: str,
+        thread_id: str,
+        *,
+        message_id: str = "",
+    ) -> None:
+        try:
+            goal = self._adapter.get_thread_goal(thread_id)
+        except Exception:
+            logger.debug("读取 thread goal 失败: thread=%s", thread_id[:12], exc_info=True)
+            return
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        state = resolved.state
+        with self._lock:
+            if str(state["current_thread_id"] or "").strip() != str(thread_id or "").strip():
+                return
+            self._apply_thread_goal_projection_locked(state, goal)
 
     def _list_global_threads(self) -> list[ThreadSummary]:
         return list_global_threads(

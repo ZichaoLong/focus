@@ -131,6 +131,64 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(state_a["current_thread_title"], "new-title")
         self.assertEqual(state_b["current_thread_title"], "new-title")
 
+    def test_handle_thread_goal_updated_projects_goal_state(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+
+        controller, note_events, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_goal_updated(
+            {
+                "threadId": "thread-1",
+                "goal": {
+                    "objective": "ship goal support",
+                    "status": "active",
+                    "tokenBudget": 200,
+                    "tokensUsed": 12,
+                    "timeUsedSeconds": 34,
+                    "createdAt": 1712476800,
+                    "updatedAt": 1712476801,
+                },
+            }
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(state["goal_objective"], "ship goal support")
+        self.assertEqual(state["goal_status"], "active")
+        self.assertEqual(state["goal_token_budget"], 200)
+        self.assertEqual(state["goal_tokens_used"], 12)
+        self.assertEqual(state["goal_time_used_seconds"], 34)
+
+    def test_handle_thread_goal_cleared_resets_goal_projection(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["goal_objective"] = "stale goal"
+        state["goal_status"] = "paused"
+        state["goal_token_budget"] = 200
+        state["goal_tokens_used"] = 12
+        state["goal_time_used_seconds"] = 34
+        state["goal_created_at"] = 1712476800
+        state["goal_updated_at"] = 1712476801
+
+        controller, note_events, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_goal_cleared({"threadId": "thread-1"})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(state["goal_objective"], "")
+        self.assertEqual(state["goal_status"], "")
+        self.assertIsNone(state["goal_token_budget"])
+        self.assertEqual(state["goal_tokens_used"], 0)
+        self.assertEqual(state["goal_time_used_seconds"], 0)
+
     def test_handle_turn_started_patches_previous_card_and_assigns_new_card(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()

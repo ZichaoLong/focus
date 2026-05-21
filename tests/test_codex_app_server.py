@@ -16,7 +16,13 @@ from io import StringIO
 from pathlib import Path
 
 from bot import process_utils
-from bot.adapters.base import RuntimeConfigSummary, RuntimeModelSummary, RuntimeProfileSummary, ThreadSummary
+from bot.adapters.base import (
+    RuntimeConfigSummary,
+    RuntimeModelSummary,
+    RuntimeProfileSummary,
+    ThreadGoalSummary,
+    ThreadSummary,
+)
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
 from bot.codex_command_resolver import DEFAULT_CODEX_COMMAND
 from bot.codex_protocol.client import CodexRpcClient
@@ -108,6 +114,21 @@ class _FakeRpc:
                     "status": {"type": "idle", "activeFlags": []},
                 }
             }
+        if method in {"thread/goal/get", "thread/goal/set"}:
+            return {
+                "goal": {
+                    "threadId": "thread-1",
+                    "objective": "ship goal support",
+                    "status": "active",
+                    "tokenBudget": 123,
+                    "tokensUsed": 45,
+                    "timeUsedSeconds": 67,
+                    "createdAt": 1712476800,
+                    "updatedAt": 1712476801,
+                }
+            }
+        if method == "thread/goal/clear":
+            return {"cleared": True}
         return {"ok": True}
 
     def stop(self) -> None:
@@ -336,6 +357,57 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 },
             ),
         )
+
+    def test_get_thread_goal_reads_current_goal(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        goal = adapter.get_thread_goal("thread-1")
+
+        self.assertEqual(fake_rpc.calls[0], ("thread/goal/get", {"threadId": "thread-1"}))
+        self.assertEqual(
+            goal,
+            ThreadGoalSummary(
+                thread_id="thread-1",
+                objective="ship goal support",
+                status="active",
+                token_budget=123,
+                tokens_used=45,
+                time_used_seconds=67,
+                created_at=1712476800,
+                updated_at=1712476801,
+            ),
+        )
+
+    def test_set_thread_goal_supports_status_only_update(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        goal = adapter.set_thread_goal("thread-1", status="paused")
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/goal/set",
+                {
+                    "threadId": "thread-1",
+                    "status": "paused",
+                },
+            ),
+        )
+        self.assertEqual(goal.objective, "ship goal support")
+
+    def test_clear_thread_goal_returns_backend_result(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        cleared = adapter.clear_thread_goal("thread-1")
+
+        self.assertEqual(fake_rpc.calls[0], ("thread/goal/clear", {"threadId": "thread-1"}))
+        self.assertTrue(cleared)
 
     def test_start_turn_default_mode_sends_explicit_collaboration_mode(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
