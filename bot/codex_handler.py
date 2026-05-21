@@ -450,6 +450,9 @@ class CodexHandler(BotHandler):
                 get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
                 set_thread_goal=lambda thread_id, **kwargs: self._adapter.set_thread_goal(thread_id, **kwargs),
                 clear_thread_goal=lambda thread_id: self._adapter.clear_thread_goal(thread_id),
+                attach_current_binding=lambda sender_id, chat_id, message_id="": self._runtime_admin.attach_binding(
+                    self._chat_binding_key(sender_id, chat_id, message_id)
+                ),
                 update_runtime_goal_projection=self._update_runtime_goal_projection,
             )
         )
@@ -1770,6 +1773,10 @@ class CodexHandler(BotHandler):
                 group_guard="group_admin",
             ),
             "goal_clear": ActionRoute(
+                handler=self._goal_domain.handle_goal_action,
+                group_guard="group_admin",
+            ),
+            "goal_apply_confirm": ActionRoute(
                 handler=self._goal_domain.handle_goal_action,
                 group_guard="group_admin",
             ),

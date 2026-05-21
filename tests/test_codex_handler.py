@@ -3114,6 +3114,116 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(clear_response["toast"], "已清除 goal。")
         self.assertIn("当前 thread 暂无 goal。", clear_response["card"]["elements"][0]["content"])
 
+    def test_goal_set_detached_requires_confirm_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        handler.handle_message("ou_user", "c1", "/goal set ship goal support")
+
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Goal")
+        content = card["elements"][0]["content"]
+        self.assertIn("当前会话处于 `detached`。", content)
+        self.assertIn("目标：ship goal support", content)
+        actions = self._first_action(card)["actions"]
+        self.assertEqual([item["text"]["content"] for item in actions], ["恢复推送并继续", "保持 detached"])
+        self.assertNotIn("thread-1", handler._adapter.thread_goals)
+
+    def test_goal_resume_detached_confirm_can_keep_detached(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="paused",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        handler._refresh_bound_thread_goal_projection("ou_user", "c1", "thread-1")
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        confirm_response = self._unpack_card_response(
+            handler.handle_card_action("ou_user", "c1", "msg-goal", {"action": "goal_resume"})
+        )
+        self.assertIn("当前会话处于 `detached`。", confirm_response["card"]["elements"][0]["content"])
+        self.assertIn("状态：`active`", confirm_response["card"]["elements"][0]["content"])
+
+        apply_response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-goal",
+                {
+                    "action": "goal_apply_confirm",
+                    "status": "active",
+                    "attach_binding": "",
+                },
+            )
+        )
+        self.assertEqual(apply_response["toast"], "已恢复 goal，保持 detached。")
+        self.assertIn("当前 thread goal。", apply_response["card"]["elements"][0]["content"])
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+
+    def test_goal_set_detached_confirm_can_attach_before_apply(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        apply_response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-goal",
+                {
+                    "action": "goal_apply_confirm",
+                    "objective": "ship goal support",
+                    "attach_binding": "true",
+                },
+            )
+        )
+        self.assertEqual(apply_response["toast"], "已更新 goal 并恢复当前会话推送。")
+        self.assertIn("当前会话已恢复接收该 thread 的飞书推送。", apply_response["card"]["elements"][0]["content"])
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_objective"], "ship goal support")
+
     def test_status_prefers_pending_threadwise_profile_over_store(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(

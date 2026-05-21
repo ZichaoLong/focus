@@ -431,6 +431,76 @@ def build_goal_card(
     }
 
 
+def build_goal_detached_confirm_card(
+    *,
+    thread_id: str,
+    thread_title: str,
+    objective: str = "",
+    status: str = "",
+) -> dict:
+    normalized_thread_id = str(thread_id or "").strip()
+    normalized_thread_title = str(thread_title or "").strip()
+    normalized_objective = str(objective or "").strip()
+    normalized_status = str(status or "").strip()
+    action_label = "恢复当前 thread goal" if normalized_status == "active" and not normalized_objective else "更新当前 thread goal"
+    lines = [
+        (
+            f"线程：`{normalized_thread_id[:8]}…` {normalized_thread_title or '（无标题）'}"
+            if normalized_thread_id
+            else "线程：-"
+        ),
+        "",
+        "当前会话处于 `detached`。",
+        f"{action_label} 可能让已 loaded 的 backend 在后台继续执行，但当前会话不会自动恢复飞书推送。",
+    ]
+    if normalized_objective:
+        lines.append(f"目标：{shorten(normalized_objective, _GOAL_OBJECTIVE_MAX)}")
+    if normalized_status:
+        lines.append(f"状态：`{normalized_status}` ({goal_status_label(normalized_status)})")
+    lines.extend(
+        [
+            "",
+            "请选择：",
+            "- 恢复推送并继续：先把当前会话 attach 回来，再应用这次 goal 变更",
+            "- 保持 detached：只应用 goal 变更，不恢复当前会话推送",
+        ]
+    )
+    return build_markdown_action_card(
+        "Codex Goal",
+        "\n".join(lines),
+        template="orange",
+        action_rows=[
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "恢复推送并继续"},
+                        "type": "primary",
+                        "value": {
+                            "action": "goal_apply_confirm",
+                            "attach_binding": "true",
+                            "objective": normalized_objective,
+                            "status": normalized_status,
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "保持 detached"},
+                        "type": "default",
+                        "value": {
+                            "action": "goal_apply_confirm",
+                            "attach_binding": "",
+                            "objective": normalized_objective,
+                            "status": normalized_status,
+                        },
+                    },
+                ],
+            }
+        ],
+    )
+
+
 def _back_to_help_action() -> dict:
     return {
         "tag": "action",

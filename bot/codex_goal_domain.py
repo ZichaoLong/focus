@@ -11,9 +11,11 @@ from bot.adapters.base import ThreadGoalSummary
 from bot.cards import (
     CommandResult,
     build_goal_card,
+    build_goal_detached_confirm_card,
     build_markdown_card,
     make_card_response,
 )
+from bot.runtime_state import FEISHU_RUNTIME_DETACHED
 from bot.runtime_view import RuntimeView
 
 _GOAL_USAGE = (
@@ -32,6 +34,7 @@ class GoalDomainPorts:
     get_thread_goal: Callable[[str], ThreadGoalSummary | None]
     set_thread_goal: Callable[..., ThreadGoalSummary]
     clear_thread_goal: Callable[[str], bool]
+    attach_current_binding: Callable[[str, str, str], None]
     update_runtime_goal_projection: Callable[[str, str, str, ThreadGoalSummary | None], None]
 
 
@@ -96,11 +99,30 @@ class CodexGoalDomain:
                 result = self._update_goal_status(sender_id, chat_id, "paused", message_id=message_id)
                 return make_card_response(card=result.card, toast="已暂停 goal。", toast_type="success")
             if action == "goal_resume":
-                result = self._update_goal_status(sender_id, chat_id, "active", message_id=message_id)
+                confirm_card = self._build_detached_goal_confirm_card(
+                    sender_id,
+                    chat_id,
+                    objective="",
+                    status="active",
+                    message_id=message_id,
+                )
+                if confirm_card is not None:
+                    return make_card_response(card=confirm_card)
+                result = self._update_goal_status_direct(sender_id, chat_id, "active", message_id=message_id)
                 return make_card_response(card=result.card, toast="已恢复 goal。", toast_type="success")
             if action == "goal_clear":
                 result = self._clear_goal(sender_id, chat_id, message_id=message_id)
                 return make_card_response(card=result.card, toast="已清除 goal。", toast_type="success")
+            if action == "goal_apply_confirm":
+                result, toast = self._apply_goal_confirmed(
+                    sender_id,
+                    chat_id,
+                    objective=str(action_value.get("objective", "") or "").strip(),
+                    status=str(action_value.get("status", "") or "").strip(),
+                    attach_binding=str(action_value.get("attach_binding", "") or "").strip().lower() == "true",
+                    message_id=message_id,
+                )
+                return make_card_response(card=result.card, toast=toast, toast_type="success")
         except Exception as exc:
             return make_card_response(toast=str(exc) or "goal 操作失败", toast_type="warning")
         return P2CardActionTriggerResponse()
@@ -136,17 +158,16 @@ class CodexGoalDomain:
         *,
         message_id: str = "",
     ) -> CommandResult:
-        thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
-        goal = self._ports.set_thread_goal(thread_id, objective=objective)
-        self._project_goal(sender_id, chat_id, goal, message_id=message_id)
-        return CommandResult(
-            card=build_goal_card(
-                thread_id=thread_id,
-                thread_title=thread_title,
-                goal=goal,
-                notice="已设置当前 thread goal。",
-            )
+        confirm_card = self._build_detached_goal_confirm_card(
+            sender_id,
+            chat_id,
+            objective=objective,
+            status="",
+            message_id=message_id,
         )
+        if confirm_card is not None:
+            return CommandResult(card=confirm_card)
+        return self._set_goal_direct(sender_id, chat_id, objective, message_id=message_id)
 
     def _update_goal_status(
         self,
@@ -156,18 +177,16 @@ class CodexGoalDomain:
         *,
         message_id: str = "",
     ) -> CommandResult:
-        thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
-        goal = self._ports.set_thread_goal(thread_id, status=status)
-        self._project_goal(sender_id, chat_id, goal, message_id=message_id)
-        notice = "已暂停当前 thread goal。" if status == "paused" else "已恢复当前 thread goal。"
-        return CommandResult(
-            card=build_goal_card(
-                thread_id=thread_id,
-                thread_title=thread_title,
-                goal=goal,
-                notice=notice,
-            )
+        confirm_card = self._build_detached_goal_confirm_card(
+            sender_id,
+            chat_id,
+            objective="",
+            status=status,
+            message_id=message_id,
         )
+        if confirm_card is not None:
+            return CommandResult(card=confirm_card)
+        return self._update_goal_status_direct(sender_id, chat_id, status, message_id=message_id)
 
     def _clear_goal(self, sender_id: str, chat_id: str, *, message_id: str = "") -> CommandResult:
         thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
@@ -179,6 +198,110 @@ class CodexGoalDomain:
                 thread_id=thread_id,
                 thread_title=thread_title,
                 goal=None,
+                notice=notice,
+            )
+        )
+
+    def _build_detached_goal_confirm_card(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        objective: str,
+        status: str,
+        message_id: str = "",
+    ) -> dict | None:
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
+        thread_id = runtime.current_thread_id.strip()
+        if not thread_id or runtime.binding.feishu_runtime_state != FEISHU_RUNTIME_DETACHED:
+            return None
+        return build_goal_detached_confirm_card(
+            thread_id=thread_id,
+            thread_title=runtime.current_thread_title.strip(),
+            objective=objective,
+            status=status,
+        )
+
+    def _apply_goal_confirmed(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        objective: str,
+        status: str,
+        attach_binding: bool,
+        message_id: str = "",
+    ) -> tuple[CommandResult, str]:
+        normalized_objective = str(objective or "").strip()
+        normalized_status = str(status or "").strip()
+        if attach_binding:
+            self._ports.attach_current_binding(sender_id, chat_id, message_id)
+        if normalized_objective:
+            result = self._set_goal_direct(
+                sender_id,
+                chat_id,
+                normalized_objective,
+                message_id=message_id,
+                attached_notice=attach_binding,
+            )
+            return result, "已更新 goal 并恢复当前会话推送。" if attach_binding else "已更新 goal，保持 detached。"
+        if normalized_status:
+            result = self._update_goal_status_direct(
+                sender_id,
+                chat_id,
+                normalized_status,
+                message_id=message_id,
+                attached_notice=attach_binding,
+            )
+            if normalized_status == "active":
+                return result, "已恢复 goal 并恢复当前会话推送。" if attach_binding else "已恢复 goal，保持 detached。"
+            return result, "已更新 goal 并恢复当前会话推送。" if attach_binding else "已更新 goal，保持 detached。"
+        raise ValueError("goal 变更缺少 objective 或 status。")
+
+    def _set_goal_direct(
+        self,
+        sender_id: str,
+        chat_id: str,
+        objective: str,
+        *,
+        message_id: str = "",
+        attached_notice: bool = False,
+    ) -> CommandResult:
+        thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+        goal = self._ports.set_thread_goal(thread_id, objective=objective)
+        self._project_goal(sender_id, chat_id, goal, message_id=message_id)
+        notice = "已设置当前 thread goal。"
+        if attached_notice:
+            notice += "\n当前会话已恢复接收该 thread 的飞书推送。"
+        return CommandResult(
+            card=build_goal_card(
+                thread_id=thread_id,
+                thread_title=thread_title,
+                goal=goal,
+                notice=notice,
+            )
+        )
+
+    def _update_goal_status_direct(
+        self,
+        sender_id: str,
+        chat_id: str,
+        status: str,
+        *,
+        message_id: str = "",
+        attached_notice: bool = False,
+    ) -> CommandResult:
+        thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+        goal = self._ports.set_thread_goal(thread_id, status=status)
+        self._project_goal(sender_id, chat_id, goal, message_id=message_id)
+        notice = "已暂停当前 thread goal。" if status == "paused" else "已恢复当前 thread goal。"
+        if attached_notice:
+            notice += "\n当前会话已恢复接收该 thread 的飞书推送。"
+        return CommandResult(
+            card=build_goal_card(
+                thread_id=thread_id,
+                thread_title=thread_title,
+                goal=goal,
                 notice=notice,
             )
         )
