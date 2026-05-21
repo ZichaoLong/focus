@@ -758,7 +758,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl thread archive --thread-name demo\n"
             "  feishu-codexctl thread attach --thread-id <id>\n"
             "  feishu-codexctl thread detach --thread-name <name>\n"
-            "  feishu-codexctl image send --path ./diagram.png\n"
+            "  feishu-codexctl image send --thread-id <id> --path ./diagram.png\n"
             "\n"
             "多实例:\n"
             "  feishu-codexctl --instance corp-a service status\n"
@@ -988,7 +988,7 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_goal_set.add_argument("--objective", default="", help="新的 goal objective。")
     thread_goal_set.add_argument(
         "--status",
-        choices=("active", "paused"),
+        choices=("active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"),
         default="",
         help="可选 goal 状态；主要供本地调试使用。",
     )

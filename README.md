@@ -198,13 +198,14 @@ feishu-codexctl binding list
 feishu-codexctl thread list
 feishu-codexctl thread status --thread-name <name>
 feishu-codexctl thread goal --thread-name <name>
-feishu-codexctl image send --path ./diagram.png
+feishu-codexctl image send --thread-id <thread_id> --path ./diagram.png
 ```
 
 可选进阶：
 
 - `feishu-codexctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
-- 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `feishu-codexctl image send`，把图片发回当前 thread 当前 attached 的飞书会话。
+- `feishu-codexctl image send` 是 thread-scoped 动作：在 Codex turn 内可依赖自动注入的 `CODEX_THREAD_ID` 把图片发回当前 thread；若目标不是当前 thread，则必须显式提供 `--thread-id` 或 `--thread-name`。
+- 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `feishu-codexctl image send`，把图片发回当前 thread 当前 attached 的飞书会话；这个 skill 不负责跨 thread / 手动选目标。
 
 ### 5. 多机器人多实例
 

@@ -187,6 +187,25 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(args.objective, "ship goal support")
         self.assertEqual(args.status, "paused")
 
+    def test_thread_goal_set_accepts_all_upstream_goal_statuses(self) -> None:
+        parser = _build_parser()
+
+        for status in ("active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"):
+            args = parser.parse_args(
+                [
+                    "thread",
+                    "goal",
+                    "set",
+                    "--thread-id",
+                    "thread-1",
+                    "--status",
+                    status,
+                ]
+            )
+            self.assertEqual(args.goal_action, "set")
+            self.assertEqual(_thread_target_params(args), {"thread_id": "thread-1"})
+            self.assertEqual(args.status, status)
+
     def test_thread_goal_pause_accepts_explicit_thread_name(self) -> None:
         parser = _build_parser()
 

@@ -135,7 +135,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in thread_settings_help["elements"][2]["actions"]],
-            ["改 Profile", "改 Memory"],
+            ["查看 Goal", "改 Profile"],
         )
         self.assertEqual(execution_card["header"]["title"]["content"], "Codex 执行过程（执行中）")
         self.assertNotIn("`/help`", json.dumps(execution_card, ensure_ascii=False))
