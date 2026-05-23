@@ -8,6 +8,7 @@ from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdow
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
 TERMINAL_RESULT_CARD_MARKER = "\u2063\u2060\u2064\u2060\u2063"
+EXECUTION_CARD_TITLE_PREFIX = "Codex 执行过程"
 _TEXT_NODE_TAGS = {"markdown", "plain_text", "lark_md"}
 _IGNORED_TAGS = {
     "action",
@@ -75,6 +76,24 @@ def project_interactive_card_text(content_dict: dict[str, Any]) -> CardTextProje
         return terminal_projection
     visible_text = _extract_visible_card_text(content_dict)
     return CardTextProjection(text=visible_text, visible_text=visible_text)
+
+
+def is_terminal_result_card(content_dict: dict[str, Any]) -> bool:
+    return _matches_terminal_result_card_contract(content_dict)
+
+
+def is_execution_card(content_dict: dict[str, Any]) -> bool:
+    header = content_dict.get("header") or {}
+    if not isinstance(header, dict):
+        return False
+    title = header.get("title") or {}
+    if not isinstance(title, dict):
+        return False
+    title_content = str(title.get("content", "") or "").strip()
+    if not title_content.startswith(EXECUTION_CARD_TITLE_PREFIX):
+        return False
+    template = str(header.get("template", "") or "").strip()
+    return template in {"turquoise", "grey", "blue"}
 
 
 def _project_terminal_result_card_text(

@@ -1145,6 +1145,67 @@ class FeishuBot(ABC):
             page_token=str(getattr(body, "page_token", "") or "").strip(),
         )
 
+    def list_recent_messages(
+        self,
+        *,
+        chat_id: str,
+        thread_id: str = "",
+        limit: int = 20,
+    ) -> list[Any]:
+        normalized_limit = max(int(limit or 0), 0)
+        if normalized_limit <= 0:
+            return []
+
+        container_id_type = "thread" if str(thread_id or "").strip() else "chat"
+        container_id = str(thread_id or "").strip() or str(chat_id or "").strip()
+        if not container_id:
+            return []
+
+        page_size = min(normalized_limit, 50)
+        page_token = ""
+        items: list[Any] = []
+        sort_type = "ByCreateTimeDesc"
+
+        try:
+            while len(items) < normalized_limit:
+                page = self._list_history_messages_page(
+                    container_id_type=container_id_type,
+                    container_id=container_id,
+                    sort_type=sort_type,
+                    page_size=page_size,
+                    page_token=page_token,
+                )
+                page_items = list(page.items or [])
+                if not page_items:
+                    break
+                items.extend(page_items)
+                if not page.has_more or not page.page_token:
+                    break
+                page_token = page.page_token
+        except Exception as exc:
+            if container_id_type != "thread" or not GroupHistoryRecovery.should_fallback_thread_history_scan(exc):
+                raise
+            page_token = ""
+            items = []
+            while True:
+                page = self._list_history_messages_page(
+                    container_id_type="thread",
+                    container_id=container_id,
+                    sort_type="ByCreateTimeAsc",
+                    page_size=50,
+                    page_token=page_token,
+                )
+                page_items = list(page.items or [])
+                if page_items:
+                    items.extend(page_items)
+                    if len(items) > normalized_limit:
+                        items = items[-normalized_limit:]
+                if not page.has_more or not page.page_token:
+                    break
+                page_token = page.page_token
+            items.reverse()
+        return items[:normalized_limit]
+
     def _history_recovery_enabled(self) -> bool:
         """Whether assistant mode should perform any history recovery at all.
 

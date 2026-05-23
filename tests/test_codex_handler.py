@@ -8,7 +8,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bot.cards import build_ask_user_card, build_execution_card
+from bot.cards import build_ask_user_card, build_execution_card, build_terminal_result_card
 from bot.adapters.base import (
     RuntimeConfigSummary,
     ThreadGoalSummary,
@@ -339,6 +339,8 @@ class _FakeAdapter:
 
 class _FakeBot:
     def __init__(self, data_dir: pathlib.Path) -> None:
+        del data_dir
+        self.app_id = "cli_test_app"
         self.replies: list[tuple[str, str]] = []
         self.cards: list[tuple[str, dict]] = []
         self.reply_refs: list[tuple[str, str, str]] = []
@@ -358,13 +360,14 @@ class _FakeBot:
         self.reserved_execution_cards: dict[str, str] = {}
         self.admin_open_ids = {"ou_admin"}
         self.bot_identity = {
-            "app_id": "cli_test_app",
+            "app_id": self.app_id,
             "configured_open_id": "ou_bot",
             "discovered_open_id": "ou_bot",
             "trigger_open_ids": [],
         }
         self.runtime_bot_open_id = "ou_bot"
         self.downloaded_resources: dict[tuple[str, str, str], object] = {}
+        self.history_messages: list[object] = []
 
     def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> bool:
         self.replies.append((chat_id, text))
@@ -400,6 +403,16 @@ class _FakeBot:
 
     def get_message_context(self, message_id: str) -> dict:
         return dict(self.message_contexts.get(message_id, {}))
+
+    def list_recent_messages(self, *, chat_id: str, thread_id: str = "", limit: int = 20) -> list[object]:
+        del chat_id
+        normalized_thread_id = str(thread_id or "").strip()
+        items = [
+            item
+            for item in self.history_messages
+            if str(getattr(item, "thread_id", "") or "").strip() == normalized_thread_id
+        ]
+        return items[:limit]
 
     def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str):
         resource = self.downloaded_resources.get((message_id, resource_type, resource_key))
@@ -678,6 +691,122 @@ class CodexHandlerTests(unittest.TestCase):
             handler.on_register(bot)
 
         self.assertEqual(handler._adapter.start_calls, 0)
+
+    def test_last_text_prefers_latest_terminal_card(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("最新终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card("旧执行输出", [], running=False),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "最新终态")
+
+    def test_last_text_falls_back_to_latest_execution_card(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card("最近执行输出", [], running=False),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id="other_app"),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("别的机器人终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertIn("最近执行输出", bot.replies[-1][1])
+
+    def test_last_text_uses_current_thread_scope(self) -> None:
+        handler, bot = self._make_handler()
+        bot.message_contexts["msg-thread"] = {"chat_type": "group", "thread_id": "th-1"}
+        bot.history_messages = [
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("线程内终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="th-1",
+            ),
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("主会话终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_admin", "c1", "/last text", message_id="msg-thread")
+
+        self.assertEqual(bot.replies[-1][1], "线程内终态")
+
+    def test_last_text_requires_text_subcommand(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "/last")
+
+        self.assertEqual(bot.replies[-1][1], "用法：`/last text`")
+
+    def test_last_text_reports_when_no_matching_card_exists(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                msg_type="text",
+                sender=SimpleNamespace(sender_type="user", id="ou_user"),
+                body=SimpleNamespace(content=json.dumps({"text": "普通消息"}, ensure_ascii=False)),
+                thread_id="",
+            )
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "最近没有找到可导出的终态卡；也没有可回退的执行卡。")
 
     def test_on_register_recovers_from_stale_owner_metadata_and_socket(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
@@ -5771,6 +5900,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", reply)
         self.assertIn("`/group-mode [assistant|mention-only|all]`", reply)
         self.assertIn("`/reset-backend`", reply)
+        self.assertIn("`/last text`", reply)
         self.assertIn("`/model [name|auto]`", reply)
         self.assertIn("`/effort [auto|none|minimal|low|medium|high|xhigh]`", reply)
         self.assertIn(f"`{_DISPLAY_INIT_COMMAND}`", reply)
@@ -5908,6 +6038,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：本轮设置")
         content = card["elements"][0]["content"]
         self.assertIn("推荐先用“权限预设”", content)
+        self.assertIn("`/last text`", content)
+        self.assertIn("回退到最近执行卡", content)
         self.assertIn("实例级 backend reset 在“更多 -> 高级操作”", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
@@ -5924,6 +6056,10 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[3]["actions"]],
+            ["最近文本"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in action_elements[4]["actions"]],
             ["返回首页"],
         )
 
@@ -6006,6 +6142,10 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[3]["actions"]],
+            ["最近文本"],
+        )
+        self.assertEqual(
+            [item["text"]["content"] for item in self._action_elements(response["card"])[4]["actions"]],
             ["返回首页"],
         )
 

@@ -30,6 +30,7 @@ _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
 _SHARED_MEMORY_COMMAND = get_shared_command("memory")
 _SHARED_GOAL_COMMAND = get_shared_command("goal")
+_SHARED_LAST_COMMAND = get_shared_command("last")
 _SHARED_MODEL_COMMAND = get_shared_command("model")
 _SHARED_EFFORT_COMMAND = get_shared_command("effort")
 _SHARED_COMPACT_COMMAND = get_shared_command("compact")
@@ -320,7 +321,9 @@ class CodexHelpDomain:
                 title="Codex 工作台：本轮设置",
                 markdown=(
                     "调整当前飞书会话后续 turn 的设置。\n\n"
-                    "推荐先用“权限预设”；模型、推理强度、审批、沙箱与协作模式都从下一轮生效。\n\n"
+                    "推荐先用“权限预设”；模型、推理强度、审批、沙箱与协作模式都从下一轮生效。\n"
+                    f"`{_SHARED_LAST_COMMAND.feishu_usage}` 可把当前会话最近一张终态卡转成普通文本；"
+                    "如果还没有终态卡，会回退到最近执行卡。\n\n"
                     "实例级 backend reset 在“更多 -> 高级操作”。"
                 ),
                 action_rows=(
@@ -368,6 +371,15 @@ class CodexHelpDomain:
                             ),
                         ),
                         layout="bisected",
+                    ),
+                    _HelpActionRowSpec(
+                        buttons=(
+                            _HelpCommandButtonSpec(
+                                label="最近文本",
+                                command="/last text",
+                                title="Codex 最近结果文本",
+                            ),
+                        ),
                     ),
                     self._return_home_row(),
                 ),
@@ -954,6 +966,7 @@ class CodexHelpDomain:
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"
                 "`本轮设置`\n"
+                f"- `{_SHARED_LAST_COMMAND.feishu_usage}`\n"
                 "- `/permissions [read-only|default|full-access]`\n"
                 "- `/model [name|auto]`\n"
                 "- `/effort [auto|none|minimal|low|medium|high|xhigh]`\n"

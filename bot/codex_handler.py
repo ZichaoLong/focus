@@ -72,6 +72,7 @@ from bot.execution_recovery_controller import (
 )
 from bot.generated_image_delivery import GeneratedImageDeliveryController
 from bot.file_message_domain import FileMessageDomain, FileMessagePorts, IncomingAttachmentMessage
+from bot.card_text_projection import is_execution_card, is_terminal_result_card, project_interactive_card_text
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.interaction_request_controller import InteractionRequestController
 from bot.interaction_request_controller import PendingRequestStateDict
@@ -1602,6 +1603,14 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, message_id=message_id
                 ),
             ),
+            "/last": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._handle_last_command(
+                    sender_id,
+                    chat_id,
+                    arg,
+                    message_id=message_id,
+                ),
+            ),
             "/goal": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._handle_goal_command(
                     sender_id,
@@ -2145,8 +2154,65 @@ class CodexHandler(BotHandler):
         binding = self._chat_binding_key(sender_id, chat_id, message_id)
         return self._runtime_admin.handle_status_command(binding)
 
+    def _handle_last_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
+        del sender_id
+        if str(arg or "").strip().lower() != "text":
+            return CommandResult(text="用法：`/last text`")
+        text = self._find_last_card_text(chat_id, message_id=message_id)
+        return CommandResult(text=text)
+
     def _handle_goal_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         return self._goal_domain.handle_goal_command(sender_id, chat_id, arg, message_id=message_id)
+
+    def _find_last_card_text(self, chat_id: str, *, message_id: str = "") -> str:
+        thread_id = ""
+        if message_id and hasattr(self.bot, "get_message_context"):
+            context = self.bot.get_message_context(message_id) or {}
+            thread_id = str(context.get("thread_id", "") or "").strip()
+
+        try:
+            items = self.bot.list_recent_messages(chat_id=chat_id, thread_id=thread_id, limit=20)
+        except Exception as exc:
+            logger.warning(
+                "读取最近卡片失败: chat_id=%s thread_id=%s message_id=%s error=%s",
+                chat_id,
+                thread_id,
+                message_id,
+                exc,
+            )
+            return "读取最近卡片失败，请稍后重试。"
+
+        app_id = str(getattr(self.bot, "app_id", "") or "").strip()
+        fallback_text = ""
+        for item in items:
+            if str(getattr(item, "msg_type", "") or "").strip() != "interactive":
+                continue
+            sender = getattr(item, "sender", None)
+            sender_type = str(getattr(sender, "sender_type", "") or "").strip()
+            sender_id = str(getattr(sender, "id", "") or "").strip()
+            if app_id and (sender_type != "app" or sender_id != app_id):
+                continue
+
+            body = getattr(item, "body", None)
+            raw_content = str(getattr(body, "content", "") or "").strip()
+            if not raw_content:
+                continue
+            try:
+                content_dict = json.loads(raw_content)
+            except Exception:
+                continue
+            if not isinstance(content_dict, dict):
+                continue
+
+            projection = project_interactive_card_text(content_dict)
+            if is_terminal_result_card(content_dict) and projection.text:
+                return projection.text
+            if not fallback_text and is_execution_card(content_dict) and projection.text:
+                fallback_text = projection.text
+
+        if fallback_text:
+            return fallback_text
+        return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"
 
     def _handle_preflight_command(
         self,

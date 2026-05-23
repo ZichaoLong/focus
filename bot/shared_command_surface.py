@@ -53,6 +53,12 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="查看或管理当前绑定 thread 的 goal。",
     ),
     SharedCommandSpec(
+        key="last",
+        slash_name="/last",
+        feishu_usage="/last text",
+        feishu_summary="把当前会话最近一张终态卡转成普通文本；若没有终态卡则回退最近执行卡。",
+    ),
+    SharedCommandSpec(
         key="model",
         slash_name="/model",
         feishu_usage="/model [name|auto]",
