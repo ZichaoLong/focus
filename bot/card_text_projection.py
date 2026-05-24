@@ -108,16 +108,15 @@ def is_terminal_result_card(content_dict: dict[str, Any]) -> bool:
 
 def is_execution_card(content_dict: dict[str, Any]) -> bool:
     header = content_dict.get("header") or {}
-    if not isinstance(header, dict):
-        return False
-    title = header.get("title") or {}
-    if not isinstance(title, dict):
-        return False
-    title_content = str(title.get("content", "") or "").strip()
-    if not title_content.startswith(EXECUTION_CARD_TITLE_PREFIX):
-        return False
-    template = str(header.get("template", "") or "").strip()
-    return template in {"turquoise", "grey", "blue"}
+    if isinstance(header, dict):
+        title = header.get("title") or {}
+        if isinstance(title, dict):
+            title_content = str(title.get("content", "") or "").strip()
+            if title_content.startswith(EXECUTION_CARD_TITLE_PREFIX):
+                template = str(header.get("template", "") or "").strip()
+                return template in {"turquoise", "grey", "blue"}
+    title_content = str(content_dict.get("title", "") or "").strip()
+    return title_content.startswith(EXECUTION_CARD_TITLE_PREFIX)
 
 
 def _project_terminal_result_card_text(
@@ -139,24 +138,21 @@ def _project_terminal_result_card_text(
 
 def _matches_terminal_result_card_contract(content_dict: dict[str, Any]) -> bool:
     header = content_dict.get("header") or {}
-    if not isinstance(header, dict):
-        return False
-    title = header.get("title") or {}
-    if not isinstance(title, dict):
-        return False
-    if str(title.get("content", "") or "").strip() != TERMINAL_RESULT_CARD_TITLE:
-        return False
-    if str(header.get("template", "") or "").strip() != "green":
-        return False
-
-    elements = _collect_root_elements(content_dict)
-    has_final_reply_block = any(
-        isinstance(element, dict)
-        and str(element.get("tag", "") or "").strip() == "markdown"
-        and _contains_terminal_result_marker(str(element.get("content", "") or ""))
-        for element in elements
-    )
-    return has_final_reply_block
+    if isinstance(header, dict):
+        title = header.get("title") or {}
+        if isinstance(title, dict):
+            if str(title.get("content", "") or "").strip() == TERMINAL_RESULT_CARD_TITLE:
+                if str(header.get("template", "") or "").strip() == "green":
+                    elements = _collect_root_elements(content_dict)
+                    has_final_reply_block = any(
+                        isinstance(element, dict)
+                        and str(element.get("tag", "") or "").strip() == "markdown"
+                        and _contains_terminal_result_marker(str(element.get("content", "") or ""))
+                        for element in elements
+                    )
+                    if has_final_reply_block:
+                        return True
+    return _matches_history_rendered_terminal_result_contract(content_dict)
 
 
 def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any]) -> str:
@@ -169,6 +165,9 @@ def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any])
         content = str(element.get("content", "") or "")
         if _contains_terminal_result_marker(content):
             return _strip_terminal_result_marker(content).strip()
+    history_rendered = _extract_history_rendered_terminal_result_text(content_dict)
+    if history_rendered:
+        return history_rendered
     return ""
 
 
@@ -186,7 +185,103 @@ def _extract_terminal_result_card_structure_summary(
             continue
         _, payload = _split_terminal_result_payload(content)
         return decode_terminal_structure_summary(payload)
+    history_rendered = _history_rendered_card_text(content_dict)
+    if _contains_terminal_result_marker(history_rendered):
+        _, payload = _split_terminal_result_payload(history_rendered)
+        return decode_terminal_structure_summary(payload)
     return TerminalStructureSummary()
+
+
+def _matches_history_rendered_terminal_result_contract(content_dict: dict[str, Any]) -> bool:
+    title = str(content_dict.get("title", "") or "").strip()
+    if title != TERMINAL_RESULT_CARD_TITLE:
+        return False
+    rendered_text = _history_rendered_card_text(content_dict)
+    return _contains_terminal_result_marker(rendered_text)
+
+
+def _extract_history_rendered_terminal_result_text(content_dict: dict[str, Any]) -> str:
+    if not _matches_history_rendered_terminal_result_contract(content_dict):
+        return ""
+    rendered_text = _history_rendered_card_text(content_dict)
+    return _strip_terminal_result_marker(rendered_text).strip()
+
+
+def _history_rendered_text_nodes(content_dict: dict[str, Any]) -> list[str]:
+    nodes: list[str] = []
+    _collect_history_rendered_text_nodes(content_dict.get("elements"), nodes)
+    return nodes
+
+
+def _history_rendered_card_text(content_dict: dict[str, Any]) -> str:
+    return _join_history_rendered_raw_text_nodes(_history_rendered_raw_text_nodes(content_dict))
+
+
+def _history_rendered_raw_text_nodes(content_dict: dict[str, Any]) -> list[str]:
+    nodes: list[str] = []
+    _collect_history_rendered_raw_text_nodes(content_dict.get("elements"), nodes)
+    return nodes
+
+
+def _collect_history_rendered_text_nodes(node: Any, texts: list[str]) -> None:
+    if isinstance(node, list):
+        for item in node:
+            _collect_history_rendered_text_nodes(item, texts)
+        return
+    if not isinstance(node, dict):
+        return
+    tag = str(node.get("tag", "") or "").strip()
+    if tag == "text":
+        normalized = _strip_terminal_result_marker(str(node.get("text", "") or node.get("content", "") or "")).strip()
+        if normalized:
+            texts.append(normalized)
+        return
+    for key in ("elements", "fields", "columns"):
+        value = node.get(key)
+        if isinstance(value, list):
+            _collect_history_rendered_text_nodes(value, texts)
+    for key in ("text", "title", "header", "body", "alt"):
+        value = node.get(key)
+        if isinstance(value, (dict, list)):
+            _collect_history_rendered_text_nodes(value, texts)
+
+
+def _collect_history_rendered_raw_text_nodes(node: Any, texts: list[str]) -> None:
+    if isinstance(node, list):
+        for item in node:
+            _collect_history_rendered_raw_text_nodes(item, texts)
+        return
+    if not isinstance(node, dict):
+        return
+    tag = str(node.get("tag", "") or "").strip()
+    if tag == "text":
+        raw = str(node.get("text", "") or node.get("content", "") or "")
+        if raw:
+            texts.append(raw)
+        return
+    for key in ("elements", "fields", "columns"):
+        value = node.get(key)
+        if isinstance(value, list):
+            _collect_history_rendered_raw_text_nodes(value, texts)
+    for key in ("text", "title", "header", "body", "alt"):
+        value = node.get(key)
+        if isinstance(value, (dict, list)):
+            _collect_history_rendered_raw_text_nodes(value, texts)
+
+
+def _join_history_rendered_raw_text_nodes(nodes: list[str]) -> str:
+    parts: list[str] = []
+    previous = ""
+    for raw in nodes:
+        text = str(raw or "")
+        if not text:
+            continue
+        if parts:
+            if not previous.endswith(("\n", "\r")) and not text.startswith(("\n", "\r")):
+                parts.append("\n")
+        parts.append(text)
+        previous = text
+    return "".join(parts)
 
 
 def _collect_root_elements(content_dict: dict[str, Any]) -> list[Any]:

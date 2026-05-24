@@ -786,6 +786,37 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(bot.replies[-1][1], "线程内终态")
 
+    def test_last_text_supports_history_rendered_terminal_card_shape(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        {
+                            "title": "Codex",
+                            "elements": [
+                                [
+                                    {"tag": "text", "text": "## 结论"},
+                                    {
+                                        "tag": "text",
+                                        "text": "第一条\n第二条\u2063\u2060\u2064\u2060\u2063",
+                                    },
+                                ]
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "## 结论第一条\n第二条")
+
     def test_last_text_requires_text_subcommand(self) -> None:
         handler, bot = self._make_handler()
 

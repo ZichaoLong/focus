@@ -191,3 +191,24 @@ class CardTextProjectionTests(unittest.TestCase):
             projection.final_reply_structure_summary.headings,
             (TerminalHeading(level=1, text="标题"),),
         )
+
+    def test_terminal_result_card_supports_history_rendered_shape(self) -> None:
+        projection = project_interactive_card_text(
+            {
+                "title": "Codex",
+                "elements": [
+                    [
+                        {"tag": "text", "text": "## 结论"},
+                        {
+                            "tag": "text",
+                            "text": f"\n- 第一条\n- 第二条{TERMINAL_RESULT_CARD_MARKER}",
+                        },
+                    ]
+                ],
+            }
+        )
+
+        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertEqual(projection.final_reply_text, "## 结论\n- 第一条\n- 第二条")
+        self.assertEqual(projection.text, "## 结论\n- 第一条\n- 第二条")
+        self.assertIn("Codex", projection.visible_text)
