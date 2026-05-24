@@ -121,13 +121,8 @@ def render_execution_card(model: ExecutionCardModel) -> dict:
 
 def render_terminal_result_card(
     final_reply_text: str,
-    *,
-    include_structure_summary: bool = True,
 ) -> dict:
-    return build_terminal_result_card(
-        final_reply_text,
-        include_structure_summary=include_structure_summary,
-    )
+    return build_terminal_result_card(final_reply_text)
 
 
 def build_plan_card_model(plan: PlanView) -> PlanCardModel:
@@ -207,14 +202,10 @@ class RuntimeCardPublisher:
         chat_id: str,
         parent_message_id: str,
         final_reply_text: str,
-        include_structure_summary: bool = True,
         reply_in_thread: bool = False,
     ) -> str | None:
         content = json.dumps(
-            render_terminal_result_card(
-                final_reply_text,
-                include_structure_summary=include_structure_summary,
-            ),
+            render_terminal_result_card(final_reply_text),
             ensure_ascii=False,
         )
         normalized_parent = str(parent_message_id or "").strip()

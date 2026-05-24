@@ -4,13 +4,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdown
-from bot.terminal_result_semantics import (
-    TerminalHeading,
-    TerminalStructureSummary,
-    decode_terminal_structure_summary,
-    encode_terminal_structure_summary,
-    summarize_terminal_result_text,
-)
 
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
@@ -41,27 +34,17 @@ class CardTextProjection:
     text: str
     visible_text: str
     final_reply_text: str = ""
-    final_reply_structure_summary: TerminalStructureSummary = TerminalStructureSummary()
 
     @property
     def has_authoritative_final_reply(self) -> bool:
         return bool(self.final_reply_text)
 
 
-def render_final_reply_text_block(
-    final_reply_text: str,
-    *,
-    structure_summary: TerminalStructureSummary | None = None,
-) -> str:
+def render_final_reply_text_block(final_reply_text: str) -> str:
     normalized = str(final_reply_text or "").strip()
     if not normalized:
         return ""
-    encoded_summary = encode_terminal_structure_summary(
-        summarize_terminal_result_text(normalized)
-        if structure_summary is None
-        else structure_summary
-    )
-    return f"{normalized}{TERMINAL_RESULT_CARD_MARKER}{encoded_summary}"
+    return f"{normalized}{TERMINAL_RESULT_CARD_MARKER}"
 
 
 def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -> bool:
@@ -127,16 +110,12 @@ def _project_terminal_result_card_text(
         return None
     visible_text = _extract_visible_card_text(content_dict)
     final_reply_text = _extract_terminal_result_card_final_reply_text(content_dict)
-    structure_summary = _extract_terminal_result_card_structure_summary(content_dict)
     if not final_reply_text:
         return CardTextProjection(text="", visible_text=visible_text)
-    if structure_summary.headings:
-        final_reply_text = _restore_heading_markdown_from_summary(final_reply_text, structure_summary)
     return CardTextProjection(
         text=final_reply_text,
         visible_text=visible_text,
         final_reply_text=final_reply_text,
-        final_reply_structure_summary=structure_summary,
     )
 
 
@@ -175,27 +154,6 @@ def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any])
     return ""
 
 
-def _extract_terminal_result_card_structure_summary(
-    content_dict: dict[str, Any],
-) -> TerminalStructureSummary:
-    elements = _collect_root_elements(content_dict)
-    for element in elements:
-        if not isinstance(element, dict):
-            continue
-        if str(element.get("tag", "") or "").strip() != "markdown":
-            continue
-        content = str(element.get("content", "") or "")
-        if not _contains_terminal_result_marker(content):
-            continue
-        _, payload = _split_terminal_result_payload(content)
-        return decode_terminal_structure_summary(payload)
-    history_rendered = _history_rendered_card_text(content_dict)
-    if _contains_terminal_result_marker(history_rendered):
-        _, payload = _split_terminal_result_payload(history_rendered)
-        return decode_terminal_structure_summary(payload)
-    return TerminalStructureSummary()
-
-
 def _matches_history_rendered_terminal_result_contract(content_dict: dict[str, Any]) -> bool:
     title = str(content_dict.get("title", "") or "").strip()
     if title != TERMINAL_RESULT_CARD_TITLE:
@@ -208,11 +166,7 @@ def _extract_history_rendered_terminal_result_text(content_dict: dict[str, Any])
     if not _matches_history_rendered_terminal_result_contract(content_dict):
         return ""
     rendered_text = _history_rendered_card_text(content_dict)
-    visible = _strip_terminal_result_marker(rendered_text).strip()
-    summary = _extract_terminal_result_card_structure_summary(content_dict)
-    if summary.headings:
-        visible = _restore_heading_markdown_from_summary(visible, summary)
-    return visible
+    return _strip_terminal_result_marker(rendered_text).strip()
 
 
 def _history_rendered_text_nodes(content_dict: dict[str, Any]) -> list[str]:
@@ -290,27 +244,6 @@ def _join_history_rendered_raw_text_nodes(nodes: list[str]) -> str:
         parts.append(text)
         previous = text
     return "".join(parts)
-
-
-def _restore_heading_markdown_from_summary(text: str, summary: TerminalStructureSummary) -> str:
-    restored = str(text or "")
-    for heading in summary.headings:
-        label = _visible_heading_label(heading)
-        markdown = f"{'#' * heading.level} {heading.text}"
-        restored = restored.replace(label, markdown, 1)
-    return restored
-
-
-def _visible_heading_label(heading: TerminalHeading) -> str:
-    marker = {
-        1: "【标题】",
-        2: "【小节】",
-        3: "【三级标题】",
-        4: "【四级标题】",
-        5: "【五级标题】",
-        6: "【六级标题】",
-    }.get(int(heading.level), "【标题】")
-    return f"{marker} {heading.text}"
 
 
 def _collect_root_elements(content_dict: dict[str, Any]) -> list[Any]:

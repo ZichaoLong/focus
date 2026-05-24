@@ -559,28 +559,22 @@
    - 输入：飞书 `interactive` 消息内容
    - 输出：强合同文本或 best-effort 文本
 
-如果引入轻量机器摘要，建议在这一边界内继续细分：
+当前实现下，这一边界内继续细分为：
 
-1. 发送侧终态摘要提取
-   - 输入：终态 markdown / final reply
-   - 输出：轻量结构摘要
-2. 发送侧终态卡协议封装
-   - 输入：`final_reply_text`、轻量结构摘要
+1. 发送侧终态卡协议封装
+   - 输入：`final_reply_text`
    - 输出：`terminal result card`
-3. 接收侧终态卡协议解析
+2. 接收侧终态卡协议解析
    - 输入：飞书 `interactive` 消息内容
-   - 输出：`final_reply_text`、可选结构摘要、`visible_text`
-4. 普通外部卡片文本投影
+   - 输出：`final_reply_text`、`visible_text`
+3. 普通外部卡片文本投影
    - 输入：非终态 `interactive` 内容
    - 输出：best-effort 文本
 
 推荐的代码落点是：
 
 - 继续以 `bot/card_text_projection.py` 作为接收侧协议解析与普通文本投影边界
-- 新增独立的终态结构摘要模块，例如：
-  - `bot/terminal_result_semantics.py`
-
-不建议把轻量机器摘要逻辑直接散落到：
+不建议把终态协议逻辑直接散落到：
 
 - `bot/feishu_bot.py`
 - `bot/runtime_card_publisher.py`
@@ -624,7 +618,7 @@
 - 把普通外部卡片与自家终态结果放进同一套解析规则
 - 把纯文本兜底误用成常态主路径
 - 为了机器读取而把完整终态正文再隐藏重复一份
-- 因为引入自家轻量机器摘要，就移除外部普通卡片的 best-effort 文本回落
+- 因为自家终态卡协议已稳定，就移除外部普通卡片的 best-effort 文本回落
 
 当前阶段更应该优先保证：
 
@@ -632,58 +626,19 @@
 - 普通卡片 best-effort
 - 复杂卡片 fail-closed
 
-### 11.9 轻量机器摘要的最小改造建议
+### 11.9 当前实施 checklist
 
-如果后续正式实现该协议升级，建议按下面的最小范围推进：
+当前实现应持续满足下面这些约束：
 
-1. 终态发送侧
-   - 扩展 `build_terminal_result_card(...)`
-   - 支持可选的轻量结构摘要参数
-   - 摘要严格受独立小预算约束
-2. 终态发布编排
-   - 在 `runtime_card_publisher` / `execution_output_controller` 链路中
-   - 先生成 `final_reply_text`
-   - 再尝试附带结构摘要
-   - 超预算时只省略摘要，不影响终态卡主路径
-3. 接收侧投影
-   - 扩展 `CardTextProjection`
-   - 在不破坏现有 `text` / `visible_text` / `final_reply_text` 的前提下
-   - 增加可选的结构摘要字段
-4. 普通外部卡片路径
-   - 不做协议升级要求
-   - 继续维持当前标题 / markdown / plain_text 的有限提取
-5. 验证
-   - 新终态卡：可提取 `final_reply_text`
-   - 新终态卡：可提取结构摘要
-   - 新终态卡：`visible_text` 不污染机器摘要
-   - 外部普通卡片：仍保留 best-effort 文本回落
-
-这条最小改造建议的目标不是完整恢复 Markdown AST，而是先稳定解决：
-
-- 终态卡标题层级在跨服务读取时容易丢失
-- 但又不希望显著增加消息体大小
-
-### 11.10 实施 checklist
-
-后续若将本方案正式实现，建议按下面 checklist 跟踪：
-
-1. 扩展 `terminal result card` 协议，支持可选的轻量机器摘要载荷，但不重复隐藏完整终态正文
-2. 新增发送侧终态结构摘要提取模块，只提取最小必要结构语义，例如：
-   - heading 文本
-   - heading level
-   - 少量 list / quote 边界信息
-3. 在终态发送链路中接入结构摘要生成与附带逻辑，并保证预算优先级始终是：
-   1. `final_reply_text`
-   2. 轻量机器摘要
-   3. display-only 补充内容
-4. 当附带结构摘要会导致终态卡超预算时，省略或裁剪摘要，而不是牺牲终态卡主路径或权威终态文本
-5. 扩展接收侧终态卡解析逻辑，在保留现有 `final_reply_text` 强合同的同时提取可选结构摘要
-6. 保证 `visible_text`、`text` 与 `/last text` 等纯文本路径不会混入机器摘要内容
-7. 保留并验证外部普通卡片的现有 best-effort 文本回落，确保非本项目机器人发送的卡片仍可尽量提取主要文本
-8. 视实现复杂度决定是否顺手让终态卡解析同时兼容 `elements` 与 `body.elements`，为后续 JSON 2.0 迁移留出边界
-9. 为下列场景补齐自动化测试：
-   - 新协议终态卡
-   - 旧终态卡
-   - 超预算时省略摘要
-   - 外部普通卡片 best-effort 回落
-10. 实现完成后更新相关协议 / 决策文档，确保终态卡强合同与普通卡片回落边界保持清晰
+1. `terminal result card` 只保留单份权威 `final_reply_text`，不再发送结构摘要
+2. 终态发送链路优先保证终态卡主路径；超预算时直接退回纯文本，而不是裁剪协议
+3. 接收侧优先识别自家终态卡 marker 与模板合同，命中后直接返回 `final_reply_text`
+4. 对自家或外部卡片，只要拿得到 `message_id`，都优先尝试原卡查询，而不是先做投影猜测
+5. `merge_forward` 不读取外层固定文案，而是展开子消息后逐条处理
+6. 普通外部卡片继续保留 best-effort 文本回落，但不把它提升为权威文本
+7. `/last text` 等读取链路不得依赖本地摘要恢复标题层级，应直接消费原卡或历史中的权威正文
+8. 自动化测试至少覆盖：
+   - 新协议终态卡 round-trip
+   - `message_id` 原卡读取
+   - `merge_forward` 子消息展开
+   - 普通外部卡片 best-effort 回落

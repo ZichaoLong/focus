@@ -165,7 +165,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         state = self._make_state()
         controller, bot, replies, _ = self._make_controller(
             state,
-            terminal_result_card_limit=10,
+            terminal_result_card_limit=5,
         )
 
         ok = controller.publish_terminal_result(

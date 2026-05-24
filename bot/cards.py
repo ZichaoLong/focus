@@ -28,7 +28,6 @@ from bot.feishu_card_markdown import (
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
 from bot.shared_command_surface import get_shared_command
-from bot.terminal_result_semantics import TerminalStructureSummary, summarize_terminal_result_text
 
 
 def make_card_response(
@@ -181,8 +180,6 @@ def build_markdown_action_card(
 
 def build_terminal_result_card(
     final_reply_text: str,
-    *,
-    include_structure_summary: bool = True,
 ) -> dict:
     """构造终态结果卡。"""
     raw_text = str(final_reply_text or "")
@@ -198,18 +195,7 @@ def build_terminal_result_card(
             "elements": [
                 {
                     "tag": "markdown",
-                    "content": render_final_reply_text_block(
-                        normalized,
-                        structure_summary=(
-                            None
-                            if include_structure_summary and normalized == raw_text
-                            else (
-                                TerminalStructureSummary()
-                                if not include_structure_summary
-                                else summarize_terminal_result_text(raw_text)
-                            )
-                        ),
-                    ),
+                    "content": render_final_reply_text_block(normalized),
                 }
             ]
         },
