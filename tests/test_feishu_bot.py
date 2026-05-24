@@ -403,6 +403,55 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
         self.assertIn("示例卡片", bot.received_messages[0][2])
         self.assertIn("<final_reply_text>demo</final_reply_text>", bot.received_messages[0][2])
 
+    def test_merge_forward_projects_interactive_terminal_result_from_other_app(self) -> None:
+        bot = self._make_bot()
+
+        object.__setattr__(bot._forward_aggregator._ports, "fetch_merge_forward_items", lambda _message_id: [
+            SimpleNamespace(
+                message_id="sub-card",
+                upper_message_id="merge-root",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id="cli_other_bot"),
+                body=SimpleNamespace(
+                    content=json.dumps(build_terminal_result_card("来自转发终态卡"), ensure_ascii=False)
+                ),
+                create_time=1712476800000,
+            )
+        ])
+
+        bot._handle_raw_message(
+            _attachment_message_event(
+                message_id="merge-root",
+                chat_id="ou-admin",
+                chat_type="p2p",
+                msg_type="merge_forward",
+                sender_user_id="u-user",
+                sender_open_id="ou-admin",
+                content={"text": "Merged and Forwarded Message"},
+            )
+        )
+
+        pending = bot._forward_aggregator.peek_pending_forward("ou-admin", "ou-admin")
+        assert pending is not None
+        pending.timer.cancel()
+
+        bot._handle_raw_message(
+            _p2p_message_event(
+                message_id="leave-1",
+                chat_id="ou-admin",
+                text="请读取这个",
+                sender_user_id="u-user",
+                sender_open_id="ou-admin",
+            )
+        )
+
+        self.assertEqual(len(bot.received_messages), 1)
+        forwarded_text = bot.received_messages[0][2]
+        self.assertIn("<forwarded_messages>", forwarded_text)
+        self.assertIn("cli_othe[机器人]", forwarded_text)
+        self.assertIn("来自转发终态卡", forwarded_text)
+        self.assertIn("请读取这个", forwarded_text)
+
 
 class FeishuBotGroupModeTests(unittest.TestCase):
     def _make_bot(self, *, system_config: dict | None = None) -> _RecordingBot:
