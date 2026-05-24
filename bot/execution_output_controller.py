@@ -4,13 +4,14 @@ import threading
 import time
 from typing import Any, Callable, Protocol, TypeAlias
 
-from bot.card_text_projection import can_render_terminal_result_card
+from bot.card_text_projection import render_final_reply_text_block
 from bot.runtime_card_publisher import (
     ExecutionCardModel,
     RuntimeCardPublisher,
     build_execution_card_model,
     build_plan_card_model,
 )
+from bot.terminal_result_semantics import TerminalStructureSummary
 from bot.runtime_state import ExecutionStateChanged, PlanStateChanged, RuntimeStateDict, RuntimeStateMessage
 from bot.runtime_view import RuntimeView, build_runtime_view
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
@@ -254,14 +255,24 @@ class ExecutionOutputController:
         normalized = str(final_reply_text or "").strip()
         if not normalized:
             return False
-        if can_render_terminal_result_card(
+        budget = int(self._terminal_result_card_limit())
+        include_structure_summary = True
+        payload = render_final_reply_text_block(
             normalized,
-            char_limit=int(self._terminal_result_card_limit()),
-        ):
+            structure_summary=None,
+        )
+        if len(payload) > budget:
+            include_structure_summary = False
+            payload = render_final_reply_text_block(
+                normalized,
+                structure_summary=TerminalStructureSummary(),
+            )
+        if len(payload) <= budget:
             published = self._card_publisher_factory().publish_terminal_result_card(
                 chat_id=chat_id,
                 parent_message_id=prompt_message_id,
                 final_reply_text=normalized,
+                include_structure_summary=include_structure_summary,
                 reply_in_thread=prompt_reply_in_thread,
             )
             if published:

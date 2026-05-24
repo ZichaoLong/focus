@@ -4,6 +4,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdown
+from bot.terminal_result_semantics import (
+    TerminalStructureSummary,
+    decode_terminal_structure_summary,
+    encode_terminal_structure_summary,
+    summarize_terminal_result_text,
+)
 
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
@@ -34,17 +40,27 @@ class CardTextProjection:
     text: str
     visible_text: str
     final_reply_text: str = ""
+    final_reply_structure_summary: TerminalStructureSummary = TerminalStructureSummary()
 
     @property
     def has_authoritative_final_reply(self) -> bool:
         return bool(self.final_reply_text)
 
 
-def render_final_reply_text_block(final_reply_text: str) -> str:
+def render_final_reply_text_block(
+    final_reply_text: str,
+    *,
+    structure_summary: TerminalStructureSummary | None = None,
+) -> str:
     normalized = str(final_reply_text or "").strip()
     if not normalized:
         return ""
-    return f"{normalized}{TERMINAL_RESULT_CARD_MARKER}"
+    encoded_summary = encode_terminal_structure_summary(
+        summarize_terminal_result_text(normalized)
+        if structure_summary is None
+        else structure_summary
+    )
+    return f"{normalized}{TERMINAL_RESULT_CARD_MARKER}{encoded_summary}"
 
 
 def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -> bool:
@@ -58,16 +74,24 @@ def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -
     budget = max(int(char_limit), 0)
     if budget <= 0:
         return False
-    payload = render_final_reply_text_block(normalized)
-    return len(payload) <= budget
+    return len(render_final_reply_text_block(normalized)) <= budget
 
 
 def _contains_terminal_result_marker(text: str) -> bool:
     return TERMINAL_RESULT_CARD_MARKER in str(text or "")
 
 
+def _split_terminal_result_payload(text: str) -> tuple[str, str]:
+    normalized = str(text or "")
+    if TERMINAL_RESULT_CARD_MARKER not in normalized:
+        return normalized, ""
+    visible, _, payload = normalized.partition(TERMINAL_RESULT_CARD_MARKER)
+    return visible, payload
+
+
 def _strip_terminal_result_marker(text: str) -> str:
-    return str(text or "").replace(TERMINAL_RESULT_CARD_MARKER, "")
+    visible, _ = _split_terminal_result_payload(text)
+    return visible
 
 
 def project_interactive_card_text(content_dict: dict[str, Any]) -> CardTextProjection:
@@ -109,6 +133,7 @@ def _project_terminal_result_card_text(
         text=final_reply_text,
         visible_text=visible_text,
         final_reply_text=final_reply_text,
+        final_reply_structure_summary=_extract_terminal_result_card_structure_summary(content_dict),
     )
 
 
@@ -124,9 +149,7 @@ def _matches_terminal_result_card_contract(content_dict: dict[str, Any]) -> bool
     if str(header.get("template", "") or "").strip() != "green":
         return False
 
-    elements = content_dict.get("elements") or []
-    if not isinstance(elements, list):
-        return False
+    elements = _collect_root_elements(content_dict)
     has_final_reply_block = any(
         isinstance(element, dict)
         and str(element.get("tag", "") or "").strip() == "markdown"
@@ -137,9 +160,7 @@ def _matches_terminal_result_card_contract(content_dict: dict[str, Any]) -> bool
 
 
 def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any]) -> str:
-    elements = content_dict.get("elements") or []
-    if not isinstance(elements, list):
-        return ""
+    elements = _collect_root_elements(content_dict)
     for element in elements:
         if not isinstance(element, dict):
             continue
@@ -149,6 +170,35 @@ def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any])
         if _contains_terminal_result_marker(content):
             return _strip_terminal_result_marker(content).strip()
     return ""
+
+
+def _extract_terminal_result_card_structure_summary(
+    content_dict: dict[str, Any],
+) -> TerminalStructureSummary:
+    elements = _collect_root_elements(content_dict)
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        if str(element.get("tag", "") or "").strip() != "markdown":
+            continue
+        content = str(element.get("content", "") or "")
+        if not _contains_terminal_result_marker(content):
+            continue
+        _, payload = _split_terminal_result_payload(content)
+        return decode_terminal_structure_summary(payload)
+    return TerminalStructureSummary()
+
+
+def _collect_root_elements(content_dict: dict[str, Any]) -> list[Any]:
+    elements = content_dict.get("elements")
+    if isinstance(elements, list):
+        return elements
+    body = content_dict.get("body")
+    if isinstance(body, dict):
+        body_elements = body.get("elements")
+        if isinstance(body_elements, list):
+            return body_elements
+    return []
 
 
 def _extract_visible_card_text(content_dict: dict[str, Any]) -> str:

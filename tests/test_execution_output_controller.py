@@ -160,7 +160,28 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(bot.reply_refs[-1][0], "msg-3")
         self.assertEqual(bot.reply_refs[-1][1], "interactive")
 
-    def test_publish_terminal_result_with_embedded_image_markdown_falls_back_to_text(self) -> None:
+    def test_publish_terminal_result_falls_back_to_text_when_authoritative_payload_exceeds_budget(self) -> None:
+        state = self._make_state()
+        controller, bot, replies, _ = self._make_controller(
+            state,
+            terminal_result_card_limit=10,
+        )
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text="# 标题\n\n## 小节\n\n- 条目",
+            prompt_message_id="msg-3b",
+            prompt_reply_in_thread=False,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(bot.reply_refs, [])
+        self.assertEqual(
+            replies,
+            [("c1", "# 标题\n\n## 小节\n\n- 条目", "msg-3b", False)],
+        )
+
+    def test_publish_terminal_result_with_embedded_image_markdown_uses_sanitized_card(self) -> None:
         state = self._make_state()
         controller, bot, replies, _ = self._make_controller(state)
 
@@ -172,11 +193,14 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         )
 
         self.assertTrue(ok)
-        self.assertEqual(bot.reply_refs, [])
-        self.assertEqual(
-            replies,
-            [("c1", "![示意图](/tmp/demo.png)\n\nPNG 已生成。", "msg-image", False)],
-        )
+        self.assertEqual(replies, [])
+        parent_id, msg_type, content, reply_in_thread = bot.reply_refs[-1]
+        self.assertEqual(parent_id, "msg-image")
+        self.assertEqual(msg_type, "interactive")
+        self.assertFalse(reply_in_thread)
+        card = json.loads(content)
+        self.assertIn("【图片】示意图", card["elements"][-1]["content"])
+        self.assertIn("PNG 已生成。", card["elements"][-1]["content"])
 
     def test_publish_terminal_result_falls_back_to_top_level_card_before_text(self) -> None:
         state = self._make_state()

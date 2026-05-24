@@ -8,6 +8,7 @@ from bot.card_text_projection import (
 )
 from bot.cards import build_execution_card, build_terminal_result_card
 from bot.execution_transcript import ExecutionReplySegment
+from bot.terminal_result_semantics import TerminalHeading
 
 
 class CardTextProjectionTests(unittest.TestCase):
@@ -19,6 +20,7 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertEqual(projection.final_reply_text, "最终答复")
         self.assertEqual(projection.text, "最终答复")
         self.assertIn("Codex", projection.visible_text)
+        self.assertTrue(projection.final_reply_structure_summary.is_empty)
 
     def test_terminal_result_card_normalizes_markdown_links_to_visible_urls(self) -> None:
         projection = project_interactive_card_text(
@@ -33,6 +35,25 @@ class CardTextProjectionTests(unittest.TestCase):
             "- 示例地图链接 (https://maps.example.invalid/shanghai/live)",
         )
         self.assertIn("https://maps.example.invalid/shanghai/live", projection.visible_text)
+
+    def test_terminal_result_card_extracts_lightweight_structure_summary(self) -> None:
+        projection = project_interactive_card_text(
+            build_terminal_result_card("# 总结\n\n## 下一步\n\n- 事项一\n\n> 注意")
+        )
+
+        self.assertEqual(
+            projection.final_reply_structure_summary.headings,
+            (
+                TerminalHeading(level=1, text="总结"),
+                TerminalHeading(level=2, text="下一步"),
+            ),
+        )
+        self.assertTrue(projection.final_reply_structure_summary.has_list)
+        self.assertTrue(projection.final_reply_structure_summary.has_quote)
+        self.assertNotIn("\u200b", projection.visible_text)
+        self.assertNotIn("\u200c", projection.visible_text)
+        self.assertNotIn("\u200d", projection.visible_text)
+        self.assertNotIn("\ufeff", projection.visible_text)
 
     def test_execution_card_projects_visible_text_best_effort(self) -> None:
         projection = project_interactive_card_text(
@@ -154,3 +175,19 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertFalse(projection.has_authoritative_final_reply)
         self.assertEqual(projection.final_reply_text, "")
         self.assertEqual(projection.text, "Codex\n\nfoo")
+
+    def test_terminal_result_card_supports_json2_body_elements_shape(self) -> None:
+        card = build_terminal_result_card("# 标题")
+        projection = project_interactive_card_text(
+            {
+                "header": card["header"],
+                "body": {"elements": card["elements"]},
+            }
+        )
+
+        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertEqual(projection.final_reply_text, "# 标题")
+        self.assertEqual(
+            projection.final_reply_structure_summary.headings,
+            (TerminalHeading(level=1, text="标题"),),
+        )
