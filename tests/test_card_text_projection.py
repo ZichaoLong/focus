@@ -19,6 +19,7 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertEqual(projection.final_reply_text, "最终答复")
         self.assertEqual(projection.text, "最终答复")
         self.assertIn("Codex", projection.visible_text)
+        self.assertNotIn("Codex", projection.text)
 
     def test_terminal_result_card_normalizes_markdown_links_to_visible_urls(self) -> None:
         projection = project_interactive_card_text(
@@ -178,3 +179,4 @@ class CardTextProjectionTests(unittest.TestCase):
 
         self.assertTrue(projection.has_authoritative_final_reply)
         self.assertEqual(projection.final_reply_text, "# 标题")
+        self.assertEqual(projection.text, "# 标题")

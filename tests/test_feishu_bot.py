@@ -407,6 +407,21 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
             "投影终态",
         )
 
+    def test_read_interactive_message_text_uses_authoritative_terminal_text_without_outer_title(self) -> None:
+        bot = self._make_bot()
+        card = build_terminal_result_card("# 示例标题\n\n正文")
+        bot.raw_message_items["msg-terminal"] = [
+            SimpleNamespace(
+                message_id="msg-terminal",
+                body=SimpleNamespace(content=json.dumps(card, ensure_ascii=False)),
+            )
+        ]
+
+        self.assertEqual(
+            bot.read_interactive_message_text("msg-terminal", content_dict={"text": "请升级至最新版本客户端，以查看内容"}),
+            "# 示例标题\n\n正文",
+        )
+
     def test_history_entry_projects_interactive_terminal_result_from_other_app_sender(self) -> None:
         bot = self._make_bot()
 
