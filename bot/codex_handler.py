@@ -72,7 +72,7 @@ from bot.execution_recovery_controller import (
 )
 from bot.generated_image_delivery import GeneratedImageDeliveryController
 from bot.file_message_domain import FileMessageDomain, FileMessagePorts, IncomingAttachmentMessage
-from bot.card_text_projection import is_execution_card, is_terminal_result_card, project_interactive_card_text
+from bot.card_text_projection import project_interactive_card_text
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.interaction_request_controller import InteractionRequestController
 from bot.interaction_request_controller import PendingRequestStateDict
@@ -2187,8 +2187,7 @@ class CodexHandler(BotHandler):
             return "读取最近卡片失败，请稍后重试。"
 
         app_id = str(getattr(self.bot, "app_id", "") or "").strip()
-        fallback_message_id = ""
-        fallback_content_dict: dict[str, Any] | None = None
+        fallback_text = ""
         for item in items:
             if str(getattr(item, "msg_type", "") or "").strip() != "interactive":
                 continue
@@ -2210,24 +2209,17 @@ class CodexHandler(BotHandler):
             if not isinstance(content_dict, dict):
                 continue
 
-            if is_terminal_result_card(content_dict):
-                text = self.bot.read_interactive_message_text(
-                    item_message_id,
-                    content_dict=content_dict,
-                )
-                if text:
-                    return text
-            if not fallback_message_id and is_execution_card(content_dict):
-                fallback_message_id = item_message_id
-                fallback_content_dict = content_dict
-
-        if fallback_content_dict is not None:
-            text = self.bot.read_interactive_message_text(
-                fallback_message_id,
-                content_dict=fallback_content_dict,
+            resolved = self.bot.read_interactive_message(
+                message_id=item_message_id,
+                content_dict=content_dict,
             )
-            if text:
-                return text
+            if resolved.card_kind == "terminal" and resolved.text:
+                return resolved.text
+            if not fallback_text and resolved.card_kind == "execution" and resolved.text:
+                fallback_text = resolved.text
+
+        if fallback_text:
+            return fallback_text
         return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"
 
     def _handle_preflight_command(

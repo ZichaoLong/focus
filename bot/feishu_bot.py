@@ -43,7 +43,11 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     CallBackToast,
 )
 
-from bot.card_text_projection import project_interactive_card_text
+from bot.card_text_projection import (
+    is_execution_card,
+    is_terminal_result_card,
+    project_interactive_card_text,
+)
 from bot.constants import DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS
 from bot.feishu_types import (
     BotIdentitySnapshot,
@@ -169,6 +173,13 @@ class DownloadedMessageResource:
     content: bytes
     file_name: str
     content_type: str
+
+
+@dataclass(frozen=True, slots=True)
+class InteractiveMessageReadResult:
+    text: str
+    card_kind: str
+    has_authoritative_text: bool = False
 
 
 def _scan_tables(text: str) -> list[tuple[int, int]]:
@@ -654,12 +665,12 @@ class FeishuBot(ABC):
     def _render_message_text(self, msg_type: str, content_dict: dict, *, message_id: str = "") -> str:
         normalized_message_id = str(message_id or "").strip()
         if msg_type == "interactive" and normalized_message_id:
-            resolved_text = self.read_interactive_message_text(
+            resolved = self.read_interactive_message(
                 normalized_message_id,
                 content_dict=content_dict,
             )
-            if resolved_text:
-                return resolved_text
+            if resolved.text:
+                return resolved.text
         text = self._extract_text(msg_type, content_dict)
         if text:
             if normalized_message_id:
@@ -699,15 +710,15 @@ class FeishuBot(ABC):
 
         return ""
 
-    def read_interactive_message_text(
+    def read_interactive_message(
         self,
         message_id: str,
         *,
         content_dict: dict[str, Any] | None = None,
-    ) -> str:
+    ) -> InteractiveMessageReadResult:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
-            return ""
+            return InteractiveMessageReadResult(text="", card_kind="")
 
         raw_content_dict = self._load_raw_card_content_dict(normalized_message_id)
         if raw_content_dict:
@@ -720,7 +731,11 @@ class FeishuBot(ABC):
                     path="raw_card_direct",
                     has_authoritative=projection.has_authoritative_final_reply,
                 )
-                return projection.text
+                return InteractiveMessageReadResult(
+                    text=projection.text,
+                    card_kind=self._interactive_card_kind(raw_content_dict),
+                    has_authoritative_text=projection.has_authoritative_final_reply,
+                )
 
         if isinstance(content_dict, dict):
             projection = project_interactive_card_text(content_dict)
@@ -732,8 +747,31 @@ class FeishuBot(ABC):
                     path="best_effort_projection",
                     has_authoritative=False,
                 )
-                return projection.text
-        return ""
+                return InteractiveMessageReadResult(
+                    text=projection.text,
+                    card_kind=self._interactive_card_kind(content_dict),
+                    has_authoritative_text=False,
+                )
+        return InteractiveMessageReadResult(text="", card_kind="")
+
+    def read_interactive_message_text(
+        self,
+        message_id: str,
+        *,
+        content_dict: dict[str, Any] | None = None,
+    ) -> str:
+        return self.read_interactive_message(
+            message_id,
+            content_dict=content_dict,
+        ).text
+
+    @staticmethod
+    def _interactive_card_kind(content_dict: dict[str, Any]) -> str:
+        if is_terminal_result_card(content_dict):
+            return "terminal"
+        if is_execution_card(content_dict):
+            return "execution"
+        return "other"
 
     @staticmethod
     def _attachment_message_name(msg_type: str, content_dict: dict) -> str:

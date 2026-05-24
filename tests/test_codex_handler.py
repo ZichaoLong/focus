@@ -17,6 +17,7 @@ from bot.adapters.base import (
     ThreadSnapshot,
     ThreadSummary,
 )
+from bot.feishu_bot import InteractiveMessageReadResult
 from bot.card_text_projection import project_interactive_card_text
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_handler import CodexHandler
@@ -370,6 +371,7 @@ class _FakeBot:
         self.downloaded_resources: dict[tuple[str, str, str], object] = {}
         self.history_messages: list[object] = []
         self.list_recent_messages_calls: list[dict[str, object]] = []
+        self.raw_card_results: dict[str, InteractiveMessageReadResult] = {}
 
     def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> bool:
         self.replies.append((chat_id, text))
@@ -430,11 +432,32 @@ class _FakeBot:
         ]
         return items[:limit]
 
-    def read_interactive_message_text(self, message_id: str, *, content_dict: dict | None = None) -> str:
-        del message_id
+    def read_interactive_message(
+        self,
+        message_id: str,
+        *,
+        content_dict: dict | None = None,
+    ) -> InteractiveMessageReadResult:
+        normalized_message_id = str(message_id or "").strip()
+        if normalized_message_id in self.raw_card_results:
+            return self.raw_card_results[normalized_message_id]
         if not isinstance(content_dict, dict):
-            return ""
-        return project_interactive_card_text(content_dict).text
+            return InteractiveMessageReadResult(text="", card_kind="")
+        projection = project_interactive_card_text(content_dict)
+        title = str(content_dict.get("title", "") or "").strip()
+        if not title and isinstance(content_dict.get("header"), dict):
+            title = str(
+                ((content_dict.get("header") or {}).get("title") or {}).get("content", "") or ""
+            ).strip()
+        card_kind = "other"
+        if title == "Codex":
+            card_kind = "terminal"
+        elif title.startswith("Codex 执行过程"):
+            card_kind = "execution"
+        return InteractiveMessageReadResult(text=projection.text, card_kind=card_kind)
+
+    def read_interactive_message_text(self, message_id: str, *, content_dict: dict | None = None) -> str:
+        return self.read_interactive_message(message_id, content_dict=content_dict).text
 
     def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str):
         resource = self.downloaded_resources.get((message_id, resource_type, resource_key))
@@ -718,6 +741,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
+                message_id="msg-terminal",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
@@ -729,6 +753,7 @@ class CodexHandlerTests(unittest.TestCase):
                 thread_id="",
             ),
             SimpleNamespace(
+                message_id="msg-execution",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
@@ -749,6 +774,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
+                message_id="msg-execution",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
@@ -760,6 +786,7 @@ class CodexHandlerTests(unittest.TestCase):
                 thread_id="",
             ),
             SimpleNamespace(
+                message_id="msg-other-terminal",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id="other_app"),
                 body=SimpleNamespace(
@@ -793,20 +820,57 @@ class CodexHandlerTests(unittest.TestCase):
             ),
         ]
 
-        def _raise(*args, **kwargs):
-            raise RuntimeError("boom")
-
-        bot.get_message_items = _raise
-
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertEqual(bot.replies[-1][1], "最近终态")
+
+    def test_last_text_prefers_raw_terminal_when_history_projection_loses_marker(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-latest",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        {
+                            "title": "Codex",
+                            "elements": [[{"tag": "text", "text": "投影里 marker 丢了"}]],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                message_id="msg-older",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("较早终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+        bot.raw_card_results["msg-latest"] = InteractiveMessageReadResult(
+            text="最新终态",
+            card_kind="terminal",
+            has_authoritative_text=True,
+        )
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "最新终态")
 
     def test_last_text_uses_current_thread_scope(self) -> None:
         handler, bot = self._make_handler()
         bot.message_contexts["msg-thread"] = {"chat_type": "group", "thread_id": "th-1"}
         bot.history_messages = [
             SimpleNamespace(
+                message_id="msg-thread-terminal",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
@@ -818,6 +882,7 @@ class CodexHandlerTests(unittest.TestCase):
                 thread_id="th-1",
             ),
             SimpleNamespace(
+                message_id="msg-main-terminal",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
@@ -838,6 +903,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
+                message_id="msg-history-terminal",
                 msg_type="interactive",
                 sender=SimpleNamespace(sender_type="app", id=bot.app_id),
                 body=SimpleNamespace(
