@@ -202,6 +202,26 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertIn("【图片】示意图", card["elements"][-1]["content"])
         self.assertIn("PNG 已生成。", card["elements"][-1]["content"])
 
+    def test_publish_terminal_result_sanitizes_headings_for_feishu_card(self) -> None:
+        state = self._make_state()
+        controller, bot, replies, _ = self._make_controller(state)
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text="# 标题\n\n## 小节\n\n- 条目",
+            prompt_message_id="msg-heading",
+            prompt_reply_in_thread=False,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(replies, [])
+        _parent_id, msg_type, content, _reply_in_thread = bot.reply_refs[-1]
+        self.assertEqual(msg_type, "interactive")
+        card = json.loads(content)
+        self.assertIn("【标题】 标题", card["elements"][-1]["content"])
+        self.assertIn("【小节】 小节", card["elements"][-1]["content"])
+        self.assertNotIn("# 标题", card["elements"][-1]["content"])
+
     def test_publish_terminal_result_falls_back_to_top_level_card_before_text(self) -> None:
         state = self._make_state()
         controller, bot, replies, _ = self._make_controller(state)

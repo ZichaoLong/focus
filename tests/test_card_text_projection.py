@@ -8,7 +8,11 @@ from bot.card_text_projection import (
 )
 from bot.cards import build_execution_card, build_terminal_result_card
 from bot.execution_transcript import ExecutionReplySegment
-from bot.terminal_result_semantics import TerminalHeading
+from bot.terminal_result_semantics import (
+    TerminalHeading,
+    TerminalStructureSummary,
+    encode_terminal_structure_summary,
+)
 
 
 class CardTextProjectionTests(unittest.TestCase):
@@ -54,6 +58,12 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertNotIn("\u200c", projection.visible_text)
         self.assertNotIn("\u200d", projection.visible_text)
         self.assertNotIn("\ufeff", projection.visible_text)
+        self.assertIn("【标题】 总结", projection.visible_text)
+        self.assertIn("【小节】 下一步", projection.visible_text)
+        self.assertEqual(
+            projection.final_reply_text,
+            "# 总结\n\n## 下一步\n\n- 事项一\n\n> 注意",
+        )
 
     def test_execution_card_projects_visible_text_best_effort(self) -> None:
         projection = project_interactive_card_text(
@@ -193,15 +203,18 @@ class CardTextProjectionTests(unittest.TestCase):
         )
 
     def test_terminal_result_card_supports_history_rendered_shape(self) -> None:
+        summary_payload = encode_terminal_structure_summary(
+            TerminalStructureSummary(headings=(TerminalHeading(level=2, text="结论"),), has_list=True)
+        )
         projection = project_interactive_card_text(
             {
                 "title": "Codex",
                 "elements": [
                     [
-                        {"tag": "text", "text": "## 结论"},
+                        {"tag": "text", "text": "【小节】 结论"},
                         {
                             "tag": "text",
-                            "text": f"\n- 第一条\n- 第二条{TERMINAL_RESULT_CARD_MARKER}",
+                            "text": f"\n- 第一条\n- 第二条{TERMINAL_RESULT_CARD_MARKER}{summary_payload}",
                         },
                     ]
                 ],

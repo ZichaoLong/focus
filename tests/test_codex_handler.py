@@ -3077,6 +3077,19 @@ class CodexHandlerTests(unittest.TestCase):
             card_json,
         )
 
+    def test_execution_card_sanitizes_markdown_headings_to_visible_labels(self) -> None:
+        card = build_execution_card(
+            "# 过程标题",
+            [ExecutionReplySegment("assistant", "## 回复小节\n\n- 条目")],
+            running=False,
+        )
+
+        card_json = json.dumps(card, ensure_ascii=False)
+        self.assertIn("【标题】 过程标题", card_json)
+        self.assertIn("【小节】 回复小节", card_json)
+        self.assertNotIn("# 过程标题", card_json)
+        self.assertNotIn("## 回复小节", card_json)
+
     def test_status_includes_user_facing_summary(self) -> None:
         handler, bot = self._make_handler()
 

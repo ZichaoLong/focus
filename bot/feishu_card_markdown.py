@@ -4,6 +4,7 @@ import re
 
 _MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]\n]*)\]\(([^)\n]+)\)")
+_MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 
 
 def contains_unsupported_embedded_image_markdown(text: str) -> bool:
@@ -33,5 +34,21 @@ def sanitize_runtime_markdown_for_feishu_card(text: str) -> str:
             return f"{label}{target}"
         return f"{label} ({target})"
 
-    sanitized = _MARKDOWN_IMAGE_RE.sub(_replace_image, normalized)
+    def _replace_heading(match: re.Match[str]) -> str:
+        level = len(str(match.group(1) or ""))
+        title = str(match.group(2) or "").strip()
+        if not title:
+            return ""
+        marker = {
+            1: "【标题】",
+            2: "【小节】",
+            3: "【三级标题】",
+            4: "【四级标题】",
+            5: "【五级标题】",
+            6: "【六级标题】",
+        }.get(level, "【标题】")
+        return f"{marker} {title}"
+
+    sanitized = _MARKDOWN_HEADING_RE.sub(_replace_heading, normalized)
+    sanitized = _MARKDOWN_IMAGE_RE.sub(_replace_image, sanitized)
     return _MARKDOWN_LINK_RE.sub(_replace_link, sanitized)
