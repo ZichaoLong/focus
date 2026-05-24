@@ -52,3 +52,18 @@ def sanitize_runtime_markdown_for_feishu_card(text: str) -> str:
     sanitized = _MARKDOWN_HEADING_RE.sub(_replace_heading, normalized)
     sanitized = _MARKDOWN_IMAGE_RE.sub(_replace_image, sanitized)
     return _MARKDOWN_LINK_RE.sub(_replace_link, sanitized)
+
+
+def sanitize_terminal_result_markdown_for_feishu_json2(text: str) -> str:
+    normalized = str(text or "")
+    if not normalized:
+        return ""
+
+    def _replace_image(match: re.Match[str]) -> str:
+        alt_text = str(match.group(1) or "").strip() or "图片"
+        target = str(match.group(2) or "").strip()
+        if not target:
+            return f"【图片】{alt_text}"
+        return f"【图片】{alt_text}\n路径：`{target}`"
+
+    return _MARKDOWN_IMAGE_RE.sub(_replace_image, normalized)

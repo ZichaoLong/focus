@@ -136,9 +136,10 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(msg_type, "interactive")
         self.assertTrue(reply_in_thread)
         card = json.loads(content)
+        self.assertEqual(card["schema"], "2.0")
         self.assertEqual(card["header"]["title"]["content"], "Codex")
-        self.assertIn(TERMINAL_RESULT_CARD_MARKER, card["elements"][-1]["content"])
-        self.assertIn("done", card["elements"][-1]["content"])
+        self.assertIn(TERMINAL_RESULT_CARD_MARKER, card["body"]["elements"][-1]["content"])
+        self.assertIn("done", card["body"]["elements"][-1]["content"])
 
     def test_publish_terminal_result_uses_independent_budget_from_execution_card_reply_limit(self) -> None:
         state = self._make_state()
@@ -199,8 +200,8 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(msg_type, "interactive")
         self.assertFalse(reply_in_thread)
         card = json.loads(content)
-        self.assertIn("【图片】示意图", card["elements"][-1]["content"])
-        self.assertIn("PNG 已生成。", card["elements"][-1]["content"])
+        self.assertIn("【图片】示意图", card["body"]["elements"][-1]["content"])
+        self.assertIn("PNG 已生成。", card["body"]["elements"][-1]["content"])
 
     def test_publish_terminal_result_sanitizes_headings_for_feishu_card(self) -> None:
         state = self._make_state()
@@ -218,9 +219,8 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         _parent_id, msg_type, content, _reply_in_thread = bot.reply_refs[-1]
         self.assertEqual(msg_type, "interactive")
         card = json.loads(content)
-        self.assertIn("【标题】 标题", card["elements"][-1]["content"])
-        self.assertIn("【小节】 小节", card["elements"][-1]["content"])
-        self.assertNotIn("# 标题", card["elements"][-1]["content"])
+        self.assertIn("# 标题", card["body"]["elements"][-1]["content"])
+        self.assertIn("## 小节", card["body"]["elements"][-1]["content"])
 
     def test_publish_terminal_result_falls_back_to_top_level_card_before_text(self) -> None:
         state = self._make_state()

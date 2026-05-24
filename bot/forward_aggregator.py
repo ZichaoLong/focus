@@ -48,7 +48,7 @@ class ForwardAggregatorPorts:
     handle_forwarded_text: Callable[[str, str, str, str], None]
     fetch_merge_forward_items: Callable[[str], list[Any]]
     batch_resolve_sender_names: Callable[[set[str]], dict[str, str]]
-    extract_text: Callable[[str, dict[str, Any]], str]
+    render_message_text: Callable[[str, dict[str, Any]], str]
 
 
 class ForwardAggregator:
@@ -275,7 +275,7 @@ class ForwardAggregator:
                     body = getattr(item, "body", None)
                     raw_content = getattr(body, "content", "")
                     content = json.loads(raw_content)
-                    text = self._ports.extract_text(sub_type, content)
+                    text = self._ports.render_message_text(sub_type, content)
                 except (json.JSONDecodeError, TypeError, AttributeError):
                     text = ""
 

@@ -41,6 +41,7 @@ class _RecordingBot(FeishuBot):
         self.history_entries: list[dict] = []
         self.history_fetch_calls: list[dict] = []
         self.history_fetch_error: Exception | None = None
+        self.raw_message_items: dict[str, list[object]] = {}
         self.allow_group_prompt_result = True
         self.chat_unavailable_events: list[tuple[str, str]] = []
 
@@ -97,6 +98,23 @@ class _RecordingBot(FeishuBot):
 
     def on_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         self.chat_unavailable_events.append((chat_id, reason))
+
+    def get_message_items(self, message_id: str, *, card_msg_content_type: str = "") -> list[object]:
+        del card_msg_content_type
+        return list(self.raw_message_items.get(message_id, []))
+
+    def get_message_content_dict(self, message_id: str, *, card_msg_content_type: str = "") -> dict:
+        del card_msg_content_type
+        items = self.get_message_items(message_id)
+        for item in items:
+            if str(getattr(item, "message_id", "") or "").strip() != str(message_id or "").strip():
+                continue
+            body = getattr(item, "body", None)
+            raw_content = str(getattr(body, "content", "") or "").strip()
+            if not raw_content:
+                continue
+            return json.loads(raw_content)
+        return {}
 
     def _collect_assistant_context_entries(
         self,
@@ -311,6 +329,14 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
 
     def test_p2p_terminal_result_card_projects_authoritative_text(self) -> None:
         bot = self._make_bot()
+        bot.raw_message_items["card-1"] = [
+            SimpleNamespace(
+                message_id="card-1",
+                body=SimpleNamespace(
+                    content=json.dumps(build_terminal_result_card("稳定终态"), ensure_ascii=False)
+                ),
+            )
+        ]
 
         bot._handle_raw_message(
             _attachment_message_event(
@@ -331,6 +357,21 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
 
     def test_p2p_execution_card_projects_visible_text_best_effort(self) -> None:
         bot = self._make_bot()
+        bot.raw_message_items["card-2"] = [
+            SimpleNamespace(
+                message_id="card-2",
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card(
+                            "命令输出",
+                            [ExecutionReplySegment("assistant", "阶段回复")],
+                            running=False,
+                        ),
+                        ensure_ascii=False,
+                    )
+                ),
+            )
+        ]
 
         bot._handle_raw_message(
             _attachment_message_event(
@@ -405,6 +446,14 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
 
     def test_merge_forward_projects_interactive_terminal_result_from_other_app(self) -> None:
         bot = self._make_bot()
+        bot.raw_message_items["sub-card"] = [
+            SimpleNamespace(
+                message_id="sub-card",
+                body=SimpleNamespace(
+                    content=json.dumps(build_terminal_result_card("来自转发终态卡"), ensure_ascii=False)
+                ),
+            )
+        ]
 
         object.__setattr__(bot._forward_aggregator._ports, "fetch_merge_forward_items", lambda _message_id: [
             SimpleNamespace(

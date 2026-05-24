@@ -2171,7 +2171,12 @@ class CodexHandler(BotHandler):
             thread_id = str(context.get("thread_id", "") or "").strip()
 
         try:
-            items = self.bot.list_recent_messages(chat_id=chat_id, thread_id=thread_id, limit=20)
+            items = self.bot.list_recent_messages(
+                chat_id=chat_id,
+                thread_id=thread_id,
+                limit=20,
+                card_msg_content_type="user_card_content",
+            )
         except Exception as exc:
             logger.warning(
                 "读取最近卡片失败: chat_id=%s thread_id=%s message_id=%s error=%s",

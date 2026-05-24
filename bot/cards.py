@@ -21,7 +21,10 @@ from bot.card_text_projection import (
 )
 from bot.constants import display_path, format_timestamp, shorten
 from bot.execution_transcript import ExecutionReplySegment
-from bot.feishu_card_markdown import sanitize_runtime_markdown_for_feishu_card
+from bot.feishu_card_markdown import (
+    sanitize_runtime_markdown_for_feishu_card,
+    sanitize_terminal_result_markdown_for_feishu_json2,
+)
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
 from bot.shared_command_surface import get_shared_command
@@ -66,6 +69,10 @@ _LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <thread_id|
 
 def _card_config() -> dict:
     return {"wide_screen_mode": True, "update_multi": True}
+
+
+def _card_config_v2() -> dict:
+    return {"update_multi": True}
 
 
 def _format_ts_ms(value: int) -> str:
@@ -179,30 +186,33 @@ def build_terminal_result_card(
 ) -> dict:
     """构造终态结果卡。"""
     raw_text = str(final_reply_text or "")
-    normalized = sanitize_runtime_markdown_for_feishu_card(raw_text)
+    normalized = sanitize_terminal_result_markdown_for_feishu_json2(raw_text)
     return {
-        "config": _card_config(),
+        "schema": "2.0",
+        "config": _card_config_v2(),
         "header": {
             "title": {"tag": "plain_text", "content": TERMINAL_RESULT_CARD_TITLE},
             "template": "green",
         },
-        "elements": [
-            {
-                "tag": "markdown",
-                "content": render_final_reply_text_block(
-                    normalized,
-                    structure_summary=(
-                        None
-                        if include_structure_summary and normalized == raw_text
-                        else (
-                            TerminalStructureSummary()
-                            if not include_structure_summary
-                            else summarize_terminal_result_text(raw_text)
-                        )
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": render_final_reply_text_block(
+                        normalized,
+                        structure_summary=(
+                            None
+                            if include_structure_summary and normalized == raw_text
+                            else (
+                                TerminalStructureSummary()
+                                if not include_structure_summary
+                                else summarize_terminal_result_text(raw_text)
+                            )
+                        ),
                     ),
-                ),
-            }
-        ],
+                }
+            ]
+        },
     }
 
 

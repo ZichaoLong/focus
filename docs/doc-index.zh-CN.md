@@ -63,6 +63,7 @@
 - [`managed-backend-startup-profile.zh-CN.md`](./decisions/managed-backend-startup-profile.zh-CN.md)
 - [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md)
 - [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md)
+- [`feishu-raw-card-retrieval.zh-CN.md`](./decisions/feishu-raw-card-retrieval.zh-CN.md)
 - [`feishu-output-images.zh-CN.md`](./decisions/feishu-output-images.zh-CN.md)
 
 ### 验证材料
@@ -97,6 +98,7 @@
 | shared backend 复用与 `/resume` 有哪些安全规则？ | [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md) |
 | 飞书附件 / 文件消息应如何进入本地工作区？哪些类型支持下载、哪些行为不由本仓库负责？ | [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md) |
 | 飞书卡片消息的文本投影、终态 `final_reply_text`、以及普通卡片的 best-effort 文本提取边界是什么？ | [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md) |
+| 飞书卡片如何从 JSON 2.0 升级到“按 `message_id` 原卡读取”？普通转发、合并转发、best-effort 投影之间的读取决策是什么？重启后又如何确认项目实际收到了什么？ | [`feishu-raw-card-retrieval.zh-CN.md`](./decisions/feishu-raw-card-retrieval.zh-CN.md) |
 | 飞书出站生成图片的当前边界是什么？文本为何必须先于图片送达？为什么任意工作区图片不在范围内？ | [`feishu-output-images.zh-CN.md`](./decisions/feishu-output-images.zh-CN.md) |
 | 跨实例 `attach / resume` 之前到底要遵守什么安全准入规则？为什么不能只看 `ThreadRuntimeLease`？ | [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)、[`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | 群聊相关功能需要做哪些手工回归检查？ | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |
@@ -146,6 +148,7 @@
   - [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md)
 - 改飞书卡片消息、终态结果 round-trip、普通卡片文本提取相关逻辑时：
   - [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md)
+  - [`feishu-raw-card-retrieval.zh-CN.md`](./decisions/feishu-raw-card-retrieval.zh-CN.md)
   - [`feishu-output-images.zh-CN.md`](./decisions/feishu-output-images.zh-CN.md)
   - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
   - [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md)

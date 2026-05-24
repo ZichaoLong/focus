@@ -97,6 +97,7 @@ _GROUP_HISTORY_FETCH_LOOKBACK_SECONDS = 24 * 3600
 _DOWNLOADABLE_ATTACHMENT_MESSAGE_TYPES = {"image", "file", "audio", "media"}
 _UNSUPPORTED_ATTACHMENT_MESSAGE_TYPES = {"folder", "sticker"}
 _ATTACHMENT_MESSAGE_TYPES = _DOWNLOADABLE_ATTACHMENT_MESSAGE_TYPES | _UNSUPPORTED_ATTACHMENT_MESSAGE_TYPES
+_CARD_MSG_CONTENT_TYPE_USER_CARD_CONTENT = "user_card_content"
 # 普通非管理员私聊默认拒绝；仅保留显式 bootstrap / identity 命令作为例外。
 _NON_ADMIN_P2P_BOOTSTRAP_COMMANDS = frozenset({"/whoami", "/bot-status", "/init"})
 
@@ -306,6 +307,7 @@ class FeishuBot(ABC):
             if isinstance(item, str) and str(item).strip()
         }
         self._bot_open_id_error_logged = False
+        self._debug_raw_card_ingress = bool(config.get("debug_raw_card_ingress", True))
         self._forward_aggregator = ForwardAggregator(
             ports=ForwardAggregatorPorts(
                 get_group_mode=self.get_group_mode,
@@ -318,7 +320,7 @@ class FeishuBot(ABC):
                 ),
                 fetch_merge_forward_items=self._fetch_merge_forward_items,
                 batch_resolve_sender_names=self._batch_resolve_sender_names,
-                extract_text=self._extract_text,
+                render_message_text=lambda msg_type, content_dict: self._render_message_text(msg_type, content_dict),
             ),
             group_mode_all=self._GROUP_MODE_ALL,
             group_mode_assistant=self._GROUP_MODE_ASSISTANT,
@@ -649,9 +651,31 @@ class FeishuBot(ABC):
         # sticker/image/video/audio 等无文本消息
         return ""
 
-    def _render_message_text(self, msg_type: str, content_dict: dict) -> str:
+    def _render_message_text(self, msg_type: str, content_dict: dict, *, message_id: str = "") -> str:
+        normalized_message_id = str(message_id or "").strip()
+        if msg_type == "interactive" and normalized_message_id:
+            raw_content_dict = self._load_raw_card_content_dict(normalized_message_id)
+            if raw_content_dict:
+                projection = project_interactive_card_text(raw_content_dict)
+                if projection.text:
+                    self._log_card_ingress_event(
+                        "resolution",
+                        message_id=normalized_message_id,
+                        msg_type=msg_type,
+                        path="raw_card_direct",
+                        has_authoritative=projection.has_authoritative_final_reply,
+                    )
+                    return projection.text
         text = self._extract_text(msg_type, content_dict)
         if text:
+            if normalized_message_id:
+                self._log_card_ingress_event(
+                    "resolution",
+                    message_id=normalized_message_id,
+                    msg_type=msg_type,
+                    path="best_effort_projection",
+                    has_authoritative=False,
+                )
             return text
 
         if msg_type == "share_user":
@@ -1119,6 +1143,7 @@ class FeishuBot(ABC):
         page_token: str = "",
         start_time: int | str | None = None,
         end_time: int | str | None = None,
+        card_msg_content_type: str = "",
     ) -> ListedMessagesPage:
         builder = (
             ListMessageRequest.builder()
@@ -1134,6 +1159,9 @@ class FeishuBot(ABC):
         if page_token:
             builder = builder.page_token(page_token)
         request = builder.build()
+        normalized_card_content_type = str(card_msg_content_type or "").strip()
+        if normalized_card_content_type:
+            request.queries.append(("card_msg_content_type", normalized_card_content_type))
         response = self.client.im.v1.message.list(request)
         if not response.success():
             raise RuntimeError(f"code={response.code}, msg={response.msg}")
@@ -1151,6 +1179,7 @@ class FeishuBot(ABC):
         chat_id: str,
         thread_id: str = "",
         limit: int = 20,
+        card_msg_content_type: str = "",
     ) -> list[Any]:
         normalized_limit = max(int(limit or 0), 0)
         if normalized_limit <= 0:
@@ -1174,6 +1203,7 @@ class FeishuBot(ABC):
                     sort_type=sort_type,
                     page_size=page_size,
                     page_token=page_token,
+                    card_msg_content_type=card_msg_content_type,
                 )
                 page_items = list(page.items or [])
                 if not page_items:
@@ -1194,6 +1224,7 @@ class FeishuBot(ABC):
                     sort_type="ByCreateTimeAsc",
                     page_size=50,
                     page_token=page_token,
+                    card_msg_content_type=card_msg_content_type,
                 )
                 page_items = list(page.items or [])
                 if page_items:
@@ -1205,6 +1236,109 @@ class FeishuBot(ABC):
                 page_token = page.page_token
             items.reverse()
         return items[:normalized_limit]
+
+    def get_message_items(
+        self,
+        message_id: str,
+        *,
+        card_msg_content_type: str = "",
+    ) -> list[Any]:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return []
+        request = GetMessageRequest.builder().message_id(normalized_message_id).build()
+        normalized_card_content_type = str(card_msg_content_type or "").strip()
+        if normalized_card_content_type:
+            request.queries.append(("card_msg_content_type", normalized_card_content_type))
+        response = self.client.im.v1.message.get(request)
+        if not response.success():
+            raise RuntimeError(f"code={response.code}, msg={response.msg}")
+        return list(getattr(response.data, "items", None) or [])
+
+    def get_message_content_dict(
+        self,
+        message_id: str,
+        *,
+        card_msg_content_type: str = "",
+    ) -> dict[str, Any]:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return {}
+        items = self.get_message_items(
+            normalized_message_id,
+            card_msg_content_type=card_msg_content_type,
+        )
+        for item in items:
+            if str(getattr(item, "message_id", "") or "").strip() != normalized_message_id:
+                continue
+            body = getattr(item, "body", None)
+            raw_content = str(getattr(body, "content", "") or "").strip()
+            if not raw_content:
+                continue
+            try:
+                content_dict = json.loads(raw_content)
+            except Exception:
+                return {}
+            if isinstance(content_dict, dict):
+                return content_dict
+        return {}
+
+    @staticmethod
+    def _normalize_card_ingress_log_value(value: Any) -> Any:
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, (list, tuple)):
+            return [FeishuBot._normalize_card_ingress_log_value(item) for item in value]
+        if isinstance(value, dict):
+            return {
+                str(key): FeishuBot._normalize_card_ingress_log_value(item)
+                for key, item in value.items()
+            }
+        return repr(value)
+
+    def _log_card_ingress_event(self, event: str, **fields: Any) -> None:
+        if not self._debug_raw_card_ingress:
+            return
+        normalized_fields: dict[str, Any] = {}
+        for key, value in fields.items():
+            normalized_fields[key] = self._normalize_card_ingress_log_value(value)
+        logger.info("card_ingress_%s %s", event, json.dumps(normalized_fields, ensure_ascii=False, sort_keys=True))
+
+    def _load_raw_card_content_dict(self, message_id: str) -> dict[str, Any]:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return {}
+        try:
+            content_dict = self.get_message_content_dict(
+                normalized_message_id,
+                card_msg_content_type=_CARD_MSG_CONTENT_TYPE_USER_CARD_CONTENT,
+            )
+        except Exception as exc:
+            self._log_card_ingress_event(
+                "raw_card_fetch",
+                message_id=normalized_message_id,
+                ok=False,
+                error=str(exc),
+            )
+            return {}
+        if not isinstance(content_dict, dict) or not content_dict:
+            self._log_card_ingress_event(
+                "raw_card_fetch",
+                message_id=normalized_message_id,
+                ok=False,
+                error="message_not_found_in_items",
+            )
+            return {}
+        self._log_card_ingress_event(
+            "raw_card_fetch",
+            message_id=normalized_message_id,
+            ok=True,
+            schema=str(content_dict.get("schema", "") or ""),
+            title=str((content_dict.get("header") or {}).get("title", {}).get("content", "") or "")
+            if isinstance(content_dict.get("header"), dict)
+            else str(content_dict.get("title", "") or ""),
+        )
+        return content_dict
 
     def _history_recovery_enabled(self) -> bool:
         """Whether assistant mode should perform any history recovery at all.
@@ -1385,18 +1519,58 @@ class FeishuBot(ABC):
 
     def _fetch_merge_forward_items(self, merge_message_id: str) -> list[Any]:
         try:
-            request = GetMessageRequest.builder().message_id(merge_message_id).build()
-            response = self.client.im.v1.message.get(request)
-            if not response.success():
-                logger.warning(
-                    "获取合并转发消息失败: message_id=%s, code=%s, msg=%s",
-                    merge_message_id,
-                    response.code,
-                    response.msg,
-                )
-                return []
-            return list(response.data.items or [])
+            items = self.get_message_items(merge_message_id)
+            for item in items:
+                sub_message_id = str(getattr(item, "message_id", "") or "").strip()
+                sub_type = str(getattr(item, "msg_type", "") or "").strip()
+                if not sub_message_id or sub_message_id == str(merge_message_id or "").strip():
+                    continue
+                if sub_type != "interactive":
+                    continue
+                raw_content_dict = self._load_raw_card_content_dict(sub_message_id)
+                if not raw_content_dict:
+                    continue
+                body = getattr(item, "body", None)
+                if body is None:
+                    continue
+                try:
+                    setattr(body, "content", json.dumps(raw_content_dict, ensure_ascii=False))
+                    self._log_card_ingress_event(
+                        "merge_forward_child",
+                        parent_message_id=str(merge_message_id or "").strip(),
+                        child_message_id=sub_message_id,
+                        msg_type=sub_type,
+                        path="raw_card_from_merge_forward_child",
+                    )
+                except Exception as exc:
+                    self._log_card_ingress_event(
+                        "merge_forward_child",
+                        parent_message_id=str(merge_message_id or "").strip(),
+                        child_message_id=sub_message_id,
+                        msg_type=sub_type,
+                        path="raw_card_from_merge_forward_child",
+                        ok=False,
+                        error=str(exc),
+                    )
+            self._log_card_ingress_event(
+                "merge_forward_expansion",
+                message_id=str(merge_message_id or "").strip(),
+                ok=True,
+                item_count=len(items),
+                child_message_ids=[
+                    str(getattr(item, "message_id", "") or "").strip()
+                    for item in items
+                    if str(getattr(item, "message_id", "") or "").strip()
+                ],
+            )
+            return items
         except Exception as exc:
+            self._log_card_ingress_event(
+                "merge_forward_expansion",
+                message_id=str(merge_message_id or "").strip(),
+                ok=False,
+                error=str(exc),
+            )
             logger.warning(
                 "获取合并转发消息异常: message_id=%s, error=%s",
                 merge_message_id,
@@ -1457,6 +1631,16 @@ class FeishuBot(ABC):
         # 需要在 JSON 解析之前单独处理。
         # 注意：merge_forward 在群聊中不携带 @mention，所以要绕过群聊过滤先暂存。
         if msg_type == "merge_forward":
+            self._log_card_ingress_event(
+                "event",
+                message_id=message_id,
+                msg_type=msg_type,
+                chat_id=chat_id,
+                thread_id=thread_id,
+                parent_id=parent_id,
+                root_id=root_id,
+                raw_content="Merged and Forwarded Message",
+            )
             logger.info("收到合并转发: user=%s, chat_type=%s, message_id=%s",
                         sender_id, chat_type, message_id)
             text = self._fetch_merge_forward_text(message_id)
@@ -1490,6 +1674,17 @@ class FeishuBot(ABC):
                 message_id, msg_type, type(e).__name__, message.content,
             )
             return
+
+        self._log_card_ingress_event(
+            "event",
+            message_id=message_id,
+            msg_type=msg_type,
+            chat_id=chat_id,
+            thread_id=thread_id,
+            parent_id=parent_id,
+            root_id=root_id,
+            raw_content=str(message.content or "")[:4000],
+        )
 
         sender_name, sender_open_log, sender_user_log = self._sender_log_fields(
             user_id=sender_user_id,
@@ -1525,7 +1720,7 @@ class FeishuBot(ABC):
                 attachment_name,
             )
         else:
-            text = self._render_message_text(msg_type, content_dict)
+            text = self._render_message_text(msg_type, content_dict, message_id=message_id)
         if chat_type == "group" and mentions:
             text = self._normalize_mentions(text, mentions)
         pending = None if is_attachment_message else self._pop_pending_forward(sender_id, chat_id)

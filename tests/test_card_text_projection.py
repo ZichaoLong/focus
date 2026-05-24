@@ -36,9 +36,9 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertTrue(projection.has_authoritative_final_reply)
         self.assertEqual(
             projection.final_reply_text,
-            "- 示例地图链接 (https://maps.example.invalid/shanghai/live)",
+            "- [示例地图链接](https://maps.example.invalid/shanghai/live)",
         )
-        self.assertIn("https://maps.example.invalid/shanghai/live", projection.visible_text)
+        self.assertIn("[示例地图链接](https://maps.example.invalid/shanghai/live)", projection.visible_text)
 
     def test_terminal_result_card_extracts_lightweight_structure_summary(self) -> None:
         projection = project_interactive_card_text(
@@ -58,8 +58,8 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertNotIn("\u200c", projection.visible_text)
         self.assertNotIn("\u200d", projection.visible_text)
         self.assertNotIn("\ufeff", projection.visible_text)
-        self.assertIn("【标题】 总结", projection.visible_text)
-        self.assertIn("【小节】 下一步", projection.visible_text)
+        self.assertIn("# 总结", projection.visible_text)
+        self.assertIn("## 下一步", projection.visible_text)
         self.assertEqual(
             projection.final_reply_text,
             "# 总结\n\n## 下一步\n\n- 事项一\n\n> 注意",
@@ -191,7 +191,7 @@ class CardTextProjectionTests(unittest.TestCase):
         projection = project_interactive_card_text(
             {
                 "header": card["header"],
-                "body": {"elements": card["elements"]},
+                "body": {"elements": card["body"]["elements"]},
             }
         )
 

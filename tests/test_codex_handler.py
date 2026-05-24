@@ -368,6 +368,7 @@ class _FakeBot:
         self.runtime_bot_open_id = "ou_bot"
         self.downloaded_resources: dict[tuple[str, str, str], object] = {}
         self.history_messages: list[object] = []
+        self.list_recent_messages_calls: list[dict[str, object]] = []
 
     def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> bool:
         self.replies.append((chat_id, text))
@@ -404,8 +405,22 @@ class _FakeBot:
     def get_message_context(self, message_id: str) -> dict:
         return dict(self.message_contexts.get(message_id, {}))
 
-    def list_recent_messages(self, *, chat_id: str, thread_id: str = "", limit: int = 20) -> list[object]:
-        del chat_id
+    def list_recent_messages(
+        self,
+        *,
+        chat_id: str,
+        thread_id: str = "",
+        limit: int = 20,
+        card_msg_content_type: str = "",
+    ) -> list[object]:
+        self.list_recent_messages_calls.append(
+            {
+                "chat_id": chat_id,
+                "thread_id": thread_id,
+                "limit": limit,
+                "card_msg_content_type": card_msg_content_type,
+            }
+        )
         normalized_thread_id = str(thread_id or "").strip()
         items = [
             item
@@ -722,6 +737,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertEqual(bot.replies[-1][1], "最新终态")
+        self.assertEqual(bot.list_recent_messages_calls[-1]["card_msg_content_type"], "user_card_content")
 
     def test_last_text_falls_back_to_latest_execution_card(self) -> None:
         handler, bot = self._make_handler()
@@ -815,7 +831,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "/last text")
 
-        self.assertEqual(bot.replies[-1][1], "## 结论第一条\n第二条")
+        self.assertEqual(bot.replies[-1][1], "## 结论\n第一条\n第二条")
 
     def test_last_text_requires_text_subcommand(self) -> None:
         handler, bot = self._make_handler()
@@ -1602,7 +1618,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["terminal_result_text"], "watchdog final")
         card = json.loads(bot.sent_messages[-1][2])
         self.assertEqual(card["header"]["title"]["content"], "Codex")
-        self.assertIn("watchdog final", card["elements"][-1]["content"])
+        self.assertIn("watchdog final", card["body"]["elements"][-1]["content"])
 
     def test_cancel_refreshes_stale_execution_card_when_turn_already_finished(self) -> None:
         handler, bot = self._make_handler()
@@ -1782,7 +1798,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.reply_ref_calls[-1][3], True)
         card = json.loads(bot.reply_refs[-1][2])
         self.assertEqual(card["header"]["title"]["content"], "Codex")
-        self.assertIn("123456789", card["elements"][-1]["content"])
+        self.assertIn("123456789", card["body"]["elements"][-1]["content"])
 
     def test_group_terminal_result_card_stays_in_topic_after_message_context_is_gone(self) -> None:
         handler, bot = self._make_handler()
@@ -2203,7 +2219,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(terminal_cards), 2)
         card = next(card for card in terminal_cards if card["header"]["title"]["content"] == "Codex")
         self.assertEqual(card["header"]["title"]["content"], "Codex")
-        self.assertIn("123456789", card["elements"][-1]["content"])
+        self.assertIn("123456789", card["body"]["elements"][-1]["content"])
 
     def test_terminal_reconcile_sends_authoritative_result_card_from_snapshot_without_live_reply_delta(self) -> None:
         handler, bot = self._make_handler()
@@ -2237,7 +2253,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.sent_messages[-1][1], "interactive")
         card = json.loads(bot.sent_messages[-1][2])
         self.assertEqual(card["header"]["title"]["content"], "Codex")
-        self.assertIn("snapshot final answer", card["elements"][-1]["content"])
+        self.assertIn("snapshot final answer", card["body"]["elements"][-1]["content"])
         self.assertEqual(bot.deletes, [])
 
     def test_collab_mode_command_without_arg_shows_mode_card(self) -> None:
