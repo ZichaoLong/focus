@@ -2175,7 +2175,6 @@ class CodexHandler(BotHandler):
                 chat_id=chat_id,
                 thread_id=thread_id,
                 limit=20,
-                card_msg_content_type="user_card_content",
             )
         except Exception as exc:
             logger.warning(
@@ -2188,7 +2187,8 @@ class CodexHandler(BotHandler):
             return "读取最近卡片失败，请稍后重试。"
 
         app_id = str(getattr(self.bot, "app_id", "") or "").strip()
-        fallback_text = ""
+        fallback_message_id = ""
+        fallback_content_dict: dict[str, Any] | None = None
         for item in items:
             if str(getattr(item, "msg_type", "") or "").strip() != "interactive":
                 continue
@@ -2198,6 +2198,7 @@ class CodexHandler(BotHandler):
             if app_id and (sender_type != "app" or sender_id != app_id):
                 continue
 
+            item_message_id = str(getattr(item, "message_id", "") or "").strip()
             body = getattr(item, "body", None)
             raw_content = str(getattr(body, "content", "") or "").strip()
             if not raw_content:
@@ -2209,14 +2210,24 @@ class CodexHandler(BotHandler):
             if not isinstance(content_dict, dict):
                 continue
 
-            projection = project_interactive_card_text(content_dict)
-            if is_terminal_result_card(content_dict) and projection.text:
-                return projection.text
-            if not fallback_text and is_execution_card(content_dict) and projection.text:
-                fallback_text = projection.text
+            if is_terminal_result_card(content_dict):
+                text = self.bot.read_interactive_message_text(
+                    item_message_id,
+                    content_dict=content_dict,
+                )
+                if text:
+                    return text
+            if not fallback_message_id and is_execution_card(content_dict):
+                fallback_message_id = item_message_id
+                fallback_content_dict = content_dict
 
-        if fallback_text:
-            return fallback_text
+        if fallback_content_dict is not None:
+            text = self.bot.read_interactive_message_text(
+                fallback_message_id,
+                content_dict=fallback_content_dict,
+            )
+            if text:
+                return text
         return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"
 
     def _handle_preflight_command(

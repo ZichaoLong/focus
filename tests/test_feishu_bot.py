@@ -393,6 +393,20 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
         self.assertIn("命令输出", bot.received_messages[0][2])
         self.assertIn("阶段回复", bot.received_messages[0][2])
 
+    def test_read_interactive_message_text_falls_back_to_projection_when_raw_fetch_fails(self) -> None:
+        bot = self._make_bot()
+        card = build_terminal_result_card("投影终态")
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        bot.get_message_content_dict = _raise  # type: ignore[method-assign]
+
+        self.assertEqual(
+            bot.read_interactive_message_text("msg-1", content_dict=card),
+            "投影终态",
+        )
+
     def test_history_entry_projects_interactive_terminal_result_from_other_app_sender(self) -> None:
         bot = self._make_bot()
 

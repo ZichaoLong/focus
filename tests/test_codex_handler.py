@@ -17,6 +17,7 @@ from bot.adapters.base import (
     ThreadSnapshot,
     ThreadSummary,
 )
+from bot.card_text_projection import project_interactive_card_text
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_handler import CodexHandler
 from bot.codex_protocol.client import CodexRpcError
@@ -429,6 +430,12 @@ class _FakeBot:
         ]
         return items[:limit]
 
+    def read_interactive_message_text(self, message_id: str, *, content_dict: dict | None = None) -> str:
+        del message_id
+        if not isinstance(content_dict, dict):
+            return ""
+        return project_interactive_card_text(content_dict).text
+
     def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str):
         resource = self.downloaded_resources.get((message_id, resource_type, resource_key))
         if resource is None:
@@ -737,7 +744,6 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertEqual(bot.replies[-1][1], "最新终态")
-        self.assertEqual(bot.list_recent_messages_calls[-1]["card_msg_content_type"], "user_card_content")
 
     def test_last_text_falls_back_to_latest_execution_card(self) -> None:
         handler, bot = self._make_handler()
@@ -769,6 +775,32 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertIn("最近执行输出", bot.replies[-1][1])
+
+    def test_last_text_falls_back_to_best_effort_when_raw_card_fetch_fails(self) -> None:
+        handler, bot = self._make_handler()
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-terminal",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("最近终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("boom")
+
+        bot.get_message_items = _raise
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "最近终态")
 
     def test_last_text_uses_current_thread_scope(self) -> None:
         handler, bot = self._make_handler()

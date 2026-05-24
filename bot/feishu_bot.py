@@ -654,18 +654,12 @@ class FeishuBot(ABC):
     def _render_message_text(self, msg_type: str, content_dict: dict, *, message_id: str = "") -> str:
         normalized_message_id = str(message_id or "").strip()
         if msg_type == "interactive" and normalized_message_id:
-            raw_content_dict = self._load_raw_card_content_dict(normalized_message_id)
-            if raw_content_dict:
-                projection = project_interactive_card_text(raw_content_dict)
-                if projection.text:
-                    self._log_card_ingress_event(
-                        "resolution",
-                        message_id=normalized_message_id,
-                        msg_type=msg_type,
-                        path="raw_card_direct",
-                        has_authoritative=projection.has_authoritative_final_reply,
-                    )
-                    return projection.text
+            resolved_text = self.read_interactive_message_text(
+                normalized_message_id,
+                content_dict=content_dict,
+            )
+            if resolved_text:
+                return resolved_text
         text = self._extract_text(msg_type, content_dict)
         if text:
             if normalized_message_id:
@@ -703,6 +697,42 @@ class FeishuBot(ABC):
             template = str(content_dict.get("template", "") or "").strip()
             return f"[系统消息] {template}" if template else "[系统消息]"
 
+        return ""
+
+    def read_interactive_message_text(
+        self,
+        message_id: str,
+        *,
+        content_dict: dict[str, Any] | None = None,
+    ) -> str:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return ""
+
+        raw_content_dict = self._load_raw_card_content_dict(normalized_message_id)
+        if raw_content_dict:
+            projection = project_interactive_card_text(raw_content_dict)
+            if projection.text:
+                self._log_card_ingress_event(
+                    "resolution",
+                    message_id=normalized_message_id,
+                    msg_type="interactive",
+                    path="raw_card_direct",
+                    has_authoritative=projection.has_authoritative_final_reply,
+                )
+                return projection.text
+
+        if isinstance(content_dict, dict):
+            projection = project_interactive_card_text(content_dict)
+            if projection.text:
+                self._log_card_ingress_event(
+                    "resolution",
+                    message_id=normalized_message_id,
+                    msg_type="interactive",
+                    path="best_effort_projection",
+                    has_authoritative=False,
+                )
+                return projection.text
         return ""
 
     @staticmethod
