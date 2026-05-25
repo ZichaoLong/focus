@@ -278,6 +278,7 @@ class CodexHandler(BotHandler):
             card_publisher_factory=self._runtime_card_publisher,
             dispatch_execution_card_patch=self._execution_card_patch_dispatcher.submit,
             reply_text=self._reply_text,
+            reply_text_get_id=self._reply_text_get_id,
             record_terminal_result_card=self._record_terminal_result_card_with_execution,
             card_reply_limit=lambda: self._card_reply_limit,
             terminal_result_card_limit=lambda: self._terminal_result_card_limit,
@@ -1536,6 +1537,26 @@ class CodexHandler(BotHandler):
             )
         return bool(self.bot.reply(chat_id, text))
 
+    def _reply_text_get_id(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        message_id: str = "",
+        reply_in_thread: bool = False,
+    ) -> str:
+        if self._is_group_chat(chat_id, message_id) and message_id:
+            return str(
+                getattr(self.bot, "reply_get_id", lambda *_args, **_kwargs: "")(
+                    chat_id,
+                    text,
+                    parent_message_id=message_id,
+                    reply_in_thread=reply_in_thread,
+                )
+                or ""
+            ).strip()
+        return str(getattr(self.bot, "reply_get_id", lambda *_args, **_kwargs: "")(chat_id, text) or "").strip()
+
     def _reply_card(
         self,
         chat_id: str,
@@ -2222,8 +2243,7 @@ class CodexHandler(BotHandler):
         app_id = str(getattr(self.bot, "app_id", "") or "").strip()
         fallback_text = ""
         for item in items:
-            if str(getattr(item, "msg_type", "") or "").strip() != "interactive":
-                continue
+            item_msg_type = str(getattr(item, "msg_type", "") or "").strip()
             sender = getattr(item, "sender", None)
             sender_type = str(getattr(sender, "sender_type", "") or "").strip()
             sender_id = str(getattr(sender, "id", "") or "").strip()
@@ -2234,6 +2254,8 @@ class CodexHandler(BotHandler):
             authoritative_text = self._terminal_result_store.get(item_message_id)
             if authoritative_text:
                 return authoritative_text
+            if item_msg_type != "interactive":
+                continue
             body = getattr(item, "body", None)
             raw_content = str(getattr(body, "content", "") or "").strip()
             if not raw_content:

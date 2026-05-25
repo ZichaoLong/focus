@@ -381,6 +381,22 @@ class _FakeBot:
             self.reply_parent_calls.append((chat_id, text, parent_message_id, reply_in_thread))
         return True
 
+    def reply_get_id(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        parent_message_id: str = "",
+        reply_in_thread: bool = False,
+    ) -> str:
+        self.replies.append((chat_id, text))
+        if parent_message_id:
+            self.reply_parents.append((chat_id, text, parent_message_id))
+            self.reply_parent_calls.append((chat_id, text, parent_message_id, reply_in_thread))
+            return "text-reply-1"
+        self.sent_messages.append((chat_id, "text", json.dumps({"text": text}, ensure_ascii=False)))
+        return "text-message-1"
+
     def reply_card(self, chat_id: str, card: dict, *, parent_message_id: str = "", reply_in_thread: bool = False) -> None:
         self.cards.append((chat_id, card))
         if parent_message_id:
@@ -848,6 +864,42 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIn("最近执行输出", bot.replies[-1][1])
 
+    def test_last_text_prefers_latest_authoritative_text_message(self) -> None:
+        handler, bot = self._make_handler()
+        handler._terminal_result_store.upsert(
+            TerminalResultRecord(
+                message_id="msg-latest-text",
+                execution_message_id="exec-1",
+                final_reply_text="最新纯文本终态",
+                recorded_at=2.0,
+            )
+        )
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-latest-text",
+                msg_type="text",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(content=json.dumps({"text": "最新纯文本终态"}, ensure_ascii=False)),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                message_id="msg-execution",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card("旧执行输出", [], running=False),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "最新纯文本终态")
+
     def test_last_text_falls_back_to_best_effort_when_raw_card_fetch_fails(self) -> None:
         handler, bot = self._make_handler()
         bot.history_messages = [
@@ -997,6 +1049,31 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertEqual(bot.replies[-1][1], "最近没有找到可导出的终态卡；也没有可回退的执行卡。")
+
+    def test_last_text_ignores_corrupted_terminal_result_store(self) -> None:
+        handler, bot = self._make_handler()
+        (handler._data_dir / "terminal_results.json").write_text(
+            '{"schema_version":"oops","results":[]}',
+            encoding="utf-8",
+        )
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-execution",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card("最近执行输出", [], running=False),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertIn("最近执行输出", bot.replies[-1][1])
 
     def test_on_register_recovers_from_stale_owner_metadata_and_socket(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

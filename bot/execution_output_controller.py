@@ -29,6 +29,17 @@ class _ReplyText(Protocol):
     ) -> bool: ...
 
 
+class _ReplyTextGetId(Protocol):
+    def __call__(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        message_id: str = "",
+        reply_in_thread: bool = False,
+    ) -> str: ...
+
+
 class _RecordTerminalResultCard(Protocol):
     def __call__(
         self,
@@ -53,6 +64,7 @@ class ExecutionOutputController:
         card_publisher_factory: Callable[[], RuntimeCardPublisher],
         dispatch_execution_card_patch: Callable[[str, ExecutionCardModel], None],
         reply_text: _ReplyText,
+        reply_text_get_id: _ReplyTextGetId,
         record_terminal_result_card: _RecordTerminalResultCard,
         card_reply_limit: Callable[[], int],
         terminal_result_card_limit: Callable[[], int],
@@ -69,6 +81,7 @@ class ExecutionOutputController:
         self._card_publisher_factory = card_publisher_factory
         self._dispatch_execution_card_patch = dispatch_execution_card_patch
         self._reply_text = reply_text
+        self._reply_text_get_id = reply_text_get_id
         self._record_terminal_result_card = record_terminal_result_card
         self._card_reply_limit = card_reply_limit
         self._terminal_result_card_limit = terminal_result_card_limit
@@ -283,14 +296,20 @@ class ExecutionOutputController:
                     final_reply_text=normalized,
                 )
                 return True
-        return bool(
-            self._reply_text(
-                chat_id,
-                normalized,
-                message_id=prompt_message_id,
-                reply_in_thread=prompt_reply_in_thread,
-            )
+        text_message_id = self._reply_text_get_id(
+            chat_id,
+            normalized,
+            message_id=prompt_message_id,
+            reply_in_thread=prompt_reply_in_thread,
         )
+        if text_message_id:
+            self._record_terminal_result_card(
+                message_id=text_message_id,
+                execution_message_id=str(source_execution_message_id or "").strip(),
+                final_reply_text=normalized,
+            )
+            return True
+        return False
 
     def flush_plan_card(self, sender_id: str, chat_id: str) -> None:
         runtime = self._get_runtime_view(sender_id, chat_id)

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import pathlib
 import threading
 from dataclasses import asdict, dataclass
 
 _SCHEMA_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,19 +28,25 @@ class TerminalResultStore:
         normalized = self._normalize_record(record)
         if not normalized.message_id or not normalized.final_reply_text:
             return
-        with self._lock:
-            records = [item for item in self._read_all() if item.message_id != normalized.message_id]
-            records.append(normalized)
-            self._write_all(records)
+        try:
+            with self._lock:
+                records = [item for item in self._read_all() if item.message_id != normalized.message_id]
+                records.append(normalized)
+                self._write_all(records)
+        except Exception as exc:
+            logger.warning("terminal result store upsert failed: %s", exc)
 
     def get(self, message_id: str) -> str:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
             return ""
-        with self._lock:
-            for item in self._read_all():
-                if item.message_id == normalized_message_id:
-                    return item.final_reply_text
+        try:
+            with self._lock:
+                for item in self._read_all():
+                    if item.message_id == normalized_message_id:
+                        return item.final_reply_text
+        except Exception as exc:
+            logger.warning("terminal result store get failed: %s", exc)
         return ""
 
     def has_execution_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
@@ -46,19 +54,27 @@ class TerminalResultStore:
         normalized_text = str(final_reply_text or "").strip()
         if not normalized_execution_message_id or not normalized_text:
             return False
-        with self._lock:
-            return any(
-                item.execution_message_id == normalized_execution_message_id
-                and item.final_reply_text == normalized_text
-                for item in self._read_all()
-            )
+        try:
+            with self._lock:
+                return any(
+                    item.execution_message_id == normalized_execution_message_id
+                    and item.final_reply_text == normalized_text
+                    for item in self._read_all()
+                )
+        except Exception as exc:
+            logger.warning("terminal result store has_execution_result failed: %s", exc)
+            return False
 
     def list_all(self) -> tuple[TerminalResultRecord, ...]:
-        with self._lock:
-            items = sorted(
-                self._read_all(),
-                key=lambda item: (item.recorded_at, item.message_id),
-            )
+        try:
+            with self._lock:
+                items = sorted(
+                    self._read_all(),
+                    key=lambda item: (item.recorded_at, item.message_id),
+                )
+        except Exception as exc:
+            logger.warning("terminal result store list_all failed: %s", exc)
+            return ()
         return tuple(items)
 
     def _file_path(self) -> pathlib.Path:

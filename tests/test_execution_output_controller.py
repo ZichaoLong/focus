@@ -97,6 +97,10 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
                 replies.append((chat_id, text, message_id, reply_in_thread)) or True
             ),
+            reply_text_get_id=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
+                replies.append((chat_id, text, message_id, reply_in_thread))
+                or ("text-reply-1" if message_id else "text-message-1")
+            ),
             record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: recorded_terminal_results.append(
                 {
                     "message_id": message_id,
@@ -195,7 +199,16 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             replies,
             [("c1", "# 标题\n\n## 小节\n\n- 条目", "msg-3b", False)],
         )
-        self.assertEqual(recorded, [])
+        self.assertEqual(
+            recorded,
+            [
+                {
+                    "message_id": "text-reply-1",
+                    "execution_message_id": "",
+                    "final_reply_text": "# 标题\n\n## 小节\n\n- 条目",
+                }
+            ],
+        )
 
     def test_publish_terminal_result_with_embedded_image_markdown_uses_sanitized_card(self) -> None:
         state = self._make_state()
@@ -283,6 +296,9 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             dispatch_execution_card_patch=lambda message_id, model: None,
             reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
                 replies.append((chat_id, text, message_id, reply_in_thread)) or False
+            ),
+            reply_text_get_id=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
+                replies.append((chat_id, text, message_id, reply_in_thread)) or ""
             ),
             record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: None,
             card_reply_limit=lambda: 5,

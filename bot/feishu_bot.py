@@ -2264,6 +2264,28 @@ class FeishuBot(ABC):
             )
         return bool(self.send_message_get_id(chat_id, "text", content))
 
+    def reply_get_id(
+        self,
+        chat_id: str,
+        text: str,
+        *,
+        parent_message_id: str = "",
+        reply_in_thread: bool = False,
+    ) -> str:
+        content = json.dumps({"text": text})
+        normalized_parent_id = str(parent_message_id or "").strip()
+        if normalized_parent_id:
+            return str(
+                self.reply_to_message(
+                    normalized_parent_id,
+                    "text",
+                    content,
+                    reply_in_thread=self._should_reply_in_thread(normalized_parent_id, reply_in_thread),
+                )
+                or ""
+            ).strip()
+        return str(self.send_message_get_id(chat_id, "text", content) or "").strip()
+
     def reply_card(
         self,
         chat_id: str,

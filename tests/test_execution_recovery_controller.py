@@ -522,6 +522,46 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         )
         self.assertEqual(delivered_images, [])
 
+    def test_run_terminal_execution_reconcile_does_not_duplicate_text_fallback_when_already_recorded(self) -> None:
+        state = self._make_state()
+        controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
+        state["execution_transcript"].set_reply_text("fallback answer")
+        snapshots.append(_ThreadNotFound("thread not found"))
+        controller._has_recorded_terminal_result = lambda *, execution_message_id, final_reply_text: (
+            execution_message_id == "card-1" and final_reply_text == "fallback answer"
+        )
+
+        controller.run_terminal_execution_reconcile(
+            TerminalReconcileTarget(
+                sender_id="ou_user",
+                chat_id="c1",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                card_message_id="card-1",
+                prompt_message_id="msg-9",
+                prompt_reply_in_thread=False,
+                transcript=state["execution_transcript"],
+                cancelled=False,
+                elapsed=5,
+            )
+        )
+
+        self.assertEqual(terminal_results, [])
+        self.assertEqual(
+            patches,
+            [
+                {
+                    "message_id": "card-1",
+                    "reply_text": "",
+                    "running": False,
+                    "elapsed": 5,
+                    "cancelled": False,
+                }
+            ],
+        )
+        self.assertEqual(deletes, [])
+        self.assertEqual(delivered_images, [])
+
     def test_run_terminal_execution_reconcile_keeps_final_reply_on_execution_card_when_result_publish_fails(self) -> None:
         state = self._make_state()
         controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
