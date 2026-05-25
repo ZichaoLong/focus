@@ -84,6 +84,11 @@ class InboundSurfaceControllerTests(unittest.TestCase):
                     scope="p2p",
                     scope_denied_text="private only",
                 ),
+                "/last": CommandRoute(
+                    handler=lambda sender_id, chat_id, arg, message_id: CommandResult(text="latest text")
+                    if arg == "text"
+                    else CommandResult(text="用法：`/last text`")
+                ),
             },
             action_routes={
                 "group_only": ActionRoute(
@@ -156,6 +161,27 @@ class InboundSurfaceControllerTests(unittest.TestCase):
 
         self.assertEqual(response["toast"], "private only")
         self.assertEqual(response["toast_type"], "warning")
+
+    def test_help_execute_last_text_action_replies_with_plain_text_instead_of_card(self) -> None:
+        controller, _, _, replies, cards, *_ = self._make_controller()
+
+        response = self._unpack_card_response(
+            controller.handle_help_execute_command_action(
+                "ou_user",
+                "c1",
+                "msg-last",
+                {
+                    "action": "help_execute_command",
+                    "command": "/last text",
+                    "title": "Codex 最近结果文本",
+                },
+            )
+        )
+
+        self.assertEqual(replies, [("c1", "latest text", "msg-last")])
+        self.assertEqual(cards, [])
+        self.assertEqual(response["toast"], "已发送最近文本。")
+        self.assertEqual(response["toast_type"], "success")
 
     def test_group_action_guard_denies_non_admin_actor(self) -> None:
         controller, _, _, _, _, _, action_calls, _, _, _ = self._make_controller()

@@ -201,9 +201,12 @@ feishu-codexctl thread goal --thread-name <name>
 feishu-codexctl image send --thread-id <thread_id> --path ./diagram.png
 ```
 
-可选进阶：
+#### 可选进阶
+
+如果你已经完成基本安装与初始化，再看这部分：
 
 - `feishu-codexctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
+- `/goal` 用于查看或管理当前 thread 的 goal；常用形态包括 `/goal`、`/goal set <objective>`、`/goal pause`、`/goal resume`、`/goal clear`。本地查看或排障时，可配合 `feishu-codexctl thread goal --thread-name <name>` 一起用。如需让机器人帮助生成 goal 主句，可先用 `/last text` 获取最新卡片内容文本，方便在手机侧复制后再整理成主句。
 - `feishu-codexctl image send` 是 thread-scoped 动作：在 Codex turn 内可依赖自动注入的 `CODEX_THREAD_ID` 把图片发回当前 thread；若目标不是当前 thread，则必须显式提供 `--thread-id` 或 `--thread-name`。
 - 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `feishu-codexctl image send`，把图片发回当前 thread 当前 attached 的飞书会话；这个 skill 不负责跨 thread / 手动选目标。
 

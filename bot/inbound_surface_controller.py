@@ -229,6 +229,12 @@ class InboundSurfaceController:
             command,
             message_id=message_id,
         )
+        if command == "/last text" and execution.result is not None and execution.result.text and execution.result.card is None:
+            self.dispatch_command_result(chat_id, execution.result, message_id=message_id)
+            return make_card_response(
+                toast="已发送最近文本。",
+                toast_type="success",
+            )
         return self._command_action_response(execution, title=title)
 
     def handle_help_submit_command_action(
