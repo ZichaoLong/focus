@@ -105,7 +105,7 @@ from bot.runtime_state import (
     ThreadStateChanged,
     apply_runtime_state_message,
 )
-from bot.runtime_view import RuntimeView
+from bot.runtime_view import RuntimeView, build_runtime_view
 from bot.service_control_plane import ServiceControlPlane
 from bot.thread_resolution import (
     list_current_dir_threads,
@@ -122,6 +122,7 @@ from bot.stores.interaction_lease_store import (
     InteractionLeaseAcquireResult,
     InteractionLeaseStore,
 )
+from bot.stores.terminal_result_store import TerminalResultRecord, TerminalResultStore
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord, ThreadResumeProfileStore
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeRecord, ThreadMemoryModeStore
 from bot.stores.service_instance_lease import (
@@ -248,6 +249,7 @@ class CodexHandler(BotHandler):
         self._app_server_runtime = AppServerRuntimeStore(self._data_dir)
         self._chat_binding_store = ChatBindingStore(self._data_dir)
         self._pending_attachment_store = PendingAttachmentStore(self._data_dir)
+        self._terminal_result_store = TerminalResultStore(self._data_dir)
         self._binding_runtime = BindingRuntimeManager(
             lock=self._lock,
             default_working_dir=self._default_working_dir,
@@ -276,6 +278,7 @@ class CodexHandler(BotHandler):
             card_publisher_factory=self._runtime_card_publisher,
             dispatch_execution_card_patch=self._execution_card_patch_dispatcher.submit,
             reply_text=self._reply_text,
+            record_terminal_result_card=self._record_terminal_result_card_with_execution,
             card_reply_limit=lambda: self._card_reply_limit,
             terminal_result_card_limit=lambda: self._terminal_result_card_limit,
             card_log_limit=lambda: self._card_log_limit,
@@ -307,6 +310,7 @@ class CodexHandler(BotHandler):
             dispatch_execution_card_message=self._dispatch_execution_card_message,
             remove_execution_card_message=self._remove_execution_card_message,
             publish_terminal_result=self._publish_terminal_result,
+            has_recorded_terminal_result=self._has_recorded_terminal_result,
             deliver_generated_images_from_snapshot=self._deliver_generated_images_from_snapshot,
             read_thread=lambda thread_id: self._adapter.read_thread(thread_id, include_turns=True),
             is_thread_not_found_error=self._is_thread_not_found_error,
@@ -1999,10 +2003,39 @@ class CodexHandler(BotHandler):
             thread_id=thread_id,
             turn_id=turn_id,
         )
+        if target is not None:
+            self._remember_runtime_terminal_result_text(
+                sender_id=sender_id,
+                chat_id=chat_id,
+                execution_message_id=target.card_message_id,
+                final_reply_text=target.transcript.reply_text(),
+            )
         finalized = self._finalize_execution_card_from_state(sender_id, chat_id)
         if finalized:
             self._schedule_terminal_execution_reconcile(target)
         return finalized
+
+    def _remember_runtime_terminal_result_text(
+        self,
+        *,
+        sender_id: str,
+        chat_id: str,
+        execution_message_id: str,
+        final_reply_text: str,
+    ) -> None:
+        normalized_message_id = str(execution_message_id or "").strip()
+        normalized_text = str(final_reply_text or "").strip()
+        if not normalized_message_id or not normalized_text:
+            return
+        state = self._get_runtime_state(sender_id, chat_id)
+        with self._lock:
+            runtime = build_runtime_view(state)
+            if runtime.execution.current_message_id.strip() != normalized_message_id:
+                return
+            self._apply_runtime_state_message_locked(
+                state,
+                ExecutionStateChanged(terminal_result_text=normalized_text),
+            )
 
     def _reconcile_execution_snapshot(
         self,
@@ -2198,6 +2231,9 @@ class CodexHandler(BotHandler):
                 continue
 
             item_message_id = str(getattr(item, "message_id", "") or "").strip()
+            authoritative_text = self._terminal_result_store.get(item_message_id)
+            if authoritative_text:
+                return authoritative_text
             body = getattr(item, "body", None)
             raw_content = str(getattr(body, "content", "") or "").strip()
             if not raw_content:
@@ -2221,6 +2257,40 @@ class CodexHandler(BotHandler):
         if fallback_text:
             return fallback_text
         return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"
+
+    def _record_terminal_result_card(self, *, message_id: str, final_reply_text: str) -> None:
+        self._record_terminal_result_card_with_execution(
+            message_id=message_id,
+            execution_message_id="",
+            final_reply_text=final_reply_text,
+        )
+
+    def _record_terminal_result_card_with_execution(
+        self,
+        *,
+        message_id: str,
+        execution_message_id: str,
+        final_reply_text: str,
+    ) -> None:
+        normalized_message_id = str(message_id or "").strip()
+        normalized_execution_message_id = str(execution_message_id or "").strip()
+        normalized_text = str(final_reply_text or "").strip()
+        if not normalized_message_id or not normalized_text:
+            return
+        self._terminal_result_store.upsert(
+            TerminalResultRecord(
+                message_id=normalized_message_id,
+                execution_message_id=normalized_execution_message_id,
+                final_reply_text=normalized_text,
+                recorded_at=time.time(),
+            )
+        )
+
+    def _has_recorded_terminal_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
+        return self._terminal_result_store.has_execution_result(
+            execution_message_id=execution_message_id,
+            final_reply_text=final_reply_text,
+        )
 
     def _handle_preflight_command(
         self,
@@ -3409,12 +3479,14 @@ class CodexHandler(BotHandler):
         chat_id: str,
         *,
         final_reply_text: str,
+        source_execution_message_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
     ) -> bool:
         return self._execution_output.publish_terminal_result(
             chat_id,
             final_reply_text=final_reply_text,
+            source_execution_message_id=source_execution_message_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
         )

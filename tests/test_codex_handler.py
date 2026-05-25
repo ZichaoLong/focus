@@ -27,6 +27,7 @@ from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.service_instance_lease import ServiceInstanceLease, ServiceInstanceLeaseError
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
+from bot.stores.terminal_result_store import TerminalResultRecord
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
 from bot.thread_resume_profile_setting import ThreadResumeProfileSetting
 
@@ -769,6 +770,50 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertEqual(bot.replies[-1][1], "最新终态")
+
+    def test_last_text_prefers_local_authoritative_terminal_text_when_protocol_is_lost(self) -> None:
+        handler, bot = self._make_handler()
+        handler._terminal_result_store.upsert(
+            TerminalResultRecord(
+                message_id="msg-terminal",
+                execution_message_id="",
+                final_reply_text="本地权威终态\n> 引用正文",
+                recorded_at=1.0,
+            )
+        )
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-terminal",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        {
+                            "title": "Codex",
+                            "elements": [[{"tag": "text", "text": "飞书投影已丢协议 marker"}]],
+                        },
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                message_id="msg-older",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card("较早终态"),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertEqual(bot.replies[-1][1], "本地权威终态\n> 引用正文")
 
     def test_last_text_falls_back_to_latest_execution_card(self) -> None:
         handler, bot = self._make_handler()
@@ -2050,7 +2095,6 @@ class CodexHandlerTests(unittest.TestCase):
             bot.replies,
         )
         state_b = handler._get_runtime_state("ou_user", "chat-b")
-        self.assertEqual(state_b["execution_transcript"].reply_text(), "")
         self.assertEqual(state_b["current_message_id"], "")
         self.assertTrue(state_b["last_execution_message_id"])
         self.assertEqual(state_b["terminal_result_text"], "done")
@@ -2303,6 +2347,14 @@ class CodexHandlerTests(unittest.TestCase):
         target = handler._capture_terminal_reconcile_target("ou_user", "c1", thread_id="thread-created", turn_id="turn-1")
         assert target is not None
         handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+        self._wait_until(
+            lambda: any(
+                parent_id == "msg-1"
+                and msg_type == "interactive"
+                and json.loads(content)["header"]["title"]["content"] == "Codex"
+                for parent_id, msg_type, content in bot.reply_refs
+            )
+        )
         reply_refs_before_reconcile = list(bot.reply_refs)
         handler._adapter.thread_snapshots[("thread-created", True)] = RuntimeError("snapshot down")
         handler._run_terminal_execution_reconcile(target)

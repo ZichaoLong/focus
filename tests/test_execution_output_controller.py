@@ -67,6 +67,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         bot = _FakeBot()
         replies: list[tuple[str, str, str, bool]] = []
         dispatched: list[dict[str, object]] = []
+        recorded_terminal_results: list[dict[str, str]] = []
         lock = threading.RLock()
         turn_execution = TurnExecutionCoordinator()
 
@@ -96,16 +97,23 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
                 replies.append((chat_id, text, message_id, reply_in_thread)) or True
             ),
+            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: recorded_terminal_results.append(
+                {
+                    "message_id": message_id,
+                    "execution_message_id": execution_message_id,
+                    "final_reply_text": final_reply_text,
+                }
+            ),
             card_reply_limit=lambda: card_reply_limit,
             terminal_result_card_limit=lambda: terminal_result_card_limit,
             card_log_limit=lambda: 100,
             stream_patch_interval_ms=lambda: 1,
         )
-        return controller, bot, replies, dispatched
+        return controller, bot, replies, dispatched, recorded_terminal_results
 
     def test_flush_execution_card_patch_failure_falls_back_once(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(state)
+        controller, bot, replies, _, _ = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["current_prompt_message_id"] = "msg-1"
         state["current_prompt_reply_in_thread"] = True
@@ -120,7 +128,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_publish_terminal_result_prefers_terminal_result_card_when_reply_fits_budget(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(state)
+        controller, bot, replies, _, recorded = self._make_controller(state)
 
         ok = controller.publish_terminal_result(
             "c1",
@@ -140,10 +148,14 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex")
         self.assertIn(TERMINAL_RESULT_CARD_MARKER, card["body"]["elements"][-1]["content"])
         self.assertIn("done", card["body"]["elements"][-1]["content"])
+        self.assertEqual(
+            recorded,
+            [{"message_id": "plan-card-1", "execution_message_id": "", "final_reply_text": "done"}],
+        )
 
     def test_publish_terminal_result_uses_independent_budget_from_execution_card_reply_limit(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(
+        controller, bot, replies, _, recorded = self._make_controller(
             state,
             card_reply_limit=3,
             terminal_result_card_limit=200,
@@ -160,10 +172,12 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(replies, [])
         self.assertEqual(bot.reply_refs[-1][0], "msg-3")
         self.assertEqual(bot.reply_refs[-1][1], "interactive")
+        self.assertEqual(recorded[-1]["message_id"], "plan-card-1")
+        self.assertEqual(recorded[-1]["execution_message_id"], "")
 
     def test_publish_terminal_result_falls_back_to_text_when_authoritative_payload_exceeds_budget(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(
+        controller, bot, replies, _, recorded = self._make_controller(
             state,
             terminal_result_card_limit=5,
         )
@@ -181,10 +195,11 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             replies,
             [("c1", "# 标题\n\n## 小节\n\n- 条目", "msg-3b", False)],
         )
+        self.assertEqual(recorded, [])
 
     def test_publish_terminal_result_with_embedded_image_markdown_uses_sanitized_card(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(state)
+        controller, bot, replies, _, _ = self._make_controller(state)
 
         ok = controller.publish_terminal_result(
             "c1",
@@ -205,7 +220,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_publish_terminal_result_sanitizes_headings_for_feishu_card(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(state)
+        controller, bot, replies, _, _ = self._make_controller(state)
 
         ok = controller.publish_terminal_result(
             "c1",
@@ -224,7 +239,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_publish_terminal_result_falls_back_to_top_level_card_before_text(self) -> None:
         state = self._make_state()
-        controller, bot, replies, _ = self._make_controller(state)
+        controller, bot, replies, _, recorded = self._make_controller(state)
 
         def _reply_fail(parent_id: str, msg_type: str, content: str, *, reply_in_thread: bool = False) -> str | None:
             bot.reply_refs.append((parent_id, msg_type, content, reply_in_thread))
@@ -244,6 +259,10 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(bot.reply_refs[-1][0], "msg-4")
         self.assertEqual(bot.sent_messages[-1][0], "c1")
         self.assertEqual(bot.sent_messages[-1][1], "interactive")
+        self.assertEqual(
+            recorded,
+            [{"message_id": "plan-card-2", "execution_message_id": "", "final_reply_text": "done"}],
+        )
 
     def test_publish_terminal_result_returns_false_when_text_fallback_fails(self) -> None:
         state = self._make_state()
@@ -265,6 +284,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             reply_text=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
                 replies.append((chat_id, text, message_id, reply_in_thread)) or False
             ),
+            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: None,
             card_reply_limit=lambda: 5,
             terminal_result_card_limit=lambda: 0,
             card_log_limit=lambda: 100,
@@ -283,7 +303,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_schedule_execution_card_update_immediate_path_dispatches_card_patch(self) -> None:
         state = self._make_state()
-        controller, bot, _, dispatched = self._make_controller(state)
+        controller, bot, _, dispatched, _ = self._make_controller(state)
         state["current_message_id"] = "card-1"
         state["started_at"] = time.monotonic() - 1
         state["execution_transcript"].set_reply_text("done")
@@ -296,7 +316,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_background_flush_execution_card_dispatches_without_sync_patch(self) -> None:
         state = self._make_state()
-        controller, bot, _, dispatched = self._make_controller(state)
+        controller, bot, _, dispatched, _ = self._make_controller(state)
         state["current_message_id"] = "card-2"
         state["started_at"] = time.monotonic() - 2
         state["execution_transcript"].set_reply_text("done")
@@ -308,7 +328,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_refresh_terminal_execution_card_uses_effective_message_id(self) -> None:
         state = self._make_state()
-        controller, bot, _, _ = self._make_controller(state)
+        controller, bot, _, _, _ = self._make_controller(state)
         state["last_execution_message_id"] = "archived-card"
         state["started_at"] = time.monotonic() - 3
         state["execution_transcript"].set_reply_text("complete")
@@ -320,7 +340,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
 
     def test_flush_plan_card_reuses_existing_or_updates_message_id(self) -> None:
         state = self._make_state()
-        controller, bot, _, _ = self._make_controller(state)
+        controller, bot, _, _, _ = self._make_controller(state)
         state["current_message_id"] = "exec-1"
         state["plan_message_id"] = "plan-existing"
         state["plan_turn_id"] = "turn-1"

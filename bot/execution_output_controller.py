@@ -29,6 +29,16 @@ class _ReplyText(Protocol):
     ) -> bool: ...
 
 
+class _RecordTerminalResultCard(Protocol):
+    def __call__(
+        self,
+        *,
+        message_id: str,
+        execution_message_id: str,
+        final_reply_text: str,
+    ) -> None: ...
+
+
 class ExecutionOutputController:
     def __init__(
         self,
@@ -43,6 +53,7 @@ class ExecutionOutputController:
         card_publisher_factory: Callable[[], RuntimeCardPublisher],
         dispatch_execution_card_patch: Callable[[str, ExecutionCardModel], None],
         reply_text: _ReplyText,
+        record_terminal_result_card: _RecordTerminalResultCard,
         card_reply_limit: Callable[[], int],
         terminal_result_card_limit: Callable[[], int],
         card_log_limit: Callable[[], int],
@@ -58,6 +69,7 @@ class ExecutionOutputController:
         self._card_publisher_factory = card_publisher_factory
         self._dispatch_execution_card_patch = dispatch_execution_card_patch
         self._reply_text = reply_text
+        self._record_terminal_result_card = record_terminal_result_card
         self._card_reply_limit = card_reply_limit
         self._terminal_result_card_limit = terminal_result_card_limit
         self._card_log_limit = card_log_limit
@@ -248,6 +260,7 @@ class ExecutionOutputController:
         chat_id: str,
         *,
         final_reply_text: str,
+        source_execution_message_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
     ) -> bool:
@@ -264,6 +277,11 @@ class ExecutionOutputController:
                 reply_in_thread=prompt_reply_in_thread,
             )
             if published:
+                self._record_terminal_result_card(
+                    message_id=published,
+                    execution_message_id=str(source_execution_message_id or "").strip(),
+                    final_reply_text=normalized,
+                )
                 return True
         return bool(
             self._reply_text(

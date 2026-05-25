@@ -61,6 +61,7 @@ class ExecutionRecoveryController:
         dispatch_execution_card_message: Callable[..., None],
         remove_execution_card_message: Callable[[str], bool],
         publish_terminal_result: Callable[..., bool],
+        has_recorded_terminal_result: Callable[..., bool],
         deliver_generated_images_from_snapshot: Callable[..., int],
         read_thread: Callable[[str], ThreadSnapshot],
         is_thread_not_found_error: Callable[[Exception], bool],
@@ -83,6 +84,7 @@ class ExecutionRecoveryController:
         self._dispatch_execution_card_message = dispatch_execution_card_message
         self._remove_execution_card_message = remove_execution_card_message
         self._publish_terminal_result = publish_terminal_result
+        self._has_recorded_terminal_result = has_recorded_terminal_result
         self._deliver_generated_images_from_snapshot = deliver_generated_images_from_snapshot
         self._read_thread = read_thread
         self._is_thread_not_found_error = is_thread_not_found_error
@@ -281,15 +283,15 @@ class ExecutionRecoveryController:
         normalized = str(final_reply_text or "").strip()
         if not normalized:
             return False
-        state = self._get_runtime_state(sender_id, chat_id)
-        with self._lock:
-            runtime = build_runtime_view(state)
-            if self._runtime_matches_execution(runtime, execution_message_id):
-                if runtime.execution.terminal_result_text == normalized:
-                    return True
+        if self._has_recorded_terminal_result(
+            execution_message_id=execution_message_id,
+            final_reply_text=normalized,
+        ):
+            return True
         published = self._publish_terminal_result(
             chat_id,
             final_reply_text=normalized,
+            source_execution_message_id=execution_message_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
         )

@@ -53,6 +53,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         terminal_results: list[dict[str, object]] = []
         delivered_images: list[dict[str, object]] = []
         snapshots: list[ThreadSnapshot | Exception] = []
+        recorded_terminal_results: set[tuple[str, str]] = set()
 
         def _read_thread(thread_id: str) -> ThreadSnapshot:
             del thread_id
@@ -92,15 +93,23 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             )
             or True,
             remove_execution_card_message=lambda message_id: deletes.append(message_id) or True,
-            publish_terminal_result=lambda chat_id, *, final_reply_text, prompt_message_id="", prompt_reply_in_thread=False: terminal_results.append(
-                {
-                    "chat_id": chat_id,
-                    "final_reply_text": final_reply_text,
-                    "prompt_message_id": prompt_message_id,
-                    "prompt_reply_in_thread": prompt_reply_in_thread,
-                }
-            )
-            or True,
+            publish_terminal_result=lambda chat_id, *, final_reply_text, source_execution_message_id="", prompt_message_id="", prompt_reply_in_thread=False: (
+                terminal_results.append(
+                    {
+                        "chat_id": chat_id,
+                        "final_reply_text": final_reply_text,
+                        "source_execution_message_id": source_execution_message_id,
+                        "prompt_message_id": prompt_message_id,
+                        "prompt_reply_in_thread": prompt_reply_in_thread,
+                    }
+                ),
+                recorded_terminal_results.add((str(source_execution_message_id or "").strip(), str(final_reply_text or "").strip())),
+                True,
+            )[-1],
+            has_recorded_terminal_result=lambda *, execution_message_id, final_reply_text: (
+                str(execution_message_id or "").strip(),
+                str(final_reply_text or "").strip(),
+            ) in recorded_terminal_results,
             deliver_generated_images_from_snapshot=_deliver_generated_images_from_snapshot,
             read_thread=_read_thread,
             is_thread_not_found_error=lambda exc: isinstance(exc, _ThreadNotFound),
@@ -242,6 +251,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "fallback reply",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": False,
                 }
@@ -311,6 +321,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "updated reply",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
                 }
@@ -380,6 +391,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "late final",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
                 }
@@ -454,6 +466,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "最终答案",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
                 }
@@ -501,6 +514,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "fallback answer",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-9",
                     "prompt_reply_in_thread": False,
                 }
@@ -639,6 +653,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "最终答案",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
                 }
@@ -698,6 +713,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "最终答案",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": False,
                 }
@@ -754,6 +770,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 {
                     "chat_id": "c1",
                     "final_reply_text": "Missing environment variable: `CODEX_ZH_API_KEY`.",
+                    "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": False,
                 }
