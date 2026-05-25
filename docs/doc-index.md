@@ -70,6 +70,7 @@ Status guidance:
 - [`managed-backend-startup-profile.md`](./decisions/managed-backend-startup-profile.md)
 - [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md)
 - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
+- [`feishu-raw-card-retrieval.md`](./decisions/feishu-raw-card-retrieval.md)
 - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
 
 ### Verification
@@ -104,6 +105,7 @@ Status guidance:
 | What safety rules apply to shared backend reuse and `/resume`? | [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md) |
 | What boundary should Feishu attachment / file-message support follow, including what gets downloaded and what remains outside this repository? | [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md) |
 | What is the boundary for Feishu card text projection, terminal `final_reply_text`, and best-effort extraction from ordinary cards? | [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md) |
+| How should Feishu card reads move from JSON 2.0 display output to `message_id`-based raw-card retrieval, and what is the read decision across ordinary forwards, merge-forwards, and best-effort projection? | [`feishu-raw-card-retrieval.md`](./decisions/feishu-raw-card-retrieval.md) |
 | What is the current boundary for Feishu outbound generated images, including text-before-image ordering and why arbitrary workspace images are out of scope? | [`feishu-output-images.md`](./decisions/feishu-output-images.md) |
 | What cross-instance safety rule applies before attach / resume, and why is `ThreadRuntimeLease` alone not enough? | [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md), [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | What should be covered in manual group-chat regression testing? | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |
@@ -156,6 +158,7 @@ Status guidance:
 - For Feishu card messages, terminal-result round-trip, or best-effort text
   extraction from ordinary cards:
   - [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md)
+  - [`feishu-raw-card-retrieval.md`](./decisions/feishu-raw-card-retrieval.md)
   - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
   - [`feishu-codex-design.md`](./architecture/feishu-codex-design.md)
