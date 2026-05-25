@@ -322,8 +322,8 @@ class CodexHelpDomain:
                 markdown=(
                     "调整当前飞书会话后续 turn 的设置。\n\n"
                     "推荐先用“权限预设”；模型、推理强度、审批、沙箱与协作模式都从下一轮生效。\n"
-                    f"`{_SHARED_LAST_COMMAND.feishu_usage}` 可把当前会话最近一张终态卡转成普通文本；"
-                    "如果还没有终态卡，会回退到最近执行卡。\n\n"
+                    f"`{_SHARED_LAST_COMMAND.feishu_usage}` 可导出当前会话最近一条权威终态文本；"
+                    "如果还没有终态结果，会回退到最近执行卡。\n\n"
                     "实例级 backend reset 在“更多 -> 高级操作”。"
                 ),
                 action_rows=(

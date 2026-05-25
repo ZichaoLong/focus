@@ -56,7 +56,7 @@ _SHARED_COMMAND_SPECS = (
         key="last",
         slash_name="/last",
         feishu_usage="/last text",
-        feishu_summary="把当前会话最近一张终态卡转成普通文本；若没有终态卡则回退最近执行卡。",
+        feishu_summary="导出当前会话最近一条权威终态文本；优先终态结果，若没有则回退最近执行卡。",
     ),
     SharedCommandSpec(
         key="model",
