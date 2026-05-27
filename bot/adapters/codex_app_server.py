@@ -27,6 +27,7 @@ from bot.thread_memory_mode import (
     normalize_thread_memory_mode,
     thread_memory_mode_from_memories_config,
 )
+from bot.codex_protocol.client import CodexRpcError
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,11 @@ _SUPPORTED_SANDBOX_MODES = {
     "read-only",
     "workspace-write",
     "danger-full-access",
+}
+_BUILT_IN_PERMISSION_PROFILE_BY_SANDBOX = {
+    "read-only": ":read-only",
+    "workspace-write": ":workspace",
+    "danger-full-access": ":danger-full-access",
 }
 
 
@@ -170,7 +176,12 @@ class CodexAppServerAdapter(AgentAdapter):
             approval_policy=approval_policy,
             sandbox=sandbox,
         )
-        result = self._rpc.request("thread/start", params)
+        result = self._request_with_permissions_fallback(
+            "thread/start",
+            params,
+            legacy_field="sandbox",
+            legacy_value=self._normalize_sandbox_mode(sandbox or self._config.sandbox),
+        )
         self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
 
@@ -337,18 +348,28 @@ class CodexAppServerAdapter(AgentAdapter):
             "model": effective_model,
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
-            "sandboxPolicy": self._sandbox_policy_payload(sandbox or self._config.sandbox),
             "effort": effective_reasoning,
             "personality": self._config.personality or None,
             "serviceTier": self._config.service_tier or None,
         }
+        effective_sandbox = sandbox or self._config.sandbox
+        permissions = self._permission_profile_id_for_sandbox(effective_sandbox)
+        if permissions:
+            params["permissions"] = permissions
+        else:
+            params["sandboxPolicy"] = self._sandbox_policy_payload(effective_sandbox)
         params["collaborationMode"] = self._collaboration_mode_payload(
             effective_collaboration_mode,
             model=effective_model,
             thread_id=thread_id,
             reasoning_effort=effective_reasoning,
         )
-        return self._rpc.request("turn/start", _compact(params))
+        return self._request_with_permissions_fallback(
+            "turn/start",
+            _compact(params),
+            legacy_field="sandboxPolicy",
+            legacy_value=self._sandbox_policy_payload(effective_sandbox),
+        )
 
     def interrupt_turn(self, *, thread_id: str, turn_id: str) -> None:
         self._rpc.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
@@ -398,7 +419,6 @@ class CodexAppServerAdapter(AgentAdapter):
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
             "cwd": cwd,
-            "sandbox": self._normalize_sandbox_mode(sandbox or self._config.sandbox),
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "personality": self._config.personality or None,
@@ -406,12 +426,48 @@ class CodexAppServerAdapter(AgentAdapter):
             "modelProvider": model_provider or self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
+        effective_sandbox = sandbox or self._config.sandbox
+        permissions = self._permission_profile_id_for_sandbox(effective_sandbox)
+        if permissions:
+            params["permissions"] = permissions
+        else:
+            params["sandbox"] = self._normalize_sandbox_mode(effective_sandbox)
         merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
         if merged_config:
             params["config"] = merged_config
         if include_service_name:
             params["serviceName"] = self._config.service_name or None
         return _compact(params)
+
+    def _request_with_permissions_fallback(
+        self,
+        method: str,
+        params: dict[str, Any],
+        *,
+        legacy_field: str,
+        legacy_value: Any,
+    ) -> dict[str, Any]:
+        try:
+            return self._rpc.request(method, params)
+        except CodexRpcError as exc:
+            if not self._should_retry_without_permissions(exc.error, params):
+                raise
+            retry_params = dict(params)
+            retry_params.pop("permissions", None)
+            if legacy_value is not None:
+                retry_params[legacy_field] = legacy_value
+            logger.info("rpc %s 不支持 permissions 字段，回退到 legacy %s", method, legacy_field)
+            return self._rpc.request(method, retry_params)
+
+    @staticmethod
+    def _should_retry_without_permissions(error: dict[str, Any], params: dict[str, Any]) -> bool:
+        if "permissions" not in params:
+            return False
+        code = error.get("code")
+        message = str(error.get("message") or "").lower()
+        if code == -32602 and "permissions" in message:
+            return True
+        return code == -32600 and "permissions" in message
 
     @staticmethod
     def _merge_request_config(
@@ -433,6 +489,13 @@ class CodexAppServerAdapter(AgentAdapter):
         if value not in _SUPPORTED_SANDBOX_MODES:
             raise ValueError("sandbox 仅支持 read-only、workspace-write、danger-full-access")
         return value
+
+    @classmethod
+    def _permission_profile_id_for_sandbox(cls, mode: str | None) -> str | None:
+        normalized = cls._normalize_sandbox_mode(mode)
+        if normalized is None:
+            return None
+        return _BUILT_IN_PERMISSION_PROFILE_BY_SANDBOX.get(normalized)
 
     @classmethod
     def _sandbox_policy_payload(cls, mode: str | None) -> dict[str, Any] | None:
