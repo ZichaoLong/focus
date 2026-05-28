@@ -3606,7 +3606,6 @@ class CodexHandlerTests(unittest.TestCase):
                 },
             )
         )
-        self.assertEqual(apply_response["toast"], "正在恢复 goal…")
         self.assertIn("正在同步 thread、goal 与当前会话设置", apply_response["card"]["elements"][0]["content"])
         handler._runtime_call(lambda: None)
         _, final_card = handler.bot.cards[-1]
@@ -3712,7 +3711,7 @@ class CodexHandlerTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(response["toast"], "正在恢复 goal 并恢复当前会话推送…")
+        self.assertIn("正在同步 thread、goal 与当前会话设置", response["card"]["elements"][0]["content"])
         handler._runtime_call(lambda: None)
 
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
@@ -3774,7 +3773,10 @@ class CodexHandlerTests(unittest.TestCase):
         worker.start()
         worker.join(timeout=0.2)
         self.assertFalse(worker.is_alive())
-        self.assertEqual(response_holder["response"]["toast"], "正在恢复 goal 并恢复当前会话推送…")
+        self.assertIn(
+            "正在同步 thread、goal 与当前会话设置",
+            response_holder["response"]["card"]["elements"][0]["content"],
+        )
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
 
         blocker_release.set()
@@ -7265,8 +7267,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "resume_thread", "thread_id": "thread-1", "thread_title": "demo"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
-        self.assertIn("正在恢复线程", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
         handler._runtime_call(lambda: None)
 
     def test_resume_card_action_failure_refreshes_threads_card(self) -> None:
@@ -7297,7 +7298,7 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "resume_thread", "thread_id": "thread-missing", "thread_title": "missing"},
         ))
 
-        self.assertEqual(response["toast"], "正在恢复线程…")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
         handler._runtime_call(lambda: None)
 
         self.assertIn("恢复线程失败", bot.replies[-1][1])
@@ -7308,6 +7309,98 @@ class CodexHandlerTests(unittest.TestCase):
             if isinstance(element, dict) and element.get("tag") == "markdown"
         )
         self.assertIn("thread-1", content)
+
+    def test_attach_binding_card_action_returns_ack_card_then_sends_result_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        response = self._unpack_card_response(
+            handler.handle_card_action("ou_user", "c1", "msg-attach", {"action": "attach_runtime"})
+        )
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复飞书推送")
+        self.assertIn("当前会话推送", response["card"]["elements"][0]["content"])
+        handler._runtime_call(lambda: None)
+
+        _, final_card = bot.cards[-1]
+        self.assertEqual(final_card["header"]["title"]["content"], "Codex 已附着飞书推送")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
+
+    def test_attach_thread_card_action_returns_ack_card_then_sends_result_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-attach",
+                {"action": "attach_runtime", "scope": "thread"},
+            )
+        )
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复飞书推送")
+        self.assertIn("当前线程推送", response["card"]["elements"][0]["content"])
+        handler._runtime_call(lambda: None)
+
+        _, final_card = bot.cards[-1]
+        self.assertEqual(final_card["header"]["title"]["content"], "Codex 已附着飞书推送")
+
+    def test_attach_service_card_action_returns_ack_card_then_sends_result_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-attach",
+                {"action": "attach_runtime", "scope": "service"},
+            )
+        )
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复飞书推送")
+        self.assertIn("当前实例推送", response["card"]["elements"][0]["content"])
+        handler._runtime_call(lambda: None)
+
+        _, final_card = bot.cards[-1]
+        self.assertEqual(final_card["header"]["title"]["content"], "Codex 已附着飞书推送")
 
     def test_show_rename_form_registers_pending_message(self) -> None:
         handler, _ = self._make_handler()

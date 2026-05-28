@@ -525,6 +525,9 @@ class CodexHandler(BotHandler):
             get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
             set_thread_goal=lambda thread_id, **kwargs: self._adapter.set_thread_goal(thread_id, **kwargs),
             clear_thread_goal=lambda thread_id: self._adapter.clear_thread_goal(thread_id),
+            submit_to_runtime=self._runtime_submit,
+            reply_text=self._reply_text,
+            reply_card=self._reply_card,
             submit_prompt_for_control=self._submit_prompt_for_control,
             prompt_write_denial_check=self._thread_access_policy.prompt_write_denial_check,
             detached_runtime_attach_check=self._detached_runtime_attach_check,
@@ -836,15 +839,14 @@ class CodexHandler(BotHandler):
 
     @staticmethod
     def _should_bypass_runtime_for_card_action(action_value: dict[str, Any]) -> bool:
-        # Only the detached goal resume confirmation is fast-acked outside the
-        # runtime loop. It returns "accepted" immediately while the real state
-        # mutation still re-enters the serialized runtime queue.
         action = str(action_value.get("action", "") or "").strip()
-        if action != "goal_apply_confirm":
-            return False
-        objective = str(action_value.get("objective", "") or "").strip()
-        status = str(action_value.get("status", "") or "").strip()
-        return not objective and status == "active"
+        if action in {"resume_thread", "attach_runtime", "goal_resume"}:
+            return True
+        if action == "goal_apply_confirm":
+            objective = str(action_value.get("objective", "") or "").strip()
+            status = str(action_value.get("status", "") or "").strip()
+            return not objective and status == "active"
+        return False
 
     def _handle_card_action_impl(
         self, sender_id: str, chat_id: str, message_id: str, action_value: dict

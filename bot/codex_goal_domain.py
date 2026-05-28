@@ -117,11 +117,7 @@ class CodexGoalDomain:
                     False,
                     message_id,
                 )
-                return make_card_response(
-                    card=self._build_goal_resume_pending_card(),
-                    toast="正在恢复 goal…",
-                    toast_type="success",
-                )
+                return make_card_response(card=self._build_goal_resume_pending_card())
             if action == "goal_clear":
                 result = self._clear_goal(sender_id, chat_id, message_id=message_id)
                 return make_card_response(card=result.card, toast="已清除 goal。", toast_type="success")
@@ -134,7 +130,9 @@ class CodexGoalDomain:
                     attach_binding=str(action_value.get("attach_binding", "") or "").strip().lower() == "true",
                     message_id=message_id,
                 )
-                return make_card_response(card=result.card, toast=toast, toast_type="success")
+                if toast:
+                    return make_card_response(card=result.card, toast=toast, toast_type="success")
+                return make_card_response(card=result.card)
         except Exception as exc:
             return make_card_response(toast=str(exc) or "goal 操作失败", toast_type="warning")
         return P2CardActionTriggerResponse()
@@ -256,10 +254,7 @@ class CodexGoalDomain:
                 attach_binding,
                 message_id,
             )
-            return (
-                CommandResult(card=self._build_goal_resume_pending_card()),
-                "正在恢复 goal 并恢复当前会话推送…" if attach_binding else "正在恢复 goal…",
-            )
+            return (CommandResult(card=self._build_goal_resume_pending_card()), "")
         if attach_binding:
             self._ports.attach_current_binding(sender_id, chat_id, message_id)
         if normalized_objective:
@@ -309,6 +304,7 @@ class CodexGoalDomain:
             "Codex 正在恢复 Goal",
             "正在同步 thread、goal 与当前会话设置；完成后会自动回复结果。",
         )
+
 
     def _set_goal_direct(
         self,

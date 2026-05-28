@@ -383,11 +383,7 @@ class CodexThreadsUiDomain:
             message_id=message_id,
             refresh_threads_message_id=message_id,
         )
-        return make_card_response(
-            card=build_threads_pending_card(thread_id, title=thread_title),
-            toast="正在恢复线程…",
-            toast_type="success",
-        )
+        return make_card_response(card=build_threads_pending_card(thread_id, title=thread_title))
 
     def _resume_target_on_runtime(
         self,

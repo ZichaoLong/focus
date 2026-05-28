@@ -1,15 +1,19 @@
-# `/goal resume` 恢复矩阵与实现方案 — 2026-05-28
+# `/goal resume` / `attach` / fast-ack 调查结论与恢复矩阵 — 2026-05-28
 
 Status: working material under `docs/_work/`. Not a repository fact.
 
 本文记录当前 `feishu-codex` 在 `/goal resume`、`/attach`、`thread/resume`、
 binding-wise runtime settings 与上游 goal 自动续跑之间的真实关系，并给出后续可落地的恢复矩阵与实现方案。
 
-本文不是正式合同。它的作用是：
+本文不是正式合同。它是面向长期参考的调查/结论文档，作用是：
 
 - 把这轮分析结论固定下来，避免后续再把 `thread/resume`、`thread/settings/update` 与 `goal resume` 混成一件事
 - 给后续修复 `/goal resume` 权限不生效问题提供一份明确的状态矩阵
 - 给“飞书卡片 action 回调超时”提供一条工程上可执行的修复路径
+
+若要把本轮改造任务设置为 goal，并给实现过程提供短版约束，请优先引用：
+
+- `docs/_work/goal-fast-ack-execution-constraints-2026-05-28.zh-CN.md`
 
 另见：
 
@@ -453,9 +457,11 @@ loaded thread 的 permission 修正，不应依赖 `thread/resume`。
 1. action callback 立即返回
    - 含义是 `accepted`
    - 不是 `completed`
-   - 可以返回：
-     - toast：`正在恢复 goal…`
-     - 或一张轻量“已接收，后台处理中”的过渡卡
+   - callback 统一返回：
+     - 原卡轻量 ACK patch
+   - 原卡 ACK patch 只表达“已接收，后台处理中”
+   - 原卡 ACK patch 不承担最终结果语义
+   - 同步 callback 不承载最终结果卡
 
 2. 真正恢复逻辑改为后台 submit 到本项目的全局 runtime loop
    - 若 `attach_binding=true`，先 attach
@@ -466,13 +472,152 @@ loaded thread 的 permission 修正，不应依赖 `thread/resume`。
 
 3. 完成后再主动发送最终结果
    - 优先发送一张结果卡
+   - 失败时也要主动发送失败卡
    - 不要求依赖同步 callback 对原卡做最终 patch
+   - 第一版明确不把“完成后再 patch 原卡”作为能力合同
 
 这样可解决：
 
 - rollout 很大时 `thread/resume` 过慢
 - 飞书同步 action callback 超时
 - 用户先看到“目标回调服务超时未响应”，但后台其实稍后又成功的混乱体验
+
+### 6.4.1 为什么结果卡必须迁到后台主动发送
+
+对这类 fast-ack 动作，同步 callback 的职责只应表达：
+
+- `accepted`
+
+而不应继续承担：
+
+- 最终成功结果卡
+- 最终失败结果卡
+
+否则会出现当前 `attach` 类动作已经暴露出的混乱体验：
+
+- 飞书客户端先报 callback 超时
+- 真实动作随后又成功
+- 但由于结果卡原本只存在于同步 callback 返回里，用户最终什么也收不到
+
+因此一旦采用 fast-ack，就必须同步采用：
+
+- 后台完成后主动发送成功结果卡
+- 后台失败后主动发送失败卡
+
+这不是可选优化，而是必需配套。
+
+这里的关键区分是：
+
+- 点击当下的 callback patch 原卡，只是 ACK
+- 后台完成后的结果卡，才是 completed
+
+两者不能混为一谈。
+
+### 6.4.2 后台主动发送结果卡的风险与控制
+
+把结果卡迁到后台主动发送后，会引入几类新的工程关注点，但都可控。
+
+1. 结果卡可能重复
+   - 若用户重复点击，或后台动作重试，可能发送两张相近结果卡
+   - 第一版接受这点，不引入复杂去重
+   - 只要真正状态修改仍在同一个 runtime loop 串行执行，这属于展示冗余，不是状态破坏
+
+2. `accepted` 时看到的上下文，与 `completed` 时的真实结果可能不完全一致
+   - 尤其是 `service attach` 这类批量动作
+   - 点击时的 detached 集合，可能在真正执行前已被别的串行动作改变
+   - 因此 completed 卡必须反映“执行时的真实结果”，而不是点击时的快照
+
+3. 结果卡发送本身也可能失败
+   - 这和普通飞书发消息失败属于同一类风险
+   - 失败时沿用当前项目已有的发送失败日志与补救路径即可
+   - 不应反过来把 callback 再改回同步承载结果
+
+4. 结果卡不再 patch 原卡
+   - 第一版不追求把原按钮卡 patch 成终态
+   - 入口当下统一轻量 patch 原卡为 ACK 态
+   - 但 completed 一律改为后台新发结果卡，而不是回头 patch 原卡
+   - 这样合同最清楚，也最不依赖飞书 callback 生命周期
+
+总体判断：
+
+- 风险主要在展示层，而不是状态层
+- 只要真实状态修改仍回到同一个 runtime loop 串行执行，就不会引入新的并发状态破坏
+
+### 6.4.3 轻量 ACK 是否足以消除飞书 callback 超时
+
+前提是：
+
+- 该动作的同步 callback 确实绕开了 `_runtime_call(...)` 的阻塞等待
+- 且 callback 内不再同步执行 `thread/resume` / `attach` / backend reset 这类重操作
+
+在此前提下，一次很轻的原卡 ACK patch 不会重新诱发“目标服务器回调超时未响应”，只要它不重新把 callback 变回重操作。
+
+更准确地说：
+
+- callback 只负责快速返回一个很小的 response payload
+- 最多再附带一个很轻的 ACK 视图更新
+- 真正耗时的动作已经移到后台 runtime loop
+- 因而飞书看到的是一次及时 ACK，而不是等待重操作完成
+
+剩余只可能有两类异常：
+
+- 极端情况下 callback 线程自身被外部阻塞
+- 或飞书网络 / 服务端异常
+
+它们不属于本项目这次要处理的语义问题。
+
+### 6.4.4 统一推广范围
+
+在 `goal_apply_confirm(active)` 验证通过后，后续统一 fast-ack 方案建议按以下顺序推进：
+
+1. `goal_apply_confirm(active)`
+   - 收敛为原卡 ACK patch
+   - completed 卡改为后台主动发送
+
+2. `resume_thread`
+   - 轻量 accepted
+   - 点击当下 patch 原卡为“正在恢复线程…”
+   - completed 卡为“已切换线程”卡或历史预览卡
+
+3. `attach_runtime` scope=`binding`
+   - 轻量 accepted
+   - 点击当下 patch 原卡为“正在恢复当前会话推送…”
+   - completed 卡为当前会话 attach 结果卡
+
+4. `attach_runtime` scope=`thread`
+   - 轻量 accepted
+   - 点击当下 patch 原卡为“正在恢复当前线程推送…”
+   - completed 卡为 thread 级 attach 结果卡
+
+5. `attach_runtime` scope=`service`
+   - 轻量 accepted
+   - 点击当下 patch 原卡为“正在恢复当前实例推送…”
+   - completed 卡为实例级批量汇总卡
+   - 保留“部分成功、部分 blocked”的现有合同
+
+6. `reset_backend`
+   - 当前不纳入这一轮 fast-ack
+   - 原因不是它绝不能异步，而是当前用户痛点主要不在 reset 本身，而在 reset 之后的 attach
+   - 若 reset 结果卡在当前实现下能稳定返回，则优先保持现状，避免把本来可接受的动作一并改复杂
+
+### 6.4.5 为什么第一版不再返回 toast
+
+在当前收敛方案里，fast-ack 的直接反馈统一由：
+
+- 原卡轻量 ACK patch
+
+承担。
+
+不再额外返回 toast，原因是：
+
+- ACK 卡本身已经足以表达“已接收”
+- 少一层瞬时提示，界面更干净
+- 也能自然降低重复点击，而不必再依赖 toast 做即时确认
+
+因此第一版统一采用：
+
+- fast ack = 原卡轻量 ACK patch
+- completed = 后台新发结果卡
 
 ### 6.5 `goal_apply_confirm` 的边界与约束
 

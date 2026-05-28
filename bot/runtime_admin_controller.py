@@ -148,6 +148,9 @@ class RuntimeAdminController:
         get_thread_goal: Callable[[str], ThreadGoalSummary | None],
         set_thread_goal: Callable[..., ThreadGoalSummary],
         clear_thread_goal: Callable[[str], bool],
+        submit_to_runtime: Callable[..., None],
+        reply_text: Callable[..., None],
+        reply_card: Callable[..., None],
         submit_prompt_for_control: Callable[..., dict[str, Any]],
         prompt_write_denial_check: Callable[[ChatBindingKey, str, str, str], ReasonedCheck],
         detached_runtime_attach_check: Callable[[str], ReasonedCheck],
@@ -184,6 +187,9 @@ class RuntimeAdminController:
         self._get_thread_goal = get_thread_goal
         self._set_thread_goal = set_thread_goal
         self._clear_thread_goal = clear_thread_goal
+        self._submit_to_runtime = submit_to_runtime
+        self._reply_text = reply_text
+        self._reply_card = reply_card
         self._submit_prompt_for_control = submit_prompt_for_control
         self._prompt_write_denial_check = prompt_write_denial_check
         self._detached_runtime_attach_check = detached_runtime_attach_check
@@ -1289,18 +1295,48 @@ class RuntimeAdminController:
         message_id: str,
         action_value: dict[str, Any],
     ) -> P2CardActionTriggerResponse:
-        del message_id
         binding = self._effective_binding_key(sender_id, chat_id)
         scope = str(action_value.get("scope", "") or "").strip().lower()
         thread_id = str(action_value.get("thread_id", "") or "").strip()
+        self._submit_to_runtime(
+            self._run_attach_action_on_runtime,
+            binding,
+            scope,
+            message_id=message_id,
+            thread_id=thread_id,
+        )
+        if scope == "service":
+            ack_card = build_markdown_card(
+                "Codex 正在恢复飞书推送",
+                "正在恢复当前实例推送；完成后会自动回复结果。",
+            )
+        elif scope == "thread":
+            ack_card = build_markdown_card(
+                "Codex 正在恢复飞书推送",
+                "正在恢复当前线程推送；完成后会自动回复结果。",
+            )
+        else:
+            ack_card = build_markdown_card(
+                "Codex 正在恢复飞书推送",
+                "正在恢复当前会话推送；完成后会自动回复结果。",
+            )
+        return make_card_response(card=ack_card)
+
+    def _run_attach_action_on_runtime(
+        self,
+        binding: ChatBindingKey,
+        scope: str,
+        *,
+        message_id: str = "",
+        thread_id: str = "",
+    ) -> None:
+        chat_id = binding[1]
         try:
             if scope == "service":
                 card = self._build_service_attach_result_card(self.attach_service())
-                toast = "已附着当前实例。"
             elif scope == "thread":
                 target_thread_id = thread_id or self._binding_thread_id_or_raise(binding)
                 card = self._build_thread_attach_result_card(self.attach_thread(target_thread_id))
-                toast = "已附着当前线程。"
             else:
                 result = self.attach_binding(binding)
                 description = (
@@ -1319,14 +1355,14 @@ class RuntimeAdminController:
                     ),
                     template=template,
                 )
-                toast = "已附着当前会话。"
         except Exception as exc:
-            return make_card_response(
-                card=build_markdown_card("Codex 飞书推送附着失败", str(exc) or "attach 失败", template="red"),
-                toast=str(exc) or "attach 失败",
-                toast_type="warning",
+            self._reply_card(
+                chat_id,
+                build_markdown_card("Codex 飞书推送附着失败", str(exc) or "attach 失败", template="red"),
+                message_id=message_id,
             )
-        return make_card_response(card=card, toast=toast, toast_type="success")
+            return
+        self._reply_card(chat_id, card, message_id=message_id)
 
     def handle_dismiss_attach_action(self) -> P2CardActionTriggerResponse:
         return make_card_response(
