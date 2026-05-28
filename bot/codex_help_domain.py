@@ -66,8 +66,15 @@ class _HelpCommandButtonSpec:
 
 
 @dataclass(frozen=True)
+class _HelpDirectActionButtonSpec:
+    label: str
+    value: dict[str, Any]
+    button_type: str = "default"
+
+
+@dataclass(frozen=True)
 class _HelpActionRowSpec:
-    buttons: tuple[_HelpPageButtonSpec | _HelpCommandButtonSpec, ...]
+    buttons: tuple[_HelpPageButtonSpec | _HelpCommandButtonSpec | _HelpDirectActionButtonSpec, ...]
     layout: str = ""
 
 
@@ -397,15 +404,13 @@ class CodexHelpDomain:
                 action_rows=(
                     _HelpActionRowSpec(
                         buttons=(
-                            _HelpCommandButtonSpec(
+                            _HelpDirectActionButtonSpec(
                                 label="附着当前线程",
-                                command="/attach thread",
-                                title="Codex 已附着当前线程",
+                                value={"action": "attach_runtime", "scope": "thread"},
                             ),
-                            _HelpCommandButtonSpec(
+                            _HelpDirectActionButtonSpec(
                                 label="附着当前会话",
-                                command="/attach",
-                                title="Codex 已附着飞书推送",
+                                value={"action": "attach_runtime"},
                             ),
                         ),
                         layout="bisected",
@@ -689,7 +694,10 @@ class CodexHelpDomain:
             )
         return spec.markdown
 
-    def _render_button(self, spec: _HelpPageButtonSpec | _HelpCommandButtonSpec) -> dict[str, Any]:
+    def _render_button(
+        self,
+        spec: _HelpPageButtonSpec | _HelpCommandButtonSpec | _HelpDirectActionButtonSpec,
+    ) -> dict[str, Any]:
         if isinstance(spec, _HelpPageButtonSpec):
             return {
                 "tag": "button",
@@ -699,6 +707,13 @@ class CodexHelpDomain:
                     "action": "show_help_page",
                     "page": spec.page,
                 },
+            }
+        if isinstance(spec, _HelpDirectActionButtonSpec):
+            return {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": spec.label},
+                "type": spec.button_type,
+                "value": dict(spec.value),
             }
         return {
             "tag": "button",
@@ -751,6 +766,13 @@ class CodexHelpDomain:
         toggle_button = self._binding_push_toggle_button(
             str(runtime_state.get("feishu_runtime_state", "") or "")
         )
+        attach_binding_button: _HelpCommandButtonSpec | _HelpDirectActionButtonSpec = toggle_button
+        if isinstance(toggle_button, _HelpCommandButtonSpec) and toggle_button.command == _SHARED_ATTACH_COMMAND.slash_name:
+            attach_binding_button = _HelpDirectActionButtonSpec(
+                label=toggle_button.label,
+                value={"action": "attach_runtime"},
+                button_type=toggle_button.button_type,
+            )
         return (
             _HelpActionRowSpec(
                 buttons=(
@@ -769,11 +791,10 @@ class CodexHelpDomain:
             ),
             _HelpActionRowSpec(
                 buttons=(
-                    toggle_button,
-                    _HelpCommandButtonSpec(
+                    attach_binding_button,
+                    _HelpDirectActionButtonSpec(
                         label="附着当前实例",
-                        command="/attach service",
-                        title="Codex 已附着当前实例",
+                        value={"action": "attach_runtime", "scope": "service"},
                     ),
                 ),
                 layout="bisected",

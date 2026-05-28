@@ -54,6 +54,9 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         pending_requests: list[dict[str, object]] = []
         reset_calls: list[bool] = []
         sent_images: list[tuple[str, str]] = []
+        runtime_submissions: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
+        reply_texts: list[tuple[str, str, str]] = []
+        reply_cards: list[tuple[str, dict[str, object], str]] = []
         submitted_prompts: list[dict[str, object]] = []
         thread_memory_modes: dict[str, str] = {}
         thread_goals: dict[str, ThreadGoalSummary] = {}
@@ -131,6 +134,9 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             get_thread_goal=lambda thread_id: thread_goals.get(thread_id),
             set_thread_goal=_set_thread_goal,
             clear_thread_goal=lambda thread_id: thread_goals.pop(thread_id, None) is not None,
+            submit_to_runtime=lambda fn, *args, **kwargs: runtime_submissions.append((fn, args, kwargs)),
+            reply_text=lambda chat_id, text, message_id="": reply_texts.append((chat_id, text, message_id)),
+            reply_card=lambda chat_id, card, message_id="": reply_cards.append((chat_id, card, message_id)),
             submit_prompt_for_control=lambda binding, **kwargs: submitted_prompts.append(
                 {"binding": binding, **kwargs}
             ) or {

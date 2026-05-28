@@ -1604,7 +1604,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
 
     def test_group_stored_binding_hydrates_detached_and_next_prompt_attaches(self) -> None:
-        tempdir = tempfile.TemporaryDirectory()
+        tempdir = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
 
@@ -6305,7 +6305,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
         pending_content = response["card"]["elements"][0]["content"]
         self.assertIn("正在恢复线程", pending_content)
-        self.assertEqual(response["toast"], "正在恢复线程…")
+        self.assertNotIn("toast", response)
         handler._runtime_call(lambda: None)
 
         patched = json.loads(next(content for message_id, content in bot.patches if message_id == "msg-session"))
@@ -6450,6 +6450,11 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
             ["恢复当前会话", "附着当前实例"],
+        )
+        self.assertEqual(action_elements[1]["actions"][0]["value"], {"action": "attach_runtime"})
+        self.assertEqual(
+            action_elements[1]["actions"][1]["value"],
+            {"action": "attach_runtime", "scope": "service"},
         )
 
     def test_help_thread_page_mentions_resume_scope_and_local_resume(self) -> None:
@@ -6799,6 +6804,14 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
             ["附着当前线程", "附着当前会话"],
+        )
+        self.assertEqual(
+            self._action_elements(response["card"])[0]["actions"][0]["value"],
+            {"action": "attach_runtime", "scope": "thread"},
+        )
+        self.assertEqual(
+            self._action_elements(response["card"])[0]["actions"][1]["value"],
+            {"action": "attach_runtime"},
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
@@ -7267,7 +7280,8 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "resume_thread", "thread_id": "thread-1", "thread_title": "demo"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
+        self.assertIn("正在恢复线程", response["card"]["elements"][0]["content"])
         handler._runtime_call(lambda: None)
 
     def test_resume_card_action_failure_refreshes_threads_card(self) -> None:
@@ -7298,7 +7312,8 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "resume_thread", "thread_id": "thread-missing", "thread_title": "missing"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
+        self.assertIn("正在恢复线程", response["card"]["elements"][0]["content"])
         handler._runtime_call(lambda: None)
 
         self.assertIn("恢复线程失败", bot.replies[-1][1])

@@ -395,7 +395,13 @@ class CodexThreadsUiDomain:
         refresh_threads_message_id: str = "",
     ) -> None:
         try:
-            thread = self._ports.resolve_resume_target(target)
+            # Card actions already carry an explicit thread_id, so this path
+            # should read that thread directly instead of re-entering
+            # name-based resolution rules used by `/resume <thread_name>`.
+            thread = self._ports.read_thread_summary_authoritatively(
+                target,
+                original_arg=target,
+            )
         except Exception as exc:
             logger.exception("解析恢复目标失败")
             self._ports.reply_text(chat_id, f"恢复线程失败：{exc}", message_id=message_id)

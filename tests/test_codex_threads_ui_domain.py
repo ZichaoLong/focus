@@ -9,6 +9,7 @@ class _PortsStub:
     def __init__(self) -> None:
         self.archive_calls: list[tuple[str, ThreadSummary | None]] = []
         self.compact_calls: list[str] = []
+        self.read_calls: list[tuple[str, str]] = []
         self.reply_calls: list[tuple[str, str, str]] = []
         self.resolve_calls: list[str] = []
         self.rename_calls: list[tuple[str, str]] = []
@@ -82,7 +83,7 @@ class _PortsStub:
         *,
         original_arg: str,
     ) -> ThreadSummary:
-        del thread_id, original_arg
+        self.read_calls.append((thread_id, original_arg))
         return self.thread
 
     def _archive_thread_for_control(
@@ -185,7 +186,8 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
             refresh_threads_message_id="msg-session",
         )
 
-        self.assertEqual(ports_stub.resolve_calls, ["thread-1"])
+        self.assertEqual(ports_stub.resolve_calls, [])
+        self.assertEqual(ports_stub.read_calls, [("thread-1", "thread-1")])
         self.assertEqual(submit_calls, [])
         self.assertEqual(len(resume_calls), 1)
         args, kwargs = resume_calls[0]
