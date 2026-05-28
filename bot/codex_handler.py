@@ -819,6 +819,13 @@ class CodexHandler(BotHandler):
     def handle_card_action(
         self, sender_id: str, chat_id: str, message_id: str, action_value: dict
     ) -> P2CardActionTriggerResponse:
+        if self._should_bypass_runtime_for_card_action(action_value):
+            return self._handle_card_action_impl(
+                sender_id,
+                chat_id,
+                message_id,
+                action_value,
+            )
         return self._runtime_call(
             self._handle_card_action_impl,
             sender_id,
@@ -826,6 +833,18 @@ class CodexHandler(BotHandler):
             message_id,
             action_value,
         )
+
+    @staticmethod
+    def _should_bypass_runtime_for_card_action(action_value: dict[str, Any]) -> bool:
+        # Only the detached goal resume confirmation is fast-acked outside the
+        # runtime loop. It returns "accepted" immediately while the real state
+        # mutation still re-enters the serialized runtime queue.
+        action = str(action_value.get("action", "") or "").strip()
+        if action != "goal_apply_confirm":
+            return False
+        objective = str(action_value.get("objective", "") or "").strip()
+        status = str(action_value.get("status", "") or "").strip()
+        return not objective and status == "active"
 
     def _handle_card_action_impl(
         self, sender_id: str, chat_id: str, message_id: str, action_value: dict

@@ -3718,6 +3718,72 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
 
+    def test_goal_apply_confirm_fast_ack_bypasses_busy_runtime_queue(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="paused",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        blocker_started = threading.Event()
+        blocker_release = threading.Event()
+        handler._runtime_submit(
+            lambda: (
+                blocker_started.set(),
+                blocker_release.wait(2),
+            )
+        )
+        self.assertTrue(blocker_started.wait(1))
+
+        response_holder: dict[str, dict] = {}
+
+        def invoke() -> None:
+            response_holder["response"] = self._unpack_card_response(
+                handler.handle_card_action(
+                    "ou_user",
+                    "c1",
+                    "msg-goal",
+                    {
+                        "action": "goal_apply_confirm",
+                        "status": "active",
+                        "attach_binding": "true",
+                    },
+                )
+            )
+
+        worker = threading.Thread(target=invoke)
+        worker.start()
+        worker.join(timeout=0.2)
+        self.assertFalse(worker.is_alive())
+        self.assertEqual(response_holder["response"]["toast"], "正在恢复 goal 并恢复当前会话推送…")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
+
+        blocker_release.set()
+        worker.join(timeout=1)
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+
     def test_goal_set_detached_confirm_can_attach_before_apply(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(

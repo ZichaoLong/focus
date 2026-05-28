@@ -430,29 +430,141 @@ loaded thread 的 permission 修正，不应依赖 `thread/resume`。
   - `thread/settings/update`
   - 不再额外触发重复的 active 恢复动作，避免与 app-server 自动续跑打架
 
-### 6.4 步骤四：把 goal 卡片确认动作改成异步 ACK
+### 6.4 步骤四：只把 `goal_apply_confirm` 做成最小异步 ACK
 
-当前 `goal_apply_confirm` 不应继续同步执行完整恢复链路。
+当前更合适的第一步，不是把所有“可能较重”的卡片动作都异步化，而是只旁路：
 
-建议改成：
+- `goal_apply_confirm`
+
+它的特点是：
+
+- 本质是触发一条恢复链路，而不是要求“原卡必须同步变成最终态”
+- 会触发 attach / `thread/resume` / `thread/settings/update` / `goal set(active)` 这类耗时操作
+- 用户更容易接受“先收到已接收，再等最终结果”
+
+当前第一版实现再额外收窄为：
+
+- 只旁路 `goal_apply_confirm` 中 `status=active` 且未携带 `objective` 的恢复路径
+- 也就是只覆盖“恢复 goal / 恢复推送”这一类重操作
+- `goal_apply_confirm` 的其他分支（如 detached 下直接 set goal）继续保留现有同步路径，避免扩大合同变化
+
+建议语义：
 
 1. action callback 立即返回
-   - toast：`已接收，后台处理中`
+   - 含义是 `accepted`
+   - 不是 `completed`
+   - 可以返回：
+     - toast：`正在恢复 goal…`
+     - 或一张轻量“已接收，后台处理中”的过渡卡
 
-2. 后台任务执行：
-   - attach
-   - `thread/resume` / `thread/settings/update`
-   - `goal resume`
+2. 真正恢复逻辑改为后台 submit 到本项目的全局 runtime loop
+   - 若 `attach_binding=true`，先 attach
+   - 再按恢复矩阵执行：
+     - `thread/resume`
+     - `thread/settings/update`
+     - `thread/goal/set(active)`（如仍需要）
 
-3. 完成后再：
-   - patch 原确认卡
-   - 或发送一张结果卡
+3. 完成后再主动发送最终结果
+   - 优先发送一张结果卡
+   - 不要求依赖同步 callback 对原卡做最终 patch
 
 这样可解决：
 
 - rollout 很大时 `thread/resume` 过慢
 - 飞书同步 action callback 超时
 - 用户先看到“目标回调服务超时未响应”，但后台其实稍后又成功的混乱体验
+
+### 6.5 `goal_apply_confirm` 的边界与约束
+
+#### 6.5.1 只做最小旁路，不扩大到其他动作
+
+当前不建议在同一轮里把以下动作一起做成异步旁路：
+
+- `resume_thread`
+- `attach_runtime`
+- `reset_backend`
+
+原因不是它们“绝对不能异步”，而是：
+
+- 它们对原卡同步更新的依赖通常更强
+- 它们的 accepted/completed 语义需要逐个重新定义
+- 在收益尚未验证前，同时改动太多动作，会放大合同变化与回归风险
+
+因此当前文档明确约束为：
+
+- 只旁路 `goal_apply_confirm`
+- 其他动作继续保留现有同步路径
+
+#### 6.5.2 旁路后仍坚持 runtime 串行执行
+
+`goal_apply_confirm` 的异步化，只应把：
+
+- 飞书 callback 的同步等待
+
+从主链路拿掉。
+
+它不应改变以下事实：
+
+- 真正的状态修改仍在本项目全局 runtime loop 中串行执行
+- 不引入多线程并发修改 runtime state
+- 不改变当前实例级顺序执行保护
+
+这意味着：
+
+- 可以消除 callback timeout toast
+- 但不能消除“同一实例里，一个重恢复动作会让别的会话消息处理也排队”的现象
+
+这是有意接受的边界，而不是实现遗漏。
+
+#### 6.5.3 去重只允许做“紧邻完全相同重复提交”的防抖
+
+若要防止用户因没看到即时结果而连续点两次同一个确认按钮，去重规则必须非常保守。
+
+当前第一版不强行实现去重；若未来需要补上，只允许采用以下规则。
+
+允许的唯一规则是：
+
+- 只去重“连续的、完全相同的、且中间没有任何状态变更动作插入”的重复提交
+
+这意味着：
+
+- 若连续两次 `goal_apply_confirm` 的 payload 完全相同
+- 且中间没有出现任何会改变 runtime / binding / goal / settings 的动作
+- 则第二次可视为重复点击，允许防抖
+
+但以下情况一律不应合并：
+
+- `resume -> clear -> resume`
+- `resume -> set(new objective) -> resume`
+- `resume -> permissions changed -> resume`
+- 或任何中间插入了别的状态变更动作的情况
+
+因为这些都已经是新的顺序化用户意图，不能被简单视为重复提交。
+
+#### 6.5.4 暂不引入“后意图覆盖前意图”的通用语义
+
+当前阶段不建议把 `goal_apply_confirm` 进一步做成：
+
+- 新动作自动取消旧动作
+- 或“后一个 goal 动作覆盖前一个 goal 动作”的通用状态机
+
+原因是：
+
+- 不同动作组合的语义差异很大
+- 要正确实现，必须穷尽“什么算新的意图、哪些组合可覆盖”的矩阵
+- 在未穷尽前引入覆盖语义，风险高于收益
+
+因此旁路第一版建议坚持：
+
+- callback 立即 ACK
+- 真正执行仍严格按 runtime queue 顺序处理
+- 除“紧邻完全相同重复提交”外，不做动作级覆盖或取消
+
+这保证：
+
+- accepted 更快
+- completed 语义仍和现有串行模型一致
+- 不因过早引入复杂 cancellation / revision 机制而扩大回归面
 
 ---
 
