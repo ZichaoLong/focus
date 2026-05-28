@@ -15,6 +15,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 from bot.cards import CommandResult, make_card_response
 from bot.constants import display_path
 from bot.feishu_command_syntax import feishu_visible_command_syntax
+from bot.permissions_profile import permissions_profile_choice_key
 from bot.runtime_state import FEISHU_RUNTIME_DETACHED
 from bot.shared_command_surface import get_shared_command
 
@@ -321,7 +322,7 @@ class CodexHelpDomain:
                 title="Codex 工作台：本轮设置",
                 markdown=(
                     "调整当前飞书会话后续 turn 的设置。\n\n"
-                    "推荐先用“权限预设”；模型、推理强度、审批、沙箱与协作模式都从下一轮生效。\n"
+                    "推荐先用“权限基线”；模型、推理强度、审批与协作模式都从下一轮生效。\n"
                     f"`{_SHARED_LAST_COMMAND.feishu_usage}` 可导出当前会话最近一条权威终态文本；"
                     "如果还没有终态结果，会回退到最近执行卡。\n\n"
                     "实例级 backend reset 在“更多 -> 高级操作”。"
@@ -330,9 +331,9 @@ class CodexHelpDomain:
                     _HelpActionRowSpec(
                         buttons=(
                             _HelpCommandButtonSpec(
-                                label="权限预设",
+                                label="权限基线",
                                 command="/permissions",
-                                title="Codex 权限预设",
+                                title="Codex 权限基线",
                             ),
                             _HelpCommandButtonSpec(
                                 label="模型",
@@ -360,17 +361,11 @@ class CodexHelpDomain:
                     _HelpActionRowSpec(
                         buttons=(
                             _HelpCommandButtonSpec(
-                                label="沙箱策略",
-                                command="/sandbox",
-                                title="Codex 沙箱策略",
-                            ),
-                            _HelpCommandButtonSpec(
                                 label="协作模式",
                                 command="/collab-mode",
                                 title="Codex 协作模式",
                             ),
                         ),
-                        layout="bisected",
                     ),
                     _HelpActionRowSpec(
                         buttons=(
@@ -586,27 +581,25 @@ class CodexHelpDomain:
         }
 
     @staticmethod
-    def _permissions_summary(approval_policy: str, sandbox: str) -> str:
-        normalized_approval = str(approval_policy or "").strip()
-        normalized_sandbox = str(sandbox or "").strip()
-        if normalized_approval == "on-request" and normalized_sandbox == "read-only":
+    def _permissions_summary(permissions_profile_id: str) -> str:
+        choice = permissions_profile_choice_key(permissions_profile_id)
+        if choice == "read-only":
             return "read-only"
-        if normalized_approval == "on-request" and normalized_sandbox == "workspace-write":
-            return "default"
-        if normalized_approval == "never" and normalized_sandbox == "danger-full-access":
-            return "full-access"
-        if not normalized_approval and not normalized_sandbox:
-            return "default"
-        return f"{normalized_sandbox or '-'} / {normalized_approval or '-'}"
+        if choice == "workspace":
+            return "workspace"
+        if choice == "danger-full-access":
+            return "danger-full-access"
+        normalized = str(permissions_profile_id or "").strip()
+        return normalized or "danger-full-access"
 
     @staticmethod
-    def _overview_permissions_label(approval_policy: str, sandbox: str) -> str:
-        summary = CodexHelpDomain._permissions_summary(approval_policy, sandbox)
+    def _overview_permissions_label(permissions_profile_id: str) -> str:
+        summary = CodexHelpDomain._permissions_summary(permissions_profile_id)
         if summary == "read-only":
             return "只读"
-        if summary == "default":
-            return "Default"
-        if summary == "full-access":
+        if summary == "workspace":
+            return "Workspace"
+        if summary == "danger-full-access":
             return "Full"
         return "Custom"
 
@@ -641,10 +634,7 @@ class CodexHelpDomain:
         working_dir = display_path(str(state.get("working_dir", "") or "")) or "."
         thread_summary = self._thread_summary(state)
         push_state = str(state.get("feishu_runtime_state", "") or "").strip() or "detached"
-        permissions = self._overview_permissions_label(
-            str(state.get("approval_policy", "") or ""),
-            str(state.get("sandbox", "") or ""),
-        )
+        permissions = self._overview_permissions_label(str(state.get("permissions_profile_id", "") or ""))
         model = str(state.get("model", "") or "").strip() or "Auto"
         effort = self._overview_effort_label(str(state.get("reasoning_effort", "") or ""))
         collaboration_mode = str(state.get("collaboration_mode", "") or "").strip() or "default"
@@ -967,11 +957,10 @@ class CodexHelpDomain:
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"
                 "`本轮设置`\n"
                 f"- `{_SHARED_LAST_COMMAND.feishu_usage}`\n"
-                "- `/permissions [read-only|default|full-access]`\n"
+                "- `/permissions [read-only|workspace|danger-full-access]`\n"
                 "- `/model [name|auto]`\n"
                 "- `/effort [auto|none|minimal|low|medium|high|xhigh]`\n"
                 "- `/approval [untrusted|on-request|never]`\n"
-                "- `/sandbox [read-only|workspace-write|danger-full-access]`\n"
                 "- `/collab-mode [default|plan]`\n\n"
                 "`连接状态`\n"
                 "- `/status`\n"

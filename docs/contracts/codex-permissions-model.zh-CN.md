@@ -2,7 +2,7 @@
 
 英文原文：`docs/contracts/codex-permissions-model.md`
 
-本文记录 `feishu-codex` 暴露出来的 `approval_policy`、`sandbox` 和 `permissions` 预设背后的 upstream 语义。
+本文记录 `feishu-codex` 当前暴露的 `approval_policy` 与 `permissions_profile_id`，以及 upstream 里 legacy `sandbox` / canonical `permissions` 的关系。
 
 写这篇文档有两个目的：
 
@@ -19,22 +19,18 @@
 
 ## 1. 三层概念
 
-`feishu-codex` 暴露了三个彼此相关的概念：
+`feishu-codex` 当前暴露两个正式 runtime setting，并需要理解一个上游 legacy 概念：
 
 1. `approval_policy`
 - 运行在什么时机需要停下来等待审批
 
-2. `sandbox`
-- 命令最终在什么文件系统与网络限制下执行
+2. `permissions_profile_id`
+- 当前飞书 binding 在下一轮注入哪个 upstream permission profile id
 
-3. `permissions`
-- 飞书侧的一个预设，它会同时修改前两者
+3. legacy `sandbox`
+- 上游仍兼容，但飞书侧不再把它当成正式 persisted setting
 
-重要点在于：`permissions` 不是 upstream 原生概念。
-它是产品层对两个 upstream 旋钮的便捷封装：
-
-- `approval_policy`
-- `sandbox`
+重要点在于：飞书侧当前的 `/permissions` 已不再是“组合预设”，而是独立设置 upstream canonical `permissions` profile id。
 
 ## 2. Approval 与 Sandbox
 

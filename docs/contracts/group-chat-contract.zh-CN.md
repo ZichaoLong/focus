@@ -103,7 +103,6 @@
   - `/reset-backend`
   - `/profile`
   - `/approval`
-  - `/sandbox`
   - `/permissions`
   - 群激活与群工作态管理命令
 

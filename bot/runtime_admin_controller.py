@@ -143,7 +143,7 @@ class RuntimeAdminController:
         load_thread_resume_profile: Callable[[str], Any],
         load_thread_memory_mode: Callable[[str], Any],
         apply_thread_memory_mode: Callable[[str, str], Any],
-        permissions_summary: Callable[[str, str], str],
+        permissions_summary: Callable[..., str],
         thread_image_delivery: ThreadImageDeliveryController,
         get_thread_goal: Callable[[str], ThreadGoalSummary | None],
         set_thread_goal: Callable[..., ThreadGoalSummary],
@@ -193,6 +193,15 @@ class RuntimeAdminController:
         self._is_thread_not_found_error = is_thread_not_found_error
         self._is_thread_not_loaded_error = is_thread_not_loaded_error
         self._reprofile_possible_check = reprofile_possible_check
+
+    def _render_permissions_summary(self, snapshot: dict[str, Any]) -> str:
+        try:
+            return self._permissions_summary(snapshot["permissions_profile_id"])
+        except TypeError:
+            return self._permissions_summary(
+                snapshot.get("approval_policy", ""),
+                snapshot.get("permissions_profile_id", ""),
+            )
 
     def _current_thread_profile_text(self, thread_id: str) -> str:
         normalized_thread_id = str(thread_id or "").strip()
@@ -637,9 +646,8 @@ class RuntimeAdminController:
                 lines.append(f"当前 profile：`{current_profile}`")
             lines.extend(
                 [
-                    f"权限预设：`{self._permissions_summary(snapshot['approval_policy'], snapshot['sandbox'])}`",
+                    f"权限基线：`{self._render_permissions_summary(snapshot)}`",
                     f"审批策略：`{snapshot['approval_policy']}`",
-                    f"沙箱策略：`{snapshot['sandbox']}`",
                     f"Codex 协作模式：`{snapshot['collaboration_mode']}`",
                     f"Codex model override：`{snapshot['model'] or 'auto'}`",
                     f"Codex effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",
@@ -772,9 +780,8 @@ class RuntimeAdminController:
             lines.extend(
                 [
                     "",
-                    f"权限预设：`{self._permissions_summary(snapshot['approval_policy'], snapshot['sandbox'])}`",
+                    f"权限基线：`{self._render_permissions_summary(snapshot)}`",
                     f"审批策略：`{snapshot['approval_policy']}`",
-                    f"沙箱策略：`{snapshot['sandbox']}`",
                     f"协作模式：`{snapshot['collaboration_mode']}`",
                     f"model override：`{snapshot['model'] or 'auto'}`",
                     f"effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",

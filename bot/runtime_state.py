@@ -83,7 +83,7 @@ class RuntimeStateDict(TypedDict):
     awaiting_local_turn_started: bool
     awaiting_attach_status_settle: bool
     approval_policy: str
-    sandbox: str
+    permissions_profile_id: str
     collaboration_mode: str
     model: str
     reasoning_effort: str
@@ -118,7 +118,7 @@ class StoredBindingHydrated(RuntimeStateCommand):
     current_thread_title: str
     feishu_runtime_state: str
     approval_policy: str
-    sandbox: str
+    permissions_profile_id: str
     collaboration_mode: str
     model: str
     reasoning_effort: str
@@ -127,7 +127,7 @@ class StoredBindingHydrated(RuntimeStateCommand):
 @dataclass(frozen=True, slots=True)
 class RuntimeSettingsChanged(RuntimeStateCommand):
     approval_policy: Any = UNSET
-    sandbox: Any = UNSET
+    permissions_profile_id: Any = UNSET
     collaboration_mode: Any = UNSET
     model: Any = UNSET
     reasoning_effort: Any = UNSET
@@ -222,7 +222,7 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             current_thread_title=current_thread_title,
             feishu_runtime_state=feishu_runtime_state,
             approval_policy=approval_policy,
-            sandbox=sandbox,
+            permissions_profile_id=permissions_profile_id,
             collaboration_mode=collaboration_mode,
             model=model,
             reasoning_effort=reasoning_effort,
@@ -232,21 +232,21 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             state["current_thread_title"] = current_thread_title
             state["feishu_runtime_state"] = feishu_runtime_state
             state["approval_policy"] = approval_policy
-            state["sandbox"] = sandbox
+            state["permissions_profile_id"] = permissions_profile_id
             state["collaboration_mode"] = collaboration_mode
             state["model"] = model
             state["reasoning_effort"] = reasoning_effort
         case RuntimeSettingsChanged(
             approval_policy=approval_policy,
-            sandbox=sandbox,
+            permissions_profile_id=permissions_profile_id,
             collaboration_mode=collaboration_mode,
             model=model,
             reasoning_effort=reasoning_effort,
         ):
             if approval_policy is not UNSET:
                 state["approval_policy"] = approval_policy
-            if sandbox is not UNSET:
-                state["sandbox"] = sandbox
+            if permissions_profile_id is not UNSET:
+                state["permissions_profile_id"] = permissions_profile_id
             if collaboration_mode is not UNSET:
                 state["collaboration_mode"] = collaboration_mode
             if model is not UNSET:

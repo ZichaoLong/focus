@@ -136,7 +136,6 @@ Those remain owned by their dedicated documents.
   - `/reset-backend`
   - `/profile`
   - `/approval`
-  - `/sandbox`
   - `/permissions`
   - group activation and group-mode management commands
 

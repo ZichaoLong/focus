@@ -42,7 +42,7 @@ def _build_state() -> dict[str, object]:
         "terminal_result_text": "",
         "awaiting_local_turn_started": True,
         "approval_policy": "on-request",
-        "sandbox": "workspace-write",
+        "permissions_profile_id": ":workspace",
         "collaboration_mode": "default",
         "model": "gpt-5.4",
         "reasoning_effort": "high",
@@ -64,7 +64,7 @@ class RuntimeViewTests(unittest.TestCase):
         self.assertEqual(view.current_thread_title, "demo")
         self.assertTrue(view.running)
         self.assertEqual(view.approval_policy, "on-request")
-        self.assertEqual(view.sandbox, "workspace-write")
+        self.assertEqual(view.permissions_profile_id, ":workspace")
         self.assertEqual(view.collaboration_mode, "default")
         self.assertEqual(view.reasoning_effort, "high")
         self.assertTrue(view.goal.exists)

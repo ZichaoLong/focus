@@ -14,10 +14,9 @@ from bot.cards import (
     build_group_activation_card,
     build_group_mode_card,
     build_memory_mode_card,
-    build_permissions_preset_card,
+    build_permissions_profile_card,
     build_profile_card,
     build_rename_card,
-    build_sandbox_policy_card,
     build_threads_card,
 )
 from bot.codex_handler import CodexHandler
@@ -85,7 +84,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "current_thread_id": "",
                 "feishu_runtime_state": "attached",
                 "approval_policy": "on-request",
-                "sandbox": "workspace-write",
+                "permissions_profile_id": ":workspace",
                 "collaboration_mode": "",
                 "model": "",
                 "reasoning_effort": "",
@@ -120,7 +119,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         threads_markdown = threads_card["elements"][0]["content"]
 
         self.assertIn("线程：`未绑定`", overview_markdown)
-        self.assertIn("本轮：权限 `Default` | 模型 `Auto` | 推理 `Auto`", overview_markdown)
+        self.assertIn("本轮：权限 `Workspace` | 模型 `Auto` | 推理 `Auto`", overview_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", start_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", start_markdown)
         self.assertIn("测试规则", start_markdown)
@@ -148,7 +147,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "current_thread_id": "",
                 "feishu_runtime_state": "attached",
                 "approval_policy": "never",
-                "sandbox": "danger-full-access",
+                "permissions_profile_id": ":danger-full-access",
                 "collaboration_mode": "plan",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
@@ -170,7 +169,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "current_thread_id": "",
                 "feishu_runtime_state": "attached",
                 "approval_policy": "on-request",
-                "sandbox": "workspace-write",
+                "permissions_profile_id": ":workspace",
                 "collaboration_mode": "",
                 "model": "",
                 "reasoning_effort": "",
@@ -185,8 +184,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
             build_execution_card("log", [], running=True),
             build_command_approval_card("req-1", command="ls", cwd="/tmp/project", reason="需要执行"),
             build_approval_policy_card("on-request", running=True),
-            build_sandbox_policy_card("workspace-write", running=True),
-            build_permissions_preset_card("on-request", "workspace-write", running=True),
+            build_permissions_profile_card(":workspace", running=True),
             build_collaboration_mode_card("plan", running=True),
             build_group_mode_card("assistant", can_manage=True),
             build_group_activation_card(

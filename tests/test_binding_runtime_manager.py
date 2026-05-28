@@ -539,7 +539,7 @@ class BindingRuntimeManagerTests(unittest.TestCase):
 
         self.assertEqual(state["working_dir"], "/tmp/default")
         self.assertEqual(state["approval_policy"], "on-request")
-        self.assertEqual(state["sandbox"], "workspace-write")
+        self.assertEqual(state["permissions_profile_id"], ":workspace")
         self.assertEqual(state["collaboration_mode"], "default")
 
     def test_unsubscribe_by_thread_id_locked_marks_bindings_detached(self) -> None:

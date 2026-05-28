@@ -611,7 +611,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "detach_reason_code": "",
             "detach_reason": "",
             "approval_policy": "on-request",
-            "sandbox": "workspace-write",
+            "permissions_profile_id": ":workspace",
             "collaboration_mode": "default",
         }
         with patch("bot.feishu_codexctl._request", return_value=snapshot):

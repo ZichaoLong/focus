@@ -182,9 +182,8 @@ runtime 正在用什么”混成一件事。
 
 - `/model` 解析为 model 覆盖项
 - `/effort` 解析为 reasoning effort 覆盖项
-- `/approval` 与 `/sandbox` 解析为各自 runtime 字段
-- `/permissions` 不是独立 persisted 字段，而是先展开成
-  `approval_policy + sandbox`
+- `/approval` 解析为 `approval_policy`
+- `/permissions` 解析为独立 runtime 字段 `permissions_profile_id`
 
 ### 4.2 写后持久源
 

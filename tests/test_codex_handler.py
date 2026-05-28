@@ -96,6 +96,7 @@ class _FakeAdapter:
         model: str | None = None,
         model_provider: str | None = None,
         approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
         sandbox: str | None = None,
     ):
         self.create_thread_calls.append(
@@ -106,6 +107,7 @@ class _FakeAdapter:
                 "model": model,
                 "model_provider": model_provider,
                 "approval_policy": approval_policy,
+                "permissions_profile_id": permissions_profile_id,
                 "sandbox": sandbox,
             }
         )
@@ -303,6 +305,7 @@ class _FakeAdapter:
         model_provider: str | None = None,
         profile: str | None = None,
         approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
         sandbox: str | None = None,
         reasoning_effort: str | None = None,
         collaboration_mode: str | None = None,
@@ -322,6 +325,7 @@ class _FakeAdapter:
                 "model_provider": model_provider,
                 "profile": profile,
                 "approval_policy": approval_policy,
+                "permissions_profile_id": permissions_profile_id,
                 "sandbox": sandbox,
                 "reasoning_effort": reasoning_effort,
                 "collaboration_mode": collaboration_mode,
@@ -1481,7 +1485,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler1, _ = self._make_handler(data_dir=data_dir)
         handler1.handle_message("ou_user", "c1", f"/cd {project_dir}")
-        handler1.handle_message("ou_user", "c1", "/permissions full-access")
+        handler1.handle_message("ou_user", "c1", "/permissions danger-full-access")
         handler1.handle_message("ou_user", "c1", "/model gpt-5.5")
         handler1.handle_message("ou_user", "c1", "/effort high")
         handler1.handle_message("ou_user", "c1", "/collab-mode plan")
@@ -1494,7 +1498,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["current_thread_id"], "thread-created")
         self.assertEqual(state["current_thread_title"], "（无标题）")
         self.assertEqual(state["approval_policy"], "never")
-        self.assertEqual(state["sandbox"], "danger-full-access")
+        self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
         self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["reasoning_effort"], "high")
         self.assertEqual(state["collaboration_mode"], "plan")
@@ -2986,37 +2990,16 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(second.binding, ("__group__", "chat-group"))
         self.assertIs(first.state, second.state)
 
-    def test_sandbox_command_updates_state(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/sandbox read-only")
-
-        state = handler._get_runtime_state("ou_user", "c1")
-        self.assertEqual(state["sandbox"], "read-only")
-        self.assertIn("已切换沙箱策略：`read-only`", bot.replies[-1][1])
-        self.assertIn("只影响当前飞书会话的后续 turn", bot.replies[-1][1])
-
-    def test_sandbox_command_without_arg_shows_sandbox_card(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/sandbox")
-
-        self.assertEqual(len(bot.cards), 1)
-        _, card = bot.cards[0]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 沙箱策略")
-        self.assertIn("它只决定文件和网络边界", card["elements"][0]["content"])
-        self.assertIn("优先使用 `/permissions`", card["elements"][0]["content"])
-
     def test_permissions_command_updates_state(self) -> None:
         handler, bot = self._make_handler()
 
-        handler.handle_message("ou_user", "c1", "/permissions full-access")
+        handler.handle_message("ou_user", "c1", "/permissions danger-full-access")
 
         state = handler._get_runtime_state("ou_user", "c1")
         self.assertEqual(state["approval_policy"], "never")
-        self.assertEqual(state["sandbox"], "danger-full-access")
-        self.assertIn("Full Access", bot.replies[-1][1])
-        self.assertIn("danger-full-access", bot.replies[-1][1])
+        self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
+        self.assertIn("Danger Full Access", bot.replies[-1][1])
+        self.assertIn(":danger-full-access", bot.replies[-1][1])
 
     def test_permissions_command_without_arg_shows_permissions_card(self) -> None:
         handler, bot = self._make_handler()
@@ -3025,9 +3008,9 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(bot.cards), 1)
         _, card = bot.cards[0]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 权限预设")
-        self.assertIn("推荐先用这个", card["elements"][0]["content"])
-        self.assertIn("优先选 `default`", card["elements"][0]["content"])
+        self.assertEqual(card["header"]["title"]["content"], "Codex 权限基线")
+        self.assertIn("它只决定执行边界", card["elements"][0]["content"])
+        self.assertIn("审批策略请单独使用 `/approval`", card["elements"][0]["content"])
         action_elements = self._action_elements(card)
         self.assertEqual(len(action_elements), 2)
         self.assertEqual(action_elements[0]["layout"], "trisection")
@@ -3144,21 +3127,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("high", response["toast"])
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 模型 / Effort")
 
-    def test_sandbox_card_action_updates_state(self) -> None:
-        handler, _ = self._make_handler()
-
-        response = self._unpack_card_response(handler.handle_card_action(
-            "ou_user",
-            "c1",
-            "m1",
-            {"action": "set_sandbox_policy", "policy": "read-only"},
-        ))
-
-        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["sandbox"], "read-only")
-        self.assertEqual(response["toast_type"], "success")
-        self.assertIn("read-only", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 沙箱策略")
-
     def test_permissions_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
 
@@ -3166,15 +3134,14 @@ class CodexHandlerTests(unittest.TestCase):
             "ou_user",
             "c1",
             "m1",
-            {"action": "set_permissions_preset", "preset": "full-access"},
+            {"action": "set_permissions_profile", "profile": "danger-full-access"},
         ))
 
         state = handler._get_runtime_state("ou_user", "c1")
-        self.assertEqual(state["approval_policy"], "never")
-        self.assertEqual(state["sandbox"], "danger-full-access")
+        self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
         self.assertEqual(response["toast_type"], "success")
-        self.assertIn("Full Access", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 权限预设")
+        self.assertIn("Danger Full Access", response["toast"])
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 权限基线")
         self.assertEqual(self._action_elements(response["card"])[1]["actions"][0]["text"]["content"], "返回帮助")
 
     def test_turn_plan_updated_sends_then_patches_plan_card(self) -> None:
@@ -3342,9 +3309,8 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         self.assertEqual(card["header"]["title"]["content"], "Codex 当前状态")
         content = card["elements"][0]["content"]
-        self.assertIn("权限预设：`Full Access`", content)
+        self.assertIn("权限基线：`Danger Full Access`", content)
         self.assertIn("审批策略：`never`", content)
-        self.assertIn("沙箱策略：`danger-full-access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("新 thread seed profile", content)
@@ -3377,7 +3343,7 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
         self.assertIn("当前 profile：`provider2`", content)
-        self.assertIn("权限预设：`Full Access`", content)
+        self.assertIn("权限基线：`Danger Full Access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("binding：", content)
@@ -5451,13 +5417,13 @@ class CodexHandlerTests(unittest.TestCase):
     def test_permissions_command_applies_to_thread_creation_and_turn_start(self) -> None:
         handler, _ = self._make_handler()
 
-        handler.handle_message("ou_user", "c1", "/permissions full-access")
+        handler.handle_message("ou_user", "c1", "/permissions danger-full-access")
         handler.handle_message("ou_user", "c1", "hello")
 
         self.assertEqual(handler._adapter.create_thread_calls[-1]["approval_policy"], "never")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["sandbox"], "danger-full-access")
+        self.assertEqual(handler._adapter.create_thread_calls[-1]["permissions_profile_id"], ":danger-full-access")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["approval_policy"], "never")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["sandbox"], "danger-full-access")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["permissions_profile_id"], ":danger-full-access")
 
     def test_model_command_applies_to_thread_creation_and_turn_start(self) -> None:
         handler, _ = self._make_handler()
@@ -6324,14 +6290,14 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         self.assertEqual(card["header"]["title"]["content"], "Codex 工作台：本轮设置")
         content = card["elements"][0]["content"]
-        self.assertIn("推荐先用“权限预设”", content)
+        self.assertIn("推荐先用“权限基线”", content)
         self.assertIn("`/last text`", content)
         self.assertIn("回退到最近执行卡", content)
         self.assertIn("实例级 backend reset 在“更多 -> 高级操作”", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["权限预设", "模型"],
+            ["权限基线", "模型"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
@@ -6339,7 +6305,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
-            ["沙箱策略", "协作模式"],
+            ["协作模式"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[3]["actions"]],
@@ -6417,7 +6383,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：本轮设置")
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
-            ["权限预设", "模型"],
+            ["权限基线", "模型"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[1]["actions"]],
@@ -6425,7 +6391,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[2]["actions"]],
-            ["沙箱策略", "协作模式"],
+            ["协作模式"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[3]["actions"]],

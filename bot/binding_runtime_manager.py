@@ -9,6 +9,10 @@ from bot.approval_policy import normalize_approval_policy
 from bot.binding_identity import binding_kind, format_binding_id
 from bot.constants import GROUP_SHARED_BINDING_OWNER_ID
 from bot.execution_transcript import ExecutionTranscript
+from bot.permissions_profile import (
+    BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+    normalize_permissions_profile_id,
+)
 from bot.runtime_state import (
     BACKEND_THREAD_STATUS_ACTIVE,
     BACKEND_THREAD_STATUS_NOT_LOADED,
@@ -89,7 +93,8 @@ class BindingRuntimeManager:
         lock,
         default_working_dir: str,
         default_approval_policy: str,
-        default_sandbox: str,
+        default_permissions_profile_id: str = "",
+        default_sandbox: str = "",
         default_collaboration_mode: str,
         default_model: str,
         default_reasoning_effort: str,
@@ -101,7 +106,10 @@ class BindingRuntimeManager:
         self._lock = lock
         self._default_working_dir = str(default_working_dir or "").strip()
         self._default_approval_policy = str(default_approval_policy or "").strip()
-        self._default_sandbox = str(default_sandbox or "").strip()
+        self._default_permissions_profile_id = normalize_permissions_profile_id(
+            str(default_permissions_profile_id or default_sandbox or "").strip(),
+            fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+        )
         self._default_collaboration_mode = str(default_collaboration_mode or "").strip()
         self._default_model = str(default_model or "").strip()
         self._default_reasoning_effort = str(default_reasoning_effort or "").strip()
@@ -138,7 +146,7 @@ class BindingRuntimeManager:
             "current_thread_title": "",
             "feishu_runtime_state": "",
             "approval_policy": "",
-            "sandbox": "",
+            "permissions_profile_id": "",
             "collaboration_mode": "",
             "model": "",
             "reasoning_effort": "",
@@ -181,7 +189,7 @@ class BindingRuntimeManager:
             "awaiting_local_turn_started": False,
             "awaiting_attach_status_settle": False,
             "approval_policy": self._default_approval_policy,
-            "sandbox": self._default_sandbox,
+            "permissions_profile_id": self._default_permissions_profile_id,
             "collaboration_mode": self._default_collaboration_mode,
             "model": "",
             "reasoning_effort": "",
@@ -211,7 +219,11 @@ class BindingRuntimeManager:
                 approval_policy=normalize_approval_policy(
                     stored_binding["approval_policy"] or self._default_approval_policy,
                 ),
-                sandbox=stored_binding["sandbox"] or self._default_sandbox,
+                permissions_profile_id=normalize_permissions_profile_id(
+                    stored_binding.get("permissions_profile_id", stored_binding.get("sandbox", ""))
+                    or self._default_permissions_profile_id,
+                    fallback=self._default_permissions_profile_id,
+                ),
                 collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,
                 model=str(stored_binding.get("model", "") or "").strip(),
                 reasoning_effort=str(stored_binding.get("reasoning_effort", "") or "").strip(),
@@ -351,7 +363,10 @@ class BindingRuntimeManager:
             feishu_runtime_state = ""
         working_dir = str(state["working_dir"]).strip()
         approval_policy = normalize_approval_policy(str(state["approval_policy"]).strip())
-        sandbox = str(state["sandbox"]).strip()
+        permissions_profile_id = normalize_permissions_profile_id(
+            str(state["permissions_profile_id"]).strip(),
+            fallback=self._default_permissions_profile_id,
+        )
         collaboration_mode = str(state["collaboration_mode"]).strip()
         model = str(state["model"]).strip()
         reasoning_effort = str(state["reasoning_effort"]).strip()
@@ -361,7 +376,11 @@ class BindingRuntimeManager:
             "current_thread_title": str(state["current_thread_title"]).strip(),
             "feishu_runtime_state": feishu_runtime_state,
             "approval_policy": "" if approval_policy == self._default_approval_policy else approval_policy,
-            "sandbox": "" if sandbox == self._default_sandbox else sandbox,
+            "permissions_profile_id": (
+                ""
+                if permissions_profile_id == self._default_permissions_profile_id
+                else permissions_profile_id
+            ),
             "collaboration_mode": (
                 ""
                 if collaboration_mode == self._default_collaboration_mode
@@ -959,7 +978,7 @@ class BindingRuntimeManager:
             "running_turn": self.binding_has_inflight_turn_locked(state),
             "current_turn_id": str(state["current_turn_id"] or "").strip(),
             "approval_policy": str(state["approval_policy"] or "").strip(),
-            "sandbox": str(state["sandbox"] or "").strip(),
+            "permissions_profile_id": str(state["permissions_profile_id"] or "").strip(),
             "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
             "model": str(state["model"] or "").strip(),
             "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
@@ -1030,7 +1049,7 @@ class BindingRuntimeManager:
                     ),
                     "running_turn": self.binding_has_inflight_turn_locked(state),
                     "approval_policy": str(state["approval_policy"] or "").strip(),
-                    "sandbox": str(state["sandbox"] or "").strip(),
+                    "permissions_profile_id": str(state["permissions_profile_id"] or "").strip(),
                     "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
                     "model": str(state["model"] or "").strip(),
                     "reasoning_effort": str(state["reasoning_effort"] or "").strip(),

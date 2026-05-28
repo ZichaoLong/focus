@@ -21,6 +21,11 @@ from bot.adapters.base import (
 )
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
+from bot.permissions_profile import (
+    BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+    PERMISSION_PROFILE_ID_TO_LEGACY_SANDBOX,
+    normalize_permissions_profile_id,
+)
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.thread_memory_mode import (
     deep_merge_config_overrides,
@@ -31,18 +36,6 @@ from bot.codex_protocol.client import CodexRpcError
 
 logger = logging.getLogger(__name__)
 
-_SUPPORTED_SANDBOX_MODES = {
-    "read-only",
-    "workspace-write",
-    "danger-full-access",
-}
-_BUILT_IN_PERMISSION_PROFILE_BY_SANDBOX = {
-    "read-only": ":read-only",
-    "workspace-write": ":workspace",
-    "danger-full-access": ":danger-full-access",
-}
-
-
 @dataclass(slots=True)
 class CodexAppServerConfig:
     codex_command: str = "codex"
@@ -51,7 +44,7 @@ class CodexAppServerConfig:
     connect_timeout_seconds: float = 15.0
     request_timeout_seconds: float = 30.0
     service_name: str = "feishu-codex"
-    sandbox: str = "danger-full-access"
+    permissions_profile_id: str = BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
     approval_policy: str = "never"
     approvals_reviewer: str = "user"
     personality: str = "pragmatic"
@@ -63,6 +56,10 @@ class CodexAppServerConfig:
     new_thread_memory_mode_seed: str = ""
     app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
+
+    @property
+    def sandbox(self) -> str:
+        return PERMISSION_PROFILE_ID_TO_LEGACY_SANDBOX.get(self.permissions_profile_id, "danger-full-access")
 
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "CodexAppServerConfig":
@@ -83,7 +80,15 @@ class CodexAppServerConfig:
             connect_timeout_seconds=float(config.get("connect_timeout_seconds", 15)),
             request_timeout_seconds=float(config.get("request_timeout_seconds", 30)),
             service_name=str(config.get("service_name", "feishu-codex")),
-            sandbox=str(config.get("sandbox", "danger-full-access")),
+            permissions_profile_id=normalize_permissions_profile_id(
+                str(
+                    config.get(
+                        "permissions_profile_id",
+                        config.get("permissions", config.get("sandbox", BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS)),
+                    )
+                ),
+                fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+            ),
             approval_policy=normalize_approval_policy(
                 str(config.get("approval_policy", "never")),
             ),
@@ -164,6 +169,7 @@ class CodexAppServerAdapter(AgentAdapter):
         model: str | None = None,
         model_provider: str | None = None,
         approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
         sandbox: str | None = None,
     ) -> ThreadSnapshot:
         params = self._thread_params(
@@ -174,13 +180,13 @@ class CodexAppServerAdapter(AgentAdapter):
             model=model,
             model_provider=model_provider,
             approval_policy=approval_policy,
-            sandbox=sandbox,
+            permissions_profile_id=permissions_profile_id or sandbox,
         )
         result = self._request_with_permissions_fallback(
             "thread/start",
             params,
             legacy_field="sandbox",
-            legacy_value=self._normalize_sandbox_mode(sandbox or self._config.sandbox),
+            legacy_value=self._legacy_sandbox(permissions_profile_id or sandbox),
         )
         self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
@@ -334,6 +340,7 @@ class CodexAppServerAdapter(AgentAdapter):
         model_provider: str | None = None,
         profile: str | None = None,
         approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
         sandbox: str | None = None,
         reasoning_effort: str | None = None,
         collaboration_mode: str | None = None,
@@ -352,12 +359,10 @@ class CodexAppServerAdapter(AgentAdapter):
             "personality": self._config.personality or None,
             "serviceTier": self._config.service_tier or None,
         }
-        effective_sandbox = sandbox or self._config.sandbox
-        permissions = self._permission_profile_id_for_sandbox(effective_sandbox)
-        if permissions:
-            params["permissions"] = permissions
-        else:
-            params["sandboxPolicy"] = self._sandbox_policy_payload(effective_sandbox)
+        params["permissions"] = normalize_permissions_profile_id(
+            permissions_profile_id or sandbox or self._config.permissions_profile_id,
+            fallback=self._config.permissions_profile_id,
+        )
         params["collaborationMode"] = self._collaboration_mode_payload(
             effective_collaboration_mode,
             model=effective_model,
@@ -368,7 +373,7 @@ class CodexAppServerAdapter(AgentAdapter):
             "turn/start",
             _compact(params),
             legacy_field="sandboxPolicy",
-            legacy_value=self._sandbox_policy_payload(effective_sandbox),
+            legacy_value=self._legacy_sandbox_policy(permissions_profile_id or sandbox),
         )
 
     def interrupt_turn(self, *, thread_id: str, turn_id: str) -> None:
@@ -415,6 +420,7 @@ class CodexAppServerAdapter(AgentAdapter):
         model: str | None = None,
         model_provider: str | None = None,
         approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
         sandbox: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, Any] = {
@@ -426,12 +432,10 @@ class CodexAppServerAdapter(AgentAdapter):
             "modelProvider": model_provider or self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
-        effective_sandbox = sandbox or self._config.sandbox
-        permissions = self._permission_profile_id_for_sandbox(effective_sandbox)
-        if permissions:
-            params["permissions"] = permissions
-        else:
-            params["sandbox"] = self._normalize_sandbox_mode(effective_sandbox)
+        params["permissions"] = normalize_permissions_profile_id(
+            permissions_profile_id or sandbox or self._config.permissions_profile_id,
+            fallback=self._config.permissions_profile_id,
+        )
         merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
         if merged_config:
             params["config"] = merged_config
@@ -470,6 +474,33 @@ class CodexAppServerAdapter(AgentAdapter):
         return code == -32600 and "permissions" in message
 
     @staticmethod
+    def _legacy_sandbox(value: str | None) -> str | None:
+        normalized = normalize_permissions_profile_id(value or "")
+        return PERMISSION_PROFILE_ID_TO_LEGACY_SANDBOX.get(normalized)
+
+    @classmethod
+    def _legacy_sandbox_policy(cls, value: str | None) -> dict[str, Any] | None:
+        legacy = cls._legacy_sandbox(value)
+        if legacy == "danger-full-access":
+            return {"type": "dangerFullAccess"}
+        if legacy == "read-only":
+            return {
+                "type": "readOnly",
+                "access": {"type": "fullAccess"},
+                "networkAccess": False,
+            }
+        if legacy == "workspace-write":
+            return {
+                "type": "workspaceWrite",
+                "writableRoots": [],
+                "readOnlyAccess": {"type": "fullAccess"},
+                "networkAccess": False,
+                "excludeTmpdirEnvVar": False,
+                "excludeSlashTmp": False,
+            }
+        return None
+
+    @staticmethod
     def _merge_request_config(
         *,
         profile: str | None = None,
@@ -478,46 +509,6 @@ class CodexAppServerAdapter(AgentAdapter):
         normalized_profile = str(profile or "").strip()
         profile_override = {"profile": normalized_profile} if normalized_profile else None
         return deep_merge_config_overrides(profile_override, config_overrides)
-
-    @staticmethod
-    def _normalize_sandbox_mode(mode: str | None) -> str | None:
-        if mode is None:
-            return None
-        value = str(mode).strip().lower()
-        if not value:
-            return None
-        if value not in _SUPPORTED_SANDBOX_MODES:
-            raise ValueError("sandbox 仅支持 read-only、workspace-write、danger-full-access")
-        return value
-
-    @classmethod
-    def _permission_profile_id_for_sandbox(cls, mode: str | None) -> str | None:
-        normalized = cls._normalize_sandbox_mode(mode)
-        if normalized is None:
-            return None
-        return _BUILT_IN_PERMISSION_PROFILE_BY_SANDBOX.get(normalized)
-
-    @classmethod
-    def _sandbox_policy_payload(cls, mode: str | None) -> dict[str, Any] | None:
-        normalized = cls._normalize_sandbox_mode(mode)
-        if normalized is None:
-            return None
-        if normalized == "danger-full-access":
-            return {"type": "dangerFullAccess"}
-        if normalized == "read-only":
-            return {
-                "type": "readOnly",
-                "access": {"type": "fullAccess"},
-                "networkAccess": False,
-            }
-        return {
-            "type": "workspaceWrite",
-            "writableRoots": [],
-            "readOnlyAccess": {"type": "fullAccess"},
-            "networkAccess": False,
-            "excludeTmpdirEnvVar": False,
-            "excludeSlashTmp": False,
-        }
 
     def _collaboration_mode_payload(
         self,

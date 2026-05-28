@@ -22,10 +22,15 @@ from typing import Any
 from bot.approval_policy import normalize_approval_policy
 from bot.constants import GROUP_SHARED_BINDING_OWNER_ID
 from bot.feishu_types import ChatBindingsFileData, StoredChatBinding
+from bot.permissions_profile import (
+    BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+    LEGACY_SANDBOX_TO_PERMISSION_PROFILE_ID,
+    normalize_permissions_profile_id,
+)
 from bot.runtime_state import VALID_FEISHU_RUNTIME_STATES
 
-CHAT_BINDING_STORE_SCHEMA_VERSION = 5
-SUPPORTED_CHAT_BINDING_STORE_SCHEMA_VERSIONS = frozenset({4, CHAT_BINDING_STORE_SCHEMA_VERSION})
+CHAT_BINDING_STORE_SCHEMA_VERSION = 6
+SUPPORTED_CHAT_BINDING_STORE_SCHEMA_VERSIONS = frozenset({4, 5, CHAT_BINDING_STORE_SCHEMA_VERSION})
 
 
 class ChatBindingStore:
@@ -178,7 +183,7 @@ class ChatBindingStore:
             "current_thread_title": raw_state.get("current_thread_title", ""),
             "feishu_runtime_state": raw_state.get("feishu_runtime_state", ""),
             "approval_policy": raw_state.get("approval_policy", ""),
-            "sandbox": raw_state.get("sandbox", ""),
+            "permissions_profile_id": raw_state.get("permissions_profile_id", raw_state.get("sandbox", "")),
             "collaboration_mode": raw_state.get("collaboration_mode", ""),
             "model": raw_state.get("model", ""),
             "reasoning_effort": raw_state.get("reasoning_effort", ""),
@@ -190,6 +195,10 @@ class ChatBindingStore:
             normalized[key] = value.strip()
         if normalized["approval_policy"]:
             normalized["approval_policy"] = normalize_approval_policy(normalized["approval_policy"])
+        normalized["permissions_profile_id"] = normalize_permissions_profile_id(
+            normalized["permissions_profile_id"],
+            fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+        )
         current_thread_id = normalized["current_thread_id"]
         runtime_state = normalized["feishu_runtime_state"]
         if current_thread_id:

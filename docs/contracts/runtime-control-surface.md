@@ -115,7 +115,6 @@ The currently explicit user-facing entries include:
 - `/model`
 - `/effort`
 - `/approval`
-- `/sandbox`
 - `/permissions`
 - `/collab-mode`
 

@@ -1,7 +1,8 @@
 # Codex Permissions Model
 
-This document records the upstream semantics behind `approval_policy`,
-`sandbox`, and the `permissions` presets exposed by `feishu-codex`.
+This document records how `feishu-codex` now exposes `approval_policy` and
+`permissions_profile_id`, and how they relate to upstream legacy `sandbox` and
+canonical `permissions`.
 
 It exists for two reasons:
 
@@ -19,22 +20,23 @@ Upstream baseline:
 
 ## 1. The Three Layers
 
-`feishu-codex` exposes three closely related concepts:
+`feishu-codex` now exposes two formal runtime settings and still needs to
+explain one upstream legacy concept:
 
 1. `approval_policy`
 - when execution should pause for approval before continuing
 
-2. `sandbox`
-- what filesystem and network restrictions commands run under
+2. `permissions_profile_id`
+- which upstream permission profile id the current Feishu binding injects for
+  later turns
 
-3. `permissions`
-- a Feishu-side preset that changes both values together
+3. legacy `sandbox`
+- still supported upstream, but no longer a formal persisted Feishu-side
+  setting
 
-The important point is that `permissions` is not an upstream primitive.
-It is a product convenience layer over the two upstream knobs:
-
-- `approval_policy`
-- `sandbox`
+The important point is that the Feishu-side `/permissions` command no longer
+means a product preset. It now maps directly to upstream canonical
+`permissions` profile ids.
 
 ## 2. Approval vs Sandbox
 

@@ -214,7 +214,7 @@ class PromptTurnEntryController:
             cwd=runtime.working_dir,
             model=runtime.model or None,
             approval_policy=runtime.approval_policy or None,
-            sandbox=runtime.sandbox or None,
+            permissions_profile_id=runtime.permissions_profile_id or None,
         )
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         return snapshot.summary.thread_id
@@ -529,7 +529,7 @@ class PromptTurnEntryController:
                 cwd=state["working_dir"],
                 model=runtime_model or thread_model or None,
                 approval_policy=state["approval_policy"] or None,
-                sandbox=state["sandbox"] or None,
+                permissions_profile_id=state["permissions_profile_id"] or None,
                 reasoning_effort=state["reasoning_effort"] or None,
                 collaboration_mode=state["collaboration_mode"] or None,
             )

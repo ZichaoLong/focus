@@ -111,7 +111,7 @@ load-time observed snapshot。
 当前至少应明确包括：
 
 - `turn/start` 的运行时覆盖项
-  - 例如 `model`、`cwd`、`approvalPolicy`、`sandbox` / experimental `permissions`
+  - 例如 `model`、`cwd`、`approvalPolicy`、canonical `permissions`
 - `config/batchWrite` 且 `reloadUserConfig: true`
   - 会热重载 loaded threads
 - `config/mcpServer/reload`

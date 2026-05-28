@@ -53,11 +53,10 @@
 
 | 命令 | 作用 | `/help` 可达 | 私聊 | 群聊 | 本地对应 |
 | --- | --- | --- | --- | --- | --- |
-| `/permissions [read-only\|default\|full-access]` | 同时设置审批策略与沙箱策略 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
+| `/permissions [read-only\|workspace\|danger-full-access]` | 设置权限基线（独立于审批策略） | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/model [name\|auto]` | 设置当前飞书会话后续 turn 的 model override；无参数时打开 model/effort 联合卡片 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | 设置当前飞书会话后续 turn 的 effort override；无参数时打开 model/effort 联合卡片 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/approval [untrusted\|on-request\|never]` | 设置审批策略 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/sandbox [read-only\|workspace-write\|danger-full-access]` | 设置沙箱策略 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/collab-mode [default\|plan]` | 设置当前飞书会话后续 turn 的协作模式 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/reset-backend` | 预览并重置当前实例 backend | 是；`更多 -> 高级操作` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
 | `/whoami` | 查看自己的身份信息 | 是；`更多` 页 | 任何人 | 不支持 | 无 |
@@ -99,7 +98,7 @@
 - `/threads` 列表卡：`恢复/当前`、`归档`、`更多`、`收起`
 - `/goal` 卡：`刷新`、`暂停` / `恢复`、`清除`
 - `/profile` / `/memory` / `/reset-backend` 结果卡：`应用并重置 backend`、`强制应用并重置 backend`、`附着当前线程`、`附着当前实例`、`保持 detached`
-- `/model` / `/effort` 联合卡，以及 `/permissions` / `/approval` / `/sandbox` / `/collab-mode` 卡：turn-time runtime setting 切换按钮
+- `/model` / `/effort` 联合卡，以及 `/permissions` / `/approval` / `/collab-mode` 卡：turn-time runtime setting 切换按钮
 - 审批 / 补充输入卡：按当前请求类型暴露 `允许/拒绝/提交` 等按钮
 
 ## 5. 边界

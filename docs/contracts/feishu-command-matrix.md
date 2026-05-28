@@ -53,11 +53,10 @@ It does not redefine:
 
 | Command | Purpose | Reachable from `/help` | P2P | Group | Closest local counterpart |
 | --- | --- | --- | --- | --- | --- |
-| `/permissions [read-only\|default\|full-access]` | Set approval policy and sandbox together | yes; `Turn Settings` page | admin only | admin only | none |
+| `/permissions [read-only\|workspace\|danger-full-access]` | Set the permission baseline independently from approval policy | yes; `Turn Settings` page | admin only | admin only | none |
 | `/model [name\|auto]` | Set the current Feishu session's turn-time model override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | Set the current Feishu session's turn-time effort override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `Turn Settings` page | admin only | admin only | none |
-| `/sandbox [read-only\|workspace-write\|danger-full-access]` | Set sandbox policy | yes; `Turn Settings` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `Turn Settings` page | admin only | admin only | none |
 | `/reset-backend` | Preview and reset the current instance backend | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
 | `/whoami` | Show the caller's identity | yes; `More` page | anyone | unsupported | none |
@@ -99,7 +98,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
 - `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
-- shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/sandbox` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
+- shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 
 ## 5. Boundary

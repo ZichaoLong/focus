@@ -117,7 +117,7 @@ snapshot.
 At minimum, this includes:
 
 - `turn/start` runtime overrides
-  - for example `model`, `cwd`, `approvalPolicy`, `sandbox` / experimental `permissions`
+  - for example `model`, `cwd`, `approvalPolicy`, and canonical `permissions`
 - `config/batchWrite` with `reloadUserConfig: true`
   - hot-reloads loaded threads
 - `config/mcpServer/reload`

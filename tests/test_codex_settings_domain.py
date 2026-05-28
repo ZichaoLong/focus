@@ -964,18 +964,18 @@ class CodexSettingsDomainTests(unittest.TestCase):
             [("ou_user", "chat-a", {"message_id": "msg-1", "approval_policy": "never"})],
         )
 
-    def test_permissions_command_updates_approval_and_sandbox_together(self) -> None:
+    def test_permissions_command_updates_permissions_profile_only(self) -> None:
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)
 
         result = domain.handle_permissions_command(
             "ou_user",
             "chat-a",
-            "full-access",
+            "danger-full-access",
             message_id="msg-1",
         )
 
-        self.assertIn("已切换权限预设：`Full Access`", result.text)
+        self.assertIn("已切换权限基线：`Danger Full Access`", result.text)
         self.assertEqual(
             stub.update_calls,
             [
@@ -984,8 +984,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
                     "chat-a",
                     {
                         "message_id": "msg-1",
-                        "approval_policy": "never",
-                        "sandbox": "danger-full-access",
+                        "permissions_profile_id": ":danger-full-access",
                     },
                 )
             ],

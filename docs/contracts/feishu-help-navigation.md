@@ -135,7 +135,6 @@ This page must provide:
 - `/model`
 - `/effort`
 - `/approval`
-- `/sandbox`
 - `/collab-mode`
 
 Its body must also state:

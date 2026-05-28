@@ -135,7 +135,6 @@
 - `/model`
 - `/effort`
 - `/approval`
-- `/sandbox`
 - `/collab-mode`
 
 正文里还必须明确：

@@ -21,15 +21,19 @@ from bot.cards import (
     build_collaboration_mode_card,
     build_memory_mode_card,
     build_model_effort_card,
+    build_permissions_profile_card,
     build_profile_card,
-    build_permissions_preset_card,
-    build_sandbox_policy_card,
     make_card_response,
 )
 from bot.config import ensure_init_token, load_system_config_raw, save_system_config
 from bot.codex_config_reader import ResolvedProfileConfig
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.runtime_view import RuntimeView
+from bot.permissions_profile import (
+    PERMISSION_PROFILE_CHOICES,
+    permissions_profile_choice_key,
+    permissions_profile_label,
+)
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeRecord
 from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
 from bot.thread_resume_profile_setting import (
@@ -122,13 +126,12 @@ class CodexSettingsDomain:
         *,
         ports: SettingsDomainPorts,
         approval_policies: set[str],
-        sandbox_policies: set[str],
-        permissions_presets: dict[str, dict[str, str]],
+        sandbox_policies: set[str] | None = None,
+        permissions_presets: dict[str, dict[str, str]] | None = None,
     ) -> None:
+        del sandbox_policies, permissions_presets
         self._ports = ports
         self._approval_policies = approval_policies
-        self._sandbox_policies = sandbox_policies
-        self._permissions_presets = permissions_presets
 
     def _runtime_view(self, sender_id: str, chat_id: str, message_id: str = "") -> RuntimeView:
         return self._ports.get_runtime_view(sender_id, chat_id, message_id)
@@ -140,7 +143,7 @@ class CodexSettingsDomain:
         *,
         message_id: str = "",
         approval_policy: Any = _UNSET,
-        sandbox: Any = _UNSET,
+        permissions_profile_id: Any = _UNSET,
         collaboration_mode: Any = _UNSET,
         model: Any = _UNSET,
         reasoning_effort: Any = _UNSET,
@@ -148,8 +151,8 @@ class CodexSettingsDomain:
         changes: dict[str, Any] = {"message_id": message_id}
         if approval_policy is not _UNSET:
             changes["approval_policy"] = approval_policy
-        if sandbox is not _UNSET:
-            changes["sandbox"] = sandbox
+        if permissions_profile_id is not _UNSET:
+            changes["permissions_profile_id"] = permissions_profile_id
         if collaboration_mode is not _UNSET:
             changes["collaboration_mode"] = collaboration_mode
         if model is not _UNSET:
@@ -1485,54 +1488,35 @@ class CodexSettingsDomain:
             return CommandResult(text=message)
         return CommandResult(card=build_approval_policy_card(runtime.approval_policy, running=runtime.running))
 
-    def handle_sandbox_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
-        runtime = self._runtime_view(sender_id, chat_id, message_id)
-        if arg:
-            policy = arg.strip().lower()
-            if policy not in self._sandbox_policies:
-                return CommandResult(text="沙箱策略仅支持：`read-only`、`workspace-write`、`danger-full-access`")
-            self._update_runtime_settings(
-                sender_id,
-                chat_id,
-                message_id=message_id,
-                sandbox=policy,
-            )
-            running = runtime.running
-            message = f"已切换沙箱策略：`{policy}`\n作用范围：只影响当前飞书会话的后续 turn。"
-            if running:
-                message += "\n如果当前正在执行，新设置从下一轮生效。"
-            return CommandResult(text=message)
-        return CommandResult(card=build_sandbox_policy_card(runtime.sandbox, running=runtime.running))
-
     def handle_permissions_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         runtime = self._runtime_view(sender_id, chat_id, message_id)
         if arg:
-            preset = arg.strip().lower()
-            config = self._permissions_presets.get(preset)
+            choice = arg.strip().lower()
+            config = PERMISSION_PROFILE_CHOICES.get(choice)
             if config is None:
-                return CommandResult(text="权限预设仅支持：`read-only`、`default`、`full-access`")
+                return CommandResult(text="权限基线仅支持：`read-only`、`workspace`、`danger-full-access`")
             self._update_runtime_settings(
                 sender_id,
                 chat_id,
                 message_id=message_id,
-                approval_policy=config["approval_policy"],
-                sandbox=config["sandbox"],
+                permissions_profile_id=config["profile_id"],
             )
             running = runtime.running
             message = (
-                f"已切换权限预设：`{config['label']}`\n"
-                f"审批：`{config['approval_policy']}`\n"
-                f"沙箱：`{config['sandbox']}`\n"
+                f"已切换权限基线：`{config['label']}`\n"
+                f"Profile ID：`{config['profile_id']}`\n"
+                "它只决定执行边界；是否需要停下来审批，仍由 `/approval` 单独控制。\n"
                 "作用范围：只影响当前飞书会话的后续 turn。"
             )
             if running:
                 message += "\n如果当前正在执行，新设置从下一轮生效。"
             return CommandResult(text=message)
-        return CommandResult(card=build_permissions_preset_card(
-            runtime.approval_policy,
-            runtime.sandbox,
-            running=runtime.running,
-        ))
+        return CommandResult(
+            card=build_permissions_profile_card(
+                runtime.permissions_profile_id,
+                running=runtime.running,
+            )
+        )
 
     def handle_collab_mode_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         runtime = self._runtime_view(sender_id, chat_id, message_id)
@@ -1674,60 +1658,31 @@ class CodexSettingsDomain:
             toast_type="success",
         )
 
-    def handle_set_sandbox_policy(
+    def handle_set_permissions_profile(
         self,
         sender_id: str,
         chat_id: str,
         message_id: str,
         action_value: dict,
     ) -> P2CardActionTriggerResponse:
-        policy = str(action_value.get("policy", "")).strip().lower()
-        if policy not in self._sandbox_policies:
-            return make_card_response(toast="非法沙箱策略", toast_type="warning")
-        runtime = self._runtime_view(sender_id, chat_id, message_id)
-        self._update_runtime_settings(
-            sender_id,
-            chat_id,
-            message_id=message_id,
-            sandbox=policy,
-        )
-        running = runtime.running
-        toast = f"已切换沙箱策略：{policy}"
-        if running:
-            toast += "；下一轮生效"
-        return make_card_response(
-            card=build_sandbox_policy_card(policy, running=running),
-            toast=toast,
-            toast_type="success",
-        )
-
-    def handle_set_permissions_preset(
-        self,
-        sender_id: str,
-        chat_id: str,
-        message_id: str,
-        action_value: dict,
-    ) -> P2CardActionTriggerResponse:
-        preset = str(action_value.get("preset", "")).strip().lower()
-        config = self._permissions_presets.get(preset)
+        choice = str(action_value.get("profile", "")).strip().lower()
+        config = PERMISSION_PROFILE_CHOICES.get(choice)
         if config is None:
-            return make_card_response(toast="非法权限预设", toast_type="warning")
+            return make_card_response(toast="非法权限基线", toast_type="warning")
         runtime = self._runtime_view(sender_id, chat_id, message_id)
         self._update_runtime_settings(
             sender_id,
             chat_id,
             message_id=message_id,
-            approval_policy=config["approval_policy"],
-            sandbox=config["sandbox"],
+            permissions_profile_id=config["profile_id"],
         )
         running = runtime.running
-        toast = f"已切换权限预设：{config['label']}"
+        toast = f"已切换权限基线：{config['label']}"
         if running:
             toast += "；下一轮生效"
         return make_card_response(
-            card=build_permissions_preset_card(
-                config["approval_policy"],
-                config["sandbox"],
+            card=build_permissions_profile_card(
+                config["profile_id"],
                 running=running,
             ),
             toast=toast,

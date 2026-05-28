@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from bot.execution_transcript import ExecutionTranscript
+from bot.permissions_profile import normalize_permissions_profile_id
 from bot.runtime_state import FEISHU_RUNTIME_ATTACHED, RuntimeStateDict
 
 
@@ -23,7 +24,7 @@ class PlanStepView:
 @dataclass(frozen=True, slots=True)
 class RuntimeSettingsView:
     approval_policy: str
-    sandbox: str
+    permissions_profile_id: str
     collaboration_mode: str
     model: str
     reasoning_effort: str
@@ -132,8 +133,8 @@ class RuntimeView:
         return self.settings.approval_policy
 
     @property
-    def sandbox(self) -> str:
-        return self.settings.sandbox
+    def permissions_profile_id(self) -> str:
+        return self.settings.permissions_profile_id
 
     @property
     def collaboration_mode(self) -> str:
@@ -193,7 +194,9 @@ def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
         ),
         settings=RuntimeSettingsView(
             approval_policy=str(state["approval_policy"] or ""),
-            sandbox=str(state["sandbox"] or ""),
+            permissions_profile_id=normalize_permissions_profile_id(
+                str(state.get("permissions_profile_id", state.get("sandbox", "")) or "")
+            ),
             collaboration_mode=str(state["collaboration_mode"] or ""),
             model=str(state["model"] or ""),
             reasoning_effort=str(state["reasoning_effort"] or ""),

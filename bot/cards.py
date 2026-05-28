@@ -27,6 +27,7 @@ from bot.feishu_card_markdown import (
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
+from bot.permissions_profile import PERMISSION_PROFILE_CHOICES, permissions_profile_choice_key, permissions_profile_label
 from bot.shared_command_surface import get_shared_command
 
 
@@ -934,112 +935,19 @@ def build_approval_policy_card(current_policy: str, *, running: bool = False) ->
     }
 
 
-def build_sandbox_policy_card(current_sandbox: str, *, running: bool = False) -> dict:
-    """构造沙箱策略选择卡片。"""
-    labels = {
-        "read-only": "read-only",
-        "workspace-write": "workspace-write",
-        "danger-full-access": "danger-full-access",
-    }
-    descs = {
-        "read-only": "只读当前工作区；修改文件通常需要更高权限组合。",
-        "workspace-write": "可读写当前工作区；工作区外写入仍受限。",
-        "danger-full-access": "可编辑工作区外文件并直接联网，风险最高。",
-    }
-
-    current_label = labels.get(current_sandbox, current_sandbox or "（未设置）")
-    current_desc = (
-        "它只决定文件和网络边界，不决定是否停下来审批。\n"
-        "多数情况下，优先使用 `/permissions`。\n"
-        "作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。"
-    )
-    if running:
-        current_desc += "\n\n当前若有执行中的 turn，切换仅对下一轮生效。"
-
-    buttons = []
-    elements = [
-        {
-            "tag": "markdown",
-            "content": f"当前沙箱策略：**{current_label}**\n{current_desc}",
-        },
-        {"tag": "hr"},
-    ]
-    for policy, label in labels.items():
-        elements.append({"tag": "markdown", "content": f"**{label}**\n{descs[policy]}"})
-        buttons.append(
-            {
-                "tag": "button",
-                "text": {
-                    "tag": "plain_text",
-                    "content": f"{'✓ ' if policy == current_sandbox else ''}{label}",
-                },
-                "type": "primary" if policy == current_sandbox else "default",
-                "value": {
-                    "action": "set_sandbox_policy",
-                    "policy": policy,
-                },
-            }
-        )
-    elements.append({"tag": "action", "layout": "trisection", "actions": buttons})
-
-    return {
-        "config": _card_config(),
-        "header": {
-            "title": {"tag": "plain_text", "content": "Codex 沙箱策略"},
-            "template": "blue",
-        },
-        "elements": elements,
-    }
-
-
-def build_permissions_preset_card(
-    current_approval: str,
-    current_sandbox: str,
+def build_permissions_profile_card(
+    current_permissions_profile_id: str,
     *,
     running: bool = False,
 ) -> dict:
-    """构造权限预设选择卡片。"""
-    presets = [
-        {
-            "id": "read-only",
-            "label": "read-only",
-            "description": "只读当前工作区；更安全，改文件前通常会停下来。",
-            "approval": "on-request",
-            "sandbox": "read-only",
-        },
-        {
-            "id": "default",
-            "label": "default",
-            "description": "推荐默认值；可改当前工作区，风险和可用性更平衡。",
-            "approval": "on-request",
-            "sandbox": "workspace-write",
-        },
-        {
-            "id": "full-access",
-            "label": "full-access",
-            "description": "不再请求审批；也可联网并写工作区外文件，风险最高。",
-            "approval": "never",
-            "sandbox": "danger-full-access",
-        },
-    ]
-    current_preset = next(
-        (
-            preset["id"]
-            for preset in presets
-            if preset["approval"] == current_approval and preset["sandbox"] == current_sandbox
-        ),
-        "",
-    )
-    current_label = next(
-        (preset["label"] for preset in presets if preset["id"] == current_preset),
-        f"Custom ({current_sandbox}, {current_approval})",
-    )
+    """构造权限基线选择卡片。"""
+    current_choice = permissions_profile_choice_key(current_permissions_profile_id)
+    current_label = permissions_profile_label(current_permissions_profile_id)
     current_desc = (
-        "推荐先用这个；它会同时设置审批策略和沙箱。\n"
-        "不确定时，优先选 `default`。\n"
+        "它只决定执行边界，不决定是否停下来审批。\n"
+        "审批策略请单独使用 `/approval`。\n"
         "作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。\n\n"
-        f"审批：`{current_approval}`\n"
-        f"沙箱：`{current_sandbox}`"
+        f"Profile ID：`{current_permissions_profile_id or '（空）'}`"
     )
     if running:
         current_desc += "\n\n当前若有执行中的 turn，切换仅对下一轮生效。"
@@ -1048,15 +956,15 @@ def build_permissions_preset_card(
     elements = [
         {
             "tag": "markdown",
-            "content": f"当前权限预设：**{current_label}**\n{current_desc}",
+            "content": f"当前权限基线：**{current_label}**\n{current_desc}",
         },
         {"tag": "hr"},
     ]
-    for preset in presets:
+    for key, config in PERMISSION_PROFILE_CHOICES.items():
         elements.append(
             {
                 "tag": "markdown",
-                "content": f"**{preset['label']}**\n{preset['description']}",
+                "content": f"**{config['label']}**\n{config['description']}",
             }
         )
         buttons.append(
@@ -1064,12 +972,12 @@ def build_permissions_preset_card(
                 "tag": "button",
                 "text": {
                     "tag": "plain_text",
-                    "content": f"{'✓ ' if preset['id'] == current_preset else ''}{preset['label']}",
+                    "content": f"{'✓ ' if key == current_choice else ''}{config['label']}",
                 },
-                "type": "primary" if preset["id"] == current_preset else "default",
+                "type": "primary" if key == current_choice else "default",
                 "value": {
-                    "action": "set_permissions_preset",
-                    "preset": preset["id"],
+                    "action": "set_permissions_profile",
+                    "profile": key,
                 },
             }
         )
@@ -1079,7 +987,7 @@ def build_permissions_preset_card(
     return {
         "config": _card_config(),
         "header": {
-            "title": {"tag": "plain_text", "content": "Codex 权限预设"},
+            "title": {"tag": "plain_text", "content": "Codex 权限基线"},
             "template": "blue",
         },
         "elements": elements,

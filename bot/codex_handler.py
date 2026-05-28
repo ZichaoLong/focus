@@ -76,6 +76,11 @@ from bot.card_text_projection import project_interactive_card_text
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.interaction_request_controller import InteractionRequestController
 from bot.interaction_request_controller import PendingRequestStateDict
+from bot.permissions_profile import (
+    PERMISSION_PROFILE_CHOICES,
+    permissions_profile_choice_key,
+    permissions_profile_label,
+)
 from bot.thread_resume_profile_setting import (
     ThreadResumeProfileSetting,
     format_thread_resume_profile_missing_fields,
@@ -157,43 +162,17 @@ _CARD_LOG_LIMIT_DEFAULT = 8000
 _MIRROR_WATCHDOG_SECONDS_DEFAULT = 8.0
 _ATTACHMENT_TTL_SECONDS_DEFAULT = 1800.0
 _APPROVAL_POLICIES = set(USER_SELECTABLE_APPROVAL_POLICIES)
-_SANDBOX_POLICIES = {"read-only", "workspace-write", "danger-full-access"}
 _LOCAL_THREAD_SAFETY_RULE = (
     "同一线程允许多端订阅观察，但同一 live turn 只有一个交互 owner；非 owner 只能看，不能写或处理审批。"
 )
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 ChatBindingKey: TypeAlias = tuple[str, str]
-_PERMISSIONS_PRESETS: dict[str, dict[str, str]] = {
-    "read-only": {
-        "label": "Read Only",
-        "approval_policy": "on-request",
-        "sandbox": "read-only",
-    },
-    "default": {
-        "label": "Default",
-        "approval_policy": "on-request",
-        "sandbox": "workspace-write",
-    },
-    "full-access": {
-        "label": "Full Access",
-        "approval_policy": "never",
-        "sandbox": "danger-full-access",
-    },
-}
-
-def _permissions_preset_key(approval_policy: str, sandbox: str) -> str:
-    for preset, config in _PERMISSIONS_PRESETS.items():
-        if config["approval_policy"] == approval_policy and config["sandbox"] == sandbox:
-            return preset
-    return ""
-
-
-def _permissions_summary(approval_policy: str, sandbox: str) -> str:
-    preset = _permissions_preset_key(approval_policy, sandbox)
-    if preset:
-        return _PERMISSIONS_PRESETS[preset]["label"]
-    return f"Custom ({sandbox}, {approval_policy})"
+def _permissions_summary(permissions_profile_id: str) -> str:
+    choice = permissions_profile_choice_key(permissions_profile_id)
+    if choice:
+        return PERMISSION_PROFILE_CHOICES[choice]["label"]
+    return permissions_profile_label(permissions_profile_id)
 
 
 class CodexHandler(BotHandler):
@@ -254,7 +233,7 @@ class CodexHandler(BotHandler):
             lock=self._lock,
             default_working_dir=self._default_working_dir,
             default_approval_policy=self._adapter_config.approval_policy,
-            default_sandbox=self._adapter_config.sandbox,
+            default_permissions_profile_id=self._adapter_config.permissions_profile_id,
             default_collaboration_mode=self._adapter_config.collaboration_mode,
             default_model=self._adapter_config.model,
             default_reasoning_effort=self._adapter_config.reasoning_effort,
@@ -421,8 +400,6 @@ class CodexHandler(BotHandler):
                 get_new_thread_memory_mode_seed=self._new_thread_memory_mode_seed,
             ),
             approval_policies=_APPROVAL_POLICIES,
-            sandbox_policies=_SANDBOX_POLICIES,
-            permissions_presets=_PERMISSIONS_PRESETS,
         )
         self._group_domain = CodexGroupDomain(
             ports=GroupDomainPorts(
@@ -1197,7 +1174,7 @@ class CodexHandler(BotHandler):
         *,
         message_id: str = "",
         approval_policy: Any = UNSET,
-        sandbox: Any = UNSET,
+        permissions_profile_id: Any = UNSET,
         collaboration_mode: Any = UNSET,
         model: Any = UNSET,
         reasoning_effort: Any = UNSET,
@@ -1209,7 +1186,7 @@ class CodexHandler(BotHandler):
                 resolved.state,
                 RuntimeSettingsChanged(
                     approval_policy=approval_policy,
-                    sandbox=sandbox,
+                    permissions_profile_id=permissions_profile_id,
                     collaboration_mode=collaboration_mode,
                     model=model,
                     reasoning_effort=reasoning_effort,
@@ -1737,11 +1714,6 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, arg, message_id=message_id
                 ),
             ),
-            "/sandbox": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_sandbox_command(
-                    sender_id, chat_id, arg, message_id=message_id
-                ),
-            ),
             "/permissions": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_permissions_command(
                     sender_id, chat_id, arg, message_id=message_id
@@ -1857,14 +1829,8 @@ class CodexHandler(BotHandler):
                 ),
                 group_guard="group_admin",
             ),
-            "set_sandbox_policy": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_sandbox_policy(
-                    sender_id, chat_id, message_id, action_value
-                ),
-                group_guard="group_admin",
-            ),
-            "set_permissions_preset": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_permissions_preset(
+            "set_permissions_profile": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_permissions_profile(
                     sender_id, chat_id, message_id, action_value
                 ),
                 group_guard="group_admin",
@@ -2167,7 +2133,7 @@ class CodexHandler(BotHandler):
                 cwd=runtime.working_dir,
                 model=runtime.model or None,
                 approval_policy=runtime.approval_policy or None,
-                sandbox=runtime.sandbox or None,
+                permissions_profile_id=runtime.permissions_profile_id or None,
             )
             self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         except Exception as exc:
@@ -3179,7 +3145,7 @@ class CodexHandler(BotHandler):
         model_provider: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
-        sandbox: str | None = None,
+        permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         new_thread_memory_mode_seed = self._new_thread_memory_mode_seed()
         seeded_memory_overrides = (
@@ -3197,7 +3163,7 @@ class CodexHandler(BotHandler):
             model_provider=model_provider,
             config_overrides=deep_merge_config_overrides(seeded_memory_overrides, config_overrides),
             approval_policy=approval_policy,
-            sandbox=sandbox,
+            permissions_profile_id=permissions_profile_id,
         )
         return snapshot
 
@@ -3210,7 +3176,7 @@ class CodexHandler(BotHandler):
         model_provider: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         approval_policy: str | None = None,
-        sandbox: str | None = None,
+        permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         snapshot = self._create_thread_with_seeded_memory_mode(
             cwd=cwd,
@@ -3219,7 +3185,7 @@ class CodexHandler(BotHandler):
             model_provider=model_provider,
             config_overrides=config_overrides,
             approval_policy=approval_policy,
-            sandbox=sandbox,
+            permissions_profile_id=permissions_profile_id,
         )
         new_thread_memory_mode_seed = self._new_thread_memory_mode_seed()
         if new_thread_memory_mode_seed:
@@ -3296,7 +3262,7 @@ class CodexHandler(BotHandler):
                 or None
             ),
             approval_policy=runtime.approval_policy or None,
-            sandbox=runtime.sandbox or None,
+            permissions_profile_id=runtime.permissions_profile_id or None,
         )
         new_thread_id = created.summary.thread_id
         try:

@@ -49,7 +49,7 @@ def _build_state() -> dict[str, object]:
         "terminal_result_text": "",
         "awaiting_local_turn_started": True,
         "approval_policy": "on-request",
-        "sandbox": "workspace-write",
+        "permissions_profile_id": ":workspace",
         "collaboration_mode": "default",
         "model": "",
         "reasoning_effort": "",
@@ -107,7 +107,12 @@ class RuntimeStateReducerTests(unittest.TestCase):
 
         apply_runtime_state_message(
             state,
-            RuntimeSettingsChanged(approval_policy="never", model="gpt-5.5", reasoning_effort="high"),
+            RuntimeSettingsChanged(
+                approval_policy="never",
+                permissions_profile_id=":danger-full-access",
+                model="gpt-5.5",
+                reasoning_effort="high",
+            ),
         )
         apply_runtime_state_message(
             state,
@@ -115,7 +120,7 @@ class RuntimeStateReducerTests(unittest.TestCase):
         )
 
         self.assertEqual(state["approval_policy"], "never")
-        self.assertEqual(state["sandbox"], "workspace-write")
+        self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
         self.assertEqual(state["collaboration_mode"], "default")
         self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["reasoning_effort"], "high")

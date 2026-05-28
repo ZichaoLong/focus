@@ -201,9 +201,8 @@ For example:
 
 - `/model` resolves to a model override
 - `/effort` resolves to a reasoning-effort override
-- `/approval` and `/sandbox` resolve to their runtime fields
-- `/permissions` is not an independent persisted field; it is first expanded
-  into `approval_policy + sandbox`
+- `/approval` resolves to `approval_policy`
+- `/permissions` resolves to the independent runtime field `permissions_profile_id`
 
 ### 4.2 Post-write persisted source
 
