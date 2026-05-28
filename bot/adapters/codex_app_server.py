@@ -199,16 +199,30 @@ class CodexAppServerAdapter(AgentAdapter):
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         params: dict[str, Any] = {"threadId": thread_id}
         if model:
             params["model"] = model
         if model_provider:
             params["modelProvider"] = model_provider
+        if approval_policy:
+            params["approvalPolicy"] = approval_policy
+        if permissions_profile_id:
+            params["permissions"] = normalize_permissions_profile_id(
+                permissions_profile_id,
+                fallback=self._config.permissions_profile_id,
+            )
         merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
         if merged_config:
             params["config"] = merged_config
-        result = self._rpc.request("thread/resume", params)
+        result = self._request_with_permissions_fallback(
+            "thread/resume",
+            params,
+            legacy_field="sandbox",
+            legacy_value=self._legacy_sandbox(permissions_profile_id),
+        )
         self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
 
@@ -298,6 +312,44 @@ class CodexAppServerAdapter(AgentAdapter):
         result = self._rpc.request("thread/loaded/list", {})
         data = result.get("data") or []
         return [str(item).strip() for item in data if str(item).strip()]
+
+    def update_thread_settings(
+        self,
+        thread_id: str,
+        *,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        collaboration_mode: str | None = None,
+    ) -> None:
+        effective_model = model or None
+        effective_reasoning = reasoning_effort or None
+        effective_collaboration_mode = collaboration_mode or None
+        params: dict[str, Any] = {
+            "threadId": thread_id,
+            "approvalPolicy": approval_policy or None,
+            "model": effective_model,
+            "effort": effective_reasoning,
+        }
+        if effective_collaboration_mode:
+            params["collaborationMode"] = self._collaboration_mode_payload(
+                effective_collaboration_mode,
+                model=effective_model,
+                thread_id=thread_id,
+                reasoning_effort=effective_reasoning,
+            )
+        if permissions_profile_id:
+            params["permissions"] = normalize_permissions_profile_id(
+                permissions_profile_id,
+                fallback=self._config.permissions_profile_id,
+            )
+        self._request_with_permissions_fallback(
+            "thread/settings/update",
+            _compact(params),
+            legacy_field="sandboxPolicy",
+            legacy_value=self._legacy_sandbox_policy(permissions_profile_id),
+        )
 
     def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
         self._rpc.request(

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any, Callable
 
 from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
@@ -36,6 +36,8 @@ class GoalDomainPorts:
     clear_thread_goal: Callable[[str], bool]
     attach_current_binding: Callable[[str, str, str], None]
     update_runtime_goal_projection: Callable[[str, str, str, ThreadGoalSummary | None], None]
+    submit_to_runtime: Callable[..., None]
+    resume_goal_on_runtime: Callable[[str, str, bool, str], None]
 
 
 class CodexGoalDomain:
@@ -108,8 +110,18 @@ class CodexGoalDomain:
                 )
                 if confirm_card is not None:
                     return make_card_response(card=confirm_card)
-                result = self._update_goal_status_direct(sender_id, chat_id, "active", message_id=message_id)
-                return make_card_response(card=result.card, toast="已恢复 goal。", toast_type="success")
+                self._ports.submit_to_runtime(
+                    self._ports.resume_goal_on_runtime,
+                    sender_id,
+                    chat_id,
+                    False,
+                    message_id,
+                )
+                return make_card_response(
+                    card=self._build_goal_resume_pending_card(),
+                    toast="正在恢复 goal…",
+                    toast_type="success",
+                )
             if action == "goal_clear":
                 result = self._clear_goal(sender_id, chat_id, message_id=message_id)
                 return make_card_response(card=result.card, toast="已清除 goal。", toast_type="success")
@@ -186,6 +198,8 @@ class CodexGoalDomain:
         )
         if confirm_card is not None:
             return CommandResult(card=confirm_card)
+        if status == "active":
+            return self._resume_goal_async(sender_id, chat_id, attach_binding=False, message_id=message_id)
         return self._update_goal_status_direct(sender_id, chat_id, status, message_id=message_id)
 
     def _clear_goal(self, sender_id: str, chat_id: str, *, message_id: str = "") -> CommandResult:
@@ -234,6 +248,18 @@ class CodexGoalDomain:
     ) -> tuple[CommandResult, str]:
         normalized_objective = str(objective or "").strip()
         normalized_status = str(status or "").strip()
+        if normalized_status == "active":
+            self._ports.submit_to_runtime(
+                self._ports.resume_goal_on_runtime,
+                sender_id,
+                chat_id,
+                attach_binding,
+                message_id,
+            )
+            return (
+                CommandResult(card=self._build_goal_resume_pending_card()),
+                "正在恢复 goal 并恢复当前会话推送…" if attach_binding else "正在恢复 goal…",
+            )
         if attach_binding:
             self._ports.attach_current_binding(sender_id, chat_id, message_id)
         if normalized_objective:
@@ -257,6 +283,32 @@ class CodexGoalDomain:
                 return result, "已恢复 goal 并恢复当前会话推送。" if attach_binding else "已恢复 goal，保持 detached。"
             return result, "已更新 goal 并恢复当前会话推送。" if attach_binding else "已更新 goal，保持 detached。"
         raise ValueError("goal 变更缺少 objective 或 status。")
+
+    def _resume_goal_async(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        attach_binding: bool,
+        message_id: str = "",
+    ) -> CommandResult:
+        return CommandResult(
+            card=self._build_goal_resume_pending_card(),
+            after_dispatch=lambda: self._ports.submit_to_runtime(
+                self._ports.resume_goal_on_runtime,
+                sender_id,
+                chat_id,
+                attach_binding,
+                message_id,
+            ),
+        )
+
+    @staticmethod
+    def _build_goal_resume_pending_card() -> dict:
+        return build_markdown_card(
+            "Codex 正在恢复 Goal",
+            "正在同步 thread、goal 与当前会话设置；完成后会自动回复结果。",
+        )
 
     def _set_goal_direct(
         self,

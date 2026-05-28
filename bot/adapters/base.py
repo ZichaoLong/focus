@@ -114,6 +114,8 @@ class AgentAdapter(ABC):
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         ...
 
@@ -164,6 +166,19 @@ class AgentAdapter(ABC):
 
     @abstractmethod
     def list_loaded_thread_ids(self) -> list[str]:
+        ...
+
+    @abstractmethod
+    def update_thread_settings(
+        self,
+        thread_id: str,
+        *,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        collaboration_mode: str | None = None,
+    ) -> None:
         ...
 
     @abstractmethod

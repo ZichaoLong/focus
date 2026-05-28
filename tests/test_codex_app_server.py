@@ -138,7 +138,7 @@ class _FakeRpc:
 class _PermissionsUnsupportedRpc(_FakeRpc):
     def request(self, method: str, params: dict | None = None, *, timeout: float | None = None) -> dict:
         payload = params or {}
-        if method in {"thread/start", "turn/start"} and "permissions" in payload:
+        if method in {"thread/start", "thread/resume", "thread/settings/update", "turn/start"} and "permissions" in payload:
             self.calls.append((method, payload))
             raise CodexRpcError(method, {"code": -32602, "message": "unknown field permissions"})
         return super().request(method, params, timeout=timeout)
@@ -361,6 +361,105 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     },
                 },
             ),
+        )
+
+    def test_resume_thread_can_attach_runtime_permission_overrides(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.resume_thread(
+            "thread-1",
+            approval_policy="on-request",
+            permissions_profile_id=":workspace",
+        )
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/resume",
+                {
+                    "threadId": "thread-1",
+                    "approvalPolicy": "on-request",
+                    "permissions": ":workspace",
+                },
+            ),
+        )
+
+    def test_resume_thread_falls_back_to_legacy_sandbox_when_permissions_unsupported(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _PermissionsUnsupportedRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.resume_thread(
+            "thread-1",
+            approval_policy="on-request",
+            permissions_profile_id=":workspace",
+        )
+
+        self.assertEqual(fake_rpc.calls[0][0], "thread/resume")
+        self.assertEqual(fake_rpc.calls[0][1]["permissions"], ":workspace")
+        self.assertEqual(fake_rpc.calls[1][0], "thread/resume")
+        self.assertNotIn("permissions", fake_rpc.calls[1][1])
+        self.assertEqual(fake_rpc.calls[1][1]["sandbox"], "workspace-write")
+
+    def test_update_thread_settings_uses_canonical_runtime_fields(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.update_thread_settings(
+            "thread-1",
+            approval_policy="on-request",
+            permissions_profile_id=":workspace",
+            model="gpt-5.4",
+            reasoning_effort="high",
+            collaboration_mode="plan",
+        )
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/settings/update",
+                {
+                    "threadId": "thread-1",
+                    "approvalPolicy": "on-request",
+                    "permissions": ":workspace",
+                    "model": "gpt-5.4",
+                    "effort": "high",
+                    "collaborationMode": {
+                        "mode": "plan",
+                        "settings": {
+                            "model": "gpt-5.4",
+                            "reasoning_effort": "high",
+                            "developer_instructions": None,
+                        },
+                    },
+                },
+            ),
+        )
+
+    def test_update_thread_settings_falls_back_to_legacy_sandbox_policy_when_permissions_unsupported(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _PermissionsUnsupportedRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.update_thread_settings("thread-1", permissions_profile_id=":workspace")
+
+        self.assertEqual(fake_rpc.calls[0][0], "thread/settings/update")
+        self.assertEqual(fake_rpc.calls[0][1]["permissions"], ":workspace")
+        self.assertEqual(fake_rpc.calls[1][0], "thread/settings/update")
+        self.assertNotIn("permissions", fake_rpc.calls[1][1])
+        self.assertEqual(
+            fake_rpc.calls[1][1]["sandboxPolicy"],
+            {
+                "type": "workspaceWrite",
+                "writableRoots": [],
+                "readOnlyAccess": {"type": "fullAccess"},
+                "networkAccess": False,
+                "excludeTmpdirEnvVar": False,
+                "excludeSlashTmp": False,
+            },
         )
 
     def test_compact_thread_calls_upstream_endpoint(self) -> None:

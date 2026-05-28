@@ -25,6 +25,7 @@ from bot.adapters.base import RuntimeConfigSummary, ThreadGoalSummary, ThreadSna
 from bot.adapter_notification_controller import AdapterNotificationController
 from bot.cards import (
     CommandResult,
+    build_goal_card,
     build_history_preview_card,
     build_markdown_card,
     make_card_response,
@@ -437,6 +438,8 @@ class CodexHandler(BotHandler):
                     self._chat_binding_key(sender_id, chat_id, message_id)
                 ),
                 update_runtime_goal_projection=self._update_runtime_goal_projection,
+                submit_to_runtime=self._runtime_submit,
+                resume_goal_on_runtime=self._resume_goal_on_runtime,
             )
         )
         self._help_domain = CodexHelpDomain(
@@ -2559,6 +2562,8 @@ class CodexHandler(BotHandler):
         *,
         original_arg: str,
         summary: ThreadSummary | None = None,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         thread = summary or self._lookup_thread_summary_in_bounded_list(thread_id)
         profile_record = self._thread_resume_profile(thread_id)
@@ -2575,12 +2580,19 @@ class CodexHandler(BotHandler):
         )
         lease_was_newly_acquired = self._ensure_service_thread_runtime_lease(thread_id)
         try:
+            # Cold thread/resume is the only place where we intentionally carry
+            # binding-wise next-turn permissions as a one-shot runtime override,
+            # so an auto-continued active goal can use them on its very first
+            # post-resume turn. Loaded-thread canonical correction still goes
+            # through thread/settings/update immediately afterwards.
             return self._adapter.resume_thread(
                 thread_id,
                 profile=profile or None,
                 config_overrides=memory_config_overrides or None,
                 model=model or None,
                 model_provider=model_provider or None,
+                approval_policy=approval_policy or None,
+                permissions_profile_id=permissions_profile_id or None,
             )
         except Exception as exc:
             if lease_was_newly_acquired:
@@ -2593,6 +2605,76 @@ class CodexHandler(BotHandler):
                     "这通常意味着该线程正被本地 TUI 使用，或当前版本暂不支持加载它的完整历史。"
                 ) from exc
             raise
+
+    def _resume_goal_on_runtime(
+        self,
+        sender_id: str,
+        chat_id: str,
+        attach_binding: bool,
+        message_id: str = "",
+    ) -> None:
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
+        thread_id = runtime.current_thread_id.strip()
+        if not thread_id:
+            self._reply_text(chat_id, "当前没有绑定 thread；请先直接发送消息、执行 `/new`，或 `/resume` 目标线程。", message_id=message_id)
+            return
+        goal = self._adapter.get_thread_goal(thread_id)
+        if goal is None:
+            self._reply_card(
+                chat_id,
+                build_markdown_card("Codex Goal 操作失败", "当前 thread 没有可恢复的 goal。", template="red"),
+                message_id=message_id,
+            )
+            return
+        approval_policy = runtime.approval_policy or None
+        permissions_profile_id = runtime.permissions_profile_id or None
+        loaded_thread_ids = set(self._adapter.list_loaded_thread_ids())
+        was_loaded = thread_id in loaded_thread_ids
+        snapshot: ThreadSnapshot | None = None
+        try:
+            if attach_binding or not was_loaded:
+                snapshot = self._resume_snapshot_by_id(
+                    thread_id,
+                    original_arg=thread_id,
+                    approval_policy=approval_policy,
+                    permissions_profile_id=permissions_profile_id,
+                )
+            if attach_binding and snapshot is not None:
+                self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
+            self._adapter.update_thread_settings(
+                thread_id,
+                approval_policy=approval_policy,
+                permissions_profile_id=permissions_profile_id,
+                model=runtime.model or None,
+                reasoning_effort=runtime.reasoning_effort or None,
+                collaboration_mode=runtime.collaboration_mode or None,
+            )
+            effective_goal = goal
+            if goal.status != "active":
+                effective_goal = self._adapter.set_thread_goal(thread_id, status="active")
+            self._update_runtime_goal_projection(sender_id, chat_id, message_id, effective_goal)
+        except Exception as exc:
+            logger.exception("恢复 goal 失败")
+            self._reply_card(
+                chat_id,
+                build_markdown_card("Codex Goal 操作失败", str(exc) or "恢复 goal 失败", template="red"),
+                message_id=message_id,
+            )
+            return
+        notice = "已恢复当前 thread goal。"
+        if attach_binding:
+            notice += "\n当前会话已恢复接收该 thread 的飞书推送。"
+        thread_title = self._get_runtime_view(sender_id, chat_id, message_id).current_thread_title.strip()
+        self._reply_card(
+            chat_id,
+            build_goal_card(
+                thread_id=thread_id,
+                thread_title=thread_title,
+                goal=effective_goal,
+                notice=notice,
+            ),
+            message_id=message_id,
+        )
 
     def _lookup_thread_summary_in_bounded_list(self, thread_id: str) -> ThreadSummary | None:
         threads = self._list_global_threads()

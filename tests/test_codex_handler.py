@@ -63,6 +63,7 @@ class _FakeAdapter:
         self.set_active_profile_calls: list[str] = []
         self.create_thread_calls: list[dict] = []
         self.resume_thread_calls: list[dict] = []
+        self.update_thread_settings_calls: list[dict] = []
         self.start_turn_calls: list[dict] = []
         self.interrupt_turn_calls: list[dict] = []
         self.respond_calls: list[dict] = []
@@ -214,6 +215,8 @@ class _FakeAdapter:
         config_overrides: dict | None = None,
         model: str | None = None,
         model_provider: str | None = None,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
     ):
         self.resume_thread_calls.append({
             "thread_id": thread_id,
@@ -221,6 +224,8 @@ class _FakeAdapter:
             "config_overrides": config_overrides,
             "model": model,
             "model_provider": model_provider,
+            "approval_policy": approval_policy,
+            "permissions_profile_id": permissions_profile_id,
         })
         return ThreadSnapshot(
             summary=ThreadSummary(
@@ -233,6 +238,27 @@ class _FakeAdapter:
                 source="cli",
                 status="idle",
             )
+        )
+
+    def update_thread_settings(
+        self,
+        thread_id: str,
+        *,
+        approval_policy: str | None = None,
+        permissions_profile_id: str | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        collaboration_mode: str | None = None,
+    ) -> None:
+        self.update_thread_settings_calls.append(
+            {
+                "thread_id": thread_id,
+                "approval_policy": approval_policy,
+                "permissions_profile_id": permissions_profile_id,
+                "model": model,
+                "reasoning_effort": reasoning_effort,
+                "collaboration_mode": collaboration_mode,
+            }
         )
 
     def unsubscribe_thread(self, thread_id: str) -> None:
@@ -1308,6 +1334,8 @@ class CodexHandlerTests(unittest.TestCase):
                     "config_overrides": None,
                     "model": None,
                     "model_provider": None,
+                    "approval_policy": None,
+                    "permissions_profile_id": None,
                 }
             ],
         )
@@ -1351,6 +1379,8 @@ class CodexHandlerTests(unittest.TestCase):
                 "config_overrides": None,
                 "model": None,
                 "model_provider": None,
+                "approval_policy": None,
+                "permissions_profile_id": None,
             },
         )
         self.assertEqual(handler._adapter.unsubscribe_thread_calls, [])
@@ -3446,7 +3476,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("状态：`paused`", pause_card["elements"][0]["content"])
         self.assertEqual(state["goal_status"], "paused")
 
+        pending_count = len(bot.cards)
         handler.handle_message("ou_user", "c1", "/goal resume")
+        pending_cards = [
+            card
+            for _, card in bot.cards[pending_count:]
+            if "正在同步 thread、goal 与当前会话设置" in card["elements"][0]["content"]
+        ]
+        self.assertTrue(pending_cards)
+        handler._runtime_call(lambda: None)
         _, resume_card = bot.cards[-1]
         self.assertIn("状态：`active`", resume_card["elements"][0]["content"])
         self.assertEqual(state["goal_status"], "active")
@@ -3568,9 +3606,116 @@ class CodexHandlerTests(unittest.TestCase):
                 },
             )
         )
-        self.assertEqual(apply_response["toast"], "已恢复 goal，保持 detached。")
-        self.assertIn("当前 thread goal。", apply_response["card"]["elements"][0]["content"])
+        self.assertEqual(apply_response["toast"], "正在恢复 goal…")
+        self.assertIn("正在同步 thread、goal 与当前会话设置", apply_response["card"]["elements"][0]["content"])
+        handler._runtime_call(lambda: None)
+        _, final_card = handler.bot.cards[-1]
+        self.assertIn("当前 thread goal。", final_card["elements"][0]["content"])
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+
+    def test_goal_resume_cold_thread_injects_runtime_permissions_and_updates_loaded_settings(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="paused",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["approval_policy"] = "on-request"
+        state["permissions_profile_id"] = ":workspace"
+        state["model"] = "gpt-5.4"
+        state["reasoning_effort"] = "high"
+        state["collaboration_mode"] = "plan"
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.resume_thread_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "profile": None,
+                "config_overrides": None,
+                "model": None,
+                "model_provider": None,
+                "approval_policy": "on-request",
+                "permissions_profile_id": ":workspace",
+            },
+        )
+        self.assertEqual(
+            handler._adapter.update_thread_settings_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "approval_policy": "on-request",
+                "permissions_profile_id": ":workspace",
+                "model": "gpt-5.4",
+                "reasoning_effort": "high",
+                "collaboration_mode": "plan",
+            },
+        )
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+        self.assertIn("状态：`active`", bot.cards[-1][1]["elements"][0]["content"])
+
+    def test_goal_resume_card_action_acknowledges_immediately_then_attaches_in_background(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="paused",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-goal",
+                {
+                    "action": "goal_apply_confirm",
+                    "status": "active",
+                    "attach_binding": "true",
+                },
+            )
+        )
+
+        self.assertEqual(response["toast"], "正在恢复 goal 并恢复当前会话推送…")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
 
     def test_goal_set_detached_confirm_can_attach_before_apply(self) -> None:
