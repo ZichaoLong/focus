@@ -208,12 +208,15 @@ upstream CLI 提供了明确的 sandbox 调试子命令：
 
 - `sandbox` 控制技术执行边界
 - `approval_policy` 控制什么时候必须先审批才能继续
-- `permissions` 是同时调整两者的预设
+- `/permissions` 设置独立的 upstream canonical `permissions` profile id
+- `/approval` 单独设置审批策略
+- 飞书侧不再暴露 `/sandbox` 用户面
 
 推荐的简明表述：
 
-- “`sandbox` 决定命令运行时的文件系统和网络边界。”
-- “`approval_policy` 决定什么时候必须先停下来等待审批。”
+- “`/permissions` 决定后续 turn 采用哪条权限基线。”
+- “`/approval` 决定什么时候必须先停下来等待审批。”
+- “权限基线决定执行边界；审批策略决定是否需要停下来等待批准。”
 
 不要在顶层 README 里过度承诺那些未来可能变化的实现细节。
 像平台后端、实现路径、排障分层这类内容，更适合放在像本文这样的专门文档里。

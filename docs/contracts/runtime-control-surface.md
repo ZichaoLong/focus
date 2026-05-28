@@ -225,7 +225,7 @@ It shows only:
 - current thread
 - the current thread's goal summary when known
 - the current thread's thread-wise profile
-- the current Feishu session's model / effort / permissions / approval / sandbox / collaboration settings
+- the current Feishu session's model / effort / permissions baseline / approval / collaboration settings
 
 It is no longer the full debugging surface.
 

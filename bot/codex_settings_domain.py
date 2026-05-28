@@ -126,10 +126,7 @@ class CodexSettingsDomain:
         *,
         ports: SettingsDomainPorts,
         approval_policies: set[str],
-        sandbox_policies: set[str] | None = None,
-        permissions_presets: dict[str, dict[str, str]] | None = None,
     ) -> None:
-        del sandbox_policies, permissions_presets
         self._ports = ports
         self._approval_policies = approval_policies
 

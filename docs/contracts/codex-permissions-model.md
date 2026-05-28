@@ -234,12 +234,15 @@ For user-facing docs in `feishu-codex`, the safest wording is:
 
 - `sandbox` controls the technical execution boundary
 - `approval_policy` controls when approval is required before continuing
-- `permissions` is a preset that changes both together
+- `/permissions` sets the upstream canonical `permissions` profile id independently
+- `/approval` sets the approval policy independently
+- the Feishu surface no longer exposes a `/sandbox` user command
 
 Good concise wording:
 
-- "`sandbox` decides what filesystem and network boundary commands run under."
-- "`approval_policy` decides when the run must stop for approval."
+- "`/permissions` decides which permissions baseline future turns use."
+- "`/approval` decides when the run must stop for approval."
+- "The permissions baseline controls the execution boundary; the approval policy controls whether execution must pause for approval."
 
 Avoid overcommitting to unstable implementation details in the top-level README.
 The detailed backend references belong in a dedicated document like this one.

@@ -35,7 +35,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             lock=lock,
             default_working_dir="/tmp/default",
             default_approval_policy="on-request",
-            default_sandbox="workspace-write",
+            default_permissions_profile_id=":workspace",
             default_collaboration_mode="default",
             default_model="gpt-5.4",
             default_reasoning_effort="medium",

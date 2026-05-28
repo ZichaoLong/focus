@@ -94,7 +94,6 @@ class BindingRuntimeManager:
         default_working_dir: str,
         default_approval_policy: str,
         default_permissions_profile_id: str = "",
-        default_sandbox: str = "",
         default_collaboration_mode: str,
         default_model: str,
         default_reasoning_effort: str,
@@ -107,7 +106,7 @@ class BindingRuntimeManager:
         self._default_working_dir = str(default_working_dir or "").strip()
         self._default_approval_policy = str(default_approval_policy or "").strip()
         self._default_permissions_profile_id = normalize_permissions_profile_id(
-            str(default_permissions_profile_id or default_sandbox or "").strip(),
+            str(default_permissions_profile_id or "").strip(),
             fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
         )
         self._default_collaboration_mode = str(default_collaboration_mode or "").strip()
@@ -220,8 +219,7 @@ class BindingRuntimeManager:
                     stored_binding["approval_policy"] or self._default_approval_policy,
                 ),
                 permissions_profile_id=normalize_permissions_profile_id(
-                    stored_binding.get("permissions_profile_id", stored_binding.get("sandbox", ""))
-                    or self._default_permissions_profile_id,
+                    stored_binding.get("permissions_profile_id", "") or self._default_permissions_profile_id,
                     fallback=self._default_permissions_profile_id,
                 ),
                 collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,

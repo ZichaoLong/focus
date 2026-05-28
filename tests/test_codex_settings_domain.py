@@ -15,24 +15,6 @@ from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
 
 
 _APPROVAL_POLICIES = {"untrusted", "on-request", "never"}
-_SANDBOX_POLICIES = {"read-only", "workspace-write", "danger-full-access"}
-_PERMISSIONS_PRESETS = {
-    "read-only": {
-        "label": "Read Only",
-        "approval_policy": "on-request",
-        "sandbox": "read-only",
-    },
-    "default": {
-        "label": "Default",
-        "approval_policy": "on-request",
-        "sandbox": "workspace-write",
-    },
-    "full-access": {
-        "label": "Full Access",
-        "approval_policy": "never",
-        "sandbox": "danger-full-access",
-    },
-}
 _DISPLAY_DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 
 
@@ -45,7 +27,7 @@ class _SettingsPortsStub:
         self.runtime = SimpleNamespace(
             running=False,
             approval_policy="on-request",
-            sandbox="workspace-write",
+            permissions_profile_id=":workspace",
             collaboration_mode="default",
             model="",
             reasoning_effort="",
@@ -250,8 +232,6 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_new_thread_memory_mode_seed=stub.get_new_thread_memory_mode_seed,
         ),
         approval_policies=_APPROVAL_POLICIES,
-        sandbox_policies=_SANDBOX_POLICIES,
-        permissions_presets=_PERMISSIONS_PRESETS,
     )
 
 

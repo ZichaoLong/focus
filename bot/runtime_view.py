@@ -195,7 +195,7 @@ def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
         settings=RuntimeSettingsView(
             approval_policy=str(state["approval_policy"] or ""),
             permissions_profile_id=normalize_permissions_profile_id(
-                str(state.get("permissions_profile_id", state.get("sandbox", "")) or "")
+                str(state.get("permissions_profile_id", "") or "")
             ),
             collaboration_mode=str(state["collaboration_mode"] or ""),
             model=str(state["model"] or ""),
