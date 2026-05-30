@@ -58,6 +58,7 @@
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | 设置当前飞书会话后续 turn 的 effort override；无参数时打开 model/effort 联合卡片 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/approval [untrusted\|on-request\|never]` | 设置审批策略 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/collab-mode [default\|plan]` | 设置当前飞书会话后续 turn 的协作模式 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
+| `/last text` | 导出当前会话最近一条权威终态文本；优先终态结果，若没有则回退最近执行卡 | 是；`本轮设置` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/reset-backend` | 预览并重置当前实例 backend | 是；`更多 -> 高级操作` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
 | `/whoami` | 查看自己的身份信息 | 是；`更多` 页 | 任何人 | 不支持 | 无 |
 | `/bot-status` | 查看机器人身份与配置探测结果 | 是；`更多` 页 | 任何人 | 仅管理员 | 无 |

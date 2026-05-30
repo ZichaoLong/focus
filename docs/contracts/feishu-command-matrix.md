@@ -58,6 +58,7 @@ It does not redefine:
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | Set the current Feishu session's turn-time effort override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `Turn Settings` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `Turn Settings` page | admin only | admin only | none |
+| `/last text` | Export the latest authoritative terminal text from the current session; prefers terminal result, falls back to the latest execution card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/reset-backend` | Preview and reset the current instance backend | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
 | `/whoami` | Show the caller's identity | yes; `More` page | anyone | unsupported | none |
 | `/bot-status` | Show bot identity and config probe results | yes; `More` page | anyone | admin only | none |
