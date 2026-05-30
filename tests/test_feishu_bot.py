@@ -327,6 +327,21 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
         self.addCleanup(tempdir.cleanup)
         return _RecordingBot(pathlib.Path(tempdir.name))
 
+    def test_extract_post_text_preserves_paragraph_breaks(self) -> None:
+        text = FeishuBot._extract_text(
+            "post",
+            {
+                "title": "",
+                "content": [
+                    [{"tag": "text", "text": "第一段"}],
+                    [],
+                    [{"tag": "text", "text": "- "}, {"tag": "text", "text": "第二段"}],
+                ],
+            },
+        )
+
+        self.assertEqual(text, "第一段\n\n- 第二段")
+
     def test_p2p_terminal_result_card_projects_authoritative_text(self) -> None:
         bot = self._make_bot()
         bot.raw_message_items["card-1"] = [
@@ -1644,6 +1659,36 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         )
 
         self.assertEqual(normalized, "请和 @Alice 一起看")
+
+    def test_group_normalization_preserves_newlines(self) -> None:
+        bot = self._make_bot(system_config={"bot_open_id": "ou-bot"})
+        bot.set_group_mode("chat-1", "assistant")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+
+        bot._handle_raw_message(
+            _message_event(
+                message_id="m-1",
+                chat_id="chat-1",
+                text="@_user_1 第一行\n第二行 @_user_2",
+                sender_user_id="u-user",
+                sender_open_id="ou-user",
+                mentions=[
+                    {
+                        "key": "@_user_1",
+                        "id": {"user_id": "u-bot", "open_id": "ou-bot"},
+                        "name": "Codex",
+                    },
+                    {
+                        "key": "@_user_2",
+                        "id": {"user_id": "u-other", "open_id": "ou-other"},
+                        "name": "Alice",
+                    },
+                ],
+            )
+        )
+
+        self.assertEqual(len(bot.received_messages), 1)
+        self.assertIn("message:\n第一行\n第二行 @Alice", bot.received_messages[0][2])
 
     def test_group_mention_is_not_matched_without_bot_open_id(self) -> None:
         bot = self._make_bot(system_config={"bot_open_id": ""})

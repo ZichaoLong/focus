@@ -624,7 +624,7 @@ class FeishuBot(ABC):
         """从飞书消息中提取纯文本内容
 
         - text 类型：直接取 text 字段
-        - post 富文本：遍历 content 二维数组，提取所有 tag=text 的文本
+        - post 富文本：遍历 content 二维数组，提取所有 tag=text 的文本，并保留段落换行
         - 其他类型（sticker/image/video/audio 等）：返回空字符串
         """
         if msg_type == "text":
@@ -648,12 +648,19 @@ class FeishuBot(ABC):
             for para in paragraphs:
                 if not isinstance(para, list):
                     continue
+                line_parts: list[str] = []
                 for elem in para:
                     if isinstance(elem, dict) and elem.get("tag") == "text":
-                        t = elem.get("text", "").strip()
+                        t = str(elem.get("text", "") or "")
                         if t:
-                            parts.append(t)
-            return " ".join(parts)
+                            line_parts.append(t)
+                line = "".join(line_parts)
+                parts.append(line if line.strip() else "")
+            while parts and not parts[0]:
+                parts.pop(0)
+            while parts and not parts[-1]:
+                parts.pop()
+            return "\n".join(parts)
 
         if msg_type == "interactive":
             projection = project_interactive_card_text(content_dict)
@@ -839,7 +846,7 @@ class FeishuBot(ABC):
                 normalized = normalized.replace(key, "")
             else:
                 normalized = normalized.replace(key, f"@{mention_name}")
-        return " ".join(normalized.split())
+        return normalized.strip()
 
     @staticmethod
     def _sender_ids(sender_id: Any) -> tuple[str, str]:
