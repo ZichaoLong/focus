@@ -19,6 +19,7 @@ from bot.adapters.base import (
     ThreadSummary,
     TurnInputItem,
 )
+from bot.codex_config_reader import list_profile_v2_names, resolve_profile_from_codex_config
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
 from bot.permissions_profile import (
@@ -202,11 +203,16 @@ class CodexAppServerAdapter(AgentAdapter):
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
+        effective_model, effective_model_provider = self._materialize_profile_slice(
+            profile=profile,
+            model=model,
+            model_provider=model_provider,
+        )
         params: dict[str, Any] = {"threadId": thread_id}
-        if model:
-            params["model"] = model
-        if model_provider:
-            params["modelProvider"] = model_provider
+        if effective_model:
+            params["model"] = effective_model
+        if effective_model_provider:
+            params["modelProvider"] = effective_model_provider
         if approval_policy:
             params["approvalPolicy"] = approval_policy
         if permissions_profile_id:
@@ -294,7 +300,7 @@ class CodexAppServerAdapter(AgentAdapter):
         return bool(result.get("cleared"))
 
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
-        result = self._rpc.request("config/read", _compact({"includeLayers": False, "cwd": cwd}))
+        result = self._rpc.request("config/read", _compact({"includeLayers": True, "cwd": cwd}))
         return self._runtime_config_from_result(result)
 
     def list_models(self, *, include_hidden: bool = False) -> list[RuntimeModelSummary]:
@@ -352,21 +358,8 @@ class CodexAppServerAdapter(AgentAdapter):
         )
 
     def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
-        self._rpc.request(
-            "config/batchWrite",
-            {
-                "edits": [
-                    {
-                        "keyPath": "profile",
-                        "value": profile,
-                        "mergeStrategy": "replace",
-                    }
-                ],
-                "reloadUserConfig": True,
-            },
-        )
-        self._collaboration_mode_model = None
-        return self.read_runtime_config()
+        del profile
+        raise RuntimeError("上游已不支持运行时 active profile 切换；请改用 thread-wise `/profile`。")
 
     def compact_thread(self, thread_id: str) -> None:
         self._rpc.request(
@@ -475,13 +468,18 @@ class CodexAppServerAdapter(AgentAdapter):
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
     ) -> dict[str, Any]:
+        resolved_model, resolved_model_provider = self._materialize_profile_slice(
+            profile=profile,
+            model=model,
+            model_provider=model_provider,
+        )
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "personality": self._config.personality or None,
-            "model": model or self._config.model or None,
-            "modelProvider": model_provider or self._config.model_provider or None,
+            "model": resolved_model or self._config.model or None,
+            "modelProvider": resolved_model_provider or self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
         params["permissions"] = normalize_permissions_profile_id(
@@ -558,9 +556,31 @@ class CodexAppServerAdapter(AgentAdapter):
         profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        del profile
+        # profile-v2 is materialized locally to model/modelProvider instead of
+        # being forwarded as legacy `config.profile`.
+        return deep_merge_config_overrides(config_overrides)
+
+    @staticmethod
+    def _materialize_profile_slice(
+        *,
+        profile: str | None,
+        model: str | None,
+        model_provider: str | None,
+    ) -> tuple[str | None, str | None]:
+        effective_model = str(model or "").strip() or None
+        effective_model_provider = str(model_provider or "").strip() or None
         normalized_profile = str(profile or "").strip()
-        profile_override = {"profile": normalized_profile} if normalized_profile else None
-        return deep_merge_config_overrides(profile_override, config_overrides)
+        if not normalized_profile or (effective_model and effective_model_provider):
+            return effective_model, effective_model_provider
+        resolved = resolve_profile_from_codex_config(normalized_profile)
+        if not effective_model:
+            resolved_model = str(resolved.model or "").strip()
+            effective_model = resolved_model or None
+        if not effective_model_provider:
+            resolved_provider = str(resolved.model_provider or "").strip()
+            effective_model_provider = resolved_provider or None
+        return effective_model, effective_model_provider
 
     def _collaboration_mode_payload(
         self,
@@ -626,23 +646,24 @@ class CodexAppServerAdapter(AgentAdapter):
     @staticmethod
     def _runtime_config_from_result(result: dict[str, Any]) -> RuntimeConfigSummary:
         config = result.get("config") or {}
-        profiles_raw = config.get("profiles") or {}
         memories_raw = config.get("memories") or {}
+        layers_raw = result.get("layers") or []
         profiles: list[RuntimeProfileSummary] = []
-        if isinstance(profiles_raw, dict):
-            for name in sorted(profiles_raw):
-                if not str(name).strip():
-                    continue
-                item = profiles_raw.get(name)
-                item_dict = item if isinstance(item, dict) else {}
-                profiles.append(
-                    RuntimeProfileSummary(
-                        name=str(name),
-                        model_provider=_read_string(item_dict, "modelProvider", "model_provider"),
-                    )
+        for name in list_profile_v2_names():
+            try:
+                resolved = resolve_profile_from_codex_config(name)
+            except ValueError:
+                logger.debug("skip invalid profile-v2 candidate %s", name, exc_info=True)
+                continue
+            profiles.append(
+                RuntimeProfileSummary(
+                    name=name,
+                    model_provider=str(resolved.model_provider or "").strip() or None,
                 )
+            )
         return RuntimeConfigSummary(
-            current_profile=_read_string(config, "profile", "activeProfile", "active_profile"),
+            current_profile=_read_current_profile_from_layers(layers_raw)
+            or _read_string(config, "profile", "activeProfile", "active_profile"),
             current_model_provider=_read_string(config, "modelProvider", "model_provider"),
             current_memory_mode=thread_memory_mode_from_memories_config(
                 memories_raw if isinstance(memories_raw, dict) else None
@@ -711,4 +732,21 @@ def _read_string(data: dict[str, Any], *keys: str) -> str | None:
         value = data.get(key)
         if value not in (None, ""):
             return str(value)
+    return None
+
+
+def _read_current_profile_from_layers(layers_raw: Any) -> str | None:
+    if not isinstance(layers_raw, list):
+        return None
+    for layer in layers_raw:
+        if not isinstance(layer, dict):
+            continue
+        name = layer.get("name")
+        if not isinstance(name, dict):
+            continue
+        if str(name.get("type", "") or "").strip() != "user":
+            continue
+        profile = name.get("profile")
+        if profile not in (None, ""):
+            return str(profile)
     return None

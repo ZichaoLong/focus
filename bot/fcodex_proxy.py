@@ -697,15 +697,8 @@ class _ProxyInteractionGate:
         setting = self._thread_seed_state.new_thread_profile_seed_setting()
         if setting is None:
             return payload
-        existing_config = params.get("config")
-        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        merged_config = deep_merge_config_overrides(
-            normalized_existing_config,
-            {"profile": setting.profile},
-        )
         updated_payload = dict(payload)
         updated_params = dict(params)
-        updated_params["config"] = merged_config
         if setting.model:
             updated_params["model"] = setting.model
         if setting.model_provider:
@@ -714,11 +707,6 @@ class _ProxyInteractionGate:
         return updated_payload
 
     def _new_thread_memory_profile_hint(self, params: dict[str, Any]) -> str:
-        existing_config = params.get("config")
-        if isinstance(existing_config, dict):
-            profile_name = str(existing_config.get("profile", "") or "").strip()
-            if profile_name:
-                return profile_name
         setting = self._thread_seed_state.new_thread_profile_seed_setting()
         return str(setting.profile or "").strip() if setting is not None else ""
 
@@ -777,12 +765,6 @@ class _ProxyInteractionGate:
         params = payload.get("params")
         if not isinstance(params, dict):
             return payload
-        existing_config = params.get("config")
-        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        merged_config = deep_merge_config_overrides(
-            normalized_existing_config,
-            {"profile": profile_setting.profile},
-        )
         updated_payload = dict(payload)
         updated_params = dict(params)
         model = profile_setting.model
@@ -795,7 +777,6 @@ class _ProxyInteractionGate:
             updated_params["modelProvider"] = model_provider
         else:
             updated_params.pop("modelProvider", None)
-        updated_params["config"] = merged_config
         updated_payload["params"] = updated_params
         return updated_payload
 
@@ -818,14 +799,13 @@ class _ProxyInteractionGate:
             return payload
         existing_config = params.get("config")
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        profile_name_hint = str(normalized_existing_config.get("profile", "") or "").strip()
-        if not profile_name_hint:
-            if pending is not None and pending.has_profile_slice:
-                profile_name_hint = pending.profile
-            else:
-                profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-                if profile_record is not None:
-                    profile_name_hint = str(profile_record.profile or "").strip()
+        profile_name_hint = ""
+        if pending is not None and pending.has_profile_slice:
+            profile_name_hint = pending.profile
+        else:
+            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
+            if profile_record is not None:
+                profile_name_hint = str(profile_record.profile or "").strip()
         if not profile_name_hint:
             profile_name_hint = self._resume_profile_hint
         merged_config = deep_merge_config_overrides(

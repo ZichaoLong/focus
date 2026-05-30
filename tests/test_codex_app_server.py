@@ -24,6 +24,7 @@ from bot.adapters.base import (
     ThreadSummary,
 )
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
+from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_command_resolver import DEFAULT_CODEX_COMMAND
 from bot.codex_protocol.client import CodexRpcClient, CodexRpcError
 from bot.fcodex import (
@@ -89,17 +90,23 @@ class _FakeRpc:
         if method == "config/read":
             return {
                 "config": {
-                    "profile": "provider1",
                     "modelProvider": "provider1_api",
                     "memories": {
                         "use_memories": True,
                         "generate_memories": False,
                     },
-                    "profiles": {
-                        "provider1": {"modelProvider": "provider1_api"},
-                        "provider2": {"modelProvider": "provider2_api"},
-                    },
-                }
+                },
+                "layers": [
+                    {
+                        "name": {
+                            "type": "user",
+                            "file": "/tmp/.codex/work.config.toml",
+                            "profile": "provider1",
+                        },
+                        "version": "v1",
+                        "config": {},
+                    }
+                ],
             }
         if method in {"thread/start", "thread/resume"}:
             return {
@@ -164,7 +171,11 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        adapter.create_thread(cwd="/tmp/project", profile="provider2")
+        with patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
+        ):
+            adapter.create_thread(cwd="/tmp/project", profile="provider2")
 
         self.assertEqual(
             fake_rpc.calls[0],
@@ -177,7 +188,8 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
                     "serviceName": "feishu-codex",
-                    "config": {"profile": "provider2"},
+                    "model": "provider2-model",
+                    "modelProvider": "provider2_api",
                 },
             ),
         )
@@ -187,16 +199,20 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        adapter.create_thread(
-            cwd="/tmp/project",
-            profile="provider2",
-            config_overrides={
-                "memories": {
-                    "use_memories": True,
-                    "generate_memories": False,
+        with patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
+        ):
+            adapter.create_thread(
+                cwd="/tmp/project",
+                profile="provider2",
+                config_overrides={
+                    "memories": {
+                        "use_memories": True,
+                        "generate_memories": False,
+                    }
                 }
-            },
-        )
+            )
 
         self.assertEqual(
             fake_rpc.calls[0],
@@ -209,8 +225,9 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
                     "serviceName": "feishu-codex",
+                    "model": "provider2-model",
+                    "modelProvider": "provider2_api",
                     "config": {
-                        "profile": "provider2",
                         "memories": {
                             "use_memories": True,
                             "generate_memories": False,
@@ -245,7 +262,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "serviceName": "feishu-codex",
                     "model": "gpt-5.4",
                     "modelProvider": "provider2_api",
-                    "config": {"profile": "provider2"},
                 },
             ),
         )
@@ -294,7 +310,11 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        adapter.resume_thread("thread-1", profile="provider2")
+        with patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
+        ):
+            adapter.resume_thread("thread-1", profile="provider2")
 
         self.assertEqual(
             fake_rpc.calls[0],
@@ -302,7 +322,8 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 "thread/resume",
                 {
                     "threadId": "thread-1",
-                    "config": {"profile": "provider2"},
+                    "model": "provider2-model",
+                    "modelProvider": "provider2_api",
                 },
             ),
         )
@@ -335,16 +356,20 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        adapter.resume_thread(
-            "thread-1",
-            profile="provider2",
-            config_overrides={
-                "memories": {
-                    "use_memories": True,
-                    "generate_memories": True,
+        with patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
+        ):
+            adapter.resume_thread(
+                "thread-1",
+                profile="provider2",
+                config_overrides={
+                    "memories": {
+                        "use_memories": True,
+                        "generate_memories": True,
+                    }
                 }
-            },
-        )
+            )
 
         self.assertEqual(
             fake_rpc.calls[0],
@@ -352,8 +377,9 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 "thread/resume",
                 {
                     "threadId": "thread-1",
+                    "model": "provider2-model",
+                    "modelProvider": "provider2_api",
                     "config": {
-                        "profile": "provider2",
                         "memories": {
                             "use_memories": True,
                             "generate_memories": True,
@@ -750,7 +776,17 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        runtime = adapter.read_runtime_config()
+        with patch(
+            "bot.adapters.codex_app_server.list_profile_v2_names",
+            return_value=["provider1", "provider2"],
+        ), patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            side_effect=[
+                ResolvedProfileConfig(model="provider1-model", model_provider="provider1_api"),
+                ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
+            ],
+        ):
+            runtime = adapter.read_runtime_config()
 
         self.assertEqual(runtime.current_profile, "provider1")
         self.assertEqual(runtime.current_model_provider, "provider1_api")
@@ -776,62 +812,14 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ],
         )
 
-    def test_set_active_profile_uses_config_batch_write_and_reload(self) -> None:
+    def test_set_active_profile_is_unsupported(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        runtime = adapter.set_active_profile("provider2")
-
-        self.assertEqual(fake_rpc.calls[0][0], "config/batchWrite")
-        self.assertEqual(
-            fake_rpc.calls[0][1],
-            {
-                "edits": [
-                    {
-                        "keyPath": "profile",
-                        "value": "provider2",
-                        "mergeStrategy": "replace",
-                    }
-                ],
-                "reloadUserConfig": True,
-            },
-        )
-        self.assertEqual(fake_rpc.calls[1][0], "config/read")
-        self.assertEqual(runtime.current_profile, "provider1")
-
-    def test_set_active_profile_invalidates_cached_collaboration_mode_model(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        adapter.start_turn(
-            thread_id="thread-1",
-            input_items=[{"type": "text", "text": "hello"}],
-            cwd="/tmp",
-        )
-        self.assertEqual(
-            fake_rpc.calls[1][1]["collaborationMode"]["settings"]["model"],
-            "gpt-5.3-codex",
-        )
-
-        fake_rpc.default_model = "gpt-5.5"
-        fake_rpc.calls.clear()
-
-        adapter.set_active_profile("provider2")
-        adapter.start_turn(
-            thread_id="thread-2",
-            input_items=[{"type": "text", "text": "hello again"}],
-            cwd="/tmp",
-        )
-
-        self.assertEqual(fake_rpc.calls[0][0], "config/batchWrite")
-        self.assertEqual(fake_rpc.calls[1][0], "config/read")
-        self.assertEqual(fake_rpc.calls[2][0], "model/list")
-        self.assertEqual(
-            fake_rpc.calls[3][1]["collaborationMode"]["settings"]["model"],
-            "gpt-5.5",
-        )
+        with self.assertRaisesRegex(RuntimeError, "active profile"):
+            adapter.set_active_profile("provider2")
+        self.assertEqual(fake_rpc.calls, [])
 
     def test_stop_clears_cached_models(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -3000,7 +2988,6 @@ class FCodexTests(unittest.TestCase):
                     forwarded = backend_messages.get(timeout=1)
                     self.assertEqual(forwarded["method"], "thread/start")
                     self.assertEqual(forwarded["params"]["cwd"], "/tmp/project")
-                    self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
                     self.assertEqual(
                         forwarded["params"]["config"]["memories"],
                         {
@@ -3008,6 +2995,7 @@ class FCodexTests(unittest.TestCase):
                             "generate_memories": False,
                         },
                     )
+                    self.assertNotIn("profile", forwarded["params"]["config"])
                     self.assertEqual(forwarded["params"]["model"], "provider2-model")
                     self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
@@ -3603,9 +3591,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
 
             forwarded = self._decode_payload(backend_ws.sent[-1])
             self.assertEqual(forwarded["method"], "thread/start")
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("config", forwarded["params"])
 
     def test_sequential_second_thread_start_request_fails_closed_while_initial_seed_is_reserved(
         self,
@@ -3651,7 +3639,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
             )
 
             forwarded_first = self._decode_payload(backend_ws.sent[0])
-            self.assertEqual(forwarded_first["params"]["config"]["profile"], "provider2")
             self.assertEqual(
                 forwarded_first["params"]["config"]["memories"],
                 {
@@ -3659,6 +3646,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
+            self.assertNotIn("profile", forwarded_first["params"]["config"])
             self.assertEqual(forwarded_first["params"]["model"], "provider2-model")
             self.assertEqual(forwarded_first["params"]["modelProvider"], "provider2_api")
 
@@ -3796,7 +3784,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(len(backend_payloads), 1)
 
             forwarded = backend_payloads[0]
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
             self.assertEqual(
                 forwarded["params"]["config"]["memories"],
                 {
@@ -3804,6 +3791,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
+            self.assertNotIn("profile", forwarded["params"]["config"])
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
@@ -3953,7 +3941,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
             )
 
             forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
             self.assertEqual(
                 forwarded["params"]["config"]["memories"],
                 {
@@ -3961,6 +3948,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
+            self.assertNotIn("profile", forwarded["params"]["config"])
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
@@ -4122,7 +4110,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
 
             resumed = self._decode_payload(backend_ws_second.sent[-1])
             self.assertEqual(resumed["params"]["threadId"], "thread-1")
-            self.assertEqual(resumed["params"]["config"]["profile"], "provider2")
             self.assertEqual(
                 resumed["params"]["config"]["memories"],
                 {
@@ -4130,6 +4117,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
+            self.assertNotIn("profile", resumed["params"]["config"])
             self.assertEqual(resumed["params"]["model"], "provider2-model")
             self.assertEqual(resumed["params"]["modelProvider"], "provider2_api")
 
@@ -4335,7 +4323,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["method"], "thread/resume")
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
-            self.assertEqual(forwarded["params"]["config"]["profile"], "provider2")
+            self.assertNotIn("config", forwarded["params"])
 
     def test_thread_resume_request_rejects_incomplete_saved_profile_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
