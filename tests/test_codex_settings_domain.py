@@ -391,6 +391,25 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIn("provider：`old-provider` -> `work-provider`", content)
         self.assertIn("应用该 profile，并重置当前实例 backend", content)
 
+    def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime_config = RuntimeConfigSummary(
+            profiles=[
+                RuntimeProfileSummary(name="clear", model_provider="clear-provider"),
+                RuntimeProfileSummary(name="work", model_provider="anthropic"),
+            ],
+        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "clear", message_id="msg-1")
+
+        self.assertEqual(
+            stub.saved_thread_profiles,
+            [("thread-1", "clear", "clear-model", "clear-provider")],
+        )
+        self.assertIsNotNone(result.card)
+        self.assertIn("已切换当前 thread 的 profile：`clear`", result.card["elements"][0]["content"])
+
     def test_apply_profile_with_backend_reset_saves_profile_after_reset(self) -> None:
         stub = _SettingsPortsStub()
         stub.thread_reprofile_plan = SimpleNamespace(
@@ -586,7 +605,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
         )
         domain = _make_domain(stub)
 
-        result = domain.handle_profile_command("ou_user", "chat-a", "clear", message_id="msg-1")
+        result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
         self.assertEqual(stub.cleared_thread_profiles, ["thread-1"])
         self.assertIsNone(stub.current_thread_profile)
@@ -605,12 +624,22 @@ class CodexSettingsDomainTests(unittest.TestCase):
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)
 
-        result = domain.handle_profile_command("ou_user", "chat-a", "clear", message_id="msg-1")
+        result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
         self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)
         content = result.card["elements"][0]["content"]
         self.assertIn("当前 thread 未设置 thread-wise profile。", content)
+
+    def test_profile_clear_command_rejects_extra_args(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_clear_command("ou_user", "chat-a", "extra", message_id="msg-1")
+
+        self.assertIn("用法：`/profile-clear`", result.text)
+        self.assertIn("不接受额外参数", result.text)
+        self.assertEqual(stub.cleared_thread_profiles, [])
 
     def test_profile_clear_offers_backend_reset_when_thread_not_globally_unloaded(self) -> None:
         stub = _SettingsPortsStub()
@@ -628,7 +657,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
         )
         domain = _make_domain(stub)
 
-        result = domain.handle_profile_command("ou_user", "chat-a", "clear", message_id="msg-1")
+        result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
         self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)

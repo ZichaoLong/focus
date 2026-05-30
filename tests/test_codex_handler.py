@@ -4772,6 +4772,58 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "清空 profile")
         self.assertEqual(action_elements[1]["actions"][0]["value"]["action"], "clear_profile")
 
+    def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler.handle_message("ou_user", "c1", "/detach")
+        thread_snapshot = ThreadSnapshot(
+            summary=ThreadSummary(
+                thread_id="thread-1",
+                cwd="/tmp/project",
+                name="demo",
+                preview="hello",
+                created_at=0,
+                updated_at=0,
+                source="appServer",
+                status="notLoaded",
+            )
+        )
+        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
+        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
+        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
+        handler._runtime_admin._list_loaded_thread_ids = lambda: []
+        handler._adapter.read_runtime_config = lambda **kwargs: RuntimeConfigSummary(
+            current_profile="provider1",
+            current_model_provider="provider1_api",
+            profiles=[
+                RuntimeProfileSummary(name="clear", model_provider="clear-provider"),
+                RuntimeProfileSummary(name="provider1", model_provider="provider1_api"),
+            ],
+        )
+        object.__setattr__(
+            handler._settings_domain._ports,
+            "resolve_profile_resume_config",
+            lambda profile: ResolvedProfileConfig(model="clear-model", model_provider=""),
+        )
+
+        handler.handle_message("ou_user", "c1", "/profile clear")
+
+        _, card = bot.cards[-1]
+        self.assertIn("已切换当前 thread 的 profile：`clear`", card["elements"][0]["content"])
+        saved = handler._thread_resume_profile_store.load("thread-1")
+        assert saved is not None
+        self.assertEqual(saved.profile, "clear")
+
     def test_profile_card_action_updates_thread_profile(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
@@ -4865,7 +4917,7 @@ class CodexHandlerTests(unittest.TestCase):
             model_provider="provider2_api",
         )
 
-        handler.handle_message("ou_user", "c1", "/profile clear")
+        handler.handle_message("ou_user", "c1", "/profile-clear")
 
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
         _, card = bot.cards[-1]

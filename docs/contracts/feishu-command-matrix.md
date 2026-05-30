@@ -40,7 +40,8 @@ It does not redefine:
 | `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
-| `/profile [name\|clear]` | Show, change, or clear the current thread's thread-wise profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
+| `/profile [name]` | Show or change the current thread's thread-wise profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
+| `/profile-clear` | Clear the current thread's thread-wise profile | no; also available via card button | admin only | admin only | no direct local equivalent |
 | `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `Thread Settings` page | admin only | admin only | `feishu-codexctl thread memory --thread-id/--thread-name`; `fcodex resume` reuses the persisted mode |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |

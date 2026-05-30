@@ -1694,6 +1694,11 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, arg, message_id=message_id
                 ),
             ),
+            "/profile-clear": CommandRoute(
+                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_profile_clear_command(
+                    sender_id, chat_id, arg, message_id=message_id
+                ),
+            ),
             "/memory": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_memory_command(
                     sender_id, chat_id, arg, message_id=message_id

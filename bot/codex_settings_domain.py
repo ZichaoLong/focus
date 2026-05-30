@@ -52,7 +52,7 @@ _UNSET = object()
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
-_PROFILE_CLEAR_COMMAND = feishu_visible_command_syntax("/profile clear")
+_PROFILE_CLEAR_COMMAND = feishu_visible_command_syntax("/profile-clear")
 _MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
 _MODEL_WITH_NAME_COMMAND = feishu_visible_command_syntax("/model <name|auto>")
 _EFFORT_WITH_NAME_COMMAND = feishu_visible_command_syntax("/effort <auto|none|minimal|low|medium|high|xhigh>")
@@ -360,17 +360,28 @@ class CodexSettingsDomain:
         return CommandResult(text="\n".join(lines))
 
     def handle_profile_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
-        normalized_arg = str(arg or "").strip()
-        if normalized_arg.lower() == "clear":
-            return self._handle_clear_profile_request(
-                sender_id,
-                chat_id,
-                message_id=message_id,
-            ).command_result
         return self._handle_profile_request(
             sender_id,
             chat_id,
-            normalized_arg,
+            str(arg or "").strip(),
+            message_id=message_id,
+        ).command_result
+
+    def handle_profile_clear_command(
+        self,
+        sender_id: str,
+        chat_id: str,
+        arg: str = "",
+        *,
+        message_id: str = "",
+    ) -> CommandResult:
+        if str(arg or "").strip():
+            return CommandResult(
+                text=f"用法：`{_PROFILE_CLEAR_COMMAND}`\n说明：该命令不接受额外参数。"
+            )
+        return self._handle_clear_profile_request(
+            sender_id,
+            chat_id,
             message_id=message_id,
         ).command_result
 

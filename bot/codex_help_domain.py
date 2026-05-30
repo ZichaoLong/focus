@@ -21,6 +21,7 @@ from bot.shared_command_surface import get_shared_command
 
 
 _SHARED_PROFILE_COMMAND = get_shared_command("profile")
+_SHARED_PROFILE_CLEAR_COMMAND = get_shared_command("profile-clear")
 _SHARED_RESET_BACKEND_COMMAND = get_shared_command("reset-backend")
 _SHARED_PREFLIGHT_COMMAND = get_shared_command("preflight")
 _SHARED_ARCHIVE_COMMAND = get_shared_command("archive")
@@ -239,7 +240,7 @@ class CodexHelpDomain:
                     f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
                     f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
-                    "如需清空当前 thread-wise profile，可直接使用 `/profile clear`；"
+                    f"如需清空当前 thread-wise profile，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`；"
                     f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
                 ),
                 action_rows=(

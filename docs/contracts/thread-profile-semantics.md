@@ -23,7 +23,7 @@ The shared next-load effect and direct-write / reset-backend rules live in
 - per-cwd / project-local config is intentionally out of scope for that
   thread-wise profile-slice contract
 
-## 2. Feishu-side `/profile [name|clear]`
+## 2. Feishu-side `/profile [name]` and `/profile-clear`
 
 `/profile` is the formal profile-management entry point for the current thread.
 
@@ -38,10 +38,10 @@ It follows the shared next-load-setting rule, so it has three outcomes:
      safely reset, or the target profile cannot resolve to a concrete
      `profile` + `model` + `model_provider` tuple
 
-Within that entry point:
+Within that command surface:
 
 - `/profile <name>` rewrites the current thread's thread-wise profile tuple
-- `/profile clear` clears the persisted thread-wise profile slice and returns
+- `/profile-clear` clears the persisted thread-wise profile slice and returns
   the thread to the “no profile override” state
 
 ## 3. State after reset-backend
