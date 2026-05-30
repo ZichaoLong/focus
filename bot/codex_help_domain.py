@@ -239,6 +239,7 @@ class CodexHelpDomain:
                     f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
                     f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
                     f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
+                    "如需清空当前 thread-wise profile，可直接使用 `/profile clear`；"
                     f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
                 ),
                 action_rows=(

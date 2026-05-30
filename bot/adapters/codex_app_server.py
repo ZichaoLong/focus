@@ -655,6 +655,9 @@ class CodexAppServerAdapter(AgentAdapter):
             except ValueError:
                 logger.debug("skip invalid profile-v2 candidate %s", name, exc_info=True)
                 continue
+            if not str(resolved.model or "").strip() or not str(resolved.model_provider or "").strip():
+                logger.debug("skip non-concrete profile-v2 candidate %s", name)
+                continue
             profiles.append(
                 RuntimeProfileSummary(
                     name=name,

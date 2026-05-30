@@ -384,6 +384,7 @@ class CodexHandler(BotHandler):
                 set_configured_bot_open_id=lambda open_id: self.bot.set_configured_bot_open_id(open_id),
                 load_thread_resume_profile=self._thread_resume_profile,
                 save_thread_resume_profile=self._save_thread_resume_profile_record,
+                clear_thread_resume_profile=self._clear_thread_resume_profile_record,
                 load_thread_memory_mode=self._thread_memory_mode,
                 apply_thread_memory_mode=self._apply_thread_memory_mode,
                 check_thread_resume_profile_mutable=self._thread_resume_profile_write_check,
@@ -1883,8 +1884,20 @@ class CodexHandler(BotHandler):
                 ),
                 group_guard="group_admin",
             ),
+            "clear_profile": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_clear_profile(
+                    sender_id, chat_id, message_id, action_value
+                ),
+                group_guard="group_admin",
+            ),
             "apply_profile_with_backend_reset": ActionRoute(
                 handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_apply_profile_with_backend_reset(
+                    sender_id, chat_id, message_id, action_value
+                ),
+                group_guard="group_admin",
+            ),
+            "clear_profile_with_backend_reset": ActionRoute(
+                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_clear_profile_with_backend_reset(
                     sender_id, chat_id, message_id, action_value
                 ),
                 group_guard="group_admin",
@@ -3212,6 +3225,21 @@ class CodexHandler(BotHandler):
             model_provider=setting.model_provider,
         )
 
+    def _clear_thread_resume_profile_record(self, thread_id: str) -> bool:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return False
+        pending = self._pending_threadwise_seed(normalized_thread_id)
+        pending_cleared = False
+        if pending is not None and pending.has_profile_slice:
+            self._replace_pending_threadwise_seed(
+                normalized_thread_id,
+                memory_mode=pending.memory_mode,
+            )
+            pending_cleared = True
+        store_cleared = self._thread_resume_profile_store.clear(normalized_thread_id)
+        return pending_cleared or store_cleared
+
     def _save_thread_memory_mode_record(self, thread_id: str, mode: str) -> ThreadMemoryModeRecord:
         return self._thread_memory_mode_store.save(
             thread_id,
@@ -3311,6 +3339,7 @@ class CodexHandler(BotHandler):
         target_profile: str = "",
         target_memory_mode: str = "",
         message_id: str = "",
+        clear_profile: bool = False,
     ) -> ThreadResetReplacement | None:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         old_thread_id = runtime.current_thread_id.strip()
@@ -3318,9 +3347,11 @@ class CodexHandler(BotHandler):
             return None
         old_profile_record = self._thread_resume_profile(old_thread_id)
         old_memory_record = self._thread_memory_mode(old_thread_id)
-        effective_profile = str(target_profile or "").strip() or (
-            old_profile_record.profile if old_profile_record is not None else ""
-        )
+        effective_profile = ""
+        if not clear_profile:
+            effective_profile = str(target_profile or "").strip() or (
+                old_profile_record.profile if old_profile_record is not None else ""
+            )
         effective_memory_mode = str(target_memory_mode or "").strip() or (
             old_memory_record.mode if old_memory_record is not None else ""
         )
@@ -3344,7 +3375,7 @@ class CodexHandler(BotHandler):
             target_profile_setting = self._require_concrete_explicit_thread_resume_profile_setting(
                 self._resolve_thread_resume_profile_setting(effective_profile)
             )
-        elif old_profile_record is not None:
+        elif not clear_profile and old_profile_record is not None:
             target_profile_setting = self._require_concrete_persisted_thread_resume_profile_setting(
                 old_thread_id,
                 old_profile_record,

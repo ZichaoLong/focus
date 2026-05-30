@@ -58,6 +58,24 @@ model_provider = "global-provider"
             ResolvedProfileConfig(model="work-model", model_provider="global-provider"),
         )
 
+    def test_resolve_profile_works_without_base_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = Path(tmpdir)
+            (codex_home / "work.config.toml").write_text(
+                """
+model = "work-model"
+model_provider = "work-provider"
+""".lstrip(),
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"CODEX_HOME": tmpdir}):
+                resolved = resolve_profile_from_codex_config("work")
+
+        self.assertEqual(
+            resolved,
+            ResolvedProfileConfig(model="work-model", model_provider="work-provider"),
+        )
+
     def test_resolve_profile_model_metadata_reads_profile_catalog_entry(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             codex_home = Path(tmpdir)

@@ -796,6 +796,28 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             [("provider1", "provider1_api"), ("provider2", "provider2_api")],
         )
 
+    def test_read_runtime_config_skips_non_concrete_profile_candidates(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        with patch(
+            "bot.adapters.codex_app_server.list_profile_v2_names",
+            return_value=["provider1", "broken"],
+        ), patch(
+            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
+            side_effect=[
+                ResolvedProfileConfig(model="provider1-model", model_provider="provider1_api"),
+                ResolvedProfileConfig(model="broken-model", model_provider=""),
+            ],
+        ):
+            runtime = adapter.read_runtime_config()
+
+        self.assertEqual(
+            [(item.name, item.model_provider) for item in runtime.profiles],
+            [("provider1", "provider1_api")],
+        )
+
     def test_list_models_reads_visible_models(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()

@@ -22,7 +22,7 @@
 - per-cwd / project-local config 被明确排除在这条 thread-wise profile
   slice 合同之外。
 
-## 2. 飞书侧 `/profile [name]`
+## 2. 飞书侧 `/profile [name|clear]`
 
 `/profile` 是当前 thread 的正式 profile 管理入口。
 
@@ -35,6 +35,12 @@
 3. fail-closed
    - live runtime 由别的实例持有，或当前实例无法安全重置，或目标
      profile 不能解析成具体的 `profile + model + model_provider` 三元组
+
+其中：
+
+- `/profile <name>`：把当前 thread 的 thread-wise profile 改写为目标三元组
+- `/profile clear`：清空当前 thread 已持久化的 thread-wise profile slice，
+  回到“该 thread 未设置 profile override”的状态
 
 ## 3. reset-backend 后的状态
 

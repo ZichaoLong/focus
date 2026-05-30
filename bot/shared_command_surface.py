@@ -37,8 +37,8 @@ _SHARED_COMMAND_SPECS = (
     SharedCommandSpec(
         key="profile",
         slash_name="/profile",
-        feishu_usage="/profile [name]",
-        feishu_summary="查看或切换当前绑定 thread 的 resume profile。",
+        feishu_usage="/profile [name|clear]",
+        feishu_summary="查看、切换或清空当前绑定 thread 的 thread-wise profile。",
     ),
     SharedCommandSpec(
         key="memory",

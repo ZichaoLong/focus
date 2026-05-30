@@ -52,6 +52,7 @@ _UNSET = object()
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
+_PROFILE_CLEAR_COMMAND = feishu_visible_command_syntax("/profile clear")
 _MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
 _MODEL_WITH_NAME_COMMAND = feishu_visible_command_syntax("/model <name|auto>")
 _EFFORT_WITH_NAME_COMMAND = feishu_visible_command_syntax("/effort <auto|none|minimal|low|medium|high|xhigh>")
@@ -77,6 +78,7 @@ class SettingsDomainPorts:
     set_configured_bot_open_id: Callable[[str], None]
     load_thread_resume_profile: Callable[[str], ThreadResumeProfileRecord | None]
     save_thread_resume_profile: Callable[[str, str, str, str], ThreadResumeProfileRecord]
+    clear_thread_resume_profile: Callable[[str], bool]
     load_thread_memory_mode: Callable[[str], ThreadMemoryModeRecord | None]
     apply_thread_memory_mode: Callable[[str, str], ThreadMemoryModeRecord]
     check_thread_resume_profile_mutable: Callable[[str], tuple[bool, str]]
@@ -85,7 +87,7 @@ class SettingsDomainPorts:
     plan_thread_memory_mode_update: Callable[[str], Any]
     reset_current_instance_backend: Callable[[bool], dict[str, Any]]
     replace_bound_provisional_thread_after_reset: Callable[
-        [str, str, str, str, str],
+        [str, str, str, str, str, bool],
         ThreadResetReplacement | None,
     ]
     resolve_profile_resume_config: Callable[[str], ResolvedProfileConfig]
@@ -99,7 +101,9 @@ class SettingsDomainPorts:
 class ProfileCommandOutcome:
     command_result: CommandResult
     applied_profile: str = ""
+    cleared_profile: bool = False
     reset_offered_profile: str = ""
+    reset_offered_clear: bool = False
     reset_requires_force: bool = False
     already_set: bool = False
 
@@ -356,10 +360,17 @@ class CodexSettingsDomain:
         return CommandResult(text="\n".join(lines))
 
     def handle_profile_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
+        normalized_arg = str(arg or "").strip()
+        if normalized_arg.lower() == "clear":
+            return self._handle_clear_profile_request(
+                sender_id,
+                chat_id,
+                message_id=message_id,
+            ).command_result
         return self._handle_profile_request(
             sender_id,
             chat_id,
-            arg,
+            normalized_arg,
             message_id=message_id,
         ).command_result
 
@@ -429,6 +440,31 @@ class CodexSettingsDomain:
                             target_key: target_value,
                             "force": bool(force),
                         },
+                    }
+                ],
+            },
+        ]
+
+    @staticmethod
+    def _profile_clear_action_rows(*, with_reset: bool = False, force: bool = False) -> list[dict]:
+        label = "强制清空并重置 backend" if force else "清空并重置 backend"
+        value = {
+            "action": "clear_profile_with_backend_reset" if with_reset else "clear_profile",
+            "force": bool(force),
+        }
+        if not with_reset:
+            value.pop("force", None)
+            label = "清空 profile"
+        return [
+            {"tag": "hr"},
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": label},
+                        "type": "default" if not with_reset else "primary",
+                        "value": value,
                     }
                 ],
             },
@@ -528,6 +564,7 @@ class CodexSettingsDomain:
         leading_lines: list[str] | None = None,
         reset_target_profile: str = "",
         reset_requires_force: bool = False,
+        include_clear_button: bool = True,
         extra_action_rows: list[dict] | None = None,
     ) -> dict:
         lines = list(leading_lines or [])
@@ -568,6 +605,11 @@ class CodexSettingsDomain:
             current_profile=current_profile,
             extra_action_rows=(
                 [
+                    *(
+                        self._profile_clear_action_rows()
+                        if include_clear_button and current_profile
+                        else []
+                    ),
                     *(
                         self._threadwise_reset_action_rows(
                             action="apply_profile_with_backend_reset",
@@ -888,6 +930,136 @@ class CodexSettingsDomain:
             )
         )
 
+    def _handle_clear_profile_request(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        message_id: str = "",
+    ) -> ProfileCommandOutcome:
+        ports = self._ports
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        thread_id = str(runtime.current_thread_id or "").strip()
+        if not thread_id:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。"
+                )
+            )
+        runtime_config = ports.safe_read_runtime_config()
+        if runtime_config is None:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text="读取 Codex 运行时配置失败，无法清空 profile。")
+            )
+        profiles = {profile.name: profile for profile in runtime_config.profiles if profile.name}
+        profile_names = [profile.name for profile in runtime_config.profiles if profile.name]
+        current_record = ports.load_thread_resume_profile(thread_id)
+        current_profile = current_record.profile if current_record is not None else ""
+        plan = ports.plan_thread_reprofile(thread_id)
+
+        if current_record is None or not current_profile:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile="",
+                        current_record=None,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=ThreadwiseNoopPlan("当前 thread 未设置 thread-wise profile；无需清空。"),
+                        leading_lines=["当前 thread 未设置 thread-wise profile。", ""],
+                        include_clear_button=False,
+                    )
+                ),
+                already_set=True,
+            )
+
+        if plan.status == "direct-write":
+            try:
+                ports.clear_thread_resume_profile(thread_id)
+            except Exception as exc:
+                logger.exception("清空 thread-wise profile 失败")
+                return ProfileCommandOutcome(
+                    command_result=CommandResult(text=f"清空 profile 失败：{exc}")
+                )
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile="",
+                        current_record=ports.load_thread_resume_profile(thread_id),
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=ports.plan_thread_reprofile(thread_id),
+                        leading_lines=["已清空当前 thread 的 profile override。", ""],
+                        include_clear_button=False,
+                    )
+                ),
+                cleared_profile=True,
+            )
+
+        if plan.status == "reset-available":
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile=current_profile,
+                        current_record=current_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=plan,
+                        leading_lines=[
+                            "当前还不能直接清空 thread-wise profile。",
+                            "可继续执行：清空 profile，并重置当前实例 backend。",
+                        ],
+                        include_clear_button=False,
+                        extra_action_rows=self._profile_clear_action_rows(with_reset=True, force=False),
+                    )
+                ),
+                reset_offered_clear=True,
+                reset_requires_force=False,
+            )
+
+        if plan.status == "reset-force-only":
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile=current_profile,
+                        current_record=current_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=plan,
+                        leading_lines=[
+                            "当前还不能直接清空 thread-wise profile。",
+                            plan.reason_text,
+                            "如确认可打断，可强制清空 profile 并重置 backend。",
+                        ],
+                        include_clear_button=False,
+                        extra_action_rows=self._profile_clear_action_rows(with_reset=True, force=True),
+                    )
+                ),
+                reset_offered_clear=True,
+                reset_requires_force=True,
+            )
+
+        return ProfileCommandOutcome(
+            command_result=CommandResult(
+                card=self._build_profile_summary_card(
+                    thread_id=thread_id,
+                    current_profile=current_profile,
+                    current_record=current_record,
+                    profiles=profiles,
+                    profile_names=profile_names,
+                    plan=plan,
+                    leading_lines=[
+                        "当前不能清空 thread-wise profile。",
+                        plan.reason_text,
+                    ],
+                )
+            )
+        )
+
     def _apply_profile_after_backend_reset(
         self,
         sender_id: str,
@@ -1072,6 +1244,163 @@ class CodexSettingsDomain:
                 )
             ),
             applied_profile=target_profile,
+        )
+
+    def _clear_profile_after_backend_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        force: bool,
+        message_id: str = "",
+    ) -> ProfileCommandOutcome:
+        initial = self._handle_clear_profile_request(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+        )
+        if initial.cleared_profile:
+            return initial
+        if not initial.reset_offered_clear:
+            return initial
+
+        ports = self._ports
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        thread_id = str(runtime.current_thread_id or "").strip()
+        current_record = ports.load_thread_resume_profile(thread_id)
+        runtime_config = ports.safe_read_runtime_config()
+        if runtime_config is None:
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text="读取 Codex 运行时配置失败，无法在 reset 后清空 profile。")
+            )
+        profiles = {profile.name: profile for profile in runtime_config.profiles if profile.name}
+        profile_names = [profile.name for profile in runtime_config.profiles if profile.name]
+
+        try:
+            reset_result = ports.reset_current_instance_backend(force)
+        except Exception as exc:
+            logger.exception("reset backend 失败")
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text=f"reset backend 失败：{exc}")
+            )
+
+        try:
+            replacement = ports.replace_bound_provisional_thread_after_reset(
+                sender_id,
+                chat_id,
+                "",
+                "",
+                message_id,
+                True,
+            )
+        except Exception as exc:
+            logger.exception("reset 后替换临时 thread 失败")
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text=(
+                        "reset 完成，但当前临时 thread 替换失败："
+                        f"{exc}"
+                    )
+                )
+            )
+        if replacement is not None:
+            thread_id = replacement.new_thread_id
+            updated_record = ports.load_thread_resume_profile(thread_id)
+            fresh_plan = ports.plan_thread_reprofile(thread_id)
+            leading_lines = [
+                "已清空当前 thread 的 profile override。",
+                "已重置当前实例 backend。",
+                (
+                    "原临时 thread 尚未 materialize，"
+                    f"已替换为新 thread：`{replacement.new_thread_id[:8]}…`"
+                ),
+            ]
+            if reset_result.get("interrupted_binding_ids"):
+                leading_lines.append(
+                    "已中断运行中的 binding："
+                    + ", ".join(f"`{binding_id}`" for binding_id in reset_result["interrupted_binding_ids"])
+                )
+            if reset_result.get("fail_closed_request_count"):
+                leading_lines.append(
+                    f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
+                )
+            if replacement.warning_text:
+                leading_lines.append(replacement.warning_text)
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile="",
+                        current_record=updated_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=fresh_plan,
+                        leading_lines=leading_lines + [""],
+                        include_clear_button=False,
+                        extra_action_rows=self._post_replacement_attached_action_rows(),
+                    )
+                ),
+                cleared_profile=True,
+            )
+
+        can_write, deny_reason = ports.check_thread_resume_profile_mutable(thread_id)
+        if not can_write:
+            plan = ports.plan_thread_reprofile(thread_id)
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    card=self._build_profile_summary_card(
+                        thread_id=thread_id,
+                        current_profile=current_record.profile if current_record is not None else "",
+                        current_record=current_record,
+                        profiles=profiles,
+                        profile_names=profile_names,
+                        plan=plan,
+                        leading_lines=[
+                            "backend 已重置，但当前仍不能清空 thread-wise profile。",
+                            deny_reason,
+                        ],
+                    )
+                )
+            )
+
+        try:
+            ports.clear_thread_resume_profile(thread_id)
+        except Exception as exc:
+            logger.exception("reset 后清空 thread-wise profile 失败")
+            return ProfileCommandOutcome(
+                command_result=CommandResult(text=f"reset 完成，但清空 profile 失败：{exc}")
+            )
+
+        updated_record = ports.load_thread_resume_profile(thread_id)
+        fresh_plan = ports.plan_thread_reprofile(thread_id)
+        leading_lines = [
+            "已清空当前 thread 的 profile override。",
+            "已重置当前实例 backend。",
+        ]
+        if reset_result.get("interrupted_binding_ids"):
+            leading_lines.append(
+                "已中断运行中的 binding："
+                + ", ".join(f"`{binding_id}`" for binding_id in reset_result["interrupted_binding_ids"])
+            )
+        if reset_result.get("fail_closed_request_count"):
+            leading_lines.append(
+                f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
+            )
+        return ProfileCommandOutcome(
+            command_result=CommandResult(
+                card=self._build_profile_summary_card(
+                    thread_id=thread_id,
+                    current_profile="",
+                    current_record=updated_record,
+                    profiles=profiles,
+                    profile_names=profile_names,
+                    plan=fresh_plan,
+                    leading_lines=leading_lines + [""],
+                    include_clear_button=False,
+                    extra_action_rows=self._post_reset_attach_action_rows(thread_id),
+                )
+            ),
+            cleared_profile=True,
         )
 
     def _handle_memory_mode_request(
@@ -1752,6 +2081,44 @@ class CodexSettingsDomain:
             toast_type=toast_type,
         )
 
+    def handle_clear_profile(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict,
+    ) -> P2CardActionTriggerResponse:
+        del action_value
+        outcome = self._handle_clear_profile_request(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+        )
+        result = outcome.command_result
+        if result.card is None:
+            return make_card_response(toast=result.text or "清空 profile 失败", toast_type="warning")
+        if outcome.cleared_profile:
+            toast = "已清空当前 thread 的 profile override"
+            toast_type = "success"
+        elif outcome.already_set:
+            toast = "当前 thread 未设置 thread-wise profile"
+            toast_type = "success"
+        elif outcome.reset_offered_clear:
+            toast = (
+                "当前需要先重置 backend，才能清空该 thread 的 profile。"
+                if outcome.reset_requires_force
+                else "当前可通过重置 backend 后清空该 thread 的 profile。"
+            )
+            toast_type = "info"
+        else:
+            toast = result.text or "当前不能清空该 thread 的 profile。"
+            toast_type = "warning"
+        return make_card_response(
+            card=result.card,
+            toast=toast,
+            toast_type=toast_type,
+        )
+
     def handle_apply_profile_with_backend_reset(
         self,
         sender_id: str,
@@ -1784,6 +2151,40 @@ class CodexSettingsDomain:
         return make_card_response(
             card=result.card,
             toast=result.text or "当前仍无法应用该 profile。",
+            toast_type="warning",
+        )
+
+    def handle_clear_profile_with_backend_reset(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict,
+    ) -> P2CardActionTriggerResponse:
+        outcome = self._clear_profile_after_backend_reset(
+            sender_id,
+            chat_id,
+            force=bool(action_value.get("force")),
+            message_id=message_id,
+        )
+        result = outcome.command_result
+        if result.card is None:
+            return make_card_response(toast=result.text or "清空 profile 失败", toast_type="warning")
+        if outcome.cleared_profile:
+            return make_card_response(
+                card=result.card,
+                toast="已清空当前 thread 的 profile 并重置 backend。",
+                toast_type="success",
+            )
+        if outcome.already_set:
+            return make_card_response(
+                card=result.card,
+                toast="当前 thread 未设置 thread-wise profile。",
+                toast_type="success",
+            )
+        return make_card_response(
+            card=result.card,
+            toast=result.text or "当前仍无法清空该 thread 的 profile。",
             toast_type="warning",
         )
 

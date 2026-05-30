@@ -40,7 +40,7 @@
 | `/threads` | 浏览当前目录线程 | 是；`开始` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | 恢复目标线程到当前 chat | 是；`开始` 页表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 应使用 `fcodex resume <thread_id\|thread_name>` |
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | 查看或管理当前 thread 的 goal | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/profile [name]` | 查看或切换当前 thread 的 thread-wise profile | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
+| `/profile [name\|clear]` | 查看、切换或清空当前 thread 的 thread-wise profile | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/memory [off\|read\|read_write]` | 查看或切换当前 thread 的 thread-wise memory mode | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread memory --thread-id/--thread-name`；`fcodex resume` 会沿用已持久化模式 |
 | `/compact` | 压缩当前绑定 thread 的上下文历史 | 是；`线程设置` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/rename <title>` | 重命名当前 thread | 是；`线程设置` 页表单 | 仅管理员 | 仅管理员 | 无 |

@@ -164,6 +164,8 @@ def _load_base_user_config() -> _LoadedUserConfig | None:
     config_path = _base_config_path()
     if config_path is None:
         return None
+    if not config_path.is_file():
+        return _LoadedUserConfig(path=config_path, data={})
     try:
         with open(config_path, "rb") as fh:
             config = tomllib.load(fh)
@@ -211,8 +213,7 @@ def _base_config_path() -> Path | None:
     codex_home = _codex_home_dir()
     if codex_home is None:
         return None
-    path = codex_home / "config.toml"
-    return path if path.is_file() else None
+    return codex_home / "config.toml"
 
 
 def _selected_profile_v2_path(profile_name: str) -> Path | None:
