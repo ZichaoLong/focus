@@ -3047,7 +3047,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "返回帮助")
 
     def test_model_command_without_arg_shows_model_card(self) -> None:
-        handler, bot = self._make_handler()
+        handler, bot = self._make_handler({"managed_startup_profile": "work"})
 
         handler.handle_message("ou_user", "c1", "/model")
 
@@ -3056,7 +3056,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex 模型 / Effort")
         self.assertIn("当前会话 model override：`auto`", card["elements"][0]["content"])
         self.assertIn("当前会话 effort override：`auto`", card["elements"][0]["content"])
-        self.assertIn("不改 thread-wise profile", card["elements"][0]["content"])
+        self.assertIn("当前实例 startup profile：`work`", card["elements"][0]["content"])
         action_elements = self._action_elements(card)
         self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "✓ auto")
 
@@ -3347,8 +3347,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertNotIn("当前 provider", content)
         self.assertNotIn("binding：", content)
 
-    def test_status_shows_current_thread_profile_and_hides_runtime_debug_fields(self) -> None:
-        handler, bot = self._make_handler()
+    def test_status_shows_startup_profile_and_hides_runtime_debug_fields(self) -> None:
+        handler, bot = self._make_handler({"managed_startup_profile": "work"})
         thread = ThreadSummary(
             thread_id="thread-1",
             cwd="/tmp/project",
@@ -3360,19 +3360,13 @@ class CodexHandlerTests(unittest.TestCase):
             status="idle",
         )
         handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-        )
         handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
 
         handler.handle_message("ou_user", "c1", "/status")
 
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
-        self.assertIn("当前 profile：`provider2`", content)
+        self.assertIn("实例 startup profile：`work`", content)
         self.assertIn("权限基线：`Danger Full Access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertIn("Codex effort override：`auto`", content)
@@ -3819,8 +3813,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_objective"], "ship goal support")
 
-    def test_status_prefers_pending_threadwise_profile_over_store(self) -> None:
-        handler, bot = self._make_handler()
+    def test_status_ignores_pending_threadwise_profile_seed(self) -> None:
+        handler, bot = self._make_handler({"managed_startup_profile": "work"})
         thread = ThreadSummary(
             thread_id="thread-1",
             cwd="/tmp/project",
@@ -3846,7 +3840,8 @@ class CodexHandlerTests(unittest.TestCase):
 
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
-        self.assertIn("当前 profile：`provider2`", content)
+        self.assertIn("实例 startup profile：`work`", content)
+        self.assertNotIn("provider2", content)
 
     def test_detach_command_detaches_current_binding_and_keeps_other_binding_attached(self) -> None:
         handler, bot = self._make_handler()
@@ -4614,194 +4609,40 @@ class CodexHandlerTests(unittest.TestCase):
                 {"thread_id": "thread-1", "thread_name": "demo"},
             )
 
-    def test_profile_command_without_arg_shows_bound_thread_profiles(self) -> None:
+    def test_profile_command_without_arg_shows_startup_profile_summary(self) -> None:
         handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
 
         handler.handle_message("ou_user", "c1", "/profile")
 
         _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex Thread Profile")
+        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
         content = card["elements"][0]["content"]
-        self.assertIn("当前 thread：`thread-1", content)
-        self.assertIn("当前 thread-wise profile：`（未设置）`", content)
-        self.assertIn("当前 thread-wise provider：未设置 thread-wise profile", content)
-        self.assertIn("当前不能直接写入：当前 thread 尚未满足 verifiably globally unloaded", content)
-        self.assertIn("**re-profile 诊断**", content)
-        self.assertIn("当前实例：`default`", content)
-        self.assertNotIn("切换方式：发送", content)
-        self.assertNotIn("**可用 profile**", content)
-        self.assertNotIn("**说明**", content)
-        self.assertNotIn("`provider1` -> `provider1_api`", content)
-        self.assertNotIn("`provider2` -> `provider2_api`", content)
-        action = self._action_elements(card)[0]
-        self.assertNotIn("layout", action)
-        self.assertEqual(
-            [item["text"]["content"] for item in action["actions"]],
-            ["provider1", "provider2"],
-        )
-        self.assertEqual(
-            [item["type"] for item in action["actions"]],
-            ["default", "default"],
-        )
+        self.assertIn("当前实例 startup profile：`auto`", content)
+        self.assertIn("作用范围：managed backend 的启动基线。", content)
+        self.assertIn("如需让当前实例马上切到这套基线，请重置 backend。", content)
 
-    def test_profile_command_switches_bound_thread_profile(self) -> None:
+    def test_profile_command_sets_managed_startup_profile(self) -> None:
         handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
-            )
-        )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin._list_loaded_thread_ids = lambda: []
-        object.__setattr__(
-            handler._settings_domain._ports,
-            "resolve_profile_resume_config",
-            lambda profile: ResolvedProfileConfig(model="provider2-model", model_provider=""),
-        )
 
         handler.handle_message("ou_user", "c1", "/profile provider2")
 
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
+        self.assertIn("已设置当前实例的 startup profile：`provider2`", card["elements"][0]["content"])
         self.assertEqual(handler._adapter.set_active_profile_calls, [])
-        _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex Thread Profile")
-        content = card["elements"][0]["content"]
-        self.assertIn("已切换当前 thread 的 profile：`provider2`", content)
-        self.assertIn("当前 thread-wise provider：`provider2_api`", content)
-        self.assertIn("当前已满足切换条件：thread globally unloaded。", content)
-        action = self._action_elements(card)[0]
-        self.assertEqual(
-            [item["type"] for item in action["actions"]],
-            ["default", "primary"],
-        )
-        saved = handler._thread_resume_profile_store.load("thread-1")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
-        self.assertEqual(saved.model_provider, "provider2_api")
 
-    def test_profile_command_prefers_profile_mapping_for_thread_provider(self) -> None:
-        handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="",
-        )
-        handler._adapter.read_runtime_config = lambda **kwargs: RuntimeConfigSummary(
-            current_profile="provider1",
-            current_model_provider=None,
-            profiles=[
-                RuntimeProfileSummary(name="provider1", model_provider="provider1_api"),
-                RuntimeProfileSummary(name="provider2", model_provider="provider2_api"),
-            ],
-        )
-
-        handler.handle_message("ou_user", "c1", "/profile")
-
-        _, card = bot.cards[-1]
-        content = card["elements"][0]["content"]
-        self.assertIn("当前 thread-wise profile：`provider2`", content)
-        self.assertIn("当前 thread-wise provider：`provider2_api`", content)
-
-    def test_profile_command_with_existing_profile_shows_clear_button(self) -> None:
-        handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-        )
+    def test_profile_command_with_existing_startup_profile_shows_clear_button(self) -> None:
+        handler, bot = self._make_handler({"managed_startup_profile": "provider2"})
 
         handler.handle_message("ou_user", "c1", "/profile")
 
         _, card = bot.cards[-1]
         action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "清空 profile")
-        self.assertEqual(action_elements[1]["actions"][0]["value"]["action"], "clear_profile")
+        self.assertEqual(action_elements[1]["actions"][1]["text"]["content"], "清空 profile")
+        self.assertEqual(action_elements[1]["actions"][1]["value"]["action"], "clear_profile")
 
     def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
         handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
-            )
-        )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin._list_loaded_thread_ids = lambda: []
         handler._adapter.read_runtime_config = lambda **kwargs: RuntimeConfigSummary(
             current_profile="provider1",
             current_model_provider="provider1_api",
@@ -4810,155 +4651,38 @@ class CodexHandlerTests(unittest.TestCase):
                 RuntimeProfileSummary(name="provider1", model_provider="provider1_api"),
             ],
         )
-        object.__setattr__(
-            handler._settings_domain._ports,
-            "resolve_profile_resume_config",
-            lambda profile: ResolvedProfileConfig(model="clear-model", model_provider=""),
-        )
 
         handler.handle_message("ou_user", "c1", "/profile clear")
 
         _, card = bot.cards[-1]
-        self.assertIn("已切换当前 thread 的 profile：`clear`", card["elements"][0]["content"])
-        saved = handler._thread_resume_profile_store.load("thread-1")
-        assert saved is not None
-        self.assertEqual(saved.profile, "clear")
+        self.assertIn("已设置当前实例的 startup profile：`clear`", card["elements"][0]["content"])
 
-    def test_profile_card_action_updates_thread_profile(self) -> None:
+    def test_profile_card_action_updates_startup_profile(self) -> None:
         handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
+
+        response = self._unpack_card_response(
+            handler.handle_card_action(
+                "ou_user",
+                "c1",
+                "m1",
+                {"action": "set_profile", "profile": "provider2"},
             )
         )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin._list_loaded_thread_ids = lambda: []
-        object.__setattr__(
-            handler._settings_domain._ports,
-            "resolve_profile_resume_config",
-            lambda profile: ResolvedProfileConfig(model="provider2-model", model_provider=""),
-        )
 
-        response = self._unpack_card_response(handler.handle_card_action(
-            "ou_user",
-            "c1",
-            "m1",
-            {"action": "set_profile", "profile": "provider2"},
-        ))
-
-        saved = handler._thread_resume_profile_store.load("thread-1")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
         self.assertEqual(response["toast_type"], "success")
         self.assertIn("provider2", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex Thread Profile")
-        action = self._action_elements(response["card"])[0]
-        self.assertNotIn("layout", action)
-        self.assertEqual(
-            [item["type"] for item in action["actions"]],
-            ["default", "primary"],
-        )
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex Backend Startup Profile")
 
-    def test_profile_command_clear_clears_bound_thread_profile(self) -> None:
-        handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
-            )
-        )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin._list_loaded_thread_ids = lambda: []
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-        )
+    def test_profile_command_clear_clears_startup_profile(self) -> None:
+        handler, bot = self._make_handler({"managed_startup_profile": "provider2"})
 
         handler.handle_message("ou_user", "c1", "/profile-clear")
 
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
         _, card = bot.cards[-1]
-        self.assertIn("已清空当前 thread 的 profile override。", card["elements"][0]["content"])
+        self.assertIn("已清空当前实例的 startup profile override。", card["elements"][0]["content"])
 
-    def test_profile_clear_card_action_clears_bound_thread_profile(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
-            )
-        )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin._list_loaded_thread_ids = lambda: []
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-        )
+    def test_profile_clear_card_action_clears_startup_profile(self) -> None:
+        handler, _ = self._make_handler({"managed_startup_profile": "provider2"})
 
         response = self._unpack_card_response(
             handler.handle_card_action(
@@ -4969,9 +4693,8 @@ class CodexHandlerTests(unittest.TestCase):
             )
         )
 
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
         self.assertEqual(response["toast_type"], "success")
-        self.assertIn("已清空当前 thread 的 profile override", response["toast"])
+        self.assertIn("已清空当前实例的 startup profile override", response["toast"])
 
     def test_clear_thread_resume_profile_record_preserves_pending_memory_mode(self) -> None:
         handler, _ = self._make_handler()
@@ -5095,12 +4818,14 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("explorer", bot.replies[-1][1])
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-1")
 
-    def test_profile_command_rejects_when_unbound(self) -> None:
+    def test_profile_command_without_bound_thread_still_shows_startup_profile(self) -> None:
         handler, bot = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "/profile")
 
-        self.assertIn("当前还没有绑定 thread", bot.replies[-1][1])
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
+        self.assertIn("当前实例 startup profile：`auto`", card["elements"][0]["content"])
 
     def test_status_hides_removed_new_thread_seed_profile_row(self) -> None:
         handler, bot = self._make_handler()
@@ -5256,7 +4981,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.create_thread_calls[-1]["cwd"], "/home/tester")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["cwd"], "/home/tester")
 
-    def test_detached_thread_resume_uses_thread_wise_profile(self) -> None:
+    def test_detached_thread_resume_ignores_legacy_thread_profile_store(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5275,18 +5000,19 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
 
         handler.handle_message("ou_user", "c1", "hello")
 
         self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["profile"], "provider2")
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["model_provider"], "provider2_api")
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
+        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["model_provider"])
+        self.assertEqual(handler._adapter.resume_thread_calls[-1]["config_overrides"], None)
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
 
-    def test_thread_wise_profile_turn_does_not_use_service_default_model(self) -> None:
+    def test_legacy_thread_profile_store_no_longer_drives_turn_start(self) -> None:
         handler, _ = self._make_handler(cfg={"model": "stale-default-model"})
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5304,15 +5030,15 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
 
         handler.handle_message("ou_user", "c1", "hello")
 
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "provider2-model")
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
 
-    def test_runtime_model_override_can_override_thread_profile_model_at_turn_start(self) -> None:
+    def test_runtime_model_override_wins_even_if_legacy_thread_profile_store_exists(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5331,15 +5057,15 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
 
         handler.handle_message("ou_user", "c1", "hello")
 
         self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model_provider"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
 
-    def test_replace_bound_provisional_thread_after_reset_rebinds_and_moves_profile(self) -> None:
+    def test_replace_bound_provisional_thread_after_reset_rebinds_without_moving_legacy_profile(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5357,6 +5083,7 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
         handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
             summary=ThreadSummary(
@@ -5385,25 +5112,18 @@ class CodexHandlerTests(unittest.TestCase):
         assert replacement is not None
         self.assertEqual(replacement.old_thread_id, "thread-1")
         self.assertEqual(replacement.new_thread_id, "thread-created")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["model"], "provider2-model")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["model_provider"], "provider2_api")
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
+        self.assertEqual(handler._adapter.create_thread_calls[-1]["config_overrides"], {})
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
-        pending = handler._thread_resume_profile("thread-created")
-        assert pending is not None
-        self.assertEqual(pending.profile, "provider2")
-        self.assertEqual(pending.model, "provider2-model")
-        self.assertEqual(pending.model_provider, "provider2_api")
+        self.assertIsNone(handler._thread_resume_profile("thread-created"))
 
         handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
 
-        saved = handler._thread_resume_profile_store.load("thread-created")
-        assert saved is not None
-        self.assertEqual(saved.profile, "provider2")
-        self.assertEqual(saved.model, "provider2-model")
-        self.assertEqual(saved.model_provider, "provider2_api")
+        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
     def test_replace_bound_provisional_thread_after_reset_handles_thread_not_loaded_read(self) -> None:
         handler, _ = self._make_handler()
@@ -5423,28 +5143,25 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
         handler._adapter.thread_snapshots[("thread-1", False)] = CodexRpcError(
             "thread/read",
             {"code": -32000, "message": "thread not loaded: thread-1"},
         )
 
-        with patch(
-            "bot.codex_handler.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider=""),
-        ):
-            replacement = handler._replace_bound_provisional_thread_after_reset(
-                "ou_user",
-                "c1",
-                "provider2",
-            )
+        replacement = handler._replace_bound_provisional_thread_after_reset(
+            "ou_user",
+            "c1",
+            "provider2",
+        )
 
         assert replacement is not None
         self.assertEqual(replacement.old_thread_id, "thread-1")
         self.assertEqual(replacement.new_thread_id, "thread-created")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
 
-    def test_replace_bound_provisional_thread_after_memory_only_reset_preserves_old_profile_slice(self) -> None:
+    def test_replace_bound_provisional_thread_after_memory_only_reset_keeps_only_memory_slice(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5462,6 +5179,7 @@ class CodexHandlerTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
         handler._thread_memory_mode_store.save("thread-1", mode="read")
         handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
@@ -5478,29 +5196,30 @@ class CodexHandlerTests(unittest.TestCase):
             )
         )
 
-        with patch(
-            "bot.codex_handler.resolve_profile_from_codex_config",
-            side_effect=AssertionError("memory-only reset must preserve old profile slice"),
-        ):
-            replacement = handler._replace_bound_provisional_thread_after_reset(
-                "ou_user",
-                "c1",
-                "",
-                "read_write",
-            )
+        replacement = handler._replace_bound_provisional_thread_after_reset(
+            "ou_user",
+            "c1",
+            "",
+            "read_write",
+        )
 
         assert replacement is not None
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["profile"], "provider2")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["model"], "provider2-model")
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["model_provider"], "provider2_api")
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
+        self.assertEqual(
+            handler._adapter.create_thread_calls[-1]["config_overrides"],
+            {
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": True,
+                },
+            },
+        )
         self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
-        pending = handler._thread_resume_profile("thread-created")
-        assert pending is not None
-        self.assertEqual(pending.profile, "provider2")
-        self.assertEqual(pending.model, "provider2-model")
-        self.assertEqual(pending.model_provider, "provider2_api")
+        self.assertIsNone(handler._thread_resume_profile("thread-created"))
 
-    def test_resume_snapshot_by_id_rejects_incomplete_persisted_profile_slice(self) -> None:
+    def test_resume_snapshot_by_id_ignores_incomplete_legacy_profile_slice(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5519,8 +5238,11 @@ class CodexHandlerTests(unittest.TestCase):
             model_provider="",
         )
 
-        with self.assertRaisesRegex(ValueError, "thread-wise profile slice 不完整"):
-            handler._resume_snapshot_by_id(thread.thread_id, original_arg=thread.thread_id, summary=thread)
+        snapshot = handler._resume_snapshot_by_id(thread.thread_id, original_arg=thread.thread_id, summary=thread)
+
+        self.assertEqual(snapshot.summary.thread_id, "thread-1")
+        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
+        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["profile"])
 
     def test_prompt_reuses_reserved_execution_card(self) -> None:
         handler, bot = self._make_handler()
@@ -5766,7 +5488,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIn("卡片里的资源当前无法通过飞书 API 下载", bot.replies[-1][1])
 
-    def test_profile_command_fails_closed_when_loaded_state_cannot_be_verified(self) -> None:
+    def test_profile_command_does_not_depend_on_loaded_state_verification(self) -> None:
         handler, bot = self._make_handler()
         state = handler._get_runtime_state("ou_user", "c1")
         with handler._lock:
@@ -5788,27 +5510,11 @@ class CodexHandlerTests(unittest.TestCase):
         handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
         handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
         handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler._runtime_admin.plan_thread_reprofile = lambda thread_id: SimpleNamespace(
-            status="reset-force-only",
-            reason_text="当前无法完整确认 backend 是否仍有运行中的 thread；需按 fail-close 先 reset backend。",
-            diagnostics=(),
-        )
-        object.__setattr__(
-            handler._settings_domain._ports,
-            "resolve_profile_resume_config",
-            lambda profile: ResolvedProfileConfig(model="provider2-model", model_provider=""),
-        )
-
         handler.handle_message("ou_user", "c1", "/profile provider2")
 
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
-        self.assertIn("当前无法完整确认 backend 是否仍有运行中的 thread", content)
-        reset_action = self._action_elements(card)[1]
-        self.assertEqual(
-            [item["text"]["content"] for item in reset_action["actions"]],
-            ["强制应用并重置 backend"],
-        )
+        self.assertIn("已设置当前实例的 startup profile：`provider2`", content)
 
     def test_prompt_after_switching_back_to_default_uses_default_collaboration_mode(self) -> None:
         handler, _ = self._make_handler()

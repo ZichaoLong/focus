@@ -30,6 +30,7 @@ from bot.local_websocket_auth import (
 )
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, uses_default_app_server_url
 from bot.codex_command_resolver import resolve_managed_codex_command
+from bot.managed_codex_home import prepare_managed_codex_home
 from bot.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,7 @@ class CodexRpcClient:
         app_server_runtime_store: AppServerRuntimeStore | None = None,
         managed_startup_lock_path: pathlib.Path | str | None = None,
         app_server_data_dir: pathlib.Path | str | None = None,
+        managed_startup_profile: str | None = None,
     ) -> None:
         self._codex_command = codex_command
         self._app_server_mode = app_server_mode
@@ -87,6 +89,7 @@ class CodexRpcClient:
             pathlib.Path(managed_startup_lock_path) if managed_startup_lock_path is not None else None
         )
         self._app_server_data_dir = pathlib.Path(app_server_data_dir) if app_server_data_dir is not None else None
+        self._managed_startup_profile = str(managed_startup_profile or "").strip()
         self._app_server_ws_auth_store = (
             AppServerWebsocketAuthTokenStore(self._app_server_data_dir)
             if self._app_server_data_dir is not None
@@ -249,7 +252,7 @@ class CodexRpcClient:
             stdin=subprocess.DEVNULL,
             text=True,
             bufsize=1,
-            env=os.environ.copy(),
+            env=self._managed_process_env(),
         )
         assert self._process.stdout is not None
         assert self._process.stderr is not None
@@ -462,6 +465,19 @@ class CodexRpcClient:
         else:
             token = self._app_server_ws_auth_store.require()
         return build_bearer_authorization_headers(token)
+
+    def _managed_process_env(self) -> dict[str, str]:
+        env = os.environ.copy()
+        if not self._managed_startup_profile:
+            return env
+        if self._app_server_data_dir is None:
+            raise RuntimeError("managed startup profile requires app_server_data_dir")
+        prepared = prepare_managed_codex_home(
+            app_server_data_dir=self._app_server_data_dir,
+            startup_profile=self._managed_startup_profile,
+        )
+        env["CODEX_HOME"] = str(prepared.path)
+        return env
 
     def _record_managed_runtime_state(self) -> None:
         if self._app_server_mode != "managed" or self._app_server_runtime_store is None:

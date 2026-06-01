@@ -16,6 +16,7 @@ class ThreadResumeProfileStoreTests(unittest.TestCase):
             profile="provider2",
             model="provider2-model",
             model_provider="provider2_api",
+            reasoning_effort="high",
         )
 
         loaded = store.load("thread-1")
@@ -24,6 +25,7 @@ class ThreadResumeProfileStoreTests(unittest.TestCase):
         self.assertEqual(loaded.profile, "provider2")
         self.assertEqual(loaded.model, "provider2-model")
         self.assertEqual(loaded.model_provider, "provider2_api")
+        self.assertEqual(loaded.reasoning_effort, "high")
         self.assertGreater(loaded.updated_at, 0)
         self.assertEqual(saved.profile, loaded.profile)
 

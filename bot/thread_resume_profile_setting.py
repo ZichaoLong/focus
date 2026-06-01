@@ -11,6 +11,7 @@ class ThreadResumeProfileSetting:
     profile: str
     model: str
     model_provider: str
+    reasoning_effort: str = ""
 
 
 def thread_resume_profile_setting_missing_fields(
@@ -41,6 +42,7 @@ def build_thread_resume_profile_setting(
     *,
     model: str = "",
     model_provider: str = "",
+    reasoning_effort: str = "",
     runtime_provider: str = "",
 ) -> ThreadResumeProfileSetting:
     normalized_profile = str(profile or "").strip()
@@ -50,6 +52,7 @@ def build_thread_resume_profile_setting(
         profile=normalized_profile,
         model=normalized_model,
         model_provider=normalized_model_provider,
+        reasoning_effort=str(reasoning_effort or "").strip(),
     )
 
 
@@ -61,8 +64,9 @@ def resolve_thread_resume_profile_setting(
 ) -> ThreadResumeProfileSetting:
     return build_thread_resume_profile_setting(
         profile,
-        model=resolved.model,
-        model_provider=resolved.model_provider,
+        model=getattr(resolved, "model", ""),
+        model_provider=getattr(resolved, "model_provider", ""),
+        reasoning_effort=getattr(resolved, "reasoning_effort", ""),
         runtime_provider=runtime_provider,
     )
 
@@ -79,6 +83,7 @@ def thread_resume_profile_setting_from_record(
         profile=normalized_profile,
         model=str(record.model or "").strip(),
         model_provider=str(record.model_provider or "").strip(),
+        reasoning_effort=str(record.reasoning_effort or "").strip(),
     )
 
 
@@ -108,7 +113,22 @@ def describe_thread_resume_profile_setting_diff(
         diffs.append(f"model：{current_model} -> {desired_model}")
     if current is None or current.model_provider != desired.model_provider:
         diffs.append(f"provider：{current_provider} -> {desired_provider}")
+    current_effort = _display_value(current.reasoning_effort if current is not None else "")
+    desired_effort = _display_value(desired.reasoning_effort)
+    if current is None or current.reasoning_effort != desired.reasoning_effort:
+        diffs.append(f"effort：{current_effort} -> {desired_effort}")
     return tuple(diffs)
+
+
+def build_thread_resume_profile_config_overrides(
+    setting: ThreadResumeProfileSetting | None,
+) -> dict[str, object]:
+    if setting is None:
+        return {}
+    reasoning_effort = str(setting.reasoning_effort or "").strip()
+    if not reasoning_effort:
+        return {}
+    return {"model_reasoning_effort": reasoning_effort}
 
 
 def _display_value(value: str) -> str:

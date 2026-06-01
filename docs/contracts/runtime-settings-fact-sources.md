@@ -2,296 +2,155 @@
 
 Chinese original: `docs/contracts/runtime-settings-fact-sources.zh-CN.md`
 
-This document defines one shared analysis frame for questions such as:
+This document provides the shared analysis frame used to separate:
 
-- What exactly was resolved when a setting write happened?
-- After the write returns, which layer becomes the persisted fact source?
-- At which official boundary will upstream actually consume the setting?
-- Is a current status page reading persisted intent, a load-time snapshot, or
-  live runtime truth?
-- Is the value merely recorded, or has it actually taken effect?
+- what exactly was resolved at write time
+- which layer becomes the persisted fact source after the write
+- which upstream boundary actually consumes the value
+- whether a read-side surface is showing intent, a snapshot, or live truth
 
-Without separating those questions, it is easy to blur together “what was just
-set”, “what the next load/turn will use”, and “what the current live runtime is
-really using”.
+## 1. The current three setting families
 
-## 1. Scope
+The project now separates runtime-related settings into three families:
 
-The current project has at least two major classes of runtime-related settings:
+1. **instance startup baseline**
+   - currently only the managed backend startup profile
+2. **thread-wise next-load state**
+   - currently only thread memory mode
+3. **frontend-owned next-turn settings**
+   - model
+   - effort
+   - approval
+   - permissions
+   - collaboration mode
 
-- **thread-wise next-load state**
-- **frontend-owned runtime settings**
+Those families must not be read, written, or explained as if they were the
+same thing.
 
-Users may casually think of both as “settings”, but they do not share the same
-fact source, application boundary, or read-back contract.
+## 2. Shared question list
 
-This document defines the shared frame only. It does not replace the
-setting-family business contracts:
+For any setting, the system should answer separately:
 
-- thread-wise next-load shared rules:
-  `docs/contracts/thread-next-load-settings-semantics.md`
-- runtime control surface / Feishu-side runtime settings:
-  `docs/contracts/runtime-control-surface.md`
+1. write-time resolution source
+2. post-write persisted source
+3. application boundary
+4. read-side view
+5. whether it has already taken effect
 
-## 2. Five questions and one stage marker
+It should also mark, when needed:
 
-For any runtime setting, the system should answer these five questions
-separately, and also mark whether the setting is still in a provisional stage.
+- whether the value is still provisional / pending
 
-### 2.1 Write-time resolution source
+## 3. Side-by-side table
 
-This is: “When the user issues a write, how is the target value resolved?”
+| Setting family | Persisted source | Official application boundary | Primary read-side |
+| --- | --- | --- | --- |
+| instance startup profile | instance config `managed_startup_profile` | managed backend start / restart after reset | `/profile`, `/status`, local instance diagnostics |
+| thread-wise memory | `ThreadMemoryModeStore`; pending seed when needed | `thread/start`, `thread/resume` | `/memory`, thread status, resume diagnostics |
+| binding-wise next-turn | persisted runtime settings on the current binding | `turn/start` | `/status`, turn-settings cards, preflight |
 
-It answers:
-
-- what the user is really asking to set
-- whether aliases, shorthands, or compound commands were expanded first
-- whether the target was completed into a fully writable value before storage
-
-### 2.2 Post-write persisted source
-
-This is: “After the write succeeds, which layer is now the persisted fact
-source?”
-
-It answers:
-
-- where a later read should look
-- whether the write landed at thread scope, binding scope, or only in a
-  temporary pending state
-
-### 2.3 Application boundary
-
-This is: “Which official upstream boundary will actually consume this value?”
-
-Typical boundaries include:
-
-- `thread/start`
-- `thread/resume`
-- `turn/start`
-
-“Persisted” is not the same thing as “already consumed by a live runtime”.
-
-### 2.4 Read-side view
-
-This is: “What layer is a given read API, status page, or debug surface showing?”
-
-It answers:
-
-- next-load / next-turn intent
-- a load-time observed snapshot
-- or the authoritative live runtime truth
-
-If the project has no authoritative read surface for the live truth, it must
-say so explicitly.
-
-### 2.5 Effectivity judgment
-
-This is: “Has the setting crossed its application boundary and been consumed by
-the real runtime?”
-
-It answers:
-
-- whether the value is only persisted intent
-- whether it is now the input for the next load / turn
-- or whether the current live runtime has actually consumed it
-
-### 2.6 Provisional / pending stage
-
-There are moments where the five questions above do not all have stable answers.
-
-Typical cases include:
-
-- the `thread_id` has not materialized yet
-- the `thread/start` outcome is unknown
-- a pending seed has not yet been promoted into formal thread-wise persisted
-  state
-
-Those moments must be marked explicitly as:
-
-- **provisional / pending**
-
-The system must not pretend that a temporary seed is already formal persisted
-truth.
-
-## 3. Thread-wise next-load state
-
-The shared rules for this family live in
-`docs/contracts/thread-next-load-settings-semantics.md`. This document only
-places it inside the unified fact-source frame.
-
-### 3.1 Write-time resolution source
-
-- the target is first resolved into a thread-stable value under its own setting
-  contract
-- profile-style slices must resolve to a complete valid triple:
-  `profile`, `model`, `model_provider`
-- memory-style slices must resolve to a normalized legal enum value
-
-### 3.2 Post-write persisted source
-
-On a normal thread, the formal persisted source is:
-
-- the thread-wise profile store
-- the thread-wise memory store
-
-But the provisional stage must stay distinct:
-
-- launch seed
-  - there is no `thread_id` yet
-  - it is only a session-level one-shot seed
-- pending threadwise seed
-  - a `thread_id` now exists
-  - but it is still not formal thread-wise persisted state
-
-Only after the first successful user turn completes may that pending seed be
-promoted into the formal thread-wise persisted fact.
-
-### 3.3 Application boundary
-
-The application boundary for this family is:
-
-- the unloaded -> loaded thread boundary
-- specifically, supported `thread/start` / `thread/resume` paths
-
-These are not turn-time hot overrides, and they are not in-place hot patches of
-an already loaded runtime.
-
-### 3.4 Read-side view
-
-For an **unloaded** thread:
-
-- the thread-wise persisted store is the fact source
-
-For a **loaded** thread:
-
-- the live runtime is the current truth
-- the only stable project read today is the
-  **load-time observed snapshot** returned by `thread/start` / `thread/resume`
-
-For a **provisional** thread:
-
-- the launch seed / pending seed only describes a to-be-materialized intent
-- it must not be treated as formal persisted thread truth
-
-### 3.5 Effectivity judgment
-
-These settings count as effective only when:
-
-- the target thread is unloaded
-- a later supported `thread/start` / `thread/resume` happens
-- and that load actually consumes the persisted thread-wise state
-
-Therefore:
-
-- “written into the thread-wise store” means the next load will use it
-- it does not mean an already loaded runtime was changed in place
-
-## 4. Frontend-owned runtime settings
-
-The Feishu-side product contract for this family lives in
-`docs/contracts/runtime-control-surface.md`. This document only defines how to
-reason about that family under the shared frame.
+## 4. Startup profile
 
 ### 4.1 Write-time resolution source
 
-On the Feishu side, writes are first resolved under the current binding's
-command contract.
-
-For example:
-
-- `/model` resolves to a model override
-- `/effort` resolves to a reasoning-effort override
-- `/approval` resolves to `approval_policy`
-- `/permissions` resolves to the independent runtime field `permissions_profile_id`
+- the target value is resolved as a usable profile-v2 name from shared
+  `CODEX_HOME`
 
 ### 4.2 Post-write persisted source
 
-For the Feishu surface, the persisted source is:
-
-- the current Feishu binding's persisted settings
-
-The service may also refresh in-memory binding runtime state, but that remains a
-binding-level fact, not a thread-level fact.
+- instance config field `managed_startup_profile`
 
 ### 4.3 Application boundary
 
-These settings are mainly consumed at:
-
-- `thread/start` initiated by the current binding
-- `turn/start` initiated by the current binding
-
-Therefore:
-
-- if changed before a turn actually starts, they may affect that upcoming turn
-- if the current turn is already running, they typically affect the next turn
+- managed backend startup
+- managed backend restart after reset
 
 ### 4.4 Read-side view
 
-The default read-side meaning of these settings is:
+- `/profile` and `/status` read instance-level intent
+- that is not the thread-wise truth of the current live thread
 
-- the current binding's next-turn intent
+## 5. Thread-wise memory
 
-For example, values shown in `/status` or the matching settings pages answer:
+### 5.1 Write-time resolution source
 
-- “What will this Feishu chat inject when it starts the next turn itself?”
+- input is normalized into a legal memory-mode enum
 
-They do not answer:
+### 5.2 Post-write persisted source
 
-- what another Feishu chat will inject
-- what local `fcodex` will inject
-- what the full live truth of the loaded thread currently is
+- normal case: `ThreadMemoryModeStore`
+- provisional case: pending threadwise seed
 
-### 4.5 Effectivity judgment
+### 5.3 Application boundary
 
-These settings count as consumed only when a later `thread/start` or
-`turn/start` from that binding actually sends them upstream.
+- existing thread: `thread/resume`
+- new thread: the startup-seed path of `thread/start`
 
-Therefore:
+### 5.4 Read-side view
 
-- “saved on the binding” does not mean “the currently loaded thread is already
-  running under it”
-- it is closer to “input intent for the next load / turn started by this
-  binding”
+- `/memory` primarily reads persisted intent
+- status pages may additionally show a load-time observed value, but must not
+  pretend it is always-available live truth
 
-## 5. Formal place of provisional threads and pending seeds
+## 6. Binding-wise next-turn settings
 
-The repository must explicitly acknowledge that:
+### 6.1 Write-time resolution source
 
-- a provisional stage exists
-- pending seeds exist
-- they are not the same thing as formal persisted thread-wise truth
+- commands or card actions from the current Feishu binding
+- `auto` means "do not explicitly override", not "write thread-wise state"
 
-Three layers must stay distinct:
+### 6.2 Post-write persisted source
 
-1. launch seed
-   - a session-level one-shot seed
-   - no thread identity yet
-2. pending threadwise seed
-   - already bound to a `thread_id`
-   - still waiting for the first successful turn to promote it
-3. promoted thread-wise state
-   - only this is the formal persisted truth for later restore paths
+- the persisted runtime settings of the current binding
 
-This distinction also changes the effectivity judgment:
+### 6.3 Application boundary
 
-- in provisional / pending stages, the most accurate statement is usually
-  “intent has been recorded”
-- it is not yet correct to say “the thread now formally carries this persisted
-  state”
+- main path: `turn/start`
 
-## 6. Practical reading rule
+There is one narrow implementation exception today:
 
-When the user asks “what is true now?”, the question must be classified first:
+- for approval / permissions, some flows that "cold-resume first and then
+  continue a goal" also carry a one-shot correction during resume, so the first
+  resumed round does not silently fall back to the wrong default
 
-- “What was just set?”
-  - read the write-time resolution source
-- “What is persisted now?”
-  - read the post-write persisted source
-- “What will the next thread load use?”
-  - read thread-wise next-load state
-- “What will this Feishu chat send on its next turn?”
-  - read the current binding's frontend-owned runtime settings
-- “What is the live runtime using right now?”
-  - prefer live runtime / load-time snapshot
-  - if the current contract has no stable read surface, answer unknown instead
-    of pretending the persisted value is the live truth
+That correction:
+
+- does not change the fact source; it is still binding-wise next-turn state
+- does not turn approval / permissions into thread-wise state
+
+### 6.4 Read-side view
+
+- `/status` and related setting cards read the binding's persisted intent
+- if a live runtime was changed by another upstream frontend, the project does
+  not promise lossless readback of every live field
+
+## 7. Pending / provisional
+
+The system must explicitly admit a provisional stage when:
+
+- a thread was just created and is not yet stably materialized
+- the result of `thread/start` is unknown
+- backend reset is still replacing a provisional thread
+
+Temporary seeds are allowed there, but they must not be represented as formal
+thread/store truth too early.
+
+## 8. One guiding rule
+
+If the question is:
+
+- "what will the next backend start use?"
+
+look at the startup profile first.
+
+If the question is:
+
+- "what will the next resume of this thread use?"
+
+look at thread-wise memory first.
+
+If the question is:
+
+- "what will the next turn from this Feishu chat use?"
+
+look at the binding-wise next-turn settings first.

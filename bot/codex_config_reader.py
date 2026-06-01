@@ -1,19 +1,4 @@
-"""
-Read shared user-level CODEX_HOME config for thread-wise profile slices.
-
-This is an intentional feishu-codex contract choice:
-
-- explicit thread-wise profile mutation resolves against the shared user-level
-  CODEX_HOME only
-- it deliberately does not follow per-cwd / project-local config layers used by
-  upstream bare Codex
-
-Upstream profile-v2 now maps `--profile work` to `${CODEX_HOME}/work.config.toml`
-layered on top of `${CODEX_HOME}/config.toml`. feishu-codex keeps the same
-thread-wise contract boundary, but only materializes the effective
-`model` / `model_provider` slice locally and never forwards legacy
-`config.profile` to app-server.
-"""
+"""Read shared user-level CODEX_HOME profile-v2 files."""
 
 from __future__ import annotations
 
@@ -35,6 +20,7 @@ _PROFILE_V2_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 class ResolvedProfileConfig:
     model: str = ""
     model_provider: str = ""
+    reasoning_effort: str = ""
 
 
 @dataclass(frozen=True)
@@ -44,7 +30,7 @@ class _LoadedUserConfig:
 
 
 def list_profile_v2_names() -> list[str]:
-    codex_home = _codex_home_dir()
+    codex_home = codex_home_dir()
     if codex_home is None or not codex_home.is_dir():
         return []
     names: list[str] = []
@@ -62,16 +48,7 @@ def list_profile_v2_names() -> list[str]:
 
 
 def resolve_profile_from_codex_config(profile_name: str) -> ResolvedProfileConfig:
-    """Extract the effective model/model_provider for *profile_name*.
-
-    This intentionally mirrors only the shared user-level subset that matters
-    for feishu-codex thread-wise resume persistence:
-
-    - selected `${CODEX_HOME}/<name>.config.toml`
-    - falling back to top-level `${CODEX_HOME}/config.toml`
-
-    It does not load or merge per-project config from cwd.
-    """
+    """Extract the effective model/model_provider slice for *profile_name*."""
     normalized_profile = _normalize_profile_v2_name(profile_name)
     if not normalized_profile:
         return ResolvedProfileConfig()
@@ -87,6 +64,10 @@ def resolve_profile_from_codex_config(profile_name: str) -> ResolvedProfileConfi
         model_provider=(
             _read_string(profile_config.data, "model_provider", "modelProvider")
             or _read_string(base_config.data, "model_provider", "modelProvider")
+        ),
+        reasoning_effort=(
+            _read_string(profile_config.data, "model_reasoning_effort", "modelReasoningEffort")
+            or _read_string(base_config.data, "model_reasoning_effort", "modelReasoningEffort")
         ),
     )
 
@@ -149,6 +130,30 @@ def resolve_profile_model_metadata(profile_name: str) -> dict[str, object] | Non
     return None
 
 
+def profile_v2_exists(profile_name: str) -> bool:
+    return profile_v2_path(profile_name) is not None
+
+
+def profile_v2_is_usable(profile_name: str) -> bool:
+    try:
+        normalized_profile = normalize_profile_v2_name(profile_name)
+    except ValueError:
+        return False
+    if not normalized_profile:
+        return False
+    try:
+        return _load_profile_v2_layers(normalized_profile) is not None
+    except ValueError:
+        return False
+
+
+def read_profile_v2_text(profile_name: str) -> str:
+    path = profile_v2_path(profile_name)
+    if path is None:
+        raise FileNotFoundError(f"未找到 profile-v2 文件：`{profile_name}`")
+    return path.read_text(encoding="utf-8")
+
+
 def _load_profile_v2_layers(profile_name: str) -> tuple[_LoadedUserConfig, _LoadedUserConfig] | None:
     base_config = _load_base_user_config()
     if base_config is None:
@@ -202,35 +207,50 @@ def _raise_if_matching_legacy_profile_conflict(base_config: _LoadedUserConfig, p
     )
 
 
-def _codex_home_dir() -> Path | None:
+def codex_home_dir() -> Path | None:
     codex_home_env = os.environ.get("CODEX_HOME", "").strip()
     if codex_home_env:
         return Path(codex_home_env).expanduser()
     return Path.home() / ".codex"
 
 
-def _base_config_path() -> Path | None:
-    codex_home = _codex_home_dir()
+def base_config_path() -> Path | None:
+    codex_home = codex_home_dir()
     if codex_home is None:
         return None
     return codex_home / "config.toml"
 
 
-def _selected_profile_v2_path(profile_name: str) -> Path | None:
-    codex_home = _codex_home_dir()
+def profile_v2_path(profile_name: str) -> Path | None:
+    normalized_profile = normalize_profile_v2_name(profile_name)
+    if not normalized_profile:
+        return None
+    codex_home = codex_home_dir()
     if codex_home is None:
         return None
-    path = codex_home / f"{profile_name}.config.toml"
+    path = codex_home / f"{normalized_profile}.config.toml"
     return path if path.is_file() else None
 
 
-def _normalize_profile_v2_name(profile_name: str) -> str:
+def _base_config_path() -> Path | None:
+    return base_config_path()
+
+
+def _selected_profile_v2_path(profile_name: str) -> Path | None:
+    return profile_v2_path(profile_name)
+
+
+def normalize_profile_v2_name(profile_name: str) -> str:
     normalized = str(profile_name or "").strip()
     if not normalized:
         return ""
     if _is_valid_profile_v2_name(normalized):
         return normalized
     raise ValueError(f"非法 profile 名称：`{normalized}`。请使用类似 `work` 的纯名字。")
+
+
+def _normalize_profile_v2_name(profile_name: str) -> str:
+    return normalize_profile_v2_name(profile_name)
 
 
 def _is_valid_profile_v2_name(value: str) -> bool:

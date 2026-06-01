@@ -55,6 +55,7 @@ from bot.thread_memory_mode import (
     normalize_thread_memory_mode,
 )
 from bot.thread_resume_profile_setting import (
+    build_thread_resume_profile_config_overrides,
     build_thread_resume_profile_setting,
     format_thread_resume_profile_missing_fields,
     thread_resume_profile_setting_from_record,
@@ -341,12 +342,14 @@ class _ProxyThreadSeedState:
         new_thread_profile_seed: str = "",
         new_thread_profile_model_seed: str = "",
         new_thread_profile_model_provider_seed: str = "",
+        new_thread_profile_reasoning_effort_seed: str = "",
         new_thread_memory_mode_seed: str = "",
     ) -> None:
         self._new_thread_profile_seed_setting = build_thread_resume_profile_setting(
             new_thread_profile_seed,
             model=new_thread_profile_model_seed,
             model_provider=new_thread_profile_model_provider_seed,
+            reasoning_effort=new_thread_profile_reasoning_effort_seed,
         )
         self._new_thread_profile_seed_consumed = not self._new_thread_profile_seed_setting.profile
         self._new_thread_memory_mode_seed = str(new_thread_memory_mode_seed or "").strip()
@@ -475,6 +478,7 @@ class _ProxyThreadSeedState:
                 profile=profile_setting.profile if profile_setting is not None else "",
                 model=profile_setting.model if profile_setting is not None else "",
                 model_provider=profile_setting.model_provider if profile_setting is not None else "",
+                reasoning_effort=profile_setting.reasoning_effort if profile_setting is not None else "",
                 memory_mode=normalized_memory_mode,
             )
             if seed.has_any:
@@ -496,6 +500,7 @@ class _ProxyInteractionGate:
         new_thread_profile_seed: str = "",
         new_thread_profile_model_seed: str = "",
         new_thread_profile_model_provider_seed: str = "",
+        new_thread_profile_reasoning_effort_seed: str = "",
         new_thread_memory_mode_seed: str = "",
         resume_profile_hint: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
@@ -517,6 +522,7 @@ class _ProxyInteractionGate:
             new_thread_profile_seed=new_thread_profile_seed,
             new_thread_profile_model_seed=new_thread_profile_model_seed,
             new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
+            new_thread_profile_reasoning_effort_seed=new_thread_profile_reasoning_effort_seed,
             new_thread_memory_mode_seed=new_thread_memory_mode_seed,
         )
         self._thread_seed_state_owner_key = f"gate:{id(self)}"
@@ -636,6 +642,7 @@ class _ProxyInteractionGate:
                 pending.profile,
                 model=pending.model,
                 model_provider=pending.model_provider,
+                reasoning_effort=pending.reasoning_effort,
             )
         profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
         return thread_resume_profile_setting_from_record(profile_record)
@@ -670,13 +677,6 @@ class _ProxyInteractionGate:
         if pending is None:
             return
         try:
-            if pending.has_profile_slice:
-                ThreadResumeProfileStore(self._global_data_dir).save(
-                    pending.thread_id,
-                    profile=pending.profile,
-                    model=pending.model,
-                    model_provider=pending.model_provider,
-                )
             if pending.has_memory_mode:
                 ThreadMemoryModeStore(self._global_data_dir).save(
                     pending.thread_id,
@@ -703,6 +703,14 @@ class _ProxyInteractionGate:
             updated_params["model"] = setting.model
         if setting.model_provider:
             updated_params["modelProvider"] = setting.model_provider
+        profile_config_overrides = build_thread_resume_profile_config_overrides(setting)
+        if profile_config_overrides:
+            existing_config = params.get("config")
+            normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+            updated_params["config"] = deep_merge_config_overrides(
+                profile_config_overrides,
+                normalized_existing_config,
+            )
         updated_payload["params"] = updated_params
         return updated_payload
 
@@ -777,6 +785,14 @@ class _ProxyInteractionGate:
             updated_params["modelProvider"] = model_provider
         else:
             updated_params.pop("modelProvider", None)
+        profile_config_overrides = build_thread_resume_profile_config_overrides(profile_setting)
+        if profile_config_overrides:
+            existing_config = updated_params.get("config")
+            normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
+            updated_params["config"] = deep_merge_config_overrides(
+                profile_config_overrides,
+                normalized_existing_config,
+            )
         updated_payload["params"] = updated_params
         return updated_payload
 
@@ -848,13 +864,21 @@ class _ProxyInteractionGate:
         if not explicit_model and profile_setting.model:
             updated_params["model"] = profile_setting.model
             effective_model = profile_setting.model
+        explicit_effort = str(updated_params.get("effort", "") or "").strip()
+        effective_effort = explicit_effort
+        if not explicit_effort and profile_setting.reasoning_effort:
+            updated_params["effort"] = profile_setting.reasoning_effort
+            effective_effort = profile_setting.reasoning_effort
         collaboration = updated_params.get("collaborationMode")
         normalized_collaboration = collaboration if isinstance(collaboration, dict) else {}
         settings = normalized_collaboration.get("settings")
         normalized_settings = settings if isinstance(settings, dict) else {}
-        if effective_model:
+        if effective_model or effective_effort:
             updated_settings = dict(normalized_settings)
-            updated_settings["model"] = effective_model
+            if effective_model:
+                updated_settings["model"] = effective_model
+            if effective_effort:
+                updated_settings["reasoning_effort"] = effective_effort
             updated_collaboration = dict(normalized_collaboration)
             updated_collaboration["settings"] = updated_settings
             updated_params["collaborationMode"] = updated_collaboration
@@ -933,7 +957,6 @@ class _ProxyInteractionGate:
             request_key = _jsonrpc_id_key(request_id)
             reserved_new_thread_seed = False
             if method == "thread/resume":
-                payload = self._apply_saved_thread_profile_for_resume(payload)
                 payload = self._apply_saved_thread_memory_mode_for_resume(payload)
             elif method == "thread/start":
                 reservation_state = self._reserve_new_thread_seed_for_request(request_id)
@@ -957,8 +980,6 @@ class _ProxyInteractionGate:
                 if reserved_new_thread_seed:
                     payload = self._apply_new_thread_profile_seed(payload)
                     payload = self._apply_new_thread_memory_mode_seed(payload)
-            elif method == "turn/start":
-                payload = self._apply_saved_thread_profile_for_turn(payload)
             thread_id = _payload_thread_id(payload)
             if method == "thread/resume" and thread_id:
                 try:
@@ -1152,6 +1173,7 @@ def run_proxy(
     new_thread_profile_seed: str = "",
     new_thread_profile_model_seed: str = "",
     new_thread_profile_model_provider_seed: str = "",
+    new_thread_profile_reasoning_effort_seed: str = "",
     new_thread_memory_mode_seed: str = "",
     resume_profile_hint: str = "",
     listen_host: str = "127.0.0.1",
@@ -1251,11 +1273,12 @@ def run_proxy(
                     instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
                     service_token=service_token,
                     holder_pid=holder_pid,
-                    new_thread_profile_seed=new_thread_profile_seed,
-                    new_thread_profile_model_seed=new_thread_profile_model_seed,
-                    new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
-                    new_thread_memory_mode_seed=new_thread_memory_mode_seed,
-                    resume_profile_hint=resume_profile_hint,
+        new_thread_profile_seed=new_thread_profile_seed,
+        new_thread_profile_model_seed=new_thread_profile_model_seed,
+        new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
+        new_thread_profile_reasoning_effort_seed=new_thread_profile_reasoning_effort_seed,
+        new_thread_memory_mode_seed=new_thread_memory_mode_seed,
+        resume_profile_hint=resume_profile_hint,
                     runtime_lease_keeper=runtime_lease_keeper,
                     thread_seed_state=thread_seed_state,
                 )
@@ -1330,6 +1353,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--new-thread-profile-seed", default="")
     parser.add_argument("--new-thread-profile-model-seed", default="")
     parser.add_argument("--new-thread-profile-model-provider-seed", default="")
+    parser.add_argument("--new-thread-profile-reasoning-effort-seed", default="")
     parser.add_argument("--new-thread-memory-mode-seed", default="")
     parser.add_argument("--resume-profile-hint", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
@@ -1355,6 +1379,7 @@ def main(argv: list[str] | None = None) -> None:
         new_thread_profile_seed=args.new_thread_profile_seed,
         new_thread_profile_model_seed=args.new_thread_profile_model_seed,
         new_thread_profile_model_provider_seed=args.new_thread_profile_model_provider_seed,
+        new_thread_profile_reasoning_effort_seed=args.new_thread_profile_reasoning_effort_seed,
         new_thread_memory_mode_seed=args.new_thread_memory_mode_seed,
         resume_profile_hint=args.resume_profile_hint,
         listen_host=args.listen_host,

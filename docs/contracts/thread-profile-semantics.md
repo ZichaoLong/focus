@@ -1,119 +1,101 @@
-# Thread Profile Semantics
+# Startup Profile Semantics
 
 Chinese original: `docs/contracts/thread-profile-semantics.zh-CN.md`
 
-This file defines only the profile-specific semantics and entry contract for the
-**profile slice** of thread-wise next-load state.
-The shared next-load effect and direct-write / reset-backend rules live in
-`docs/contracts/thread-next-load-settings-semantics.md`.
+Note: this file keeps its historical filename, but it no longer defines a
+"thread-wise profile". It now defines the **instance-level startup profile for
+a managed backend**.
 
-## 1. Basic fact
+## 1. Definition
 
-- profile is **thread-wise**, not binding-wise
-- for supported resume paths, the same thread should use the same persisted profile slice when it moves from unloaded back to loaded
-- the persisted profile slice is the truth for an unloaded thread
-- the live runtime is the truth for a loaded thread
-- a persisted profile slice is valid only when `profile`, `model`, and
-  `model_provider` are all present; supported project paths must fail closed on
-  incomplete persisted records
-- the project no longer keeps an “instance-level default profile” as a user-facing concept
-- for this project's explicit profile-mutation paths, `profile -> model /
-  model_provider` is resolved from the shared user-level
-  `CODEX_HOME/config.toml` (with runtime provider fallback when needed)
-- per-cwd / project-local config is intentionally out of scope for that
-  thread-wise profile-slice contract
+- the startup profile is an **instance-level** setting, not thread-wise state
+- it only applies when `app_server_mode=managed`
+- its fact source is the instance config field `managed_startup_profile`
+- its value space is the set of usable profile-v2 names in the shared
+  `CODEX_HOME`
+- its purpose is to provide one startup baseline layer for the next managed
+  backend process
 
-## 2. Feishu-side `/profile [name]` and `/profile-clear`
+It does not mean:
 
-`/profile` is the formal profile-management entry point for the current thread.
+- the current thread's next-load profile
+- the current Feishu binding's turn-time override
+- the immediate live truth of an already loaded backend
 
-It follows the shared next-load-setting rule, so it has three outcomes:
+## 2. `/profile` and `/profile-clear`
 
-1. direct write
-   - the shared direct-write condition is satisfied
-2. offer “apply and reset backend”
-   - the shared direct-write condition is not satisfied yet, but the current instance can converge through reset-backend
-3. fail closed
-   - live runtime is owned by another instance, the current instance cannot
-     safely reset, or the target profile cannot resolve to a concrete
-     `profile` + `model` + `model_provider` tuple
+On the Feishu side:
 
-Within that command surface:
+- `/profile`
+  - without args: show the current instance startup profile and available
+    profile list
+  - with an arg: set the current instance startup-profile override
+- `/profile-clear`
+  - clear the current instance startup-profile override
+  - fall back to top-level defaults from shared `CODEX_HOME/config.toml`
 
-- `/profile <name>` rewrites the current thread's thread-wise profile tuple
-- `/profile-clear` clears the persisted thread-wise profile slice and returns
-  the thread to the “no profile override” state
+These commands:
 
-## 3. State after reset-backend
+- do not rewrite the current thread
+- do not write any thread-wise persisted state
+- do not guarantee immediate mutation of the currently loaded backend
 
-When backend reset is triggered from `/profile`:
+## 3. When it takes effect
 
+The startup profile is consumed at:
+
+- managed backend startup
+- managed backend restart after reset
+
+Therefore:
+
+- changing `/profile` only affects the next managed backend start
+- if the operator wants the current instance to switch immediately, they must
+  reset the backend
+
+## 4. Observable result after backend reset
+
+When the operator chooses "apply and reset backend" from `/profile` or
+`/profile-clear`:
+
+- the new backend starts with the new startup profile
 - binding bookmarks stay
-- related Feishu bindings become `detached`
-- the thread-wise profile/provider is persisted immediately once the write succeeds
-- continued Feishu push is not automatically guaranteed
+- relevant Feishu push paths become `detached` first
+- the result card offers `Attach Current Thread`, `Attach Current Instance`, and
+  `Keep Detached`
 
-The result card must offer:
+What changes here is:
 
-- `Attach Current Thread`
-- `Attach Current Instance`
-- `Keep Detached`
+- the backend process startup baseline
 
-## 4. Relationship to `/attach` and `/detach`
+What does not change here is:
 
-- `/detach`
-  - only pauses Feishu push for a chat
-  - does not imply the thread is globally unloaded
-- `/attach`
-  - only restores Feishu push
-  - does not change thread-wise profile
+- thread identity
+- binding identity
 
-So:
+## 5. Boundary against other setting families
 
-- profile management and attach/detach are different state axes
+The current project separates runtime settings into three families:
 
-## 5. Local `fcodex -p`
+1. instance startup profile
+   - defined here
+2. thread-wise next-load memory
+   - `docs/contracts/thread-next-load-settings-semantics.md`
+3. binding-wise next-turn settings
+   - `docs/contracts/runtime-control-surface.md`
 
-`fcodex resume <thread> -p <profile>` may rewrite profile only when the thread is not currently loaded.
+`/profile` belongs only to family 1.
 
-One idempotent exception is allowed:
+## 6. Non-goals
 
-- if the requested effective next-load profile setting already equals the
-  persisted thread-wise setting for that thread, the command may continue as a
-  no-op reuse even while the thread is still loaded
-- for profile, this equality check covers the full persisted tuple:
-  `profile`, `model`, `model_provider`
-- if the profile name is the same but resolved `model` or `model_provider`
-  differs, that is not no-op reuse; it is still a profile-setting change and
-  must follow the normal direct-write / reset-backend admission rule
-- here "resolved" means the thread-stable project contract above, not
-  upstream's per-cwd / per-repo config resolution
-- for an unloaded thread, plain `fcodex resume <thread>` keeps using the
-  persisted tuple, even if the profile name now resolves differently in local
-  config
-- for an unloaded thread, explicit `fcodex resume <thread> -p <profile>`
-  requests the profile name's current effective setting and rewrites the
-  persisted tuple before resume
-- for a loaded thread, plain `fcodex resume <thread>` joins the live runtime;
-  it does not try to reconcile persisted-profile drift against current local
-  config
+The project no longer promises:
 
-If the thread is still loaded, the command should reject clearly and tell the user:
+- "profile is thread-wise next-load truth"
+- "the same thread resume automatically reuses a persisted profile slice"
+- "Feishu `/profile` is semantically equivalent to local `fcodex -p`"
+- "once a thread is unloaded, profile can still be treated as a thread setting"
 
-- removing `-p/--profile` is the direct way to enter the current session
-- if the goal is to change profile, wait until the thread is verifiably globally unloaded
-- the common alternative is Feishu `/profile <name>` plus the reset-backend flow
+The new contract is deliberately narrower:
 
-## 6. Old mental models that are no longer valid
-
-These statements are no longer accurate:
-
-- “release runtime first, then change profile”
-- “unsubscribe always makes the profile writable”
-- “the instance has its own default profile that affects existing threads”
-
-The accurate contract is:
-
-- profile is thread-wise
-- next-load effect and direct-write rules are defined by the shared contract
-- divergence caused by bare `codex` or other out-of-contract runtime/config mutations is not normalized by this project
+- startup profile only manages the managed backend startup baseline
+- memory is the only formal thread-wise next-load setting that remains

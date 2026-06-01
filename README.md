@@ -178,7 +178,7 @@ feishu-codex config init-token
 - 发送 `/help` 或 `/h` 看可用命令导航
 - 发送 `/commands` 看可用命令列表
 - 直接发送普通文本开始对话
-- 手动发送命令 `/new`、`/resume`、`/profile`、`/cd` 管理当前会话绑定的 thread
+- 手动发送命令 `/new`、`/resume`、`/cd` 管理当前会话绑定的 thread；`/profile` 用于切换当前实例 managed backend 的 startup profile
 - 如果想让同一个机器人同时服务多个项目，建议为每个项目单独建一个群聊；每个群聊固定在自己的目录和 thread 上，避免在单聊里反复 `/cd`、`/resume`
 - 群聊里管理员先用 `/group activate` 激活，再按群模式使用
 
@@ -260,7 +260,7 @@ flowchart LR
     BindB["binding B<br/>binding-wise permissions"]
     Service["feishu-codex service"]
     Backend["shared codex app-server"]
-    Thread["thread<br/>thread-wise profile"]
+    Thread["thread<br/>thread-wise memory"]
   end
 
   Global["machine-global coordination<br/>ThreadRuntimeLease / instance registry"]
@@ -289,7 +289,7 @@ flowchart LR
     F1["Feishu binding 1<br/>(attached, own permissions)"]
     F2["Feishu binding 2<br/>(attached, own permissions)"]
     TUI["fcodex subscriber<br/>(local permissions)"]
-    Thread["thread<br/>thread-wise profile"]
+    Thread["thread<br/>thread-wise memory"]
     Owner["interaction owner"]
   end
 

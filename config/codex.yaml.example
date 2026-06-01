@@ -5,6 +5,13 @@
 # 如果通过 fnm 管理 Node，建议填写稳定安装路径，不要写 /run/user/.../fnm_multishells/... 这类临时 shim。
 # codex_command: codex
 
+# managed backend 启动时叠加的 startup profile；默认值：空
+# 说明：只对 `app_server_mode: managed` 生效。
+# 说明：这里填写的是共享 `CODEX_HOME` 下的 profile-v2 名称，例如 `work`，
+# 实际等价于把 `work.config.toml` 作为 managed backend 的启动基线层。
+# 修改后不会立刻改动已加载 backend；如需立即应用，请执行 `/reset-backend`。
+# managed_startup_profile: work
+
 # app-server 连接模式；默认值：managed
 # managed: feishu-codex 自己拉起并维护 shared app-server；
 #          默认优先监听 ws://127.0.0.1:8765，若被占用会自动切到空闲本地端口

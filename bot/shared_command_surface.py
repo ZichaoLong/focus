@@ -38,13 +38,13 @@ _SHARED_COMMAND_SPECS = (
         key="profile",
         slash_name="/profile",
         feishu_usage="/profile [name]",
-        feishu_summary="查看或切换当前绑定 thread 的 thread-wise profile。",
+        feishu_summary="查看或切换当前实例 managed backend 的 startup profile。",
     ),
     SharedCommandSpec(
         key="profile-clear",
         slash_name="/profile-clear",
         feishu_usage="/profile-clear",
-        feishu_summary="清空当前绑定 thread 的 thread-wise profile。",
+        feishu_summary="清空当前实例 managed backend 的 startup profile override。",
     ),
     SharedCommandSpec(
         key="memory",

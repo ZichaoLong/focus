@@ -780,6 +780,9 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             "bot.adapters.codex_app_server.list_profile_v2_names",
             return_value=["provider1", "provider2"],
         ), patch(
+            "bot.adapters.codex_app_server.profile_v2_is_usable",
+            side_effect=[True, True],
+        ), patch(
             "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
             side_effect=[
                 ResolvedProfileConfig(model="provider1-model", model_provider="provider1_api"),
@@ -804,6 +807,9 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         with patch(
             "bot.adapters.codex_app_server.list_profile_v2_names",
             return_value=["provider1", "broken"],
+        ), patch(
+            "bot.adapters.codex_app_server.profile_v2_is_usable",
+            side_effect=[True, False],
         ), patch(
             "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
             side_effect=[
@@ -1424,6 +1430,7 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_seed="",
             new_thread_profile_model_seed="",
             new_thread_profile_model_provider_seed="",
+            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
             proxy_auth_token=ANY,
@@ -1463,6 +1470,7 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_seed="",
             new_thread_profile_model_seed="",
             new_thread_profile_model_provider_seed="",
+            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
             proxy_auth_token=ANY,
@@ -1510,6 +1518,7 @@ class FCodexTests(unittest.TestCase):
                     profile="provider1",
                     model="gpt-5.4",
                     model_provider="provider1_api",
+                    reasoning_effort="high",
                 ),
             ):
                 with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
@@ -1523,11 +1532,12 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             os.getcwd(),
             _default_data_dir(),
-            new_thread_profile_seed="provider1",
-            new_thread_profile_model_seed="gpt-5.4",
-            new_thread_profile_model_provider_seed="provider1_api",
+            new_thread_profile_seed="",
+            new_thread_profile_model_seed="",
+            new_thread_profile_model_provider_seed="",
+            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="",
+            resume_profile_hint="provider1",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -1638,6 +1648,7 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_seed="",
             new_thread_profile_model_seed="",
             new_thread_profile_model_provider_seed="",
+            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
             proxy_auth_token=ANY,
@@ -2196,12 +2207,44 @@ class FCodexTests(unittest.TestCase):
             ],
         )
 
-    def test_fcodex_resume_with_saved_thread_profile_injects_profile(self) -> None:
+    def test_fcodex_resume_ignores_legacy_saved_thread_profile(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
         saved_record = ThreadResumeProfileRecord(
             thread_id=thread_id,
             profile="provider2",
             model="provider2-model",
+            model_provider="provider2_api",
+            updated_at=1.0,
+        )
+        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
+            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=saved_record):
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex", "resume", thread_id]):
+                            fcodex_main()
+
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "resume",
+                thread_id,
+            ],
+        )
+        self.assertEqual(mock_proxy.call_args.kwargs["resume_profile_hint"], "")
+
+    def test_fcodex_resume_ignores_incomplete_legacy_saved_thread_profile(self) -> None:
+        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
+        saved_record = ThreadResumeProfileRecord(
+            thread_id=thread_id,
+            profile="provider2",
+            model="",
             model_provider="provider2_api",
             updated_at=1.0,
         )
@@ -2222,174 +2265,22 @@ class FCodexTests(unittest.TestCase):
                 FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
-                "--profile",
-                "provider2",
                 "resume",
                 thread_id,
             ],
         )
 
-    def test_fcodex_resume_rejects_incomplete_persisted_profile_slice(self) -> None:
+    def test_fcodex_resume_with_explicit_profile_only_sets_resume_hint(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        saved_record = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile="provider2",
-            model="",
-            model_provider="provider2_api",
-            updated_at=1.0,
-        )
-        stderr = StringIO()
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=saved_record):
-                with patch("bot.fcodex.sys.stderr", stderr):
-                    with patch("sys.argv", ["fcodex", "resume", thread_id]):
-                        with self.assertRaises(SystemExit) as exc:
+            with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
                             fcodex_main()
 
-        self.assertEqual(exc.exception.code, 2)
-        self.assertIn("thread-wise profile slice 不完整", stderr.getvalue())
-        self.assertIn("`model`", stderr.getvalue())
-        self.assertIn("当前按 fail-close 拒绝继续", stderr.getvalue())
-
-    def test_fcodex_resume_with_explicit_profile_saves_thread_record_when_unloaded(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        mock_adapter = Mock()
-        mock_adapter.list_loaded_thread_ids.return_value = []
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="provider2_api")]
-        )
-        mock_adapter.stop.return_value = None
-        resolved_profile = Mock(model="gpt-5.4", model_provider="provider2_api")
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=None):
-                with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                    with patch("bot.fcodex.resolve_profile_from_codex_config", return_value=resolved_profile):
-                        with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
-                            with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
-                                with patch("bot.fcodex.os.execvpe") as mock_exec:
-                                    with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                        fcodex_main()
-
-        mock_save.assert_called_once_with(
-            thread_id,
-            profile="provider2",
-            model="gpt-5.4",
-            model_provider="provider2_api",
-        )
-        self.assertEqual(
-            mock_exec.call_args[0][1],
-            [
-                "codex",
-                "--remote",
-                "ws://127.0.0.1:9100",
-                "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-                "--cd",
-                os.getcwd(),
-                "-p",
-                "provider2",
-                "resume",
-                thread_id,
-            ],
-        )
-
-    def test_fcodex_resume_with_explicit_profile_rejects_when_profile_slice_is_incomplete(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        mock_adapter = Mock()
-        mock_adapter.list_loaded_thread_ids.return_value = []
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="")]
-        )
-        mock_adapter.stop.return_value = None
-        stderr = StringIO()
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=None):
-                with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                    with patch(
-                        "bot.fcodex.resolve_profile_from_codex_config",
-                        return_value=Mock(model="gpt-5.4", model_provider=""),
-                    ):
-                        with patch("bot.fcodex.sys.stderr", stderr):
-                            with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                with self.assertRaises(SystemExit) as exc:
-                                    fcodex_main()
-
-        self.assertEqual(exc.exception.code, 2)
-        self.assertIn("`-p/--profile` 解析出的 thread-wise profile slice 不完整", stderr.getvalue())
-        self.assertIn("`model_provider`", stderr.getvalue())
-        self.assertIn("`CODEX_HOME/config.toml`", stderr.getvalue())
-
-    def test_fcodex_resume_with_explicit_profile_rejects_when_loaded(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        lease = ThreadRuntimeLease(
-            thread_id=thread_id,
-            owner_instance="default",
-            owner_service_token="token-default",
-            control_endpoint="tcp://127.0.0.1:9100",
-            backend_url="ws://127.0.0.1:8765",
-            attached_at=1.0,
-            holders=(),
-        )
-        mock_adapter = Mock()
-        mock_adapter.list_loaded_thread_ids.return_value = [thread_id]
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="provider2_api")]
-        )
-        mock_adapter.stop.return_value = None
-        stderr = StringIO()
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=lease):
-                with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                    with patch(
-                        "bot.fcodex.resolve_profile_from_codex_config",
-                        return_value=Mock(model="gpt-5.4", model_provider=""),
-                    ):
-                        with patch("bot.fcodex.sys.stderr", stderr):
-                            with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                with self.assertRaises(SystemExit) as exc:
-                                    fcodex_main()
-        self.assertEqual(exc.exception.code, 2)
-        self.assertIn("实例 `default` 的 backend", stderr.getvalue())
-        self.assertIn("thread 级 next-load 设置", stderr.getvalue())
-        self.assertIn("feishu-codexctl --instance default service reset-backend", stderr.getvalue())
-
-    def test_fcodex_resume_with_same_effective_profile_setting_is_noop_when_loaded(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        lease = ThreadRuntimeLease(
-            thread_id=thread_id,
-            owner_instance="default",
-            owner_service_token="token-default",
-            control_endpoint="tcp://127.0.0.1:9100",
-            backend_url="ws://127.0.0.1:8765",
-            attached_at=1.0,
-            holders=(),
-        )
-        existing_record = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile="provider2",
-            model="gpt-5.4",
-            model_provider="provider2_api",
-            updated_at=1.0,
-        )
-        mock_adapter = Mock()
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="provider2_api")]
-        )
-        mock_adapter.stop.return_value = None
-        resolved_profile = Mock(model="gpt-5.4", model_provider="")
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=existing_record):
-                with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=lease):
-                    with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                        with patch("bot.fcodex.resolve_profile_from_codex_config", return_value=resolved_profile):
-                            with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
-                                with patch("bot.fcodex._thread_resume_profile_mutable", side_effect=AssertionError("should not check mutability")):
-                                    with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
-                                        with patch("bot.fcodex.os.execvpe") as mock_exec:
-                                            with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                                fcodex_main()
-
         mock_save.assert_not_called()
+        self.assertEqual(mock_proxy.call_args.kwargs["resume_profile_hint"], "provider2")
         self.assertEqual(
             mock_exec.call_args[0][1],
             [
@@ -2406,73 +2297,6 @@ class FCodexTests(unittest.TestCase):
                 thread_id,
             ],
         )
-
-    def test_fcodex_resume_with_same_profile_name_but_changed_setting_rejects_when_loaded(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        lease = ThreadRuntimeLease(
-            thread_id=thread_id,
-            owner_instance="default",
-            owner_service_token="token-default",
-            control_endpoint="tcp://127.0.0.1:9100",
-            backend_url="ws://127.0.0.1:8765",
-            attached_at=1.0,
-            holders=(),
-        )
-        existing_record = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile="provider2",
-            model="gpt-5.4",
-            model_provider="provider2_api",
-            updated_at=1.0,
-        )
-        mock_adapter = Mock()
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="provider2_api")]
-        )
-        mock_adapter.stop.return_value = None
-        stderr = StringIO()
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=existing_record):
-                with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=lease):
-                    with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                        with patch("bot.fcodex.resolve_profile_from_codex_config", return_value=Mock(model="gpt-5.5", model_provider="provider3_api")):
-                            with patch("bot.fcodex._thread_resume_profile_mutable", return_value=(False, "generic deny reason")):
-                                with patch("bot.fcodex.sys.stderr", stderr):
-                                    with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                        with self.assertRaises(SystemExit) as exc:
-                                            fcodex_main()
-
-        self.assertEqual(exc.exception.code, 2)
-        self.assertIn("同名 profile", stderr.getvalue())
-        self.assertIn("model：`gpt-5.4` -> `gpt-5.5`", stderr.getvalue())
-        self.assertIn("provider：`provider2_api` -> `provider3_api`", stderr.getvalue())
-        self.assertIn("generic deny reason", stderr.getvalue())
-
-    def test_fcodex_resume_with_explicit_profile_rejects_when_loaded_state_is_unverifiable(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        mock_adapter = Mock()
-        mock_adapter.list_loaded_thread_ids.side_effect = RuntimeError("backend down")
-        mock_adapter.read_runtime_config.return_value = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="provider2", model_provider="provider2_api")]
-        )
-        mock_adapter.stop.return_value = None
-        stderr = StringIO()
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadRuntimeLeaseStore.load", return_value=None):
-                with patch("bot.fcodex.CodexAppServerAdapter", return_value=mock_adapter):
-                    with patch(
-                        "bot.fcodex.resolve_profile_from_codex_config",
-                        return_value=Mock(model="gpt-5.4", model_provider=""),
-                    ):
-                        with patch("bot.fcodex.sys.stderr", stderr):
-                            with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                                with self.assertRaises(SystemExit) as exc:
-                                    fcodex_main()
-
-        self.assertEqual(exc.exception.code, 2)
-        self.assertIn("无法确认实例 `default` 的 backend", stderr.getvalue())
-        self.assertIn("按 fail-close 拒绝", stderr.getvalue())
-        self.assertIn("feishu-codexctl --instance default service reset-backend", stderr.getvalue())
 
     def test_fcodex_explicit_cd_is_forwarded_to_proxy(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
@@ -2488,6 +2312,7 @@ class FCodexTests(unittest.TestCase):
             new_thread_profile_seed="",
             new_thread_profile_model_seed="",
             new_thread_profile_model_provider_seed="",
+            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
             resume_profile_hint="",
             proxy_auth_token=ANY,
@@ -2903,7 +2728,6 @@ class FCodexTests(unittest.TestCase):
 
                 proxy_thread.join(timeout=1)
                 self.assertFalse(proxy_thread.is_alive())
-                self.assertTrue((global_data_dir / "thread_resume_profiles.lock").exists())
                 self.assertTrue((global_data_dir / "thread_memory_modes.lock").exists())
             finally:
                 backend_server = backend_server_ref.get("server")
@@ -3170,7 +2994,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(error["id"], 1)
             self.assertIn("当前线程正由其他终端执行", error["error"]["message"])
 
-    def test_turn_start_injects_saved_thread_model_without_profile_or_provider(self) -> None:
+    def test_turn_start_ignores_legacy_saved_thread_profile_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             data_dir = Path(tmpdir)
             ThreadResumeProfileStore(data_dir).save(
@@ -3178,6 +3002,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 profile="provider2",
                 model="provider2-model",
                 model_provider="provider2_api",
+                reasoning_effort="high",
             )
             gate = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -3209,13 +3034,15 @@ class ProxyInteractionGateTests(unittest.TestCase):
             )
 
             forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
+            self.assertNotIn("model", forwarded["params"])
             self.assertNotIn("config", forwarded["params"])
             self.assertNotIn("modelProvider", forwarded["params"])
-            self.assertEqual(
-                forwarded["params"]["collaborationMode"]["settings"]["model"],
-                "provider2-model",
-            )
+        self.assertEqual(
+            forwarded["params"]["collaborationMode"]["settings"]["model"],
+            "gpt-5.4",
+        )
+        self.assertNotIn("effort", forwarded["params"])
+        self.assertNotIn("reasoning_effort", forwarded["params"]["collaborationMode"]["settings"])
 
     def test_model_list_response_rewrites_existing_launch_profile_item_as_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3719,11 +3546,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             memory_first = ThreadMemoryModeStore(root_dir).load("thread-1")
             memory_second = ThreadMemoryModeStore(root_dir).load("thread-2")
 
-            self.assertIsNotNone(profile_first)
-            assert profile_first is not None
-            self.assertEqual(profile_first.profile, "provider2")
-            self.assertEqual(profile_first.model, "provider2-model")
-            self.assertEqual(profile_first.model_provider, "provider2_api")
+            self.assertIsNone(profile_first)
             self.assertIsNone(profile_second)
             self.assertIsNotNone(memory_first)
             assert memory_first is not None
@@ -3974,7 +3797,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(forwarded["params"]["model"], "provider2-model")
             self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
 
-    def test_thread_start_response_promotes_new_thread_profile_seed_after_first_completed_turn(self) -> None:
+    def test_thread_start_response_does_not_promote_new_thread_profile_seed(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             gate = _ProxyInteractionGate(
@@ -4057,11 +3880,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             first = ThreadResumeProfileStore(root_dir).load("thread-1")
             second = ThreadResumeProfileStore(root_dir).load("thread-2")
 
-            self.assertIsNotNone(first)
-            assert first is not None
-            self.assertEqual(first.profile, "provider2")
-            self.assertEqual(first.model, "provider2-model")
-            self.assertEqual(first.model_provider, "provider2_api")
+            self.assertIsNone(first)
             self.assertIsNone(second)
 
     def test_pending_new_thread_seed_survives_reconnect_until_first_completed_turn(self) -> None:
@@ -4140,8 +3959,8 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 },
             )
             self.assertNotIn("profile", resumed["params"]["config"])
-            self.assertEqual(resumed["params"]["model"], "provider2-model")
-            self.assertEqual(resumed["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("model", resumed["params"])
+            self.assertNotIn("modelProvider", resumed["params"])
 
             gate_second.handle_backend_message(
                 json.dumps(
@@ -4161,11 +3980,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             profile_record = ThreadResumeProfileStore(root_dir).load("thread-1")
             memory_record = ThreadMemoryModeStore(root_dir).load("thread-1")
 
-            self.assertIsNotNone(profile_record)
-            assert profile_record is not None
-            self.assertEqual(profile_record.profile, "provider2")
-            self.assertEqual(profile_record.model, "provider2-model")
-            self.assertEqual(profile_record.model_provider, "provider2_api")
+            self.assertIsNone(profile_record)
             self.assertIsNotNone(memory_record)
             assert memory_record is not None
             self.assertEqual(memory_record.mode, "read")
@@ -4276,6 +4091,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 profile="provider2",
                 model="provider2-model",
                 model_provider="provider2_api",
+                reasoning_effort="high",
             )
             gate = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -4310,7 +4126,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             )
             self.assertNotIn("profiles", forwarded["params"]["config"])
 
-    def test_thread_resume_request_injects_saved_thread_profile_slice(self) -> None:
+    def test_thread_resume_request_ignores_saved_thread_profile_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             ThreadResumeProfileStore(root_dir).save(
@@ -4318,6 +4134,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 profile="provider2",
                 model="provider2-model",
                 model_provider="provider2_api",
+                reasoning_effort="high",
             )
             gate = _ProxyInteractionGate(
                 cwd="/tmp/project",
@@ -4343,11 +4160,11 @@ class ProxyInteractionGateTests(unittest.TestCase):
 
             forwarded = self._decode_payload(backend_ws.sent[-1])
             self.assertEqual(forwarded["method"], "thread/resume")
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("model", forwarded["params"])
+            self.assertNotIn("modelProvider", forwarded["params"])
             self.assertNotIn("config", forwarded["params"])
 
-    def test_thread_resume_request_rejects_incomplete_saved_profile_slice(self) -> None:
+    def test_thread_resume_request_ignores_incomplete_saved_profile_slice(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             ThreadResumeProfileStore(root_dir).save(
@@ -4365,26 +4182,26 @@ class ProxyInteractionGateTests(unittest.TestCase):
             client_ws = self._FakeWs()
             backend_ws = self._FakeWs()
 
-            with self.assertRaisesRegex(RuntimeError, "thread-wise profile slice 不完整"):
-                gate.handle_client_message(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "thread/resume",
-                            "params": {
-                                "threadId": "thread-1",
-                                "model": "stale-local-model",
-                                "modelProvider": "stale-local-provider",
-                                "config": {"profile": "provider2"},
-                            },
-                        }
-                    ),
-                    client_ws=client_ws,
-                    backend_ws=backend_ws,
-                )
-
-            self.assertEqual(backend_ws.sent, [])
+            gate.handle_client_message(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "thread/resume",
+                        "params": {
+                            "threadId": "thread-1",
+                            "model": "stale-local-model",
+                            "modelProvider": "stale-local-provider",
+                            "config": {"profile": "provider2"},
+                        },
+                    }
+                ),
+                client_ws=client_ws,
+                backend_ws=backend_ws,
+            )
+            forwarded = self._decode_payload(backend_ws.sent[-1])
+            self.assertEqual(forwarded["params"]["model"], "stale-local-model")
+            self.assertEqual(forwarded["params"]["modelProvider"], "stale-local-provider")
 
     def test_runtime_lease_survives_lookup_connection_close_until_proxy_shutdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -945,9 +945,6 @@ class BindingRuntimeManager:
             snapshot["working_dir"] = summary.cwd or str(snapshot["working_dir"] or "").strip()
         snapshot["backend_thread_status"] = backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN
         snapshot["backend_running_turn"] = backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE
-        snapshot["reprofile_possible"] = bool(
-            thread_id and backend_thread_status == BACKEND_THREAD_STATUS_NOT_LOADED
-        )
         snapshot["detach_available"] = bool(thread_id and detach_available)
         snapshot["detach_reason"] = detach_reason
         return snapshot

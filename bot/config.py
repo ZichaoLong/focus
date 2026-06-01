@@ -106,3 +106,11 @@ def load_config_file(name: str) -> dict:
     """
     path = config_dir() / f"{name}.yaml"
     return _load_yaml_file(path)
+
+
+def save_config_file(name: str, config: dict[str, Any]) -> Path:
+    """保存指定组件的配置 ({name}.yaml)。"""
+    path = config_dir() / f"{name}.yaml"
+    rendered = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
+    _atomic_write_text(path, rendered, mode=0o600)
+    return path

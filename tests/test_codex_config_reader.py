@@ -31,6 +31,30 @@ model_provider = "work-provider"
             ResolvedProfileConfig(model="work-model", model_provider="work-provider"),
         )
 
+    def test_resolve_profile_reads_reasoning_effort(self) -> None:
+        resolved = self._resolve_from_temp_config(
+            base_config="""
+model = "global-model"
+model_provider = "global-provider"
+model_reasoning_effort = "medium"
+""",
+            profile_name="work",
+            profile_config="""
+model = "work-model"
+model_provider = "work-provider"
+model_reasoning_effort = "high"
+""",
+        )
+
+        self.assertEqual(
+            resolved,
+            ResolvedProfileConfig(
+                model="work-model",
+                model_provider="work-provider",
+                reasoning_effort="high",
+            ),
+        )
+
     def test_resolve_profile_inherits_top_level_model_and_provider(self) -> None:
         resolved = self._resolve_from_temp_config(
             base_config="""

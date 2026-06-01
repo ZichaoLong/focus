@@ -160,6 +160,7 @@ class RuntimeAdminController:
         is_thread_not_found_error: Callable[[Exception], bool],
         is_thread_not_loaded_error: Callable[[Exception], bool],
         reprofile_possible_check: Callable[[str], tuple[bool, str]],
+        load_managed_startup_profile: Callable[[], str] | None = None,
     ) -> None:
         self._lock = lock
         self._binding_runtime = binding_runtime
@@ -199,6 +200,7 @@ class RuntimeAdminController:
         self._is_thread_not_found_error = is_thread_not_found_error
         self._is_thread_not_loaded_error = is_thread_not_loaded_error
         self._reprofile_possible_check = reprofile_possible_check
+        self._load_managed_startup_profile = load_managed_startup_profile or (lambda: "")
 
     def _render_permissions_summary(self, snapshot: dict[str, Any]) -> str:
         try:
@@ -209,18 +211,12 @@ class RuntimeAdminController:
                 snapshot.get("permissions_profile_id", ""),
             )
 
-    def _current_thread_profile_text(self, thread_id: str) -> str:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return ""
+    def _current_startup_profile_text(self) -> str:
         try:
-            record = self._load_thread_resume_profile(normalized_thread_id)
+            profile = str(self._load_managed_startup_profile() or "").strip()
         except Exception:
-            logger.exception("读取 thread-wise profile 失败: thread=%s", normalized_thread_id[:12])
+            logger.exception("读取实例 startup profile 失败")
             return "读取失败"
-        if record is None:
-            return "（未设置）"
-        profile = str(getattr(record, "profile", "") or "").strip()
         return profile or "（未设置）"
 
     def _current_thread_memory_mode_text(self, thread_id: str) -> str:
@@ -613,7 +609,6 @@ class RuntimeAdminController:
         snapshot["backend_running_turn"] = backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE
         snapshot["live_runtime_owner"] = self._live_runtime_owner_snapshot(lease)
         snapshot["live_runtime_holder_labels"] = self._live_runtime_holder_labels(lease)
-        snapshot["reprofile_possible"] = bool(thread_id and self._reprofile_possible_check(thread_id)[0])
         snapshot["detach_available"] = bool(thread_id and detach_check.allowed)
         snapshot["detach_reason_code"] = detach_check.reason_code
         snapshot["detach_reason"] = detach_check.reason_text
@@ -647,9 +642,9 @@ class RuntimeAdminController:
             )
         )
         if include_profile_lines:
-            current_profile = self._current_thread_profile_text(thread_id)
+            current_profile = self._current_startup_profile_text()
             if current_profile:
-                lines.append(f"当前 profile：`{current_profile}`")
+                lines.append(f"实例 startup profile：`{current_profile}`")
             lines.extend(
                 [
                     f"权限基线：`{self._render_permissions_summary(snapshot)}`",
@@ -963,7 +958,7 @@ class RuntimeAdminController:
         lines.extend(
             [
                 "作用对象：当前实例 backend；这是实例级管理动作，不是当前线程命令。",
-                "不会覆盖 binding bookmark、thread-wise profile/provider、其他用户配置或数据。",
+                "不会覆盖 binding bookmark、实例 startup profile、thread-wise memory、其他用户配置或数据。",
                 "",
                 f"当前结论：{preview.reason_text}",
             ]
@@ -1010,7 +1005,7 @@ class RuntimeAdminController:
             f"已清理 live runtime lease thread：{self._short_thread_ids(result.get('purged_thread_ids') or [])}",
             f"当前 backend 地址：`{str(result.get('app_server_url') or '').strip() or '（未知）'}`",
             "",
-            "不会覆盖 binding bookmark、thread-wise profile/provider、其他用户配置或数据。",
+            "不会覆盖 binding bookmark、实例 startup profile、thread-wise memory、其他用户配置或数据。",
         ]
         current_thread_id = str(result.get("current_thread_id", "") or "").strip()
         if result.get("detached_binding_ids"):
@@ -1469,7 +1464,6 @@ class RuntimeAdminController:
             "already_detached": result.already_detached,
             "backend_thread_status": backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN,
             "backend_still_loaded": backend_thread_status in LOADED_BACKEND_THREAD_STATUSES,
-            "reprofile_possible": self._reprofile_possible_check(normalized_thread_id)[0],
             "detach_reason_code": "" if result.changed else detach_check.reason_code,
         }
 
@@ -1627,7 +1621,6 @@ class RuntimeAdminController:
             "attached_binding_ids": snapshot["attached_binding_ids"],
             "detached_binding_ids": snapshot["detached_binding_ids"],
             "interaction_owner": snapshot["interaction_owner"],
-            "reprofile_possible": self._reprofile_possible_check(normalized_thread_id)[0],
             "detach_available": snapshot["detach_available"],
             "detach_reason_code": detach_reason_code,
             "detach_reason": snapshot["detach_reason"],

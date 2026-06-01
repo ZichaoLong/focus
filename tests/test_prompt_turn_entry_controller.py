@@ -1,7 +1,6 @@
 import pathlib
 import tempfile
 import threading
-import types
 import unittest
 
 from bot.adapters.base import ThreadSnapshot, ThreadSummary
@@ -93,7 +92,6 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         }
         start_turn_behavior = {"value": {"turnId": "turn-1"}}
         interrupt_behavior = {"exc": None}
-        thread_profiles: dict[str, str] = {}
         access_policy = ThreadAccessPolicy(
             lock=lock,
             is_group_chat=lambda chat_id, message_id: False,
@@ -189,11 +187,6 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
                 clear_thread_binding=_clear_thread_binding,
                 resume_snapshot_by_id=_resume_snapshot_by_id,
                 create_thread=_create_thread,
-                thread_resume_profile_for_thread=lambda thread_id: (
-                    types.SimpleNamespace(profile=thread_profiles[thread_id], model="", model_provider="")
-                    if thread_id in thread_profiles
-                    else None
-                ),
                 message_reply_in_thread=lambda message_id: message_id.startswith("thread-"),
                 group_actor_open_id=lambda message_id: "ou_actor" if message_id else "",
                 access_policy=access_policy,
@@ -264,7 +257,6 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
             "create_thread_calls": create_thread_calls,
             "resume_calls": resume_calls,
             "start_turn_calls": start_turn_calls,
-            "thread_profiles": thread_profiles,
             "interrupt_calls": interrupt_calls,
             "sent_execution_cards": sent_execution_cards,
             "flushed": flushed,
@@ -401,21 +393,30 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         started = controller.start_prompt_turn("ou_user", "c1", "hello", message_id="msg-1")
 
         self.assertTrue(started)
-        self.assertEqual(env["thread_profiles"], {})
         self.assertNotIn("profile", env["start_turn_calls"][-1])
 
-    def test_start_prompt_turn_rejects_incomplete_persisted_profile_slice(self) -> None:
+    def test_start_prompt_turn_ignores_legacy_thread_profile_store(self) -> None:
         env = self._make_controller()
         controller = env["controller"]
         self._bind_thread(env, thread_id="thread-1")
-        env["thread_profiles"]["thread-1"] = "work"
 
         result = controller.start_prompt_turn_result("ou_user", "c1", "hello", message_id="msg-1")
 
-        self.assertFalse(result.started)
-        self.assertIn("thread-wise profile slice 不完整", result.reason_text)
-        self.assertEqual(env["start_turn_calls"], [])
-        self.assertEqual(env["scheduled_watchdogs"], [])
+        self.assertTrue(result.started)
+        self.assertIsNone(env["start_turn_calls"][-1]["model"])
+        self.assertIsNone(env["start_turn_calls"][-1]["reasoning_effort"])
+
+    def test_start_prompt_turn_uses_runtime_effort_only(self) -> None:
+        env = self._make_controller()
+        controller = env["controller"]
+        self._bind_thread(env, thread_id="thread-1")
+        env["state"]["reasoning_effort"] = "high"
+        env["start_turn_calls"].clear()
+
+        result = controller.start_prompt_turn_result("ou_user", "c1", "hello", message_id="msg-1")
+
+        self.assertTrue(result.started)
+        self.assertEqual(env["start_turn_calls"][-1]["reasoning_effort"], "high")
 
     def test_start_prompt_turn_fails_closed_when_execution_card_cannot_be_sent(self) -> None:
         env = self._make_controller()

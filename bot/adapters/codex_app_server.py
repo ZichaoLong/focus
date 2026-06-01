@@ -19,7 +19,11 @@ from bot.adapters.base import (
     ThreadSummary,
     TurnInputItem,
 )
-from bot.codex_config_reader import list_profile_v2_names, resolve_profile_from_codex_config
+from bot.codex_config_reader import (
+    list_profile_v2_names,
+    profile_v2_is_usable,
+    resolve_profile_from_codex_config,
+)
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
 from bot.permissions_profile import (
@@ -55,6 +59,7 @@ class CodexAppServerConfig:
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
     new_thread_memory_mode_seed: str = ""
+    managed_startup_profile: str = ""
     app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
@@ -105,6 +110,7 @@ class CodexAppServerConfig:
                 if raw_new_thread_memory_mode_seed
                 else ""
             ),
+            managed_startup_profile=str(config.get("managed_startup_profile", "") or "").strip(),
             source_kinds=[str(item) for item in source_kinds],
         )
 
@@ -124,7 +130,7 @@ class CodexAppServerAdapter(AgentAdapter):
         self._config = config
         self._collaboration_mode_model: str | None = None
         # Workaround: turn/start 的稳定上游覆盖面里只有 model /
-        # collaborationMode；thread-wise profile/provider 只在
+        # collaborationMode；startup baseline / create-resume model 只在
         # thread/start、thread/resume 这类线程边界请求上传递。
         # 因此缓存 thread/start 和 thread/resume 响应里后端解析好的
         # model，作为 collaborationMode.settings.model 的 fallback，
@@ -141,6 +147,7 @@ class CodexAppServerAdapter(AgentAdapter):
             on_disconnect=on_disconnect,
             app_server_runtime_store=app_server_runtime_store,
             app_server_data_dir=config.app_server_data_dir or None,
+            managed_startup_profile=config.managed_startup_profile or None,
         )
 
     def start(self) -> None:
@@ -359,7 +366,7 @@ class CodexAppServerAdapter(AgentAdapter):
 
     def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
         del profile
-        raise RuntimeError("上游已不支持运行时 active profile 切换；请改用 thread-wise `/profile`。")
+        raise RuntimeError("上游已不支持运行时 active profile 切换；请改用实例级 startup `/profile`。")
 
     def compact_thread(self, thread_id: str) -> None:
         self._rpc.request(
@@ -650,14 +657,10 @@ class CodexAppServerAdapter(AgentAdapter):
         layers_raw = result.get("layers") or []
         profiles: list[RuntimeProfileSummary] = []
         for name in list_profile_v2_names():
-            try:
-                resolved = resolve_profile_from_codex_config(name)
-            except ValueError:
-                logger.debug("skip invalid profile-v2 candidate %s", name, exc_info=True)
+            if not profile_v2_is_usable(name):
+                logger.debug("skip unusable profile-v2 candidate %s", name)
                 continue
-            if not str(resolved.model or "").strip() or not str(resolved.model_provider or "").strip():
-                logger.debug("skip non-concrete profile-v2 candidate %s", name)
-                continue
+            resolved = resolve_profile_from_codex_config(name)
             profiles.append(
                 RuntimeProfileSummary(
                     name=name,

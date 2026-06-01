@@ -343,7 +343,6 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
     else:
         print(f"next prompt: blocked ({snapshot['next_prompt_reason_code']})")
         print(f"next prompt reason: {snapshot['next_prompt_reason']}")
-    print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
     if snapshot["thread_id"]:
         availability = "available" if snapshot["detach_available"] else "blocked"
         print(f"detach: {availability}")
@@ -457,7 +456,6 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
     print(f"attached bindings: {', '.join(snapshot['attached_binding_ids']) or '（无）'}")
     print(f"detached bindings: {', '.join(snapshot['detached_binding_ids']) or '（无）'}")
     print(f"interaction owner: {snapshot['interaction_owner']['label']}")
-    print(f"re-profile possible: {'yes' if snapshot['reprofile_possible'] else 'no'}")
     availability = "available" if snapshot["detach_available"] else "blocked"
     print(f"detach: {availability}")
     if snapshot["detach_reason_code"]:
@@ -649,7 +647,6 @@ def _detach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"detached bindings: {', '.join(result['detached_binding_ids']) or '（无）'}")
     print(f"backend thread status: {result['backend_thread_status']}")
-    print(f"re-profile possible: {'yes' if result['reprofile_possible'] else 'no'}")
     if result.get("detach_reason_code"):
         print(f"detach reason code: {result['detach_reason_code']}")
     if result["already_detached"]:

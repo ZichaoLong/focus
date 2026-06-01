@@ -26,7 +26,8 @@ class ThreadResumeProfileRecord:
     profile: str
     model: str
     model_provider: str
-    updated_at: float
+    reasoning_effort: str = ""
+    updated_at: float = 0.0
 
 
 class ThreadResumeProfileStore:
@@ -59,6 +60,7 @@ class ThreadResumeProfileStore:
         profile: str,
         model: str = "",
         model_provider: str = "",
+        reasoning_effort: str = "",
     ) -> ThreadResumeProfileRecord:
         normalized_thread_id = self._normalize_thread_id(thread_id)
         normalized_profile = str(profile or "").strip()
@@ -71,6 +73,7 @@ class ThreadResumeProfileStore:
             profile=normalized_profile,
             model=str(model or "").strip(),
             model_provider=str(model_provider or "").strip(),
+            reasoning_effort=str(reasoning_effort or "").strip(),
             updated_at=time.time(),
         )
         with self._locked_data() as data:
@@ -113,6 +116,7 @@ class ThreadResumeProfileStore:
             profile = str(raw.get("profile", "") or "").strip()
             model = str(raw.get("model", "") or "").strip()
             model_provider = str(raw.get("model_provider", "") or "").strip()
+            reasoning_effort = str(raw.get("reasoning_effort", "") or "").strip()
             updated_at = float(raw.get("updated_at") or 0.0)
         except (TypeError, ValueError):
             return None
@@ -123,6 +127,7 @@ class ThreadResumeProfileStore:
             profile=profile,
             model=model,
             model_provider=model_provider,
+            reasoning_effort=reasoning_effort,
             updated_at=updated_at,
         )
 

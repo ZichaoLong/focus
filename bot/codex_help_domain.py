@@ -239,8 +239,8 @@ class CodexHelpDomain:
                     "新建、恢复、浏览线程与切换目录，请到“开始”。\n\n"
                     f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
                     f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
-                    f"如果只是为了 re-profile，优先直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
-                    f"如需清空当前 thread-wise profile，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`；"
+                    f"如需切换当前实例 managed backend 的 startup profile，可直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
+                    f"如需清空 startup profile override，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`；"
                     f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
                 ),
                 action_rows=(
@@ -254,7 +254,7 @@ class CodexHelpDomain:
                             _HelpCommandButtonSpec(
                                 label="改 Profile",
                                 command="/profile",
-                                title="Codex Thread Profile",
+                                title="Codex Backend Startup Profile",
                             ),
                         ),
                         layout="bisected",

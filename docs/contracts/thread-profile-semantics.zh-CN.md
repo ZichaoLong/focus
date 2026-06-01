@@ -1,113 +1,94 @@
-# Thread Profile 语义
+# Startup Profile 语义
 
 英文原文：`docs/contracts/thread-profile-semantics.md`
 
-本文只定义 thread-wise next-load state 中 **profile slice** 的业务语义与入口合同。
-共享的 next-load 生效与 direct-write / reset-backend 规则，以
-`docs/contracts/thread-next-load-settings-semantics.zh-CN.md` 为准。
+说明：本文件沿用历史文件名，但当前定义的已经不是“thread-wise profile”，而是
+**managed backend 的实例级 startup profile**。
 
-## 1. 基本事实
+## 1. 定义
 
-- profile 是 **thread-wise** 状态，不是 binding-wise 状态。
-- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应使用同一份已持久化的 profile slice。
-- 对 unloaded thread，持久化 profile slice 才是事实源。
-- 对 loaded thread，事实源改由 live runtime 持有。
-- 只有 `profile`、`model`、`model_provider` 三项都齐全时，这份持久化
-  profile slice 才算有效；对本项目的受支持路径，遇到不完整记录必须
-  fail-close。
-- 当前项目不再保留“实例级默认 profile”这一层用户概念。
-- 对本项目的显式 profile 改写路径，`profile -> model / model_provider`
-  的解析来源是共享的用户级 `CODEX_HOME/config.toml`
-  （必要时再用 runtime profile mapping 补 provider）。
-- per-cwd / project-local config 被明确排除在这条 thread-wise profile
-  slice 合同之外。
+- startup profile 是 **实例级** 设置，不是 thread-wise 状态。
+- 它只适用于 `app_server_mode=managed` 的实例。
+- 它的事实源是实例配置里的 `managed_startup_profile`。
+- 它的取值空间来自共享 `CODEX_HOME` 下可用的 profile-v2 名称。
+- 它的作用是：为下一次启动的 managed backend 提供一层启动基线。
 
-## 2. 飞书侧 `/profile [name]` 与 `/profile-clear`
+它不表示：
 
-`/profile` 是当前 thread 的正式 profile 管理入口。
+- 当前 thread 的 next-load profile
+- 当前 Feishu 会话的 turn-time override
+- 当前已加载 backend 的即时 live truth
 
-它沿用共享的 next-load 设置规则，因此有三类结果：
+## 2. `/profile` 与 `/profile-clear`
 
-1. 直接写入
-   - 共享 direct-write 条件已满足
-2. 提供 “应用并重置 backend”
-   - 共享 direct-write 条件未满足，但当前实例可通过 reset-backend 收口
-3. fail-closed
-   - live runtime 由别的实例持有，或当前实例无法安全重置，或目标
-     profile 不能解析成具体的 `profile + model + model_provider` 三元组
+飞书侧：
 
-其中：
+- `/profile`
+  - 无参数：查看当前实例的 startup profile 与可选 profile 列表
+  - 带参数：把当前实例的 startup profile override 改为目标 profile
+- `/profile-clear`
+  - 清空当前实例的 startup profile override
+  - 回落到共享 `CODEX_HOME/config.toml` 顶层默认配置
 
-- `/profile <name>`：把当前 thread 的 thread-wise profile 改写为目标三元组
-- `/profile-clear`：清空当前 thread 已持久化的 thread-wise profile slice，
-  回到“该 thread 未设置 profile override”的状态
+这些命令：
 
-## 3. reset-backend 后的状态
+- 不直接改写当前 thread
+- 不写 thread-wise 持久化状态
+- 不保证当前已加载 backend 立即变更
 
-通过 `/profile` 触发 backend reset 后：
+## 3. 何时生效
 
+startup profile 会在以下边界被消费：
+
+- managed backend 启动
+- managed backend reset 后重启
+
+因此：
+
+- 改完 `/profile` 后，下一次 managed backend 启动才会真正吃到它
+- 若希望当前实例立刻切过去，应再执行 reset backend
+
+## 4. reset backend 后的可观察结果
+
+当用户通过 `/profile` 或 `/profile-clear` 选择“应用并重置 backend”时：
+
+- 新 backend 会按新的 startup profile 启动
 - binding bookmark 保留
-- 相关 Feishu binding 会变成 `detached`
-- thread-wise profile/provider 写入成功后立即持久化
-- 不自动保证继续接收飞书推送
+- 当前实例的相关飞书推送会先变成 `detached`
+- 结果卡会继续提供 `附着当前线程` / `附着当前实例` / `保持 detached`
 
-结果卡必须给用户明确选项：
+这一步改变的是：
 
-- `附着当前线程`
-- `附着当前实例`
-- `保持 detached`
+- backend 进程启动基线
 
-## 4. `/attach` 与 `/detach` 的关系
+不是：
 
-- `/detach`
-  - 只是暂停某个飞书会话接收推送
-  - 不等于 thread 已 globally unloaded
-- `/attach`
-  - 只是恢复推送
-  - 不修改 thread-wise profile
+- 某个 thread 的逻辑身份
+- 某个会话的绑定关系
 
-也就是说：
+## 5. 与其他设置的边界
 
-- profile 管理与 attach/detach 是两条不同状态轴
+当前项目的运行时设置分三类：
 
-## 5. 本地 `fcodex -p`
+1. 实例 startup profile
+   - 本文件定义
+2. thread-wise next-load memory
+   - `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
+3. binding-wise next-turn 设置
+   - `docs/contracts/runtime-control-surface.zh-CN.md`
 
-`fcodex resume <thread> -p <profile>` 只有在 thread 当前未 loaded 时才允许改写 profile。
+`/profile` 只属于第 1 类。
 
-但允许一条例外的幂等路径：
+## 6. 非目标
 
-- 如果请求的有效 next-load profile 设置已等于该 thread 当前持久化设置，
-  则即使 thread 仍 loaded，也可按 no-op reuse 继续
-- 对 profile 而言，这里的相等判断覆盖完整三元组：
-  `profile`、`model`、`model_provider`
-- 如果 profile 名字相同，但解析出的 `model` 或 `model_provider`
-  已不同，这就不属于 no-op reuse；它仍然是 profile 设置变更，必须走正常的
-  direct-write / reset-backend 准入规则
-- 这里的“解析出”指的是上面这条 thread-stable 项目合同，不是 upstream
-  按 cwd / repo 动态计算出来的结果
-- 对于 unloaded thread，普通 `fcodex resume <thread>` 仍应继续使用该 thread
-  当前已持久化的三元组，即使这个 profile 名字在本地配置里现在已能解析出不同结果
-- 对于 unloaded thread，显式 `fcodex resume <thread> -p <profile>`
-  则表示请求该 profile 名字当前的有效设置，并在 resume 前改写持久化三元组
-- 对于 loaded thread，普通 `fcodex resume <thread>` 的含义只是接入当前 live runtime；
-  它不会主动拿当前本地配置去对账持久化 profile 漂移
+当前合同明确不再承诺：
 
-如果 thread 仍 loaded，应明确拒绝，并告诉用户：
+- “profile 是 thread-wise next-load truth”
+- “同一个 thread resume 时应自动沿用持久化 profile slice”
+- “飞书侧 `/profile` 与本地 `fcodex -p` 在语义上等价”
+- “只要 thread unloaded，就能在本项目里把 profile 当 thread 设置来写”
 
-- 去掉 `-p/--profile` 可直接进入当前会话
-- 如果真要改 profile，应等待 thread verifiably globally unloaded
-- 常见替代路径是飞书 `/profile <name>` + reset-backend
+本项目现在把这些旧心智收缩为：
 
-## 6. 不再支持的旧心智
-
-以下说法当前都不准确：
-
-- “先 release-runtime，再改 profile”
-- “只要 unsubscribe，profile 就一定可写”
-- “实例有自己的默认 profile，会影响现有 thread”
-
-当前准确说法是：
-
-- profile 是 thread-wise
-- next-load 生效与 direct-write 规则，以共享合同为准
-- 裸 `codex` 或其他合同外入口直接改动 runtime / config 所造成的分叉，不由本项目兜底统一
+- startup profile 只管理 managed backend 的启动基线
+- thread-wise next-load 正式保留的只有 memory

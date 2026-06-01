@@ -2,115 +2,39 @@
 
 Chinese original: `docs/contracts/runtime-control-surface.zh-CN.md`
 
-This file is the authoritative contract for the current runtime vocabulary and control actions.
+This document is the user-facing contract for the Feishu-side runtime control
+surface.
 
-For the shared frame of write-time resolution, persisted fact source,
-application boundary, read-side view, effectivity judgment, and provisional
-stages, see:
+## 1. The control surface separates only three setting families
 
-- `docs/contracts/runtime-settings-fact-sources.md`
+### 1.1 Instance startup profile
 
-## 1. Three-layer mental model
+Entry points:
 
-The product now exposes only three user-facing layers:
+- `/profile`
+- `/profile-clear`
 
-1. `binding`
-   - which thread a Feishu chat currently remembers
-2. `attach / detach`
-   - whether that Feishu chat currently receives push for that thread
-3. `backend / live runtime`
-   - whether that thread is loaded in the backend, and which instance / local frontend currently owns live runtime
+Semantics:
 
-Upstream `thread/unsubscribe` still exists, but only as an internal protocol action. It is no longer a user-facing concept.
+- manage the startup baseline of the current instance's managed backend
+- do not directly mutate the current thread
+- take effect only on the next backend start / reset
 
-## 2. Core vocabulary
+### 1.2 Thread-wise next-load memory
 
-### 2.1 `binding`
+Entry point:
 
-One Feishu chat's logical pointer to a thread.
+- `/memory`
 
-- `unbound`
-- `bound`
+Semantics:
 
-It answers:
+- manage the current thread's memory mode
+- take effect on the next `thread/resume` or the corresponding startup-seed path
+- are not turn-time overrides
 
-- “Which thread will this chat continue by default on the next message?”
+### 1.3 Binding-wise next-turn settings
 
-It does not answer:
-
-- whether push is still attached
-- whether the backend is loaded
-
-### 2.2 `feishu push`
-
-Whether the current Feishu chat receives push for the thread.
-
-- `attached`
-- `detached`
-- `not-applicable`
-
-It answers:
-
-- “Will this Feishu chat currently receive push for this thread?”
-
-### 2.3 `backend thread status`
-
-The current backend state of the thread in this instance.
-
-Typical values:
-
-- `notLoaded`
-- `idle`
-- `active`
-- `systemError`
-
-This is a separate axis from Feishu attachment state.
-
-### 2.4 `live runtime owner`
-
-The machine-global owner of the live thread runtime.
-
-It may be:
-
-- one `feishu-codex` service instance
-- one local `fcodex` / proxy holder
-- none
-
-It answers:
-
-- “Which instance or local frontend is actually holding this live thread now?”
-
-It is not the only safety fact for cross-instance attach / resume.
-
-- before cross-instance continuation, the system must first verify that no other running instance still keeps the thread `loaded`
-- only after that loaded gate passes may the current instance continue to claim `ThreadRuntimeLease`
-
-### 2.5 `interaction owner`
-
-Who currently owns write / interrupt / approval / extra-input control for the thread.
-
-It is not identical to `live runtime owner`:
-
-- `live runtime owner` is about holding live runtime
-- `interaction owner` is about owning the current turn's interaction control
-
-### 2.6 Feishu frontend-owned runtime settings
-
-More generally, this project distinguishes two classes:
-
-- **thread-wise next-load state**
-- **frontend-owned runtime settings**
-
-The current Feishu surface exposes some runtime settings from the second class.
-They do not belong to thread-wise next-load state and do not form the
-permanent snapshot truth of a loaded thread.
-
-On the Feishu frontend specifically, the current persistence strategy for these
-runtime settings is:
-
-- **binding-wise turn-time settings**
-
-The currently explicit user-facing entries include:
+Entry points:
 
 - `/model`
 - `/effort`
@@ -118,262 +42,100 @@ The currently explicit user-facing entries include:
 - `/permissions`
 - `/collab-mode`
 
-Their contract is:
+Semantics:
 
-- the setting value is persisted on the current Feishu binding
-- the current binding injects it when creating a thread or starting `turn/start`
-- if changed before the turn starts, it can affect that turn immediately
-- if the current turn is already running, it affects the next turn instead
+- manage runtime overrides for future turns of the current Feishu binding
+- are primarily consumed at `turn/start`
+- do not write thread-wise next-load state
 
-They are not:
+## 2. Other core state axes
 
-- thread-wise next-load state
-- one shared thread-level truth across all frontends
-- a live-runtime snapshot that can always be re-read stably for a loaded thread
+Besides settings, the control surface continues to separate three orthogonal
+state axes:
+
+1. `binding`
+   - which thread the current chat logically points to
+2. `attach / detach`
+   - whether the current chat receives Feishu push for that thread
+3. `backend / live runtime`
+   - whether the thread is loaded in the backend, and who currently owns live
+     runtime
+
+Those state axes must not be conflated with the setting families.
+
+## 3. Formal semantics of `/profile`
+
+`/profile` still appears under the "thread settings" workbench area, but its
+true scope is:
+
+- **the current instance**
+
+That placement is a workflow choice only: operators often adjust backend
+baseline while working on the current thread.
 
 Therefore:
 
-- one Feishu chat's stored settings do not automatically become the defaults of
-  another Feishu chat or local `fcodex`
-- another frontend may inject different runtime overrides on its own turns
-- this binding-wise persistence is a Feishu product choice, not a
-  cross-frontend requirement for all runtime settings
-- `fcodex` / upstream TUI do not automatically participate in this
-  Feishu-side persistence model
+- `/profile <name>` changes the instance startup profile
+- `/profile-clear` clears the instance startup-profile override
+- if the operator wants the current instance to switch immediately, they must
+  reset the backend
 
-## 3. Hard rules
+## 4. Formal semantics of `/memory`
 
-### 3.1 First attach / last detach
+`/memory` is the only formally retained thread-wise next-load setting entry
+point.
 
-For the Feishu service itself:
+It has three outcomes:
 
-- when the first binding on a thread goes from detached to attached, the service must ensure it is subscribed to that thread
-- when the last attached Feishu binding on a thread becomes detached, the service must automatically stop its own Feishu-side subscription for that thread
-- a local `attached` flag is not enough by itself; the service must only mark `attached` after its own backend connection has re-established the real thread subscription fact
+1. direct write
+   - the target thread is verifiably globally unloaded
+2. offer "apply and reset backend"
+   - the current instance can converge through reset-backend
+3. fail closed
+   - the current state is not safe to mutate
 
-This constrains the Feishu service only.
+## 5. Formal semantics of turn-time settings
 
-It does not constrain local `fcodex`:
+`/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode`:
 
-- local `fcodex` may still subscribe independently
-- so the backend may stay loaded after the last Feishu detach
+- all belong to the current Feishu binding's next-turn settings
+- primarily read back persisted binding intent
+- are not thread snapshot truth
+- are not instance startup baseline
 
-### 3.2 Restart recovery
+Within that family:
 
-A persisted `attached` value is not a durable truth across processes.
+- `auto` means "do not explicitly override"
+- it does not mean "clear some thread-wise state to default"
 
-So after restart or a fresh service connection:
+## 6. Side-effect boundary of reset-backend
 
-- persisted `attached` must be downgraded to `detached`
-- the binding bookmark stays
-- later `/attach`, `/resume`, or the next accepted plain message may attach again
+When an instance resets its backend:
 
-### 3.3 Pure reject for detached prompts
+- the backend process restarts
+- binding bookmarks stay
+- related Feishu push paths detach first
+- thread-wise memory store stays
+- startup profile stays
+- binding-wise next-turn settings stay
 
-If the current binding is `bound + detached`, and the next plain message is denied by live-runtime / interaction / sharing rules:
+Reset-backend does not:
 
-- it must be a pure reject
-- it must not resume behind the scenes
-- it must not add a Feishu subscriber behind the scenes
-- it must not flip `detached` back to `attached`
+- rewrite thread history
+- automatically re-attach every chat
+- upgrade binding settings into thread-wise state
 
-## 4. Important state combinations
+## 7. What status pages should read
 
-### 4.1 `bound + attached + idle`
+`/status` and related diagnostics should show separately:
 
-Valid steady state.
+- the instance startup profile
+- the current thread's persisted memory mode
+- the current binding's next-turn overrides
 
-Meaning:
+They should no longer present:
 
-- the chat still remembers the thread
-- the chat still receives push
-- no turn is currently running in the backend
+- "current thread-wise profile"
+- "re-profile possible"
 
-### 4.2 `bound + detached + notLoaded`
-
-The most typical “thread-wise profile is directly writable” state.
-
-Meaning:
-
-- the binding bookmark still exists
-- Feishu is not receiving push
-- this instance has confirmed the thread is not loaded
-
-### 4.3 `bound + detached + idle/active`
-
-Also valid.
-
-Meaning:
-
-- Feishu has detached
-- but another subscriber still keeps the backend loaded
-- the common case is local `fcodex`
-
-So:
-
-- `detached` does not imply `notLoaded`
-
-## 5. Command contracts
-
-### 5.1 `/status`
-
-`/status` is a chat-scoped summary command.
-
-It shows only:
-
-- current directory
-- current thread
-- the current thread's goal summary when known
-- the current thread's thread-wise profile
-- the current Feishu session's model / effort / permissions baseline / approval / collaboration settings
-
-It is no longer the full debugging surface.
-
-### 5.2 `/goal`
-
-`/goal` is the thread-scoped goal control surface for the current binding.
-
-Stable Feishu-side subcommands are:
-
-- `/goal`
-- `/goal show`
-- `/goal set <objective>`
-- `/goal pause`
-- `/goal resume`
-- `/goal clear`
-
-Contract boundaries:
-
-- `/goal` without arguments is the same as `/goal show`
-- this surface depends on app-server `thread/goal/*` RPCs rather than mirroring the TUI slash UX
-- goal state is thread-level, separate from execution cards
-- if one goal drives multiple turns, Feishu still shows normal per-turn execution-card lifecycle
-
-### 5.3 `/preflight`
-
-`/preflight` is a chat-scoped dry-run.
-
-It may answer:
-
-- whether the next plain message would be accepted or blocked
-- whether `/detach` is currently available for the current chat
-
-It must not:
-
-- start a turn
-- call resume
-- change binding / attached / detached / owner state
-
-### 5.4 `/detach`
-
-`/detach` applies only to the current chat binding.
-
-It:
-
-- keeps the binding bookmark
-- flips the current chat from `attached` to `detached`
-- if that chat was the last attached Feishu binding on the thread, automatically stops the Feishu service's own subscription for that thread
-
-It does not:
-
-- delete the thread
-- clear the binding
-- force the backend to unload
-
-### 5.5 `/attach [binding|thread|service]`
-
-This is the recovery action.
-
-Scopes:
-
-- `binding`
-  - restore only the current chat binding
-- `thread`
-  - restore all detached bindings on the current chat's thread
-- `service`
-  - restore all recoverable detached bindings in the current instance
-
-All attach actions must fail closed when:
-
-- another running instance still reports the thread as `loaded`
-- the system cannot verify whether other running instances are fully `unloaded`
-- the loaded gate passes but live-runtime lease claim still denies them
-- the target thread is no longer attachable
-- the current instance cannot safely acquire the needed runtime
-
-`service attach` must also satisfy:
-
-- instance-level batch restore
-- thread-level fail-close
-- partial success across different threads is allowed
-
-Attach is not a read-only inspection.
-
-- if the thread is already loaded, attach must still re-establish the service connection's backend-side thread subscription
-- it must not flip local state to `attached` based only on a successful `thread/read`
-
-### 5.5 `/reset-backend`
-
-`/reset-backend` is an instance-scoped action.
-
-It:
-
-- resets the current instance backend
-- preserves binding bookmarks
-- preserves thread-wise profile/provider data
-- preserves user config and data
-- moves affected Feishu bindings into `detached`
-
-It does not:
-
-- automatically delete bindings
-- automatically clear thread-wise profile
-- automatically guarantee that push becomes attached again
-
-So the result card must directly offer:
-
-- `Attach Current Thread`
-- `Attach Current Instance`
-- `Keep Detached`
-
-Before the reset actually runs, preview / denial wording should split facts into
-two layers:
-
-- `hard blockers`
-  - for example active threads, pending approval/input requests, and running
-    Feishu bindings
-- `collateral impact`
-  - for example attached bindings, live runtime holders, and the count / short
-    summary of loaded threads on the current instance that would also be
-    affected
-
-Do not dump every loaded thread into the primary card by default.
-
-## 6. Local management surface
-
-The formal local `feishu-codexctl` command matrix lives in
-`docs/contracts/feishu-codexctl-command-matrix.md`.
-
-This document no longer maintains a second command list; it only defines runtime
-state and control semantics.
-
-## 7. reset-backend and re-profile
-
-The direct-write rule and reset path for thread-wise next-load settings
-(currently profile / memory mode) live in
-`docs/contracts/thread-next-load-settings-semantics.md`.
-
-This document keeps only the runtime-control requirement:
-
-- the Feishu-side `/profile <name>` / `/memory <...>` flows should prefer direct write when possible, otherwise “apply and reset backend”
-- it should not force ordinary users to understand complex detach / attach / unsubscribe relationships first
-
-## 8. Bottom line
-
-The user-facing contract must stay:
-
-- `binding` answers “which thread is remembered”
-- `attach / detach` answers “whether this chat receives push”
-- `backend / live runtime` answers “where the thread is loaded and who currently holds it”
-
-Any code, CLI wording, help card, result card, README, or contract doc that still collapses these layers into a single “release runtime residency” concept should be treated as a contract bug and tightened further.
+because those are no longer part of the formal contract.

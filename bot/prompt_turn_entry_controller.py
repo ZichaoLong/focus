@@ -12,11 +12,6 @@ from bot.execution_transcript import ExecutionTranscript
 from bot.runtime_card_publisher import build_execution_card_model
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, ExecutionStateChanged, RuntimeStateDict
 from bot.runtime_view import build_runtime_view
-from bot.thread_resume_profile_setting import (
-    format_thread_resume_profile_missing_fields,
-    thread_resume_profile_setting_from_record,
-    thread_resume_profile_setting_missing_fields,
-)
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.reason_codes import ReasonedCheck
 
@@ -73,7 +68,6 @@ class PromptTurnEntryPorts:
     clear_thread_binding: Callable[..., None]
     resume_snapshot_by_id: Callable[..., ThreadSnapshot]
     create_thread: Callable[..., ThreadSnapshot]
-    thread_resume_profile_for_thread: Callable[[str], Any]
     message_reply_in_thread: Callable[[str], bool]
     group_actor_open_id: Callable[[str], str]
     access_policy: _ThreadAccessPolicy
@@ -124,7 +118,6 @@ class PromptTurnEntryController:
         self._clear_thread_binding = ports.clear_thread_binding
         self._resume_snapshot_by_id = ports.resume_snapshot_by_id
         self._create_thread = ports.create_thread
-        self._thread_resume_profile_for_thread = ports.thread_resume_profile_for_thread
         self._message_reply_in_thread = ports.message_reply_in_thread
         self._group_actor_open_id = ports.group_actor_open_id
         self._access_policy = ports.access_policy
@@ -509,28 +502,16 @@ class PromptTurnEntryController:
             )
 
         def _start_turn_once(bound_thread_id: str) -> dict[str, Any]:
-            profile_record = self._thread_resume_profile_for_thread(bound_thread_id)
-            profile_setting = thread_resume_profile_setting_from_record(profile_record)
-            missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
-            if profile_setting is not None and missing_fields:
-                missing_text = format_thread_resume_profile_missing_fields(missing_fields)
-                raise ValueError(
-                    "当前 thread 已持久化的 thread-wise profile slice 不完整："
-                    f"thread=`{bound_thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
-                    "当前按 fail-close 拒绝继续。"
-                    "请改用飞书 `/profile <name>` 或本地 "
-                    "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
-                )
-            thread_model = str(getattr(profile_setting, "model", "") or "").strip()
             runtime_model = str(state["model"] or "").strip()
+            runtime_reasoning_effort = str(state["reasoning_effort"] or "").strip()
             return self._start_turn(
                 thread_id=bound_thread_id,
                 input_items=effective_input_items,
                 cwd=state["working_dir"],
-                model=runtime_model or thread_model or None,
+                model=runtime_model or None,
                 approval_policy=state["approval_policy"] or None,
                 permissions_profile_id=state["permissions_profile_id"] or None,
-                reasoning_effort=state["reasoning_effort"] or None,
+                reasoning_effort=runtime_reasoning_effort or None,
                 collaboration_mode=state["collaboration_mode"] or None,
             )
 

@@ -143,7 +143,6 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(snapshot["interaction_owner"]["relation"], "current")
         self.assertTrue(snapshot["running_turn"])
         self.assertTrue(snapshot["detach_available"])
-        self.assertTrue(snapshot["reprofile_possible"])
 
     def test_interactive_binding_can_adopt_sole_subscriber(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

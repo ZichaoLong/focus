@@ -40,8 +40,9 @@ class _SettingsPortsStub:
             ],
             current_memory_mode="read",
         )
+        self.codex_config: dict[str, Any] = {"app_server_mode": "managed"}
         self.new_thread_memory_mode_seed = "read"
-        self.saved_thread_profiles: list[tuple[str, str, str, str]] = []
+        self.saved_thread_profiles: list[tuple[str, str, str, str, str]] = []
         self.cleared_thread_profiles: list[str] = []
         self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
@@ -107,6 +108,12 @@ class _SettingsPortsStub:
     def set_configured_bot_open_id(self, open_id: str) -> None:
         self.configured_bot_open_ids.append(open_id)
 
+    def load_codex_config(self) -> dict[str, Any]:
+        return dict(self.codex_config)
+
+    def save_codex_config(self, config: dict[str, Any]) -> None:
+        self.codex_config = dict(config)
+
     def load_thread_resume_profile(self, thread_id: str) -> ThreadResumeProfileRecord | None:
         if self.current_thread_profile is None:
             return None
@@ -120,13 +127,15 @@ class _SettingsPortsStub:
         profile: str,
         model: str,
         model_provider: str,
+        reasoning_effort: str,
     ) -> ThreadResumeProfileRecord:
-        self.saved_thread_profiles.append((thread_id, profile, model, model_provider))
+        self.saved_thread_profiles.append((thread_id, profile, model, model_provider, reasoning_effort))
         self.current_thread_profile = ThreadResumeProfileRecord(
             thread_id=thread_id,
             profile=profile,
             model=model,
             model_provider=model_provider,
+            reasoning_effort=reasoning_effort,
             updated_at=1.0,
         )
         return self.current_thread_profile
@@ -200,6 +209,7 @@ class _SettingsPortsStub:
         return ResolvedProfileConfig(
             model=f"{profile}-model",
             model_provider=f"{profile}-provider",
+            reasoning_effort=f"{profile}-effort",
         )
 
     def get_runtime_view(self, sender_id: str, chat_id: str, message_id: str):
@@ -225,18 +235,14 @@ def _make_domain(stub: _SettingsPortsStub) -> CodexSettingsDomain:
             get_bot_identity_snapshot=stub.get_bot_identity_snapshot,
             add_admin_open_id=stub.add_admin_open_id,
             set_configured_bot_open_id=stub.set_configured_bot_open_id,
-            load_thread_resume_profile=stub.load_thread_resume_profile,
-            save_thread_resume_profile=stub.save_thread_resume_profile,
-            clear_thread_resume_profile=stub.clear_thread_resume_profile,
+            load_codex_config=stub.load_codex_config,
+            save_codex_config=stub.save_codex_config,
             load_thread_memory_mode=stub.load_thread_memory_mode,
             apply_thread_memory_mode=stub.apply_thread_memory_mode,
-            check_thread_resume_profile_mutable=stub.check_thread_resume_profile_mutable,
             check_thread_memory_mode_mutable=stub.check_thread_memory_mode_mutable,
-            plan_thread_reprofile=stub.plan_thread_reprofile,
             plan_thread_memory_mode_update=stub.plan_thread_memory_mode_update,
             reset_current_instance_backend=stub.reset_current_instance_backend,
             replace_bound_provisional_thread_after_reset=stub.replace_bound_provisional_thread_after_reset,
-            resolve_profile_resume_config=stub.resolve_profile_resume_config,
             get_runtime_view=stub.get_runtime_view,
             update_runtime_settings=stub.update_runtime_settings,
             safe_read_runtime_config=stub.safe_read_runtime_config,
@@ -278,118 +284,45 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         self.assertIn(_DISPLAY_DEBUG_CONTACT_COMMAND, result.text)
 
-    def test_profile_command_saves_bound_thread_profile_via_port_and_returns_card(self) -> None:
+    def test_profile_command_sets_managed_startup_profile_and_returns_card(self) -> None:
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)
 
         result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
 
-        self.assertEqual(
-            stub.saved_thread_profiles,
-            [("thread-1", "work", "work-model", "work-provider")],
-        )
-        self.assertEqual(stub.runtime_view_calls, [("ou_user", "chat-a", "msg-1")])
-        self.assertIsNotNone(result.card)
-        self.assertEqual(result.card["header"]["title"]["content"], "Codex Thread Profile")
-        content = result.card["elements"][0]["content"]
-        self.assertIn("已切换当前 thread 的 profile：`work`", content)
-        action_buttons = result.card["elements"][2]["actions"]
-        buttons_by_profile = {button["text"]["content"]: button for button in action_buttons}
-        self.assertEqual(buttons_by_profile["work"]["type"], "primary")
-
-    def test_profile_command_offers_backend_reset_when_thread_not_globally_unloaded(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=("当前实例：`default`",),
-        )
-        domain = _make_domain(stub)
-
-        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
-
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
         self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertEqual(stub.runtime_view_calls, [])
         self.assertIsNotNone(result.card)
+        self.assertEqual(result.card["header"]["title"]["content"], "Codex Backend Startup Profile")
         content = result.card["elements"][0]["content"]
-        self.assertIn("当前还不能直接切换到 `work`。", content)
-        self.assertIn("可继续执行：应用该 profile，并重置当前实例 backend。", content)
-        self.assertIn("当前不能直接写入：当前 thread 尚未满足 verifiably globally unloaded", content)
-        reset_action = result.card["elements"][-1]["actions"]
-        self.assertEqual(
-            [button["text"]["content"] for button in reset_action],
-            ["应用并重置 backend"],
-        )
+        self.assertIn("已设置当前实例的 startup profile：`work`", content)
+        self.assertIn("该设置会在下次 managed backend 启动时生效。", content)
+        self.assertIn("当前实例 startup profile：`work`", content)
 
-    def test_profile_command_short_circuits_when_target_already_persisted(self) -> None:
+    def test_profile_command_without_arg_shows_startup_profile_summary(self) -> None:
         stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "", message_id="msg-1")
+
+        self.assertIsNotNone(result.card)
+        self.assertEqual(result.card["header"]["title"]["content"], "Codex Backend Startup Profile")
+        content = result.card["elements"][0]["content"]
+        self.assertIn("当前实例 startup profile：`auto`", content)
+        self.assertIn("作用范围：managed backend 的启动基线。", content)
+        self.assertIn("如需让当前实例马上切到这套基线，请重置 backend。", content)
+
+    def test_profile_command_short_circuits_when_target_already_current(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
 
-        self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
         self.assertIsNotNone(result.card)
-        content = result.card["elements"][0]["content"]
-        self.assertIn("当前 thread 的 profile 已是：`work`", content)
-        self.assertIn("无需重置 backend", content)
-        self.assertNotIn("应用并重置 backend", content)
-
-    def test_profile_command_same_profile_name_but_changed_setting_direct_writes_when_unloaded(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="old-provider",
-            updated_at=1.0,
-        )
-        domain = _make_domain(stub)
-
-        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
-
-        self.assertEqual(
-            stub.saved_thread_profiles,
-            [("thread-1", "work", "work-model", "work-provider")],
-        )
-        self.assertIsNotNone(result.card)
-        content = result.card["elements"][0]["content"]
-        self.assertIn("已切换当前 thread 的 profile：`work`", content)
-
-    def test_profile_command_same_profile_name_but_changed_setting_offers_reset_when_loaded(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="old-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
-        domain = _make_domain(stub)
-
-        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
-
-        self.assertEqual(stub.saved_thread_profiles, [])
-        self.assertIsNotNone(result.card)
-        content = result.card["elements"][0]["content"]
-        self.assertIn("当前同名 profile 的 thread 级 next-load 设置已变化：", content)
-        self.assertIn("provider：`old-provider` -> `work-provider`", content)
-        self.assertIn("应用该 profile，并重置当前实例 backend", content)
+        self.assertIn("当前实例的 startup profile 已是：`work`", result.card["elements"][0]["content"])
 
     def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
         stub = _SettingsPortsStub()
@@ -403,28 +336,44 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         result = domain.handle_profile_command("ou_user", "chat-a", "clear", message_id="msg-1")
 
-        self.assertEqual(
-            stub.saved_thread_profiles,
-            [("thread-1", "clear", "clear-model", "clear-provider")],
-        )
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "clear")
         self.assertIsNotNone(result.card)
-        self.assertIn("已切换当前 thread 的 profile：`clear`", result.card["elements"][0]["content"])
+        self.assertIn("已设置当前实例的 startup profile：`clear`", result.card["elements"][0]["content"])
+
+    def test_profile_command_allows_unbound_runtime(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime.current_thread_id = ""
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
+
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
+        self.assertIsNotNone(result.card)
+
+    def test_profile_command_rejects_unknown_profile_name(self) -> None:
+        stub = _SettingsPortsStub()
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "missing", message_id="msg-1")
+
+        self.assertIn("未找到 profile：`missing`", result.text)
+        self.assertNotIn("managed_startup_profile", stub.codex_config)
+
+    def test_profile_command_rejects_in_remote_mode(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.codex_config["app_server_mode"] = "remote"
+        domain = _make_domain(stub)
+
+        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
+
+        self.assertIn("当前实例使用的是 remote app-server", result.text)
+        self.assertNotIn("managed_startup_profile", stub.codex_config)
 
     def test_apply_profile_with_backend_reset_saves_profile_after_reset(self) -> None:
         stub = _SettingsPortsStub()
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
 
         def _reset_backend(force: bool) -> dict[str, Any]:
             stub.reset_backend_calls.append(bool(force))
-            stub.thread_reprofile_plan = SimpleNamespace(
-                status="direct-write",
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
-                diagnostics=(),
-            )
             return {
                 "force": bool(force),
                 "detached_binding_ids": ["p2p:ou_user:chat-a"],
@@ -444,60 +393,17 @@ class CodexSettingsDomainTests(unittest.TestCase):
             {"profile": "work", "force": False},
         )
 
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
         self.assertEqual(stub.reset_backend_calls, [False])
-        self.assertEqual(
-            stub.saved_thread_profiles,
-            [("thread-1", "work", "work-model", "work-provider")],
-        )
+        self.assertEqual(stub.saved_thread_profiles, [])
+        self.assertEqual(stub.replacement_calls, [])
         self.assertEqual(response.toast.type, "success")
         self.assertIn("已应用 `work` 并重置 backend", response.toast.content)
-        self.assertIsNotNone(response.card)
-        self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "work", "", "msg-1")])
+        self.assertIn("已重置当前实例 backend。", response.card.data["elements"][0]["content"])
 
-    def test_apply_profile_with_backend_reset_recomputes_setting_from_refreshed_runtime_config(self) -> None:
+    def test_apply_profile_with_backend_reset_can_reapply_same_current_profile(self) -> None:
         stub = _SettingsPortsStub()
-        stub.runtime_config = RuntimeConfigSummary(
-            profiles=[
-                RuntimeProfileSummary(name="default", model_provider="openai"),
-                RuntimeProfileSummary(name="work", model_provider="old-provider"),
-            ],
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
-
-        def _resolve_profile(profile: str) -> ResolvedProfileConfig:
-            return ResolvedProfileConfig(
-                model=f"{profile}-model",
-                model_provider="",
-            )
-
-        def _reset_backend(force: bool) -> dict[str, Any]:
-            stub.reset_backend_calls.append(bool(force))
-            stub.thread_reprofile_plan = SimpleNamespace(
-                status="direct-write",
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
-                diagnostics=(),
-            )
-            stub.runtime_config = RuntimeConfigSummary(
-                profiles=[
-                    RuntimeProfileSummary(name="default", model_provider="openai"),
-                    RuntimeProfileSummary(name="work", model_provider="new-provider"),
-                ],
-            )
-            return {
-                "force": bool(force),
-                "detached_binding_ids": ["p2p:ou_user:chat-a"],
-                "interrupted_binding_ids": [],
-                "fail_closed_request_count": 0,
-                "purged_thread_ids": ["thread-1"],
-                "app_server_url": "ws://127.0.0.1:8765",
-            }
-
-        stub.resolve_profile_resume_config = _resolve_profile
-        stub.reset_current_instance_backend = _reset_backend
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         response = domain.handle_apply_profile_with_backend_reset(
@@ -508,117 +414,22 @@ class CodexSettingsDomainTests(unittest.TestCase):
         )
 
         self.assertEqual(stub.reset_backend_calls, [False])
-        self.assertEqual(
-            stub.saved_thread_profiles,
-            [("thread-1", "work", "work-model", "new-provider")],
-        )
         self.assertEqual(response.toast.type, "success")
-
-    def test_apply_profile_with_backend_reset_short_circuits_when_target_already_persisted(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
-        domain = _make_domain(stub)
-
-        response = domain.handle_apply_profile_with_backend_reset(
-            "ou_user",
-            "chat-a",
-            "msg-1",
-            {"profile": "work", "force": False},
-        )
-
-        self.assertEqual(stub.reset_backend_calls, [])
-        self.assertEqual(response.toast.type, "success")
-        self.assertIn("当前 thread 的 profile 已是：work", response.toast.content)
-
-    def test_apply_profile_with_backend_reset_replaces_provisional_thread(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
-
-        def _replace(
-            sender_id: str,
-            chat_id: str,
-            target_profile: str,
-            target_memory_mode: str,
-            message_id: str,
-        ):
-            stub.replacement_calls.append((sender_id, chat_id, target_profile, target_memory_mode, message_id))
-            stub.runtime.current_thread_id = "thread-2"
-            stub.current_thread_profile = ThreadResumeProfileRecord(
-                thread_id="thread-2",
-                profile="work",
-                model="work-model",
-                model_provider="work-provider",
-                updated_at=2.0,
-            )
-            stub.thread_reprofile_plan = SimpleNamespace(
-                status="direct-write",
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
-                diagnostics=(),
-            )
-            return ThreadResetReplacement(
-                old_thread_id="thread-1",
-                new_thread_id="thread-2",
-            )
-
-        stub.replace_bound_provisional_thread_after_reset = _replace
-        domain = _make_domain(stub)
-
-        response = domain.handle_apply_profile_with_backend_reset(
-            "ou_user",
-            "chat-a",
-            "msg-1",
-            {"profile": "work", "force": False},
-        )
-
-        self.assertEqual(stub.saved_thread_profiles, [])
-        self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "work", "", "msg-1")])
-        self.assertEqual(response.toast.type, "success")
-        content = response.card.data["elements"][0]["content"]
-        self.assertIn("已替换为新 thread：`thread-2", content)
-        self.assertIn("当前会话已自动附着到新 thread", response.card.data["elements"][-2]["content"])
-        actions = response.card.data["elements"][-1]["actions"]
-        self.assertEqual([action["text"]["content"] for action in actions], ["附着当前实例", "保持当前状态"])
+        self.assertIn("已应用 `work` 并重置 backend", response.toast.content)
 
     def test_profile_clear_direct_write_clears_current_profile(self) -> None:
         stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
-        self.assertEqual(stub.cleared_thread_profiles, ["thread-1"])
-        self.assertIsNone(stub.current_thread_profile)
+        self.assertNotIn("managed_startup_profile", stub.codex_config)
+        self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)
         content = result.card["elements"][0]["content"]
-        self.assertIn("已清空当前 thread 的 profile override。", content)
-        action_labels = [
-            button["text"]["content"]
-            for element in result.card["elements"]
-            if isinstance(element, dict) and element.get("tag") == "action"
-            for button in element["actions"]
-        ]
-        self.assertNotIn("清空 profile", action_labels)
+        self.assertIn("已清空当前实例的 startup profile override。", content)
+        self.assertIn("当前将回落到 `CODEX_HOME/config.toml` 顶层配置。", content)
 
     def test_profile_clear_without_existing_profile_is_noop(self) -> None:
         stub = _SettingsPortsStub()
@@ -628,8 +439,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)
-        content = result.card["elements"][0]["content"]
-        self.assertIn("当前 thread 未设置 thread-wise profile。", content)
+        self.assertIn("当前实例未设置 startup profile。", result.card["elements"][0]["content"])
 
     def test_profile_clear_command_rejects_extra_args(self) -> None:
         stub = _SettingsPortsStub()
@@ -641,52 +451,23 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIn("不接受额外参数", result.text)
         self.assertEqual(stub.cleared_thread_profiles, [])
 
-    def test_profile_clear_offers_backend_reset_when_thread_not_globally_unloaded(self) -> None:
+    def test_profile_clear_rejects_in_remote_mode(self) -> None:
         stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
+        stub.codex_config["app_server_mode"] = "remote"
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
-        self.assertEqual(stub.cleared_thread_profiles, [])
-        self.assertIsNotNone(result.card)
-        content = result.card["elements"][0]["content"]
-        self.assertIn("可继续执行：清空 profile，并重置当前实例 backend。", content)
-        self.assertEqual(result.card["elements"][-1]["actions"][0]["text"]["content"], "清空并重置 backend")
+        self.assertIn("当前实例使用的是 remote app-server", result.text)
+        self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
 
     def test_clear_profile_with_backend_reset_clears_profile_after_reset(self) -> None:
         stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
+        stub.codex_config["managed_startup_profile"] = "work"
 
         def _reset_backend(force: bool) -> dict[str, Any]:
             stub.reset_backend_calls.append(bool(force))
-            stub.thread_reprofile_plan = SimpleNamespace(
-                status="direct-write",
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
-                diagnostics=(),
-            )
             return {
                 "force": bool(force),
                 "detached_binding_ids": ["p2p:ou_user:chat-a"],
@@ -707,96 +488,12 @@ class CodexSettingsDomainTests(unittest.TestCase):
         )
 
         self.assertEqual(stub.reset_backend_calls, [False])
-        self.assertEqual(stub.cleared_thread_profiles, ["thread-1"])
-        self.assertIsNone(stub.current_thread_profile)
+        self.assertNotIn("managed_startup_profile", stub.codex_config)
         self.assertEqual(response.toast.type, "success")
-        self.assertIn("已清空当前 thread 的 profile 并重置 backend", response.toast.content)
+        self.assertIn("已清空当前实例的 startup profile 并重置 backend", response.toast.content)
         content = response.card.data["elements"][0]["content"]
-        self.assertIn("已清空当前 thread 的 profile override。", content)
+        self.assertIn("已清空当前实例的 startup profile override。", content)
         self.assertIn("已重置当前实例 backend。", content)
-
-    def test_clear_profile_with_backend_reset_replaces_provisional_thread_without_reusing_profile(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
-        stub.thread_reprofile_plan = SimpleNamespace(
-            status="reset-available",
-            reason_text="当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 profile。",
-            diagnostics=(),
-        )
-        clear_flags: list[bool] = []
-
-        def _replace(
-            sender_id: str,
-            chat_id: str,
-            target_profile: str,
-            target_memory_mode: str,
-            message_id: str,
-            clear_profile: bool = False,
-        ):
-            clear_flags.append(bool(clear_profile))
-            stub.replacement_calls.append((sender_id, chat_id, target_profile, target_memory_mode, message_id))
-            stub.runtime.current_thread_id = "thread-2"
-            stub.current_thread_profile = None
-            stub.thread_reprofile_plan = SimpleNamespace(
-                status="direct-write",
-                reason_text="当前 thread 已 verifiably globally unloaded，可直接写入 profile。",
-                diagnostics=(),
-            )
-            return ThreadResetReplacement(
-                old_thread_id="thread-1",
-                new_thread_id="thread-2",
-            )
-
-        stub.replace_bound_provisional_thread_after_reset = _replace
-        domain = _make_domain(stub)
-
-        response = domain.handle_clear_profile_with_backend_reset(
-            "ou_user",
-            "chat-a",
-            "msg-1",
-            {"force": False},
-        )
-
-        self.assertEqual(clear_flags, [True])
-        self.assertEqual(stub.replacement_calls, [("ou_user", "chat-a", "", "", "msg-1")])
-        self.assertEqual(response.toast.type, "success")
-        content = response.card.data["elements"][0]["content"]
-        self.assertIn("已替换为新 thread：`thread-2", content)
-        self.assertIn("已清空当前 thread 的 profile override。", content)
-
-    def test_profile_command_rejects_when_unbound(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.runtime.current_thread_id = ""
-        domain = _make_domain(stub)
-
-        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
-
-        self.assertIn("当前还没有绑定 thread", result.text)
-        self.assertEqual(stub.saved_thread_profiles, [])
-
-    def test_profile_command_rejects_when_explicit_profile_cannot_resolve_concrete_slice(self) -> None:
-        stub = _SettingsPortsStub()
-        stub.resolve_profile_resume_config = lambda profile: ResolvedProfileConfig(
-            model=f"{profile}-model",
-            model_provider="",
-        )
-        stub.runtime_config = RuntimeConfigSummary(
-            profiles=[RuntimeProfileSummary(name="work", model_provider="")]
-        )
-        domain = _make_domain(stub)
-
-        result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
-
-        self.assertIn("thread-wise profile slice 不完整", result.text)
-        self.assertIn("`model_provider`", result.text)
-        self.assertIn("`CODEX_HOME/config.toml`", result.text)
-        self.assertEqual(stub.saved_thread_profiles, [])
 
     def test_memory_command_applies_direct_write_and_returns_summary_card(self) -> None:
         stub = _SettingsPortsStub()
@@ -880,13 +577,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
     def test_model_command_without_arg_shows_model_summary_card(self) -> None:
         stub = _SettingsPortsStub()
-        stub.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id="thread-1",
-            profile="work",
-            model="work-model",
-            model_provider="work-provider",
-            updated_at=1.0,
-        )
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         result = domain.handle_model_command("ou_user", "chat-a", "", message_id="msg-1")
@@ -896,8 +587,8 @@ class CodexSettingsDomainTests(unittest.TestCase):
         content = result.card["elements"][0]["content"]
         self.assertIn("当前会话 model override：`auto`", content)
         self.assertIn("当前会话 effort override：`auto`", content)
-        self.assertIn("当前 thread-wise profile：`work`", content)
-        self.assertIn("当前 thread-wise provider：`work-provider`", content)
+        self.assertIn("当前实例 startup profile：`work`", content)
+        self.assertIn("当前 effective effort 来源：backend default / model default", content)
         action_buttons = next(
             element["actions"]
             for element in result.card["elements"]
@@ -956,6 +647,7 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
     def test_effort_command_without_arg_shows_combined_card(self) -> None:
         stub = _SettingsPortsStub()
+        stub.codex_config["managed_startup_profile"] = "work"
         domain = _make_domain(stub)
 
         result = domain.handle_effort_command("ou_user", "chat-a", "", message_id="msg-1")
@@ -963,6 +655,8 @@ class CodexSettingsDomainTests(unittest.TestCase):
         self.assertIsNotNone(result.card)
         self.assertEqual(result.card["header"]["title"]["content"], "Codex 模型 / Effort")
         self.assertIn("当前会话 effort override：`auto`", result.card["elements"][0]["content"])
+        self.assertIn("当前实例 startup profile：`work`", result.card["elements"][0]["content"])
+        self.assertIn("当前 effective effort 来源：backend default / model default", result.card["elements"][0]["content"])
 
     def test_effort_command_updates_runtime_override(self) -> None:
         stub = _SettingsPortsStub()

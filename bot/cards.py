@@ -209,7 +209,7 @@ def build_profile_card(
     profile_names: list[str],
     current_profile: str,
     extra_action_rows: list[dict] | None = None,
-    title: str = "Codex Thread Profile",
+    title: str = "Codex Backend Startup Profile",
 ) -> dict:
     """构造 profile 选择卡片。"""
     elements: list[dict] = [
@@ -1064,7 +1064,7 @@ def build_model_effort_card(
             "tag": "markdown",
             "content": (
                 "**effort override**\n"
-                "`auto` 表示清除 override，回到默认；`none` 表示显式不用 reasoning effort。"
+                "`auto` 表示清除 override，先回到 thread profile effort；若 thread profile effort 也未设置，则回到 model default。`none` 表示显式不用 reasoning effort。"
             ),
         },
     ]

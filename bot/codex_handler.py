@@ -32,7 +32,7 @@ from bot.cards import (
 )
 from bot.binding_identity import format_binding_id
 from bot.binding_runtime_manager import BindingRuntimeManager, ResolvedRuntimeBinding
-from bot.config import load_config_file
+from bot.config import load_config_file, save_config_file
 from bot.constants import (
     DEFAULT_HISTORY_PREVIEW_ROUNDS,
     DEFAULT_THREADS_INITIAL_LIMIT,
@@ -83,6 +83,7 @@ from bot.permissions_profile import (
     permissions_profile_label,
 )
 from bot.thread_resume_profile_setting import (
+    build_thread_resume_profile_config_overrides,
     ThreadResumeProfileSetting,
     format_thread_resume_profile_missing_fields,
     resolve_thread_resume_profile_setting,
@@ -382,20 +383,16 @@ class CodexHandler(BotHandler):
                 get_bot_identity_snapshot=lambda: self.bot.get_bot_identity_snapshot(),
                 add_admin_open_id=lambda open_id: self.bot.add_admin_open_id(open_id),
                 set_configured_bot_open_id=lambda open_id: self.bot.set_configured_bot_open_id(open_id),
-                load_thread_resume_profile=self._thread_resume_profile,
-                save_thread_resume_profile=self._save_thread_resume_profile_record,
-                clear_thread_resume_profile=self._clear_thread_resume_profile_record,
+                load_codex_config=lambda: load_config_file("codex"),
+                save_codex_config=lambda config: save_config_file("codex", config),
                 load_thread_memory_mode=self._thread_memory_mode,
                 apply_thread_memory_mode=self._apply_thread_memory_mode,
-                check_thread_resume_profile_mutable=self._thread_resume_profile_write_check,
                 check_thread_memory_mode_mutable=self._thread_memory_mode_write_check,
-                plan_thread_reprofile=lambda thread_id: self._runtime_admin.plan_thread_reprofile(thread_id),
                 plan_thread_memory_mode_update=lambda thread_id: self._runtime_admin.plan_thread_memory_mode_update(
                     thread_id
                 ),
                 reset_current_instance_backend=self._reset_current_instance_backend,
                 replace_bound_provisional_thread_after_reset=self._replace_bound_provisional_thread_after_reset,
-                resolve_profile_resume_config=resolve_profile_from_codex_config,
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
@@ -538,6 +535,7 @@ class CodexHandler(BotHandler):
             is_thread_not_found_error=self._is_thread_not_found_error,
             is_thread_not_loaded_error=self._is_thread_not_loaded_error,
             reprofile_possible_check=self._thread_resume_profile_write_check,
+            load_managed_startup_profile=lambda: str(load_config_file("codex").get("managed_startup_profile", "") or "").strip(),
         )
         self._prompt_turn_entry = PromptTurnEntryController(
             lock=self._lock,
@@ -571,7 +569,6 @@ class CodexHandler(BotHandler):
                 ),
                 resume_snapshot_by_id=self._resume_snapshot_by_id,
                 create_thread=lambda **kwargs: self._create_thread_with_pending_new_thread_memory_seed(**kwargs),
-                thread_resume_profile_for_thread=self._thread_resume_profile,
                 message_reply_in_thread=self._message_reply_in_thread,
                 group_actor_open_id=self._group_actor_open_id,
                 access_policy=self._thread_access_policy,
@@ -2605,31 +2602,19 @@ class CodexHandler(BotHandler):
         permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         thread = summary or self._lookup_thread_summary_in_bounded_list(thread_id)
-        profile_record = self._thread_resume_profile(thread_id)
-        profile_setting = self._require_concrete_persisted_thread_resume_profile_setting(
-            thread_id,
-            profile_record,
-        )
-        profile = profile_setting.profile if profile_setting is not None else ""
-        model = profile_setting.model if profile_setting is not None else ""
-        model_provider = profile_setting.model_provider if profile_setting is not None else ""
         memory_config_overrides = self._thread_memory_config_overrides(
             thread_id,
-            profile_name=profile,
         )
         lease_was_newly_acquired = self._ensure_service_thread_runtime_lease(thread_id)
         try:
             # Cold thread/resume is the only place where we intentionally carry
             # binding-wise next-turn permissions as a one-shot runtime override,
             # so an auto-continued active goal can use them on its very first
-            # post-resume turn. Loaded-thread canonical correction still goes
-            # through thread/settings/update immediately afterwards.
+            # post-resume turn. Other binding-wise overrides still remain
+            # turn-scoped or are corrected via thread/settings/update.
             return self._adapter.resume_thread(
                 thread_id,
-                profile=profile or None,
                 config_overrides=memory_config_overrides or None,
-                model=model or None,
-                model_provider=model_provider or None,
                 approval_policy=approval_policy or None,
                 permissions_profile_id=permissions_profile_id or None,
             )
@@ -2892,6 +2877,11 @@ class CodexHandler(BotHandler):
                 if profile_setting is not None
                 else ""
             ),
+            reasoning_effort=(
+                str(profile_setting.reasoning_effort or "").strip()
+                if profile_setting is not None
+                else ""
+            ),
             memory_mode=normalized_memory_mode,
         )
         with self._lock:
@@ -2917,6 +2907,7 @@ class CodexHandler(BotHandler):
             profile=seed.profile,
             model=seed.model,
             model_provider=seed.model_provider,
+            reasoning_effort=seed.reasoning_effort,
             updated_at=0.0,
         )
 
@@ -2941,6 +2932,7 @@ class CodexHandler(BotHandler):
                     pending.profile,
                     pending.model,
                     pending.model_provider,
+                    pending.reasoning_effort,
                 )
             if pending.has_memory_mode:
                 self._save_thread_memory_mode_record(
@@ -3207,6 +3199,7 @@ class CodexHandler(BotHandler):
         profile: str,
         model: str,
         model_provider: str,
+        reasoning_effort: str = "",
     ) -> ThreadResumeProfileRecord:
         normalized_profile = str(profile or "").strip()
         normalized_model_provider = str(model_provider or "").strip()
@@ -3221,6 +3214,7 @@ class CodexHandler(BotHandler):
             profile=normalized_profile,
             model=str(model or "").strip(),
             model_provider=normalized_model_provider or runtime_provider,
+            reasoning_effort=str(reasoning_effort or "").strip(),
         )
         self._require_concrete_explicit_thread_resume_profile_setting(setting)
         return self._thread_resume_profile_store.save(
@@ -3228,6 +3222,7 @@ class CodexHandler(BotHandler):
             profile=setting.profile,
             model=setting.model,
             model_provider=setting.model_provider,
+            reasoning_effort=setting.reasoning_effort,
         )
 
     def _clear_thread_resume_profile_record(self, thread_id: str) -> bool:
@@ -3350,16 +3345,11 @@ class CodexHandler(BotHandler):
         old_thread_id = runtime.current_thread_id.strip()
         if not old_thread_id:
             return None
-        old_profile_record = self._thread_resume_profile(old_thread_id)
         old_memory_record = self._thread_memory_mode(old_thread_id)
-        effective_profile = ""
-        if not clear_profile:
-            effective_profile = str(target_profile or "").strip() or (
-                old_profile_record.profile if old_profile_record is not None else ""
-            )
         effective_memory_mode = str(target_memory_mode or "").strip() or (
             old_memory_record.mode if old_memory_record is not None else ""
         )
+        del target_profile, clear_profile
         provisional_replace = False
         try:
             snapshot = self._read_thread_snapshot_authoritatively(
@@ -3375,27 +3365,11 @@ class CodexHandler(BotHandler):
             provisional_replace = self._thread_snapshot_is_provisional(snapshot)
         if not provisional_replace:
             return None
-        target_profile_setting: ThreadResumeProfileSetting | None = None
-        if target_profile:
-            target_profile_setting = self._require_concrete_explicit_thread_resume_profile_setting(
-                self._resolve_thread_resume_profile_setting(effective_profile)
-            )
-        elif not clear_profile and old_profile_record is not None:
-            target_profile_setting = self._require_concrete_persisted_thread_resume_profile_setting(
-                old_thread_id,
-                old_profile_record,
-            )
         created = self._create_thread_with_seeded_memory_mode(
             cwd=runtime.working_dir,
-            profile=target_profile_setting.profile if target_profile_setting is not None else None,
-            model=target_profile_setting.model if target_profile_setting is not None else None,
-            model_provider=(
-                target_profile_setting.model_provider if target_profile_setting is not None else None
-            ),
             config_overrides=(
                 self._thread_memory_config_overrides(
                     old_thread_id,
-                    profile_name=effective_profile,
                     memory_mode=effective_memory_mode,
                 )
                 or None
@@ -3407,7 +3381,6 @@ class CodexHandler(BotHandler):
         try:
             self._replace_pending_threadwise_seed(
                 new_thread_id,
-                profile_setting=target_profile_setting,
                 memory_mode=effective_memory_mode,
             )
             self._bind_thread(sender_id, chat_id, created.summary, message_id=message_id)
