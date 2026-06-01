@@ -15,7 +15,6 @@ from dataclasses import dataclass, replace
 
 from bot.adapters.base import ThreadSummary
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
-from bot.codex_config_reader import resolve_profile_from_codex_config
 from bot.config import load_config_file
 from bot.constants import DEFAULT_APP_SERVER_URL
 from bot.env_file import load_env_file
@@ -30,25 +29,8 @@ from bot.instance_resolution import (
 from bot.local_websocket_auth import FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, FCODEX_SERVICE_TOKEN_ENV_VAR
 from bot.platform_paths import default_data_root, is_windows
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
-from bot.thread_resolution import (
-    looks_like_thread_id,
-    resolve_resume_name_via_remote_backend,
-)
-from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord, ThreadResumeProfileStore
+from bot.thread_resolution import looks_like_thread_id, resolve_resume_name_via_remote_backend
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
-from bot.thread_resume_profile_setting import (
-    ThreadResumeProfileSetting,
-    describe_thread_resume_profile_setting_diff,
-    format_thread_resume_profile_missing_fields,
-    resolve_thread_resume_profile_setting,
-    thread_resume_profile_setting_from_record,
-    thread_resume_profile_setting_missing_fields,
-    thread_resume_profile_settings_equal,
-)
-from bot.thread_profile_mutability import (
-    check_thread_resume_profile_mutable,
-    format_thread_resume_profile_denial_for_local_cli,
-)
 from bot.thread_runtime_coordination import preview_thread_global_loaded_gate
 
 _OPTIONS_WITH_VALUE = {
@@ -93,11 +75,6 @@ def _has_option(user_args: list[str], names: tuple[str, ...]) -> bool:
 
 def _has_explicit_remote(user_args: list[str]) -> bool:
     return _has_option(user_args, ("--remote",))
-
-
-def _has_explicit_profile(user_args: list[str]) -> bool:
-    return _has_option(user_args, ("-p", "--profile"))
-
 
 def _has_explicit_remote_auth_token_env(user_args: list[str]) -> bool:
     return _has_option(user_args, ("--remote-auth-token-env",))
@@ -278,13 +255,6 @@ def _resolve_runtime_target_for_wrapper(
         print(error_text, file=sys.stderr)
         raise SystemExit(2)
 
-
-def _inject_profile_arg_if_missing(user_args: list[str], profile: str) -> list[str]:
-    if not profile or _has_explicit_profile(user_args):
-        return list(user_args)
-    return ["--profile", profile, *user_args]
-
-
 def _inject_default_cwd(user_args: list[str]) -> list[str]:
     if _has_explicit_cwd(user_args):
         return list(user_args)
@@ -440,139 +410,10 @@ def _resolve_resume_target(
         preferred_running_instance=preferred_instance,
     )
 
-
-def _thread_resume_profile_mutable(
-    cfg: dict,
-    app_server_url: str,
-    data_dir: pathlib.Path,
-    thread_id: str,
-    *,
-    target_instance_name: str,
-) -> tuple[bool, str]:
-    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url, data_dir=data_dir))
-    try:
-        check = check_thread_resume_profile_mutable(
-            thread_id,
-            unbound_reason="恢复目标不能为空。",
-            has_runtime_lease=lambda normalized_thread_id: (
-                ThreadRuntimeLeaseStore(global_data_dir()).load(normalized_thread_id) is not None
-            ),
-            list_loaded_thread_ids=adapter.list_loaded_thread_ids,
-        )
-        return (
-            check.allowed,
-            format_thread_resume_profile_denial_for_local_cli(
-                check,
-                instance_name=target_instance_name,
-            ),
-        )
-    finally:
-        adapter.stop()
-
-
-def _persist_thread_resume_profile_for_resume(
-    thread_id: str,
-    setting: ThreadResumeProfileSetting,
-) -> None:
-    ThreadResumeProfileStore(global_data_dir()).save(
-        thread_id,
-        profile=setting.profile,
-        model=setting.model,
-        model_provider=setting.model_provider,
-        reasoning_effort=setting.reasoning_effort,
-    )
-
-
-def _runtime_provider_for_profile(
-    cfg: dict,
-    app_server_url: str,
-    data_dir: pathlib.Path,
-    profile: str,
-) -> str:
-    normalized_profile = str(profile or "").strip()
-    if not normalized_profile:
-        return ""
-    adapter = CodexAppServerAdapter(_remote_adapter_config(cfg, app_server_url, data_dir=data_dir))
-    try:
-        runtime_config = adapter.read_runtime_config()
-        for item in runtime_config.profiles:
-            if item.name == normalized_profile:
-                return str(item.model_provider or "").strip()
-    except Exception:
-        return ""
-    finally:
-        adapter.stop()
-    return ""
-
-
-def _resolve_thread_resume_profile_setting_for_resume(
-    cfg: dict,
-    app_server_url: str,
-    data_dir: pathlib.Path,
-    profile: str,
-) -> ThreadResumeProfileSetting:
-    normalized_profile = str(profile or "").strip()
-    runtime_provider = _runtime_provider_for_profile(cfg, app_server_url, data_dir, normalized_profile)
-    resolved = resolve_profile_from_codex_config(normalized_profile)
-    return resolve_thread_resume_profile_setting(
-        normalized_profile,
-        resolved=resolved,
-        runtime_provider=runtime_provider,
-    )
-
-
-def _require_concrete_explicit_profile_setting(
-    setting: ThreadResumeProfileSetting,
-) -> ThreadResumeProfileSetting:
-    missing_fields = thread_resume_profile_setting_missing_fields(setting)
-    if not missing_fields:
-        return setting
-    missing_text = format_thread_resume_profile_missing_fields(missing_fields)
-    raise ValueError(
-        "当前 `-p/--profile` 解析出的 thread-wise profile slice 不完整："
-        f"profile=`{setting.profile or '（未设置）'}`，缺少：{missing_text}。"
-        "本项目显式 profile 改写只读取共享用户级 `CODEX_HOME/config.toml`，"
-        "不读取当前 cwd / 项目本地 config。"
-    )
-
-
-def _require_concrete_persisted_profile_record(
-    thread_id: str,
-    record: ThreadResumeProfileRecord,
-) -> ThreadResumeProfileSetting:
-    setting = thread_resume_profile_setting_from_record(record)
-    missing_fields = thread_resume_profile_setting_missing_fields(setting)
-    if not missing_fields:
-        assert setting is not None
-        return setting
-    missing_text = format_thread_resume_profile_missing_fields(missing_fields)
-    raise ValueError(
-        "当前 thread 已持久化的 thread-wise profile slice 不完整："
-        f"thread=`{thread_id}`，profile=`{record.profile}`，缺少：{missing_text}。"
-        "当前按 fail-close 拒绝继续。"
-        "请显式执行 `fcodex resume <thread> -p <profile>` 重新写入完整设置，"
-        "或改用飞书 `/profile <name>`。"
-    )
-
-
-def _inject_saved_thread_resume_profile_if_needed(user_args: list[str], thread_id: str) -> list[str]:
-    if _has_explicit_profile(user_args):
-        return list(user_args)
-    record = ThreadResumeProfileStore(global_data_dir()).load(thread_id)
-    if record is None or not record.profile:
-        return list(user_args)
-    # Wrapper-side `--profile` is only a CLI hint for upstream TUI/bootstrap.
-    # The real persisted next-load profile slice is enforced later by the
-    # local proxy when it rewrites `thread/resume`.
-    return _inject_profile_arg_if_missing(user_args, record.profile)
-
-
 @dataclass(frozen=True, slots=True)
 class _WrapperProfileLaunchPlan:
     user_args: list[str]
-    new_thread_profile_seed: ThreadResumeProfileSetting | None = None
     new_thread_memory_mode_seed: str = ""
-    resume_profile_hint: str = ""
 
 
 def _build_wrapper_profile_launch_plan(
@@ -585,12 +426,9 @@ def _build_wrapper_profile_launch_plan(
 ) -> _WrapperProfileLaunchPlan:
     planned_args = list(user_args)
     configured_new_thread_memory_mode_seed = CodexAppServerConfig.from_dict(cfg).new_thread_memory_mode_seed
-    resume_thread_id = _thread_target_hint(planned_args)
-    explicit_profile = _extract_option_value(planned_args, ("-p", "--profile")).strip()
-    del app_server_url, data_dir, instance_name, resume_thread_id
+    del app_server_url, data_dir, instance_name
     return _WrapperProfileLaunchPlan(
         user_args=planned_args,
-        resume_profile_hint=explicit_profile,
         new_thread_memory_mode_seed=configured_new_thread_memory_mode_seed,
     )
 
@@ -658,12 +496,7 @@ def _launch_local_cwd_proxy(
     *,
     instance_name: str = DEFAULT_INSTANCE_NAME,
     service_token: str = "",
-    new_thread_profile_seed: str = "",
-    new_thread_profile_model_seed: str = "",
-    new_thread_profile_model_provider_seed: str = "",
-    new_thread_profile_reasoning_effort_seed: str = "",
     new_thread_memory_mode_seed: str = "",
-    resume_profile_hint: str = "",
     proxy_auth_token: str,
 ) -> tuple[str, subprocess.Popen[str]]:
     cmd = [
@@ -680,18 +513,8 @@ def _launch_local_cwd_proxy(
         instance_name,
         "--global-data-dir",
         str(global_data_dir()),
-        "--new-thread-profile-seed",
-        new_thread_profile_seed,
-        "--new-thread-profile-model-seed",
-        new_thread_profile_model_seed,
-        "--new-thread-profile-model-provider-seed",
-        new_thread_profile_model_provider_seed,
-        "--new-thread-profile-reasoning-effort-seed",
-        new_thread_profile_reasoning_effort_seed,
         "--new-thread-memory-mode-seed",
         new_thread_memory_mode_seed,
-        "--resume-profile-hint",
-        resume_profile_hint,
         "--parent-pid",
         str(os.getpid()),
     ]
@@ -817,9 +640,7 @@ def main() -> None:
 
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
-    new_thread_profile_seed: ThreadResumeProfileSetting | None = None
     new_thread_memory_mode_seed = ""
-    resume_profile_hint = ""
     if not _has_explicit_remote(user_args):
         profile_launch_plan = _build_wrapper_profile_launch_plan(
             cfg=cfg,
@@ -829,9 +650,7 @@ def main() -> None:
             user_args=user_args,
         )
         user_args = list(profile_launch_plan.user_args)
-        new_thread_profile_seed = profile_launch_plan.new_thread_profile_seed
         new_thread_memory_mode_seed = profile_launch_plan.new_thread_memory_mode_seed
-        resume_profile_hint = profile_launch_plan.resume_profile_hint
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
     proxy_auth_token = ""
@@ -852,16 +671,7 @@ def main() -> None:
                 app_server_url,
                 effective_cwd,
                 data_dir,
-                new_thread_profile_seed=new_thread_profile_seed.profile if new_thread_profile_seed is not None else "",
-                new_thread_profile_model_seed=new_thread_profile_seed.model if new_thread_profile_seed is not None else "",
-                new_thread_profile_model_provider_seed=(
-                    new_thread_profile_seed.model_provider if new_thread_profile_seed is not None else ""
-                ),
-                new_thread_profile_reasoning_effort_seed=(
-                    new_thread_profile_seed.reasoning_effort if new_thread_profile_seed is not None else ""
-                ),
                 new_thread_memory_mode_seed=new_thread_memory_mode_seed,
-                resume_profile_hint=resume_profile_hint,
                 proxy_auth_token=proxy_auth_token,
                 **proxy_kwargs,
             )

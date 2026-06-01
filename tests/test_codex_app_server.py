@@ -60,14 +60,12 @@ from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
-from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord, ThreadResumeProfileStore
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease, ThreadRuntimeLeaseStore
 from bot.thread_resolution import (
     format_thread_match,
     looks_like_thread_id,
     resolve_resume_target_by_name,
 )
-from bot.thread_resume_profile_setting import ThreadResumeProfileSetting
 from bot.version import __version__
 
 
@@ -1427,12 +1425,7 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             os.getcwd(),
             _default_data_dir(),
-            new_thread_profile_seed="",
-            new_thread_profile_model_seed="",
-            new_thread_profile_model_provider_seed="",
-            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -1467,12 +1460,7 @@ class FCodexTests(unittest.TestCase):
             fallback_url,
             os.getcwd(),
             _default_data_dir(),
-            new_thread_profile_seed="",
-            new_thread_profile_model_seed="",
-            new_thread_profile_model_provider_seed="",
-            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -1510,34 +1498,18 @@ class FCodexTests(unittest.TestCase):
             ],
         )
 
-    def test_fcodex_explicit_profile_seeds_first_new_thread(self) -> None:
+    def test_fcodex_explicit_profile_is_passthrough_only(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch(
-                "bot.fcodex._resolve_thread_resume_profile_setting_for_resume",
-                return_value=ThreadResumeProfileSetting(
-                    profile="provider1",
-                    model="gpt-5.4",
-                    model_provider="provider1_api",
-                    reasoning_effort="high",
-                ),
-            ):
-                with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
-                    with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
-                        with patch("bot.fcodex.os.execvpe") as mock_exec:
-                            with patch("sys.argv", ["fcodex", "-p", "provider1"]):
-                                fcodex_main()
+            with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
+                with patch("bot.fcodex.os.execvpe") as mock_exec:
+                    with patch("sys.argv", ["fcodex", "-p", "provider1"]):
+                        fcodex_main()
 
-        mock_save.assert_not_called()
         mock_proxy.assert_called_once_with(
             "ws://127.0.0.1:8765",
             os.getcwd(),
             _default_data_dir(),
-            new_thread_profile_seed="",
-            new_thread_profile_model_seed="",
-            new_thread_profile_model_provider_seed="",
-            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="provider1",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -1645,12 +1617,7 @@ class FCodexTests(unittest.TestCase):
             Path("/tmp/data-b"),
             instance_name="corp-b",
             service_token="token-b",
-            new_thread_profile_seed="",
-            new_thread_profile_model_seed="",
-            new_thread_profile_model_provider_seed="",
-            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -2207,97 +2174,6 @@ class FCodexTests(unittest.TestCase):
             ],
         )
 
-    def test_fcodex_resume_ignores_legacy_saved_thread_profile(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        saved_record = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            updated_at=1.0,
-        )
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=saved_record):
-                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
-                    with patch("bot.fcodex.os.execvpe") as mock_exec:
-                        with patch("sys.argv", ["fcodex", "resume", thread_id]):
-                            fcodex_main()
-
-        self.assertEqual(
-            mock_exec.call_args[0][1],
-            [
-                "codex",
-                "--remote",
-                "ws://127.0.0.1:9100",
-                "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-                "--cd",
-                os.getcwd(),
-                "resume",
-                thread_id,
-            ],
-        )
-        self.assertEqual(mock_proxy.call_args.kwargs["resume_profile_hint"], "")
-
-    def test_fcodex_resume_ignores_incomplete_legacy_saved_thread_profile(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        saved_record = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile="provider2",
-            model="",
-            model_provider="provider2_api",
-            updated_at=1.0,
-        )
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.load", return_value=saved_record):
-                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
-                    with patch("bot.fcodex.os.execvpe") as mock_exec:
-                        with patch("sys.argv", ["fcodex", "resume", thread_id]):
-                            fcodex_main()
-
-        self.assertEqual(
-            mock_exec.call_args[0][1],
-            [
-                "codex",
-                "--remote",
-                "ws://127.0.0.1:9100",
-                "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-                "--cd",
-                os.getcwd(),
-                "resume",
-                thread_id,
-            ],
-        )
-
-    def test_fcodex_resume_with_explicit_profile_only_sets_resume_hint(self) -> None:
-        thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
-        with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
-            with patch("bot.fcodex.ThreadResumeProfileStore.save") as mock_save:
-                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())) as mock_proxy:
-                    with patch("bot.fcodex.os.execvpe") as mock_exec:
-                        with patch("sys.argv", ["fcodex", "-p", "provider2", "resume", thread_id]):
-                            fcodex_main()
-
-        mock_save.assert_not_called()
-        self.assertEqual(mock_proxy.call_args.kwargs["resume_profile_hint"], "provider2")
-        self.assertEqual(
-            mock_exec.call_args[0][1],
-            [
-                "codex",
-                "--remote",
-                "ws://127.0.0.1:9100",
-                "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-                "--cd",
-                os.getcwd(),
-                "-p",
-                "provider2",
-                "resume",
-                thread_id,
-            ],
-        )
-
     def test_fcodex_explicit_cd_is_forwarded_to_proxy(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
             with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9101", Mock())) as mock_proxy:
@@ -2309,12 +2185,7 @@ class FCodexTests(unittest.TestCase):
             "ws://127.0.0.1:8765",
             "/home/tester/project",
             _default_data_dir(),
-            new_thread_profile_seed="",
-            new_thread_profile_model_seed="",
-            new_thread_profile_model_provider_seed="",
-            new_thread_profile_reasoning_effort_seed="",
             new_thread_memory_mode_seed="",
-            resume_profile_hint="",
             proxy_auth_token=ANY,
         )
         self.assertEqual(
@@ -2756,7 +2627,6 @@ class FCodexTests(unittest.TestCase):
                         "method": "thread/resume",
                         "params": {"threadId": "thread-1"},
                     }
-                    payload = gate._apply_saved_thread_profile_for_resume(payload)
                     payload = gate._apply_saved_thread_memory_mode_for_resume(payload)
             finally:
                 os.chdir(previous_cwd)
@@ -2764,7 +2634,6 @@ class FCodexTests(unittest.TestCase):
             self.assertEqual(payload["params"]["threadId"], "thread-1")
             self.assertFalse((current_dir / "thread_resume_profiles.lock").exists())
             self.assertFalse((current_dir / "thread_memory_modes.lock").exists())
-            self.assertTrue((global_data_dir / "thread_resume_profiles.lock").exists())
             self.assertTrue((global_data_dir / "thread_memory_modes.lock").exists())
 
     def test_proxy_fail_closes_new_thread_after_disconnect_with_unknown_seed_outcome(self) -> None:
@@ -2804,9 +2673,6 @@ class FCodexTests(unittest.TestCase):
                     "data_dir": data_dir,
                     "idle_timeout_seconds": 1.0,
                     "on_listen": proxy_url_queue.put,
-                    "new_thread_profile_seed": "provider2",
-                    "new_thread_profile_model_seed": "provider2-model",
-                    "new_thread_profile_model_provider_seed": "provider2_api",
                     "new_thread_memory_mode_seed": "read",
                 },
                 daemon=True,
@@ -2841,9 +2707,8 @@ class FCodexTests(unittest.TestCase):
                             "generate_memories": False,
                         },
                     )
-                    self.assertNotIn("profile", forwarded["params"]["config"])
-                    self.assertEqual(forwarded["params"]["model"], "provider2-model")
-                    self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+                    self.assertNotIn("model", forwarded["params"])
+                    self.assertNotIn("modelProvider", forwarded["params"])
 
                 backend_disconnects.get(timeout=1)
                 time.sleep(0.1)
@@ -2993,206 +2858,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
             error = self._decode_payload(client_ws.sent[-1])
             self.assertEqual(error["id"], 1)
             self.assertIn("当前线程正由其他终端执行", error["error"]["message"])
-
-    def test_turn_start_ignores_legacy_saved_thread_profile_slice(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            ThreadResumeProfileStore(data_dir).save(
-                "thread-1",
-                profile="provider2",
-                model="provider2-model",
-                model_provider="provider2_api",
-                reasoning_effort="high",
-            )
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=data_dir,
-                global_data_dir=data_dir,
-                holder_pid=os.getpid(),
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "turn/start",
-                        "params": {
-                            "threadId": "thread-1",
-                            "input": [{"type": "text", "text": "hello"}],
-                            "collaborationMode": {
-                                "mode": "default",
-                                "settings": {"model": "gpt-5.4"},
-                            },
-                        },
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-
-            forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertNotIn("model", forwarded["params"])
-            self.assertNotIn("config", forwarded["params"])
-            self.assertNotIn("modelProvider", forwarded["params"])
-        self.assertEqual(
-            forwarded["params"]["collaborationMode"]["settings"]["model"],
-            "gpt-5.4",
-        )
-        self.assertNotIn("effort", forwarded["params"])
-        self.assertNotIn("reasoning_effort", forwarded["params"]["collaborationMode"]["settings"])
-
-    def test_model_list_response_rewrites_existing_launch_profile_item_as_default(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=data_dir,
-                global_data_dir=data_dir,
-                holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            with patch(
-                "bot.fcodex_proxy.resolve_profile_model_metadata",
-                return_value={
-                    "model": "provider2-model",
-                    "displayName": "Provider Two",
-                    "supports_reasoning_summaries": False,
-                },
-            ):
-                gate.handle_client_message(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "model/list",
-                            "params": {},
-                        }
-                    ),
-                    client_ws=client_ws,
-                    backend_ws=backend_ws,
-                )
-                gate.handle_backend_message(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "result": {
-                                "data": [
-                                    {
-                                        "id": "openai/gpt-5.4",
-                                        "model": "gpt-5.4",
-                                        "displayName": "GPT-5.4",
-                                        "description": "OpenAI model",
-                                        "hidden": False,
-                                        "supportedReasoningEfforts": [],
-                                        "defaultReasoningEffort": "medium",
-                                        "inputModalities": ["text"],
-                                        "serviceTiers": [],
-                                        "isDefault": True,
-                                    },
-                                    {
-                                        "id": "provider2/provider2-model",
-                                        "model": "provider2-model",
-                                        "displayName": "Old Provider Two",
-                                        "description": "Provider Two model",
-                                        "hidden": False,
-                                        "supportedReasoningEfforts": [],
-                                        "defaultReasoningEffort": "medium",
-                                        "inputModalities": ["text"],
-                                        "serviceTiers": [],
-                                        "isDefault": False,
-                                    },
-                                ]
-                            },
-                        }
-                    ),
-                    client_ws=client_ws,
-                    backend_ws=backend_ws,
-                )
-
-            forwarded = self._decode_payload(client_ws.sent[-1])
-            self.assertEqual(forwarded["result"]["data"][0]["model"], "gpt-5.4")
-            self.assertFalse(forwarded["result"]["data"][0]["isDefault"])
-            self.assertEqual(forwarded["result"]["data"][1]["id"], "provider2/provider2-model")
-            self.assertEqual(forwarded["result"]["data"][1]["model"], "provider2-model")
-            self.assertEqual(forwarded["result"]["data"][1]["displayName"], "Provider Two")
-            self.assertTrue(forwarded["result"]["data"][1]["isDefault"])
-
-    def test_model_list_response_does_not_inject_incomplete_synthetic_launch_profile_item(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=data_dir,
-                global_data_dir=data_dir,
-                holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            with patch(
-                "bot.fcodex_proxy.resolve_profile_model_metadata",
-                return_value={
-                    "model": "provider2-model",
-                    "displayName": "Provider Two",
-                    "supports_reasoning_summaries": False,
-                },
-            ):
-                gate.handle_client_message(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "model/list",
-                            "params": {},
-                        }
-                    ),
-                    client_ws=client_ws,
-                    backend_ws=backend_ws,
-                )
-                gate.handle_backend_message(
-                    json.dumps(
-                        {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "result": {
-                                "data": [
-                                    {
-                                        "id": "openai/gpt-5.4",
-                                        "model": "gpt-5.4",
-                                        "displayName": "GPT-5.4",
-                                        "description": "OpenAI model",
-                                        "hidden": False,
-                                        "supportedReasoningEfforts": [],
-                                        "defaultReasoningEffort": "medium",
-                                        "inputModalities": ["text"],
-                                        "serviceTiers": [],
-                                        "isDefault": True,
-                                    },
-                                ]
-                            },
-                        }
-                    ),
-                    client_ws=client_ws,
-                    backend_ws=backend_ws,
-                )
-
-            forwarded = self._decode_payload(client_ws.sent[-1])
-            self.assertEqual(len(forwarded["result"]["data"]), 1)
-            self.assertEqual(forwarded["result"]["data"][0]["id"], "openai/gpt-5.4")
-            self.assertEqual(forwarded["result"]["data"][0]["model"], "gpt-5.4")
-            self.assertTrue(forwarded["result"]["data"][0]["isDefault"])
 
     def test_thread_resume_gets_local_error_when_other_running_instance_still_reports_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3406,44 +3071,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
 
             self.assertIsNone(store.load("thread-1"))
 
-    def test_thread_start_request_injects_initial_thread_profile_slice(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_dir = Path(tmpdir)
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=root_dir,
-                global_data_dir=root_dir,
-                holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/start",
-                        "params": {
-                            "cwd": "/tmp/project",
-                            "model": "stale-local-model",
-                            "modelProvider": "stale-local-provider",
-                        },
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-
-            forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["method"], "thread/start")
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
-            self.assertNotIn("config", forwarded["params"])
-
     def test_sequential_second_thread_start_request_fails_closed_while_initial_seed_is_reserved(
         self,
     ) -> None:
@@ -3454,9 +3081,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
                 new_thread_memory_mode_seed="read",
             )
             client_ws = self._FakeWs()
@@ -3495,9 +3119,8 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
-            self.assertNotIn("profile", forwarded_first["params"]["config"])
-            self.assertEqual(forwarded_first["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded_first["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("model", forwarded_first["params"])
+            self.assertNotIn("modelProvider", forwarded_first["params"])
 
             self.assertEqual(len(backend_ws.sent), 1)
             self.assertEqual(
@@ -3541,13 +3164,9 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 backend_ws=backend_ws,
             )
 
-            profile_first = ThreadResumeProfileStore(root_dir).load("thread-1")
-            profile_second = ThreadResumeProfileStore(root_dir).load("thread-2")
             memory_first = ThreadMemoryModeStore(root_dir).load("thread-1")
             memory_second = ThreadMemoryModeStore(root_dir).load("thread-2")
 
-            self.assertIsNone(profile_first)
-            self.assertIsNone(profile_second)
             self.assertIsNotNone(memory_first)
             assert memory_first is not None
             self.assertEqual(memory_first.mode, "read")
@@ -3559,9 +3178,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
                 new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
@@ -3636,9 +3252,8 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
-            self.assertNotIn("profile", forwarded["params"]["config"])
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
+            self.assertNotIn("model", forwarded["params"])
+            self.assertNotIn("modelProvider", forwarded["params"])
 
             client_payloads = [
                 self._decode_payload(payload)
@@ -3665,9 +3280,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
                 new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
@@ -3740,9 +3352,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 data_dir=root_dir,
                 global_data_dir=root_dir,
                 holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
                 new_thread_memory_mode_seed="read",
             )
             client_ws = self._FakeWs()
@@ -3793,103 +3402,13 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
-            self.assertNotIn("profile", forwarded["params"]["config"])
-            self.assertEqual(forwarded["params"]["model"], "provider2-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "provider2_api")
-
-    def test_thread_start_response_does_not_promote_new_thread_profile_seed(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_dir = Path(tmpdir)
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=root_dir,
-                global_data_dir=root_dir,
-                holder_pid=os.getpid(),
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/start",
-                        "params": {"cwd": "/tmp/project"},
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-            gate.handle_backend_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "result": {"thread": {"id": "thread-1"}},
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-            self.assertIsNone(ThreadResumeProfileStore(root_dir).load("thread-1"))
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "method": "thread/start",
-                        "params": {"cwd": "/tmp/project"},
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-            forwarded_second = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded_second["method"], "thread/start")
-            self.assertNotIn("config", forwarded_second["params"])
-            gate.handle_backend_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 2,
-                        "result": {"thread": {"id": "thread-2"}},
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-            gate.handle_backend_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "method": "turn/completed",
-                        "params": {
-                            "threadId": "thread-1",
-                            "turn": {"id": "turn-1", "status": "completed"},
-                        },
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-
-            first = ThreadResumeProfileStore(root_dir).load("thread-1")
-            second = ThreadResumeProfileStore(root_dir).load("thread-2")
-
-            self.assertIsNone(first)
-            self.assertIsNone(second)
+            self.assertNotIn("model", forwarded["params"])
+            self.assertNotIn("modelProvider", forwarded["params"])
 
     def test_pending_new_thread_seed_survives_reconnect_until_first_completed_turn(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             shared_seed_state = _ProxyThreadSeedState(
-                new_thread_profile_seed="provider2",
-                new_thread_profile_model_seed="provider2-model",
-                new_thread_profile_model_provider_seed="provider2_api",
                 new_thread_memory_mode_seed="read",
             )
             gate_first = _ProxyInteractionGate(
@@ -3958,7 +3477,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     "generate_memories": False,
                 },
             )
-            self.assertNotIn("profile", resumed["params"]["config"])
             self.assertNotIn("model", resumed["params"])
             self.assertNotIn("modelProvider", resumed["params"])
 
@@ -3977,10 +3495,8 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 backend_ws=backend_ws_second,
             )
 
-            profile_record = ThreadResumeProfileStore(root_dir).load("thread-1")
             memory_record = ThreadMemoryModeStore(root_dir).load("thread-1")
 
-            self.assertIsNone(profile_record)
             self.assertIsNotNone(memory_record)
             assert memory_record is not None
             self.assertEqual(memory_record.mode, "read")
@@ -4086,13 +3602,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root_dir = Path(tmpdir)
             ThreadMemoryModeStore(root_dir).save("thread-1", mode="read_write")
-            ThreadResumeProfileStore(root_dir).save(
-                "thread-1",
-                profile="provider2",
-                model="provider2-model",
-                model_provider="provider2_api",
-                reasoning_effort="high",
-            )
             gate = _ProxyInteractionGate(
                 cwd="/tmp/project",
                 data_dir=root_dir,
@@ -4125,83 +3634,6 @@ class ProxyInteractionGateTests(unittest.TestCase):
                 },
             )
             self.assertNotIn("profiles", forwarded["params"]["config"])
-
-    def test_thread_resume_request_ignores_saved_thread_profile_slice(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_dir = Path(tmpdir)
-            ThreadResumeProfileStore(root_dir).save(
-                "thread-1",
-                profile="provider2",
-                model="provider2-model",
-                model_provider="provider2_api",
-                reasoning_effort="high",
-            )
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=root_dir,
-                global_data_dir=root_dir,
-                holder_pid=os.getpid(),
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/resume",
-                        "params": {"threadId": "thread-1"},
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-
-            forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["method"], "thread/resume")
-            self.assertNotIn("model", forwarded["params"])
-            self.assertNotIn("modelProvider", forwarded["params"])
-            self.assertNotIn("config", forwarded["params"])
-
-    def test_thread_resume_request_ignores_incomplete_saved_profile_slice(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root_dir = Path(tmpdir)
-            ThreadResumeProfileStore(root_dir).save(
-                "thread-1",
-                profile="provider2",
-                model="",
-                model_provider="",
-            )
-            gate = _ProxyInteractionGate(
-                cwd="/tmp/project",
-                data_dir=root_dir,
-                global_data_dir=root_dir,
-                holder_pid=os.getpid(),
-            )
-            client_ws = self._FakeWs()
-            backend_ws = self._FakeWs()
-
-            gate.handle_client_message(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "thread/resume",
-                        "params": {
-                            "threadId": "thread-1",
-                            "model": "stale-local-model",
-                            "modelProvider": "stale-local-provider",
-                            "config": {"profile": "provider2"},
-                        },
-                    }
-                ),
-                client_ws=client_ws,
-                backend_ws=backend_ws,
-            )
-            forwarded = self._decode_payload(backend_ws.sent[-1])
-            self.assertEqual(forwarded["params"]["model"], "stale-local-model")
-            self.assertEqual(forwarded["params"]["modelProvider"], "stale-local-provider")
 
     def test_runtime_lease_survives_lookup_connection_close_until_proxy_shutdown(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

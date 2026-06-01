@@ -114,7 +114,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             list_pending_interaction_requests=lambda: list(pending_requests),
             reset_current_instance_backend=lambda force: reset_calls.append(bool(force)) or {"force": bool(force)},
             attach_binding=lambda binding, thread_id: summaries[thread_id],
-            load_thread_resume_profile=lambda thread_id: None,
             load_thread_memory_mode=lambda thread_id: (
                 types.SimpleNamespace(mode=thread_memory_modes[thread_id])
                 if thread_id in thread_memory_modes
@@ -165,7 +164,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             cancel_mirror_watchdog_locked=lambda state: state.update({"mirror_watchdog_timer": None}),
             is_thread_not_found_error=lambda exc: False,
             is_thread_not_loaded_error=lambda exc: False,
-            reprofile_possible_check=lambda thread_id: (thread_id not in loaded_thread_ids, ""),
         )
         controller._submitted_prompts = submitted_prompts  # type: ignore[attr-defined]
         controller._thread_memory_modes = thread_memory_modes  # type: ignore[attr-defined]
@@ -631,159 +629,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(status["backend_reset_status"], "force-only")
         self.assertEqual(status["backend_reset_reason_code"], "backend_reset_force_only_by_running_binding")
 
-    def test_plan_thread_reprofile_allows_direct_write_after_detached_and_globally_unloaded(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="notLoaded",
-        )
-        controller.detach_thread("thread-1")
-
-        plan = controller.plan_thread_reprofile("thread-1")
-
-        self.assertEqual(plan.status, "direct-write")
-        self.assertEqual(plan.backend_thread_status, "notLoaded")
-        self.assertEqual(plan.feishu_runtime_state, "detached")
-        self.assertIn("verifiably globally unloaded", plan.reason_text)
-
-    def test_plan_thread_reprofile_treats_thread_not_loaded_read_error_as_not_loaded(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            _summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        controller._read_thread = lambda thread_id: (_ for _ in ()).throw(RuntimeError("thread not loaded: thread-1"))
-        controller._is_thread_not_loaded_error = lambda exc: "thread not loaded:" in str(exc)
-
-        plan = controller.plan_thread_reprofile("thread-1")
-
-        self.assertEqual(plan.status, "reset-available")
-        self.assertEqual(plan.backend_thread_status, "notLoaded")
-
-    def test_plan_thread_reprofile_requires_force_when_reset_would_hit_other_loaded_threads(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-        summaries["thread-2"] = ThreadSummary(
-            thread_id="thread-2",
-            cwd="/tmp/project",
-            name="other",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-        loaded_thread_ids.extend(["thread-1", "thread-2"])
-
-        plan = controller.plan_thread_reprofile("thread-1")
-
-        self.assertEqual(plan.status, "reset-force-only")
-        self.assertEqual(plan.reason_code, "reprofile_reset_force_only")
-        self.assertIn("其他 loaded thread", plan.reason_text)
-
-    def test_plan_thread_reprofile_blocks_when_live_runtime_owned_by_other_instance(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-        controller._load_thread_runtime_lease = lambda thread_id: ThreadRuntimeLease(
-            thread_id=thread_id,
-            owner_instance="other-instance",
-            owner_service_token="other-token",
-            control_endpoint="tcp://127.0.0.1:9393",
-            backend_url="ws://127.0.0.1:8765",
-            attached_at=1.0,
-            holders=(),
-        )
-
-        plan = controller.plan_thread_reprofile("thread-1")
-
-        self.assertEqual(plan.status, "blocked")
-        self.assertEqual(plan.reason_code, "reprofile_blocked_by_other_instance_owner")
-        self.assertIn("other-instance", plan.reason_text)
-
     def test_thread_status_snapshot_exposes_machine_global_live_runtime_owner(self) -> None:
         (
             lock,
@@ -1207,44 +1052,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(
             status["backend_reset_reason_code"],
             "backend_reset_force_only_by_runtime_unverified",
-        )
-
-    def test_plan_thread_reprofile_uses_force_only_reason_when_runtime_is_unverified(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-        controller._list_loaded_thread_ids = lambda: (_ for _ in ()).throw(RuntimeError("backend down"))
-
-        plan = controller.plan_thread_reprofile("thread-1")
-
-        self.assertEqual(plan.status, "reset-force-only")
-        self.assertEqual(
-            plan.reason_code,
-            "reprofile_reset_force_only_by_runtime_unverified",
         )
 
     def test_clear_all_bindings_for_control_rejects_when_binding_has_pending_request(self) -> None:

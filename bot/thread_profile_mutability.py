@@ -44,38 +44,6 @@ def _format_loaded_reasons(check: ThreadResumeMutabilityCheck) -> str:
     return "、".join(facts)
 
 
-def format_thread_resume_profile_denial_for_local_cli(
-    check: ThreadResumeMutabilityCheck,
-    *,
-    instance_name: str = "",
-) -> str:
-    if check.allowed:
-        return ""
-    if check.reason_code == THREAD_RESUME_MUTABILITY_REASON_UNBOUND:
-        return check.reason_text
-    if check.reason_code == THREAD_RESUME_MUTABILITY_REASON_RUNTIME_UNVERIFIED:
-        backend_label = _instance_backend_label(instance_name, fallback="目标实例的 backend")
-        reset_command = _local_reset_backend_command(instance_name)
-        return (
-            f"当前无法确认{backend_label}是否仍把该 thread 保持为 loaded；"
-            "当前按 fail-close 拒绝本次 `fcodex resume` 携带 `-p/--profile` 改写 profile。"
-            f"请先检查该实例状态；若确认可打断，可执行 {reset_command} 后重试。"
-        )
-    backend_label = _instance_backend_label(instance_name, fallback="目标实例的 backend")
-    reset_command = _local_reset_backend_command(instance_name)
-    loaded_reasons = _format_loaded_reasons(check)
-    suffix = f" 当前观测：{loaded_reasons}。" if loaded_reasons else ""
-    return (
-        f"{backend_label} 当前仍把该 thread 保持为 loaded；"
-        "本次 `fcodex resume` 不能同时携带 `-p/--profile` 改写该 thread 的 profile。"
-        "因为 profile 属于 thread 级 next-load 设置，只有该 thread 下次从 unloaded 重新恢复时才会生效。"
-        "若只是进入当前 thread，请去掉 `-p/--profile` 后重试。"
-        f"若要立即改 profile，请先执行 {reset_command}，"
-        "或在该实例对应的飞书会话里执行 `/profile <name>` 并点“应用并重置 backend”。"
-        f"{suffix}"
-    )
-
-
 def format_thread_resume_memory_mode_denial_for_local_cli(
     check: ThreadResumeMutabilityCheck,
     *,
@@ -105,29 +73,6 @@ def format_thread_resume_memory_mode_denial_for_local_cli(
         f"若要立即改 memory mode，请先执行 {reset_command}，"
         "或在该实例对应的飞书会话里执行 `/memory <off|read|read_write>` 并点“应用并重置 backend”。"
         f"{suffix}"
-    )
-
-
-def format_thread_resume_profile_denial_for_feishu(
-    check: ThreadResumeMutabilityCheck,
-    *,
-    instance_name: str = "",
-) -> str:
-    if check.allowed:
-        return ""
-    if check.reason_code == THREAD_RESUME_MUTABILITY_REASON_UNBOUND:
-        return check.reason_text
-    if check.reason_code == THREAD_RESUME_MUTABILITY_REASON_RUNTIME_UNVERIFIED:
-        backend_label = _instance_backend_label(instance_name, fallback="当前实例 backend")
-        return (
-            f"当前无法确认{backend_label}是否仍把该 thread 保持为 loaded。"
-            "当前按 fail-close 拒绝直接改写 profile；请先检查当前实例状态，必要时执行 `/reset-backend`。"
-        )
-    backend_label = _instance_backend_label(instance_name, fallback="当前实例 backend")
-    return (
-        f"{backend_label} 当前仍把该 thread 保持为 loaded，所以现在不能直接改写该 thread-wise profile。"
-        "profile 属于 thread 级 next-load 设置，只有该 thread 下次从 unloaded 重新恢复时才会生效。"
-        "若要立即生效，请在当前实例执行 `/reset-backend`，或继续使用当前卡片里的“应用并重置 backend”路径。"
     )
 
 
@@ -196,23 +141,6 @@ def _check_thread_resume_mutable(
             listed_as_loaded=listed_as_loaded,
         )
     return ThreadResumeMutabilityCheck(allowed=True, thread_id=normalized_thread_id)
-
-
-def check_thread_resume_profile_mutable(
-    thread_id: str,
-    *,
-    unbound_reason: str,
-    has_attached_binding: Callable[[str], bool] | None = None,
-    has_runtime_lease: Callable[[str], bool] | None = None,
-    list_loaded_thread_ids: Callable[[], list[str]],
-) -> ThreadResumeMutabilityCheck:
-    return _check_thread_resume_mutable(
-        thread_id,
-        unbound_reason=unbound_reason,
-        has_attached_binding=has_attached_binding,
-        has_runtime_lease=has_runtime_lease,
-        list_loaded_thread_ids=list_loaded_thread_ids,
-    )
 
 
 def check_thread_resume_memory_mode_mutable(

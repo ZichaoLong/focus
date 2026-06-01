@@ -26,14 +26,6 @@ BACKEND_RESET_FORCE_ONLY_BY_RUNNING_BINDING = "backend_reset_force_only_by_runni
 BACKEND_RESET_FORCE_ONLY_BY_PENDING_REQUEST = "backend_reset_force_only_by_pending_request"
 BACKEND_RESET_FORCE_ONLY_BY_ACTIVE_LOADED_THREAD = "backend_reset_force_only_by_active_loaded_thread"
 
-REPROFILE_DIRECT_WRITE_AVAILABLE = "reprofile_direct_write_available"
-REPROFILE_RESET_AVAILABLE = "reprofile_reset_available"
-REPROFILE_RESET_FORCE_ONLY = "reprofile_reset_force_only"
-REPROFILE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED = "reprofile_reset_force_only_by_runtime_unverified"
-REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER = "reprofile_blocked_by_other_instance_owner"
-REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED = "reprofile_blocked_by_reset_unsupported"
-REPROFILE_BLOCKED_BY_UNBOUND_THREAD = "reprofile_blocked_by_unbound_thread"
-
 MEMORY_MODE_DIRECT_WRITE_AVAILABLE = "memory_mode_direct_write_available"
 MEMORY_MODE_RESET_AVAILABLE = "memory_mode_reset_available"
 MEMORY_MODE_RESET_FORCE_ONLY = "memory_mode_reset_force_only"

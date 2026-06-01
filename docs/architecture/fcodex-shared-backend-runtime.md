@@ -112,7 +112,8 @@ off to the Python wrapper for actual instance selection. That layer:
 
 For code ownership, the launch path is intentionally split:
 
-- the wrapper owns selected-instance resolution and launch-time profile
+- the wrapper owns selected-instance resolution and launch-time startup-profile
+  passthrough / memory-seed decisions
   decisions
 - the proxy owns only transport fixes plus one-time persistence of the initial
   new-thread profile seed after a real `thread_id` exists
@@ -229,24 +230,22 @@ This is intentional. Explicit `--remote` means "use the target I asked for."
 Compared with bare Codex TUI, `fcodex` adds these semantics:
 
 - shared backend with the selected Feishu instance by default
-- explicit `-p/--profile` one-time seeding for the first new thread created by
-  that launch
-- thread-name resume resolution plus thread-wise profile injection / persistence
+- thread-name resume resolution against the selected shared backend
+- one-shot new-thread memory-mode seeding when the instance config enables it
 - cwd patching through a thin local proxy
 - websocket auth hardening on the shared-backend path: backend and proxy each
   own separate tokens, and neither reuses the service token
-- for wrapper-managed explicit profile paths, the profile slice is pinned from
-  the shared user-level config and enforced by the proxy on `thread/start` /
-  `thread/resume`; current cwd / project-local config does not get to redefine
-  an existing thread-wise profile contract
+- the proxy only carries transport-layer fixes and thread-wise memory-mode
+  injection; it no longer synthesizes or persists a separate thread-wise
+  profile contract
 
-The profile split is explicit:
+The split is explicit:
 
-- wrapper: read/write thread-wise resume profile state for existing threads,
-  and decide whether this launch carries an initial new-thread seed
-- proxy: enforce that seed at the actual `thread/start` / `thread/resume`
-  boundary, then persist the initial new-thread seed exactly once after the
-  first successful `thread/start` returns a concrete `thread_id`
+- wrapper: resolve the target instance and pass upstream flags such as
+  `-p/--profile` through untouched
+- proxy: enforce only the one-shot new-thread memory seed at the actual
+  `thread/start` / `thread/resume` boundary, then persist that seed exactly
+  once after the first successful `thread/start` returns a concrete `thread_id`
 
 Inside the running TUI, however, command semantics return to upstream Codex
 behavior.

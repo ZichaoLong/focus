@@ -51,10 +51,7 @@ def resolve_thread_memory_mode(mode: str) -> ResolvedThreadMemoryMode:
 
 def build_thread_memory_config_override(
     mode: str,
-    *,
-    profile_name_hint: str = "",
 ) -> dict[str, Any]:
-    del profile_name_hint
     resolved = resolve_thread_memory_mode(mode)
     memories_config = {
         "use_memories": resolved.use_memories,

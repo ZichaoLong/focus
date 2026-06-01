@@ -68,8 +68,9 @@ bridge:
 - Single source of truth: thread id, cwd, title, preview, source, and runtime
   config come from Codex
 - Feishu-specific state stays local: thread/UI binding state remains in
-  `feishu-codex`, while thread-wise resume profile is machine-global shared
-  state
+  `feishu-codex`, while machine-global shared state is limited to coordination
+  primitives such as runtime lease, instance registry, and thread-wise memory
+  mode
 - Shared-backend behavior is explicit: continuing the same live thread with
   Feishu should go through the same instance backend
 - `CODEX_HOME` and Feishu runtime boundaries stay separate: the former is
@@ -200,7 +201,8 @@ Current module split:
 - `bot/stores/thread_runtime_lease_store.py`: machine-global thread
   live-runtime lease
 - `bot/stores/*.py`: runtime backend discovery state, group-chat state, and
-  machine-global thread-wise resume profile / lease / registry state
+  machine-global coordination state such as thread memory mode / lease /
+  registry data
 
 One maintenance rule should also stay explicit for the Feishu transport layer:
 
@@ -322,7 +324,7 @@ Codex remains the authority for:
 
 `feishu-codex` keeps only data that is Feishu- or integration-specific:
 
-- machine-global thread-wise resume profile
+- machine-global coordination data such as thread memory mode and runtime lease
 - per-instance runtime shared-backend discovery state
 - per-instance shared-backend websocket capability token files
 - p2p thread bindings and group-shared thread bindings keyed by `chat_id`

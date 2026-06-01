@@ -56,7 +56,7 @@
 
 - 原生协议优先：优先使用 `codex app-server` 行为和 API，而不是本地抓取或重建状态
 - 单一事实来源：thread id、cwd、title、preview、source、runtime config 来自 Codex
-- 飞书本地状态留在本地：线程/UI 绑定状态由 `feishu-codex` 管理；thread-wise resume profile 走机器级共享存储
+- 飞书本地状态留在本地：线程/UI 绑定状态由 `feishu-codex` 管理；机器级共享状态只保留 runtime lease、实例注册表、thread-wise memory mode 这类协调信息
 - shared-backend 路径显式存在：如果要和飞书继续同一个 live thread，应明确走同一个**实例 backend**
 - `CODEX_HOME` 与 Feishu 运行时边界分离：前者共享，后者按实例隔离
 - 运行时假设要文档化：wrapper 与 shared-backend 行为不能只隐含在代码里
@@ -139,7 +139,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/stores/generated_image_delivery_store.py`：每实例的已投递生成图片账本；按 binding/thread/turn/item 去重，避免 reconcile 或重复终态信号下重复发图
 - `bot/stores/instance_registry_store.py`：机器级运行中实例注册表
 - `bot/stores/thread_runtime_lease_store.py`：机器级 thread live runtime lease
-- `bot/stores/*.py`：shared backend 运行时发现状态、群聊状态；以及机器级 thread-wise resume profile / lease / registry
+- `bot/stores/*.py`：shared backend 运行时发现状态、群聊状态；以及机器级的 thread memory mode / lease / registry 等协调状态
 
 对飞书传输层还应补一条维护性约束：
 
@@ -223,7 +223,7 @@ shared backend 与 wrapper 的具体机制，见
 
 `feishu-codex` 只保存飞书或集成侧专属的数据：
 
-- 机器级共享的 thread-wise resume profile
+- 机器级共享的 thread memory mode、runtime lease 等协调状态
 - 每实例 shared backend 的运行时地址发现状态
 - 每实例 shared backend websocket capability token 文件
 - 私聊当前绑定到哪个 thread，以及群聊按 `chat_id` 共享绑定到哪个 thread

@@ -3,7 +3,6 @@ from types import SimpleNamespace
 from typing import Any
 
 from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
-from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_settings_domain import (
     CodexSettingsDomain,
     ThreadResetReplacement,
@@ -11,7 +10,6 @@ from bot.codex_settings_domain import (
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeRecord
-from bot.stores.thread_resume_profile_store import ThreadResumeProfileRecord
 
 
 _APPROVAL_POLICIES = {"untrusted", "on-request", "never"}
@@ -42,18 +40,9 @@ class _SettingsPortsStub:
         )
         self.codex_config: dict[str, Any] = {"app_server_mode": "managed"}
         self.new_thread_memory_mode_seed = "read"
-        self.saved_thread_profiles: list[tuple[str, str, str, str, str]] = []
-        self.cleared_thread_profiles: list[str] = []
-        self.current_thread_profile: ThreadResumeProfileRecord | None = None
         self.applied_thread_memory_modes: list[tuple[str, str]] = []
         self.current_thread_memory_mode: ThreadMemoryModeRecord | None = None
-        self.thread_profile_mutable = (True, "")
         self.thread_memory_mode_mutable = (True, "")
-        self.thread_reprofile_plan = SimpleNamespace(
-            status="direct-write",
-            reason_text="",
-            diagnostics=(),
-        )
         self.thread_memory_plan = SimpleNamespace(
             status="direct-write",
             reason_text="",
@@ -114,43 +103,6 @@ class _SettingsPortsStub:
     def save_codex_config(self, config: dict[str, Any]) -> None:
         self.codex_config = dict(config)
 
-    def load_thread_resume_profile(self, thread_id: str) -> ThreadResumeProfileRecord | None:
-        if self.current_thread_profile is None:
-            return None
-        if self.current_thread_profile.thread_id != thread_id:
-            return None
-        return self.current_thread_profile
-
-    def save_thread_resume_profile(
-        self,
-        thread_id: str,
-        profile: str,
-        model: str,
-        model_provider: str,
-        reasoning_effort: str,
-    ) -> ThreadResumeProfileRecord:
-        self.saved_thread_profiles.append((thread_id, profile, model, model_provider, reasoning_effort))
-        self.current_thread_profile = ThreadResumeProfileRecord(
-            thread_id=thread_id,
-            profile=profile,
-            model=model,
-            model_provider=model_provider,
-            reasoning_effort=reasoning_effort,
-            updated_at=1.0,
-        )
-        return self.current_thread_profile
-
-    def clear_thread_resume_profile(self, thread_id: str) -> bool:
-        self.cleared_thread_profiles.append(thread_id)
-        if self.current_thread_profile is None or self.current_thread_profile.thread_id != thread_id:
-            return False
-        self.current_thread_profile = None
-        return True
-
-    def check_thread_resume_profile_mutable(self, thread_id: str) -> tuple[bool, str]:
-        del thread_id
-        return self.thread_profile_mutable
-
     def check_thread_memory_mode_mutable(self, thread_id: str) -> tuple[bool, str]:
         del thread_id
         return self.thread_memory_mode_mutable
@@ -170,10 +122,6 @@ class _SettingsPortsStub:
             updated_at=1.0,
         )
         return self.current_thread_memory_mode
-
-    def plan_thread_reprofile(self, thread_id: str):
-        del thread_id
-        return self.thread_reprofile_plan
 
     def plan_thread_memory_mode_update(self, thread_id: str):
         del thread_id
@@ -204,13 +152,6 @@ class _SettingsPortsStub:
         if self.replacement_result is not None:
             self.runtime.current_thread_id = self.replacement_result.new_thread_id
         return self.replacement_result
-
-    def resolve_profile_resume_config(self, profile: str) -> ResolvedProfileConfig:
-        return ResolvedProfileConfig(
-            model=f"{profile}-model",
-            model_provider=f"{profile}-provider",
-            reasoning_effort=f"{profile}-effort",
-        )
 
     def get_runtime_view(self, sender_id: str, chat_id: str, message_id: str):
         self.runtime_view_calls.append((sender_id, chat_id, message_id))
@@ -291,7 +232,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
         result = domain.handle_profile_command("ou_user", "chat-a", "work", message_id="msg-1")
 
         self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
-        self.assertEqual(stub.saved_thread_profiles, [])
         self.assertEqual(stub.runtime_view_calls, [])
         self.assertIsNotNone(result.card)
         self.assertEqual(result.card["header"]["title"]["content"], "Codex Backend Startup Profile")
@@ -395,7 +335,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         self.assertEqual(stub.codex_config["managed_startup_profile"], "work")
         self.assertEqual(stub.reset_backend_calls, [False])
-        self.assertEqual(stub.saved_thread_profiles, [])
         self.assertEqual(stub.replacement_calls, [])
         self.assertEqual(response.toast.type, "success")
         self.assertIn("已应用 `work` 并重置 backend", response.toast.content)
@@ -425,7 +364,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
         result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
         self.assertNotIn("managed_startup_profile", stub.codex_config)
-        self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)
         content = result.card["elements"][0]["content"]
         self.assertIn("已清空当前实例的 startup profile override。", content)
@@ -437,7 +375,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         result = domain.handle_profile_clear_command("ou_user", "chat-a", message_id="msg-1")
 
-        self.assertEqual(stub.cleared_thread_profiles, [])
         self.assertIsNotNone(result.card)
         self.assertIn("当前实例未设置 startup profile。", result.card["elements"][0]["content"])
 
@@ -449,7 +386,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
 
         self.assertIn("用法：`/profile-clear`", result.text)
         self.assertIn("不接受额外参数", result.text)
-        self.assertEqual(stub.cleared_thread_profiles, [])
 
     def test_profile_clear_rejects_in_remote_mode(self) -> None:
         stub = _SettingsPortsStub()
@@ -607,7 +543,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
             stub.update_calls,
             [("ou_user", "chat-a", {"message_id": "msg-1", "model": "gpt-5.4"})],
         )
-        self.assertEqual(stub.saved_thread_profiles, [])
         self.assertEqual(stub.applied_thread_memory_modes, [])
 
     def test_model_command_auto_clears_runtime_override(self) -> None:

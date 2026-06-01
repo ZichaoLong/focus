@@ -38,13 +38,6 @@ from bot.reason_codes import (
     MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     PROMPT_DENIED_BINDING_NOT_FOUND,
     PROMPT_DENIED_BY_RUNNING_TURN,
-    REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
-    REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
-    REPROFILE_BLOCKED_BY_UNBOUND_THREAD,
-    REPROFILE_DIRECT_WRITE_AVAILABLE,
-    REPROFILE_RESET_AVAILABLE,
-    REPROFILE_RESET_FORCE_ONLY,
-    REPROFILE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     DETACH_BLOCKED_BY_INFLIGHT_TURN,
     DETACH_BLOCKED_BY_PENDING_REQUEST,
     DETACH_NOT_APPLICABLE_NO_BINDING,
@@ -77,10 +70,10 @@ BACKEND_RESET_STATUS_AVAILABLE = "available"
 BACKEND_RESET_STATUS_FORCE_ONLY = "force-only"
 BACKEND_RESET_STATUS_BLOCKED = "blocked"
 
-REPROFILE_STATUS_DIRECT_WRITE = "direct-write"
-REPROFILE_STATUS_RESET_AVAILABLE = "reset-available"
-REPROFILE_STATUS_RESET_FORCE_ONLY = "reset-force-only"
-REPROFILE_STATUS_BLOCKED = "blocked"
+THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE = "direct-write"
+THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE = "reset-available"
+THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY = "reset-force-only"
+THREAD_MUTATION_PLAN_STATUS_BLOCKED = "blocked"
 THREAD_MUTATION_STATUS_ALREADY_SET = "already-set"
 THREAD_MUTATION_STATUS_APPLIED = "applied"
 
@@ -140,7 +133,6 @@ class RuntimeAdminController:
         list_pending_interaction_requests: Callable[[], list[dict[str, Any]]],
         reset_current_instance_backend: Callable[[bool], dict[str, Any]],
         attach_binding: Callable[[ChatBindingKey, str], ThreadSummary],
-        load_thread_resume_profile: Callable[[str], Any],
         load_thread_memory_mode: Callable[[str], Any],
         apply_thread_memory_mode: Callable[[str, str], Any],
         permissions_summary: Callable[..., str],
@@ -159,7 +151,6 @@ class RuntimeAdminController:
         cancel_mirror_watchdog_locked: Callable[[RuntimeState], None],
         is_thread_not_found_error: Callable[[Exception], bool],
         is_thread_not_loaded_error: Callable[[Exception], bool],
-        reprofile_possible_check: Callable[[str], tuple[bool, str]],
         load_managed_startup_profile: Callable[[], str] | None = None,
     ) -> None:
         self._lock = lock
@@ -180,7 +171,6 @@ class RuntimeAdminController:
         self._list_pending_interaction_requests = list_pending_interaction_requests
         self._reset_current_instance_backend = reset_current_instance_backend
         self._attach_binding = attach_binding
-        self._load_thread_resume_profile = load_thread_resume_profile
         self._load_thread_memory_mode = load_thread_memory_mode
         self._apply_thread_memory_mode = apply_thread_memory_mode
         self._permissions_summary = permissions_summary
@@ -199,7 +189,6 @@ class RuntimeAdminController:
         self._cancel_mirror_watchdog_locked = cancel_mirror_watchdog_locked
         self._is_thread_not_found_error = is_thread_not_found_error
         self._is_thread_not_loaded_error = is_thread_not_loaded_error
-        self._reprofile_possible_check = reprofile_possible_check
         self._load_managed_startup_profile = load_managed_startup_profile or (lambda: "")
 
     def _render_permissions_summary(self, snapshot: dict[str, Any]) -> str:
@@ -249,8 +238,8 @@ class RuntimeAdminController:
     @staticmethod
     def _result_requires_reset_backend(status: str) -> bool:
         return status in {
-            REPROFILE_STATUS_RESET_AVAILABLE,
-            REPROFILE_STATUS_RESET_FORCE_ONLY,
+            THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
+            THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
         }
 
     def _refresh_thread_memory_mutation_result(
@@ -1732,7 +1721,7 @@ class RuntimeAdminController:
             )
             return replace(preview, diagnostics=self._backend_reset_flat_diagnostics(preview))
         preview = BackendResetPreview(
-            status=BACKEND_RESET_STATUS_AVAILABLE,
+                status=BACKEND_RESET_STATUS_AVAILABLE,
             reason_code="",
             reason_text="当前实例 backend 可安全重置。",
             **common_kwargs,
@@ -1759,7 +1748,7 @@ class RuntimeAdminController:
         current_instance_label = str(self._instance_name() or "").strip() or "当前实例"
         if not normalized_thread_id:
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_BLOCKED,
+                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
                 thread_id="",
                 backend_thread_status=BACKEND_THREAD_STATUS_UNKNOWN,
                 feishu_runtime_state="-",
@@ -1801,7 +1790,7 @@ class RuntimeAdminController:
         ):
             diagnostics.append(f"当前 thread 已 verifiably globally unloaded，可直接写入 {subject_label}。")
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_DIRECT_WRITE,
+                status=THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
@@ -1816,7 +1805,7 @@ class RuntimeAdminController:
                 f"当前 thread 的 live runtime 由实例 `{lease.owner_instance}` 持有；当前实例不能代它 reset backend。"
             )
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_BLOCKED,
+                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
@@ -1833,7 +1822,7 @@ class RuntimeAdminController:
         diagnostics.extend(reset_preview.diagnostics)
         if reset_preview.status == BACKEND_RESET_STATUS_BLOCKED:
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_BLOCKED,
+                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
@@ -1844,7 +1833,7 @@ class RuntimeAdminController:
             )
         if reset_preview.status == BACKEND_RESET_STATUS_FORCE_ONLY:
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_RESET_FORCE_ONLY,
+                status=THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
@@ -1873,7 +1862,7 @@ class RuntimeAdminController:
         )
         if collateral_loaded_thread_ids or collateral_attached_binding_ids:
             return ThreadMutationPlan(
-                status=REPROFILE_STATUS_RESET_FORCE_ONLY,
+                status=THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
                 thread_id=normalized_thread_id,
                 backend_thread_status=backend_thread_status,
                 feishu_runtime_state=feishu_runtime_state,
@@ -1886,7 +1875,7 @@ class RuntimeAdminController:
                 diagnostics=tuple(diagnostics),
             )
         return ThreadMutationPlan(
-            status=REPROFILE_STATUS_RESET_AVAILABLE,
+            status=THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
             thread_id=normalized_thread_id,
             backend_thread_status=backend_thread_status,
             feishu_runtime_state=feishu_runtime_state,
@@ -1897,19 +1886,6 @@ class RuntimeAdminController:
                 f"若要现在生效，可通过重置实例 `{current_instance_label}` 的 backend 后再写入 {subject_label}。"
             ),
             diagnostics=tuple(diagnostics),
-        )
-
-    def plan_thread_reprofile(self, thread_id: str) -> ThreadMutationPlan:
-        return self._plan_threadwise_mutation(
-            thread_id,
-            direct_write_reason_code=REPROFILE_DIRECT_WRITE_AVAILABLE,
-            reset_available_reason_code=REPROFILE_RESET_AVAILABLE,
-            reset_force_only_reason_code=REPROFILE_RESET_FORCE_ONLY,
-            reset_force_only_runtime_unverified_reason_code=REPROFILE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
-            blocked_by_other_instance_reason_code=REPROFILE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
-            blocked_by_reset_unsupported_reason_code=REPROFILE_BLOCKED_BY_RESET_UNSUPPORTED,
-            blocked_by_unbound_thread_reason_code=REPROFILE_BLOCKED_BY_UNBOUND_THREAD,
-            subject_label="profile",
         )
 
     def plan_thread_memory_mode_update(self, thread_id: str) -> ThreadMutationPlan:
@@ -1950,7 +1926,7 @@ class RuntimeAdminController:
             "requested_mode": "",
             "applied": False,
             "requires_reset_backend": self._result_requires_reset_backend(plan.status),
-            "requires_force_reset_backend": plan.status == REPROFILE_STATUS_RESET_FORCE_ONLY,
+            "requires_force_reset_backend": plan.status == THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
             "backend_reset_performed": False,
             "backend_reset_result": None,
         }
@@ -1960,7 +1936,7 @@ class RuntimeAdminController:
         normalized_target_mode = normalize_thread_memory_mode(target_mode)
         result["requested_mode"] = normalized_target_mode
         if thread_summary_is_provisional(thread):
-            result["plan_status"] = REPROFILE_STATUS_BLOCKED
+            result["plan_status"] = THREAD_MUTATION_PLAN_STATUS_BLOCKED
             result["reason_code"] = "memory_mode_blocked_by_provisional_thread"
             result["reason"] = (
                 "目标 thread 仍是未 materialize 的 provisional shell；"
@@ -1982,7 +1958,7 @@ class RuntimeAdminController:
                 reason="目标 memory mode 已等于当前持久化设置；无需重置 backend。",
             )
 
-        if plan.status == REPROFILE_STATUS_DIRECT_WRITE:
+        if plan.status == THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE:
             self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
             return self._refresh_thread_memory_mutation_result(
                 result,
@@ -1992,13 +1968,13 @@ class RuntimeAdminController:
             )
 
         if plan.status not in {
-            REPROFILE_STATUS_RESET_AVAILABLE,
-            REPROFILE_STATUS_RESET_FORCE_ONLY,
+            THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
+            THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
         }:
             return result
         if not reset_backend:
             return result
-        if plan.status == REPROFILE_STATUS_RESET_FORCE_ONLY and not force_reset_backend:
+        if plan.status == THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY and not force_reset_backend:
             return result
 
         backend_reset_result = self._reset_current_instance_backend(bool(force_reset_backend))

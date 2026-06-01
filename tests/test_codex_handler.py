@@ -19,7 +19,6 @@ from bot.adapters.base import (
 )
 from bot.feishu_bot import InteractiveMessageReadResult
 from bot.card_text_projection import project_interactive_card_text
-from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_handler import CodexHandler
 from bot.codex_protocol.client import CodexRpcError
 from bot.execution_transcript import ExecutionReplySegment
@@ -29,7 +28,6 @@ from bot.stores.service_instance_lease import ServiceInstanceLease, ServiceInsta
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_fcodex_interaction_holder
 from bot.stores.terminal_result_store import TerminalResultRecord
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
-from bot.thread_resume_profile_setting import ThreadResumeProfileSetting
 
 _DISPLAY_INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DISPLAY_DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
@@ -3813,7 +3811,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_objective"], "ship goal support")
 
-    def test_status_ignores_pending_threadwise_profile_seed(self) -> None:
+    def test_status_ignores_pending_threadwise_memory_seed(self) -> None:
         handler, bot = self._make_handler({"managed_startup_profile": "work"})
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -3827,21 +3825,14 @@ class CodexHandlerTests(unittest.TestCase):
         )
         handler._bind_thread("ou_user", "c1", thread)
         handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
-        handler._replace_pending_threadwise_seed(
-            "thread-1",
-            profile_setting=ThreadResumeProfileSetting(
-                profile="provider2",
-                model="provider2-model",
-                model_provider="provider2_api",
-            ),
-        )
+        handler._replace_pending_threadwise_seed("thread-1", memory_mode="read")
 
         handler.handle_message("ou_user", "c1", "/status")
 
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
         self.assertIn("实例 startup profile：`work`", content)
-        self.assertNotIn("provider2", content)
+        self.assertNotIn("memory mode", content)
 
     def test_detach_command_detaches_current_binding_and_keeps_other_binding_attached(self) -> None:
         handler, bot = self._make_handler()
@@ -4696,26 +4687,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(response["toast_type"], "success")
         self.assertIn("已清空当前实例的 startup profile override", response["toast"])
 
-    def test_clear_thread_resume_profile_record_preserves_pending_memory_mode(self) -> None:
-        handler, _ = self._make_handler()
-        handler._replace_pending_threadwise_seed(
-            "thread-1",
-            profile_setting=ThreadResumeProfileSetting(
-                profile="provider2",
-                model="provider2-model",
-                model_provider="provider2_api",
-            ),
-            memory_mode="read",
-        )
-
-        cleared = handler._clear_thread_resume_profile_record("thread-1")
-
-        self.assertTrue(cleared)
-        pending = handler._pending_threadwise_seed("thread-1")
-        assert pending is not None
-        self.assertFalse(pending.has_profile_slice)
-        self.assertEqual(pending.memory_mode, "read")
-
     def test_profile_command_with_unknown_name_shows_usage(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
@@ -4841,7 +4812,6 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/new")
 
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
     def test_new_thread_applies_new_thread_memory_mode_seed_and_promotes_after_first_turn(self) -> None:
         handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read"})
@@ -4930,7 +4900,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
     def test_prompt_created_thread_applies_new_thread_memory_mode_seed_and_promotes_after_turn_completed(self) -> None:
         handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read_write"})
@@ -4981,91 +4950,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.create_thread_calls[-1]["cwd"], "/home/tester")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["cwd"], "/home/tester")
 
-    def test_detached_thread_resume_ignores_legacy_thread_profile_store(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/detach")
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
-
-        handler.handle_message("ou_user", "c1", "hello")
-
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
-        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["model_provider"])
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["config_overrides"], None)
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
-
-    def test_legacy_thread_profile_store_no_longer_drives_turn_start(self) -> None:
-        handler, _ = self._make_handler(cfg={"model": "stale-default-model"})
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
-
-        handler.handle_message("ou_user", "c1", "hello")
-
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
-
-    def test_runtime_model_override_wins_even_if_legacy_thread_profile_store_exists(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler.handle_message("ou_user", "c1", "/model gpt-5.5")
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
-
-        handler.handle_message("ou_user", "c1", "hello")
-
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["reasoning_effort"])
-
-    def test_replace_bound_provisional_thread_after_reset_rebinds_without_moving_legacy_profile(self) -> None:
+    def test_replace_bound_provisional_thread_after_reset_rebinds_memory_only(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5078,13 +4963,6 @@ class CodexHandlerTests(unittest.TestCase):
             status="idle",
         )
         handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
         handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
             summary=ThreadSummary(
                 thread_id="thread-1",
@@ -5098,16 +4976,10 @@ class CodexHandlerTests(unittest.TestCase):
                 path="/tmp/feishu-codex-missing-rollout",
             )
         )
-
-        with patch(
-            "bot.codex_handler.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider=""),
-        ):
-            replacement = handler._replace_bound_provisional_thread_after_reset(
-                "ou_user",
-                "c1",
-                "provider2",
-            )
+        replacement = handler._replace_bound_provisional_thread_after_reset(
+            "ou_user",
+            "c1",
+        )
 
         assert replacement is not None
         self.assertEqual(replacement.old_thread_id, "thread-1")
@@ -5117,13 +4989,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
         self.assertEqual(handler._adapter.create_thread_calls[-1]["config_overrides"], {})
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-1"))
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
-        self.assertIsNone(handler._thread_resume_profile("thread-created"))
-
-        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
-
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
 
     def test_replace_bound_provisional_thread_after_reset_handles_thread_not_loaded_read(self) -> None:
         handler, _ = self._make_handler()
@@ -5138,13 +5003,6 @@ class CodexHandlerTests(unittest.TestCase):
             status="idle",
         )
         handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
         handler._adapter.thread_snapshots[("thread-1", False)] = CodexRpcError(
             "thread/read",
             {"code": -32000, "message": "thread not loaded: thread-1"},
@@ -5153,7 +5011,6 @@ class CodexHandlerTests(unittest.TestCase):
         replacement = handler._replace_bound_provisional_thread_after_reset(
             "ou_user",
             "c1",
-            "provider2",
         )
 
         assert replacement is not None
@@ -5174,13 +5031,6 @@ class CodexHandlerTests(unittest.TestCase):
             status="idle",
         )
         handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="provider2_api",
-            reasoning_effort="high",
-        )
         handler._thread_memory_mode_store.save("thread-1", mode="read")
         handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
             summary=ThreadSummary(
@@ -5216,33 +5066,6 @@ class CodexHandlerTests(unittest.TestCase):
                 },
             },
         )
-        self.assertIsNone(handler._thread_resume_profile_store.load("thread-created"))
-        self.assertIsNone(handler._thread_resume_profile("thread-created"))
-
-    def test_resume_snapshot_by_id_ignores_incomplete_legacy_profile_slice(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="notLoaded",
-        )
-        handler._thread_resume_profile_store.save(
-            "thread-1",
-            profile="provider2",
-            model="provider2-model",
-            model_provider="",
-        )
-
-        snapshot = handler._resume_snapshot_by_id(thread.thread_id, original_arg=thread.thread_id, summary=thread)
-
-        self.assertEqual(snapshot.summary.thread_id, "thread-1")
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
-        self.assertIsNone(handler._adapter.resume_thread_calls[-1]["profile"])
 
     def test_prompt_reuses_reserved_execution_card(self) -> None:
         handler, bot = self._make_handler()

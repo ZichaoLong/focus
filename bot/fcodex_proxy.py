@@ -29,7 +29,6 @@ from websockets.http11 import Request, Response
 from websockets.sync.client import connect
 from websockets.sync.server import serve
 
-from bot.codex_config_reader import resolve_profile_model_metadata
 from bot.instance_layout import global_data_dir as default_global_data_dir
 from bot.local_websocket_auth import (
     AppServerWebsocketAuthTokenStore,
@@ -46,20 +45,12 @@ from bot.stores.interaction_lease_store import (
 )
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, BACKEND_THREAD_STATUS_NOT_LOADED
 from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
-from bot.stores.thread_resume_profile_store import ThreadResumeProfileStore
 from bot.thread_pending_settings import PendingThreadwiseSeed
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
 from bot.thread_memory_mode import (
     build_thread_memory_config_override,
     deep_merge_config_overrides,
     normalize_thread_memory_mode,
-)
-from bot.thread_resume_profile_setting import (
-    build_thread_resume_profile_config_overrides,
-    build_thread_resume_profile_setting,
-    format_thread_resume_profile_missing_fields,
-    thread_resume_profile_setting_from_record,
-    thread_resume_profile_setting_missing_fields,
 )
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
@@ -339,19 +330,8 @@ class _ProxyThreadSeedState:
     def __init__(
         self,
         *,
-        new_thread_profile_seed: str = "",
-        new_thread_profile_model_seed: str = "",
-        new_thread_profile_model_provider_seed: str = "",
-        new_thread_profile_reasoning_effort_seed: str = "",
         new_thread_memory_mode_seed: str = "",
     ) -> None:
-        self._new_thread_profile_seed_setting = build_thread_resume_profile_setting(
-            new_thread_profile_seed,
-            model=new_thread_profile_model_seed,
-            model_provider=new_thread_profile_model_provider_seed,
-            reasoning_effort=new_thread_profile_reasoning_effort_seed,
-        )
-        self._new_thread_profile_seed_consumed = not self._new_thread_profile_seed_setting.profile
         self._new_thread_memory_mode_seed = str(new_thread_memory_mode_seed or "").strip()
         self._new_thread_memory_mode_seed_consumed = not self._new_thread_memory_mode_seed
         self._pending_new_thread_seed_reservation: tuple[str, str] | None = None
@@ -373,12 +353,6 @@ class _ProxyThreadSeedState:
         with self._lock:
             self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
 
-    def new_thread_profile_seed_setting(self):
-        with self._lock:
-            if self._new_thread_profile_seed_consumed or not self._new_thread_profile_seed_setting.profile:
-                return None
-            return self._new_thread_profile_seed_setting
-
     def new_thread_memory_mode_seed(self) -> str:
         with self._lock:
             if self._new_thread_memory_mode_seed_consumed or not self._new_thread_memory_mode_seed:
@@ -386,16 +360,7 @@ class _ProxyThreadSeedState:
             return self._new_thread_memory_mode_seed
 
     def _new_thread_seed_available_unlocked(self) -> bool:
-        return (
-            (
-                not self._new_thread_profile_seed_consumed
-                and bool(self._new_thread_profile_seed_setting.profile)
-            )
-            or (
-                not self._new_thread_memory_mode_seed_consumed
-                and bool(self._new_thread_memory_mode_seed)
-            )
-        )
+        return (not self._new_thread_memory_mode_seed_consumed) and bool(self._new_thread_memory_mode_seed)
 
     def reserve_new_thread_seed_for_request(self, *, owner_key: str, request_id: Any) -> str:
         request_key = _jsonrpc_id_key(request_id)
@@ -454,20 +419,14 @@ class _ProxyThreadSeedState:
         with self._lock:
             if self._pending_new_thread_seed_reservation != (owner_key, request_key):
                 return
-            profile_setting = (
-                self._new_thread_profile_seed_setting
-                if not self._new_thread_profile_seed_consumed and self._new_thread_profile_seed_setting.profile
-                else None
-            )
             memory_mode = (
                 self._new_thread_memory_mode_seed
                 if not self._new_thread_memory_mode_seed_consumed and self._new_thread_memory_mode_seed
                 else ""
             )
             self._pending_new_thread_seed_reservation = None
-            if profile_setting is None and not memory_mode:
+            if not memory_mode:
                 return
-            self._new_thread_profile_seed_consumed = True
             self._new_thread_memory_mode_seed_consumed = True
             self._new_thread_seed_outcome_unknown = False
             normalized_memory_mode = str(memory_mode or "").strip()
@@ -475,10 +434,6 @@ class _ProxyThreadSeedState:
                 normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
             seed = PendingThreadwiseSeed(
                 thread_id=normalized_thread_id,
-                profile=profile_setting.profile if profile_setting is not None else "",
-                model=profile_setting.model if profile_setting is not None else "",
-                model_provider=profile_setting.model_provider if profile_setting is not None else "",
-                reasoning_effort=profile_setting.reasoning_effort if profile_setting is not None else "",
                 memory_mode=normalized_memory_mode,
             )
             if seed.has_any:
@@ -497,12 +452,7 @@ class _ProxyInteractionGate:
         instance_name: str = "",
         service_token: str = "",
         holder_pid: int,
-        new_thread_profile_seed: str = "",
-        new_thread_profile_model_seed: str = "",
-        new_thread_profile_model_provider_seed: str = "",
-        new_thread_profile_reasoning_effort_seed: str = "",
         new_thread_memory_mode_seed: str = "",
-        resume_profile_hint: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
         thread_seed_state: _ProxyThreadSeedState | None = None,
     ) -> None:
@@ -519,19 +469,13 @@ class _ProxyInteractionGate:
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
         self._thread_seed_state = thread_seed_state or _ProxyThreadSeedState(
-            new_thread_profile_seed=new_thread_profile_seed,
-            new_thread_profile_model_seed=new_thread_profile_model_seed,
-            new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
-            new_thread_profile_reasoning_effort_seed=new_thread_profile_reasoning_effort_seed,
             new_thread_memory_mode_seed=new_thread_memory_mode_seed,
         )
         self._thread_seed_state_owner_key = f"gate:{id(self)}"
-        self._resume_profile_hint = str(resume_profile_hint or "").strip()
         self._runtime_lease_keeper = runtime_lease_keeper
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
         self._pending_client_request_by_id: dict[str, tuple[str, str, bool]] = {}
-        self._pending_model_list_request_ids: set[str] = set()
         self._pending_thread_request_by_id: dict[str, tuple[str, str, bool]] = {}
         self._owned_thread_ids: set[str] = set()
 
@@ -565,7 +509,6 @@ class _ProxyInteractionGate:
             self._owned_thread_ids.clear()
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
-            self._pending_model_list_request_ids.clear()
             pending_thread_requests = list(self._pending_thread_request_by_id.values())
             self._pending_thread_request_by_id.clear()
         reserved_thread_start_outcome_unknown = any(
@@ -635,24 +578,6 @@ class _ProxyInteractionGate:
     def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
         self._thread_seed_state.clear_pending_threadwise_seed(thread_id)
 
-    def _thread_profile_setting(self, thread_id: str):
-        pending = self._pending_threadwise_seed(thread_id)
-        if pending is not None and pending.has_profile_slice:
-            return build_thread_resume_profile_setting(
-                pending.profile,
-                model=pending.model,
-                model_provider=pending.model_provider,
-                reasoning_effort=pending.reasoning_effort,
-            )
-        profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-        return thread_resume_profile_setting_from_record(profile_record)
-
-    def _launch_profile_name_hint(self) -> str:
-        initial = self._thread_seed_state.new_thread_profile_seed_setting()
-        if initial is not None and str(initial.profile or "").strip():
-            return str(initial.profile or "").strip()
-        return self._resume_profile_hint
-
     def _reserve_new_thread_seed_for_request(self, request_id: Any) -> str:
         return self._thread_seed_state.reserve_new_thread_seed_for_request(
             owner_key=self._thread_seed_state_owner_key,
@@ -690,34 +615,6 @@ class _ProxyInteractionGate:
             return
         self._clear_pending_threadwise_seed(pending.thread_id)
 
-    def _apply_new_thread_profile_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return payload
-        setting = self._thread_seed_state.new_thread_profile_seed_setting()
-        if setting is None:
-            return payload
-        updated_payload = dict(payload)
-        updated_params = dict(params)
-        if setting.model:
-            updated_params["model"] = setting.model
-        if setting.model_provider:
-            updated_params["modelProvider"] = setting.model_provider
-        profile_config_overrides = build_thread_resume_profile_config_overrides(setting)
-        if profile_config_overrides:
-            existing_config = params.get("config")
-            normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-            updated_params["config"] = deep_merge_config_overrides(
-                profile_config_overrides,
-                normalized_existing_config,
-            )
-        updated_payload["params"] = updated_params
-        return updated_payload
-
-    def _new_thread_memory_profile_hint(self, params: dict[str, Any]) -> str:
-        setting = self._thread_seed_state.new_thread_profile_seed_setting()
-        return str(setting.profile or "").strip() if setting is not None else ""
-
     def _apply_new_thread_memory_mode_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
         params = payload.get("params")
         if not isinstance(params, dict):
@@ -729,70 +626,11 @@ class _ProxyInteractionGate:
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
         merged_config = deep_merge_config_overrides(
             normalized_existing_config,
-            build_thread_memory_config_override(
-                memory_mode,
-                profile_name_hint=self._new_thread_memory_profile_hint(params),
-            ),
+            build_thread_memory_config_override(memory_mode),
         )
         updated_payload = dict(payload)
         updated_params = dict(params)
         updated_params["config"] = merged_config
-        updated_payload["params"] = updated_params
-        return updated_payload
-
-    def _apply_saved_thread_profile_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
-        # Wrapper launch args are only hints. The persisted thread-wise
-        # next-load profile slice is enforced here at the actual
-        # `thread/resume` RPC boundary so unloaded resume reuses the stored
-        # tuple instead of whatever the local CLI currently resolved.
-        thread_id = _payload_thread_id(payload)
-        if not thread_id:
-            return payload
-        pending = self._pending_threadwise_seed(thread_id)
-        if pending is not None and pending.has_profile_slice:
-            profile_setting = build_thread_resume_profile_setting(
-                pending.profile,
-                model=pending.model,
-                model_provider=pending.model_provider,
-            )
-        else:
-            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-            profile_setting = thread_resume_profile_setting_from_record(profile_record)
-        if profile_setting is None or not str(profile_setting.profile or "").strip():
-            return payload
-        missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
-        if missing_fields:
-            missing_text = format_thread_resume_profile_missing_fields(missing_fields)
-            raise RuntimeError(
-                "当前 thread 已持久化的 thread-wise profile slice 不完整："
-                f"thread=`{thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
-                "当前按 fail-close 拒绝继续。"
-                "请改用飞书 `/profile <name>` 或本地 "
-                "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
-            )
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return payload
-        updated_payload = dict(payload)
-        updated_params = dict(params)
-        model = profile_setting.model
-        model_provider = profile_setting.model_provider
-        if model:
-            updated_params["model"] = model
-        else:
-            updated_params.pop("model", None)
-        if model_provider:
-            updated_params["modelProvider"] = model_provider
-        else:
-            updated_params.pop("modelProvider", None)
-        profile_config_overrides = build_thread_resume_profile_config_overrides(profile_setting)
-        if profile_config_overrides:
-            existing_config = updated_params.get("config")
-            normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-            updated_params["config"] = deep_merge_config_overrides(
-                profile_config_overrides,
-                normalized_existing_config,
-            )
         updated_payload["params"] = updated_params
         return updated_payload
 
@@ -815,132 +653,14 @@ class _ProxyInteractionGate:
             return payload
         existing_config = params.get("config")
         normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        profile_name_hint = ""
-        if pending is not None and pending.has_profile_slice:
-            profile_name_hint = pending.profile
-        else:
-            profile_record = ThreadResumeProfileStore(self._global_data_dir).load(thread_id)
-            if profile_record is not None:
-                profile_name_hint = str(profile_record.profile or "").strip()
-        if not profile_name_hint:
-            profile_name_hint = self._resume_profile_hint
         merged_config = deep_merge_config_overrides(
             normalized_existing_config,
-            build_thread_memory_config_override(
-                memory_mode,
-                profile_name_hint=profile_name_hint,
-            ),
+            build_thread_memory_config_override(memory_mode),
         )
         updated_payload = dict(payload)
         updated_params = dict(params)
         updated_params["config"] = merged_config
         updated_payload["params"] = updated_params
-        return updated_payload
-
-    def _apply_saved_thread_profile_for_turn(self, payload: dict[str, Any]) -> dict[str, Any]:
-        thread_id = _payload_thread_id(payload)
-        if not thread_id:
-            return payload
-        profile_setting = self._thread_profile_setting(thread_id)
-        if profile_setting is None or not str(profile_setting.profile or "").strip():
-            return payload
-        missing_fields = thread_resume_profile_setting_missing_fields(profile_setting)
-        if missing_fields:
-            missing_text = format_thread_resume_profile_missing_fields(missing_fields)
-            raise RuntimeError(
-                "当前 thread 已持久化的 thread-wise profile slice 不完整："
-                f"thread=`{thread_id}`，profile=`{profile_setting.profile}`，缺少：{missing_text}。"
-                "当前按 fail-close 拒绝继续。"
-                "请改用飞书 `/profile <name>` 或本地 "
-                "`fcodex resume <thread> -p <profile>` 重新写入完整设置。"
-            )
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return payload
-        updated_payload = dict(payload)
-        updated_params = dict(params)
-        explicit_model = str(updated_params.get("model", "") or "").strip()
-        effective_model = explicit_model
-        if not explicit_model and profile_setting.model:
-            updated_params["model"] = profile_setting.model
-            effective_model = profile_setting.model
-        explicit_effort = str(updated_params.get("effort", "") or "").strip()
-        effective_effort = explicit_effort
-        if not explicit_effort and profile_setting.reasoning_effort:
-            updated_params["effort"] = profile_setting.reasoning_effort
-            effective_effort = profile_setting.reasoning_effort
-        collaboration = updated_params.get("collaborationMode")
-        normalized_collaboration = collaboration if isinstance(collaboration, dict) else {}
-        settings = normalized_collaboration.get("settings")
-        normalized_settings = settings if isinstance(settings, dict) else {}
-        if effective_model or effective_effort:
-            updated_settings = dict(normalized_settings)
-            if effective_model:
-                updated_settings["model"] = effective_model
-            if effective_effort:
-                updated_settings["reasoning_effort"] = effective_effort
-            updated_collaboration = dict(normalized_collaboration)
-            updated_collaboration["settings"] = updated_settings
-            updated_params["collaborationMode"] = updated_collaboration
-        updated_payload["params"] = updated_params
-        return updated_payload
-
-    def _rewrite_model_list_response_for_launch_profile(self, payload: dict[str, Any]) -> dict[str, Any]:
-        profile_name = self._launch_profile_name_hint()
-        if not profile_name:
-            return payload
-        metadata = resolve_profile_model_metadata(profile_name)
-        if not isinstance(metadata, dict):
-            return payload
-        model_name = str(metadata.get("model", "") or metadata.get("slug", "") or "").strip()
-        if not model_name:
-            return payload
-        result = payload.get("result")
-        if not isinstance(result, dict):
-            return payload
-        data = result.get("data")
-        if not isinstance(data, list):
-            return payload
-
-        normalized_metadata = dict(metadata)
-        normalized_metadata["model"] = model_name
-        display_name = str(
-            normalized_metadata.get("displayName", "") or normalized_metadata.get("display_name", "") or ""
-        ).strip()
-        if display_name:
-            normalized_metadata["displayName"] = display_name
-            normalized_metadata["display_name"] = display_name
-        normalized_metadata["isDefault"] = True
-        normalized_metadata.setdefault("hidden", False)
-
-        matched_indexes: list[int] = []
-        for index, item in enumerate(data):
-            if not isinstance(item, dict):
-                continue
-            item_model = str(item.get("model", "") or item.get("slug", "") or "").strip()
-            if item_model == model_name:
-                matched_indexes.append(index)
-        if not matched_indexes:
-            return payload
-
-        updated_data: list[Any] = []
-        target_index = matched_indexes[0]
-        for index, item in enumerate(data):
-            if not isinstance(item, dict):
-                updated_data.append(item)
-                continue
-            updated_item = dict(item)
-            item_model = str(updated_item.get("model", "") or updated_item.get("slug", "") or "").strip()
-            if updated_item.get("isDefault") and item_model != model_name:
-                updated_item["isDefault"] = False
-            if index == target_index:
-                updated_item.update(normalized_metadata)
-            updated_data.append(updated_item)
-
-        updated_payload = dict(payload)
-        updated_result = dict(result)
-        updated_result["data"] = updated_data
-        updated_payload["result"] = updated_result
         return updated_payload
 
     def handle_client_message(self, message: str | bytes, *, client_ws: Any, backend_ws: Any) -> None:
@@ -978,7 +698,6 @@ class _ProxyInteractionGate:
                     return
                 reserved_new_thread_seed = reservation_state in {"reserved", "owned"}
                 if reserved_new_thread_seed:
-                    payload = self._apply_new_thread_profile_seed(payload)
                     payload = self._apply_new_thread_memory_mode_seed(payload)
             thread_id = _payload_thread_id(payload)
             if method == "thread/resume" and thread_id:
@@ -995,9 +714,6 @@ class _ProxyInteractionGate:
             elif method == "thread/unsubscribe" and thread_id:
                 with self._lock:
                     self._pending_thread_request_by_id[request_key] = (method, thread_id, False)
-            elif method == "model/list":
-                with self._lock:
-                    self._pending_model_list_request_ids.add(request_key)
             if method in _OWNER_WRITE_METHODS and thread_id:
                 if method == "turn/start":
                     lease = self._lease_store.acquire(thread_id, self._holder)
@@ -1096,9 +812,6 @@ class _ProxyInteractionGate:
             request_key = _jsonrpc_id_key(response_id)
             with self._lock:
                 thread_request = self._pending_thread_request_by_id.pop(request_key, None)
-                rewrite_model_list = request_key in self._pending_model_list_request_ids
-                if rewrite_model_list:
-                    self._pending_model_list_request_ids.discard(request_key)
             if thread_request is not None:
                 request_method, thread_id, reserved_new_thread_seed = thread_request
                 if request_method == "thread/resume" and "error" in payload:
@@ -1132,8 +845,6 @@ class _ProxyInteractionGate:
                 if request_method == "turn/start" and acquired and "error" in payload:
                     self._lease_store.release(thread_id, self._holder)
                     self._forget_owned_thread(thread_id)
-            if rewrite_model_list and "result" in payload:
-                payload = self._rewrite_model_list_response_for_launch_profile(payload)
         client_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
 
 
@@ -1170,12 +881,7 @@ def run_proxy(
     global_data_dir: str | pathlib.Path | None = None,
     instance_name: str = "",
     service_token: str = "",
-    new_thread_profile_seed: str = "",
-    new_thread_profile_model_seed: str = "",
-    new_thread_profile_model_provider_seed: str = "",
-    new_thread_profile_reasoning_effort_seed: str = "",
     new_thread_memory_mode_seed: str = "",
-    resume_profile_hint: str = "",
     listen_host: str = "127.0.0.1",
     listen_port: int = 0,
     idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT_SECONDS,
@@ -1199,9 +905,6 @@ def run_proxy(
         holder_pid=parent_pid or os.getpid(),
     )
     thread_seed_state = _ProxyThreadSeedState(
-        new_thread_profile_seed=new_thread_profile_seed,
-        new_thread_profile_model_seed=new_thread_profile_model_seed,
-        new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
         new_thread_memory_mode_seed=new_thread_memory_mode_seed,
     )
 
@@ -1273,12 +976,7 @@ def run_proxy(
                     instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
                     service_token=service_token,
                     holder_pid=holder_pid,
-        new_thread_profile_seed=new_thread_profile_seed,
-        new_thread_profile_model_seed=new_thread_profile_model_seed,
-        new_thread_profile_model_provider_seed=new_thread_profile_model_provider_seed,
-        new_thread_profile_reasoning_effort_seed=new_thread_profile_reasoning_effort_seed,
-        new_thread_memory_mode_seed=new_thread_memory_mode_seed,
-        resume_profile_hint=resume_profile_hint,
+                    new_thread_memory_mode_seed=new_thread_memory_mode_seed,
                     runtime_lease_keeper=runtime_lease_keeper,
                     thread_seed_state=thread_seed_state,
                 )
@@ -1350,12 +1048,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--data-dir", default="")
     parser.add_argument("--global-data-dir", default="")
     parser.add_argument("--instance", default="")
-    parser.add_argument("--new-thread-profile-seed", default="")
-    parser.add_argument("--new-thread-profile-model-seed", default="")
-    parser.add_argument("--new-thread-profile-model-provider-seed", default="")
-    parser.add_argument("--new-thread-profile-reasoning-effort-seed", default="")
     parser.add_argument("--new-thread-memory-mode-seed", default="")
-    parser.add_argument("--resume-profile-hint", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--parent-pid", type=int, default=0)
@@ -1376,12 +1069,7 @@ def main(argv: list[str] | None = None) -> None:
         global_data_dir=args.global_data_dir or None,
         instance_name=args.instance,
         service_token=service_token,
-        new_thread_profile_seed=args.new_thread_profile_seed,
-        new_thread_profile_model_seed=args.new_thread_profile_model_seed,
-        new_thread_profile_model_provider_seed=args.new_thread_profile_model_provider_seed,
-        new_thread_profile_reasoning_effort_seed=args.new_thread_profile_reasoning_effort_seed,
         new_thread_memory_mode_seed=args.new_thread_memory_mode_seed,
-        resume_profile_hint=args.resume_profile_hint,
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         parent_pid=args.parent_pid or None,
