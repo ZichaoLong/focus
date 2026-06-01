@@ -67,7 +67,6 @@ class _FakeAdapter:
         self.respond_calls: list[dict] = []
         self.archive_thread_calls: list[str] = []
         self.unsubscribe_thread_calls: list[str] = []
-        self.set_thread_memory_mode_calls: list[dict] = []
         self.compact_thread_calls: list[str] = []
         self.read_thread_calls: list[dict] = []
         self.thread_snapshots: dict[tuple[str, bool | None], ThreadSnapshot | Exception] = {}
@@ -261,9 +260,6 @@ class _FakeAdapter:
 
     def unsubscribe_thread(self, thread_id: str) -> None:
         self.unsubscribe_thread_calls.append(thread_id)
-
-    def set_thread_memory_mode(self, thread_id: str, *, mode: str) -> None:
-        self.set_thread_memory_mode_calls.append({"thread_id": thread_id, "mode": mode})
 
     def compact_thread(self, thread_id: str) -> None:
         self.compact_thread_calls.append(thread_id)
@@ -3811,29 +3807,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "attached")
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_objective"], "ship goal support")
 
-    def test_status_ignores_pending_threadwise_memory_seed(self) -> None:
-        handler, bot = self._make_handler({"managed_startup_profile": "work"})
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._adapter.thread_snapshots[("thread-1", None)] = ThreadSnapshot(summary=thread)
-        handler._replace_pending_threadwise_seed("thread-1", memory_mode="read")
-
-        handler.handle_message("ou_user", "c1", "/status")
-
-        _, card = bot.cards[-1]
-        content = card["elements"][0]["content"]
-        self.assertIn("实例 startup profile：`work`", content)
-        self.assertNotIn("memory mode", content)
-
     def test_detach_command_detaches_current_binding_and_keeps_other_binding_attached(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
@@ -4813,35 +4786,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
 
-    def test_new_thread_applies_new_thread_memory_mode_seed_and_promotes_after_first_turn(self) -> None:
-        handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read"})
-
-        handler.handle_message("ou_user", "c1", "/new")
-
-        self.assertEqual(
-            handler._adapter.create_thread_calls[-1]["config_overrides"],
-            {
-                "memories": {
-                    "use_memories": True,
-                    "generate_memories": False,
-                }
-            },
-        )
-        memory_record = handler._thread_memory_mode_store.load("thread-created")
-        self.assertIsNone(memory_record)
-        pending_record = handler._thread_memory_mode("thread-created")
-        self.assertIsNotNone(pending_record)
-        assert pending_record is not None
-        self.assertEqual(pending_record.mode, "read")
-
-        handler.handle_message("ou_user", "c1", "hello")
-        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
-
-        memory_record = handler._thread_memory_mode_store.load("thread-created")
-        self.assertIsNotNone(memory_record)
-        assert memory_record is not None
-        self.assertEqual(memory_record.mode, "read")
-
     def test_new_thread_reports_bind_failure_instead_of_silently_dropping_command(self) -> None:
         handler, bot = self._make_handler()
 
@@ -4851,8 +4795,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("新建线程失败：bind failed", bot.replies[-1][1])
         self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
 
-    def test_new_thread_failure_rolls_back_existing_binding_and_clears_pending_seed(self) -> None:
-        handler, bot = self._make_handler({"new_thread_memory_mode_seed": "read"})
+    def test_new_thread_failure_rolls_back_existing_binding(self) -> None:
+        handler, bot = self._make_handler()
         old_thread = ThreadSummary(
             thread_id="thread-old",
             cwd="/tmp/project",
@@ -4876,11 +4820,10 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._thread_subscribers("thread-old"), (("ou_user", "c1"),))
         self.assertEqual(handler._thread_subscribers("thread-created"), ())
         self.assertEqual(self._service_runtime_holder_ids(handler, "thread-created"), ())
-        self.assertIsNone(handler._pending_threadwise_seed("thread-created"))
         self.assertEqual(handler._adapter.unsubscribe_thread_calls[-1], "thread-created")
 
-    def test_new_thread_failure_without_existing_binding_clears_pending_seed(self) -> None:
-        handler, bot = self._make_handler({"new_thread_memory_mode_seed": "read"})
+    def test_new_thread_failure_without_existing_binding_clears_new_thread_binding(self) -> None:
+        handler, bot = self._make_handler()
 
         with patch.object(handler, "_clear_plan_state", side_effect=RuntimeError("clear plan failed")):
             handler.handle_message("ou_user", "c1", "/new")
@@ -4891,7 +4834,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["feishu_runtime_state"], "")
         self.assertEqual(handler._thread_subscribers("thread-created"), ())
         self.assertEqual(self._service_runtime_holder_ids(handler, "thread-created"), ())
-        self.assertIsNone(handler._pending_threadwise_seed("thread-created"))
 
     def test_prompt_without_threadwise_profile_starts_without_profile_override(self) -> None:
         handler, _ = self._make_handler()
@@ -4901,46 +4843,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
         self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
 
-    def test_prompt_created_thread_applies_new_thread_memory_mode_seed_and_promotes_after_turn_completed(self) -> None:
-        handler, _ = self._make_handler({"new_thread_memory_mode_seed": "read_write"})
-
-        handler.handle_message("ou_user", "c1", "hello")
-
-        self.assertEqual(
-            handler._adapter.create_thread_calls[-1]["config_overrides"],
-            {
-                "memories": {
-                    "use_memories": True,
-                    "generate_memories": True,
-                }
-            },
-        )
-        memory_record = handler._thread_memory_mode_store.load("thread-created")
-        self.assertIsNone(memory_record)
-        pending_record = handler._thread_memory_mode("thread-created")
-        self.assertIsNotNone(pending_record)
-        assert pending_record is not None
-        self.assertEqual(pending_record.mode, "read_write")
-
-        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
-
-        memory_record = handler._thread_memory_mode_store.load("thread-created")
-        self.assertIsNotNone(memory_record)
-        assert memory_record is not None
-        self.assertEqual(memory_record.mode, "read_write")
-
-    def test_apply_thread_memory_mode_only_persists_next_load_setting(self) -> None:
-        handler, _ = self._make_handler()
-
-        record = handler._apply_thread_memory_mode("thread-1", "read")
-
-        self.assertEqual(record.mode, "read")
-        self.assertEqual(handler._adapter.set_thread_memory_mode_calls, [])
-        stored = handler._thread_memory_mode_store.load("thread-1")
-        self.assertIsNotNone(stored)
-        assert stored is not None
-        self.assertEqual(stored.mode, "read")
-
     def test_prompt_without_configured_default_working_dir_uses_home_directory(self) -> None:
         with patch("bot.codex_handler.default_working_dir", return_value=pathlib.Path("/home/tester")):
             handler, _ = self._make_handler()
@@ -4949,123 +4851,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(handler._adapter.create_thread_calls[-1]["cwd"], "/home/tester")
         self.assertEqual(handler._adapter.start_turn_calls[-1]["cwd"], "/home/tester")
-
-    def test_replace_bound_provisional_thread_after_reset_rebinds_memory_only(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="",
-                preview="",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="idle",
-                path="/tmp/feishu-codex-missing-rollout",
-            )
-        )
-        replacement = handler._replace_bound_provisional_thread_after_reset(
-            "ou_user",
-            "c1",
-        )
-
-        assert replacement is not None
-        self.assertEqual(replacement.old_thread_id, "thread-1")
-        self.assertEqual(replacement.new_thread_id, "thread-created")
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
-        self.assertEqual(handler._adapter.create_thread_calls[-1]["config_overrides"], {})
-        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
-
-    def test_replace_bound_provisional_thread_after_reset_handles_thread_not_loaded_read(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._adapter.thread_snapshots[("thread-1", False)] = CodexRpcError(
-            "thread/read",
-            {"code": -32000, "message": "thread not loaded: thread-1"},
-        )
-
-        replacement = handler._replace_bound_provisional_thread_after_reset(
-            "ou_user",
-            "c1",
-        )
-
-        assert replacement is not None
-        self.assertEqual(replacement.old_thread_id, "thread-1")
-        self.assertEqual(replacement.new_thread_id, "thread-created")
-        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-created")
-
-    def test_replace_bound_provisional_thread_after_memory_only_reset_keeps_only_memory_slice(self) -> None:
-        handler, _ = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-        handler._thread_memory_mode_store.save("thread-1", mode="read")
-        handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="",
-                preview="",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="idle",
-                path="/tmp/feishu-codex-missing-rollout",
-            )
-        )
-
-        replacement = handler._replace_bound_provisional_thread_after_reset(
-            "ou_user",
-            "c1",
-            "",
-            "read_write",
-        )
-
-        assert replacement is not None
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
-        self.assertEqual(
-            handler._adapter.create_thread_calls[-1]["config_overrides"],
-            {
-                "memories": {
-                    "use_memories": True,
-                    "generate_memories": True,
-                },
-            },
-        )
 
     def test_prompt_reuses_reserved_execution_card(self) -> None:
         handler, bot = self._make_handler()
@@ -6080,7 +5865,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/help [overview|start|thread-settings|turn|connection|group|more]`", reply)
         self.assertIn("`/status`", reply)
         self.assertIn("`/goal [show|set 〈objective〉|pause|resume|clear]`", reply)
-        self.assertIn("`/memory [off|read|read_write]`", reply)
         self.assertIn("`/compact`", reply)
         self.assertIn("`/detach`", reply)
         self.assertIn("`/attach [binding|thread|service]`", reply)
@@ -6217,7 +6001,7 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["查看 Goal", "改 Profile"],
+            ["查看 Goal", "改 Profile", "压缩上下文"],
         )
 
     def test_help_runtime_mentions_permissions_as_recommended_entry(self) -> None:
@@ -6418,22 +6202,18 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["查看 Goal", "改 Profile"],
+            ["查看 Goal", "改 Profile", "压缩上下文"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],
-            ["改 Memory", "压缩上下文"],
-        )
-        self.assertEqual(
-            [item["text"]["content"] for item in action_elements[2]["actions"]],
             ["重命名", "归档当前"],
         )
         self.assertEqual(
-            [item["text"]["content"] for item in action_elements[3]["actions"]],
+            [item["text"]["content"] for item in action_elements[2]["actions"]],
             ["按目标归档"],
         )
         self.assertEqual(
-            [item["text"]["content"] for item in action_elements[4]["actions"]],
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
             ["返回首页"],
         )
 

@@ -48,12 +48,6 @@ app_secret: "your_cc_bot_app_secret"
 CODEX_YAML_TEMPLATE = """# 默认工作目录；默认值：当前用户 Home 目录
 # default_working_dir: /path/to/workspace
 
-# 新线程 memory mode seed；默认值：空（不额外注入）
-# 仅作用于 feishu-codex / fcodex 支持的新线程创建路径；不会回写旧线程。
-# 需要上游 Codex 已启用 memory feature（如 ~/.codex/config.toml 或本地 TUI /memories）。
-# 可选值：off、read、read_write
-# new_thread_memory_mode_seed: read
-
 # Codex 可执行命令；默认值：codex
 # 首次安装时，如检测到稳定的 Codex 启动命令（如 fnm / nvm，或 Windows 上 npm 全局安装），
 # 会自动把稳定启动命令写入真实 `codex.yaml`。

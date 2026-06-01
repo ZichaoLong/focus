@@ -15,7 +15,6 @@ from bot.feishu_codexctl import (
     _list_running_instances,
     _print_binding_list,
     _print_thread_goal,
-    _print_thread_memory_result,
     _print_thread_list,
     _prompt_text_from_args,
     _print_binding_status,
@@ -328,25 +327,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
 
-    def test_thread_memory_accepts_mode_and_reset_flags(self) -> None:
-        parser = _build_parser()
-
-        args = parser.parse_args(
-            [
-                "thread",
-                "memory",
-                "--thread-id",
-                "thread-1",
-                "--mode",
-                "read_write",
-                "--force-reset-backend",
-            ]
-        )
-
-        self.assertEqual(_thread_target_params(args), {"thread_id": "thread-1"})
-        self.assertEqual(args.mode, "read_write")
-        self.assertTrue(args.force_reset_backend)
-
     def test_image_send_accepts_explicit_thread_selector_and_path(self) -> None:
         parser = _build_parser()
 
@@ -630,7 +610,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "working_dir": "/tmp/project",
             "backend_thread_status": "notLoaded",
             "backend_running_turn": False,
-            "thread_memory_mode": "read",
             "live_runtime_owner": {"label": "explorer"},
             "live_runtime_holder_labels": ["service@explorer(pid=1234)"],
             "bound_binding_ids": [],
@@ -653,78 +632,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
         self.assertIn("thread: thread-1 demo", rendered)
-        self.assertIn("thread-wise memory mode: read", rendered)
-
-    def test_thread_memory_result_renders_status_only_view(self) -> None:
-        stdout = io.StringIO()
-        snapshot = {
-            "thread_id": "thread-1",
-            "thread_title": "demo",
-            "working_dir": "/tmp/project",
-            "thread_memory_mode": "（未设置）",
-            "plan_status": "reset-available",
-            "reason_code": "memory_mode_reset_available",
-            "reason": "当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 memory mode。",
-            "requested_mode": "",
-            "applied": False,
-            "requires_reset_backend": True,
-            "requires_force_reset_backend": False,
-            "backend_reset_performed": False,
-            "backend_reset_result": None,
-        }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
-            with redirect_stdout(stdout):
-                result = _print_thread_memory_result(
-                    Path("/tmp/instance-data"),
-                    {"thread_id": "thread-1"},
-                    instance_name="explorer",
-                )
-
-        self.assertEqual(result, 0)
-        rendered = stdout.getvalue()
-        self.assertIn("instance: explorer", rendered)
-        self.assertIn("mutation plan: reset-available", rendered)
-        self.assertNotIn("applied: no", rendered)
-
-    def test_thread_memory_result_renders_reset_hint_when_write_not_applied(self) -> None:
-        stdout = io.StringIO()
-        snapshot = {
-            "thread_id": "thread-1",
-            "thread_title": "demo",
-            "working_dir": "/tmp/project",
-            "thread_memory_mode": "off",
-            "plan_status": "reset-available",
-            "reason_code": "memory_mode_reset_available",
-            "reason": "当前 thread 尚未满足 verifiably globally unloaded；可通过 reset 当前实例 backend 后再写入 memory mode。",
-            "requested_mode": "read",
-            "applied": False,
-            "requires_reset_backend": True,
-            "requires_force_reset_backend": False,
-            "backend_reset_performed": False,
-            "backend_reset_result": None,
-            "diagnostics": [
-                "当前 thread：`thread-1…`",
-                "hard blocker：待处理审批/输入请求：`1`",
-                "collateral impact：当前实例 loaded threads：`2`",
-            ],
-        }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
-            with redirect_stdout(stdout):
-                result = _print_thread_memory_result(
-                    Path("/tmp/instance-data"),
-                    {"thread_id": "thread-1"},
-                    mode="read",
-                    instance_name="explorer",
-                )
-
-        self.assertEqual(result, 1)
-        rendered = stdout.getvalue()
-        self.assertIn("requested mode: read", rendered)
-        self.assertIn("hint: 当前可改用 `--reset-backend`", rendered)
-        self.assertIn("重置实例 `explorer` 的 backend", rendered)
-        self.assertIn("diagnostics:", rendered)
-        self.assertIn("- hard blocker：待处理审批/输入请求：`1`", rendered)
-        self.assertIn("- collateral impact：当前实例 loaded threads：`2`", rendered)
 
     def test_print_thread_goal_renders_goal_snapshot(self) -> None:
         stdout = io.StringIO()

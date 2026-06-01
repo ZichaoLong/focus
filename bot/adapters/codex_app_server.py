@@ -34,7 +34,6 @@ from bot.permissions_profile import (
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.thread_memory_mode import (
     deep_merge_config_overrides,
-    normalize_thread_memory_mode,
     thread_memory_mode_from_memories_config,
 )
 from bot.codex_protocol.client import CodexRpcError
@@ -58,7 +57,6 @@ class CodexAppServerConfig:
     service_tier: str = ""
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
-    new_thread_memory_mode_seed: str = ""
     managed_startup_profile: str = ""
     app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
@@ -73,8 +71,9 @@ class CodexAppServerConfig:
         collaboration_mode = str(config.get("collaboration_mode", "default")).strip().lower() or "default"
         app_server_mode = str(config.get("app_server_mode", DEFAULT_APP_SERVER_MODE)).strip().lower() or DEFAULT_APP_SERVER_MODE
         if "default_thread_memory_mode" in config:
-            raise ValueError("`default_thread_memory_mode` 已移除；请改用 `new_thread_memory_mode_seed`。")
-        raw_new_thread_memory_mode_seed = str(config.get("new_thread_memory_mode_seed", "") or "").strip()
+            raise ValueError("`default_thread_memory_mode` 已移除；请改用上游 Codex memories 配置。")
+        if "new_thread_memory_mode_seed" in config:
+            raise ValueError("`new_thread_memory_mode_seed` 已移除；请改用实例 profile 或上游 Codex memories 配置。")
         if collaboration_mode not in {"default", "plan"}:
             raise ValueError("collaboration_mode 仅支持 default 或 plan")
         if app_server_mode not in {"managed", "remote"}:
@@ -105,11 +104,6 @@ class CodexAppServerConfig:
             service_tier=str(config.get("service_tier", "")),
             reasoning_effort=str(config.get("reasoning_effort", "")),
             collaboration_mode=collaboration_mode,
-            new_thread_memory_mode_seed=(
-                normalize_thread_memory_mode(raw_new_thread_memory_mode_seed)
-                if raw_new_thread_memory_mode_seed
-                else ""
-            ),
             managed_startup_profile=str(config.get("managed_startup_profile", "") or "").strip(),
             source_kinds=[str(item) for item in source_kinds],
         )

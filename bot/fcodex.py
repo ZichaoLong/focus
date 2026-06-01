@@ -28,7 +28,6 @@ from bot.instance_resolution import (
 )
 from bot.local_websocket_auth import FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, FCODEX_SERVICE_TOKEN_ENV_VAR
 from bot.platform_paths import default_data_root, is_windows
-from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
 from bot.thread_resolution import looks_like_thread_id, resolve_resume_name_via_remote_backend
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_runtime_coordination import preview_thread_global_loaded_gate
@@ -413,7 +412,6 @@ def _resolve_resume_target(
 @dataclass(frozen=True, slots=True)
 class _WrapperProfileLaunchPlan:
     user_args: list[str]
-    new_thread_memory_mode_seed: str = ""
 
 
 def _build_wrapper_profile_launch_plan(
@@ -425,12 +423,9 @@ def _build_wrapper_profile_launch_plan(
     user_args: list[str],
 ) -> _WrapperProfileLaunchPlan:
     planned_args = list(user_args)
-    configured_new_thread_memory_mode_seed = CodexAppServerConfig.from_dict(cfg).new_thread_memory_mode_seed
     del app_server_url, data_dir, instance_name
-    return _WrapperProfileLaunchPlan(
-        user_args=planned_args,
-        new_thread_memory_mode_seed=configured_new_thread_memory_mode_seed,
-    )
+    CodexAppServerConfig.from_dict(cfg)
+    return _WrapperProfileLaunchPlan(user_args=planned_args)
 
 
 def _extract_option_value(user_args: list[str], names: tuple[str, ...]) -> str:
@@ -496,7 +491,6 @@ def _launch_local_cwd_proxy(
     *,
     instance_name: str = DEFAULT_INSTANCE_NAME,
     service_token: str = "",
-    new_thread_memory_mode_seed: str = "",
     proxy_auth_token: str,
 ) -> tuple[str, subprocess.Popen[str]]:
     cmd = [
@@ -513,8 +507,6 @@ def _launch_local_cwd_proxy(
         instance_name,
         "--global-data-dir",
         str(global_data_dir()),
-        "--new-thread-memory-mode-seed",
-        new_thread_memory_mode_seed,
         "--parent-pid",
         str(os.getpid()),
     ]
@@ -640,7 +632,6 @@ def main() -> None:
 
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
-    new_thread_memory_mode_seed = ""
     if not _has_explicit_remote(user_args):
         profile_launch_plan = _build_wrapper_profile_launch_plan(
             cfg=cfg,
@@ -650,7 +641,6 @@ def main() -> None:
             user_args=user_args,
         )
         user_args = list(profile_launch_plan.user_args)
-        new_thread_memory_mode_seed = profile_launch_plan.new_thread_memory_mode_seed
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
     proxy_auth_token = ""
@@ -671,7 +661,6 @@ def main() -> None:
                 app_server_url,
                 effective_cwd,
                 data_dir,
-                new_thread_memory_mode_seed=new_thread_memory_mode_seed,
                 proxy_auth_token=proxy_auth_token,
                 **proxy_kwargs,
             )

@@ -69,7 +69,7 @@ bridge:
   config come from Codex
 - Feishu-specific state stays local: thread/UI binding state remains in
   `feishu-codex`, while machine-global shared state is limited to coordination
-  primitives such as runtime lease, instance registry, and thread-wise memory
+  primitives such as runtime lease and instance registry
   mode
 - Shared-backend behavior is explicit: continuing the same live thread with
   Feishu should go through the same instance backend
@@ -201,8 +201,7 @@ Current module split:
 - `bot/stores/thread_runtime_lease_store.py`: machine-global thread
   live-runtime lease
 - `bot/stores/*.py`: runtime backend discovery state, group-chat state, and
-  machine-global coordination state such as thread memory mode / lease /
-  registry data
+  machine-global coordination state such as runtime lease / registry data
 
 One maintenance rule should also stay explicit for the Feishu transport layer:
 
@@ -324,7 +323,7 @@ Codex remains the authority for:
 
 `feishu-codex` keeps only data that is Feishu- or integration-specific:
 
-- machine-global coordination data such as thread memory mode and runtime lease
+- machine-global coordination data such as runtime lease
 - per-instance runtime shared-backend discovery state
 - per-instance shared-backend websocket capability token files
 - p2p thread bindings and group-shared thread bindings keyed by `chat_id`

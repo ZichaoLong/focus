@@ -27,7 +27,6 @@ COMPLETION_COMMAND_NAMES = (
     "fcodex",
 )
 
-_THREAD_MEMORY_MODES = ("off", "read", "read_write")
 _FEISHU_CODEX_OPTIONS_WITH_VALUE = {"--instance", "--lines"}
 _FEISHU_CODEXCTL_OPTIONS_WITH_VALUE = {
     "--instance",
@@ -589,7 +588,6 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         ("--instance", list_known_instance_names()),
         ("--display-mode", ["silent", "announce"]),
         ("--scope", ["cwd", "global"]),
-        ("--mode", list(_THREAD_MEMORY_MODES)),
         ("--status", ["active", "paused"]),
     ):
         matches = _complete_choice_option(context, option_name, choices)
@@ -652,7 +650,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         if positional_index == 1:
             return _complete_candidates(
                 current,
-                ["list", "status", "bindings", "goal", "memory", "archive", "attach", "detach"],
+                ["list", "status", "bindings", "goal", "archive", "attach", "detach"],
             )
         if len(positionals) < 2:
             return []
@@ -661,19 +659,6 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         if current.startswith("-"):
             if action == "list":
                 return _complete_candidates(current, ["--scope", "--cwd", "--help", "-h"])
-            if action == "memory":
-                return _complete_candidates(
-                    current,
-                    [
-                        "--thread-id",
-                        "--thread-name",
-                        "--mode",
-                        "--reset-backend",
-                        "--force-reset-backend",
-                        "--help",
-                        "-h",
-                    ],
-                )
             if action == "goal":
                 if goal_subaction == "set":
                     return _complete_candidates(

@@ -2,118 +2,80 @@
 
 Chinese original: `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
 
-This document defines the **thread-wise, persisted settings that take effect on
-next-load** and are still formally kept by this project.
+This file is retained as a retirement note under its historical name.
 
-## 1. Current scope
+## 1. Current conclusion
 
-The current thread-wise next-load state has only one slice:
+The project no longer keeps any project-owned thread-wise next-load setting.
 
-- **memory slice**
-  - `memory mode`
+That means the formal contract no longer includes:
 
-This means the current contract no longer includes:
+- any thread memory setting
+- any thread provider setting
+- `new_thread_memory_mode_seed`
+- any thread-level setting layer that is first persisted by this project and
+  later injected again on resume
 
-- profile
-- model
-- model provider
-- effort
-- approval
-- permissions
-- collaboration mode
+## 2. What replaced it
 
-Those settings belong to other layers:
+### 2.1 Instance startup baseline
 
-- startup profile: `docs/contracts/thread-profile-semantics.md`
-- binding-wise next-turn settings:
-  `docs/contracts/runtime-control-surface.md`
+Managed through `/profile` and `/profile-clear`.
 
-## 2. Basic facts
+Its semantics:
 
-- memory mode is **thread-wise**, not binding-wise
-- for an unloaded thread, the persisted memory mode is the truth
-- for a loaded thread, the live runtime becomes the truth
-- writing thread-wise memory mode does not mean the current live runtime has
-  already changed
+- applies to the next backend start of the instance
+- is not thread truth
 
-Supported restore paths mainly include:
+### 2.2 Binding-wise next-turn settings
 
-- Feishu-side restore / wake-up of the current thread
-- local `fcodex resume <thread>`
+Managed through:
 
-## 3. Post-write persisted source
+- `/model`
+- `/effort`
+- `/approval`
+- `/permissions`
+- `/collab-mode`
 
-For a normal thread:
+Their semantics:
 
-- the formal persisted source is `ThreadMemoryModeStore`
+- apply to future turns of the current Feishu binding
+- are primarily consumed at `turn/start`
+- are not thread-level persisted restore settings
 
-During a provisional stage:
+## 3. Current `resume` contract
 
-- if a thread has just been created and is not yet stably materialized, the
-  system may hold a pending seed first
-- after the corresponding successful `turn/completed`, that pending seed is
-  promoted into a formal thread-wise record
+Project-supported resume paths now promise only:
 
-## 4. Application boundaries
+- thread identity resolution and safety admission
+- resuming against the correct instance backend
+- preserving instance-level startup baseline and the frontend's own runtime
+  semantics
 
-Memory mode is actually consumed at:
+They do not promise:
 
-- `thread/resume`
-  - restore an existing thread using its persisted memory mode
-- `thread/start`
-  - only for the "new thread startup seed" path
+- restoring an extra project-owned memory/provider slice for a thread
 
-So its semantics are:
+## 4. Why this file still exists
 
-- **next-load**
-- not turn-time override
+The concept of "thread-wise next-load settings" is still useful because it
+prevents maintainers from conflating:
 
-## 5. New-thread seed
+- instance baseline
+- binding overrides
+- live-runtime diagnostics
 
-An instance may configure `new_thread_memory_mode_seed`.
+But in the current version, the number of formal members in that category is:
 
-That seed:
+- `0`
 
-- affects only new threads
-- does not rewrite other existing threads' persisted memory mode
-- is recorded again into that new thread's formal or pending memory state after
-  creation succeeds
+## 5. Future maintenance rule
 
-## 6. Direct write and reset-backend
+If a thread-wise next-load setting is ever reintroduced, the project must first
+document:
 
-`/memory` follows the shared thread-wise mutation rule:
+1. the post-write persisted source
+2. the official application boundary
+3. how it differs from instance baseline and binding overrides
 
-1. if the target thread is verifiably globally unloaded
-   - direct write is allowed
-2. if the current instance can converge through reset-backend
-   - offer "apply and reset backend"
-3. otherwise
-   - fail closed
-
-This mutability check now belongs only to thread-wise memory. It no longer
-piggybacks any profile contract.
-
-## 7. Read-side view
-
-`/memory`, status pages, and local thread diagnostics should primarily show:
-
-- the thread's persisted memory mode
-
-They may additionally show:
-
-- the memory configuration observed when the current live runtime was loaded
-- the instance's `new_thread_memory_mode_seed`
-
-But they must distinguish:
-
-- "what the next load will use"
-- "what the currently loaded runtime is using"
-
-## 8. Non-goals
-
-This document no longer promises:
-
-- any thread-wise profile slice
-- `fcodex -p/--profile` rewriting a thread's persisted restore settings
-- turn-time settings such as effort or model being synchronized through
-  thread-wise state
+Until that exists, the command surface must not reintroduce it.

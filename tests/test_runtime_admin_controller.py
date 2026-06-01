@@ -58,7 +58,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         reply_texts: list[tuple[str, str, str]] = []
         reply_cards: list[tuple[str, dict[str, object], str]] = []
         submitted_prompts: list[dict[str, object]] = []
-        thread_memory_modes: dict[str, str] = {}
         thread_goals: dict[str, ThreadGoalSummary] = {}
 
         def _read_thread(thread_id: str):
@@ -114,15 +113,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             list_pending_interaction_requests=lambda: list(pending_requests),
             reset_current_instance_backend=lambda force: reset_calls.append(bool(force)) or {"force": bool(force)},
             attach_binding=lambda binding, thread_id: summaries[thread_id],
-            load_thread_memory_mode=lambda thread_id: (
-                types.SimpleNamespace(mode=thread_memory_modes[thread_id])
-                if thread_id in thread_memory_modes
-                else None
-            ),
-            apply_thread_memory_mode=lambda thread_id, mode: (
-                thread_memory_modes.__setitem__(thread_id, mode),
-                types.SimpleNamespace(mode=mode),
-            )[1],
             permissions_summary=lambda approval_policy, sandbox: f"{sandbox}/{approval_policy}",
             thread_image_delivery=ThreadImageDeliveryController(
                 upload_image=lambda local_path: "img-key-1",
@@ -166,7 +156,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             is_thread_not_loaded_error=lambda exc: False,
         )
         controller._submitted_prompts = submitted_prompts  # type: ignore[attr-defined]
-        controller._thread_memory_modes = thread_memory_modes  # type: ignore[attr-defined]
         controller._thread_goals = thread_goals  # type: ignore[attr-defined]
         return (
             lock,
@@ -366,46 +355,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(archived, ["thread-1"])
         self.assertEqual(unsubscribed, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
-
-    def test_thread_memory_mode_control_result_fail_closes_for_provisional_thread(self) -> None:
-        (
-            _lock,
-            _binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-            path="/tmp/feishu-codex-missing-rollout",
-        )
-        summaries["thread-1"] = thread
-
-        result = controller.thread_memory_mode_control_result(
-            thread,
-            target_mode="read",
-            reset_backend=True,
-        )
-
-        self.assertFalse(result["applied"])
-        self.assertEqual(result["plan_status"], "blocked")
-        self.assertEqual(result["reason_code"], "memory_mode_blocked_by_provisional_thread")
-        self.assertEqual(reset_calls, [])
 
     def test_archive_thread_for_control_rejects_other_instance_live_runtime_owner(self) -> None:
         (
@@ -683,7 +632,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(snapshot["backend_thread_status"], "notLoaded")
         self.assertEqual(snapshot["live_runtime_owner"]["label"], "explorer")
         self.assertEqual(snapshot["live_runtime_holder_labels"], ["service@explorer(pid=4321)"])
-        self.assertEqual(snapshot["thread_memory_mode"], "（未设置）")
 
     def test_handle_service_control_request_reset_backend_forwards_force_flag(self) -> None:
         (
@@ -1349,166 +1297,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(resumed["goal"]["status"], "active")
         self.assertIsNone(cleared["goal"])
         self.assertTrue(cleared["cleared"])
-
-    def test_handle_service_control_request_thread_memory_reports_plan_without_mutation(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-
-        result = controller.handle_service_control_request("thread/memory", {"thread_id": "thread-1"})
-
-        self.assertEqual(result["thread_id"], "thread-1")
-        self.assertEqual(result["thread_memory_mode"], "（未设置）")
-        self.assertEqual(result["plan_status"], "reset-available")
-        self.assertFalse(result["applied"])
-
-    def test_handle_service_control_request_thread_memory_applies_direct_write(self) -> None:
-        (
-            _lock,
-            _binding_runtime,
-            controller,
-            summaries,
-            loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            _reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="notLoaded",
-        )
-        loaded_thread_ids.clear()
-
-        result = controller.handle_service_control_request(
-            "thread/memory",
-            {"thread_id": "thread-1", "mode": "read"},
-        )
-
-        self.assertTrue(result["applied"])
-        self.assertEqual(result["thread_memory_mode"], "read")
-        self.assertEqual(controller._thread_memory_modes["thread-1"], "read")  # type: ignore[attr-defined]
-        self.assertEqual(result["plan_status"], "applied")
-        self.assertFalse(result["requires_reset_backend"])
-        self.assertEqual(result["reason_code"], "")
-
-    def test_handle_service_control_request_thread_memory_can_reset_backend_then_apply(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-
-        result = controller.handle_service_control_request(
-            "thread/memory",
-            {"thread_id": "thread-1", "mode": "read_write", "reset_backend": True},
-        )
-
-        self.assertTrue(result["applied"])
-        self.assertTrue(result["backend_reset_performed"])
-        self.assertEqual(reset_calls, [False])
-        self.assertEqual(controller._thread_memory_modes["thread-1"], "read_write")  # type: ignore[attr-defined]
-        self.assertEqual(result["plan_status"], "applied")
-        self.assertEqual(result["reason_code"], "")
-        self.assertFalse(result["requires_reset_backend"])
-
-    def test_handle_service_control_request_thread_memory_short_circuits_when_target_already_persisted(self) -> None:
-        (
-            lock,
-            binding_runtime,
-            controller,
-            summaries,
-            _loaded_thread_ids,
-            _unsubscribed,
-            _archived,
-            _released_runtime_leases,
-            _pending_by_thread,
-            _pending_by_binding,
-            _pending_requests,
-            reset_calls,
-            _sent_images,
-        ) = self._make_controller()
-        binding = ("ou_user", "c1")
-        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
-        controller._thread_memory_modes["thread-1"] = "read"  # type: ignore[attr-defined]
-        summaries["thread-1"] = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="",
-            created_at=0,
-            updated_at=0,
-            source="cli",
-            status="idle",
-        )
-
-        result = controller.handle_service_control_request(
-            "thread/memory",
-            {"thread_id": "thread-1", "mode": "read", "reset_backend": True},
-        )
-
-        self.assertTrue(result["applied"])
-        self.assertEqual(result["plan_status"], "already-set")
-        self.assertEqual(result["reason_code"], "")
-        self.assertFalse(result["backend_reset_performed"])
-        self.assertEqual(reset_calls, [])
-        self.assertFalse(result["requires_reset_backend"])
 
     def test_handle_service_control_request_thread_archive_dispatches_control_action(self) -> None:
         (

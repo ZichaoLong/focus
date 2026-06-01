@@ -44,14 +44,7 @@ from bot.stores.interaction_lease_store import (
     make_fcodex_interaction_holder,
 )
 from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, BACKEND_THREAD_STATUS_NOT_LOADED
-from bot.stores.thread_memory_mode_store import ThreadMemoryModeStore
-from bot.thread_pending_settings import PendingThreadwiseSeed
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseHolder, ThreadRuntimeLeaseStore
-from bot.thread_memory_mode import (
-    build_thread_memory_config_override,
-    deep_merge_config_overrides,
-    normalize_thread_memory_mode,
-)
 from bot.thread_runtime_coordination import (
     acquire_thread_runtime_holder_or_raise,
     preview_thread_global_loaded_gate,
@@ -326,122 +319,6 @@ class _ProxyRuntimeLeaseKeeper:
             self._runtime_lease_store.release(thread_id, self._holder_id)
 
 
-class _ProxyThreadSeedState:
-    def __init__(
-        self,
-        *,
-        new_thread_memory_mode_seed: str = "",
-    ) -> None:
-        self._new_thread_memory_mode_seed = str(new_thread_memory_mode_seed or "").strip()
-        self._new_thread_memory_mode_seed_consumed = not self._new_thread_memory_mode_seed
-        self._pending_new_thread_seed_reservation: tuple[str, str] | None = None
-        self._new_thread_seed_outcome_unknown = False
-        self._pending_threadwise_seed_by_thread_id: dict[str, PendingThreadwiseSeed] = {}
-        self._lock = threading.Lock()
-
-    def pending_threadwise_seed(self, thread_id: str) -> PendingThreadwiseSeed | None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return None
-        with self._lock:
-            return self._pending_threadwise_seed_by_thread_id.get(normalized_thread_id)
-
-    def clear_pending_threadwise_seed(self, thread_id: str) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return
-        with self._lock:
-            self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
-
-    def new_thread_memory_mode_seed(self) -> str:
-        with self._lock:
-            if self._new_thread_memory_mode_seed_consumed or not self._new_thread_memory_mode_seed:
-                return ""
-            return self._new_thread_memory_mode_seed
-
-    def _new_thread_seed_available_unlocked(self) -> bool:
-        return (not self._new_thread_memory_mode_seed_consumed) and bool(self._new_thread_memory_mode_seed)
-
-    def reserve_new_thread_seed_for_request(self, *, owner_key: str, request_id: Any) -> str:
-        request_key = _jsonrpc_id_key(request_id)
-        if not owner_key or not request_key:
-            return "invalid"
-        with self._lock:
-            if not self._new_thread_seed_available_unlocked():
-                return "exhausted"
-            if self._new_thread_seed_outcome_unknown:
-                return "outcome_unknown"
-            reservation = self._pending_new_thread_seed_reservation
-            if reservation is None:
-                self._pending_new_thread_seed_reservation = (owner_key, request_key)
-                return "reserved"
-            if reservation == (owner_key, request_key):
-                return "owned"
-            return "reserved_by_other"
-
-    def release_new_thread_seed_reservation(self, *, owner_key: str, request_key: str) -> None:
-        if not owner_key or not request_key:
-            return
-        with self._lock:
-            if self._pending_new_thread_seed_reservation == (owner_key, request_key):
-                self._pending_new_thread_seed_reservation = None
-
-    def release_new_thread_seed_reservations_for_owner(self, owner_key: str) -> None:
-        if not owner_key:
-            return
-        with self._lock:
-            reservation = self._pending_new_thread_seed_reservation
-            if reservation is not None and reservation[0] == owner_key:
-                self._pending_new_thread_seed_reservation = None
-
-    def mark_new_thread_seed_outcome_unknown_for_owner(self, owner_key: str) -> None:
-        if not owner_key:
-            return
-        with self._lock:
-            reservation = self._pending_new_thread_seed_reservation
-            if reservation is None or reservation[0] != owner_key:
-                return
-            self._pending_new_thread_seed_reservation = None
-            if self._new_thread_seed_available_unlocked():
-                self._new_thread_seed_outcome_unknown = True
-
-    def bind_new_thread_seed_once(
-        self,
-        thread_id: str,
-        *,
-        owner_key: str,
-        request_key: str,
-    ) -> None:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            self.release_new_thread_seed_reservation(owner_key=owner_key, request_key=request_key)
-            return
-        with self._lock:
-            if self._pending_new_thread_seed_reservation != (owner_key, request_key):
-                return
-            memory_mode = (
-                self._new_thread_memory_mode_seed
-                if not self._new_thread_memory_mode_seed_consumed and self._new_thread_memory_mode_seed
-                else ""
-            )
-            self._pending_new_thread_seed_reservation = None
-            if not memory_mode:
-                return
-            self._new_thread_memory_mode_seed_consumed = True
-            self._new_thread_seed_outcome_unknown = False
-            normalized_memory_mode = str(memory_mode or "").strip()
-            if normalized_memory_mode:
-                normalized_memory_mode = normalize_thread_memory_mode(normalized_memory_mode)
-            seed = PendingThreadwiseSeed(
-                thread_id=normalized_thread_id,
-                memory_mode=normalized_memory_mode,
-            )
-            if seed.has_any:
-                self._pending_threadwise_seed_by_thread_id[normalized_thread_id] = seed
-            else:
-                self._pending_threadwise_seed_by_thread_id.pop(normalized_thread_id, None)
-
-
 class _ProxyInteractionGate:
     def __init__(
         self,
@@ -452,9 +329,7 @@ class _ProxyInteractionGate:
         instance_name: str = "",
         service_token: str = "",
         holder_pid: int,
-        new_thread_memory_mode_seed: str = "",
         runtime_lease_keeper: _ProxyRuntimeLeaseKeeper | None = None,
-        thread_seed_state: _ProxyThreadSeedState | None = None,
     ) -> None:
         self._cwd = cwd
         self._holder = make_fcodex_interaction_holder(
@@ -465,13 +340,8 @@ class _ProxyInteractionGate:
         self._service_token = str(service_token or "").strip()
         self._lease_store = InteractionLeaseStore(data_dir)
         normalized_global_data_dir = _effective_global_data_dir(global_data_dir)
-        self._global_data_dir = normalized_global_data_dir
         self._runtime_lease_store = ThreadRuntimeLeaseStore(normalized_global_data_dir)
         self._instance_registry = InstanceRegistryStore(normalized_global_data_dir)
-        self._thread_seed_state = thread_seed_state or _ProxyThreadSeedState(
-            new_thread_memory_mode_seed=new_thread_memory_mode_seed,
-        )
-        self._thread_seed_state_owner_key = f"gate:{id(self)}"
         self._runtime_lease_keeper = runtime_lease_keeper
         self._lock = threading.Lock()
         self._pending_server_request_thread_by_id: dict[str, str] = {}
@@ -509,20 +379,7 @@ class _ProxyInteractionGate:
             self._owned_thread_ids.clear()
             self._pending_server_request_thread_by_id.clear()
             self._pending_client_request_by_id.clear()
-            pending_thread_requests = list(self._pending_thread_request_by_id.values())
             self._pending_thread_request_by_id.clear()
-        reserved_thread_start_outcome_unknown = any(
-            request_method == "thread/start" and reserved_new_thread_seed
-            for request_method, _, reserved_new_thread_seed in pending_thread_requests
-        )
-        if reserved_thread_start_outcome_unknown:
-            self._thread_seed_state.mark_new_thread_seed_outcome_unknown_for_owner(
-                self._thread_seed_state_owner_key
-            )
-        else:
-            self._thread_seed_state.release_new_thread_seed_reservations_for_owner(
-                self._thread_seed_state_owner_key
-            )
         for thread_id in owned_thread_ids:
             self._lease_store.release(thread_id, self._holder)
             if self._runtime_lease_keeper is None:
@@ -572,97 +429,6 @@ class _ProxyInteractionGate:
         self._runtime_lease_store.release(thread_id, self._holder.holder_id)
         self._forget_owned_thread(thread_id)
 
-    def _pending_threadwise_seed(self, thread_id: str) -> PendingThreadwiseSeed | None:
-        return self._thread_seed_state.pending_threadwise_seed(thread_id)
-
-    def _clear_pending_threadwise_seed(self, thread_id: str) -> None:
-        self._thread_seed_state.clear_pending_threadwise_seed(thread_id)
-
-    def _reserve_new_thread_seed_for_request(self, request_id: Any) -> str:
-        return self._thread_seed_state.reserve_new_thread_seed_for_request(
-            owner_key=self._thread_seed_state_owner_key,
-            request_id=request_id,
-        )
-
-    def _release_new_thread_seed_reservation(self, request_key: str) -> None:
-        self._thread_seed_state.release_new_thread_seed_reservation(
-            owner_key=self._thread_seed_state_owner_key,
-            request_key=request_key,
-        )
-
-    def _bind_new_thread_seed_once(self, thread_id: str, *, request_key: str) -> None:
-        self._thread_seed_state.bind_new_thread_seed_once(
-            thread_id,
-            owner_key=self._thread_seed_state_owner_key,
-            request_key=request_key,
-        )
-
-    def _promote_pending_threadwise_seed(self, thread_id: str) -> None:
-        pending = self._pending_threadwise_seed(thread_id)
-        if pending is None:
-            return
-        try:
-            if pending.has_memory_mode:
-                ThreadMemoryModeStore(self._global_data_dir).save(
-                    pending.thread_id,
-                    mode=pending.memory_mode,
-                )
-        except Exception as exc:
-            print(
-                f"warning: failed to promote pending thread seed for `{pending.thread_id}`: {exc}",
-                file=sys.stderr,
-            )
-            return
-        self._clear_pending_threadwise_seed(pending.thread_id)
-
-    def _apply_new_thread_memory_mode_seed(self, payload: dict[str, Any]) -> dict[str, Any]:
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return payload
-        memory_mode = self._thread_seed_state.new_thread_memory_mode_seed()
-        if not memory_mode:
-            return payload
-        existing_config = params.get("config")
-        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        merged_config = deep_merge_config_overrides(
-            normalized_existing_config,
-            build_thread_memory_config_override(memory_mode),
-        )
-        updated_payload = dict(payload)
-        updated_params = dict(params)
-        updated_params["config"] = merged_config
-        updated_payload["params"] = updated_params
-        return updated_payload
-
-    def _apply_saved_thread_memory_mode_for_resume(self, payload: dict[str, Any]) -> dict[str, Any]:
-        thread_id = _payload_thread_id(payload)
-        if not thread_id:
-            return payload
-        pending = self._pending_threadwise_seed(thread_id)
-        memory_mode = ""
-        if pending is not None and pending.has_memory_mode:
-            memory_mode = pending.memory_mode
-        else:
-            memory_record = ThreadMemoryModeStore(self._global_data_dir).load(thread_id)
-            if memory_record is not None:
-                memory_mode = memory_record.mode
-        if not memory_mode:
-            return payload
-        params = payload.get("params")
-        if not isinstance(params, dict):
-            return payload
-        existing_config = params.get("config")
-        normalized_existing_config = existing_config if isinstance(existing_config, dict) else {}
-        merged_config = deep_merge_config_overrides(
-            normalized_existing_config,
-            build_thread_memory_config_override(memory_mode),
-        )
-        updated_payload = dict(payload)
-        updated_params = dict(params)
-        updated_params["config"] = merged_config
-        updated_payload["params"] = updated_params
-        return updated_payload
-
     def handle_client_message(self, message: str | bytes, *, client_ws: Any, backend_ws: Any) -> None:
         rewritten = _rewrite_thread_start_cwd(message, self._cwd)
         parsed = _parse_jsonrpc_message(rewritten)
@@ -675,30 +441,6 @@ class _ProxyInteractionGate:
         if isinstance(method, str):
             request_id = payload.get("id")
             request_key = _jsonrpc_id_key(request_id)
-            reserved_new_thread_seed = False
-            if method == "thread/resume":
-                payload = self._apply_saved_thread_memory_mode_for_resume(payload)
-            elif method == "thread/start":
-                reservation_state = self._reserve_new_thread_seed_for_request(request_id)
-                if reservation_state == "reserved_by_other":
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
-                        "当前 fcodex 启动级 seed 正在等待另一条新建 thread 请求返回；"
-                        "请等待上一条 `thread/start` 完成或失败后再试。",
-                    )
-                    return
-                if reservation_state == "outcome_unknown":
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
-                        "当前 fcodex 启动级 seed 的上一条新建 thread 请求在连接关闭时结果未知；"
-                        "当前按 fail-close 拒绝继续，请退出并重新启动 fcodex 后再试。",
-                    )
-                    return
-                reserved_new_thread_seed = reservation_state in {"reserved", "owned"}
-                if reserved_new_thread_seed:
-                    payload = self._apply_new_thread_memory_mode_seed(payload)
             thread_id = _payload_thread_id(payload)
             if method == "thread/resume" and thread_id:
                 try:
@@ -710,7 +452,7 @@ class _ProxyInteractionGate:
                     self._pending_thread_request_by_id[_jsonrpc_id_key(request_id)] = (method, thread_id, False)
             elif method == "thread/start":
                 with self._lock:
-                    self._pending_thread_request_by_id[request_key] = (method, "", reserved_new_thread_seed)
+                    self._pending_thread_request_by_id[request_key] = (method, "", False)
             elif method == "thread/unsubscribe" and thread_id:
                 with self._lock:
                     self._pending_thread_request_by_id[request_key] = (method, thread_id, False)
@@ -785,16 +527,9 @@ class _ProxyInteractionGate:
             thread_id = _payload_thread_id(payload)
             if thread_id:
                 if method == "turn/completed":
-                    turn = params if isinstance(params, dict) else {}
-                    completed = turn.get("turn") if isinstance(turn.get("turn"), dict) else {}
-                    turn_error = completed.get("error") if isinstance(completed, dict) else {}
-                    turn_status = str(completed.get("status", "") or "").strip()
-                    if turn_status == "completed" and not turn_error:
-                        self._promote_pending_threadwise_seed(thread_id)
                     self._lease_store.release(thread_id, self._holder)
                     self._forget_owned_thread(thread_id)
                 elif method == "thread/closed":
-                    self._clear_pending_threadwise_seed(thread_id)
                     self._lease_store.release(thread_id, self._holder)
                     self._release_runtime_lease(thread_id)
                     self._forget_owned_thread(thread_id)
@@ -813,29 +548,13 @@ class _ProxyInteractionGate:
             with self._lock:
                 thread_request = self._pending_thread_request_by_id.pop(request_key, None)
             if thread_request is not None:
-                request_method, thread_id, reserved_new_thread_seed = thread_request
+                request_method, thread_id, _reserved_new_thread_seed = thread_request
                 if request_method == "thread/resume" and "error" in payload:
                     self._release_runtime_lease(thread_id)
                 elif request_method == "thread/start":
-                    if "error" in payload:
-                        if reserved_new_thread_seed:
-                            self._release_new_thread_seed_reservation(request_key)
-                    else:
-                        started_thread_id = _response_thread_id(payload)
-                        if started_thread_id:
-                            try:
-                                self._acquire_runtime_lease(started_thread_id)
-                            except Exception:
-                                if reserved_new_thread_seed:
-                                    self._release_new_thread_seed_reservation(request_key)
-                                raise
-                            if reserved_new_thread_seed:
-                                self._bind_new_thread_seed_once(
-                                    started_thread_id,
-                                    request_key=request_key,
-                                )
-                        elif reserved_new_thread_seed:
-                            self._release_new_thread_seed_reservation(request_key)
+                    started_thread_id = _response_thread_id(payload)
+                    if "error" not in payload and started_thread_id:
+                        self._acquire_runtime_lease(started_thread_id)
                 elif request_method == "thread/unsubscribe" and "error" not in payload:
                     self._release_runtime_lease(thread_id)
             with self._lock:
@@ -881,7 +600,6 @@ def run_proxy(
     global_data_dir: str | pathlib.Path | None = None,
     instance_name: str = "",
     service_token: str = "",
-    new_thread_memory_mode_seed: str = "",
     listen_host: str = "127.0.0.1",
     listen_port: int = 0,
     idle_timeout_seconds: float = _DEFAULT_IDLE_TIMEOUT_SECONDS,
@@ -903,9 +621,6 @@ def run_proxy(
         instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
         service_token=service_token,
         holder_pid=parent_pid or os.getpid(),
-    )
-    thread_seed_state = _ProxyThreadSeedState(
-        new_thread_memory_mode_seed=new_thread_memory_mode_seed,
     )
 
     def _shutdown_server() -> None:
@@ -976,9 +691,7 @@ def run_proxy(
                     instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
                     service_token=service_token,
                     holder_pid=holder_pid,
-                    new_thread_memory_mode_seed=new_thread_memory_mode_seed,
                     runtime_lease_keeper=runtime_lease_keeper,
-                    thread_seed_state=thread_seed_state,
                 )
 
                 def _backend_to_client() -> None:
@@ -1048,7 +761,6 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--data-dir", default="")
     parser.add_argument("--global-data-dir", default="")
     parser.add_argument("--instance", default="")
-    parser.add_argument("--new-thread-memory-mode-seed", default="")
     parser.add_argument("--listen-host", default="127.0.0.1")
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--parent-pid", type=int, default=0)
@@ -1069,7 +781,6 @@ def main(argv: list[str] | None = None) -> None:
         global_data_dir=args.global_data_dir or None,
         instance_name=args.instance,
         service_token=service_token,
-        new_thread_memory_mode_seed=args.new_thread_memory_mode_seed,
         listen_host=args.listen_host,
         listen_port=args.listen_port,
         parent_pid=args.parent_pid or None,

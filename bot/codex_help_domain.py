@@ -30,7 +30,6 @@ _SHARED_RESUME_COMMAND = get_shared_command("resume")
 _SHARED_DETACH_COMMAND = get_shared_command("detach")
 _SHARED_ATTACH_COMMAND = get_shared_command("attach")
 _SHARED_COMMANDS_COMMAND = get_shared_command("commands")
-_SHARED_MEMORY_COMMAND = get_shared_command("memory")
 _SHARED_GOAL_COMMAND = get_shared_command("goal")
 _SHARED_LAST_COMMAND = get_shared_command("last")
 _SHARED_MODEL_COMMAND = get_shared_command("model")
@@ -48,7 +47,6 @@ _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>
 _CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
 _RENAME_COMMAND = feishu_visible_command_syntax("/rename <title>")
 _PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
-_MEMORY_WITH_NAME_COMMAND = feishu_visible_command_syntax("/memory <off|read|read_write>")
 
 
 @dataclass(frozen=True)
@@ -235,13 +233,12 @@ class CodexHelpDomain:
             "thread-settings": _HelpPageSpec(
                 title="Codex 工作台：线程设置",
                 markdown=(
-                    "处理当前绑定 thread 的 goal、profile、memory、压缩、重命名与归档。\n\n"
+                    "处理当前绑定 thread 的 goal、实例 startup profile、压缩、重命名与归档。\n\n"
                     "新建、恢复、浏览线程与切换目录，请到“开始”。\n\n"
                     f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
                     f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
                     f"如需切换当前实例 managed backend 的 startup profile，可直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
-                    f"如需清空 startup profile override，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`；"
-                    f"如果只是为了切 memory mode，优先直接使用 `{_MEMORY_WITH_NAME_COMMAND}`。"
+                    f"如需清空 startup profile override，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`。"
                 ),
                 action_rows=(
                     _HelpActionRowSpec(
@@ -255,16 +252,6 @@ class CodexHelpDomain:
                                 label="改 Profile",
                                 command="/profile",
                                 title="Codex Backend Startup Profile",
-                            ),
-                        ),
-                        layout="bisected",
-                    ),
-                    _HelpActionRowSpec(
-                        buttons=(
-                            _HelpCommandButtonSpec(
-                                label="改 Memory",
-                                command="/memory",
-                                title="Codex Thread Memory Mode",
                             ),
                             _HelpCommandButtonSpec(
                                 label="压缩上下文",
@@ -974,7 +961,6 @@ class CodexHelpDomain:
                 "`线程设置`\n"
                 f"- `{_SHARED_GOAL_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
-                f"- `{_SHARED_MEMORY_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"

@@ -1,136 +1,108 @@
 # Local Commands and Runtime-Settings Contract
 
-Chinese original:
-`docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
+Chinese original: `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
 
-Note: this file keeps its historical filename, but the current focus is no
-longer a "thread profile". It is now the boundary document between local entry
-points and the three setting families.
+This file keeps its historical name, but its focus is no longer "thread
+profile." It now defines the boundary between local entry points and the
+current settings model.
 
 ## 1. Three local entry points
 
 ### 1.1 `feishu-codex`
 
-Owns:
+Responsible for:
 
-- install and upgrade
+- installation and upgrades
 - service lifecycle
 - instance management
 - project-level helper actions
 
-Does not own:
-
-- entering the Codex TUI
-- directly continuing a live thread locally
-
 ### 1.2 `feishu-codexctl`
 
-Owns:
+Responsible for:
 
-- viewing instance / binding / thread / service state
-- limited local management actions
-- troubleshooting attach / detach / backend issues
-
-Does not own:
-
-- persisting Feishu-side binding-wise next-turn settings
-- acting as a second Feishu frontend
-
-### 1.3 `fcodex`
-
-Owns:
-
-- entering the local Codex TUI
-- resuming or attaching to a live thread
-- acting as a local frontend that talks to the backend
+- inspecting instance / binding / thread / service state
+- performing limited local admin actions
+- diagnosing attach / detach / backend problems
 
 It is not:
 
-- a mirror of the Feishu command surface
+- a replacement for a Feishu `/memory` surface
+- a second turn-settings frontend
+
+### 1.3 `fcodex`
+
+Responsible for:
+
+- entering the local Codex TUI
+- resuming or attaching to a live thread
+- acting as a local frontend against the instance backend
+
+It is not:
+
 - a service-management CLI
+- a local mirror of Feishu setting cards
 
-## 2. The project's current three setting families
+## 2. Only two project-owned setting families remain
 
-### 2.1 Instance startup profile
+### 2.1 Instance startup baseline
 
-- target object: managed backend instance
-- Feishu entry points: `/profile`, `/profile-clear`
-- local semantics: mutate backend startup baseline, not a thread's persisted
-  restore settings
+- scope: instance
+- Feishu entries: `/profile`, `/profile-clear`
+- local meaning: mutate the startup baseline of the instance backend
 
-There is currently no local `fcodex` command that is fully equivalent to the
-Feishu `/profile` contract.
+### 2.2 Binding-wise next-turn settings
 
-### 2.2 Thread-wise next-load memory
+- scope: Feishu binding
+- Feishu entries: `/model`, `/effort`, `/approval`, `/permissions`, `/collab-mode`
+- local `fcodex` / upstream TUI keep their own local state; they do not auto-merge
+  with persisted Feishu binding settings
 
-- target object: thread
-- Feishu entry point: `/memory`
-- local observe/manage path: `feishu-codexctl thread memory ...`
-- local restore path: `fcodex resume <thread>` reuses the persisted memory mode
+## 3. Removed local thread-memory contract
 
-### 2.3 Binding-wise next-turn settings
+The project no longer supports:
 
-- target object: Feishu binding
-- Feishu entry points: `/model`, `/effort`, `/approval`, `/permissions`,
-  `/collab-mode`
-- local `fcodex` / upstream TUI keep their own local state; they are not
-  automatically merged with Feishu binding persistence
+- `feishu-codexctl thread memory`
+- any project-owned thread-memory restore semantics
+- `fcodex resume <thread>` consuming an extra project-owned persisted memory
+  setting
 
-## 3. Current role of `fcodex -p/--profile`
+If an operator wants to switch memory/provider behavior, they must use:
 
-The project no longer treats `fcodex -p/--profile` as an entry point that
-rewrites thread-wise persisted profile state.
+- the instance startup profile
+- upstream config / profile-v2
 
-Its current role is:
+## 4. Current meaning of `fcodex -p/--profile`
 
-- an upstream / local-TUI launch hint or local runtime hint
-- not the local mirror of Feishu `/profile`
-- not something this project persists as thread-wise next-load truth
+The project no longer treats `fcodex -p/--profile` as a thread-wise persisted
+mutation entry.
 
-Therefore:
+Its role is now:
 
-- Feishu `/profile` mutates the instance startup baseline
-- `fcodex -p/--profile` influences the local TUI side
+- an upstream / local-TUI parameter
+- not a local mirror of Feishu `/profile`
+- not something this project persists as thread truth
 
-The project no longer promises that those two are semantically identical.
+## 5. What `fcodex resume` still promises
 
-## 4. What `fcodex resume` still formally guarantees
+`fcodex resume <thread_id|thread_name>` now promises:
 
-`fcodex resume <thread_id|thread_name>` still formally guarantees:
+- thread identity resolution
+- live-runtime-owner / loaded-gate fail-close behavior
+- attaching to the correct instance backend
 
-- resolve thread identity first
-- then do fail-closed routing based on live-runtime owner and loaded-gate checks
-- reuse the thread's persisted memory mode during resume
+It no longer promises:
 
-It no longer formally guarantees:
-
-- reusing some project-persisted thread-wise profile slice
-- rewriting a thread's next-load profile tuple through `-p/--profile`
-
-## 5. Relationship to upstream config
-
-Shared `~/.codex/config.toml` remains the user config source for upstream
-`codex` / app-server.
-
-But the project's three setting families are not equivalent to "re-implementing
-the whole upstream config model":
-
-- startup profile: only the startup baseline layer of the managed backend
-- thread memory: only the thread-wise memory restore contract defined here
-- binding settings: only Feishu-side future-turn overrides
-
-None of those imply:
-
-- that this project persists every upstream config field as its own thread truth
+- restoring a project-owned thread memory/provider slice
 
 ## 6. One maintenance rule
 
-If a new setting is to enter this project, it must first be classified as one
-of:
+If a new setting is introduced into this project, it must first be classified
+as exactly one of:
 
 1. instance startup baseline
-2. thread-wise next-load state
-3. binding-wise next-turn settings
+2. binding-wise next-turn settings
+3. read-only diagnostic view
 
-Until that classification is explicit, it should not be stuffed into `/profile`,
-`/memory`, or the existing binding-setting surfaces.
+Until that classification exists, the project must not add a new local command
+surface for it.

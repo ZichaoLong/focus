@@ -2,155 +2,116 @@
 
 Chinese original: `docs/contracts/runtime-settings-fact-sources.zh-CN.md`
 
-This document provides the shared analysis frame used to separate:
+This document defines the shared rule for answering: after a setting is
+written, which layer is the authoritative fact source?
 
-- what exactly was resolved at write time
-- which layer becomes the persisted fact source after the write
-- which upstream boundary actually consumes the value
-- whether a read-side surface is showing intent, a snapshot, or live truth
+## 1. Only two writable setting families remain
 
-## 1. The current three setting families
+### 1.1 Instance startup baseline
 
-The project now separates runtime-related settings into three families:
+Current formal member:
 
-1. **instance startup baseline**
-   - currently only the managed backend startup profile
-2. **thread-wise next-load state**
-   - currently only thread memory mode
-3. **frontend-owned next-turn settings**
-   - model
-   - effort
-   - approval
-   - permissions
-   - collaboration mode
+- managed backend startup profile
 
-Those families must not be read, written, or explained as if they were the
-same thing.
+Its properties:
 
-## 2. Shared question list
+- instance-scoped, not thread-scoped
+- persisted in instance config
+- takes effect when the backend starts or restarts after reset
 
-For any setting, the system should answer separately:
+### 1.2 Binding-wise next-turn settings
 
-1. write-time resolution source
-2. post-write persisted source
-3. application boundary
-4. read-side view
-5. whether it has already taken effect
+Current formal members:
 
-It should also mark, when needed:
+- model
+- effort
+- approval
+- permissions
+- collaboration mode
 
-- whether the value is still provisional / pending
+Their properties:
 
-## 3. Side-by-side table
+- scoped to the current Feishu binding
+- persisted in binding runtime settings
+- primarily consumed at `turn/start`
+
+## 2. The project no longer owns any thread-wise next-load setting
+
+The following surfaces are removed from the project contract:
+
+- `/memory`
+- `feishu-codexctl thread memory`
+- `new_thread_memory_mode_seed`
+- `ThreadMemoryModeStore`
+- any project-owned thread-level memory/provider restore state
+
+As a result, the project no longer maintains a persisted fact source for
+"extra memory config that this project injects on the next resume of a thread."
+
+## 3. One remaining read-only fact family: live runtime / upstream snapshot
+
+Some values are still read, but they are not project-owned persisted settings:
+
+- live loaded-backend state
+- upstream thread snapshot
+- runtime views returned by upstream `config/read`
+
+Those values may be shown in:
+
+- `/status`
+- diagnostics
+- admin cards
+
+But they must not be treated as:
+
+- a writable project setting layer
+- the persisted fact source behind Feishu commands such as `/profile` or
+  `/model`
+
+## 4. Writable-setting table
 
 | Setting family | Persisted source | Official application boundary | Primary read-side |
 | --- | --- | --- | --- |
-| instance startup profile | instance config `managed_startup_profile` | managed backend start / restart after reset | `/profile`, `/status`, local instance diagnostics |
-| thread-wise memory | `ThreadMemoryModeStore`; pending seed when needed | `thread/start`, `thread/resume` | `/memory`, thread status, resume diagnostics |
-| binding-wise next-turn | persisted runtime settings on the current binding | `turn/start` | `/status`, turn-settings cards, preflight |
+| instance startup profile | instance config `managed_startup_profile` | backend start / restart after reset | `/profile`, `/status`, local instance diagnostics |
+| binding-wise next-turn | persisted runtime settings of the current binding | `turn/start` | `/status`, setting cards, preflight |
 
-## 4. Startup profile
+## 5. Decision rule for instance startup baseline
 
-### 4.1 Write-time resolution source
+If the question is:
 
-- the target value is resolved as a usable profile-v2 name from shared
-  `CODEX_HOME`
+- "what baseline will this instance use the next time its backend starts?"
 
-### 4.2 Post-write persisted source
+look first at:
 
-- instance config field `managed_startup_profile`
+- the instance startup profile
 
-### 4.3 Application boundary
+Do not start from:
 
-- managed backend startup
-- managed backend restart after reset
+- the current thread
+- the current Feishu binding's turn-time overrides
 
-### 4.4 Read-side view
+## 6. Decision rule for binding-wise next-turn
 
-- `/profile` and `/status` read instance-level intent
-- that is not the thread-wise truth of the current live thread
+If the question is:
 
-## 5. Thread-wise memory
+- "what model / effort / permissions will the next turn from this Feishu chat use?"
 
-### 5.1 Write-time resolution source
-
-- input is normalized into a legal memory-mode enum
-
-### 5.2 Post-write persisted source
-
-- normal case: `ThreadMemoryModeStore`
-- provisional case: pending threadwise seed
-
-### 5.3 Application boundary
-
-- existing thread: `thread/resume`
-- new thread: the startup-seed path of `thread/start`
-
-### 5.4 Read-side view
-
-- `/memory` primarily reads persisted intent
-- status pages may additionally show a load-time observed value, but must not
-  pretend it is always-available live truth
-
-## 6. Binding-wise next-turn settings
-
-### 6.1 Write-time resolution source
-
-- commands or card actions from the current Feishu binding
-- `auto` means "do not explicitly override", not "write thread-wise state"
-
-### 6.2 Post-write persisted source
+look first at:
 
 - the persisted runtime settings of the current binding
 
-### 6.3 Application boundary
+Within that family:
 
-- main path: `turn/start`
+- `auto` still means "do not explicitly override"
+- it no longer maps to any project-owned thread-level persisted state
 
-There is one narrow implementation exception today:
+## 7. One maintenance rule
 
-- for approval / permissions, some flows that "cold-resume first and then
-  continue a goal" also carry a one-shot correction during resume, so the first
-  resumed round does not silently fall back to the wrong default
+If a new setting is added later, it must first be classified as exactly one of:
 
-That correction:
+1. instance startup baseline
+2. binding-wise next-turn settings
+3. read-only diagnostic view
 
-- does not change the fact source; it is still binding-wise next-turn state
-- does not turn approval / permissions into thread-wise state
-
-### 6.4 Read-side view
-
-- `/status` and related setting cards read the binding's persisted intent
-- if a live runtime was changed by another upstream frontend, the project does
-  not promise lossless readback of every live field
-
-## 7. Pending / provisional
-
-The system must explicitly admit a provisional stage when:
-
-- a thread was just created and is not yet stably materialized
-- the result of `thread/start` is unknown
-- backend reset is still replacing a provisional thread
-
-Temporary seeds are allowed there, but they must not be represented as formal
-thread/store truth too early.
-
-## 8. One guiding rule
-
-If the question is:
-
-- "what will the next backend start use?"
-
-look at the startup profile first.
-
-If the question is:
-
-- "what will the next resume of this thread use?"
-
-look at thread-wise memory first.
-
-If the question is:
-
-- "what will the next turn from this Feishu chat use?"
-
-look at the binding-wise next-turn settings first.
+Until that classification exists, the setting must not become a new command
+surface or persisted project state layer.

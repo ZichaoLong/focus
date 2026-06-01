@@ -2,149 +2,112 @@
 
 英文原文：`docs/contracts/runtime-settings-fact-sources.md`
 
-本文给出当前项目统一的分析框架，用来区分：
+本文定义当前项目在“设置写入后，哪里才算事实源”这个问题上的统一口径。
 
-- 写入时到底解析了什么
-- 写完以后哪一层是持久化事实源
-- 哪个上游边界真正消费它
-- 读侧当前看到的是 intent、snapshot 还是 live truth
+## 1. 当前只保留两类可写设置
 
-## 1. 当前三类设置
+### 1.1 实例 startup baseline
 
-当前项目把运行时相关设置分成三类：
+当前唯一正式成员：
 
-1. **实例 startup baseline**
-   - 当前唯一正式成员：managed backend 的 startup profile
-2. **thread-wise next-load state**
-   - 当前唯一正式成员：thread memory mode
-3. **frontend-owned next-turn settings**
-   - model
-   - effort
-   - approval
-   - permissions
-   - collaboration mode
+- managed backend startup profile
 
-这三类设置不能混读、混写、混解释。
+它的特点是：
 
-## 2. 统一问题清单
+- 作用对象是实例，不是 thread
+- 写后持久化在实例配置里
+- 真正生效点是 backend 启动或 reset 后重启
 
-判断任一设置时，至少分别回答：
+### 1.2 binding-wise next-turn settings
 
-1. 写时解析源
-2. 写后持久源
-3. 应用边界
-4. 读侧视图
-5. 当前是否已生效
+当前正式成员：
 
-必要时还要再标记：
+- model
+- effort
+- approval
+- permissions
+- collaboration mode
 
-- 是否仍处于 provisional / pending 阶段
+它们的特点是：
 
-## 3. 三类设置对照表
+- 作用对象是当前飞书 binding
+- 写后持久化在 binding runtime settings
+- 主生效点是 `turn/start`
 
-| 设置类 | 写后持久源 | 正式应用边界 | 主要读侧 |
+## 2. 当前不再保留项目自管的 thread-wise next-load 设置
+
+以下能力已经移除，不再是本项目合同的一部分：
+
+- `/memory`
+- `feishu-codexctl thread memory`
+- `new_thread_memory_mode_seed`
+- `ThreadMemoryModeStore`
+- 项目自管的 thread 级 memory/provider 恢复状态
+
+因此，当前项目不会再维护一份“下次 resume 某个 thread 时，本项目额外注入什么 memory 配置”的持久化事实源。
+
+## 3. 仍然存在的一类只读事实：live runtime / upstream snapshot
+
+有些信息仍然会被本项目读取，但它们不是本项目持久化设置：
+
+- 当前 loaded backend 的 live 状态
+- 上游 thread snapshot
+- 上游 `config/read` 读到的 runtime 视图
+
+这些值可用于：
+
+- `/status`
+- 调试输出
+- 诊断卡片
+
+但它们不应被解释成：
+
+- 本项目自己的可写设置层
+- 飞书 `/profile` 或 `/model` 之类命令的持久化事实源
+
+## 4. 两类可写设置对照表
+
+| 设置类 | 写后持久源 | 正式生效边界 | 主要读侧 |
 | --- | --- | --- | --- |
-| 实例 startup profile | 实例配置 `managed_startup_profile` | managed backend 启动 / reset 后重启 | `/profile`、`/status`、本地实例状态 |
-| thread-wise memory | `ThreadMemoryModeStore`；必要时 pending seed | `thread/start`、`thread/resume` | `/memory`、thread 状态、resume 诊断 |
-| binding-wise next-turn | 当前 binding 的持久化 runtime settings | `turn/start` | `/status`、本轮设置卡片、执行前检查 |
+| 实例 startup profile | 实例配置 `managed_startup_profile` | backend 启动 / reset 后重启 | `/profile`、`/status`、本地实例诊断 |
+| binding-wise next-turn | 当前 binding 的持久化 runtime settings | `turn/start` | `/status`、设置卡片、preflight |
 
-## 4. startup profile
+## 5. 实例 startup baseline 的判断原则
 
-### 4.1 写时解析源
+如果问题是在问：
 
-- 目标值按共享 `CODEX_HOME` 中可用 profile-v2 名称解析
+- “这个实例下次启动 backend 会吃什么基线”
 
-### 4.2 写后持久源
+先看：
 
-- 实例配置字段 `managed_startup_profile`
+- 实例配置里的 startup profile
 
-### 4.3 应用边界
+不要先看：
 
-- managed backend 启动
-- managed backend reset 后重启
+- 当前 thread
+- 当前飞书会话的 turn-time override
 
-### 4.4 读侧视图
+## 6. binding-wise next-turn 的判断原则
 
-- `/profile` 与 `/status` 读到的是实例级 intent
-- 这不是当前 live thread 的 thread-wise truth
+如果问题是在问：
 
-## 5. thread-wise memory
+- “这个飞书会话下一轮会带什么 model / effort / permissions”
 
-### 5.1 写时解析源
-
-- 输入值先归一化成合法 memory mode 枚举
-
-### 5.2 写后持久源
-
-- 正常情况：`ThreadMemoryModeStore`
-- provisional 场景：pending threadwise seed
-
-### 5.3 应用边界
-
-- 现有 thread：`thread/resume`
-- 新 thread：`thread/start` 的 startup seed 路径
-
-### 5.4 读侧视图
-
-- `/memory` 主要读持久化 intent
-- 状态页可附带本次 load 时观测值，但不能假装它是随时可读的 live truth
-
-## 6. binding-wise next-turn 设置
-
-### 6.1 写时解析源
-
-- 来自当前飞书 binding 的命令 / 卡片操作
-- `auto` 只表示“不显式覆盖”，不是 thread-wise 持久化写入
-
-### 6.2 写后持久源
+先看：
 
 - 当前 binding 的持久化 runtime settings
 
-### 6.3 应用边界
+其中：
 
-- 主路径：`turn/start`
+- `auto` 的语义仍是“不显式覆盖”
+- 它不再对应任何项目自管的 thread 级持久化状态
 
-当前实现还有一条窄例外：
+## 7. 一条维护规则
 
-- 对 approval / permissions，某些“先 cold-resume 再继续 goal”的路径会在
-  resume 阶段额外带一份 one-shot 修正，避免第一轮恢复时回落到错误默认值
+后续若再新增设置，必须先明确它属于哪一类：
 
-这条修正：
+1. 实例 startup baseline
+2. binding-wise next-turn settings
+3. 只读诊断视图
 
-- 不改变其事实源仍是 binding-wise next-turn settings
-- 也不把 approval / permissions 变成 thread-wise state
-
-### 6.4 读侧视图
-
-- `/status` 与相关设置卡片读的是当前 binding 的持久化 intent
-- live runtime 若已被上游其他前端改过，本项目不承诺总能无损读回
-
-## 7. pending / provisional
-
-下列场景必须承认仍是 provisional：
-
-- thread 刚创建，还没稳定 materialize
-- `thread/start` 返回结果未知
-- backend reset 后正在替换 provisional thread
-
-这时可以有临时 seed，但不能把它伪装成正式 thread/store 真相。
-
-## 8. 一条判断原则
-
-如果某个问题是在问：
-
-- “下次 backend 启动会带什么”
-
-先看 startup profile。
-
-如果它是在问：
-
-- “下次恢复这个 thread 会带什么”
-
-先看 thread-wise memory。
-
-如果它是在问：
-
-- “当前飞书会话下一轮会带什么”
-
-先看 binding-wise next-turn settings。
+在没有完成归类之前，不应把它做成新的命令面或持久化状态层。

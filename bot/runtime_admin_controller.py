@@ -29,13 +29,6 @@ from bot.reason_codes import (
     BACKEND_RESET_FORCE_ONLY_BY_RUNNING_BINDING,
     BACKEND_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     BACKEND_RESET_UNSUPPORTED_REMOTE,
-    MEMORY_MODE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
-    MEMORY_MODE_BLOCKED_BY_RESET_UNSUPPORTED,
-    MEMORY_MODE_BLOCKED_BY_UNBOUND_THREAD,
-    MEMORY_MODE_DIRECT_WRITE_AVAILABLE,
-    MEMORY_MODE_RESET_AVAILABLE,
-    MEMORY_MODE_RESET_FORCE_ONLY,
-    MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
     PROMPT_DENIED_BINDING_NOT_FOUND,
     PROMPT_DENIED_BY_RUNNING_TURN,
     DETACH_BLOCKED_BY_INFLIGHT_TURN,
@@ -57,8 +50,6 @@ from bot.runtime_state import (
     RuntimeStateDict,
 )
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
-from bot.thread_materialization import thread_summary_is_provisional
-from bot.thread_memory_mode import normalize_thread_memory_mode
 from bot.thread_image_delivery import ThreadImageDeliveryController
 
 logger = logging.getLogger(__name__)
@@ -74,10 +65,6 @@ THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE = "direct-write"
 THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE = "reset-available"
 THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY = "reset-force-only"
 THREAD_MUTATION_PLAN_STATUS_BLOCKED = "blocked"
-THREAD_MUTATION_STATUS_ALREADY_SET = "already-set"
-THREAD_MUTATION_STATUS_APPLIED = "applied"
-
-
 @dataclass(frozen=True, slots=True)
 class BackendResetPreview:
     status: str
@@ -133,8 +120,6 @@ class RuntimeAdminController:
         list_pending_interaction_requests: Callable[[], list[dict[str, Any]]],
         reset_current_instance_backend: Callable[[bool], dict[str, Any]],
         attach_binding: Callable[[ChatBindingKey, str], ThreadSummary],
-        load_thread_memory_mode: Callable[[str], Any],
-        apply_thread_memory_mode: Callable[[str, str], Any],
         permissions_summary: Callable[..., str],
         thread_image_delivery: ThreadImageDeliveryController,
         get_thread_goal: Callable[[str], ThreadGoalSummary | None],
@@ -171,8 +156,6 @@ class RuntimeAdminController:
         self._list_pending_interaction_requests = list_pending_interaction_requests
         self._reset_current_instance_backend = reset_current_instance_backend
         self._attach_binding = attach_binding
-        self._load_thread_memory_mode = load_thread_memory_mode
-        self._apply_thread_memory_mode = apply_thread_memory_mode
         self._permissions_summary = permissions_summary
         self._thread_image_delivery = thread_image_delivery
         self._get_thread_goal = get_thread_goal
@@ -208,64 +191,12 @@ class RuntimeAdminController:
             return "读取失败"
         return profile or "（未设置）"
 
-    def _current_thread_memory_mode_text(self, thread_id: str) -> str:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return ""
-        try:
-            record = self._load_thread_memory_mode(normalized_thread_id)
-        except Exception:
-            logger.exception("读取 thread-wise memory mode 失败: thread=%s", normalized_thread_id[:12])
-            return "读取失败"
-        if record is None:
-            return "（未设置）"
-        mode = str(getattr(record, "mode", "") or "").strip()
-        return mode or "（未设置）"
-
-    def _load_thread_memory_mode_value(self, thread_id: str) -> str:
-        normalized_thread_id = str(thread_id or "").strip()
-        if not normalized_thread_id:
-            return ""
-        try:
-            record = self._load_thread_memory_mode(normalized_thread_id)
-        except Exception:
-            logger.exception("读取 thread-wise memory mode 失败: thread=%s", normalized_thread_id[:12])
-            return ""
-        if record is None:
-            return ""
-        return str(getattr(record, "mode", "") or "").strip()
-
     @staticmethod
     def _result_requires_reset_backend(status: str) -> bool:
         return status in {
             THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
             THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
         }
-
-    def _refresh_thread_memory_mutation_result(
-        self,
-        result: dict[str, Any],
-        thread_id: str,
-        *,
-        mutation_status: str,
-        reason: str,
-        backend_reset_result: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        fresh_plan = self.plan_thread_memory_mode_update(thread_id)
-        result["thread_memory_mode"] = self._current_thread_memory_mode_text(thread_id)
-        result["backend_thread_status"] = fresh_plan.backend_thread_status
-        result["feishu_runtime_state"] = fresh_plan.feishu_runtime_state
-        result["live_runtime_owner"] = fresh_plan.live_runtime_owner
-        result["diagnostics"] = list(fresh_plan.diagnostics)
-        result["plan_status"] = mutation_status
-        result["reason_code"] = ""
-        result["reason"] = reason
-        result["applied"] = True
-        result["requires_reset_backend"] = False
-        result["requires_force_reset_backend"] = False
-        result["backend_reset_performed"] = backend_reset_result is not None
-        result["backend_reset_result"] = backend_reset_result
-        return result
 
     @staticmethod
     def binding_has_inflight_turn_locked(state: RuntimeState) -> bool:
@@ -947,7 +878,7 @@ class RuntimeAdminController:
         lines.extend(
             [
                 "作用对象：当前实例 backend；这是实例级管理动作，不是当前线程命令。",
-                "不会覆盖 binding bookmark、实例 startup profile、thread-wise memory、其他用户配置或数据。",
+                "不会覆盖 binding bookmark、实例 startup profile、其他用户配置或数据。",
                 "",
                 f"当前结论：{preview.reason_text}",
             ]
@@ -994,7 +925,7 @@ class RuntimeAdminController:
             f"已清理 live runtime lease thread：{self._short_thread_ids(result.get('purged_thread_ids') or [])}",
             f"当前 backend 地址：`{str(result.get('app_server_url') or '').strip() or '（未知）'}`",
             "",
-            "不会覆盖 binding bookmark、实例 startup profile、thread-wise memory、其他用户配置或数据。",
+            "不会覆盖 binding bookmark、实例 startup profile、其他用户配置或数据。",
         ]
         current_thread_id = str(result.get("current_thread_id", "") or "").strip()
         if result.get("detached_binding_ids"):
@@ -1601,7 +1532,6 @@ class RuntimeAdminController:
             "thread_id": snapshot["thread_id"],
             "thread_title": effective_title,
             "working_dir": effective_working_dir,
-            "thread_memory_mode": self._current_thread_memory_mode_text(normalized_thread_id),
             "backend_thread_status": backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN,
             "backend_running_turn": backend_thread_status == BACKEND_THREAD_STATUS_ACTIVE,
             "live_runtime_owner": self._live_runtime_owner_snapshot(lease),
@@ -1888,105 +1818,6 @@ class RuntimeAdminController:
             diagnostics=tuple(diagnostics),
         )
 
-    def plan_thread_memory_mode_update(self, thread_id: str) -> ThreadMutationPlan:
-        return self._plan_threadwise_mutation(
-            thread_id,
-            direct_write_reason_code=MEMORY_MODE_DIRECT_WRITE_AVAILABLE,
-            reset_available_reason_code=MEMORY_MODE_RESET_AVAILABLE,
-            reset_force_only_reason_code=MEMORY_MODE_RESET_FORCE_ONLY,
-            reset_force_only_runtime_unverified_reason_code=MEMORY_MODE_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED,
-            blocked_by_other_instance_reason_code=MEMORY_MODE_BLOCKED_BY_OTHER_INSTANCE_OWNER,
-            blocked_by_reset_unsupported_reason_code=MEMORY_MODE_BLOCKED_BY_RESET_UNSUPPORTED,
-            blocked_by_unbound_thread_reason_code=MEMORY_MODE_BLOCKED_BY_UNBOUND_THREAD,
-            subject_label="memory mode",
-        )
-
-    def thread_memory_mode_control_result(
-        self,
-        thread: ThreadSummary,
-        *,
-        target_mode: str = "",
-        reset_backend: bool = False,
-        force_reset_backend: bool = False,
-    ) -> dict[str, Any]:
-        normalized_thread_id = str(thread.thread_id or "").strip()
-        plan = self.plan_thread_memory_mode_update(normalized_thread_id)
-        result: dict[str, Any] = {
-            "thread_id": normalized_thread_id,
-            "thread_title": thread.title,
-            "working_dir": thread.cwd,
-            "thread_memory_mode": self._current_thread_memory_mode_text(normalized_thread_id),
-            "backend_thread_status": plan.backend_thread_status,
-            "feishu_runtime_state": plan.feishu_runtime_state,
-            "live_runtime_owner": plan.live_runtime_owner,
-            "plan_status": plan.status,
-            "reason_code": plan.reason_code,
-            "reason": plan.reason_text,
-            "diagnostics": list(plan.diagnostics),
-            "requested_mode": "",
-            "applied": False,
-            "requires_reset_backend": self._result_requires_reset_backend(plan.status),
-            "requires_force_reset_backend": plan.status == THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
-            "backend_reset_performed": False,
-            "backend_reset_result": None,
-        }
-        if not str(target_mode or "").strip():
-            return result
-
-        normalized_target_mode = normalize_thread_memory_mode(target_mode)
-        result["requested_mode"] = normalized_target_mode
-        if thread_summary_is_provisional(thread):
-            result["plan_status"] = THREAD_MUTATION_PLAN_STATUS_BLOCKED
-            result["reason_code"] = "memory_mode_blocked_by_provisional_thread"
-            result["reason"] = (
-                "目标 thread 仍是未 materialize 的 provisional shell；"
-                "本地 control-plane 当前按 fail-close 拒绝直接改写该 thread 的 memory mode。"
-                "请先让它完成首个 turn，或回到绑定它的飞书会话继续处理。"
-            )
-            result["requires_reset_backend"] = False
-            result["requires_force_reset_backend"] = False
-            result["diagnostics"] = list(result["diagnostics"]) + [
-                "当前目标 thread 仍是 provisional shell；当前不允许通过本地 control-plane reset 后写入旧壳。",
-            ]
-            return result
-        current_mode = self._load_thread_memory_mode_value(normalized_thread_id)
-        if current_mode and current_mode == normalized_target_mode:
-            return self._refresh_thread_memory_mutation_result(
-                result,
-                normalized_thread_id,
-                mutation_status=THREAD_MUTATION_STATUS_ALREADY_SET,
-                reason="目标 memory mode 已等于当前持久化设置；无需重置 backend。",
-            )
-
-        if plan.status == THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE:
-            self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
-            return self._refresh_thread_memory_mutation_result(
-                result,
-                normalized_thread_id,
-                mutation_status=THREAD_MUTATION_STATUS_APPLIED,
-                reason="已直接写入 thread-wise memory mode。",
-            )
-
-        if plan.status not in {
-            THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
-            THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
-        }:
-            return result
-        if not reset_backend:
-            return result
-        if plan.status == THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY and not force_reset_backend:
-            return result
-
-        backend_reset_result = self._reset_current_instance_backend(bool(force_reset_backend))
-        self._apply_thread_memory_mode(normalized_thread_id, normalized_target_mode)
-        return self._refresh_thread_memory_mutation_result(
-            result,
-            normalized_thread_id,
-            mutation_status=THREAD_MUTATION_STATUS_APPLIED,
-            reason="已通过当前实例 backend reset 后写入 thread-wise memory mode。",
-            backend_reset_result=backend_reset_result,
-        )
-
     def handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         if method == "service/status":
             with self._lock:
@@ -2086,7 +1917,6 @@ class RuntimeAdminController:
             "thread/goal/clear",
             "thread/goal/pause",
             "thread/goal/resume",
-            "thread/memory",
             "thread/detach",
             "thread/send-image",
             "thread/attach",
@@ -2160,13 +1990,6 @@ class RuntimeAdminController:
                     thread.thread_id,
                     local_path=local_path,
                     summary=thread,
-                )
-            if method == "thread/memory":
-                return self.thread_memory_mode_control_result(
-                    thread,
-                    target_mode=str(params.get("mode", "") or ""),
-                    reset_backend=bool(params.get("reset_backend")),
-                    force_reset_backend=bool(params.get("force_reset_backend")),
                 )
             if method == "thread/attach":
                 return self.attach_thread(thread.thread_id)

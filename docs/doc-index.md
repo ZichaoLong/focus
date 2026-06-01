@@ -93,7 +93,7 @@ Status guidance:
 | How should questions like “what was just set”, “what is persisted now”, “when does it actually take effect”, and “does provisional state already have a formal fact source” be separated for runtime settings? | [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md), [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | For thread-wise next-load settings such as profile and memory mode, when do they take effect, when is direct write allowed, and when is reset-backend required? | [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md) |
 | What do `/threads`, `/resume`, `/profile`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
-| How does `/memory` map to upstream memory configuration, when is direct write allowed, and when is reset-backend required? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md) |
+| Why was the historical thread-memory surface removed, and which two setting layers replace it now? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md), [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md) |
 | What is the formal boundary for continuing a Feishu-bound thread later, including `binding/submit-prompt`, `feishu-codexctl prompt send`, and the Linux `systemd --user` skill? | [`scheduled-prompts.md`](./contracts/scheduled-prompts.md) |
 | What is the current contract for `/detach`, a thinner `fcodex`, the `feishu-codexctl` split, and thread-wise profile/provider? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
 | How do multi-instance `default` / named-instance behavior, shared thread visibility, `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
@@ -121,7 +121,6 @@ Status guidance:
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
-  - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - For group-chat work:
@@ -136,7 +135,6 @@ Status guidance:
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
-  - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - For wrapper or backend work:
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)

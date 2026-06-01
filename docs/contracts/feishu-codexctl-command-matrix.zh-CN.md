@@ -23,7 +23,7 @@
 - 除 `instance list` 外，其余命令都可加 `--instance <name>`。
 - 显式 `--instance` 始终优先。
 - 省略时按 `preferred-running -> unique-running -> default-running -> current-instance-paths` 规则解析。
-- `thread status`、`thread bindings`、`thread goal`、`thread memory`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
+- `thread status`、`thread bindings`、`thread goal`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
   - `--thread-id <id>`
   - `--thread-name <name>`
 
@@ -101,7 +101,6 @@
 | `feishu-codexctl [--instance <name>] thread goal pause (--thread-id <id> \| --thread-name <name>)` | 把某个 thread goal 置为 `paused` | 变更 | 飞书 `/goal pause` |
 | `feishu-codexctl [--instance <name>] thread goal resume (--thread-id <id> \| --thread-name <name>)` | 把某个 thread goal 恢复为 `active` | 变更 | 飞书 `/goal resume` |
 | `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | 清除某个 thread 当前 goal | 变更 | 飞书 `/goal clear` |
-| `feishu-codexctl [--instance <name>] thread memory (--thread-id <id> \| --thread-name <name>) [--mode off\|read\|read_write] [--reset-backend\|--force-reset-backend]` | 查看或改写某个 thread 的 thread-wise memory mode；可选 reset 会通过“当前实例 backend reset”收敛 | 不带 `--mode` 时只读；带 `--mode` 时变更 | 飞书 `/memory [off\|read\|read_write]` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | 归档目标 thread，并清理当前目标实例里仍指向它的 bindings | 变更 | 飞书 `/archive` 的本地实例级对应 |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | 恢复某个 thread 当前所有 detached bindings 的飞书推送 | 变更 | 飞书 `/attach thread`，以及 reset 结果卡里的“附着当前线程” |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | 暂停某个 thread 的飞书推送，同时保留 thread 与 binding 关系 | 变更 | 飞书 thread-scoped 的 detach 管理动作 |

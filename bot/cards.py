@@ -248,44 +248,6 @@ def build_profile_card(
     }
 
 
-def build_memory_mode_card(
-    *,
-    content: str,
-    current_mode: str,
-    extra_action_rows: list[dict] | None = None,
-    title: str = "Codex Thread Memory Mode",
-) -> dict:
-    elements: list[dict] = [
-        {"tag": "markdown", "content": content},
-        {"tag": "hr"},
-        {
-            "tag": "action",
-            "actions": [
-                {
-                    "tag": "button",
-                    "text": {"tag": "plain_text", "content": mode},
-                    "type": "primary" if mode == current_mode else "default",
-                    "value": {
-                        "action": "set_memory_mode",
-                        "mode": mode,
-                    },
-                }
-                for mode in ("off", "read", "read_write")
-            ],
-        },
-    ]
-    if extra_action_rows:
-        elements.extend(extra_action_rows)
-    return {
-        "config": _card_config(),
-        "header": {
-            "title": {"tag": "plain_text", "content": title},
-            "template": "blue",
-        },
-        "elements": elements,
-    }
-
-
 def build_backend_reset_card(
     *,
     content: str,

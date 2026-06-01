@@ -2,12 +2,11 @@
 
 Chinese original: `docs/contracts/runtime-control-surface.zh-CN.md`
 
-This document is the user-facing contract for the Feishu-side runtime control
-surface.
+This document defines the formal semantics of the Feishu-side control surface.
 
-## 1. The control surface separates only three setting families
+## 1. Only two setting families remain
 
-### 1.1 Instance startup profile
+### 1.1 Instance startup baseline
 
 Entry points:
 
@@ -18,21 +17,9 @@ Semantics:
 
 - manage the startup baseline of the current instance's managed backend
 - do not directly mutate the current thread
-- take effect only on the next backend start / reset
+- take effect only when the backend starts or restarts after reset
 
-### 1.2 Thread-wise next-load memory
-
-Entry point:
-
-- `/memory`
-
-Semantics:
-
-- manage the current thread's memory mode
-- take effect on the next `thread/resume` or the corresponding startup-seed path
-- are not turn-time overrides
-
-### 1.3 Binding-wise next-turn settings
+### 1.2 Binding-wise next-turn settings
 
 Entry points:
 
@@ -44,14 +31,30 @@ Entry points:
 
 Semantics:
 
-- manage runtime overrides for future turns of the current Feishu binding
+- manage overrides for future turns of the current Feishu binding
 - are primarily consumed at `turn/start`
-- do not write thread-wise next-load state
+- do not write any project-owned thread-level persisted state
 
-## 2. Other core state axes
+## 2. Removed setting surface
 
-Besides settings, the control surface continues to separate three orthogonal
-state axes:
+The following entry points are no longer part of the formal contract:
+
+- `/memory`
+- any thread-wise memory control surface
+
+If an operator wants to change process-level upstream capabilities such as
+memory/provider selection, they must do it through:
+
+- the instance startup profile
+- upstream `~/.codex/config.toml`
+- profile-v2
+
+not through a project-owned thread-level setting.
+
+## 3. Other core state axes
+
+Independent from settings, the control surface still separates three state
+axes:
 
 1. `binding`
    - which thread the current chat logically points to
@@ -61,52 +64,34 @@ state axes:
    - whether the thread is loaded in the backend, and who currently owns live
      runtime
 
-Those state axes must not be conflated with the setting families.
+Those axes are parallel to settings and must not be conflated with them.
 
-## 3. Formal semantics of `/profile`
+## 4. Formal semantics of `/profile`
 
 `/profile` still appears under the "thread settings" workbench area, but its
 true scope is:
 
-- **the current instance**
-
-That placement is a workflow choice only: operators often adjust backend
-baseline while working on the current thread.
+- the current instance
 
 Therefore:
 
 - `/profile <name>` changes the instance startup profile
 - `/profile-clear` clears the instance startup-profile override
-- if the operator wants the current instance to switch immediately, they must
-  reset the backend
-
-## 4. Formal semantics of `/memory`
-
-`/memory` is the only formally retained thread-wise next-load setting entry
-point.
-
-It has three outcomes:
-
-1. direct write
-   - the target thread is verifiably globally unloaded
-2. offer "apply and reset backend"
-   - the current instance can converge through reset-backend
-3. fail closed
-   - the current state is not safe to mutate
+- if the operator wants the change immediately, they must reset the backend
 
 ## 5. Formal semantics of turn-time settings
 
 `/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode`:
 
-- all belong to the current Feishu binding's next-turn settings
-- primarily read back persisted binding intent
-- are not thread snapshot truth
-- are not instance startup baseline
+- belong to the current binding's next-turn settings
+- read back persisted binding intent by default
+- are not the instance baseline
+- are not thread-level persisted truth
 
 Within that family:
 
 - `auto` means "do not explicitly override"
-- it does not mean "clear some thread-wise state to default"
+- it no longer maps to any project-owned thread-level fallback state
 
 ## 6. Side-effect boundary of reset-backend
 
@@ -115,27 +100,24 @@ When an instance resets its backend:
 - the backend process restarts
 - binding bookmarks stay
 - related Feishu push paths detach first
-- thread-wise memory store stays
-- startup profile stays
+- the startup profile stays
 - binding-wise next-turn settings stay
 
 Reset-backend does not:
 
 - rewrite thread history
 - automatically re-attach every chat
-- upgrade binding settings into thread-wise state
+- upgrade binding settings into thread-level settings
 
-## 7. What status pages should read
+## 7. What `/status` should show
 
 `/status` and related diagnostics should show separately:
 
 - the instance startup profile
-- the current thread's persisted memory mode
 - the current binding's next-turn overrides
+- attach/detach and live-runtime state
 
 They should no longer present:
 
-- "current thread-wise profile"
-- "re-profile possible"
-
-because those are no longer part of the formal contract.
+- a thread-wise memory setting
+- "extra memory config that this project will inject on the next resume"

@@ -93,15 +93,15 @@ fcodex shell wrapper
 
 从代码职责看，这条启动链路也被有意拆成两段：
 
-- wrapper 负责选定目标实例，以及启动前的 startup-profile 透传 / memory-seed 决策
-- proxy 只负责传输层修补，以及在拿到真实 `thread_id` 之后把“首次新 thread memory seed”一次性落盘
+- wrapper 负责选定目标实例，以及启动前的 startup-profile 透传
+- proxy 只负责传输层修补
 
 因此，“wrapper 与 service 共享的本地状态”应理解为：
 
 - **同一实例**共享自己的配置目录与 runtime backend 发现状态
 - wrapper 与 daemon 都会加载同一个机器级 `feishu-codex.env` provider 环境文件
 - **所有实例**共享 `CODEX_HOME`
-- **所有实例**共享机器级实例注册表、thread runtime lease，以及 thread-wise memory mode
+- **所有实例**共享机器级实例注册表与 thread runtime lease
 
 当默认 `ws://127.0.0.1:8765` 被占用、某实例服务自动切到其它空闲端口时，
 `fcodex` 会通过该实例的数据目录里记录的运行时发现状态找到当前实际 backend 地址。
@@ -193,15 +193,14 @@ fcodex shell wrapper
 
 - 默认与所选飞书实例共享 backend
 - 对 `resume`，支持在所选 shared backend 上做 thread-name 解析
-- 当实例配置启用了 new-thread memory mode seed 时，对本次启动创建的首个新 thread 写入一次性 memory seed
 - 通过一个轻量本地代理修补 cwd
 - 对 shared-backend 路径上的 websocket 面做本地鉴权收口：backend 与 proxy 各自持有独立 token，且都不再复用 service token
-- proxy 只负责传输层修补与 thread-wise memory mode 注入；它不再综合或持久化额外的 thread-wise profile 合同
+- proxy 只负责传输层修补；它不再综合或持久化任何项目自管的 thread 级设置合同
 
 其中职责边界是显式的：
 
 - wrapper：负责选实例，并把上游原生参数（包括 `-p/--profile`）原样透传
-- proxy：只在实际 `thread/start` / `thread/resume` 边界处理一次性的 new-thread memory seed，并在第一次 `thread/start` 成功且返回具体 `thread_id` 后把这份 seed 精确持久化一次
+- proxy：只在 websocket 传输边界做 cwd 修补与 owner 过滤，不再承担 thread 级设置注入
 
 但一旦进入运行中的 TUI，命令语义就回到 upstream Codex 的默认行为。
 

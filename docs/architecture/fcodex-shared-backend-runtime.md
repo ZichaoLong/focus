@@ -231,21 +231,18 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
 
 - shared backend with the selected Feishu instance by default
 - thread-name resume resolution against the selected shared backend
-- one-shot new-thread memory-mode seeding when the instance config enables it
 - cwd patching through a thin local proxy
 - websocket auth hardening on the shared-backend path: backend and proxy each
   own separate tokens, and neither reuses the service token
-- the proxy only carries transport-layer fixes and thread-wise memory-mode
-  injection; it no longer synthesizes or persists a separate thread-wise
-  profile contract
+- the proxy only carries transport-layer fixes; it no longer synthesizes or
+  persists any project-owned thread-level settings contract
 
 The split is explicit:
 
 - wrapper: resolve the target instance and pass upstream flags such as
   `-p/--profile` through untouched
-- proxy: enforce only the one-shot new-thread memory seed at the actual
-  `thread/start` / `thread/resume` boundary, then persist that seed exactly
-  once after the first successful `thread/start` returns a concrete `thread_id`
+- proxy: handle only cwd patching and owner filtering at the websocket
+  boundary; it no longer inject thread-level settings
 
 Inside the running TUI, however, command semantics return to upstream Codex
 behavior.

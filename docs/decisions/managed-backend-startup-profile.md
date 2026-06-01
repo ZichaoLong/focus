@@ -91,8 +91,10 @@ control surface.
 
 ### 3.3 `remote` mode is not a good primary path for thread-wise next-load settings
 
-In the current repository, both `profile` and `memory mode` are formal
-thread-wise next-load settings.
+In the current repository, the remaining formal setting surfaces are:
+
+- instance startup profile
+- binding-wise next-turn settings
 
 When the target thread is still loaded, those settings often need unload /
 `reset-backend` convergence.
@@ -103,7 +105,6 @@ perform `reset-backend`.
 That makes remote mode more than a minor catalog difference. It also weakens:
 
 - `/profile`
-- `/memory`
 - local control-plane flows that rely on `reset-backend`
 
 ### 3.4 the project intentionally does not keep an “instance-level default profile”
@@ -193,7 +194,7 @@ If implemented, this capability should be tightly defined as:
 It should **not** mean:
 
 - no write into thread-wise profile store
-- no write into thread-wise memory store
+- no new project-owned thread-level persisted setting
 - no retroactive rewrite of already loaded threads
 - no pretending to be the thread's “default profile truth”
 
@@ -263,7 +264,8 @@ After this discussion, the repository should follow these conclusions:
 - stop targeting “one backend that mixes GPT and GLM while both get their own
   optimal catalogs”
 - if the goal is to use ZAI well while preserving the existing product
-  contract around `/profile`, `/memory`, and `/reset-backend`, the better
+  contract around `/profile`, `/reset-backend`, and turn-time settings, the
+  better
   future route is:
   - one dedicated instance
   - `managed` backend mode

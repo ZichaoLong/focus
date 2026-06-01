@@ -77,7 +77,10 @@
 
 ### 3.3 `remote` 模式不适合作为 thread-wise next-load 设置的主路径
 
-当前仓库里，`profile` 与 `memory mode` 都是正式的 thread-wise next-load 设置入口。
+当前仓库里，正式保留的设置面已经收敛为：
+
+- 实例 startup profile
+- binding-wise next-turn settings
 
 这两类设置在目标 thread 仍 loaded 时，经常需要通过 unload / `reset-backend` 路径收敛。
 
@@ -86,7 +89,6 @@
 这意味着 remote 不是一个只影响 catalog 的小差异，而是会连带削弱：
 
 - `/profile`
-- `/memory`
 - 以及依赖 `reset-backend` 收敛的本地 control-plane 路径
 
 ### 3.4 当前项目故意不保留“实例级默认 profile”
@@ -166,7 +168,7 @@
 它**不应**承担以下语义：
 
 - 不写入 thread-wise profile store
-- 不写入 thread-wise memory store
+- 不引入新的项目自管 thread 级持久化设置
 - 不追改已 loaded thread
 - 不把自己伪装成 thread 的“默认 profile 真相”
 
@@ -228,7 +230,7 @@
 在当前这轮讨论对齐后，仓库应采用以下结论：
 
 - 不再追求“同一个 backend 混用 GPT / GLM，且两边同时吃到各自最优 catalog”
-- 若要把 ZAI 用好，同时保留现有 `/profile`、`/memory`、`/reset-backend` 这套产品面合同，更合适的未来路线是：
+- 若要把 ZAI 用好，同时保留现有 `/profile`、`/reset-backend` 与 turn-time 设置这套产品面合同，更合适的未来路线是：
   - 一个独立实例
   - `managed` backend
   - backend 启动时显式吃到 ZAI 所需 catalog 的 startup profile

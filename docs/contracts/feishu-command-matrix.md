@@ -42,7 +42,6 @@ It does not redefine:
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
 | `/profile [name]` | Show or change the current instance managed backend startup profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/profile-clear` | Clear the current instance managed backend startup-profile override | no; also available via card button | admin only | admin only | no direct local equivalent |
-| `/memory [off\|read\|read_write]` | Show or change the current thread's thread-wise memory mode | yes; `Thread Settings` page | admin only | admin only | `feishu-codexctl thread memory --thread-id/--thread-name`; `fcodex resume` reuses the persisted mode |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
@@ -99,7 +98,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
-- `/profile` / `/memory` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- `/profile` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
 - shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 

@@ -260,7 +260,7 @@ flowchart LR
     BindB["binding B<br/>binding-wise permissions"]
     Service["feishu-codex service"]
     Backend["shared codex app-server"]
-    Thread["thread<br/>thread-wise memory"]
+    Thread["thread"]
   end
 
   Global["machine-global coordination<br/>ThreadRuntimeLease / instance registry"]
@@ -289,7 +289,7 @@ flowchart LR
     F1["Feishu binding 1<br/>(attached, own permissions)"]
     F2["Feishu binding 2<br/>(attached, own permissions)"]
     TUI["fcodex subscriber<br/>(local permissions)"]
-    Thread["thread<br/>thread-wise memory"]
+    Thread["thread"]
     Owner["interaction owner"]
   end
 
