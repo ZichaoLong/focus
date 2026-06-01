@@ -321,4 +321,5 @@ flowchart LR
 
 **补充说明**
 - `permissions`、`model`、`effort`、`collab-mode` 都属于 frontend-owned runtime settings：由发起该轮 `thread/start` / `turn/start` 的前端在下一轮注入，不是 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
-- `profile`、`memory` 才是 thread-wise next-load 设置；切换它们通常要先让该 thread 回到未加载状态，必要时执行 `reset-backend`
+- `profile` 现在只用于定义当前实例 managed backend 的 startup baseline：修改后要等下次 backend 启动，或执行 `reset-backend` 才会真正生效
+- `fcodex` / 上游 TUI 里的本地配置、profile-v2、provider catalog 仍按各自前端语义工作，但不再被本项目持久化成 thread-wise 设置层

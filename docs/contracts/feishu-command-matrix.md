@@ -98,7 +98,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
-- `/profile` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- `/profile` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Clear Profile`, `Clear And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
 - shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 

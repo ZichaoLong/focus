@@ -4595,15 +4595,32 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("已设置当前实例的 startup profile：`provider2`", card["elements"][0]["content"])
         self.assertEqual(handler._adapter.set_active_profile_calls, [])
 
-    def test_profile_command_with_existing_startup_profile_shows_clear_button(self) -> None:
+    def test_profile_command_with_existing_startup_profile_shows_profile_reset_actions(self) -> None:
         handler, bot = self._make_handler({"managed_startup_profile": "provider2"})
 
         handler.handle_message("ou_user", "c1", "/profile")
 
         _, card = bot.cards[-1]
         action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[1]["actions"][1]["text"]["content"], "清空 profile")
-        self.assertEqual(action_elements[1]["actions"][1]["value"]["action"], "clear_profile")
+        self.assertEqual(action_elements[1]["actions"][0]["value"]["action"], "apply_profile_with_backend_reset")
+        self.assertEqual(action_elements[1]["actions"][1]["value"]["action"], "apply_profile_with_backend_reset")
+        self.assertEqual(action_elements[2]["actions"][0]["value"]["action"], "clear_profile")
+        self.assertEqual(action_elements[2]["actions"][1]["value"]["action"], "clear_profile_with_backend_reset")
+
+    def test_profile_command_fail_open_uses_local_profile_names_when_runtime_config_unreadable(self) -> None:
+        handler, bot = self._make_handler()
+        handler._adapter.read_runtime_config = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("broken runtime"))
+
+        with patch("bot.codex_handler.list_profile_v2_names", return_value=["work"]), patch(
+            "bot.codex_handler.profile_v2_is_usable",
+            return_value=True,
+        ):
+            handler.handle_message("ou_user", "c1", "/profile")
+
+        _, card = bot.cards[-1]
+        self.assertIn("当前未能读取 live runtime config", card["elements"][0]["content"])
+        action_elements = self._action_elements(card)
+        self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "work")
 
     def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
         handler, bot = self._make_handler()

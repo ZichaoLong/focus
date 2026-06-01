@@ -1,66 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from collections.abc import Mapping
 from typing import Any
-
-THREAD_MEMORY_MODE_OFF = "off"
-THREAD_MEMORY_MODE_READ = "read"
-THREAD_MEMORY_MODE_READ_WRITE = "read_write"
-
-THREAD_MEMORY_MODES = (
-    THREAD_MEMORY_MODE_OFF,
-    THREAD_MEMORY_MODE_READ,
-    THREAD_MEMORY_MODE_READ_WRITE,
-)
-
-@dataclass(frozen=True, slots=True)
-class ResolvedThreadMemoryMode:
-    mode: str
-    use_memories: bool
-    generate_memories: bool
-
-
-def normalize_thread_memory_mode(mode: str) -> str:
-    normalized = str(mode or "").strip().lower()
-    if normalized not in THREAD_MEMORY_MODES:
-        raise ValueError("memory mode 仅支持：`off`、`read`、`read_write`")
-    return normalized
-
-
-def resolve_thread_memory_mode(mode: str) -> ResolvedThreadMemoryMode:
-    normalized = normalize_thread_memory_mode(mode)
-    if normalized == THREAD_MEMORY_MODE_OFF:
-        return ResolvedThreadMemoryMode(
-            mode=normalized,
-            use_memories=False,
-            generate_memories=False,
-        )
-    if normalized == THREAD_MEMORY_MODE_READ:
-        return ResolvedThreadMemoryMode(
-            mode=normalized,
-            use_memories=True,
-            generate_memories=False,
-        )
-    return ResolvedThreadMemoryMode(
-        mode=normalized,
-        use_memories=True,
-        generate_memories=True,
-    )
-
-
-def build_thread_memory_config_override(
-    mode: str,
-) -> dict[str, Any]:
-    resolved = resolve_thread_memory_mode(mode)
-    memories_config = {
-        "use_memories": resolved.use_memories,
-        "generate_memories": resolved.generate_memories,
-    }
-    return {
-        "memories": dict(memories_config),
-    }
-
 
 def thread_memory_mode_from_memories_config(memories_config: Mapping[str, Any] | None) -> str | None:
     if not isinstance(memories_config, Mapping):
@@ -70,11 +11,11 @@ def thread_memory_mode_from_memories_config(memories_config: Mapping[str, Any] |
     if not isinstance(use_memories, bool) or not isinstance(generate_memories, bool):
         return None
     if not use_memories and not generate_memories:
-        return THREAD_MEMORY_MODE_OFF
+        return "off"
     if use_memories and not generate_memories:
-        return THREAD_MEMORY_MODE_READ
+        return "read"
     if use_memories and generate_memories:
-        return THREAD_MEMORY_MODE_READ_WRITE
+        return "read_write"
     return None
 
 

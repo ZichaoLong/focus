@@ -66,7 +66,6 @@ fcodex shell wrapper
 `fcodex` 存在的目的，是提供：
 
 - 与所选飞书实例共享的单一 backend
-- 显式 `-p/--profile` 对本次启动创建的首个新 thread 的一次性 seed
 - `resume <thread_name>` 这类 wrapper 级名字解析
 - 一个用于修正 remote 模式工作目录行为的兼容层
 
@@ -93,7 +92,7 @@ fcodex shell wrapper
 
 从代码职责看，这条启动链路也被有意拆成两段：
 
-- wrapper 负责选定目标实例，以及启动前的 startup-profile 透传
+- wrapper 负责选定目标实例，以及 backend 连接前的本地环境准备
 - proxy 只负责传输层修补
 
 因此，“wrapper 与 service 共享的本地状态”应理解为：

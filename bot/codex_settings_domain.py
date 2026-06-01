@@ -14,7 +14,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary
+from bot.adapters.base import RuntimeConfigSummary, RuntimeProfileSummary, ThreadSummary
 from bot.cards import (
     CommandResult,
     build_approval_policy_card,
@@ -32,6 +32,7 @@ from bot.permissions_profile import (
     permissions_profile_choice_key,
     permissions_profile_label,
 )
+from bot.thread_materialization import thread_summary_is_provisional
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +62,10 @@ class SettingsDomainPorts:
     get_runtime_view: Callable[[str, str, str], RuntimeView]
     update_runtime_settings: Callable[..., None]
     safe_read_runtime_config: Callable[[], RuntimeConfigSummary | None]
+    list_local_profile_names: Callable[[], list[str]]
+    read_thread_summary: Callable[[str], ThreadSummary]
+    clear_thread_binding: Callable[[str, str, str], None]
+    is_thread_not_found_error: Callable[[Exception], bool]
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +77,20 @@ class ProfileCommandOutcome:
     reset_offered_clear: bool = False
     reset_requires_force: bool = False
     already_set: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileCatalog:
+    profiles: dict[str, RuntimeProfileSummary]
+    profile_names: list[str]
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ProfileResetBindingPlan:
+    thread_id: str
+    clear_after_reset: bool = False
+    note: str = ""
 
 
 class CodexSettingsDomain:
@@ -335,38 +354,34 @@ class CodexSettingsDomain:
             message_id=message_id,
         ).command_result
 
-    @staticmethod
-    def _profile_clear_action_rows(*, with_reset: bool = False, force: bool = False) -> list[dict]:
-        label = "强制清空并重置 backend" if force else "清空并重置 backend"
-        value = {
-            "action": "clear_profile_with_backend_reset" if with_reset else "clear_profile",
-            "force": bool(force),
-        }
-        if not with_reset:
-            value.pop("force", None)
-            label = "清空 profile"
-        return [
-            {"tag": "hr"},
-            {
-                "tag": "action",
-                "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": label},
-                        "type": "default" if not with_reset else "primary",
-                        "value": value,
-                    }
-                ],
-            },
-        ]
-
-    def _runtime_profile_catalog(self) -> tuple[dict[str, RuntimeProfileSummary], list[str]] | tuple[None, None]:
+    def _runtime_profile_catalog(self) -> _ProfileCatalog:
         runtime_config = self._ports.safe_read_runtime_config()
-        if runtime_config is None:
-            return None, None
-        profiles = {profile.name: profile for profile in runtime_config.profiles if profile.name}
-        profile_names = [profile.name for profile in runtime_config.profiles if profile.name]
-        return profiles, profile_names
+        if runtime_config is not None:
+            profiles = {profile.name: profile for profile in runtime_config.profiles if profile.name}
+            profile_names = [profile.name for profile in runtime_config.profiles if profile.name]
+            return _ProfileCatalog(
+                profiles=profiles,
+                profile_names=profile_names,
+                source="runtime",
+            )
+        try:
+            local_profile_names = [
+                str(name).strip()
+                for name in self._ports.list_local_profile_names()
+                if str(name).strip()
+            ]
+        except Exception:
+            logger.exception("读取本地 profile-v2 列表失败")
+            local_profile_names = []
+        deduped_names = list(dict.fromkeys(local_profile_names))
+        return _ProfileCatalog(
+            profiles={
+                name: RuntimeProfileSummary(name=name)
+                for name in deduped_names
+            },
+            profile_names=deduped_names,
+            source="local" if deduped_names else "none",
+        )
 
     def _managed_startup_profile_state(self) -> tuple[str, str]:
         config = dict(self._ports.load_codex_config() or {})
@@ -375,13 +390,85 @@ class CodexSettingsDomain:
         return mode, current_profile
 
     @staticmethod
-    def _startup_profile_action_rows(*, current_profile: str, include_reset_button: bool = True) -> list[dict]:
+    def _attach_action_rows(*, include_thread: bool, include_service: bool, thread_id: str = "") -> list[dict]:
         actions: list[dict] = []
-        if include_reset_button:
+        if include_thread:
             actions.append(
                 {
                     "tag": "button",
-                    "text": {"tag": "plain_text", "content": "重置 backend 以应用"},
+                    "text": {"tag": "plain_text", "content": "附着当前线程"},
+                    "type": "primary",
+                    "value": {
+                        "action": "attach_runtime",
+                        "scope": "thread",
+                        "thread_id": thread_id,
+                    },
+                }
+            )
+        if include_service:
+            actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "附着当前实例"},
+                    "type": "default" if include_thread else "primary",
+                    "value": {
+                        "action": "attach_runtime",
+                        "scope": "service",
+                    },
+                }
+            )
+        actions.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "保持 detached"},
+                "type": "default",
+                "value": {
+                    "action": "dismiss_attach",
+                },
+            }
+        )
+        return [
+            {"tag": "hr"},
+            {
+                "tag": "action",
+                "actions": actions,
+            },
+        ]
+
+    @staticmethod
+    def _startup_profile_action_rows(*, current_profile: str, current_profile_available: bool) -> list[dict]:
+        action_rows: list[dict] = []
+        reset_actions: list[dict] = []
+        if current_profile and current_profile_available:
+            reset_actions.extend(
+                [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "应用并重置 backend"},
+                        "type": "primary",
+                        "value": {
+                            "action": "apply_profile_with_backend_reset",
+                            "profile": current_profile,
+                            "force": False,
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "强制应用并重置 backend"},
+                        "type": "default",
+                        "value": {
+                            "action": "apply_profile_with_backend_reset",
+                            "profile": current_profile,
+                            "force": True,
+                        },
+                    },
+                ]
+            )
+        elif not current_profile:
+            reset_actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "重置 backend 以应用当前基线"},
                     "type": "primary",
                     "value": {
                         "action": "reset_backend",
@@ -389,8 +476,20 @@ class CodexSettingsDomain:
                     },
                 }
             )
+        if reset_actions:
+            action_rows.extend(
+                [
+                    {"tag": "hr"},
+                    {
+                        "tag": "action",
+                        "actions": reset_actions,
+                    },
+                ]
+            )
+
+        followup_actions: list[dict] = []
         if current_profile:
-            actions.append(
+            followup_actions.append(
                 {
                     "tag": "button",
                     "text": {"tag": "plain_text", "content": "清空 profile"},
@@ -400,22 +499,51 @@ class CodexSettingsDomain:
                     },
                 }
             )
-        if not actions:
+            followup_actions.append(
+                {
+                    "tag": "button",
+                    "text": {"tag": "plain_text", "content": "清空并重置 backend"},
+                    "type": "default",
+                    "value": {
+                        "action": "clear_profile_with_backend_reset",
+                        "force": False,
+                    },
+                }
+            )
+        if followup_actions:
+            action_rows.extend(
+                [
+                    {"tag": "hr"},
+                    {
+                        "tag": "action",
+                        "actions": followup_actions,
+                    },
+                ]
+            )
+        return action_rows
+
+    @staticmethod
+    def _profile_catalog_note_lines(profile_catalog: _ProfileCatalog) -> list[str]:
+        if profile_catalog.source == "runtime":
             return []
+        if profile_catalog.source == "local":
+            return [
+                "",
+                "当前未能读取 live runtime config；下面的 profile 列表按本地 `CODEX_HOME` best-effort 展示。",
+            ]
         return [
-            {"tag": "hr"},
-            {
-                "tag": "action",
-                "actions": actions,
-            },
+            "",
+            "当前未能读取 live runtime config，也暂未发现可用的本地 profile-v2。",
+            "如果当前 startup profile 已损坏，仍可直接执行 `/profile-clear` 恢复到 `CODEX_HOME/config.toml` 顶层配置。",
         ]
 
     def _build_startup_profile_summary_card(
         self,
         *,
         current_profile: str,
-        profile_names: list[str],
+        profile_catalog: _ProfileCatalog,
         leading_lines: list[str] | None = None,
+        extra_action_rows: list[dict] | None = None,
     ) -> dict:
         lines = list(leading_lines or [])
         lines.extend(
@@ -426,18 +554,53 @@ class CodexSettingsDomain:
                 "如需让当前实例马上切到这套基线，请重置 backend。",
             ]
         )
-        if not profile_names:
+        lines.extend(self._profile_catalog_note_lines(profile_catalog))
+        if not profile_catalog.profile_names:
             lines.extend(["", "未在共享 `CODEX_HOME` 中发现可用的 profile-v2。"])
         return build_profile_card(
             content="\n".join(lines),
-            profile_names=profile_names,
+            profile_names=profile_catalog.profile_names,
             current_profile=current_profile,
             extra_action_rows=(
-                self._startup_profile_action_rows(current_profile=current_profile)
+                extra_action_rows
+                or self._startup_profile_action_rows(
+                    current_profile=current_profile,
+                    current_profile_available=current_profile in profile_catalog.profiles,
+                )
                 or None
             ),
             title="Codex Backend Startup Profile",
         )
+
+    def _profile_reset_binding_plan(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        message_id: str = "",
+    ) -> _ProfileResetBindingPlan:
+        runtime = self._runtime_view(sender_id, chat_id, message_id)
+        thread_id = str(runtime.current_thread_id or "").strip()
+        if not thread_id:
+            return _ProfileResetBindingPlan(thread_id="")
+        try:
+            summary = self._ports.read_thread_summary(thread_id)
+        except Exception as exc:
+            if self._ports.is_thread_not_found_error(exc):
+                return _ProfileResetBindingPlan(
+                    thread_id=thread_id,
+                    clear_after_reset=True,
+                    note="当前绑定 thread 已不存在；reset 后已清空当前会话的 thread bookmark。",
+                )
+            logger.exception("读取当前绑定 thread 摘要失败: thread=%s", thread_id[:12])
+            return _ProfileResetBindingPlan(thread_id=thread_id)
+        if thread_summary_is_provisional(summary):
+            return _ProfileResetBindingPlan(
+                thread_id=thread_id,
+                clear_after_reset=True,
+                note="当前绑定 thread 仍是 provisional shell；reset 后已清空当前会话的 thread bookmark。",
+            )
+        return _ProfileResetBindingPlan(thread_id=thread_id)
 
     def _handle_startup_profile_request(
         self,
@@ -447,7 +610,6 @@ class CodexSettingsDomain:
         *,
         message_id: str = "",
     ) -> ProfileCommandOutcome:
-        del sender_id, chat_id, message_id
         ports = self._ports
         mode, current_profile = self._managed_startup_profile_state()
         if mode != "managed":
@@ -459,38 +621,44 @@ class CodexSettingsDomain:
                     )
                 )
             )
-        profiles, profile_names = self._runtime_profile_catalog()
-        if profiles is None or profile_names is None:
-            return ProfileCommandOutcome(
-                command_result=CommandResult(text="读取 Codex 运行时配置失败，无法查看或切换 startup profile。")
-            )
+        profile_catalog = self._runtime_profile_catalog()
         if not arg:
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_startup_profile_summary_card(
                         current_profile=current_profile,
-                        profile_names=profile_names,
+                        profile_catalog=profile_catalog,
                     )
                 )
             )
 
         target_profile = str(arg or "").strip()
-        if target_profile not in profiles:
-            return ProfileCommandOutcome(
-                command_result=CommandResult(
-                    text=f"未找到 profile：`{target_profile}`\n用法：`{_PROFILE_WITH_NAME_COMMAND}`\n先发 `/profile` 查看可用 profile。"
-                )
-            )
         if target_profile == current_profile:
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_startup_profile_summary_card(
                         current_profile=current_profile,
-                        profile_names=profile_names,
+                        profile_catalog=profile_catalog,
                         leading_lines=[f"当前实例的 startup profile 已是：`{target_profile}`", ""],
                     )
                 ),
                 already_set=True,
+            )
+        if target_profile not in profile_catalog.profiles:
+            if profile_catalog.source == "none":
+                return ProfileCommandOutcome(
+                    command_result=CommandResult(
+                        text=(
+                            f"当前无法校验 profile：`{target_profile}` 是否存在。\n"
+                            "live runtime config 不可读，且本地 `CODEX_HOME` 下也没有可用的 profile-v2 列表。\n"
+                            f"可先执行 `{_PROFILE_CLEAR_COMMAND}` 恢复到顶层默认配置，或修复本地 profile-v2 后再试。"
+                        )
+                    )
+                )
+            return ProfileCommandOutcome(
+                command_result=CommandResult(
+                    text=f"未找到 profile：`{target_profile}`\n用法：`{_PROFILE_WITH_NAME_COMMAND}`\n先发 `/profile` 查看可用 profile。"
+                )
             )
 
         config = dict(ports.load_codex_config() or {})
@@ -506,7 +674,7 @@ class CodexSettingsDomain:
             command_result=CommandResult(
                 card=self._build_startup_profile_summary_card(
                     current_profile=target_profile,
-                    profile_names=profile_names,
+                    profile_catalog=profile_catalog,
                     leading_lines=[
                         f"已设置当前实例的 startup profile：`{target_profile}`",
                         "该设置会在下次 managed backend 启动时生效。",
@@ -524,7 +692,6 @@ class CodexSettingsDomain:
         *,
         message_id: str = "",
     ) -> ProfileCommandOutcome:
-        del sender_id, chat_id, message_id
         ports = self._ports
         mode, current_profile = self._managed_startup_profile_state()
         if mode != "managed":
@@ -535,17 +702,13 @@ class CodexSettingsDomain:
                     )
                 )
             )
-        profiles, profile_names = self._runtime_profile_catalog()
-        if profiles is None or profile_names is None:
-            return ProfileCommandOutcome(
-                command_result=CommandResult(text="读取 Codex 运行时配置失败，无法清空 startup profile。")
-            )
+        profile_catalog = self._runtime_profile_catalog()
         if not current_profile:
             return ProfileCommandOutcome(
                 command_result=CommandResult(
                     card=self._build_startup_profile_summary_card(
                         current_profile="",
-                        profile_names=profile_names,
+                        profile_catalog=profile_catalog,
                         leading_lines=["当前实例未设置 startup profile。", ""],
                     )
                 ),
@@ -564,7 +727,7 @@ class CodexSettingsDomain:
             command_result=CommandResult(
                 card=self._build_startup_profile_summary_card(
                     current_profile="",
-                    profile_names=profile_names,
+                    profile_catalog=profile_catalog,
                     leading_lines=[
                         "已清空当前实例的 startup profile override。",
                         "当前将回落到 `CODEX_HOME/config.toml` 顶层配置。",
@@ -587,15 +750,14 @@ class CodexSettingsDomain:
         initial = self._handle_startup_profile_request(sender_id, chat_id, target_profile, message_id=message_id)
         if initial.command_result.card is None and not initial.applied_profile and not initial.already_set:
             return initial
+        binding_plan = self._profile_reset_binding_plan(sender_id, chat_id, message_id=message_id)
         try:
             reset_result = self._ports.reset_current_instance_backend(force)
         except Exception as exc:
             logger.exception("reset backend 失败")
             return ProfileCommandOutcome(command_result=CommandResult(text=f"reset backend 失败：{exc}"))
         _, current_profile = self._managed_startup_profile_state()
-        profiles, profile_names = self._runtime_profile_catalog()
-        if profiles is None or profile_names is None:
-            return ProfileCommandOutcome(command_result=CommandResult(text="reset 完成，但重新读取 profile 列表失败。"))
+        profile_catalog = self._runtime_profile_catalog()
         leading_lines = [
             f"已设置当前实例的 startup profile：`{current_profile or 'auto'}`",
             "已重置当前实例 backend。",
@@ -609,12 +771,30 @@ class CodexSettingsDomain:
             leading_lines.append(
                 f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
             )
+        attach_thread_id = binding_plan.thread_id
+        if binding_plan.clear_after_reset:
+            attach_thread_id = ""
+            try:
+                self._ports.clear_thread_binding(sender_id, chat_id, message_id)
+            except Exception as exc:
+                logger.exception("profile reset 后清理当前会话 binding 失败")
+                leading_lines.append(
+                    f"注意：当前绑定 thread 需要清理，但清理失败：{exc}"
+                )
+            else:
+                if binding_plan.note:
+                    leading_lines.append(binding_plan.note)
         return ProfileCommandOutcome(
             command_result=CommandResult(
                 card=self._build_startup_profile_summary_card(
                     current_profile=current_profile,
-                    profile_names=profile_names,
+                    profile_catalog=profile_catalog,
                     leading_lines=leading_lines + [""],
+                    extra_action_rows=self._attach_action_rows(
+                        include_thread=bool(attach_thread_id),
+                        include_service=True,
+                        thread_id=attach_thread_id,
+                    ),
                 )
             ),
             applied_profile=current_profile,
@@ -635,14 +815,13 @@ class CodexSettingsDomain:
         )
         if initial.command_result.card is None and not initial.cleared_profile and not initial.already_set:
             return initial
+        binding_plan = self._profile_reset_binding_plan(sender_id, chat_id, message_id=message_id)
         try:
             reset_result = self._ports.reset_current_instance_backend(force)
         except Exception as exc:
             logger.exception("reset backend 失败")
             return ProfileCommandOutcome(command_result=CommandResult(text=f"reset backend 失败：{exc}"))
-        profiles, profile_names = self._runtime_profile_catalog()
-        if profiles is None or profile_names is None:
-            return ProfileCommandOutcome(command_result=CommandResult(text="reset 完成，但重新读取 profile 列表失败。"))
+        profile_catalog = self._runtime_profile_catalog()
         leading_lines = [
             "已清空当前实例的 startup profile override。",
             "已重置当前实例 backend。",
@@ -656,12 +835,30 @@ class CodexSettingsDomain:
             leading_lines.append(
                 f"已自动结束待处理审批/输入请求：`{reset_result['fail_closed_request_count']}`"
             )
+        attach_thread_id = binding_plan.thread_id
+        if binding_plan.clear_after_reset:
+            attach_thread_id = ""
+            try:
+                self._ports.clear_thread_binding(sender_id, chat_id, message_id)
+            except Exception as exc:
+                logger.exception("profile clear reset 后清理当前会话 binding 失败")
+                leading_lines.append(
+                    f"注意：当前绑定 thread 需要清理，但清理失败：{exc}"
+                )
+            else:
+                if binding_plan.note:
+                    leading_lines.append(binding_plan.note)
         return ProfileCommandOutcome(
             command_result=CommandResult(
                 card=self._build_startup_profile_summary_card(
                     current_profile="",
-                    profile_names=profile_names,
+                    profile_catalog=profile_catalog,
                     leading_lines=leading_lines + [""],
+                    extra_action_rows=self._attach_action_rows(
+                        include_thread=bool(attach_thread_id),
+                        include_service=True,
+                        thread_id=attach_thread_id,
+                    ),
                 )
             ),
             cleared_profile=True,

@@ -82,8 +82,6 @@ operate on the same live thread.
 `fcodex` exists to provide:
 
 - one shared backend with the selected Feishu instance
-- an explicit `-p/--profile` first-thread seed for new threads created during
-  that launch
 - `resume <thread_name>` resolution on top of the shared backend
 - a compatibility patch for remote-mode working-directory behavior
 
@@ -112,11 +110,9 @@ off to the Python wrapper for actual instance selection. That layer:
 
 For code ownership, the launch path is intentionally split:
 
-- the wrapper owns selected-instance resolution and launch-time startup-profile
-  passthrough / memory-seed decisions
-  decisions
-- the proxy owns only transport fixes plus one-time persistence of the initial
-  new-thread profile seed after a real `thread_id` exists
+- the wrapper owns selected-instance resolution and local environment setup
+  before the backend connection is made
+- the proxy owns only transport fixes
 
 So "wrapper and service share local state" should now be read as:
 

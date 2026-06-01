@@ -59,15 +59,6 @@ class ShellCompletionTests(unittest.TestCase):
         self.assertEqual(instance_matches, ["corp-a", "corp-b", "default"])
         self.assertEqual(remove_matches, ["corp-a", "corp-b"])
 
-    def test_feishu_codexctl_completes_choice_options(self) -> None:
-        matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "memory", "--mode", "r"],
-            4,
-        )
-
-        self.assertEqual(matches, ["read", "read_write"])
-
     def test_feishu_codexctl_completes_thread_goal_subcommands(self) -> None:
         matches = complete_words(
             "feishu-codexctl",

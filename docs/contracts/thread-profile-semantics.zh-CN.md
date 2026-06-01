@@ -53,7 +53,8 @@ startup profile 会在以下边界被消费：
 当用户通过 `/profile` 或 `/profile-clear` 选择“应用并重置 backend”时：
 
 - 新 backend 会按新的 startup profile 启动
-- binding bookmark 保留
+- 若当前 bookmark 指向正常 thread，binding bookmark 保留
+- 若当前 bookmark 仍是 provisional shell，或该 thread 已不存在，实现可在 reset 恢复时清空当前会话 bookmark
 - 当前实例的相关飞书推送会先变成 `detached`
 - 结果卡会继续提供 `附着当前线程` / `附着当前实例` / `保持 detached`
 
@@ -68,13 +69,11 @@ startup profile 会在以下边界被消费：
 
 ## 5. 与其他设置的边界
 
-当前项目的运行时设置分三类：
+当前项目当前只保留两类可写设置：
 
-1. 实例 startup profile
-   - 本文件定义
-2. thread-wise next-load memory
-   - `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
-3. binding-wise next-turn 设置
+1. 实例 startup baseline
+   - 本文件定义的 startup profile
+2. binding-wise next-turn 设置
    - `docs/contracts/runtime-control-surface.zh-CN.md`
 
 `/profile` 只属于第 1 类。
@@ -91,4 +90,4 @@ startup profile 会在以下边界被消费：
 本项目现在把这些旧心智收缩为：
 
 - startup profile 只管理 managed backend 的启动基线
-- thread-wise next-load 正式保留的只有 memory
+- 不再保留项目自管的 thread-wise next-load 设置层

@@ -60,11 +60,6 @@ RuntimeState: TypeAlias = RuntimeStateDict
 BACKEND_RESET_STATUS_AVAILABLE = "available"
 BACKEND_RESET_STATUS_FORCE_ONLY = "force-only"
 BACKEND_RESET_STATUS_BLOCKED = "blocked"
-
-THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE = "direct-write"
-THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE = "reset-available"
-THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY = "reset-force-only"
-THREAD_MUTATION_PLAN_STATUS_BLOCKED = "blocked"
 @dataclass(frozen=True, slots=True)
 class BackendResetPreview:
     status: str
@@ -84,18 +79,6 @@ class BackendResetPreview:
     blocking_pending_request_count: int = 0
     collateral_loaded_thread_count: int = 0
     collateral_active_loaded_thread_count: int = 0
-
-
-@dataclass(frozen=True, slots=True)
-class ThreadMutationPlan:
-    status: str
-    thread_id: str
-    backend_thread_status: str
-    feishu_runtime_state: str
-    live_runtime_owner: str
-    reason_code: str
-    reason_text: str
-    diagnostics: tuple[str, ...] = ()
 
 
 class RuntimeAdminController:
@@ -190,13 +173,6 @@ class RuntimeAdminController:
             logger.exception("读取实例 startup profile 失败")
             return "读取失败"
         return profile or "（未设置）"
-
-    @staticmethod
-    def _result_requires_reset_backend(status: str) -> bool:
-        return status in {
-            THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
-            THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
-        }
 
     @staticmethod
     def binding_has_inflight_turn_locked(state: RuntimeState) -> bool:
@@ -1660,163 +1636,6 @@ class RuntimeAdminController:
 
     def backend_reset_preview(self) -> BackendResetPreview:
         return self._backend_reset_preview()
-
-    def _plan_threadwise_mutation(
-        self,
-        thread_id: str,
-        *,
-        direct_write_reason_code: str,
-        reset_available_reason_code: str,
-        reset_force_only_reason_code: str,
-        reset_force_only_runtime_unverified_reason_code: str,
-        blocked_by_other_instance_reason_code: str,
-        blocked_by_reset_unsupported_reason_code: str,
-        blocked_by_unbound_thread_reason_code: str,
-        subject_label: str,
-    ) -> ThreadMutationPlan:
-        normalized_thread_id = str(thread_id or "").strip()
-        current_instance_label = str(self._instance_name() or "").strip() or "当前实例"
-        if not normalized_thread_id:
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
-                thread_id="",
-                backend_thread_status=BACKEND_THREAD_STATUS_UNKNOWN,
-                feishu_runtime_state="-",
-                live_runtime_owner="",
-                reason_code=blocked_by_unbound_thread_reason_code,
-                reason_text="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
-            )
-
-        with self._lock:
-            bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
-            attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
-        lease = self._load_thread_runtime_lease(normalized_thread_id)
-        _summary, backend_thread_status = self.read_thread_summary_for_status(normalized_thread_id)
-        current_instance = str(self._instance_name() or "").strip().lower()
-        feishu_runtime_state = (
-            FEISHU_RUNTIME_ATTACHED
-            if attached_bindings
-            else FEISHU_RUNTIME_DETACHED
-            if bound_bindings
-            else "-"
-        )
-        live_runtime_owner = str(lease.owner_instance if lease is not None else "").strip()
-
-        diagnostics = [
-            f"当前 thread：`{normalized_thread_id[:8]}…`",
-            f"当前 backend thread status：`{backend_thread_status or BACKEND_THREAD_STATUS_UNKNOWN}`",
-            f"当前飞书推送：`{feishu_runtime_state}`",
-            (
-                f"当前 live runtime owner：`{live_runtime_owner}`"
-                if live_runtime_owner
-                else "当前 live runtime owner：`none`"
-            ),
-        ]
-
-        if (
-            backend_thread_status == BACKEND_THREAD_STATUS_NOT_LOADED
-            and not attached_bindings
-            and lease is None
-        ):
-            diagnostics.append(f"当前 thread 已 verifiably globally unloaded，可直接写入 {subject_label}。")
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_DIRECT_WRITE,
-                thread_id=normalized_thread_id,
-                backend_thread_status=backend_thread_status,
-                feishu_runtime_state=feishu_runtime_state,
-                live_runtime_owner=live_runtime_owner,
-                reason_code=direct_write_reason_code,
-                reason_text=f"当前 thread 已 verifiably globally unloaded，可直接写入 {subject_label}。",
-                diagnostics=tuple(diagnostics),
-            )
-
-        if lease is not None and lease.owner_instance != current_instance:
-            diagnostics.append(
-                f"当前 thread 的 live runtime 由实例 `{lease.owner_instance}` 持有；当前实例不能代它 reset backend。"
-            )
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
-                thread_id=normalized_thread_id,
-                backend_thread_status=backend_thread_status,
-                feishu_runtime_state=feishu_runtime_state,
-                live_runtime_owner=live_runtime_owner,
-                reason_code=blocked_by_other_instance_reason_code,
-                reason_text=(
-                    f"当前 thread 的 live runtime 仍由实例 `{lease.owner_instance}` 持有；"
-                    f"请优先在实例 `{lease.owner_instance}` 侧释放或重置 backend 后再重试。"
-                ),
-                diagnostics=tuple(diagnostics),
-            )
-
-        reset_preview = self._backend_reset_preview()
-        diagnostics.extend(reset_preview.diagnostics)
-        if reset_preview.status == BACKEND_RESET_STATUS_BLOCKED:
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_BLOCKED,
-                thread_id=normalized_thread_id,
-                backend_thread_status=backend_thread_status,
-                feishu_runtime_state=feishu_runtime_state,
-                live_runtime_owner=live_runtime_owner,
-                reason_code=blocked_by_reset_unsupported_reason_code,
-                reason_text=reset_preview.reason_text,
-                diagnostics=tuple(diagnostics),
-            )
-        if reset_preview.status == BACKEND_RESET_STATUS_FORCE_ONLY:
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
-                thread_id=normalized_thread_id,
-                backend_thread_status=backend_thread_status,
-                feishu_runtime_state=feishu_runtime_state,
-                live_runtime_owner=live_runtime_owner,
-                reason_code=(
-                    reset_force_only_runtime_unverified_reason_code
-                    if reset_preview.reason_code == BACKEND_RESET_FORCE_ONLY_BY_RUNTIME_UNVERIFIED
-                    else reset_force_only_reason_code
-                ),
-                reason_text=reset_preview.reason_text,
-                diagnostics=tuple(diagnostics),
-            )
-        target_attached_binding_ids = {
-            format_binding_id(binding)
-            for binding in attached_bindings
-        }
-        collateral_loaded_thread_ids = tuple(
-            thread_id
-            for thread_id in reset_preview.loaded_thread_ids
-            if thread_id and thread_id != normalized_thread_id
-        )
-        collateral_attached_binding_ids = tuple(
-            binding_id
-            for binding_id in reset_preview.attached_binding_ids
-            if binding_id and binding_id not in target_attached_binding_ids
-        )
-        if collateral_loaded_thread_ids or collateral_attached_binding_ids:
-            return ThreadMutationPlan(
-                status=THREAD_MUTATION_PLAN_STATUS_RESET_FORCE_ONLY,
-                thread_id=normalized_thread_id,
-                backend_thread_status=backend_thread_status,
-                feishu_runtime_state=feishu_runtime_state,
-                live_runtime_owner=live_runtime_owner,
-                reason_code=reset_force_only_reason_code,
-                reason_text=(
-                    "当前实例 backend reset 还会影响当前目标之外的其他 loaded thread"
-                    " 或 attached Feishu binding；为避免误打断，当前只允许 force reset。"
-                ),
-                diagnostics=tuple(diagnostics),
-            )
-        return ThreadMutationPlan(
-            status=THREAD_MUTATION_PLAN_STATUS_RESET_AVAILABLE,
-            thread_id=normalized_thread_id,
-            backend_thread_status=backend_thread_status,
-            feishu_runtime_state=feishu_runtime_state,
-            live_runtime_owner=live_runtime_owner,
-            reason_code=reset_available_reason_code,
-            reason_text=(
-                f"当前 thread 尚未满足 verifiably globally unloaded；"
-                f"若要现在生效，可通过重置实例 `{current_instance_label}` 的 backend 后再写入 {subject_label}。"
-            ),
-            diagnostics=tuple(diagnostics),
-        )
 
     def handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         if method == "service/status":

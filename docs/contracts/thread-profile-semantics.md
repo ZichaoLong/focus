@@ -59,7 +59,10 @@ When the operator chooses "apply and reset backend" from `/profile` or
 `/profile-clear`:
 
 - the new backend starts with the new startup profile
-- binding bookmarks stay
+- if the current bookmark points to a normal thread, the binding bookmark stays
+- if the current bookmark is still a provisional shell, or that thread no
+  longer exists, the implementation may clear the current binding bookmark as
+  part of reset recovery
 - relevant Feishu push paths become `detached` first
 - the result card offers `Attach Current Thread`, `Attach Current Instance`, and
   `Keep Detached`
@@ -75,13 +78,11 @@ What does not change here is:
 
 ## 5. Boundary against other setting families
 
-The current project separates runtime settings into three families:
+The project now keeps only two writable setting families:
 
-1. instance startup profile
-   - defined here
-2. thread-wise next-load memory
-   - `docs/contracts/thread-next-load-settings-semantics.md`
-3. binding-wise next-turn settings
+1. instance startup baseline
+   - the startup profile defined here
+2. binding-wise next-turn settings
    - `docs/contracts/runtime-control-surface.md`
 
 `/profile` belongs only to family 1.
@@ -98,4 +99,4 @@ The project no longer promises:
 The new contract is deliberately narrower:
 
 - startup profile only manages the managed backend startup baseline
-- memory is the only formal thread-wise next-load setting that remains
+- the project no longer owns any thread-wise next-load setting layer

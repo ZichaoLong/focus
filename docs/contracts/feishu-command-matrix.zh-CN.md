@@ -98,7 +98,7 @@
 - 执行卡：`取消执行`
 - `/threads` 列表卡：`恢复/当前`、`归档`、`更多`、`收起`
 - `/goal` 卡：`刷新`、`暂停` / `恢复`、`清除`
-- `/profile` / `/reset-backend` 结果卡：`应用并重置 backend`、`强制应用并重置 backend`、`附着当前线程`、`附着当前实例`、`保持 detached`
+- `/profile` / `/reset-backend` 结果卡：`应用并重置 backend`、`强制应用并重置 backend`、`清空 profile`、`清空并重置 backend`、`附着当前线程`、`附着当前实例`、`保持 detached`
 - `/model` / `/effort` 联合卡，以及 `/permissions` / `/approval` / `/collab-mode` 卡：turn-time runtime setting 切换按钮
 - 审批 / 补充输入卡：按当前请求类型暴露 `允许/拒绝/提交` 等按钮
 

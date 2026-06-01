@@ -48,6 +48,7 @@ from bot.instance_layout import current_instance_name, global_data_dir
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.codex_protocol.client import CodexRpcError
 from bot.codex_goal_domain import CodexGoalDomain, GoalDomainPorts
+from bot.codex_config_reader import list_profile_v2_names, profile_v2_is_usable
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 from bot.codex_help_domain import CodexHelpDomain
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
@@ -361,6 +362,17 @@ class CodexHandler(BotHandler):
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
                 safe_read_runtime_config=self._safe_read_runtime_config,
+                list_local_profile_names=lambda: [
+                    name for name in list_profile_v2_names()
+                    if profile_v2_is_usable(name)
+                ],
+                read_thread_summary=lambda thread_id: self._adapter.read_thread(thread_id, include_turns=False).summary,
+                clear_thread_binding=lambda sender_id, chat_id, message_id="": self._clear_thread_binding(
+                    sender_id,
+                    chat_id,
+                    message_id=message_id,
+                ),
+                is_thread_not_found_error=self._is_thread_not_found_error,
             ),
             approval_policies=_APPROVAL_POLICIES,
         )
