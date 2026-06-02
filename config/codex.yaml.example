@@ -102,6 +102,11 @@
 # 说明：到期后不会再自动绑定到后续文本，且本地暂存文件会被清理。
 # attachment_ttl_seconds: 1800
 
+# 后端静默时终态补偿 watchdog 的触发秒数；默认值：8
+# 说明：若 app-server 在 turn 末尾漏发终态通知，超过该时长后会主动做一次 reconcile。
+# 说明：仅用于运行态补偿；调大可减少误补偿，调小可更快收敛漏通知。
+# mirror_watchdog_seconds: 8
+
 # 运行中主卡片最小 patch 间隔（毫秒）；默认值：700
 # stream_patch_interval_ms: 700
 

@@ -261,6 +261,7 @@ class InstallTemplateTests(unittest.TestCase):
         self.assertIn("override 文件", CODEX_YAML_TEMPLATE)
         self.assertIn("命名实例不会继承 default 实例", CODEX_YAML_TEMPLATE)
         self.assertIn("managed_startup_profile", CODEX_YAML_TEMPLATE)
+        self.assertIn("mirror_watchdog_seconds", CODEX_YAML_TEMPLATE)
 
     def test_system_yaml_template_mentions_real_request_timeout_default(self) -> None:
         self.assertIn(f"# request_timeout_seconds: {int(DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS)}", SYSTEM_YAML_TEMPLATE)
