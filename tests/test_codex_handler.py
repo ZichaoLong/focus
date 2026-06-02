@@ -3066,6 +3066,45 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("只决定什么时候停下来等你确认", card["elements"][0]["content"])
         self.assertIn("优先使用 `/permissions`", card["elements"][0]["content"])
 
+    def test_help_execute_approval_action_adds_return_help_and_preserves_it_after_toggle(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "help_execute_command", "command": "/approval", "title": "Codex 审批策略"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 审批策略")
+        action_elements = self._action_elements(response["card"])
+        self.assertEqual(action_elements[-1]["actions"][0]["text"]["content"], "返回帮助")
+        policy_action = action_elements[0]["actions"][0]["value"]
+        self.assertEqual(policy_action["help_origin"], "overview")
+
+        updated = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            policy_action,
+        ))
+
+        self.assertEqual(updated["card"]["header"]["title"]["content"], "Codex 审批策略")
+        self.assertEqual(self._action_elements(updated["card"])[-1]["actions"][0]["text"]["content"], "返回帮助")
+
+    def test_show_help_page_action_ignores_help_origin_redecoration(self) -> None:
+        handler, _ = self._make_handler()
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-help",
+            {"action": "show_help_page", "page": "overview", "help_origin": "overview"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台")
+        self.assertEqual(len(self._action_elements(response["card"])), 3)
+
     def test_collab_mode_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
 

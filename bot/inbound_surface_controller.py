@@ -7,7 +7,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.cards import CommandResult, build_markdown_card, make_card_response
+from bot.cards import CommandResult, build_markdown_card, decorate_help_navigation_card, make_card_response
 
 
 @dataclass(frozen=True)
@@ -170,7 +170,12 @@ class InboundSurfaceController:
         )
         if denied is not None:
             return denied
-        return route.handler(sender_id, chat_id, message_id, action_value)
+        response = route.handler(sender_id, chat_id, message_id, action_value)
+        return self._decorate_help_origin_response(
+            response,
+            action=str(action or "").strip(),
+            action_value=action_value,
+        )
 
     def handle_command(self, sender_id: str, chat_id: str, text: str, *, message_id: str = "") -> None:
         execution = self.execute_command_text(sender_id, chat_id, text, message_id=message_id)
@@ -235,7 +240,7 @@ class InboundSurfaceController:
                 toast="已发送最近文本。",
                 toast_type="success",
             )
-        return self._command_action_response(execution, title=title)
+        return self._command_action_response(execution, title=title, help_origin="overview")
 
     def handle_help_submit_command_action(
         self,
@@ -268,7 +273,7 @@ class InboundSurfaceController:
             f"{command} {arg}",
             message_id=message_id,
         )
-        return self._command_action_response(execution, title=title)
+        return self._command_action_response(execution, title=title, help_origin="overview")
 
     def _command_scope_denial_text(self, route: CommandRoute, chat_id: str, message_id: str = "") -> str:
         if route.scope == "any":
@@ -305,6 +310,7 @@ class InboundSurfaceController:
         execution: CommandExecution,
         *,
         title: str,
+        help_origin: str = "",
     ) -> P2CardActionTriggerResponse:
         if execution.error_text:
             return make_card_response(
@@ -320,10 +326,36 @@ class InboundSurfaceController:
         if result.after_dispatch is not None:
             result.after_dispatch()
         if result.card is not None:
-            return make_card_response(card=result.card)
+            card = result.card
+            if help_origin:
+                decorate_help_navigation_card(card, page=help_origin)
+            return make_card_response(card=card)
         if result.text:
-            return make_card_response(card=build_markdown_card(title or "Codex 命令结果", result.text))
+            card = build_markdown_card(title or "Codex 命令结果", result.text)
+            if help_origin:
+                decorate_help_navigation_card(card, page=help_origin)
+            return make_card_response(card=card)
         return P2CardActionTriggerResponse()
+
+    @staticmethod
+    def _decorate_help_origin_response(
+        response,
+        *,
+        action: str,
+        action_value: dict[str, Any],
+    ):
+        help_origin = str(action_value.get("help_origin", "") or "").strip()
+        if not help_origin or action == "show_help_page":
+            return response
+        if isinstance(response, dict):
+            card = response.get("card")
+            if isinstance(card, dict):
+                decorate_help_navigation_card(card, page=help_origin)
+            return response
+        callback_card = getattr(response, "card", None)
+        if callback_card is not None and isinstance(getattr(callback_card, "data", None), dict):
+            decorate_help_navigation_card(callback_card.data, page=help_origin)
+        return response
 
     def _check_action_group_guard(
         self,

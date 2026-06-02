@@ -113,6 +113,8 @@ Owns:
 
 - first-level workspace pages must expose `Back Home`
 - lower-level pages must expose only `Back`
+- command or result cards opened from `/help` must still provide a way back to
+  the help home page, even after follow-up card actions or form submits
 - every back button occupies its own row
 
 ## 5. Compatibility entries

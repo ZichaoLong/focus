@@ -179,6 +179,70 @@ def build_markdown_action_card(
     }
 
 
+def _iter_card_dict_nodes(node: dict | list | None) -> list[dict]:
+    nodes: list[dict] = []
+    if isinstance(node, dict):
+        nodes.append(node)
+        for value in node.values():
+            nodes.extend(_iter_card_dict_nodes(value))
+    elif isinstance(node, list):
+        for item in node:
+            nodes.extend(_iter_card_dict_nodes(item))
+    return nodes
+
+
+def _card_has_help_home_button(card: dict, *, page: str) -> bool:
+    for node in _iter_card_dict_nodes(card):
+        if node.get("tag") != "button":
+            continue
+        value = node.get("value")
+        if not isinstance(value, dict):
+            continue
+        if str(value.get("action", "")).strip() != "show_help_page":
+            continue
+        if str(value.get("page", "")).strip() == page:
+            return True
+    return False
+
+
+def _card_elements_list(card: dict) -> list[dict] | None:
+    elements = card.get("elements")
+    if isinstance(elements, list):
+        return elements
+    body = card.get("body")
+    if isinstance(body, dict):
+        body_elements = body.get("elements")
+        if isinstance(body_elements, list):
+            return body_elements
+    return None
+
+
+def _stamp_card_help_origin(card: dict, *, page: str) -> None:
+    for node in _iter_card_dict_nodes(card):
+        if node.get("tag") != "button":
+            continue
+        value = node.get("value")
+        if isinstance(value, dict) and "help_origin" not in value:
+            value["help_origin"] = page
+
+
+def decorate_help_navigation_card(card: dict, *, page: str = "overview") -> dict:
+    normalized_page = str(page or "").strip() or "overview"
+    has_help_home_button = _card_has_help_home_button(card, page=normalized_page)
+    if has_help_home_button:
+        _stamp_card_help_origin(card, page=normalized_page)
+        return card
+    elements = _card_elements_list(card)
+    if elements is None:
+        _stamp_card_help_origin(card, page=normalized_page)
+        return card
+    if elements and (not isinstance(elements[-1], dict) or elements[-1].get("tag") != "hr"):
+        elements.append({"tag": "hr"})
+    elements.append(_back_to_help_action(page=normalized_page))
+    _stamp_card_help_origin(card, page=normalized_page)
+    return card
+
+
 def build_terminal_result_card(
     final_reply_text: str,
 ) -> dict:
@@ -499,7 +563,7 @@ def build_resume_active_goal_confirm_card(
     )
 
 
-def _back_to_help_action() -> dict:
+def _back_to_help_action(*, page: str = "overview") -> dict:
     return {
         "tag": "action",
         "actions": [
@@ -509,7 +573,7 @@ def _back_to_help_action() -> dict:
                 "type": "default",
                 "value": {
                     "action": "show_help_page",
-                    "page": "overview",
+                    "page": page,
                 },
             }
         ],

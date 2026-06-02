@@ -98,6 +98,31 @@ class InboundSurfaceControllerTests(unittest.TestCase):
                     )[1],
                     group_guard="group_admin",
                 ),
+                "card_echo": ActionRoute(
+                    handler=lambda sender_id, chat_id, message_id, action_value: {
+                        "card": {
+                            "config": {"wide_screen_mode": True, "update_multi": True},
+                            "header": {
+                                "title": {"tag": "plain_text", "content": "Echo"},
+                                "template": "blue",
+                            },
+                            "elements": [
+                                {"tag": "markdown", "content": "echo"},
+                                {
+                                    "tag": "action",
+                                    "actions": [
+                                        {
+                                            "tag": "button",
+                                            "text": {"tag": "plain_text", "content": "Next"},
+                                            "type": "default",
+                                            "value": {"action": "noop"},
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    }
+                ),
             },
             prefixed_action_routes=[
                 (
@@ -182,6 +207,55 @@ class InboundSurfaceControllerTests(unittest.TestCase):
         self.assertEqual(cards, [])
         self.assertEqual(response["toast"], "已发送最近文本。")
         self.assertEqual(response["toast_type"], "success")
+
+    def test_help_execute_text_command_wraps_result_card_with_return_help(self) -> None:
+        controller, *_ = self._make_controller()
+
+        response = self._unpack_card_response(
+            controller.handle_help_execute_command_action(
+                "ou_user",
+                "c1",
+                "msg-help",
+                {
+                    "action": "help_execute_command",
+                    "command": "/status",
+                    "title": "Codex 当前状态",
+                },
+            )
+        )
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前状态")
+        action_rows = [
+            element for element in response["card"]["elements"]
+            if isinstance(element, dict) and element.get("tag") == "action"
+        ]
+        self.assertEqual(action_rows[-1]["actions"][0]["text"]["content"], "返回帮助")
+        self.assertEqual(
+            action_rows[-1]["actions"][0]["value"],
+            {"action": "show_help_page", "page": "overview", "help_origin": "overview"},
+        )
+
+    def test_help_origin_card_action_preserves_return_help_and_propagates_metadata(self) -> None:
+        controller, *_ = self._make_controller()
+
+        response = self._unpack_card_response(
+            controller.handle_card_action(
+                "ou_user",
+                "c1",
+                "msg-help",
+                {
+                    "action": "card_echo",
+                    "help_origin": "overview",
+                },
+            )
+        )
+
+        action_rows = [
+            element for element in response["card"]["elements"]
+            if isinstance(element, dict) and element.get("tag") == "action"
+        ]
+        self.assertEqual(action_rows[0]["actions"][0]["value"], {"action": "noop", "help_origin": "overview"})
+        self.assertEqual(action_rows[-1]["actions"][0]["text"]["content"], "返回帮助")
 
     def test_group_action_guard_denies_non_admin_actor(self) -> None:
         controller, _, _, _, _, _, action_calls, _, _, _ = self._make_controller()
