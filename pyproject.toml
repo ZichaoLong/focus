@@ -27,6 +27,7 @@ include = ["bot*"]
 version = {attr = "bot.version.__version__"}
 
 [tool.setuptools.package-data]
+"bot.install_template_data" = ["*.example"]
 "bot.managed_skills.feishu_send_image" = ["skill/SKILL.md", "skill/agents/openai.yaml"]
 "bot.managed_skills.feishu_scheduled_prompts" = [
   "skill/SKILL.md",

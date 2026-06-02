@@ -1,0 +1,34 @@
+app_id: "your_cc_bot_app_id"
+app_secret: "your_cc_bot_app_secret"
+
+# 飞书 HTTP API 请求超时（秒）；默认值：5
+# request_timeout_seconds: 5
+
+# 群聊管理员 open_id 列表；这些人始终具备群聊触发资格，并可使用
+# 所有群里的 `/` 命令（包括 `/group`、`/group-mode`、`/new`、`/threads` 等）。
+# 若群工作态是 `assistant` 或 `mention-only`，他们仍需先显式 mention
+# 触发对象，才会触发对话或群命令。
+# 也可在服务启动后，私聊机器人执行 `/init <token>` 自动写入。
+# admin_open_ids:
+#   - "ou_xxx 这样的 open_id；可先私聊机器人发送 /whoami 获取"
+
+# 机器人自身的 open_id。群聊能力依赖它做严格 mention 判定。
+# 若已开通 `application:application:self_manage`，也可通过 `/init <token>` 自动写入。
+# bot_open_id: "ou_xxx"
+
+# 初始化口令不放在 YAML 里；安装程序会在配置目录生成单独的 `init.token` 文件。
+# 首次私聊机器人时，可执行 `/init <token>` 完成管理员和 `bot_open_id` 初始化。
+
+# 额外的群聊触发 open_id 列表。若群消息 @到了这些 open_id，也会被视为
+# 一次有效触发。常见场景：别人 @你本人，由机器人代答。
+# 仍建议同时配置 `bot_open_id`；未配置 `bot_open_id` 时，这些 alias 不生效。
+# trigger_open_ids:
+#   - "ou_xxx"
+
+# assistant 模式每次有效被 @ 时，最多回捞多少条历史消息。
+# 设为 0 表示禁用历史回捞。默认值：50
+# group_history_fetch_limit: 50
+
+# assistant 模式每次历史回捞的时间窗口（秒）。
+# 设为 0 表示禁用历史回捞。默认值：86400（24 小时）
+# group_history_fetch_lookback_seconds: 86400

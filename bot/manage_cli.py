@@ -30,7 +30,6 @@ from bot.instance_layout import (
     resolve_instance_paths,
     validate_instance_name,
 )
-from bot.install_templates import CODEX_YAML_TEMPLATE, SYSTEM_YAML_TEMPLATE, render_initial_codex_yaml
 from bot.instance_resolution import list_running_instances
 from bot.platform_paths import (
     default_config_root,
@@ -78,6 +77,22 @@ _MANAGED_SKILLS: tuple[_ManagedSkillSpec, ...] = (
     _ManagedSkillSpec(name="feishu-scheduled-prompts", package="bot.managed_skills.feishu_scheduled_prompts"),
 )
 _DEFAULT_MANAGED_SKILL_NAME = _MANAGED_SKILLS[0].name
+
+
+def _install_templates_module():
+    return importlib.import_module("bot.install_templates")
+
+
+def _system_yaml_template() -> str:
+    return _install_templates_module().SYSTEM_YAML_TEMPLATE
+
+
+def _codex_yaml_template() -> str:
+    return _install_templates_module().CODEX_YAML_TEMPLATE
+
+
+def render_initial_codex_yaml() -> str:
+    return _install_templates_module().render_initial_codex_yaml()
 
 
 def _windows_user_path_metadata_path() -> pathlib.Path:
@@ -613,9 +628,11 @@ def _ensure_instance_scaffold(instance_name: str) -> None:
     paths.config_dir.mkdir(parents=True, exist_ok=True)
     paths.data_dir.mkdir(parents=True, exist_ok=True)
     paths.global_data_dir.mkdir(parents=True, exist_ok=True)
-    _ensure_text_file(paths.config_dir / "system.yaml.example", SYSTEM_YAML_TEMPLATE, overwrite=True)
-    _ensure_text_file(paths.config_dir / "codex.yaml.example", CODEX_YAML_TEMPLATE, overwrite=True)
-    _ensure_text_file(paths.config_dir / "system.yaml", SYSTEM_YAML_TEMPLATE, overwrite=False, private=True)
+    system_template = _system_yaml_template()
+    codex_template = _codex_yaml_template()
+    _ensure_text_file(paths.config_dir / "system.yaml.example", system_template, overwrite=True)
+    _ensure_text_file(paths.config_dir / "codex.yaml.example", codex_template, overwrite=True)
+    _ensure_text_file(paths.config_dir / "system.yaml", system_template, overwrite=False, private=True)
     _ensure_text_file(paths.config_dir / "codex.yaml", render_initial_codex_yaml(), overwrite=False)
     ensure_env_template()
     _ensure_init_token(paths.config_dir / "init.token")

@@ -1,11 +1,13 @@
 import pathlib
 import shlex
 import tempfile
+import tomllib
 import unittest
 from unittest.mock import patch
 
 import yaml
 
+import bot.install_templates as install_templates
 from bot.constants import DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS
 from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.install_templates import CODEX_YAML_TEMPLATE, SYSTEM_YAML_TEMPLATE, detect_stable_codex_command, render_initial_codex_yaml
@@ -263,6 +265,18 @@ class InstallTemplateTests(unittest.TestCase):
         self.assertIn("managed_startup_profile", CODEX_YAML_TEMPLATE)
         self.assertIn("mirror_watchdog_seconds", CODEX_YAML_TEMPLATE)
 
+    def test_load_template_falls_back_to_packaged_resource_when_repo_example_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("bot.install_templates._repo_root", return_value=pathlib.Path(tmpdir)):
+                self.assertEqual(
+                    install_templates._load_template("system.yaml.example"),
+                    SYSTEM_YAML_TEMPLATE,
+                )
+                self.assertEqual(
+                    install_templates._load_template("codex.yaml.example"),
+                    CODEX_YAML_TEMPLATE,
+                )
+
     def test_system_yaml_template_mentions_real_request_timeout_default(self) -> None:
         self.assertIn(f"# request_timeout_seconds: {int(DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS)}", SYSTEM_YAML_TEMPLATE)
 
@@ -277,6 +291,26 @@ class InstallTemplateTests(unittest.TestCase):
             pathlib.Path(__file__).resolve().parents[1] / "config" / "system.yaml.example"
         ).read_text(encoding="utf-8")
         self.assertEqual(repo_example, SYSTEM_YAML_TEMPLATE)
+
+    def test_packaged_template_files_match_repo_examples(self) -> None:
+        packaged_dir = install_templates._packaged_template_dir()
+        repo_root = pathlib.Path(__file__).resolve().parents[1]
+
+        self.assertEqual(
+            (packaged_dir / "system.yaml.example").read_text(encoding="utf-8"),
+            (repo_root / "config" / "system.yaml.example").read_text(encoding="utf-8"),
+        )
+        self.assertEqual(
+            (packaged_dir / "codex.yaml.example").read_text(encoding="utf-8"),
+            (repo_root / "config" / "codex.yaml.example").read_text(encoding="utf-8"),
+        )
+
+    def test_pyproject_includes_packaged_template_payload(self) -> None:
+        pyproject_path = pathlib.Path(__file__).resolve().parents[1] / "pyproject.toml"
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+
+        package_data = data["tool"]["setuptools"]["package-data"]
+        self.assertEqual(package_data["bot.install_template_data"], ["*.example"])
 
 
 if __name__ == "__main__":
