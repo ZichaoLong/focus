@@ -61,7 +61,9 @@ class _FakeAdapter:
         self.set_active_profile_calls: list[str] = []
         self.create_thread_calls: list[dict] = []
         self.resume_thread_calls: list[dict] = []
+        self.set_thread_goal_calls: list[dict] = []
         self.update_thread_settings_calls: list[dict] = []
+        self.operation_log: list[tuple[str, str, str | None]] = []
         self.start_turn_calls: list[dict] = []
         self.interrupt_turn_calls: list[dict] = []
         self.respond_calls: list[dict] = []
@@ -144,6 +146,15 @@ class _FakeAdapter:
         status: str | None = None,
         token_budget: int | None = None,
     ) -> ThreadGoalSummary:
+        self.set_thread_goal_calls.append(
+            {
+                "thread_id": thread_id,
+                "objective": objective,
+                "status": status,
+                "token_budget": token_budget,
+            }
+        )
+        self.operation_log.append(("set_thread_goal", thread_id, status))
         existing = self.thread_goals.get(thread_id)
         if existing is None:
             if not objective:
@@ -195,7 +206,9 @@ class _FakeAdapter:
             {
                 thread_id
                 for (thread_id, _include_turns), snapshot in self.thread_snapshots.items()
-                if snapshot is not None and not isinstance(snapshot, Exception)
+                if snapshot is not None
+                and not isinstance(snapshot, Exception)
+                and str(snapshot.summary.status or "").strip() != "notLoaded"
             }
         )
 
@@ -224,6 +237,7 @@ class _FakeAdapter:
             "approval_policy": approval_policy,
             "permissions_profile_id": permissions_profile_id,
         })
+        self.operation_log.append(("resume_thread", thread_id, model))
         return ThreadSnapshot(
             summary=ThreadSummary(
                 thread_id=thread_id,
@@ -257,6 +271,7 @@ class _FakeAdapter:
                 "collaboration_mode": collaboration_mode,
             }
         )
+        self.operation_log.append(("update_thread_settings", thread_id, model))
 
     def unsubscribe_thread(self, thread_id: str) -> None:
         self.unsubscribe_thread_calls.append(thread_id)
@@ -3639,8 +3654,8 @@ class CodexHandlerTests(unittest.TestCase):
             {
                 "thread_id": "thread-1",
                 "profile": None,
-                "config_overrides": None,
-                "model": None,
+                "config_overrides": {"model_reasoning_effort": "high"},
+                "model": "gpt-5.4",
                 "model_provider": None,
                 "approval_policy": "on-request",
                 "permissions_profile_id": ":workspace",
@@ -3659,6 +3674,67 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
         self.assertIn("状态：`active`", bot.cards[-1][1]["elements"][0]["content"])
+
+    def test_goal_resume_cold_active_goal_pauses_before_resume_then_reactivates(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["approval_policy"] = "never"
+        state["permissions_profile_id"] = ":danger-full-access"
+        state["model"] = "gpt-5.5"
+        state["reasoning_effort"] = "high"
+        state["collaboration_mode"] = "plan"
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.set_thread_goal_calls[-2:],
+            [
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "paused",
+                    "token_budget": None,
+                },
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "active",
+                    "token_budget": None,
+                },
+            ],
+        )
+        self.assertEqual(
+            handler._adapter.operation_log[-4:],
+            [
+                ("set_thread_goal", "thread-1", "paused"),
+                ("resume_thread", "thread-1", "gpt-5.5"),
+                ("update_thread_settings", "thread-1", "gpt-5.5"),
+                ("set_thread_goal", "thread-1", "active"),
+            ],
+        )
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
 
     def test_goal_resume_card_action_acknowledges_immediately_then_attaches_in_background(self) -> None:
         handler, _ = self._make_handler()
@@ -5316,7 +5392,7 @@ class CodexHandlerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "匹配到多个同名线程"):
             handler._resume_snapshot("demo")
 
-    def test_resume_command_for_not_loaded_thread_resumes_directly(self) -> None:
+    def test_resume_command_for_not_loaded_thread_resumes_directly_and_syncs_runtime_settings(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5332,6 +5408,12 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler._adapter.list_threads_all = lambda **kwargs: [thread]
         handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["approval_policy"] = "never"
+        state["permissions_profile_id"] = ":danger-full-access"
+        state["model"] = "gpt-5.5"
+        state["reasoning_effort"] = "high"
+        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/resume demo")
 
@@ -5339,7 +5421,207 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(pending_card["header"]["title"]["content"], "Codex 正在恢复线程")
         self.assertIn("正在恢复：`demo`", pending_card["elements"][0]["content"])
         handler._runtime_call(lambda: None)
-        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
+        self.assertEqual(
+            handler._adapter.resume_thread_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "profile": None,
+                "config_overrides": {"model_reasoning_effort": "high"},
+                "model": "gpt-5.5",
+                "model_provider": None,
+                "approval_policy": "never",
+                "permissions_profile_id": ":danger-full-access",
+            },
+        )
+        self.assertEqual(
+            handler._adapter.update_thread_settings_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "approval_policy": "never",
+                "permissions_profile_id": ":danger-full-access",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
+                "collaboration_mode": "plan",
+            },
+        )
+
+    def test_resume_command_for_unloaded_active_goal_requires_confirm(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.list_threads_all = lambda **kwargs: [thread]
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+
+        handler.handle_message("ou_user", "c1", "/resume demo")
+
+        _, confirm_card = bot.cards[-1]
+        self.assertEqual(confirm_card["header"]["title"]["content"], "Codex 恢复线程确认")
+        content = confirm_card["elements"][0]["content"]
+        self.assertIn("persisted goal 当前是 `active`", content)
+        actions = self._first_action(confirm_card)["actions"]
+        self.assertEqual([item["text"]["content"] for item in actions], ["按当前设置恢复并继续", "直接恢复"])
+        self.assertEqual(handler._adapter.resume_thread_calls, [])
+
+    def test_resume_confirm_strict_active_goal_syncs_before_reactivating(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.list_threads_all = lambda **kwargs: [thread]
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["approval_policy"] = "never"
+        state["permissions_profile_id"] = ":danger-full-access"
+        state["model"] = "gpt-5.5"
+        state["reasoning_effort"] = "high"
+        state["collaboration_mode"] = "plan"
+
+        handler.handle_message("ou_user", "c1", "/resume demo")
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-resume",
+            {
+                "action": "resume_thread_confirm",
+                "thread_id": "thread-1",
+                "thread_title": "demo",
+                "strict_active_goal_resume": "true",
+                "origin": "command",
+            },
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.resume_thread_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "profile": None,
+                "config_overrides": {"model_reasoning_effort": "high"},
+                "model": "gpt-5.5",
+                "model_provider": None,
+                "approval_policy": "never",
+                "permissions_profile_id": ":danger-full-access",
+            },
+        )
+        self.assertEqual(
+            handler._adapter.operation_log[-4:],
+            [
+                ("set_thread_goal", "thread-1", "paused"),
+                ("resume_thread", "thread-1", "gpt-5.5"),
+                ("update_thread_settings", "thread-1", "gpt-5.5"),
+                ("set_thread_goal", "thread-1", "active"),
+            ],
+        )
+
+    def test_resume_confirm_direct_resume_skips_strict_pause_but_syncs_followup_settings(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.list_threads_all = lambda **kwargs: [thread]
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["approval_policy"] = "never"
+        state["permissions_profile_id"] = ":danger-full-access"
+        state["model"] = "gpt-5.5"
+        state["reasoning_effort"] = "high"
+        state["collaboration_mode"] = "plan"
+
+        handler.handle_message("ou_user", "c1", "/resume demo")
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-resume",
+            {
+                "action": "resume_thread_confirm",
+                "thread_id": "thread-1",
+                "thread_title": "demo",
+                "strict_active_goal_resume": "",
+                "origin": "command",
+            },
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 正在恢复线程")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.resume_thread_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "profile": None,
+                "config_overrides": None,
+                "model": None,
+                "model_provider": None,
+                "approval_policy": None,
+                "permissions_profile_id": None,
+            },
+        )
+        self.assertEqual(
+            handler._adapter.update_thread_settings_calls[-1],
+            {
+                "thread_id": "thread-1",
+                "approval_policy": "never",
+                "permissions_profile_id": ":danger-full-access",
+                "model": "gpt-5.5",
+                "reasoning_effort": "high",
+                "collaboration_mode": "plan",
+            },
+        )
+        self.assertEqual(handler._adapter.set_thread_goal_calls, [])
 
     def test_threads_card_mentions_global_resume_scope(self) -> None:
         handler, bot = self._make_handler()
@@ -6830,18 +7112,11 @@ class CodexHandlerTests(unittest.TestCase):
             {"action": "resume_thread", "thread_id": "thread-missing", "thread_title": "missing"},
         ))
 
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
-        self.assertIn("正在恢复线程", response["card"]["elements"][0]["content"])
-        handler._runtime_call(lambda: None)
-
-        self.assertIn("恢复线程失败", bot.replies[-1][1])
-        patched = json.loads(next(content for message_id, content in bot.patches if message_id == "msg-session"))
-        content = "\n".join(
-            element.get("content", "")
-            for element in patched["elements"]
-            if isinstance(element, dict) and element.get("tag") == "markdown"
-        )
-        self.assertIn("thread-1", content)
+        self.assertEqual(response["toast_type"], "warning")
+        self.assertIn("恢复线程失败", response["toast"])
+        self.assertNotIn("card", response)
+        self.assertEqual(bot.replies, [])
+        self.assertEqual(bot.patches, [])
 
     def test_attach_binding_card_action_returns_ack_card_then_sends_result_card(self) -> None:
         handler, bot = self._make_handler()

@@ -482,6 +482,68 @@ def build_goal_detached_confirm_card(
     )
 
 
+def build_resume_active_goal_confirm_card(
+    *,
+    thread_id: str,
+    thread_title: str,
+    origin: str,
+) -> dict:
+    normalized_thread_id = str(thread_id or "").strip()
+    normalized_thread_title = str(thread_title or "").strip()
+    normalized_origin = str(origin or "").strip() or "command"
+    lines = [
+        (
+            f"线程：`{normalized_thread_id[:8]}…` {normalized_thread_title or '（无标题）'}"
+            if normalized_thread_id
+            else "线程：-"
+        ),
+        "",
+        "当前目标 thread 尚未加载到本实例 backend。",
+        "该 thread 的 persisted goal 当前是 `active`。",
+        "如果直接恢复，app-server 可能会立刻继续这条 goal；第一轮自动续跑不保证吃到当前会话设置。",
+        "",
+        "请选择：",
+        "- 按当前设置恢复并继续：先暂停 persisted goal，再 cold resume、同步当前会话设置，最后恢复 goal",
+        "- 直接恢复：按当前 backend 状态直接恢复；当前会话设置只会在恢复后补齐后续 turn",
+    ]
+    return build_markdown_action_card(
+        "Codex 恢复线程确认",
+        "\n".join(lines),
+        template="orange",
+        action_rows=[
+            {
+                "tag": "action",
+                "actions": [
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "按当前设置恢复并继续"},
+                        "type": "primary",
+                        "value": {
+                            "action": "resume_thread_confirm",
+                            "thread_id": normalized_thread_id,
+                            "thread_title": normalized_thread_title,
+                            "strict_active_goal_resume": "true",
+                            "origin": normalized_origin,
+                        },
+                    },
+                    {
+                        "tag": "button",
+                        "text": {"tag": "plain_text", "content": "直接恢复"},
+                        "type": "default",
+                        "value": {
+                            "action": "resume_thread_confirm",
+                            "thread_id": normalized_thread_id,
+                            "thread_title": normalized_thread_title,
+                            "strict_active_goal_resume": "",
+                            "origin": normalized_origin,
+                        },
+                    },
+                ],
+            }
+        ],
+    )
+
+
 def _back_to_help_action() -> dict:
     return {
         "tag": "action",

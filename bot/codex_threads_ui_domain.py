@@ -16,17 +16,19 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
     P2CardActionTriggerResponse,
 )
 
-from bot.adapters.base import ThreadSummary
+from bot.adapters.base import ThreadGoalSummary, ThreadSummary
 from bot.cards import (
     CommandResult,
     build_markdown_card,
     build_rename_card,
+    build_resume_active_goal_confirm_card,
     build_threads_card,
     build_threads_closed_card,
     build_threads_pending_card,
     make_card_response,
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
+from bot.runtime_state import BACKEND_THREAD_STATUS_NOT_LOADED
 from bot.runtime_view import RuntimeView
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,7 @@ class _ResumeThreadOnRuntime(Protocol):
         *,
         original_arg: str | None = None,
         summary: ThreadSummary | None = None,
+        strict_active_goal_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None: ...
@@ -105,6 +108,10 @@ class _ReadThreadSummaryAuthoritatively(Protocol):
     def __call__(self, thread_id: str, *, original_arg: str) -> ThreadSummary: ...
 
 
+class _GetThreadGoal(Protocol):
+    def __call__(self, thread_id: str) -> ThreadGoalSummary | None: ...
+
+
 class _ArchiveThreadForControl(Protocol):
     def __call__(
         self,
@@ -146,6 +153,7 @@ class ThreadsUiPorts:
     resolve_resume_target: _ResolveResumeTarget
     list_visible_current_dir_threads: _ListVisibleCurrentDirThreads
     read_thread_summary_authoritatively: _ReadThreadSummaryAuthoritatively
+    get_thread_goal: _GetThreadGoal
     archive_thread_for_control: _ArchiveThreadForControl
     compact_thread: _CompactThread
     rename_thread: _RenameThread
@@ -209,16 +217,29 @@ class CodexThreadsUiDomain:
                 text=f"用法：`{_RESUME_USAGE}`\n发送 `/help thread` 查看 `/threads` 与 `/resume` 的区别。"
             )
         target = arg.strip()
+        try:
+            thread = self._ports.resolve_resume_target(target)
+            goal = self._ports.get_thread_goal(thread.thread_id)
+        except Exception as exc:
+            logger.exception("解析恢复目标失败")
+            return CommandResult(text=f"恢复线程失败：{exc}")
+        if self._resume_requires_active_goal_confirm(thread, goal):
+            return CommandResult(
+                card=build_resume_active_goal_confirm_card(
+                    thread_id=thread.thread_id,
+                    thread_title=thread.title,
+                    origin="command",
+                )
+            )
         return CommandResult(
-            card=build_markdown_card(
-                "Codex 正在恢复线程",
-                f"正在恢复：`{target}`\n完成后会自动回复结果。",
-            ),
+            card=self._build_resume_pending_command_card(target),
             after_dispatch=lambda: self._runtime_ports.submit_to_runtime(
                 self._resume_target_on_runtime,
                 sender_id,
                 chat_id,
-                target,
+                thread.thread_id,
+                original_arg=target,
+                summary=thread,
                 message_id=message_id,
             ),
         )
@@ -375,15 +396,70 @@ class CodexThreadsUiDomain:
         if not thread_id:
             return make_card_response(toast="缺少 thread_id", toast_type="warning")
         thread_title = str(action_value.get("thread_title", "") or action_value.get("title", "")).strip() or thread_id
+        try:
+            thread = self._ports.read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
+            goal = self._ports.get_thread_goal(thread.thread_id)
+        except Exception as exc:
+            logger.exception("读取恢复目标失败")
+            return make_card_response(toast=f"恢复线程失败：{exc}", toast_type="warning")
+        if self._resume_requires_active_goal_confirm(thread, goal):
+            return make_card_response(
+                card=build_resume_active_goal_confirm_card(
+                    thread_id=thread.thread_id,
+                    thread_title=thread.title,
+                    origin="threads_card",
+                )
+            )
         self._runtime_ports.submit_to_runtime(
             self._resume_target_on_runtime,
             sender_id,
             chat_id,
-            thread_id,
+            thread.thread_id,
+            original_arg=thread_id,
+            summary=thread,
             message_id=message_id,
             refresh_threads_message_id=message_id,
         )
-        return make_card_response(card=build_threads_pending_card(thread_id, title=thread_title))
+        return make_card_response(card=build_threads_pending_card(thread.thread_id, title=thread_title))
+
+    def handle_resume_thread_confirm_action(
+        self,
+        sender_id: str,
+        chat_id: str,
+        message_id: str,
+        action_value: dict[str, Any],
+    ) -> P2CardActionTriggerResponse:
+        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
+        if runtime.running:
+            return make_card_response(
+                toast="执行中不能切换线程，请等待结束或先执行 /cancel。",
+                toast_type="warning",
+            )
+        thread_id = str(action_value.get("thread_id", "") or "").strip()
+        if not thread_id:
+            return make_card_response(toast="缺少 thread_id", toast_type="warning")
+        thread_title = str(action_value.get("thread_title", "") or "").strip() or thread_id
+        origin = str(action_value.get("origin", "") or "").strip() or "command"
+        strict_active_goal_resume = str(action_value.get("strict_active_goal_resume", "") or "").strip().lower() == "true"
+        try:
+            thread = self._ports.read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
+        except Exception as exc:
+            logger.exception("读取恢复目标失败")
+            return make_card_response(toast=f"恢复线程失败：{exc}", toast_type="warning")
+        self._runtime_ports.submit_to_runtime(
+            self._resume_target_on_runtime,
+            sender_id,
+            chat_id,
+            thread.thread_id,
+            original_arg=thread_id,
+            summary=thread,
+            strict_active_goal_resume=strict_active_goal_resume,
+            message_id=message_id,
+            refresh_threads_message_id=message_id if origin == "threads_card" else "",
+        )
+        if origin == "threads_card":
+            return make_card_response(card=build_threads_pending_card(thread.thread_id, title=thread_title))
+        return make_card_response(card=self._build_resume_pending_command_card(thread_title))
 
     def _resume_target_on_runtime(
         self,
@@ -391,16 +467,16 @@ class CodexThreadsUiDomain:
         chat_id: str,
         target: str,
         *,
+        original_arg: str | None = None,
+        summary: ThreadSummary | None = None,
+        strict_active_goal_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None:
         try:
-            # Card actions already carry an explicit thread_id, so this path
-            # should read that thread directly instead of re-entering
-            # name-based resolution rules used by `/resume <thread_name>`.
-            thread = self._ports.read_thread_summary_authoritatively(
+            thread = summary or self._ports.read_thread_summary_authoritatively(
                 target,
-                original_arg=target,
+                original_arg=original_arg or target,
             )
         except Exception as exc:
             logger.exception("解析恢复目标失败")
@@ -412,10 +488,26 @@ class CodexThreadsUiDomain:
             sender_id,
             chat_id,
             thread.thread_id,
-            original_arg=target,
+            original_arg=original_arg or target,
             summary=thread,
+            strict_active_goal_resume=strict_active_goal_resume,
             message_id=message_id,
             refresh_threads_message_id=refresh_threads_message_id,
+        )
+
+    @staticmethod
+    def _resume_requires_active_goal_confirm(thread: ThreadSummary, goal: ThreadGoalSummary | None) -> bool:
+        return (
+            str(thread.status or "").strip() == BACKEND_THREAD_STATUS_NOT_LOADED
+            and goal is not None
+            and str(goal.status or "").strip() == "active"
+        )
+
+    @staticmethod
+    def _build_resume_pending_command_card(target: str) -> dict:
+        return build_markdown_card(
+            "Codex 正在恢复线程",
+            f"正在恢复：`{target}`\n完成后会自动回复结果。",
         )
 
     def handle_show_rename_action(

@@ -84,6 +84,7 @@ from bot.runtime_card_publisher import (
 )
 from bot.runtime_state import (
     BACKEND_THREAD_STATUS_IDLE,
+    BACKEND_THREAD_STATUS_NOT_LOADED,
     FEISHU_RUNTIME_ATTACHED,
     FEISHU_RUNTIME_DETACHED,
     UNSET,
@@ -437,6 +438,7 @@ class CodexHandler(BotHandler):
                 resolve_resume_target=self._resolve_resume_target,
                 list_visible_current_dir_threads=self._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=self._read_thread_summary_authoritatively,
+                get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
                 archive_thread_for_control=self._archive_thread_for_control,
                 compact_thread=lambda thread_id: self._adapter.compact_thread(thread_id),
                 rename_thread=lambda thread_id, name: self._adapter.rename_thread(thread_id, name),
@@ -1760,6 +1762,10 @@ class CodexHandler(BotHandler):
                 handler=self._threads_ui_domain.handle_resume_thread_action,
                 group_guard="group_admin",
             ),
+            "resume_thread_confirm": ActionRoute(
+                handler=self._threads_ui_domain.handle_resume_thread_confirm_action,
+                group_guard="group_admin",
+            ),
             "goal_refresh": ActionRoute(
                 handler=self._goal_domain.handle_goal_action,
                 group_guard="group_admin",
@@ -2425,10 +2431,12 @@ class CodexHandler(BotHandler):
         *,
         original_arg: str | None = None,
         summary: ThreadSummary | None = None,
+        strict_active_goal_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None:
         state = self._get_runtime_state(sender_id, chat_id, message_id)
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         all_mode_exclusivity_violation = self._thread_access_policy.all_mode_thread_exclusivity_violation(
             chat_id,
             thread_id,
@@ -2439,11 +2447,38 @@ class CodexHandler(BotHandler):
             if refresh_threads_message_id:
                 self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
             return
+        approval_policy = runtime.approval_policy or None
+        permissions_profile_id = runtime.permissions_profile_id or None
+        model = runtime.model or None
+        reasoning_effort = runtime.reasoning_effort or None
+        collaboration_mode = runtime.collaboration_mode or None
+        goal = None
+        goal_is_active = False
+        loaded_thread_ids = set(self._adapter.list_loaded_thread_ids())
+        was_loaded = thread_id in loaded_thread_ids
+        if not was_loaded and summary is not None:
+            was_loaded = str(summary.status or "").strip() != BACKEND_THREAD_STATUS_NOT_LOADED
+        paused_for_cold_sync = False
         try:
+            goal = self._adapter.get_thread_goal(thread_id)
+            goal_is_active = goal is not None and str(goal.status or "").strip() == "active"
+            if not was_loaded and goal_is_active and strict_active_goal_resume:
+                # Ordinary `/resume` normally reattaches directly. The confirm
+                # branch upgrades unloaded+active-goal resume into the same
+                # strict pause -> resume -> settings/update -> active sequence
+                # used by `/goal resume`, so the first autonomous goal turn can
+                # inherit the current binding-owned settings.
+                self._adapter.set_thread_goal(thread_id, status="paused")
+                paused_for_cold_sync = True
+            carry_cold_binding_settings = not was_loaded and (not goal_is_active or strict_active_goal_resume)
             snapshot = self._resume_snapshot_by_id(
                 thread_id,
                 original_arg=original_arg or thread_id,
                 summary=summary,
+                model=(model if carry_cold_binding_settings else None),
+                reasoning_effort=(reasoning_effort if carry_cold_binding_settings else None),
+                approval_policy=(approval_policy if carry_cold_binding_settings else None),
+                permissions_profile_id=(permissions_profile_id if carry_cold_binding_settings else None),
             )
         except Exception as exc:
             logger.exception("恢复线程失败")
@@ -2458,6 +2493,23 @@ class CodexHandler(BotHandler):
                     self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
                 return
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
+        try:
+            self._adapter.update_thread_settings(
+                thread_id,
+                approval_policy=approval_policy,
+                permissions_profile_id=permissions_profile_id,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                collaboration_mode=collaboration_mode,
+            )
+            if paused_for_cold_sync:
+                self._adapter.set_thread_goal(thread_id, status="active")
+        except Exception as exc:
+            logger.exception("同步线程设置失败")
+            self._reply_text(chat_id, f"恢复线程后同步当前会话设置失败：{exc}", message_id=message_id)
+            if refresh_threads_message_id:
+                self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
+            return
         if refresh_threads_message_id:
             self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
         summary = (
@@ -2552,19 +2604,29 @@ class CodexHandler(BotHandler):
         *,
         original_arg: str,
         summary: ThreadSummary | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
         thread = summary or self._lookup_thread_summary_in_bounded_list(thread_id)
         lease_was_newly_acquired = self._ensure_service_thread_runtime_lease(thread_id)
+        config_overrides: dict[str, Any] | None = None
+        if reasoning_effort:
+            config_overrides = {"model_reasoning_effort": reasoning_effort}
         try:
             # Cold thread/resume is the only place where we intentionally carry
-            # binding-wise next-turn permissions as a one-shot runtime override,
-            # so an auto-continued active goal can use them on its very first
-            # post-resume turn. Other binding-wise overrides still remain
-            # turn-scoped or are corrected via thread/settings/update.
+            # a narrow slice of binding-wise next-turn settings as one-shot
+            # runtime overrides, so the first post-resume autonomous turn does
+            # not have to fall back to stale loaded-thread defaults. This does
+            # not promote binding-wise settings into a persisted thread-owned
+            # truth source; loaded-thread correction still stays on
+            # thread/settings/update, and ordinary prompt turns still inject
+            # their own turn-scoped overrides.
             return self._adapter.resume_thread(
                 thread_id,
+                config_overrides=config_overrides,
+                model=model or None,
                 approval_policy=approval_policy or None,
                 permissions_profile_id=permissions_profile_id or None,
             )
@@ -2602,16 +2664,28 @@ class CodexHandler(BotHandler):
             return
         approval_policy = runtime.approval_policy or None
         permissions_profile_id = runtime.permissions_profile_id or None
+        model = runtime.model or None
+        reasoning_effort = runtime.reasoning_effort or None
+        collaboration_mode = runtime.collaboration_mode or None
         loaded_thread_ids = set(self._adapter.list_loaded_thread_ids())
         was_loaded = thread_id in loaded_thread_ids
         snapshot: ThreadSnapshot | None = None
+        effective_goal = goal
+        paused_for_cold_sync = False
         try:
+            if not was_loaded and goal.status == "active":
+                effective_goal = self._adapter.set_thread_goal(thread_id, status="paused")
+                paused_for_cold_sync = True
+                self._update_runtime_goal_projection(sender_id, chat_id, message_id, effective_goal)
+            carry_cold_binding_settings = not was_loaded
             if attach_binding or not was_loaded:
                 snapshot = self._resume_snapshot_by_id(
                     thread_id,
                     original_arg=thread_id,
-                    approval_policy=approval_policy,
-                    permissions_profile_id=permissions_profile_id,
+                    model=(model if carry_cold_binding_settings else None),
+                    reasoning_effort=(reasoning_effort if carry_cold_binding_settings else None),
+                    approval_policy=(approval_policy if carry_cold_binding_settings else None),
+                    permissions_profile_id=(permissions_profile_id if carry_cold_binding_settings else None),
                 )
             if attach_binding and snapshot is not None:
                 self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
@@ -2619,12 +2693,11 @@ class CodexHandler(BotHandler):
                 thread_id,
                 approval_policy=approval_policy,
                 permissions_profile_id=permissions_profile_id,
-                model=runtime.model or None,
-                reasoning_effort=runtime.reasoning_effort or None,
-                collaboration_mode=runtime.collaboration_mode or None,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                collaboration_mode=collaboration_mode,
             )
-            effective_goal = goal
-            if goal.status != "active":
+            if goal.status != "active" or paused_for_cold_sync:
                 effective_goal = self._adapter.set_thread_goal(thread_id, status="active")
             self._update_runtime_goal_projection(sender_id, chat_id, message_id, effective_goal)
         except Exception as exc:
