@@ -331,6 +331,6 @@ flowchart LR
 - 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 
 **补充说明**
-- `permissions`、`model`、`effort`、`collab-mode` 都属于 frontend-owned runtime settings：由发起该轮 `thread/start` / `turn/start` 的前端在下一轮注入，不是 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
-- `profile` 现在只用于定义当前实例 managed backend 的 startup baseline：修改后要等下次 backend 启动，或执行 `reset-backend` 才会真正生效
+- `permissions`、`model`、`effort`、`collab-mode` 都属于 frontend-owned runtime settings：主要由发起该轮 `thread/start` / `turn/start` 的前端注入；仅在恢复未 loaded thread 时，cold `thread/resume` 会携带其中一小段 one-shot override 来保护恢复后的第一轮 autonomous turn。这不会把它们变成 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
+- `profile` 不再属于本项目合同：`fcodex -p/--profile` 只作为上游 Codex 的本地启动参数存在，不会定义 managed backend 的 startup baseline
 - `fcodex` / 上游 TUI 里的本地配置、profile-v2、provider catalog 仍按各自前端语义工作，但不再被本项目持久化成 thread-wise 设置层

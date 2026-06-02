@@ -88,12 +88,12 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 
 - 多个实例共享 persisted thread namespace
 - 但每个实例有自己独立的 live backend
-- 同一 thread 的 live residency 由机器级 `ThreadRuntimeLease` 协调
-- 自动转移会先写入一个短时机器级 transfer reservation，给目标实例预留 live runtime 接管窗口，再要求 owner 实例释放 Feishu runtime，最后由目标实例接管
-- 若 owner 实例当前 idle，且其 `detach_available` 为真，则允许自动转移
-- 若 owner 实例当前仍在执行，或仍有待处理审批 / 输入，则必须明确拒绝
-- 若 owner 实例对该 thread 当前没有任何 Feishu binding，或该 thread 上仍有本地
-  `fcodex` 这类 holder，也必须明确拒绝，而不是尝试强行夺走这份 live runtime
+- 跨实例 `attach / continue` 前，会先检查是否仍有其他运行中的实例把该
+  thread 报告为 `loaded`
+- loaded gate 通过后，仍需原子 claim 机器级 `ThreadRuntimeLease`，以防多个
+  实例几乎同时 cold resume 的竞态
+- 只要另一实例仍持有 loaded runtime，或 loaded 事实无法被安全验证，就必须
+  明确拒绝，而不是尝试强行夺走这份 live runtime
 
 因此，这不是“共享 backend”，也不是“可以并发双写的两个 backend”。
 它是一条**共享持久化 namespace、但 live runtime 严格单 owner** 的协调路径。
@@ -142,9 +142,10 @@ profile/provider slice 重解释一次。
 - 直接恢复目标线程
 - 将当前飞书会话绑定到该线程
 - 如果用户随后通过 `fcodex` 接入同一个实例 shared backend，则飞书与 `fcodex` 可以继续安全地共同读写这个 live thread
-- 若当前 thread 已被另一实例 backend live attach，则真正的恢复仍要服从机器级 `ThreadRuntimeLease`：
-  - owner 可立即 release 时，允许自动转移
-  - owner 仍 busy / pending 时，必须明确拒绝
+- 若另一运行中实例仍把该 thread 保持为 loaded，则 loaded gate 按
+  fail-close 直接拒绝
+- 若 loaded gate 已通过，但另一实例先一步赢得了原子 lease claim，则当前
+  写入仍按 fail-close 拒绝，并把操作者引回 owner 实例或 `reset-backend`
 - `resume` 不会回放任何额外的项目自管 thread-wise
   profile/memory/provider slice
 

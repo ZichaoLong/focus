@@ -57,7 +57,7 @@ It does not redefine:
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `Turn Settings` page | admin only | admin only | none |
 | `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `Turn Settings` page | admin only | admin only | none |
 | `/last text` | Export the latest authoritative terminal text from the current session; prefers terminal result, falls back to the latest execution card | yes; `Turn Settings` page | admin only | admin only | none |
-| `/reset-backend` | Preview and reset the current instance backend | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
+| `/reset-backend` | Preview and reset the current instance backend for recovery | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
 | `/whoami` | Show the caller's identity | yes; `More` page | anyone | unsupported | none |
 | `/bot-status` | Show bot identity and config probe results | yes; `More` page | anyone | admin only | none |
 | `/init <token>` | Initialize admins and `bot_open_id` | yes; `More` form | anyone | unsupported | `feishu-codex config init-token` only shows the token |

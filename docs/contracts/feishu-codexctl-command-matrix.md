@@ -61,7 +61,7 @@ Do not conflate them.
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] service status` | Show the target instance's service / control-plane / app-server overview | read-only | no exact single command |
-| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend without restarting the `feishu-codex` service | mutating | Feishu `/reset-backend` |
+| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend for recovery without restarting the `feishu-codex` service | mutating | Feishu `/reset-backend` |
 | `feishu-codexctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
 
 ### 4.3 `binding`

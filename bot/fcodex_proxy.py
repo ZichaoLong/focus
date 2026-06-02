@@ -294,7 +294,6 @@ class _ProxyRuntimeLeaseKeeper:
             thread_id=normalized_thread_id,
             holder=holder,
             lease_store=self._runtime_lease_store,
-            registry_store=self._instance_registry,
         )
         with self._lock:
             self._owned_thread_ids.add(normalized_thread_id)
@@ -415,7 +414,6 @@ class _ProxyInteractionGate:
             thread_id=thread_id,
             holder=holder,
             lease_store=self._runtime_lease_store,
-            registry_store=self._instance_registry,
         )
         self._remember_owned_thread(thread_id)
 

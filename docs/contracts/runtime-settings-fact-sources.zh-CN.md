@@ -21,6 +21,9 @@
 - 作用域是当前 Feishu binding
 - 持久化在 binding runtime settings 中
 - 主要在 `turn/start` 被消费
+- 在恢复未 loaded thread 时，cold `thread/resume` 也可能携带其中一小段
+  one-shot override，避免恢复后的第一轮 autonomous turn 回退到旧的
+  loaded-thread 默认值
 
 ## 2. 本项目不再拥有任何 thread-wise next-load setting
 
@@ -58,7 +61,7 @@
 
 | 设置族 | 持久化源 | 正式生效边界 | 主要读侧 |
 | --- | --- | --- | --- |
-| binding-wise next-turn | 当前 binding 的 persisted runtime settings | `turn/start` | `/status`、setting cards、preflight |
+| binding-wise next-turn | 当前 binding 的 persisted runtime settings | `turn/start`；恢复未 loaded thread 时，cold `thread/resume` 也可能携带一小段 one-shot override | `/status`、setting cards、preflight |
 
 ## 5. binding-wise next-turn 的判定规则
 

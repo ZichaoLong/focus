@@ -4142,7 +4142,7 @@ class CodexHandlerTests(unittest.TestCase):
                 reason_code="prompt_denied_by_live_runtime_owner",
                 reason_text=(
                     "当前 thread 仍由运行中的实例 `explorer` 保持为 loaded (`idle`)；"
-                    "当前不支持跨实例 hot takeover。"
+                    "当前按 fail-close 拒绝跨实例继续。"
                 ),
                 blocking_instance="explorer",
                 blocking_status="idle",
@@ -4154,7 +4154,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.start_turn_calls, [])
         self.assertEqual(handler._thread_subscribers("thread-1"), ())
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["feishu_runtime_state"], "detached")
-        self.assertIn("不支持跨实例 hot takeover", bot.replies[-1][1])
+        self.assertIn("拒绝跨实例继续", bot.replies[-1][1])
 
     def test_denied_prompt_keeps_detached_binding_detached_when_all_mode_group_owns_thread(self) -> None:
         handler, bot = self._make_handler()
@@ -6103,6 +6103,61 @@ class CodexHandlerTests(unittest.TestCase):
         handler._runtime_call(lambda: None)
 
         self.assertTrue(any(message_id == "msg-session" for message_id, _ in bot.patches))
+
+    def test_resume_thread_on_runtime_rejects_if_binding_became_running_before_runtime_executes(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        started = threading.Event()
+        release = threading.Event()
+
+        def block_runtime() -> None:
+            started.set()
+            self.assertTrue(release.wait(timeout=1))
+
+        handler._runtime_submit(block_runtime)
+        self.assertTrue(started.wait(timeout=1))
+        handler._runtime_submit(
+            handler._resume_thread_on_runtime,
+            "ou_user",
+            "c1",
+            "thread-1",
+            summary=thread,
+            pause_active_goal_on_resume=True,
+            message_id="msg-session",
+        )
+        state = handler._get_runtime_state("ou_user", "c1")
+        with handler._lock:
+            state["current_message_id"] = "msg-turn"
+            state["current_turn_id"] = "turn-1"
+            state["running"] = True
+            state["awaiting_local_turn_started"] = False
+        release.set()
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(handler._adapter.resume_thread_calls, [])
+        self.assertEqual(handler._adapter.set_thread_goal_calls, [])
+        self.assertEqual(handler._adapter.thread_goals["thread-1"].status, "active")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "")
+        self.assertIn("当前线程仍在执行，暂不切换。", bot.replies[-1][1])
 
     def test_expanded_threads_card_stays_expanded_after_resume_refresh(self) -> None:
         handler, bot = self._make_handler({"threads_initial_limit": 1})

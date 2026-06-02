@@ -155,7 +155,7 @@ Current module split:
 - `bot/thread_access_policy.py`: policy boundary for thread sharing and
   interaction-owner admission
 - `bot/thread_runtime_coordination.py`: cross-instance live-runtime lease
-  acquisition, automatic transfer, and reject flow
+  loaded-gate admission, atomic lease claim, and reject flow
 - `bot/turn_execution_coordinator.py`,
   `bot/execution_output_controller.py`, and
   `bot/execution_recovery_controller.py`: execution lifecycle state transitions,
@@ -212,11 +212,14 @@ One maintenance rule should also stay explicit for the Feishu transport layer:
 
 One adapter-boundary contract also needs to stay explicit:
 
-- `resume` request inputs should not be abstracted as only `profile`
-- for an unloaded thread, Feishu already passes `profile / model /
-  model_provider` as resume-time recovery hints
-- for a loaded thread, carrying those inputs does not mean the live runtime can
-  be rewritten in place
+- `resume` request inputs should no longer be abstracted as the repository's
+  old `profile` semantics
+- for an unloaded thread, Feishu only carries a narrow one-shot runtime
+  override on cold `thread/resume`: `model`, `reasoning_effort`,
+  `approval_policy`, and `permissions_profile_id`
+- for a loaded thread, runtime correction still belongs to
+  `thread/settings/update`, not to treating `thread/resume` as a generic
+  live-runtime rewrite surface
 
 So the adapter boundary should describe which resume inputs are accepted by the
 request contract, rather than exposing an older abstract signature that is
@@ -240,8 +243,8 @@ still need to stay explicit as the code evolves are:
   depend on named ports for the specific bot/runtime capabilities they need,
   rather than retaining broad owner protocols with implicit `bot: Any`
 - settings-domain commands should depend on named settings ports for bot
-  identity/context, runtime view/update, and profile state, rather than on a
-  broad handler-owner protocol
+  identity/context, runtime view/update, and the current binding's runtime
+  settings, rather than on a broad handler-owner protocol
 
 Thread-summary access should also keep two contracts separate:
 

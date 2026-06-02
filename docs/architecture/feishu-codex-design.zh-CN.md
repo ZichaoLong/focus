@@ -122,7 +122,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/binding_identity.py`：admin-facing binding 标识规范
 - `bot/binding_runtime_manager.py`：binding / subscribe / attach / detach 与本地 runtime snapshot 的 owner
 - `bot/thread_access_policy.py`：线程共享与 interaction owner 的准入 policy 边界
-- `bot/thread_runtime_coordination.py`：跨实例 live runtime lease 获取、自动转移与拒绝
+- `bot/thread_runtime_coordination.py`：跨实例 live runtime 的 loaded-gate 准入、原子 lease claim 与拒绝
 - `bot/turn_execution_coordinator.py`、`bot/execution_output_controller.py`、`bot/execution_recovery_controller.py`：turn / execution 生命周期、执行卡片发布、终态结果载体发送、watchdog / reconcile / degrade 处理
 - `bot/generated_image_delivery.py`：基于终态 thread snapshot 的出站图片提取与独立飞书图片消息发送；它不改写权威文本结果合同，也不进入 execution card patch 模型
 - `bot/runtime_admin_controller.py`：`/status`、`/detach`、`/attach` 与 control-plane 查询/管理
@@ -148,9 +148,12 @@ shared backend 与 wrapper 的具体机制，见
 
 在 adapter 抽象层上，还有一条需要保持清晰的合同：
 
-- `resume` 的请求输入不应只被抽象成一个 `profile`
-- 对 unloaded thread，Feishu 当前已经把 `profile / model / model_provider` 作为恢复提示显式传给 adapter
-- 对 loaded thread，这些输入即使被携带，也不表示 live runtime 一定会被改写
+- `resume` 的请求输入不应再被抽象成历史上的 `profile` 语义
+- 对 unloaded thread，Feishu 当前只会在 cold `thread/resume` 上携带一小段
+  one-shot runtime override：`model`、`reasoning_effort`、
+  `approval_policy`、`permissions_profile_id`
+- 对 loaded thread，运行时纠偏仍应走 `thread/settings/update`，而不是把
+  `thread/resume` 当成通用的 live-runtime 改写接口
 
 因此，adapter 边界必须准确表达“resume 可以接受哪些输入”，而不是把抽象层写成比真实调用面更窄的旧合同。
 
@@ -176,7 +179,7 @@ shared backend 与 wrapper 的具体机制，见
   而不是在 domain 内直接触达 handler 私有的 loop helper
 - settings / group / file-message 这类 bot-facing domain，也应只依赖具名 ports 暴露的必要 bot/runtime 能力，
   不应继续保留带隐式 `bot: Any` 的宽泛 owner protocol
-- settings domain 命令也应通过具名 settings ports 获取 bot 身份/消息上下文、runtime view/update 与 profile 状态，
+- settings domain 命令也应通过具名 settings ports 获取 bot 身份/消息上下文、runtime view/update 与当前 binding 的 runtime settings，
   而不是依赖宽泛的 handler owner protocol
 - `CodexHandler._lock` 仍然是一个覆盖面较大的共享状态兜底锁，但长期目标不应是继续围绕它细分锁，而应是减少必须共享、必须一起上锁的状态面
 

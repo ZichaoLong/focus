@@ -22,6 +22,9 @@ Their properties:
 - scoped to the current Feishu binding
 - persisted in binding runtime settings
 - primarily consumed at `turn/start`
+- on unloaded-thread recovery, cold `thread/resume` may carry a narrow one-shot
+  subset so the first post-resume autonomous turn does not fall back to stale
+  loaded-thread defaults
 
 ## 2. The project no longer owns any thread-wise next-load setting
 
@@ -59,7 +62,7 @@ But they must not be treated as:
 
 | Setting family | Persisted source | Official application boundary | Primary read-side |
 | --- | --- | --- | --- |
-| binding-wise next-turn | persisted runtime settings of the current binding | `turn/start` | `/status`, setting cards, preflight |
+| binding-wise next-turn | persisted runtime settings of the current binding | `turn/start`; cold `thread/resume` may carry a narrow one-shot subset for unloaded-thread recovery | `/status`, setting cards, preflight |
 
 ## 5. Decision rule for binding-wise next-turn
 

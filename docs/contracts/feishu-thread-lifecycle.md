@@ -249,7 +249,8 @@ elsewhere:
   `docs/contracts/runtime-control-surface.md`
 - thread-wise next-load setting semantics on unloaded-thread restore paths:
   `docs/contracts/thread-next-load-settings-semantics.md`
-- profile / provider specific semantics:
+- command semantics for `/threads`, `/resume`, `/archive`, and local `fcodex`
+  continuation:
   `docs/contracts/thread-profile-semantics.md`
 - group-chat binding-by-`chat_id` and group session-scope rules:
   `docs/contracts/group-chat-contract.md`

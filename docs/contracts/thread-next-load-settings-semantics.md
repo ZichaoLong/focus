@@ -33,6 +33,8 @@ Their semantics:
 
 - apply to future turns of the current Feishu binding
 - are primarily consumed at `turn/start`
+- on unloaded-thread recovery, cold `thread/resume` may also carry a narrow
+  one-shot subset for the first post-resume autonomous turn
 - are not thread-level persisted restore settings
 
 ### 2.2 Upstream-owned process and thread state

@@ -40,7 +40,7 @@ history.
 - thread visibility remains global
 - live continuation is instance-exclusive
 - cross-instance migration is `cold migration only`
-- no cross-instance hot takeover is supported
+- no cross-instance live takeover or automatic transfer is supported
 
 ### 3.2 Admission model
 

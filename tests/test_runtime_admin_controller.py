@@ -922,7 +922,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             if thread_id == "thread-1"
             else ReasonedCheck.deny(
                 PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
-                "当前 thread 仍由运行中的实例 `explorer` 保持为 loaded (`idle`)；当前不支持跨实例 hot takeover。",
+                "当前 thread 仍由运行中的实例 `explorer` 保持为 loaded (`idle`)；当前按 fail-close 拒绝跨实例继续。",
             )
         )
 
@@ -933,7 +933,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(len(result["blocked_threads"]), 1)
         self.assertEqual(result["blocked_threads"][0]["thread_id"], "thread-2")
         self.assertEqual(result["blocked_threads"][0]["binding_ids"], ["p2p:ou_user:c2"])
-        self.assertIn("不支持跨实例 hot takeover", result["blocked_threads"][0]["reason"])
+        self.assertIn("拒绝跨实例继续", result["blocked_threads"][0]["reason"])
 
     def test_handle_preflight_command_blocks_detached_binding_when_live_runtime_owner_blocks_attach(self) -> None:
         (
@@ -966,7 +966,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         )
         controller._detached_runtime_attach_check = lambda thread_id: ReasonedCheck.deny(
             PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
-            "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不能自动转移。",
+            "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不支持跨实例继续。",
         )
 
         result = controller.handle_preflight_command(binding, "")

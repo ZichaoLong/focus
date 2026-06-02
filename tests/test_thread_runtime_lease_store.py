@@ -199,7 +199,7 @@ class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
         self.assertTrue(purged)
         self.assertIsNone(store.load("thread-1"))
 
-    def test_purge_all_for_instance_removes_stale_holders_and_transfer(self) -> None:
+    def test_purge_all_for_instance_removes_stale_holders_and_legacy_transfer(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         root_dir = pathlib.Path(tempdir.name)
@@ -248,7 +248,8 @@ class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
 
         self.assertEqual(removed, ["thread-1"])
         self.assertIsNone(store.load("thread-1"))
-        self.assertIsNone(store.load_transfer_reservation("thread-1"))
+        raw = json.loads((root_dir / "thread_runtime_leases.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw, {})
 
     def test_concurrent_process_acquire_preserves_all_holders(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
@@ -293,46 +294,45 @@ class ThreadRuntimeLeaseStoreTests(unittest.TestCase):
         assert lease is not None
         self.assertEqual({item.holder_id for item in lease.holders}, expected_holder_ids)
 
-    def test_transfer_reservation_blocks_other_holders_until_target_acquires(self) -> None:
+    def test_load_strips_legacy_transfer_field_from_persisted_lease(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
-        store = ThreadRuntimeLeaseStore(pathlib.Path(tempdir.name))
-
-        store.acquire("thread-1", _holder(instance_name="corp-a", holder_id="service:one", service_token="token-a"))
-        reservation = store.reserve_transfer(
-            "thread-1",
+        root_dir = pathlib.Path(tempdir.name)
+        store = ThreadRuntimeLeaseStore(root_dir)
+        now = time.time()
+        _write_raw_lease(
+            root_dir,
+            thread_id="thread-1",
             owner_instance="corp-a",
             owner_service_token="token-a",
-            target_instance="corp-b",
-            target_service_token="token-b",
-            ttl_seconds=30.0,
+            holders=[
+                {
+                    "holder_id": "service:one",
+                    "holder_type": "service",
+                    "instance_name": "corp-a",
+                    "owner_pid": os.getpid(),
+                    "owner_service_token": "token-a",
+                    "control_endpoint": "tcp://127.0.0.1:9100",
+                    "backend_url": "ws://127.0.0.1:9100",
+                    "updated_at": now,
+                },
+            ],
+            transfer={
+                "thread_id": "thread-1",
+                "owner_instance": "corp-a",
+                "owner_service_token": "token-a",
+                "target_instance": "corp-b",
+                "target_service_token": "token-b",
+                "reserved_at": now,
+                "expires_at": now + 60.0,
+            },
         )
 
-        blocked_same_owner = store.acquire(
-            "thread-1",
-            _holder(instance_name="corp-a", holder_id="fcodex:123", service_token="token-a"),
-        )
-        self.assertFalse(blocked_same_owner.granted)
-        self.assertEqual(blocked_same_owner.transfer, reservation)
-
-        self.assertTrue(store.release("thread-1", "service:one"))
-        blocked_after_release = store.acquire(
-            "thread-1",
-            _holder(instance_name="corp-a", holder_id="service:two", service_token="token-a"),
-        )
-        self.assertFalse(blocked_after_release.granted)
-        self.assertIsNone(blocked_after_release.lease)
-        self.assertEqual(blocked_after_release.transfer, reservation)
-
-        acquired = store.acquire(
-            "thread-1",
-            _holder(instance_name="corp-b", holder_id="service:two", service_token="token-b"),
-        )
-        self.assertTrue(acquired.granted)
-        self.assertIsNone(store.load_transfer_reservation("thread-1"))
         lease = store.load("thread-1")
         assert lease is not None
-        self.assertEqual(lease.owner_instance, "corp-b")
+        self.assertEqual(lease.owner_instance, "corp-a")
+        payload = json.loads((root_dir / "thread_runtime_leases.json").read_text(encoding="utf-8"))
+        self.assertNotIn("transfer", payload["thread-1"])
 
 
 if __name__ == "__main__":

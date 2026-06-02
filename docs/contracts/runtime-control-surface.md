@@ -20,6 +20,8 @@ Semantics:
 
 - manage overrides for future turns of the current Feishu binding
 - are primarily consumed at `turn/start`
+- on unloaded-thread recovery, cold `thread/resume` may also carry a narrow
+  one-shot subset for the first post-resume autonomous turn
 - do not write any project-owned thread-level persisted state
 
 ## 2. Removed setting surfaces
@@ -65,6 +67,14 @@ Within that family:
 
 ## 5. Side-effect boundary of reset-backend
 
+`reset-backend` is a recovery/admin tool, not a routine settings-apply path.
+Typical uses are:
+
+- discard this instance's stale loaded runtime before cold continuation
+  elsewhere
+- rebuild this instance's backend view after the same persisted thread was
+  changed outside this project, for example by bare upstream `codex`
+
 When an instance resets its backend:
 
 - the backend process restarts
@@ -77,6 +87,7 @@ Reset-backend does not:
 - rewrite thread history
 - automatically re-attach every chat
 - upgrade binding settings into thread-level settings
+- act as a profile-switch surface
 
 ## 6. What `/status` should show
 

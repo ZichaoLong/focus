@@ -198,7 +198,7 @@ flowchart TD
 
 - `bound + detached` 下 prompt 的 pure reject / attach 规则：见 `docs/contracts/runtime-control-surface.zh-CN.md`
 - unloaded thread 恢复路径上的 thread-wise next-load 设置合同：见 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
-- profile / provider 自身语义：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
+- `/threads`、`/resume`、`/archive` 与本地 `fcodex` continuation 的命令语义：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
 - 群聊按 `chat_id` 共享 binding 以及群会话范围规则：见 `docs/contracts/group-chat-contract.zh-CN.md`
 
 ## 8. 相关实现文件

@@ -37,7 +37,7 @@ thread，而实例 B 已经基于持久化历史继续推进了对话。
 - thread visibility 继续全局共享
 - live continuation 必须实例独占
 - 跨实例迁移只支持 `cold migration only`
-- 不支持跨实例 hot takeover
+- 不支持跨实例 live takeover / 自动转移
 
 ### 3.2 准入模型
 

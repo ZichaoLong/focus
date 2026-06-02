@@ -57,7 +57,7 @@
 | `/approval [untrusted\|on-request\|never]` | 设置 approval policy | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/collab-mode [default\|plan]` | 为当前 Feishu 会话后续 turn 设置 collaboration mode | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/last text` | 导出当前会话最近的权威终态文本；优先 terminal result，其次回退最近执行卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/reset-backend` | 预览并重置当前实例 backend | 是；`More -> Advanced Actions` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
+| `/reset-backend` | 预览并重置当前实例 backend，用于恢复 | 是；`More -> Advanced Actions` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
 | `/whoami` | 查看调用者身份 | 是；`More` 页 | 任何人 | 不支持 | 无 |
 | `/bot-status` | 查看 bot 身份与配置探测结果 | 是；`More` 页 | 任何人 | 仅管理员 | 无 |
 | `/init <token>` | 初始化 admins 与 `bot_open_id` | 是；`More` 表单 | 任何人 | 不支持 | `feishu-codex config init-token` 仅显示 token |

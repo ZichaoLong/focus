@@ -20,6 +20,8 @@
 
 - 管理当前 Feishu binding 后续 turn 的 override
 - 主要在 `turn/start` 被消费
+- 在恢复未 loaded thread 时，cold `thread/resume` 也可能为恢复后的第一轮
+  autonomous turn 携带其中一小段 one-shot override
 - 不写任何项目自管的 thread-level persisted state
 
 ## 2. 已移除的设置面
@@ -62,6 +64,13 @@ memory 行为，应直接通过上游 Codex 处理，而不是走项目自管的
 
 ## 5. reset-backend 的副作用边界
 
+`reset-backend` 是恢复/管理工具，不是常规的 settings apply 路径。
+典型用途是：
+
+- 在跨实例 cold continue 之前，主动丢弃当前实例里陈旧的 loaded runtime
+- 当同一 persisted thread 在项目外被修改后，例如用户用裸上游 `codex`
+  改写了线程，再重建本实例 backend 对它的内存态视图
+
 当实例执行 backend reset 时：
 
 - backend 进程会重启
@@ -74,6 +83,7 @@ reset-backend 不会：
 - 重写 thread history
 - 自动把所有 chat 重新 attach
 - 把 binding settings 升格成 thread-level settings
+- 充当 profile 切换入口
 
 ## 6. `/status` 应展示什么
 

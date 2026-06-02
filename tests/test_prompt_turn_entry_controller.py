@@ -340,7 +340,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self._bind_thread(env, thread_id="thread-1", runtime_state="detached")
         controller._detached_runtime_attach_check = lambda thread_id: ReasonedCheck.deny(
             PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
-            "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不能自动转移。",
+            "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不支持跨实例继续。",
         )
 
         started = controller.start_prompt_turn("ou_user", "c1", "hello", message_id="msg-1")
@@ -352,7 +352,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
             env["replies"][-1],
             (
                 "c1",
-                "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不能自动转移。",
+                "当前线程正由实例 `default` 的本地 `fcodex` 持有 live runtime；当前不支持跨实例继续。",
                 "msg-1",
                 False,
             ),

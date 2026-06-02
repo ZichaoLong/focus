@@ -59,7 +59,7 @@
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] service status` | 查看目标实例 service / control plane / app-server 概况 | 只读 | 无一条完全等价命令 |
-| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | 重置当前实例 backend，但不重启 `feishu-codex` service | 变更 | 飞书 `/reset-backend` |
+| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | 为恢复而重置当前实例 backend，但不重启 `feishu-codex` service | 变更 | 飞书 `/reset-backend` |
 | `feishu-codexctl [--instance <name>] service attach` | 恢复当前实例内所有可恢复的 detached Feishu 推送 | 变更 | 飞书 `/attach service`，以及 reset 结果卡里的“附着当前实例” |
 
 ### 4.3 `binding`

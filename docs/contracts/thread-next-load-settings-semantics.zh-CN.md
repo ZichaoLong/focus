@@ -32,6 +32,8 @@
 
 - 只作用于当前 Feishu binding 的后续 turn
 - 主要在 `turn/start` 被消费
+- 在恢复未 loaded thread 时，cold `thread/resume` 也可能为恢复后的第一轮
+  autonomous turn 携带其中一小段 one-shot override
 - 不是 thread-level persisted restore settings
 
 ### 2.2 上游拥有的 process 与 thread 状态

@@ -2017,7 +2017,7 @@ class FCodexTests(unittest.TestCase):
                         allowed=False,
                         reason_text=(
                             "当前 thread 仍由运行中的实例 `default` 保持为 loaded (`idle`)；"
-                            "当前不支持跨实例 hot takeover。"
+                            "当前按 fail-close 拒绝跨实例继续。"
                         ),
                     ),
                 ):
@@ -2027,7 +2027,7 @@ class FCodexTests(unittest.TestCase):
                                 fcodex_main()
 
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("不支持跨实例 hot takeover", stderr.getvalue())
+        self.assertIn("拒绝跨实例继续", stderr.getvalue())
 
     def test_fcodex_resume_name_with_explicit_instance_rejects_conflicting_live_owner(self) -> None:
         thread_id = "019d2e94-a475-7bc1-b2f7-a3ce37628ede"
@@ -2658,7 +2658,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
                     allowed=False,
                     reason_text=(
                         "当前 thread 仍由运行中的实例 `default` 保持为 loaded (`idle`)；"
-                        "当前不支持跨实例 hot takeover。"
+                        "当前按 fail-close 拒绝跨实例继续。"
                     ),
                 ),
             ):
@@ -2678,7 +2678,7 @@ class ProxyInteractionGateTests(unittest.TestCase):
             self.assertEqual(backend_ws.sent, [])
             error = self._decode_payload(client_ws.sent[-1])
             self.assertEqual(error["id"], 1)
-            self.assertIn("不支持跨实例 hot takeover", error["error"]["message"])
+            self.assertIn("拒绝跨实例继续", error["error"]["message"])
 
     def test_local_error_response_requires_request_id(self) -> None:
         from bot.fcodex_proxy import _send_local_error_response

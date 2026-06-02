@@ -410,25 +410,6 @@ def _resolve_resume_target(
         preferred_running_instance=preferred_instance,
     )
 
-@dataclass(frozen=True, slots=True)
-class _WrapperProfileLaunchPlan:
-    user_args: list[str]
-
-
-def _build_wrapper_profile_launch_plan(
-    *,
-    cfg: dict,
-    app_server_url: str,
-    data_dir: pathlib.Path,
-    instance_name: str,
-    user_args: list[str],
-) -> _WrapperProfileLaunchPlan:
-    planned_args = list(user_args)
-    del app_server_url, data_dir, instance_name
-    CodexAppServerConfig.from_dict(cfg)
-    return _WrapperProfileLaunchPlan(user_args=planned_args)
-
-
 def _extract_option_value(user_args: list[str], names: tuple[str, ...]) -> str:
     i = 0
     while i < len(user_args):
@@ -635,14 +616,7 @@ def main() -> None:
     argv = [*shlex.split(codex_command)]
     effective_cwd = _resolve_effective_cwd(user_args)
     if not _has_explicit_remote(user_args):
-        profile_launch_plan = _build_wrapper_profile_launch_plan(
-            cfg=cfg,
-            app_server_url=app_server_url,
-            data_dir=data_dir,
-            instance_name=resolved_target.instance_name,
-            user_args=user_args,
-        )
-        user_args = list(profile_launch_plan.user_args)
+        CodexAppServerConfig.from_dict(cfg)
     user_args = _inject_default_cwd(user_args)
     proxy_process: subprocess.Popen[str] | None = None
     proxy_auth_token = ""

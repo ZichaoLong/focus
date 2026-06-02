@@ -105,18 +105,13 @@ Properties:
 
 - multiple instances share the persisted thread namespace
 - each instance has its own live backend
-- live residency of one thread is coordinated by the machine-level
-  `ThreadRuntimeLease`
-- automatic transfer now first writes a short-lived machine-level transfer
-  reservation for the target instance, then asks the owner instance to release
-  Feishu runtime, and finally lets the target acquire the live runtime
-- if the owner instance is idle and reports `detach_available`,
-  automatic transfer is allowed
-- if the owner instance is still executing or still has pending approval /
-  input, the write attempt must reject clearly
-- if the owner instance has no Feishu binding for that thread, or still has a
-  local `fcodex` holder on that thread, the write attempt must also reject
-  clearly instead of trying to force that runtime away
+- before cross-instance attach / continue, the system first checks whether
+  another running instance still reports that thread as `loaded`
+- after the loaded gate passes, the machine-level `ThreadRuntimeLease` is still
+  claimed atomically to prevent resume races
+- if another instance still holds the loaded runtime, or the loaded fact cannot
+  be verified safely, the write attempt must reject clearly instead of trying
+  to take the runtime away
 
 So this is neither "one shared backend" nor "two backends that may dual-write".
 It is a coordinated path with a shared persisted namespace but strictly
@@ -172,10 +167,11 @@ Behavior:
 - bind the current Feishu chat to that thread
 - if the user later attaches through `fcodex` on the same instance shared backend,
   Feishu and `fcodex` can continue operating on the same live thread safely
-- if another instance backend currently holds live residency for that thread,
-  actual resume still has to obey the machine-level `ThreadRuntimeLease`:
-  - automatic transfer is allowed only when the owner can release immediately
-  - busy / pending owner state must reject clearly
+- if another running instance still keeps that thread loaded, the loaded gate
+  rejects fail-closed
+- if the loaded gate passes but another instance wins the atomic lease claim
+  first, the write attempt still rejects fail-closed and routes the operator
+  back to the loaded owner or to `reset-backend`
 - `resume` does not replay any extra project-owned thread-wise
   profile/memory/provider slice
 

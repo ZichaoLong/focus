@@ -707,7 +707,6 @@ class CodexHandler(BotHandler):
             thread_id=normalized_thread_id,
             holder=self._service_thread_runtime_holder(),
             lease_store=self._thread_runtime_lease_store,
-            registry_store=self._instance_registry,
         )
         if preview.allowed:
             return ReasonedCheck.allow()
@@ -724,9 +723,8 @@ class CodexHandler(BotHandler):
             thread_id=normalized_thread_id,
             holder=self._service_thread_runtime_holder(),
             lease_store=self._thread_runtime_lease_store,
-            registry_store=self._instance_registry,
         )
-        return outcome.result.acquired
+        return outcome.acquired
 
     def _release_service_thread_runtime_lease(self, thread_id: str) -> None:
         normalized_thread_id = str(thread_id or "").strip()
@@ -2385,7 +2383,6 @@ class CodexHandler(BotHandler):
         refresh_threads_message_id: str = "",
     ) -> None:
         state = self._get_runtime_state(sender_id, chat_id, message_id)
-        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         all_mode_exclusivity_violation = self._thread_access_policy.all_mode_thread_exclusivity_violation(
             chat_id,
             thread_id,
@@ -2396,6 +2393,13 @@ class CodexHandler(BotHandler):
             if refresh_threads_message_id:
                 self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
             return
+        with self._lock:
+            if self._turn_execution.has_active_execution_locked(state):
+                self._reply_text(chat_id, "当前线程仍在执行，暂不切换。", message_id=message_id)
+                if refresh_threads_message_id:
+                    self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
+                return
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         approval_policy = runtime.approval_policy or None
         permissions_profile_id = runtime.permissions_profile_id or None
         model = runtime.model or None
@@ -2437,12 +2441,6 @@ class CodexHandler(BotHandler):
             if refresh_threads_message_id:
                 self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
             return
-        with self._lock:
-            if state["running"]:
-                self._reply_text(chat_id, "当前线程仍在执行，暂不切换。", message_id=message_id)
-                if refresh_threads_message_id:
-                    self._refresh_threads_card_message(sender_id, chat_id, refresh_threads_message_id)
-                return
         self._bind_thread(sender_id, chat_id, snapshot.summary, message_id=message_id)
         try:
             self._adapter.update_thread_settings(
