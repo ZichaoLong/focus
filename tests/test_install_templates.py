@@ -6,8 +6,9 @@ from unittest.mock import patch
 
 import yaml
 
+from bot.constants import DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS
 from bot.codex_command_resolver import resolve_managed_codex_command
-from bot.install_templates import CODEX_YAML_TEMPLATE, detect_stable_codex_command, render_initial_codex_yaml
+from bot.install_templates import CODEX_YAML_TEMPLATE, SYSTEM_YAML_TEMPLATE, detect_stable_codex_command, render_initial_codex_yaml
 
 
 class InstallTemplateTests(unittest.TestCase):
@@ -255,6 +256,26 @@ class InstallTemplateTests(unittest.TestCase):
 
     def test_codex_yaml_template_no_longer_documents_thread_memory_seed(self) -> None:
         self.assertNotIn("new_thread_memory_mode_seed", CODEX_YAML_TEMPLATE)
+
+    def test_codex_yaml_template_documents_sparse_instance_override_behavior(self) -> None:
+        self.assertIn("override 文件", CODEX_YAML_TEMPLATE)
+        self.assertIn("命名实例不会继承 default 实例", CODEX_YAML_TEMPLATE)
+        self.assertIn("managed_startup_profile", CODEX_YAML_TEMPLATE)
+
+    def test_system_yaml_template_mentions_real_request_timeout_default(self) -> None:
+        self.assertIn(f"# request_timeout_seconds: {int(DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS)}", SYSTEM_YAML_TEMPLATE)
+
+    def test_repo_codex_yaml_example_matches_install_template(self) -> None:
+        repo_example = (
+            pathlib.Path(__file__).resolve().parents[1] / "config" / "codex.yaml.example"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(repo_example, CODEX_YAML_TEMPLATE)
+
+    def test_repo_system_yaml_example_matches_install_template(self) -> None:
+        repo_example = (
+            pathlib.Path(__file__).resolve().parents[1] / "config" / "system.yaml.example"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(repo_example, SYSTEM_YAML_TEMPLATE)
 
 
 if __name__ == "__main__":

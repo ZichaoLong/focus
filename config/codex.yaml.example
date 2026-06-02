@@ -1,16 +1,16 @@
-# 默认工作目录；默认值：进程当前目录
+# 说明：真实 `codex.yaml` 是当前实例自己的 override 文件。
+# 命名实例不会继承 default 实例的这份文件。
+# 后续通过 `/profile` 等入口保存后，文件可能只保留显式设置过的键。
+# 完整可配项始终以同目录 `codex.yaml.example` 为准。
+#
+# 默认工作目录；默认值：当前用户 Home 目录
 # default_working_dir: /path/to/workspace
 
 # Codex 可执行命令；默认值：codex
-# 如果通过 fnm 管理 Node，建议填写稳定安装路径，不要写 /run/user/.../fnm_multishells/... 这类临时 shim。
+# 首次安装时，如检测到稳定的 Codex 启动命令（如 fnm / nvm，或 Windows 上 npm 全局安装），
+# 会自动把稳定启动命令写入真实 `codex.yaml`。
+# 如果通过 Node 版本管理器管理 Codex，建议填写稳定安装路径，不要写 /run/user/.../fnm_multishells/... 这类临时 shim。
 # codex_command: codex
-
-# managed backend 启动时叠加的 startup profile；默认值：空
-# 说明：只对 `app_server_mode: managed` 生效。
-# 说明：这里填写的是共享 `CODEX_HOME` 下的 profile-v2 名称，例如 `work`，
-# 实际等价于把 `work.config.toml` 作为 managed backend 的启动基线层。
-# 修改后不会立刻改动已加载 backend；如需立即应用，请执行 `/reset-backend`。
-# managed_startup_profile: work
 
 # app-server 连接模式；默认值：managed
 # managed: feishu-codex 自己拉起并维护 shared app-server；
@@ -31,13 +31,20 @@
 # app-server 请求超时（秒）；默认值：30
 # request_timeout_seconds: 30
 
+# managed backend 启动时叠加的 startup profile；默认值：空
+# 说明：只对 `app_server_mode: managed` 生效。
+# 说明：这里填写的是共享 `CODEX_HOME` 下的 profile-v2 名称，例如 `work`，
+# 实际等价于把 `work.config.toml` 作为 managed backend 的启动基线层。
+# 修改后不会立刻改动已加载 backend；如需立即应用，请执行 `/reset-backend`。
+# managed_startup_profile: work
+
 # 线程创建时声明的服务名；默认值：feishu-codex
 # service_name: feishu-codex
 
-# 默认沙箱模式；默认值：danger-full-access
+# 默认权限基线；默认值：:danger-full-access
 # 说明：这是“技术边界”，决定命令和工具最终在什么文件系统 / 网络权限下运行。
-# 可选值：read-only、workspace-write、danger-full-access
-# sandbox: danger-full-access
+# 可选值：:read-only、:workspace、:danger-full-access
+# permissions_profile_id: :danger-full-access
 
 # 默认审批策略；默认值：never
 # 说明：这是“审批边界”，决定什么时候需要先经过审批才能继续。

@@ -228,6 +228,13 @@ fcodex --instance corp-a
 - service
 - shared backend
 
+额外说明：
+
+- 命名实例只读取自己实例目录下的 `system.yaml` / `codex.yaml`
+- 它不会继承 `default` 实例的 `codex.yaml`
+- 真实 `codex.yaml` 是实例级 override 文件；后续通过 `/profile` 等入口保存后，文件可能只保留显式设置过的键
+- 如需查看完整可配项，应看同目录 `codex.yaml.example`
+
 所有实例共享：
 
 - `CODEX_HOME`
