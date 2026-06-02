@@ -531,16 +531,6 @@ def _set_thread_goal(
     return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已更新。")
 
 
-def _pause_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
-    result = _request(data_dir, "thread/goal/pause", target_params)
-    return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已暂停。")
-
-
-def _resume_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
-    result = _request(data_dir, "thread/goal/resume", target_params)
-    return _print_thread_goal_result(result, instance_name=instance_name, note="当前 thread goal 已恢复。")
-
-
 def _clear_thread_goal(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
     result = _request(data_dir, "thread/goal/clear", target_params)
     note = "当前 thread goal 已清除。" if result.get("cleared") else "当前 thread 原本就没有 goal。"
@@ -861,7 +851,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "Thread 管理面。\n"
             "- `list` 默认列当前目录线程；也支持 `--scope global`\n"
             "- 其他 thread 子命令必须显式指定 `--thread-id` 或 `--thread-name`\n"
-            "- `goal` 是 thread-scoped 的本地调试 / 运维面，默认查看，也支持 set/pause/resume/clear\n"
+            "- `goal` 是 thread-scoped 的本地调试 / 运维面，默认查看，也支持 set/clear\n"
             "- 所有实例共享同一套 persisted thread 发现面；实例差异主要体现在 live runtime 持有"
         ),
         formatter_class=_HelpFormatter,
@@ -898,7 +888,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="查看或调试某个 thread 的 goal。",
         description=(
             "Thread goal 调试面。\n"
-            "默认直接查看当前 goal，也支持 `show` / `set` / `pause` / `resume` / `clear`。\n"
+            "默认直接查看当前 goal，也支持 `show` / `set` / `clear`。\n"
+            "其中 `set --status active|paused` 只是 thread-scoped 的 persisted goal 改写，"
+            "不是 runtime resume / pause 命令；是否立即继续运行，仍取决于 thread 当前是否 loaded"
+            " 以及 loaded 后是否 idle。\n"
             "这是本地 CLI 调试 / 运维面，直接经由 service control plane 调用 goal RPC。"
         ),
         formatter_class=_HelpFormatter,
@@ -929,28 +922,10 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_goal_set.add_argument("--objective", default="", help="新的 goal objective。")
     thread_goal_set.add_argument(
         "--status",
-        choices=("active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"),
+        choices=("active", "paused"),
         default="",
-        help="可选 goal 状态；主要供本地调试使用。",
+        help="可选 persisted goal 状态；当前只暴露 `active|paused` 这两个本地调试用状态改写。",
     )
-    thread_goal_pause = thread_goal_sub.add_parser(
-        "pause",
-        help="把某个 thread goal 置为 paused。",
-        description="把某个 thread 当前 goal 置为 `paused`。",
-        formatter_class=_HelpFormatter,
-    )
-    thread_goal_pause_target = thread_goal_pause.add_mutually_exclusive_group(required=True)
-    thread_goal_pause_target.add_argument("--thread-id", help="目标 thread id。")
-    thread_goal_pause_target.add_argument("--thread-name", help="目标 thread 名称。")
-    thread_goal_resume = thread_goal_sub.add_parser(
-        "resume",
-        help="把某个 thread goal 置为 active。",
-        description="把某个 thread 当前 goal 恢复为 `active`。",
-        formatter_class=_HelpFormatter,
-    )
-    thread_goal_resume_target = thread_goal_resume.add_mutually_exclusive_group(required=True)
-    thread_goal_resume_target.add_argument("--thread-id", help="目标 thread id。")
-    thread_goal_resume_target.add_argument("--thread-name", help="目标 thread 名称。")
     thread_goal_clear = thread_goal_sub.add_parser(
         "clear",
         help="清除某个 thread 当前 goal。",
@@ -1115,22 +1090,6 @@ def main() -> None:
                         _thread_target_params(args),
                         objective=str(args.objective or ""),
                         status=str(args.status or ""),
-                        instance_name=target.instance_name,
-                    )
-                )
-            if goal_action == "pause":
-                raise SystemExit(
-                    _pause_thread_goal(
-                        data_dir,
-                        _thread_target_params(args),
-                        instance_name=target.instance_name,
-                    )
-                )
-            if goal_action == "resume":
-                raise SystemExit(
-                    _resume_thread_goal(
-                        data_dir,
-                        _thread_target_params(args),
                         instance_name=target.instance_name,
                     )
                 )

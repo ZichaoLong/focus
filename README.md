@@ -250,6 +250,7 @@ fcodex --instance corp-a
 - 飞书里发送 `/help` 或 `/h`
 - 本地查看 `feishu-codex --help`
 - 本地查看 `feishu-codexctl --help`
+- 本地查看 `fcodex --help`
 - 深入文档看 `docs/doc-index.zh-CN.md`
 
 ## 一图看懂架构

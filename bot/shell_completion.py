@@ -672,13 +672,13 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
                             "-h",
                         ],
                     )
-                if goal_subaction in {"show", "pause", "resume", "clear"}:
+                if goal_subaction in {"show", "clear"}:
                     return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
                 return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
             if action in {"status", "bindings", "archive", "attach", "detach"}:
                 return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
         if action == "goal" and positional_index == 2:
-            return _complete_candidates(current, ["show", "set", "pause", "resume", "clear"])
+            return _complete_candidates(current, ["show", "set", "clear"])
         return []
     if resource == "image":
         if positional_index == 1:

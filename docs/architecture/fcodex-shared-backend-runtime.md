@@ -235,9 +235,11 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
 
 The split is explicit:
 
-- wrapper: resolve the target instance and pass upstream flags such as
-  `-p/--profile` through untouched
-- proxy: handle only cwd patching and owner filtering at the websocket
+- wrapper: owns a narrow local CLI surface before passthrough. It consumes
+  `--instance`, intercepts wrapper help such as `fcodex --help` and
+  `fcodex resume --help`, rejects removed shell-only slash entries, and
+  otherwise passes upstream flags such as `-p/--profile` through untouched
+- proxy: handles only cwd patching and owner filtering at the websocket
   boundary; it no longer inject thread-level settings
 
 Inside the running TUI, however, command semantics return to upstream Codex

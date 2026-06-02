@@ -63,6 +63,7 @@ _REMOVED_WRAPPER_COMMAND_HINTS = {
     "/profile": "本项目不再提供 `/profile`；如需使用上游 profile，请在启动时显式传 `fcodex -p <profile>`。",
     "/archive": "请改用 `feishu-codexctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
+_HELP_FLAGS = ("-h", "--help")
 
 
 def _has_option(user_args: list[str], names: tuple[str, ...]) -> bool:
@@ -71,6 +72,58 @@ def _has_option(user_args: list[str], names: tuple[str, ...]) -> bool:
             if arg == name or arg.startswith(f"{name}="):
                 return True
     return False
+
+
+def _wrapper_help_request_kind(user_args: list[str]) -> str | None:
+    if not _has_option(user_args, _HELP_FLAGS):
+        return None
+    first_positional_index = _first_positional_index(user_args)
+    if first_positional_index is None:
+        return "top"
+    if user_args[first_positional_index] == "resume":
+        return "resume"
+    return None
+
+
+def _print_wrapper_help() -> None:
+    print(
+        "fcodex 本地 wrapper。\n\n"
+        "用法:\n"
+        "  fcodex [--instance <name>] [upstream codex args ...]\n"
+        "  fcodex [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
+        "说明:\n"
+        "- `fcodex` 不是独立第二套 TUI；普通参数会继续透传给上游 `codex`\n"
+        "- wrapper 会为当前 shell cwd 建立本地 proxy，并把上游 TUI 接到目标实例的 shared backend\n"
+        "- `--instance <name>` 只接受已创建的命名实例；不能与显式 `--remote` 同时使用\n"
+        "- `resume <thread>` 会先做实例路由、thread 名解析，以及跨实例 loaded gate 检查\n"
+        "- shell 层不再支持 `/threads`、`/resume`、`/profile` 这类 slash 自命令\n\n"
+        "常用入口:\n"
+        "  fcodex\n"
+        "  fcodex resume <thread_id|thread_name>\n"
+        "  fcodex --instance corp-a\n"
+        "  fcodex -p <profile>\n\n"
+        "更多帮助:\n"
+        "  - 上游 Codex 通用参数: `codex --help`\n"
+        "  - 本地诊断 / 管理: `feishu-codexctl --help`\n"
+        "  - 实例创建与安装修复: `feishu-codex --help`\n"
+    )
+
+
+def _print_wrapper_resume_help() -> None:
+    print(
+        "fcodex resume 本地 wrapper 语义。\n\n"
+        "用法:\n"
+        "  fcodex [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
+        "说明:\n"
+        "- `thread_name` 会先在选中的 shared backend 上解析成唯一 thread id；歧义时直接拒绝\n"
+        "- 若已有 live runtime owner，wrapper 会优先路由到 owner 实例\n"
+        "- 若其他运行中实例仍报告该 thread 处于 loaded，wrapper 会 fail-close 拒绝，而不是偷偷 cold resume\n"
+        "- 通过这些检查后，剩余参数仍透传给上游 `codex resume`\n\n"
+        "相关入口:\n"
+        "  - 本地线程查看: `feishu-codexctl thread list --scope cwd`\n"
+        "  - 本地 thread 诊断: `feishu-codexctl thread status --thread-id <id>`\n"
+        "  - 上游 resume 子命令帮助: `codex resume --help`\n"
+    )
 
 
 def _has_explicit_remote(user_args: list[str]) -> bool:
@@ -92,17 +145,36 @@ def _default_data_dir() -> pathlib.Path:
 
 
 def _consume_instance_arg(user_args: list[str]) -> tuple[str, list[str]]:
-    if not user_args:
-        return "", []
-    first = user_args[0]
-    if first == "--instance":
-        if len(user_args) < 2:
-            print("`--instance` 缺少实例名。", file=sys.stderr)
-            raise SystemExit(2)
-        return validate_instance_name(user_args[1]), user_args[2:]
-    if first.startswith("--instance="):
-        return validate_instance_name(first.split("=", 1)[1]), user_args[1:]
-    return "", list(user_args)
+    explicit_instance = ""
+    remaining: list[str] = []
+    i = 0
+    while i < len(user_args):
+        arg = user_args[i]
+        if arg == "--":
+            remaining.extend(user_args[i:])
+            break
+        if arg == "--instance":
+            if i + 1 >= len(user_args):
+                print("`--instance` 缺少实例名。", file=sys.stderr)
+                raise SystemExit(2)
+            instance_name = validate_instance_name(user_args[i + 1])
+            if explicit_instance:
+                print("`--instance` 只能传一次。", file=sys.stderr)
+                raise SystemExit(2)
+            explicit_instance = instance_name
+            i += 2
+            continue
+        if arg.startswith("--instance="):
+            instance_name = validate_instance_name(arg.split("=", 1)[1])
+            if explicit_instance:
+                print("`--instance` 只能传一次。", file=sys.stderr)
+                raise SystemExit(2)
+            explicit_instance = instance_name
+            i += 1
+            continue
+        remaining.append(arg)
+        i += 1
+    return explicit_instance, remaining
 
 
 def _first_positional_index(user_args: list[str], *, start: int = 0) -> int | None:
@@ -559,10 +631,17 @@ def _run_upstream_codex(
 
 def main() -> None:
     load_env_file()
+    explicit_instance, user_args = _consume_instance_arg(sys.argv[1:])
+    help_request = _wrapper_help_request_kind(user_args)
+    if help_request == "top":
+        _print_wrapper_help()
+        raise SystemExit(0)
+    if help_request == "resume":
+        _print_wrapper_resume_help()
+        raise SystemExit(0)
     cfg = load_config_file("codex")
     configured_codex_command = str(cfg.get("codex_command", "codex")).strip() or "codex"
     codex_command = resolve_managed_codex_command(configured_codex_command)
-    explicit_instance, user_args = _consume_instance_arg(sys.argv[1:])
     if "--dry-run" in user_args:
         print("fcodex 不再提供 `--dry-run` wrapper 入口。", file=sys.stderr)
         print("本地查看线程请改用 `feishu-codexctl thread list`、`thread status`、`thread bindings`。", file=sys.stderr)

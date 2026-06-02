@@ -1721,8 +1721,6 @@ class RuntimeAdminController:
             "thread/goal",
             "thread/goal/set",
             "thread/goal/clear",
-            "thread/goal/pause",
-            "thread/goal/resume",
             "thread/detach",
             "thread/send-image",
             "thread/attach",
@@ -1776,18 +1774,6 @@ class RuntimeAdminController:
                 )
             if method == "thread/goal/clear":
                 return self.clear_thread_goal_for_control(thread.thread_id, summary=thread)
-            if method == "thread/goal/pause":
-                return self.set_thread_goal_for_control(
-                    thread.thread_id,
-                    summary=thread,
-                    status="paused",
-                )
-            if method == "thread/goal/resume":
-                return self.set_thread_goal_for_control(
-                    thread.thread_id,
-                    summary=thread,
-                    status="active",
-                )
             if method == "thread/send-image":
                 local_path = str(params.get("local_path", "") or "").strip()
                 if not local_path:

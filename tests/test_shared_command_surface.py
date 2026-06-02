@@ -72,6 +72,11 @@ class SharedCommandSurfaceTests(unittest.TestCase):
 
         self.assertTrue(handler._inbound_surface.has_command_route("/preflight"))
 
+    def test_reset_backend_shared_summary_uses_recovery_wording(self) -> None:
+        command = get_shared_command("reset-backend")
+
+        self.assertEqual(command.feishu_summary, "预览并重置当前实例 backend，用于恢复或排障。")
+
     def test_help_thread_and_threads_cards_reuse_shared_command_specs(self) -> None:
         threads_command = get_shared_command("threads")
         resume_command = get_shared_command("resume")

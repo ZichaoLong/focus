@@ -198,7 +198,9 @@ fcodex shell wrapper
 
 其中职责边界是显式的：
 
-- wrapper：负责选实例，并把上游原生参数（包括 `-p/--profile`）原样透传
+- wrapper：在透传前只保留一层很窄的本地 CLI 语义。它会消费 `--instance`，拦截
+  `fcodex --help` 与 `fcodex resume --help` 这类 wrapper 自有帮助，并拒绝已经删除的
+  shell-only slash 入口；除此之外，仍把上游原生参数（包括 `-p/--profile`）原样透传
 - proxy：只在 websocket 传输边界做 cwd 修补与 owner 过滤，不再承担 thread 级设置注入
 
 但一旦进入运行中的 TUI，命令语义就回到 upstream Codex 的默认行为。

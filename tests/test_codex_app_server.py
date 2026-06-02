@@ -1690,6 +1690,91 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("请显式传 `--instance <name>`", stderr.getvalue())
         self.assertIn("当前是 `fcodex resume <thread>` 路径", stderr.getvalue())
 
+    def test_fcodex_top_level_help_shows_wrapper_contract(self) -> None:
+        stdout = StringIO()
+        with patch("bot.fcodex.sys.stdout", stdout):
+            with patch("sys.argv", ["fcodex", "--help"]):
+                with self.assertRaises(SystemExit) as exc:
+                    fcodex_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("fcodex 本地 wrapper", rendered)
+        self.assertIn("--instance <name>", rendered)
+        self.assertIn("codex --help", rendered)
+        self.assertIn("feishu-codexctl --help", rendered)
+
+    def test_fcodex_top_level_help_accepts_instance_after_help_flag(self) -> None:
+        stdout = StringIO()
+        with patch("bot.fcodex.sys.stdout", stdout):
+            with patch("sys.argv", ["fcodex", "--help", "--instance", "corp-a"]):
+                with self.assertRaises(SystemExit) as exc:
+                    fcodex_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("fcodex 本地 wrapper", rendered)
+        self.assertIn("--instance <name>", rendered)
+
+    def test_fcodex_resume_help_shows_wrapper_resume_contract(self) -> None:
+        stdout = StringIO()
+        with patch("bot.fcodex.sys.stdout", stdout):
+            with patch("sys.argv", ["fcodex", "resume", "--help"]):
+                with self.assertRaises(SystemExit) as exc:
+                    fcodex_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("fcodex resume 本地 wrapper 语义", rendered)
+        self.assertIn("loaded", rendered)
+        self.assertIn("codex resume --help", rendered)
+        self.assertIn("feishu-codexctl thread status", rendered)
+
+    def test_fcodex_resume_help_accepts_instance_after_help_flag(self) -> None:
+        stdout = StringIO()
+        with patch("bot.fcodex.sys.stdout", stdout):
+            with patch("sys.argv", ["fcodex", "resume", "--help", "--instance", "corp-a"]):
+                with self.assertRaises(SystemExit) as exc:
+                    fcodex_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("fcodex resume 本地 wrapper 语义", rendered)
+        self.assertIn("codex resume --help", rendered)
+
+    def test_fcodex_consumes_instance_outside_leading_prefix_position(self) -> None:
+        with patch(
+            "bot.fcodex.load_config_file",
+            return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"},
+        ):
+            with patch(
+                "bot.fcodex.resolve_cli_runtime_target",
+                return_value=CliRuntimeTarget(
+                    instance_name="explorer",
+                    data_dir=Path("/tmp/data-explorer"),
+                    app_server_url="ws://127.0.0.1:8765",
+                ),
+            ) as mock_resolve:
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex", "session", "--instance", "explorer"]):
+                            fcodex_main()
+
+        self.assertEqual(mock_resolve.call_args.kwargs["explicit_instance"], "explorer")
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            [
+                "codex",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "session",
+            ],
+        )
+
     def test_fcodex_rejects_slash_threads_command(self) -> None:
         stderr = StringIO()
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):

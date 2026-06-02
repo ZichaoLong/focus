@@ -68,7 +68,7 @@ _SHARED_COMMAND_SPECS = (
         key="reset-backend",
         slash_name="/reset-backend",
         feishu_usage="/reset-backend",
-        feishu_summary="预览并重置当前实例 backend。",
+        feishu_summary="预览并重置当前实例 backend，用于恢复或排障。",
     ),
     SharedCommandSpec(
         key="archive",

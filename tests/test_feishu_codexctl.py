@@ -19,13 +19,11 @@ from bot.feishu_codexctl import (
     _prompt_text_from_args,
     _print_binding_status,
     _render_table,
-    _resume_thread_goal,
     _send_thread_image,
     _send_binding_prompt,
     _set_thread_goal,
     _resolve_thread_archive_target,
     _remote_adapter,
-    _pause_thread_goal,
     _terminal_display_width,
     _print_thread_status,
     _thread_target_params,
@@ -186,10 +184,10 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(args.objective, "ship goal support")
         self.assertEqual(args.status, "paused")
 
-    def test_thread_goal_set_accepts_all_upstream_goal_statuses(self) -> None:
+    def test_thread_goal_set_only_accepts_active_and_paused(self) -> None:
         parser = _build_parser()
 
-        for status in ("active", "paused", "blocked", "usageLimited", "budgetLimited", "complete"):
+        for status in ("active", "paused"):
             args = parser.parse_args(
                 [
                     "thread",
@@ -205,13 +203,29 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(_thread_target_params(args), {"thread_id": "thread-1"})
             self.assertEqual(args.status, status)
 
-    def test_thread_goal_pause_accepts_explicit_thread_name(self) -> None:
+    def test_thread_goal_set_rejects_removed_terminal_statuses(self) -> None:
         parser = _build_parser()
 
-        args = parser.parse_args(["thread", "goal", "pause", "--thread-name", "demo"])
+        for status in ("blocked", "usageLimited", "budgetLimited", "complete"):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(
+                    [
+                        "thread",
+                        "goal",
+                        "set",
+                        "--thread-id",
+                        "thread-1",
+                        "--status",
+                        status,
+                    ]
+                )
 
-        self.assertEqual(args.goal_action, "pause")
-        self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
+    def test_thread_goal_removed_pause_and_resume_subcommands_are_rejected(self) -> None:
+        parser = _build_parser()
+
+        for subcommand in ("pause", "resume"):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(["thread", "goal", subcommand, "--thread-id", "thread-1"])
 
     def test_thread_list_defaults_to_cwd_scope(self) -> None:
         parser = _build_parser()
@@ -733,7 +747,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         )
         self.assertIn("note: 当前 thread goal 已更新。", stdout.getvalue())
 
-    def test_pause_resume_and_clear_thread_goal_render_operation_notes(self) -> None:
+    def test_set_and_clear_thread_goal_render_operation_notes(self) -> None:
         stdout = io.StringIO()
         paused = {
             "thread_id": "thread-1",
@@ -750,13 +764,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 "updated_at": 1712476801,
             },
         }
-        resumed = {
-            **paused,
-            "goal": {
-                **paused["goal"],
-                "status": "active",
-            },
-        }
         cleared = {
             "thread_id": "thread-1",
             "thread_title": "demo",
@@ -764,14 +771,15 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "goal": None,
             "cleared": True,
         }
-        with patch("bot.feishu_codexctl._request", side_effect=[paused, resumed, cleared]):
+        with patch("bot.feishu_codexctl._request", side_effect=[paused, cleared]):
             with redirect_stdout(stdout):
                 self.assertEqual(
-                    _pause_thread_goal(Path("/tmp/instance-data"), {"thread_id": "thread-1"}, instance_name="explorer"),
-                    0,
-                )
-                self.assertEqual(
-                    _resume_thread_goal(Path("/tmp/instance-data"), {"thread_id": "thread-1"}, instance_name="explorer"),
+                    _set_thread_goal(
+                        Path("/tmp/instance-data"),
+                        {"thread_id": "thread-1"},
+                        status="paused",
+                        instance_name="explorer",
+                    ),
                     0,
                 )
                 self.assertEqual(
@@ -780,8 +788,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 )
 
         rendered = stdout.getvalue()
-        self.assertIn("note: 当前 thread goal 已暂停。", rendered)
-        self.assertIn("note: 当前 thread goal 已恢复。", rendered)
+        self.assertIn("note: 当前 thread goal 已更新。", rendered)
         self.assertIn("note: 当前 thread goal 已清除。", rendered)
         self.assertIn("goal: （无）", rendered)
 

@@ -1289,8 +1289,14 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             status="active",
         )
 
-        paused = controller.handle_service_control_request("thread/goal/pause", {"thread_id": "thread-1"})
-        resumed = controller.handle_service_control_request("thread/goal/resume", {"thread_id": "thread-1"})
+        paused = controller.handle_service_control_request(
+            "thread/goal/set",
+            {"thread_id": "thread-1", "status": "paused"},
+        )
+        resumed = controller.handle_service_control_request(
+            "thread/goal/set",
+            {"thread_id": "thread-1", "status": "active"},
+        )
         cleared = controller.handle_service_control_request("thread/goal/clear", {"thread_id": "thread-1"})
 
         self.assertEqual(paused["goal"]["status"], "paused")

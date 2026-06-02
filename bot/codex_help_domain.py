@@ -499,7 +499,7 @@ class CodexHelpDomain:
                 title="Codex 工作台：高级操作",
                 markdown=(
                     "低频高级动作与排障入口。\n\n"
-                    f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`：重置当前实例 backend\n"
+                    f"- `{_SHARED_RESET_BACKEND_COMMAND.feishu_usage}`：恢复或排障时重置当前实例 backend\n"
                     f"- `{_DEBUG_CONTACT_COMMAND}`：管理员排查通讯录名字解析问题"
                 ),
                 action_rows=(

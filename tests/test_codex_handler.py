@@ -6738,6 +6738,7 @@ class CodexHandlerTests(unittest.TestCase):
         ))
 
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台：高级操作")
+        self.assertIn("恢复或排障时重置当前实例 backend", response["card"]["elements"][0]["content"])
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[0]["actions"]],
             ["重置 backend", "联系人排障"],

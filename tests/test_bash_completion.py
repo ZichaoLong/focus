@@ -66,7 +66,7 @@ class ShellCompletionTests(unittest.TestCase):
             3,
         )
 
-        self.assertEqual(matches, ["show", "set", "pause", "resume", "clear"])
+        self.assertEqual(matches, ["show", "set", "clear"])
 
     def test_feishu_codexctl_completes_thread_goal_set_options_and_status(self) -> None:
         option_matches = complete_words(
