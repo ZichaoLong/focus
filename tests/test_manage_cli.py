@@ -599,6 +599,49 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue(powershell_completion_path.exists())
             self.assertTrue(powershell_profile_path.exists())
 
+    def test_handle_bootstrap_install_preserves_existing_default_instance_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            bin_dir = root / "bin"
+            bash_completion_dir = root / "completion" / "bash"
+            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_rc_path = root / "shells" / "zshrc"
+            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_profile_path = root / "shells" / "profile.ps1"
+            env_file = config_root / "feishu-codex.env"
+
+            class _DummyManager:
+                def ensure_service(self, definition) -> None:
+                    del definition
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(config_root),
+                    "FC_DATA_ROOT": str(data_root),
+                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FC_BIN_DIR": str(bin_dir),
+                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FC_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                _ensure_instance_scaffold("default")
+                default_codex = config_root / "codex.yaml"
+                default_codex.write_text("mirror_watchdog_seconds: 999999\n", encoding="utf-8")
+
+                with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                    result = _handle_bootstrap_install()
+
+            self.assertEqual(result, 0)
+            self.assertEqual(default_codex.read_text(encoding="utf-8"), "mirror_watchdog_seconds: 999999\n")
+
     def test_write_wrapper_creates_windows_cmd_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
