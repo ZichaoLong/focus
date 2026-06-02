@@ -1398,6 +1398,7 @@ class FCodexTests(unittest.TestCase):
             patch("bot.instance_resolution.current_cli_instance_name", return_value="default"),
             patch("bot.fcodex.current_cli_instance_name", return_value="default"),
             patch("bot.fcodex.list_running_instances", return_value=[]),
+            patch("bot.fcodex.resolve_managed_codex_command", side_effect=lambda cmd: cmd),
         ]
         for patcher in patchers:
             patcher.start()
@@ -1441,6 +1442,33 @@ class FCodexTests(unittest.TestCase):
         self.assertEqual(
             mock_exec.call_args.args[2][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
             mock_proxy.call_args.kwargs["proxy_auth_token"],
+        )
+
+    def test_fcodex_uses_resolved_codex_command_when_instance_override_omits_it(self) -> None:
+        with patch("bot.fcodex.load_config_file", return_value={"app_server_url": "ws://127.0.0.1:8765"}):
+            with patch(
+                "bot.fcodex.resolve_managed_codex_command",
+                return_value="/stable/node /stable/codex.js",
+            ) as mock_resolve:
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex", "session"]):
+                            fcodex_main()
+
+        self.assertEqual(mock_resolve.call_args.args[0], "codex")
+        self.assertEqual(
+            mock_exec.call_args[0][1],
+            [
+                "/stable/node",
+                "/stable/codex.js",
+                "--remote",
+                "ws://127.0.0.1:9100",
+                "--remote-auth-token-env",
+                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                "--cd",
+                os.getcwd(),
+                "session",
+            ],
         )
 
     def test_fcodex_uses_runtime_resolved_backend_url(self) -> None:

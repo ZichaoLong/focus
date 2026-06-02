@@ -15,6 +15,7 @@ from dataclasses import dataclass, replace
 
 from bot.adapters.base import ThreadSummary
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
+from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.config import load_config_file
 from bot.constants import DEFAULT_APP_SERVER_URL
 from bot.env_file import load_env_file
@@ -578,7 +579,8 @@ def _run_upstream_codex(
 def main() -> None:
     load_env_file()
     cfg = load_config_file("codex")
-    codex_command = str(cfg.get("codex_command", "codex")).strip() or "codex"
+    configured_codex_command = str(cfg.get("codex_command", "codex")).strip() or "codex"
+    codex_command = resolve_managed_codex_command(configured_codex_command)
     explicit_instance, user_args = _consume_instance_arg(sys.argv[1:])
     if "--dry-run" in user_args:
         print("fcodex 不再提供 `--dry-run` wrapper 入口。", file=sys.stderr)
