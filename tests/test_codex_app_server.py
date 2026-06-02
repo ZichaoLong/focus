@@ -1362,14 +1362,17 @@ class CodexRpcClientTests(unittest.TestCase):
     def test_managed_process_env_materializes_selected_startup_profile_into_synthetic_codex_home(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as codex_tmpdir:
             codex_home = Path(codex_tmpdir)
-            (codex_home / "config.toml").write_text(
+            original_config_text = (
                 """
 model_provider = "custom"
 model = "gpt-5.4"
 
 [mcp_servers.docs]
 command = "docs-base"
-""".lstrip(),
+""".lstrip()
+            )
+            (codex_home / "config.toml").write_text(
+                original_config_text.lstrip(),
                 encoding="utf-8",
             )
             (codex_home / "moonbridge.config.toml").write_text(
@@ -1397,6 +1400,10 @@ args = ["--profile"]
             self.assertEqual(merged["mcp_servers"]["docs"]["command"], "docs-base")
             self.assertEqual(merged["mcp_servers"]["docs"]["args"], ["--profile"])
             self.assertTrue((synthetic_home / "moonbridge.config.toml").exists())
+            self.assertEqual(
+                (codex_home / "config.toml").read_text(encoding="utf-8"),
+                original_config_text.lstrip(),
+            )
 
     def test_reader_loop_notifies_disconnect_once_for_unexpected_close(self) -> None:
         disconnects: list[str] = []

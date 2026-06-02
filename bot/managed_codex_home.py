@@ -38,6 +38,8 @@ def prepare_managed_codex_home(
 
     if real_codex_home.is_dir():
         for child in real_codex_home.iterdir():
+            if child.name == "config.toml":
+                continue
             _link_or_copy(child, synthetic_home / child.name)
 
     config_path = synthetic_home / "config.toml"
