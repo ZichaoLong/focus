@@ -12,19 +12,16 @@ See also:
 
 ## 1. Status
 
-This document records the current product conclusion and the recommended next
-design direction.
+This document records the current product conclusion, the implemented startup
+profile capability, and the design constraints that still matter around it.
 
 It separates two layers:
 
 - **verified current facts**
   - behavior already confirmed in current code and upstream behavior
-- **recommended future capability**
-  - not implemented in this repository yet, but currently the better product
-    route
-
-Until implementation lands, current shipped behavior is still defined by the
-existing contracts and code.
+- **supporting design constraints**
+  - why the capability belongs at instance startup scope, and what it must not
+    grow into
 
 ## 2. Problem
 
@@ -47,7 +44,7 @@ and related behavior tuning, then:
 
 - bare `codex` can consume that catalog through its isolated startup path
 - `feishu-codex` cannot switch the shared backend's backend-global catalog
-  later through thread-wise `/profile` alone
+  later just by changing `/profile` while keeping the current backend running
 
 The visible symptom is often:
 
@@ -58,22 +55,17 @@ The visible symptom is often:
 
 ## 3. Current Facts
 
-### 3.1 backend-global catalog and thread-wise profile are different state layers
+### 3.1 backend-global catalog and current setting families are different state layers
 
-This project already treats:
+This project now keeps only two writable setting families:
 
-- `profile`
-- `memory`
+- instance startup profile
+- binding-wise next-turn settings
 
-as **thread-wise next-load state**.
+It no longer keeps any project-owned thread-wise next-load setting.
 
-That means the contract is:
-
-- for supported resume paths, when the same thread moves from unloaded back to
-  loaded, it should reuse the same persisted next-load setting
-
-But backend-global model metadata, `model/list`, and catalog path are not part
-of that state layer.
+Backend-global model metadata, `model/list`, and catalog path are not part of
+either writable family.
 
 They are shared backend facts chosen when the backend starts.
 
@@ -89,15 +81,15 @@ with a specific profile, but that still only means "use an external backend".
 It does not give this repository a native provider-aware backend startup
 control surface.
 
-### 3.3 `remote` mode is not a good primary path for thread-wise next-load settings
+### 3.3 `remote` mode is not a good primary path for instance-owned startup control
 
-In the current repository, the remaining formal setting surfaces are:
+In the current repository, provider/catalog control is intentionally expressed
+through:
 
 - instance startup profile
-- binding-wise next-turn settings
 
-When the target thread is still loaded, those settings often need unload /
-`reset-backend` convergence.
+That setting converges only when the managed backend starts or restarts after
+`reset-backend`.
 
 But in remote mode, the instance does not own the backend process, so it cannot
 perform `reset-backend`.
@@ -105,7 +97,7 @@ perform `reset-backend`.
 That makes remote mode more than a minor catalog difference. It also weakens:
 
 - `/profile`
-- local control-plane flows that rely on `reset-backend`
+- local control-plane flows that rely on managed restart convergence
 
 ### 3.4 the project intentionally does not keep an “instance-level default profile”
 
@@ -118,14 +110,19 @@ The key issue is not only whether existing threads are retroactively rewritten.
 The deeper problem is the user mental model:
 
 - once a feature is named a “default profile”, users naturally infer that
-  whenever a thread is loaded without an explicit override, it should be
-  re-resolved from that default profile
+  whenever a thread is loaded without an explicit turn-time override, it should
+  be re-resolved from that default profile
 
-That conflicts with the current thread-wise next-load contract.
+That conflicts with the current startup-profile contract.
 
 The current source of truth remains:
 
-- for unloaded threads, persisted thread-wise next-load state is the truth
+- for the next managed-backend start, instance config
+  `managed_startup_profile` is the truth
+- for future turns of one Feishu binding, binding runtime settings are the
+  truth
+- there is no extra project-owned thread-wise persisted profile slice behind
+  `/resume`
 
 ## 4. Rejected Paths
 
@@ -137,10 +134,11 @@ The reason is not just implementation complexity. The state layers themselves
 do not match:
 
 - catalog / model metadata are backend-global
-- `profile` / `memory` are thread-wise
+- `/profile` manages instance startup baseline
+- turn-time settings are binding-wise
 
-Thread-wise profile switching alone cannot make one long-lived shared backend
-hold two different backend-global catalog truths at the same time.
+No remaining setting family can make one long-lived shared backend hold two
+different backend-global catalog truths at the same time.
 
 ### 4.2 do not use `remote` as the main ZAI catalog solution
 
@@ -151,8 +149,8 @@ Reason:
 
 - it moves provider-aware backend startup control outside the repository
 - it removes `reset-backend` from the current instance
-- it degrades the formal convergence path for thread-wise `profile` /
-  `memory`
+- it weakens `/profile` and other instance-owned flows that expect managed
+  restart convergence
 
 ### 4.3 do not name the future capability an “instance-level default profile”
 
@@ -166,19 +164,19 @@ default source of truth.
 
 ## 5. Decision
 
-### 5.1 the more appropriate next route is `managed backend startup profile`
+### 5.1 the capability is `managed backend startup profile`
 
-If a future instance should serve a specific provider better, such as ZAI /
-GLM, the more appropriate capability is:
+If an instance should serve a specific provider better, such as ZAI / GLM, the
+explicit capability is:
 
 - `managed backend startup profile`
 
-Its purpose is not to replace thread-wise profile semantics. Its purpose is to
-fill the missing backend-startup control layer.
+Its purpose is not to recreate a thread-owned restore layer. Its purpose is to
+make backend-startup control explicit at instance scope.
 
 ### 5.2 exact semantics of that capability
 
-If implemented, this capability should be tightly defined as:
+This capability is tightly defined as:
 
 - effective only when `app_server_mode = managed`
 - only affecting the backend process launched by the current instance
@@ -193,27 +191,35 @@ If implemented, this capability should be tightly defined as:
 
 It should **not** mean:
 
-- no write into thread-wise profile store
 - no new project-owned thread-level persisted setting
 - no retroactive rewrite of already loaded threads
 - no pretending to be the thread's “default profile truth”
+- no equivalence to local `fcodex -p`
 
-### 5.3 relationship to existing thread-wise state
+### 5.3 relationship to the current setting model
 
-If this capability lands, the recommended separation is:
+The recommended separation is:
 
 - backend startup profile
   - defines only backend-global startup defaults
-- thread-wise profile / memory
-  - continue to define the persisted next-load setting for one thread
+- binding-wise next-turn settings
+  - define only per-binding turn-time overrides
+- read-only runtime diagnostics
+  - describe the currently loaded backend state
 
 In other words:
 
-- existing thread truth is still defined by persisted thread-wise state
-- backend startup profile is only the shared backend baseline at startup
+- existing loaded-runtime truth comes from the current backend process
+- future-turn truth for one Feishu binding comes from persisted binding
+  settings
+- backend startup profile only affects the next managed-backend start or
+  restart
 
-For a new thread, backend startup profile should matter only when there is
-**no explicit thread-wise seed and no request-time explicit override**.
+No project-owned thread-wise next-load layer sits between them.
+
+For a new thread or unloaded thread, backend startup profile matters only
+indirectly through the backend that gets started. It is not replayed later as a
+separate thread-owned restore state.
 
 ### 5.4 this is not “route threads/providers to different backends”
 
@@ -242,13 +248,13 @@ then those explicit injected values may still mask backend startup defaults and
 make behavior ambiguous again.
 
 So if the goal is to keep a clearer backend startup baseline while the shared
-backend still serves multiple thread-wise profiles, instance-level `model` /
+backend still serves multiple threads and frontends, instance-level `model` /
 `model_provider` should usually remain empty.
 
 ### 6.2 `reset-backend` should reuse the same startup profile
 
-If the capability is implemented, restarting a managed backend after
-`reset-backend` should reuse the same startup profile.
+Restarting a managed backend after `reset-backend` should reuse the same
+startup profile.
 
 Otherwise users would see an unstable result:
 
@@ -265,8 +271,7 @@ After this discussion, the repository should follow these conclusions:
   optimal catalogs”
 - if the goal is to use ZAI well while preserving the existing product
   contract around `/profile`, `/reset-backend`, and turn-time settings, the
-  better
-  future route is:
+  right route is:
   - one dedicated instance
   - `managed` backend mode
   - an explicit backend startup profile that lets that backend start with the
@@ -280,5 +285,5 @@ This document does not define:
 
 - provider-specific catalog overlay inside one backend
 - dynamic backend routing by thread/profile/provider
-- any rewrite of current shipped thread-wise profile / memory semantics
+- any reintroduction of project-owned thread-wise profile / memory semantics
 - any fake `reset-backend` patch semantics for remote mode

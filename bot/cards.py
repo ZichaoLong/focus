@@ -500,11 +500,11 @@ def build_resume_active_goal_confirm_card(
         "",
         "当前目标 thread 尚未加载到本实例 backend。",
         "该 thread 的 persisted goal 当前是 `active`。",
-        "如果直接恢复，app-server 可能会立刻继续这条 goal；第一轮自动续跑不保证吃到当前会话设置。",
+        "如果直接恢复，app-server 可能会立刻继续这条 goal；第一轮自动续跑只保证沿用 backend 当时已生效的 loaded-thread 设置。",
         "",
         "请选择：",
-        "- 按当前设置恢复并继续：先暂停 persisted goal，再 cold resume、同步当前会话设置，最后恢复 goal",
-        "- 直接恢复：按当前 backend 状态直接恢复；当前会话设置只会在恢复后补齐后续 turn",
+        "- 按当前设置恢复并保持 paused：先暂停 persisted goal，再 cold resume、同步当前会话设置，但不自动恢复 goal",
+        "- 直接恢复：按当前 backend 状态直接恢复；active goal 可能立刻续跑，当前会话设置只会影响后续已同步完成的 turn",
     ]
     return build_markdown_action_card(
         "Codex 恢复线程确认",
@@ -516,13 +516,13 @@ def build_resume_active_goal_confirm_card(
                 "actions": [
                     {
                         "tag": "button",
-                        "text": {"tag": "plain_text", "content": "按当前设置恢复并继续"},
+                        "text": {"tag": "plain_text", "content": "按当前设置恢复并保持 paused"},
                         "type": "primary",
                         "value": {
                             "action": "resume_thread_confirm",
                             "thread_id": normalized_thread_id,
                             "thread_title": normalized_thread_title,
-                            "strict_active_goal_resume": "true",
+                            "pause_active_goal_on_resume": "true",
                             "origin": normalized_origin,
                         },
                     },
@@ -534,7 +534,7 @@ def build_resume_active_goal_confirm_card(
                             "action": "resume_thread_confirm",
                             "thread_id": normalized_thread_id,
                             "thread_title": normalized_thread_title,
-                            "strict_active_goal_resume": "",
+                            "pause_active_goal_on_resume": "",
                             "origin": normalized_origin,
                         },
                     },

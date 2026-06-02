@@ -2431,7 +2431,7 @@ class CodexHandler(BotHandler):
         *,
         original_arg: str | None = None,
         summary: ThreadSummary | None = None,
-        strict_active_goal_resume: bool = False,
+        pause_active_goal_on_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None:
@@ -2460,17 +2460,17 @@ class CodexHandler(BotHandler):
             was_loaded = str(summary.status or "").strip() != BACKEND_THREAD_STATUS_NOT_LOADED
         paused_for_cold_sync = False
         try:
-            goal = self._adapter.get_thread_goal(thread_id)
+            goal = self._get_thread_goal_if_available(thread_id)
             goal_is_active = goal is not None and str(goal.status or "").strip() == "active"
-            if not was_loaded and goal_is_active and strict_active_goal_resume:
-                # Ordinary `/resume` normally reattaches directly. The confirm
-                # branch upgrades unloaded+active-goal resume into the same
-                # strict pause -> resume -> settings/update -> active sequence
-                # used by `/goal resume`, so the first autonomous goal turn can
-                # inherit the current binding-owned settings.
+            if not was_loaded and goal_is_active and pause_active_goal_on_resume:
+                # Cold-resuming an unloaded thread with an active persisted goal
+                # cannot safely guarantee that the first autonomous goal turn
+                # will inherit the current binding-wise settings. The safe
+                # branch pauses first, restores the thread, syncs settings, and
+                # leaves the goal paused for an explicit later resume.
                 self._adapter.set_thread_goal(thread_id, status="paused")
                 paused_for_cold_sync = True
-            carry_cold_binding_settings = not was_loaded and (not goal_is_active or strict_active_goal_resume)
+            carry_cold_binding_settings = not was_loaded and (not goal_is_active or pause_active_goal_on_resume)
             snapshot = self._resume_snapshot_by_id(
                 thread_id,
                 original_arg=original_arg or thread_id,
@@ -2481,6 +2481,8 @@ class CodexHandler(BotHandler):
                 permissions_profile_id=(permissions_profile_id if carry_cold_binding_settings else None),
             )
         except Exception as exc:
+            if paused_for_cold_sync:
+                self._restore_paused_goal_after_failed_resume(thread_id)
             logger.exception("恢复线程失败")
             self._reply_text(chat_id, f"恢复线程失败：{exc}", message_id=message_id)
             if refresh_threads_message_id:
@@ -2502,9 +2504,9 @@ class CodexHandler(BotHandler):
                 reasoning_effort=reasoning_effort,
                 collaboration_mode=collaboration_mode,
             )
-            if paused_for_cold_sync:
-                self._adapter.set_thread_goal(thread_id, status="active")
         except Exception as exc:
+            if paused_for_cold_sync:
+                self._restore_paused_goal_after_failed_resume(thread_id)
             logger.exception("同步线程设置失败")
             self._reply_text(chat_id, f"恢复线程后同步当前会话设置失败：{exc}", message_id=message_id)
             if refresh_threads_message_id:
@@ -2519,6 +2521,8 @@ class CodexHandler(BotHandler):
             f"目录：`{display_path(snapshot.summary.cwd)}`\n"
             f"{_LOCAL_THREAD_SAFETY_RULE}"
         )
+        if paused_for_cold_sync:
+            summary += "\n当前按本会话设置恢复了 thread，但 persisted goal 仍保持 `paused`；如需继续，请执行 `/goal resume`。"
         if self._show_history_preview_on_resume:
             rounds = self._extract_history_rounds(snapshot)
             if rounds:
@@ -2654,7 +2658,17 @@ class CodexHandler(BotHandler):
         if not thread_id:
             self._reply_text(chat_id, "当前没有绑定 thread；请先直接发送消息、执行 `/new`，或 `/resume` 目标线程。", message_id=message_id)
             return
-        goal = self._adapter.get_thread_goal(thread_id)
+        try:
+            goal = self._adapter.get_thread_goal(thread_id)
+        except Exception as exc:
+            if self._is_goals_feature_disabled_error(exc):
+                self._reply_card(
+                    chat_id,
+                    build_markdown_card("Codex Goal 操作失败", "当前 backend 未启用 goal 功能。", template="red"),
+                    message_id=message_id,
+                )
+                return
+            raise
         if goal is None:
             self._reply_card(
                 chat_id,
@@ -2701,6 +2715,10 @@ class CodexHandler(BotHandler):
                 effective_goal = self._adapter.set_thread_goal(thread_id, status="active")
             self._update_runtime_goal_projection(sender_id, chat_id, message_id, effective_goal)
         except Exception as exc:
+            if paused_for_cold_sync:
+                restored_goal = self._restore_paused_goal_after_failed_resume(thread_id)
+                if restored_goal is not None:
+                    self._update_runtime_goal_projection(sender_id, chat_id, message_id, restored_goal)
             logger.exception("恢复 goal 失败")
             self._reply_card(
                 chat_id,
@@ -2736,6 +2754,27 @@ class CodexHandler(BotHandler):
             return False
         message = str(exc.error.get("message", "")).lower()
         return message.startswith("no rollout found for thread id ")
+
+    @staticmethod
+    def _is_goals_feature_disabled_error(exc: Exception) -> bool:
+        if not isinstance(exc, CodexRpcError):
+            return False
+        return str(exc.error.get("message", "") or "").strip().lower() == "goals feature is disabled"
+
+    def _get_thread_goal_if_available(self, thread_id: str) -> ThreadGoalSummary | None:
+        try:
+            return self._adapter.get_thread_goal(thread_id)
+        except Exception as exc:
+            if self._is_goals_feature_disabled_error(exc):
+                return None
+            raise
+
+    def _restore_paused_goal_after_failed_resume(self, thread_id: str) -> ThreadGoalSummary | None:
+        try:
+            return self._adapter.set_thread_goal(thread_id, status="active")
+        except Exception:
+            logger.exception("恢复失败后回滚 paused goal 失败: thread=%s", thread_id[:12])
+            return None
 
     @staticmethod
     def _is_thread_not_loaded_error(exc: Exception) -> bool:

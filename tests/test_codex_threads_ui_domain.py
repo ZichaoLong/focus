@@ -1,7 +1,8 @@
 import unittest
 from types import SimpleNamespace
 
-from bot.adapters.base import ThreadSummary
+from bot.adapters.base import ThreadGoalSummary, ThreadSummary
+from bot.codex_protocol.client import CodexRpcError
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
 
 
@@ -23,6 +24,16 @@ class _PortsStub:
             updated_at=0,
             source="cli",
             status="idle",
+        )
+        self.goal = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="paused",
+            token_budget=100,
+            tokens_used=0,
+            time_used_seconds=0,
+            created_at=1712476800,
+            updated_at=1712476801,
         )
 
     def _get_runtime_view(self, sender_id: str, chat_id: str, message_id: str = ""):
@@ -86,6 +97,10 @@ class _PortsStub:
         self.read_calls.append((thread_id, original_arg))
         return self.thread
 
+    def _get_thread_goal(self, thread_id: str) -> ThreadGoalSummary | None:
+        del thread_id
+        return self.goal
+
     def _archive_thread_for_control(
         self,
         thread_id: str,
@@ -125,6 +140,7 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 resolve_resume_target=ports_stub._resolve_resume_target,
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                get_thread_goal=ports_stub._get_thread_goal,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
                 compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
@@ -148,7 +164,14 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
         fn, args, kwargs = submit_calls[0]
         self.assertEqual(getattr(fn, "__name__", ""), "_resume_target_on_runtime")
         self.assertEqual(args, ("ou_user", "chat-a", "thread-1"))
-        self.assertEqual(kwargs, {"message_id": "msg-1"})
+        self.assertEqual(
+            kwargs,
+            {
+                "original_arg": "thread-1",
+                "summary": ports_stub.thread,
+                "message_id": "msg-1",
+            },
+        )
         self.assertEqual(resume_calls, [])
 
     def test_resume_target_on_runtime_calls_resume_port_directly(self) -> None:
@@ -165,6 +188,7 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 resolve_resume_target=ports_stub._resolve_resume_target,
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                get_thread_goal=ports_stub._get_thread_goal,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
                 compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
@@ -209,6 +233,7 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
                 resolve_resume_target=ports_stub._resolve_resume_target,
                 list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
                 read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                get_thread_goal=ports_stub._get_thread_goal,
                 archive_thread_for_control=ports_stub._archive_thread_for_control,
                 compact_thread=ports_stub.compact_thread,
                 rename_thread=ports_stub.rename_thread,
@@ -233,6 +258,56 @@ class CodexThreadsUiDomainTests(unittest.TestCase):
         self.assertIsNotNone(result.toast)
         self.assertEqual(result.toast.content, "已归档线程：thread-1…")
         self.assertEqual(result.toast.type, "success")
+
+    def test_handle_resume_thread_action_ignores_goals_disabled_and_still_submits_resume(self) -> None:
+        ports_stub = _PortsStub()
+        ports_stub.thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        submit_calls: list[tuple[object, tuple[object, ...], dict[str, object]]] = []
+        domain = CodexThreadsUiDomain(
+            ports=ThreadsUiPorts(
+                get_runtime_view=ports_stub._get_runtime_view,
+                is_group_chat=ports_stub._is_group_chat,
+                is_group_admin_actor=ports_stub._is_group_admin_actor,
+                rename_bound_thread_title=ports_stub._rename_bound_thread_title,
+                reply_text=ports_stub._reply_text,
+                resolve_resume_target=ports_stub._resolve_resume_target,
+                list_visible_current_dir_threads=ports_stub._list_visible_current_dir_threads,
+                read_thread_summary_authoritatively=ports_stub._read_thread_summary_authoritatively,
+                get_thread_goal=lambda _thread_id: (_ for _ in ()).throw(
+                    CodexRpcError("thread/goal/get", {"code": -32602, "message": "goals feature is disabled"})
+                ),
+                archive_thread_for_control=ports_stub._archive_thread_for_control,
+                compact_thread=ports_stub.compact_thread,
+                rename_thread=ports_stub.rename_thread,
+                patch_message=ports_stub.patch_message,
+                is_thread_not_loaded_error=ports_stub.is_thread_not_loaded_error,
+                threads_initial_limit=5,
+            ),
+            runtime_ports=ThreadsUiRuntimePorts(
+                submit_to_runtime=lambda fn, *args, **kwargs: submit_calls.append((fn, args, kwargs)),
+                resume_thread_on_runtime=lambda *args, **kwargs: None,
+            ),
+        )
+
+        response = domain.handle_resume_thread_action(
+            "ou_user",
+            "chat-a",
+            "msg-1",
+            {"thread_id": "thread-1", "thread_title": "demo"},
+        )
+
+        self.assertIsNotNone(response.card)
+        self.assertIsNone(response.toast)
+        self.assertEqual(len(submit_calls), 1)
 
 
 if __name__ == "__main__":

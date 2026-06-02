@@ -8,6 +8,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 )
 
 from bot.adapters.base import ThreadGoalSummary
+from bot.codex_protocol.client import CodexRpcError
 from bot.cards import (
     CommandResult,
     build_goal_card,
@@ -26,6 +27,13 @@ _GOAL_USAGE = (
     "恢复：`/goal resume`\n"
     "清除：`/goal clear`"
 )
+_GOALS_DISABLED_TEXT = "当前 backend 未启用 goal 功能。"
+
+
+def _is_goals_feature_disabled_error(exc: Exception) -> bool:
+    if not isinstance(exc, CodexRpcError):
+        return False
+    return str(exc.error.get("message", "") or "").strip().lower() == "goals feature is disabled"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +109,8 @@ class CodexGoalDomain:
                 result = self._update_goal_status(sender_id, chat_id, "paused", message_id=message_id)
                 return make_card_response(card=result.card, toast="已暂停 goal。", toast_type="success")
             if action == "goal_resume":
+                thread_id, _thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+                self._require_resumable_goal(thread_id)
                 confirm_card = self._build_detached_goal_confirm_card(
                     sender_id,
                     chat_id,
@@ -156,7 +166,7 @@ class CodexGoalDomain:
 
     def _show_goal(self, sender_id: str, chat_id: str, *, message_id: str = "") -> CommandResult:
         thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
-        goal = self._ports.get_thread_goal(thread_id)
+        goal = self._get_thread_goal_or_raise(thread_id)
         self._project_goal(sender_id, chat_id, goal, message_id=message_id)
         return CommandResult(card=build_goal_card(thread_id=thread_id, thread_title=thread_title, goal=goal))
 
@@ -187,6 +197,9 @@ class CodexGoalDomain:
         *,
         message_id: str = "",
     ) -> CommandResult:
+        if status == "active":
+            thread_id, _thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+            self._require_resumable_goal(thread_id)
         confirm_card = self._build_detached_goal_confirm_card(
             sender_id,
             chat_id,
@@ -247,6 +260,8 @@ class CodexGoalDomain:
         normalized_objective = str(objective or "").strip()
         normalized_status = str(status or "").strip()
         if normalized_status == "active":
+            thread_id, _thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+            self._require_resumable_goal(thread_id)
             self._ports.submit_to_runtime(
                 self._ports.resume_goal_on_runtime,
                 sender_id,
@@ -304,6 +319,20 @@ class CodexGoalDomain:
             "Codex 正在恢复 Goal",
             "正在同步 thread、goal 与当前会话设置；完成后会自动回复结果。",
         )
+
+    def _get_thread_goal_or_raise(self, thread_id: str) -> ThreadGoalSummary | None:
+        try:
+            return self._ports.get_thread_goal(thread_id)
+        except Exception as exc:
+            if _is_goals_feature_disabled_error(exc):
+                raise ValueError(_GOALS_DISABLED_TEXT) from exc
+            raise
+
+    def _require_resumable_goal(self, thread_id: str) -> ThreadGoalSummary:
+        goal = self._get_thread_goal_or_raise(thread_id)
+        if goal is None:
+            raise ValueError("当前 thread 没有可恢复的 goal。")
+        return goal
 
 
     def _set_goal_direct(

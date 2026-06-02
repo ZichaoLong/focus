@@ -130,7 +130,7 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 - `resume` 不会借机改写这个 live runtime 的 profile 或 provider
 
 这是安全的，因为该线程已经活在同一个 backend 里。
-如果后续需要按另一套 profile 重新解析这个线程，前提是它先回到 `not-loaded-in-current-backend`。
+如果用户后续改了 `/profile`，那也只会影响下一次 managed backend 启动，或 reset 后的 backend 重启；`resume` 本身不会把这条已加载线程再按额外的项目自管 profile/provider slice 重解释一次。
 
 ### 6.3 未加载于当前 backend
 
@@ -144,29 +144,131 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 - 若当前 thread 已被另一实例 backend live attach，则真正的恢复仍要服从机器级 `ThreadRuntimeLease`：
   - owner 可立即 release 时，允许自动转移
   - owner 仍 busy / pending 时，必须明确拒绝
-- 如果该 thread 已保存 thread-wise profile，则飞书与 `fcodex` 都应使用这份 thread-wise 恢复配置
-- 如果该 thread 没有保存 thread-wise profile，则两端都不再额外回退到“实例级 resume 默认 profile”
+- `resume` 不会回放任何额外的项目自管 thread-wise
+  profile/memory/provider slice
+- 若配置了 managed backend startup profile，它已经在 backend 启动或重启时生效，而不是在 `thread/resume` 时才生效
 
 这条路径的前提是：
 
 - 本地继续同一线程时，使用 `fcodex`
 - 不要再用裸 `codex` 通过另一个 backend 写这个线程
 
-这里需要刻意记住一件事：两端的执行路径并不相同。
+这里需要刻意记住一件事：两端现在共享的是一套**更窄**的 resume 语义，而不是旧的 profile-restore 模型。
 
-- 飞书侧会在请求 `thread/resume` 前读取 thread-wise 记录，并显式传入 profile / model / model_provider
-- `fcodex` 则是在 wrapper 启动阶段读取同一份 thread-wise 记录，必要时再把 profile 注入到 upstream `codex resume`
+- 飞书与 `fcodex` 都不会在 resume 时回放项目自管的 thread-level
+  profile/memory slice
+- backend 启动基线来自当前实际运行的实例 backend
+- turn-time override 仍是 frontend-owned，而不是 thread-owned
+- 飞书侧仍可能为了紧随其后的 turn 准入，额外携带 binding 级 admission 设置；但那不会产生 thread 级持久化 truth
 
-这个差异不应被理解为两端语义不一致；它们的目标语义是同一个：对 unloaded 线程，优先使用 thread-wise 恢复配置；若没有记录，就保持“不额外覆盖”的恢复语义。
+这里还需要明确记录一条当前实现细节：普通的 unloaded-thread `/resume`
+仍然是直接恢复；但当目标是 unloaded 且 persisted `goal=active` 时，当前
+UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里实际上存在两种
+语义明显不同的路径：
 
-本仓库的取舍是**不再**通过预览/确认卡片拦截这类 resume。
-因此，对“可能同时被另一个 isolated backend 写入”的线程，避免双 backend 写入的责任在操作侧，而不是由 UI 强制保护。
+- `直接恢复`
+  - 直接调用 `thread/resume`
+  - 然后再用 `thread/settings/update` 补齐 loaded-thread 设置
+  - 如果 app-server 立刻自动续跑 active goal，那么第一轮 autonomous goal turn
+    只保证沿用 backend 当时已经生效的 loaded-thread 设置
+- `按当前设置恢复并保持 paused`
+  - 先把 persisted goal 暂停
+  - 再 cold-resume 该 thread，并携带上游 `thread/resume` 支持的那一小段
+    resume-time override
+  - 然后排队做 loaded-thread 设置同步
+  - 但 goal 保持 `paused`，而不是自动恢复
+
+因此，对“可能同时被另一个 isolated backend 写入”的线程，避免双 backend
+写入的责任仍主要在操作侧，而不是靠大范围 UI 强制保护。
 
 多实例模式不再额外引入一层 thread admission 过滤：
 
 - 所有实例都从同一套共享 persisted thread 命名空间解析目标
 - 飞书 `/threads` 与 `feishu-codexctl thread list --scope cwd` 都是在这套命名空间上的当前目录视图
 - 但一旦真的要 live attach，所有路径仍统一服从 `ThreadRuntimeLease`
+
+### 6.4 当前命令状态矩阵
+
+当前仓库里，`/resume` 与 `/goal resume` 的行为取决于 4 条状态轴：
+
+1. 目标 thread 是否已加载在当前 backend
+2. 上游 goals feature 是否启用
+3. persisted goal 当前状态
+4. 当前飞书 binding 是 `attached` 还是 `detached`
+
+这里最关键的区分是：
+
+- `cold overrides`
+  - 通过 `thread/resume` 直接携带的字段
+  - 当前只有：`model`、`approval_policy`、`permissions_profile_id`、
+    `reasoning_effort`
+- `queued loaded-thread sync`
+  - 通过 `thread/settings/update` 同步的字段
+  - 其中包含 `collaboration_mode`，但上游只保证“已入队”，不保证调用返回时就已生效
+
+#### `/resume`
+
+| 前置状态 | UI 路径 | 实际顺序 | 是否会自动继续 goal | 第一轮 resumed goal turn 前能保证的设置 |
+| --- | --- | --- | --- | --- |
+| loaded，任意 goal 状态 | 无确认 | `thread/resume -> bind -> thread/settings/update` | wrapper 不额外触发继续 | 除 backend 当前已加载事实外，没有额外严格保证；sync 只是排队 |
+| unloaded，goals disabled | 无确认 | `thread/resume(cold overrides) -> bind -> thread/settings/update` | 没有 goal 路径可继续 | 只有 cold overrides |
+| unloaded，没有 goal | 无确认 | `thread/resume(cold overrides) -> bind -> thread/settings/update` | 不会 | 只有 cold overrides |
+| unloaded，goal paused | 无确认 | `thread/resume(cold overrides) -> bind -> thread/settings/update` | 不会；goal 保持 paused | 只有 cold overrides |
+| unloaded，goal active，直接恢复 | 确认卡：直接恢复 | `thread/resume -> bind -> thread/settings/update` | app-server 可能立刻继续 | wrapper 不保证当前 binding 设置一定先赢得时序 |
+| unloaded，goal active，保持 paused | 确认卡：保持 paused | `thread/goal/set(paused) -> thread/resume(cold overrides) -> bind -> thread/settings/update` | 不会；goal 保持 paused | 只有 cold overrides |
+
+#### `/goal resume`
+
+| 前置状态 | 实际顺序 | 真正触发继续执行的点 | continuation 前能保证的设置 |
+| --- | --- | --- | --- |
+| 当前没有绑定 thread | fail closed | 无 | n/a |
+| goals disabled | fail closed | 无 | n/a |
+| 当前 thread 没有 goal | fail closed | 无 | n/a |
+| loaded，goal paused | `thread/settings/update -> thread/goal/set(active)` | 最后的 `set(active)` | 除已加载 backend 当前事实外，没有额外严格保证；sync 只是排队 |
+| loaded，goal active | `thread/settings/update` | 无新增触发；backend 保持当前状态 | 除已加载 backend 当前事实外，没有额外严格保证；sync 只是排队 |
+| unloaded，goal paused | `thread/resume(cold overrides) -> [按需 bind] -> thread/settings/update -> thread/goal/set(active)` | 最后的 `set(active)` | 只有 cold overrides |
+| unloaded，goal active | `thread/goal/set(paused) -> thread/resume(cold overrides) -> [按需 bind] -> thread/settings/update -> thread/goal/set(active)` | 最后的 `set(active)` | 只有 cold overrides |
+
+当前回滚范围也需要明确：
+
+- 如果 pause-first 的恢复路径在暂停 goal 之后失败，wrapper 会尝试把
+  `goal=active` 恢复回去
+- 但不会回滚已经 materialize 出来的 `thread/resume`
+- 不会撤销已经入队的 `thread/settings/update`
+- 也不会清掉已经重新绑定的 Feishu binding
+
+### 6.5 Attach 与 loaded 的关系
+
+`binding attached` 和 `backend loaded` 仍然是两条独立状态轴。
+
+它们相关，但不等价：
+
+- `attached`
+  - 表示当前 Feishu binding 在服务拥有 live subscription 路径时，应接收这个
+    thread 的实时事件
+- `loaded`
+  - 表示该 thread 当前在 app-server 里具有 runtime residency
+
+所以正式模型仍然是正交轴，而不是“只要 attached 就永远 loaded”。
+
+为什么仍可能出现 `attached + unloaded` 这类前置状态：
+
+- 上游可以独立于本地 bookmark 把 backend thread unload 或 close 掉
+- wrapper 会刻意保留逻辑上的 binding bookmark，而不是清空当前会话的
+  current thread
+- `thread/closed` 只会收敛执行态，不会抹掉 binding bookmark，也不会强制清空
+  用户看到的 attach/detach 意图
+
+但还要补一条当前实现语义：显式 `attach` 操作并不是一个纯 flag flip，而是一个
+组合操作：
+
+- control-plane attach 会先调用 `thread/resume`
+- 然后再把 Feishu chat re-bind 到这条 live thread
+
+因此：
+
+- 一次显式 `attach` 成功返回后，这个 thread 在“那一刻”应当是 loaded 的
+- 但 `attached` 仍不代表 backend 之后永远不会再次 unload
 
 ## 7. 来源展示与对称风险
 

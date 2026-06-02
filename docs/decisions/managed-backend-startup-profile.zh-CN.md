@@ -12,16 +12,14 @@
 
 ## 1. 状态
 
-本文记录当前已经对齐的产品结论与后续推荐方向。
+本文记录当前已经对齐的产品结论、已经实现的 startup profile 能力，以及围绕它仍然成立的设计约束。
 
 它区分两层内容：
 
 - **当前已验证事实**
   - 现有代码与上游行为已经如此
-- **后续推荐能力**
-  - 还未在本仓库实现，但这是当前更合适的产品路线
-
-在实现真正落地之前，当前正式行为仍以现有 contracts 与代码为准。
+- **配套设计约束**
+  - 为什么这项能力应停留在实例启动层，以及它不应膨胀成什么
 
 ## 2. 问题
 
@@ -38,7 +36,7 @@
 因此，如果某个 provider 例如 ZAI / GLM 需要自己的 `model_catalog_json` 才能获得更准确的模型元数据、context windows 与相关行为调优，那么：
 
 - 裸 `codex` 可以通过独立启动路径吃到这套 catalog
-- `feishu-codex` 的 shared backend 若没有在启动时就吃到这套 catalog，后续 thread-wise `/profile` 只能改 thread 的 `profile / model / model_provider`，不能把 backend-global catalog 一起切掉
+- `feishu-codex` 的 shared backend 若没有在启动时就吃到这套 catalog，后续仅靠改 `/profile` 而不重启当前 backend，也不能把 backend-global catalog 一起切掉
 
 典型症状是：
 
@@ -49,20 +47,16 @@
 
 ## 3. 当前事实
 
-### 3.1 backend-global catalog 与 thread-wise profile 不是一层状态
+### 3.1 backend-global catalog 与当前设置族不是一层状态
 
-本项目当前已经明确区分：
+本项目当前只保留两类可写设置：
 
-- `profile`
-- `memory`
+- 实例 startup profile
+- binding-wise next-turn settings
 
-它们属于 **thread-wise next-load state**。
+本项目已经不再保留任何项目自管的 thread-wise next-load 设置。
 
-也就是说，它们承诺的是：
-
-- 对受支持的恢复路径，同一个 thread 从 unloaded 恢复为 loaded 时，应复用同一份持久化 next-load 设置
-
-但 backend-global model metadata / `model/list` / catalog 路径不是这层状态的一部分。
+backend-global model metadata / `model/list` / catalog 路径不属于这两类可写设置中的任何一类。
 
 它们属于 backend 启动时就已决定的共享事实。
 
@@ -75,21 +69,20 @@
 
 因此 remote 模式可以被拿来“接入一个别处已按特定 profile 启动好的 backend”，但这仍然只是连接外部 backend，而不是让本实例自己具备 provider-aware 的 backend 启动控制能力。
 
-### 3.3 `remote` 模式不适合作为 thread-wise next-load 设置的主路径
+### 3.3 `remote` 模式不适合作为实例自管 startup control 的主路径
 
-当前仓库里，正式保留的设置面已经收敛为：
+当前仓库里，provider / catalog 控制被明确收口为：
 
 - 实例 startup profile
-- binding-wise next-turn settings
 
-这两类设置在目标 thread 仍 loaded 时，经常需要通过 unload / `reset-backend` 路径收敛。
+而这类设置只有在 managed backend 启动，或 `reset-backend` 后重启时才会收敛。
 
 但 remote 模式下，本实例不拥有 backend 进程，因此不能执行 `reset-backend`。
 
 这意味着 remote 不是一个只影响 catalog 的小差异，而是会连带削弱：
 
 - `/profile`
-- 以及依赖 `reset-backend` 收敛的本地 control-plane 路径
+- 以及依赖 managed restart 收敛的本地 control-plane 路径
 
 ### 3.4 当前项目故意不保留“实例级默认 profile”
 
@@ -100,14 +93,16 @@
 这里的关键不是“现有 thread 会不会被立刻追改”，而是更深一层的用户心智问题：
 
 - 一旦某个能力被叫做“默认 profile”，用户会自然推断：
-  - 只要 thread 没有显式指定 profile
+  - 只要 thread 没有显式 turn-time override
   - 它每次重新 load 时就会按这个默认 profile 重新解析
 
-这与当前 thread-wise next-load 合同冲突。
+这与当前 startup-profile 合同冲突。
 
 本项目当前的事实源仍然是：
 
-- 对 unloaded thread，持久化 thread-wise next-load state 才是事实源
+- 对下一次 managed backend 启动，实例配置 `managed_startup_profile` 才是事实源
+- 对某个 Feishu binding 的后续 turn，binding runtime settings 才是事实源
+- `/resume` 背后不存在额外的项目自管 thread-wise 持久化 profile slice
 
 ## 4. 已放弃的路线
 
@@ -118,9 +113,10 @@
 原因不是实现细节难，而是状态层本身不匹配：
 
 - catalog / model metadata 是 backend-global
-- `profile` / `memory` 是 thread-wise
+- `/profile` 管的是实例启动基线
+- turn-time settings 是 binding-wise
 
-只靠 thread-wise profile 切换，无法让一个长期存活的 shared backend 同时按 thread 拥有两套不同的 backend-global catalog 真相。
+现有任一设置族都无法让一个长期存活的 shared backend 同时维持两套不同的 backend-global catalog 真相。
 
 ### 4.2 不把 `remote` 作为 ZAI catalog 的主解决方案
 
@@ -130,7 +126,7 @@
 
 - 它把 provider-aware backend 启动控制移到了仓库外
 - 它让当前实例失去 `reset-backend`
-- 它会连带影响 thread-wise `profile` / `memory` 的正式收敛路径
+- 它会连带削弱 `/profile` 与其他依赖 managed restart 收敛的实例级路径
 
 ### 4.3 不把新能力命名成“实例级默认 profile”
 
@@ -143,17 +139,17 @@
 
 ## 5. 决策
 
-### 5.1 后续更合适的路线是 `managed backend startup profile`
+### 5.1 这项能力就是 `managed backend startup profile`
 
-如果后续要让某个实例更好地服务特定 provider，例如 ZAI / GLM，那么更合适的能力是：
+如果某个实例要更好地服务特定 provider，例如 ZAI / GLM，那么明确的能力就是：
 
 - `managed backend startup profile`
 
-它的目标不是替代 thread-wise profile，而是补上一层当前缺失的 backend 启动控制。
+它的目标不是重新造一层 thread-owned restore state，而是把 backend 启动控制明确收在实例层。
 
 ### 5.2 这项能力的准确语义
 
-这项能力若实现，语义应收紧为：
+这项能力当前的语义是：
 
 - 仅在 `app_server_mode = managed` 时生效
 - 只影响当前实例自己拉起的 backend
@@ -167,26 +163,31 @@
 
 它**不应**承担以下语义：
 
-- 不写入 thread-wise profile store
 - 不引入新的项目自管 thread 级持久化设置
 - 不追改已 loaded thread
 - 不把自己伪装成 thread 的“默认 profile 真相”
+- 不把自己说成本地 `fcodex -p` 的等价物
 
-### 5.3 它与现有 thread-wise 状态的关系
+### 5.3 它与当前设置模型的关系
 
-若这项能力落地，推荐关系应是：
+推荐关系应是：
 
 - backend startup profile
   - 只定义 backend-global 启动默认值
-- thread-wise profile / memory
-  - 继续定义某个 thread 下次恢复时应使用的持久化 next-load 设置
+- binding-wise next-turn settings
+  - 只定义某个 binding 的 turn-time override
+- 只读 runtime diagnostics
+  - 描述当前已加载 backend 的真实状态
 
 也就是说：
 
-- 现有 thread 的真相仍由 thread-wise persisted state 决定
-- backend startup profile 只是 backend 启动时的共享基线
+- 当前 loaded runtime 的真相来自当前 backend 进程
+- 某个 Feishu binding 的 future-turn 真相来自持久化 binding settings
+- backend startup profile 只影响下一次 managed backend 启动或重启
 
-对于新线程，只有在**没有显式 thread-wise 种子、也没有请求级显式覆盖**时，backend startup profile 才会以 backend 默认值的形式间接发挥作用。
+它们之间不存在一层项目自管的 thread-wise next-load 状态。
+
+对于新线程或 unloaded thread，backend startup profile 只会通过“实际启动起来的 backend”间接生效，而不是在后续 `/resume` 时被单独回放成 thread-owned restore state。
 
 ### 5.4 它不是“按 provider 路由到不同 backend”
 
@@ -212,11 +213,11 @@
 
 那么这些显式注入值仍可能掩盖 backend 启动默认值，让语义重新变模糊。
 
-因此，若目标是让 shared backend 在多个 thread-wise profile 间工作，同时保留更清楚的 backend 启动基线，实例级 `model` / `model_provider` 应优先保持空。
+因此，若目标是在 shared backend 继续服务多个 thread 与 frontend 的同时，保留更清楚的 backend 启动基线，实例级 `model` / `model_provider` 应优先保持空。
 
 ### 6.2 `/reset-backend` 应沿用同一份 startup profile
 
-若后续实现这项能力，则 `reset-backend` 后重启 managed backend 时，也应沿用同一份 startup profile。
+`reset-backend` 后重启 managed backend 时，也应沿用同一份 startup profile。
 
 否则用户会看到一种不一致：
 
@@ -230,7 +231,7 @@
 在当前这轮讨论对齐后，仓库应采用以下结论：
 
 - 不再追求“同一个 backend 混用 GPT / GLM，且两边同时吃到各自最优 catalog”
-- 若要把 ZAI 用好，同时保留现有 `/profile`、`/reset-backend` 与 turn-time 设置这套产品面合同，更合适的未来路线是：
+- 若要把 ZAI 用好，同时保留现有 `/profile`、`/reset-backend` 与 turn-time 设置这套产品面合同，更合适的路线是：
   - 一个独立实例
   - `managed` backend
   - backend 启动时显式吃到 ZAI 所需 catalog 的 startup profile
@@ -242,5 +243,5 @@
 
 - 同一个 backend 内的 provider-specific catalog overlay
 - 按 thread/profile/provider 动态路由到不同 backend
-- 对当前 shipped 合同中 thread-wise profile / memory 语义的改写
+- 重新引入项目自管的 thread-wise profile / memory 语义
 - 对 remote 模式增加“伪 reset-backend”一类的补丁语义

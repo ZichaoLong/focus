@@ -3564,6 +3564,55 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual([item["text"]["content"] for item in actions], ["恢复推送并继续", "保持 detached"])
         self.assertNotIn("thread-1", handler._adapter.thread_goals)
 
+    def test_goal_resume_detached_without_goal_fails_before_confirm_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Goal 操作失败")
+        self.assertIn("当前 thread 没有可恢复的 goal。", card["elements"][0]["content"])
+
+    def test_goal_resume_detached_with_goals_disabled_fails_before_confirm_card(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["feishu_runtime_state"] = "detached"
+
+        def fake_get_thread_goal(thread_id: str):
+            raise CodexRpcError("thread/goal/get", {"code": -32602, "message": "goals feature is disabled"})
+
+        handler._adapter.get_thread_goal = fake_get_thread_goal
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Goal 操作失败")
+        self.assertIn("当前 backend 未启用 goal 功能。", card["elements"][0]["content"])
+
     def test_goal_resume_detached_confirm_can_keep_detached(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
@@ -3735,6 +3784,82 @@ class CodexHandlerTests(unittest.TestCase):
             ],
         )
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+
+    def test_goal_resume_cold_active_goal_rolls_back_pause_on_failure(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        handler._adapter.update_thread_settings = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("sync failed"))
+
+        handler.handle_message("ou_user", "c1", "/goal resume")
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.set_thread_goal_calls[-2:],
+            [
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "paused",
+                    "token_budget": None,
+                },
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "active",
+                    "token_budget": None,
+                },
+            ],
+        )
+        self.assertEqual(handler._adapter.thread_goals["thread-1"].status, "active")
+        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
+        self.assertIn("sync failed", bot.cards[-1][1]["elements"][0]["content"])
+
+    def test_goal_resume_fails_closed_when_goals_feature_disabled(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("ou_user", "c1", thread)
+
+        def fake_get_thread_goal(thread_id: str):
+            raise CodexRpcError("thread/goal/get", {"code": -32602, "message": "goals feature is disabled"})
+
+        handler._adapter.get_thread_goal = fake_get_thread_goal
+
+        pending_count = len(bot.cards)
+        handler.handle_message("ou_user", "c1", "/goal resume")
+
+        self.assertEqual(len(bot.cards), pending_count + 1)
+        _, card = bot.cards[-1]
+        self.assertEqual(card["header"]["title"]["content"], "Codex Goal 操作失败")
+        self.assertIn("当前 backend 未启用 goal 功能。", card["elements"][0]["content"])
 
     def test_goal_resume_card_action_acknowledges_immediately_then_attaches_in_background(self) -> None:
         handler, _ = self._make_handler()
@@ -5477,10 +5602,10 @@ class CodexHandlerTests(unittest.TestCase):
         content = confirm_card["elements"][0]["content"]
         self.assertIn("persisted goal 当前是 `active`", content)
         actions = self._first_action(confirm_card)["actions"]
-        self.assertEqual([item["text"]["content"] for item in actions], ["按当前设置恢复并继续", "直接恢复"])
+        self.assertEqual([item["text"]["content"] for item in actions], ["按当前设置恢复并保持 paused", "直接恢复"])
         self.assertEqual(handler._adapter.resume_thread_calls, [])
 
-    def test_resume_confirm_strict_active_goal_syncs_before_reactivating(self) -> None:
+    def test_resume_confirm_pause_active_goal_restores_thread_and_keeps_goal_paused(self) -> None:
         handler, _ = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
@@ -5520,7 +5645,7 @@ class CodexHandlerTests(unittest.TestCase):
                 "action": "resume_thread_confirm",
                 "thread_id": "thread-1",
                 "thread_title": "demo",
-                "strict_active_goal_resume": "true",
+                "pause_active_goal_on_resume": "true",
                 "origin": "command",
             },
         ))
@@ -5541,14 +5666,16 @@ class CodexHandlerTests(unittest.TestCase):
             },
         )
         self.assertEqual(
-            handler._adapter.operation_log[-4:],
+            handler._adapter.operation_log[-3:],
             [
                 ("set_thread_goal", "thread-1", "paused"),
                 ("resume_thread", "thread-1", "gpt-5.5"),
                 ("update_thread_settings", "thread-1", "gpt-5.5"),
-                ("set_thread_goal", "thread-1", "active"),
             ],
         )
+        self.assertEqual(handler._adapter.thread_goals["thread-1"].status, "paused")
+        _, final_card = handler.bot.cards[-1]
+        self.assertIn("persisted goal 仍保持 `paused`", final_card["elements"][0]["content"])
 
     def test_resume_confirm_direct_resume_skips_strict_pause_but_syncs_followup_settings(self) -> None:
         handler, _ = self._make_handler()
@@ -5590,7 +5717,7 @@ class CodexHandlerTests(unittest.TestCase):
                 "action": "resume_thread_confirm",
                 "thread_id": "thread-1",
                 "thread_title": "demo",
-                "strict_active_goal_resume": "",
+                "pause_active_goal_on_resume": "",
                 "origin": "command",
             },
         ))
@@ -5622,6 +5749,122 @@ class CodexHandlerTests(unittest.TestCase):
             },
         )
         self.assertEqual(handler._adapter.set_thread_goal_calls, [])
+
+    def test_resume_command_ignores_goal_confirm_when_goals_feature_disabled(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.list_threads_all = lambda **kwargs: [thread]
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+
+        def fake_get_thread_goal(thread_id: str):
+            raise CodexRpcError("thread/goal/get", {"code": -32602, "message": "goals feature is disabled"})
+
+        handler._adapter.get_thread_goal = fake_get_thread_goal
+
+        handler.handle_message("ou_user", "c1", "/resume demo")
+
+        self.assertTrue(bot.cards)
+        self.assertNotEqual(bot.cards[0][1]["header"]["title"]["content"], "Codex 恢复线程确认")
+        self.assertEqual(handler._adapter.resume_thread_calls[-1]["thread_id"], "thread-1")
+
+    def test_threads_card_resume_ignores_goal_confirm_when_goals_feature_disabled(self) -> None:
+        handler, _ = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+
+        def fake_get_thread_goal(thread_id: str):
+            raise CodexRpcError("thread/goal/get", {"code": -32602, "message": "goals feature is disabled"})
+
+        handler._adapter.get_thread_goal = fake_get_thread_goal
+
+        response = self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-session",
+            {"action": "resume_thread", "thread_id": "thread-1", "thread_title": "demo"},
+        ))
+
+        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 当前目录线程")
+        self.assertIn("正在恢复线程", response["card"]["elements"][0]["content"])
+
+    def test_resume_confirm_pause_active_goal_rolls_back_when_settings_sync_fails(self) -> None:
+        handler, bot = self._make_handler()
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        handler._adapter.list_threads_all = lambda **kwargs: [thread]
+        handler._adapter.read_thread = lambda thread_id, include_turns=False: ThreadSnapshot(summary=thread)
+        handler._adapter.thread_goals["thread-1"] = ThreadGoalSummary(
+            thread_id="thread-1",
+            objective="ship goal support",
+            status="active",
+            token_budget=100,
+            tokens_used=12,
+            time_used_seconds=34,
+            created_at=1712476800,
+            updated_at=1712476801,
+        )
+        handler._adapter.update_thread_settings = lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("sync failed"))
+
+        handler.handle_message("ou_user", "c1", "/resume demo")
+        self._unpack_card_response(handler.handle_card_action(
+            "ou_user",
+            "c1",
+            "msg-resume",
+            {
+                "action": "resume_thread_confirm",
+                "thread_id": "thread-1",
+                "thread_title": "demo",
+                "pause_active_goal_on_resume": "true",
+                "origin": "command",
+            },
+        ))
+        handler._runtime_call(lambda: None)
+
+        self.assertEqual(
+            handler._adapter.set_thread_goal_calls[-2:],
+            [
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "paused",
+                    "token_budget": None,
+                },
+                {
+                    "thread_id": "thread-1",
+                    "objective": None,
+                    "status": "active",
+                    "token_budget": None,
+                },
+            ],
+        )
+        self.assertEqual(handler._adapter.thread_goals["thread-1"].status, "active")
+        self.assertIn("恢复线程后同步当前会话设置失败", bot.replies[-1][1])
 
     def test_threads_card_mentions_global_resume_scope(self) -> None:
         handler, bot = self._make_handler()

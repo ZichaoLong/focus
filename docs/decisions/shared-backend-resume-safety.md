@@ -158,8 +158,9 @@ If the target thread is already loaded in the current `feishu-codex` backend:
   provider
 
 This is safe because the thread already lives in the same backend.
-If the thread must later be re-resolved under a different profile, it must
-first return to `not-loaded-in-current-backend`.
+If the operator later changes `/profile`, that only affects the next managed
+backend start or restart after reset. `resume` still does not reinterpret the
+loaded thread through an extra project-owned profile/provider slice.
 
 ### 6.3 Not loaded in current backend
 
@@ -176,31 +177,49 @@ Behavior:
   actual resume still has to obey the machine-level `ThreadRuntimeLease`:
   - automatic transfer is allowed only when the owner can release immediately
   - busy / pending owner state must reject clearly
-- if the thread already has a saved thread-wise profile, Feishu and `fcodex`
-  both use that thread-wise resume config
-- if the thread has no saved thread-wise profile, neither side adds an extra
-  instance-level resume-profile fallback
+- `resume` does not replay any extra project-owned thread-wise
+  profile/memory/provider slice
+- the managed backend startup profile, if configured, has already taken effect
+  at backend start or restart rather than at `thread/resume`
 
 This path assumes:
 
 - local continuation of the same thread uses `fcodex`
 - bare `codex` is not also writing that thread through another backend
 
-One detail should be recorded explicitly: the two clients do not reach that
-behavior through the same execution path.
+One detail should be recorded explicitly: the common semantics are now narrower
+than the older profile-restore model.
 
-- Feishu reads the thread-wise record and sends profile / model /
-  model_provider before `thread/resume`
-- `fcodex` reads the same thread-wise record in the wrapper layer and injects
-  profile only when that record exists
+- neither Feishu nor `fcodex` replays a project-owned thread-level
+  profile/memory slice on resume
+- the backend startup baseline comes from the instance backend that is actually
+  running
+- turn-time overrides remain frontend-owned rather than thread-owned
+- Feishu may still carry admission-related binding settings needed for the
+  immediately following turn, but that does not create thread-level persisted
+  truth
 
-That difference should not be interpreted as a semantic mismatch. The intended
-semantics are the same on both sides: resume of an unloaded thread prefers
-thread-wise config, and otherwise does not add an extra override.
+One implementation detail now needs to be recorded explicitly: ordinary
+unloaded-thread `/resume` still resumes directly, but unloaded + persisted
+`goal=active` is no longer treated as an ordinary direct-resume case. The
+current UI shows a confirm card because there are two materially different
+behaviors:
 
-The repository decision is to no longer block this path with a preview/confirm
-card. Avoiding dual-backend writes for such threads is an operational rule, not
-a UI-enforced guard.
+- `Direct resume`
+  - call `thread/resume` directly
+  - then patch loaded-thread settings via `thread/settings/update`
+  - if app-server auto-continues the active goal immediately, the first
+    autonomous goal turn is only guaranteed to see whatever loaded-thread
+    settings were already effective in backend
+- `Resume with current settings and keep paused`
+  - first pause the persisted goal
+  - then cold-resume the thread while carrying the small resume-time override
+    slice that upstream accepts
+  - then queue loaded-thread settings synchronization
+  - but keep the goal paused instead of auto-resuming it
+
+Avoiding dual-backend writes for such threads is still an operational rule, not
+a broad UI-enforced guard.
 
 Multi-instance mode no longer adds a separate thread-admission filter:
 
@@ -209,6 +228,94 @@ Multi-instance mode no longer adds a separate thread-admission filter:
   current-directory views over that namespace
 - once a path actually wants live runtime residency, all of them still obey
   the same `ThreadRuntimeLease`
+
+### 6.4 Current command-state matrix
+
+The current repository behavior around `/resume` and `/goal resume` depends on
+four axes:
+
+1. whether the thread is already loaded in the current backend
+2. whether the upstream goals feature is enabled
+3. the persisted goal status
+4. whether the current Feishu binding is attached or detached
+
+The most important distinction is between:
+
+- `cold overrides`
+  - fields carried on `thread/resume`
+  - currently: `model`, `approval_policy`, `permissions_profile_id`,
+    `reasoning_effort`
+- `queued loaded-thread sync`
+  - `thread/settings/update`
+  - includes `collaboration_mode`, but upstream only acknowledges that this
+    update was queued
+
+#### `/resume`
+
+| Pre-state | UI path | Effective sequence | Automatic goal continuation | Settings guaranteed before the first resumed goal turn |
+| --- | --- | --- | --- | --- |
+| loaded, any goal state | no confirm | `thread/resume -> bind -> thread/settings/update` | no extra continuation triggered by wrapper | none beyond whatever was already loaded; sync is queued |
+| unloaded, goals disabled | no confirm | `thread/resume(cold overrides) -> bind -> thread/settings/update` | no goal path available | cold overrides only |
+| unloaded, no goal | no confirm | `thread/resume(cold overrides) -> bind -> thread/settings/update` | none | cold overrides only |
+| unloaded, goal paused | no confirm | `thread/resume(cold overrides) -> bind -> thread/settings/update` | none; goal stays paused | cold overrides only |
+| unloaded, goal active, direct resume | confirm: direct resume | `thread/resume -> bind -> thread/settings/update` | app-server may continue immediately | no wrapper guarantee that current binding settings won the race |
+| unloaded, goal active, keep paused | confirm: keep paused | `thread/goal/set(paused) -> thread/resume(cold overrides) -> bind -> thread/settings/update` | none; goal remains paused | cold overrides only |
+
+#### `/goal resume`
+
+| Pre-state | Effective sequence | What actually triggers continued execution | Settings guaranteed before continuation |
+| --- | --- | --- | --- |
+| no bound thread | fail closed | none | n/a |
+| goals disabled | fail closed | none | n/a |
+| bound thread, no goal | fail closed | none | n/a |
+| loaded, goal paused | `thread/settings/update -> thread/goal/set(active)` | the final `set(active)` | none beyond already-loaded backend state; sync is queued |
+| loaded, goal active | `thread/settings/update` | no new trigger; backend keeps current state | none beyond already-loaded backend state; sync is queued |
+| unloaded, goal paused | `thread/resume(cold overrides) -> [bind if requested] -> thread/settings/update -> thread/goal/set(active)` | the final `set(active)` | cold overrides only |
+| unloaded, goal active | `thread/goal/set(paused) -> thread/resume(cold overrides) -> [bind if requested] -> thread/settings/update -> thread/goal/set(active)` | the final `set(active)` | cold overrides only |
+
+Current rollback scope is intentionally narrow:
+
+- if a pause-first resume path fails after pausing the goal, the wrapper tries
+  to restore `goal=active`
+- it does not roll back an already materialized `thread/resume`
+- it does not retract an already queued `thread/settings/update`
+- it does not clear an already rebound Feishu binding
+
+### 6.5 Attach vs loaded
+
+`binding attached` and `backend loaded` are still separate state axes.
+
+They are related, but not identical:
+
+- `attached`
+  - says the Feishu binding should receive live thread events when the service
+    has a live subscription path
+- `loaded`
+  - says the thread currently has runtime residency inside the app-server
+
+So the formal model is still orthogonal, not "attached implies loaded forever".
+
+Why an `attached + unloaded` pre-state can still appear:
+
+- upstream may unload or close the backend thread independently of the local
+  bookmark
+- the wrapper intentionally keeps the logical binding bookmark instead of
+  clearing the chat's current thread
+- `thread/closed` settles execution state, but it does not erase the binding
+  bookmark or forcibly clear the attached/detached user intent
+
+That said, the explicit `attach` operation in the current implementation is a
+composite operation, not a pure flag flip:
+
+- control-plane attach uses `thread/resume`
+- then it re-binds the Feishu chat to that live thread
+
+So:
+
+- after a successful explicit `attach`, the thread is expected to be loaded at
+  that moment
+- but `attached` still does not mean the backend can never become unloaded
+  later
 
 ## 7. Provenance and Symmetric Risk
 

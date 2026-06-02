@@ -17,6 +17,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 )
 
 from bot.adapters.base import ThreadGoalSummary, ThreadSummary
+from bot.codex_protocol.client import CodexRpcError
 from bot.cards import (
     CommandResult,
     build_markdown_card,
@@ -30,11 +31,18 @@ from bot.cards import (
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.runtime_state import BACKEND_THREAD_STATUS_NOT_LOADED
 from bot.runtime_view import RuntimeView
+
 logger = logging.getLogger(__name__)
 
 _RESUME_USAGE = feishu_visible_command_syntax("/resume <thread_id|thread_name>")
 _RENAME_USAGE = feishu_visible_command_syntax("/rename <新标题>")
 _COMPACT_USAGE = "/compact"
+
+
+def _is_goals_feature_disabled_error(exc: Exception) -> bool:
+    if not isinstance(exc, CodexRpcError):
+        return False
+    return str(exc.error.get("message", "") or "").strip().lower() == "goals feature is disabled"
 
 
 class _SubmitToRuntime(Protocol):
@@ -50,7 +58,7 @@ class _ResumeThreadOnRuntime(Protocol):
         *,
         original_arg: str | None = None,
         summary: ThreadSummary | None = None,
-        strict_active_goal_resume: bool = False,
+        pause_active_goal_on_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None: ...
@@ -219,10 +227,16 @@ class CodexThreadsUiDomain:
         target = arg.strip()
         try:
             thread = self._ports.resolve_resume_target(target)
-            goal = self._ports.get_thread_goal(thread.thread_id)
         except Exception as exc:
             logger.exception("解析恢复目标失败")
             return CommandResult(text=f"恢复线程失败：{exc}")
+        goal = None
+        try:
+            goal = self._ports.get_thread_goal(thread.thread_id)
+        except Exception as exc:
+            if not _is_goals_feature_disabled_error(exc):
+                logger.exception("读取 thread goal 失败")
+                return CommandResult(text=f"恢复线程失败：{exc}")
         if self._resume_requires_active_goal_confirm(thread, goal):
             return CommandResult(
                 card=build_resume_active_goal_confirm_card(
@@ -398,10 +412,16 @@ class CodexThreadsUiDomain:
         thread_title = str(action_value.get("thread_title", "") or action_value.get("title", "")).strip() or thread_id
         try:
             thread = self._ports.read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
-            goal = self._ports.get_thread_goal(thread.thread_id)
         except Exception as exc:
             logger.exception("读取恢复目标失败")
             return make_card_response(toast=f"恢复线程失败：{exc}", toast_type="warning")
+        goal = None
+        try:
+            goal = self._ports.get_thread_goal(thread.thread_id)
+        except Exception as exc:
+            if not _is_goals_feature_disabled_error(exc):
+                logger.exception("读取 thread goal 失败")
+                return make_card_response(toast=f"恢复线程失败：{exc}", toast_type="warning")
         if self._resume_requires_active_goal_confirm(thread, goal):
             return make_card_response(
                 card=build_resume_active_goal_confirm_card(
@@ -440,7 +460,9 @@ class CodexThreadsUiDomain:
             return make_card_response(toast="缺少 thread_id", toast_type="warning")
         thread_title = str(action_value.get("thread_title", "") or "").strip() or thread_id
         origin = str(action_value.get("origin", "") or "").strip() or "command"
-        strict_active_goal_resume = str(action_value.get("strict_active_goal_resume", "") or "").strip().lower() == "true"
+        pause_active_goal_on_resume = (
+            str(action_value.get("pause_active_goal_on_resume", "") or "").strip().lower() == "true"
+        )
         try:
             thread = self._ports.read_thread_summary_authoritatively(thread_id, original_arg=thread_id)
         except Exception as exc:
@@ -453,7 +475,7 @@ class CodexThreadsUiDomain:
             thread.thread_id,
             original_arg=thread_id,
             summary=thread,
-            strict_active_goal_resume=strict_active_goal_resume,
+            pause_active_goal_on_resume=pause_active_goal_on_resume,
             message_id=message_id,
             refresh_threads_message_id=message_id if origin == "threads_card" else "",
         )
@@ -469,7 +491,7 @@ class CodexThreadsUiDomain:
         *,
         original_arg: str | None = None,
         summary: ThreadSummary | None = None,
-        strict_active_goal_resume: bool = False,
+        pause_active_goal_on_resume: bool = False,
         message_id: str = "",
         refresh_threads_message_id: str = "",
     ) -> None:
@@ -490,7 +512,7 @@ class CodexThreadsUiDomain:
             thread.thread_id,
             original_arg=original_arg or target,
             summary=thread,
-            strict_active_goal_resume=strict_active_goal_resume,
+            pause_active_goal_on_resume=pause_active_goal_on_resume,
             message_id=message_id,
             refresh_threads_message_id=refresh_threads_message_id,
         )
