@@ -22,6 +22,9 @@ It answers:
 
 - Every command except `instance list` accepts `--instance <name>`.
 - An explicit `--instance` always wins.
+- A named instance used here must already have been created via
+  `feishu-codex instance create <name>`; `feishu-codexctl` never creates it
+  implicitly.
 - Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
 - `thread status`, `thread bindings`, `thread goal`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
   - `--thread-id <id>`

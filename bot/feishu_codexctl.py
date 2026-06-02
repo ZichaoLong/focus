@@ -673,6 +673,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "本地查看 / 管理面：查看运行中的 feishu-codex service、binding、thread 与实例。\n\n"
             "说明：\n"
             "- `feishu-codexctl` 是本地查看 / 管理面，不是第二个 Codex 前端\n"
+            "- 命名实例必须先显式 `feishu-codex instance create <name>`；这里不会隐式创建\n"
             "- 除 `instance list` 外，其余命令都可加 `--instance <name>`；显式值优先\n"
             "- 若未显式指定，则按 preferred-running（若有）/ unique-running / default-running / current-instance-paths 规则解析；多实例仍有歧义时必须显式指定\n"
             "- `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`\n"
@@ -705,7 +706,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--instance",
-        help="目标实例；显式值优先。省略时按运行中实例解析，必要时必须显式指定。仅 `instance list` 不使用这个参数。",
+        help=(
+            "目标实例；显式值优先。命名实例必须先 `feishu-codex instance create <name>`。"
+            "省略时按运行中实例解析，必要时必须显式指定。仅 `instance list` 不使用这个参数。"
+        ),
     )
     subparsers = parser.add_subparsers(dest="resource", required=True, title="resources", metavar="resource")
 

@@ -22,6 +22,7 @@
 
 - 除 `instance list` 外，其余命令都可加 `--instance <name>`。
 - 显式 `--instance` 始终优先。
+- 这里使用的命名实例必须已经先通过 `feishu-codex instance create <name>` 创建；`feishu-codexctl` 不会隐式创建它。
 - 省略时按 `preferred-running -> unique-running -> default-running -> current-instance-paths` 规则解析。
 - `thread status`、`thread bindings`、`thread goal`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
   - `--thread-id <id>`

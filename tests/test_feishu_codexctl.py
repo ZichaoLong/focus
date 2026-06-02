@@ -423,6 +423,30 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(args.resource, "service")
         self.assertEqual(args.action, "status")
 
+    def test_main_rejects_explicit_uncreated_named_instance(self) -> None:
+        stderr = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(root / "config"),
+                    "FC_DATA_ROOT": str(root / "data"),
+                    "FC_INSTANCE": "",
+                },
+                clear=False,
+            ):
+                with patch(
+                    "bot.feishu_codexctl.sys.argv",
+                    ["feishu-codexctl", "--instance", "ghost", "service", "status"],
+                ):
+                    with patch("bot.feishu_codexctl.sys.stderr", stderr):
+                        with self.assertRaises(SystemExit) as exc:
+                            feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("instance create ghost", stderr.getvalue())
+
     def test_service_reset_backend_accepts_without_force(self) -> None:
         parser = _build_parser()
 

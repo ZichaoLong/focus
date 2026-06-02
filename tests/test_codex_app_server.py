@@ -1584,6 +1584,31 @@ class FCodexTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("不能与显式 `--remote` 同时使用", stderr.getvalue())
 
+    def test_fcodex_rejects_explicit_uncreated_named_instance(self) -> None:
+        stderr = StringIO()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(root / "config"),
+                    "FC_DATA_ROOT": str(root / "data"),
+                    "FC_INSTANCE": "",
+                },
+                clear=False,
+            ):
+                with patch(
+                    "bot.fcodex.load_config_file",
+                    return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"},
+                ):
+                    with patch("bot.fcodex.sys.stderr", stderr):
+                        with patch("sys.argv", ["fcodex", "--instance", "ghost", "session"]):
+                            with self.assertRaises(SystemExit) as exc:
+                                fcodex_main()
+
+        self.assertEqual(exc.exception.code, 2)
+        self.assertIn("instance create ghost", stderr.getvalue())
+
     def test_fcodex_rejects_remote_auth_token_env_without_explicit_remote(self) -> None:
         stderr = StringIO()
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
@@ -1724,6 +1749,24 @@ class FCodexTests(unittest.TestCase):
                 )
 
         self.assertIn("未发布可用的 app-server 地址", str(exc.exception))
+
+    def test_runtime_target_rejects_explicit_uncreated_named_instance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            with patch.dict(
+                os.environ,
+                {
+                    "FC_CONFIG_ROOT": str(root / "config"),
+                    "FC_DATA_ROOT": str(root / "data"),
+                    "FC_INSTANCE": "",
+                },
+                clear=False,
+            ):
+                with self.assertRaisesRegex(ValueError, "instance create ghost"):
+                    resolve_cli_runtime_target(
+                        configured_app_server_url="ws://127.0.0.1:8765",
+                        explicit_instance="ghost",
+                    )
 
     def test_runtime_target_without_default_fallback_rejects_multiple_running_instances(self) -> None:
         with patch(

@@ -128,6 +128,20 @@ def resolve_instance_paths(instance_name: str) -> InstancePaths:
     )
 
 
+def instance_exists(instance_name: str) -> bool:
+    paths = resolve_instance_paths(instance_name)
+    return paths.config_dir.exists() or paths.data_dir.exists()
+
+
+def require_instance_exists(instance_name: str) -> str:
+    normalized = validate_instance_name(instance_name)
+    if normalized == DEFAULT_INSTANCE_NAME or instance_exists(normalized):
+        return normalized
+    raise ValueError(
+        f"命名实例 `{normalized}` 尚未创建；请先执行 `feishu-codex instance create {normalized}`。"
+    )
+
+
 def list_known_instance_names() -> list[str]:
     names = {DEFAULT_INSTANCE_NAME}
     for root in (default_config_root() / _INSTANCES_SEGMENT, default_data_root() / _INSTANCES_SEGMENT):

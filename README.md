@@ -190,6 +190,8 @@ fcodex resume <thread_id|thread_name>
 fcodex --instance corp-a
 ```
 
+说明：`fcodex --instance <name>` 只接受已创建的命名实例；如未创建，先执行 `feishu-codex instance create <name>`。
+
 本地查看 / 管理：
 
 ```bash
@@ -200,6 +202,8 @@ feishu-codexctl thread status --thread-name <name>
 feishu-codexctl thread goal --thread-name <name>
 feishu-codexctl image send --thread-id <thread_id> --path ./diagram.png
 ```
+
+说明：`feishu-codexctl --instance <name> ...` 同样不会隐式创建命名实例。
 
 #### 可选进阶
 

@@ -8,7 +8,13 @@ import os
 import pathlib
 from dataclasses import dataclass
 
-from bot.instance_layout import DEFAULT_INSTANCE_NAME, current_instance_name, resolve_instance_paths, validate_instance_name
+from bot.instance_layout import (
+    DEFAULT_INSTANCE_NAME,
+    current_instance_name,
+    require_instance_exists,
+    resolve_instance_paths,
+    validate_instance_name,
+)
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import (
     AppServerRuntimeStore,
@@ -112,6 +118,7 @@ def resolve_cli_instance_target(
                 data_dir=pathlib.Path(running.data_dir),
                 running_entry=running,
             )
+        require_instance_exists(validated)
         paths = resolve_instance_paths(validated)
         return CliInstanceTarget(
             instance_name=paths.instance_name,
@@ -146,6 +153,7 @@ def resolve_cli_instance_target(
         raise ValueError("检测到多个运行中的实例，请显式传 `--instance <name>`。")
     if not running_instances:
         paths = current_cli_instance_paths()
+        require_instance_exists(paths.instance_name)
         return CliInstanceTarget(
             instance_name=paths.instance_name,
             data_dir=paths.data_dir,

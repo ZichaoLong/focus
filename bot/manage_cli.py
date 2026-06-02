@@ -26,6 +26,7 @@ from bot.instance_layout import (
     DEFAULT_INSTANCE_NAME,
     apply_instance_environment,
     list_known_instance_names,
+    require_instance_exists,
     resolve_instance_paths,
     validate_instance_name,
 )
@@ -716,19 +717,12 @@ def _service_definition(instance_name: str):
     )
 
 
-def _instance_exists(instance_name: str) -> bool:
-    paths = resolve_instance_paths(instance_name)
-    return paths.config_dir.exists() or paths.data_dir.exists()
-
-
 def _prepare_cli_instance(instance_name: str) -> str:
     normalized = validate_instance_name(instance_name)
     if normalized == DEFAULT_INSTANCE_NAME:
         _ensure_instance_scaffold(normalized)
         return normalized
-    if _instance_exists(normalized):
-        return normalized
-    raise ValueError(f"命名实例 `{normalized}` 尚未创建；请先执行 `feishu-codex instance create {normalized}`。")
+    return require_instance_exists(normalized)
 
 
 def _normalize_requested_instances(instance_names: list[str] | tuple[str, ...] | None) -> list[str]:
