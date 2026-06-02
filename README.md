@@ -301,7 +301,7 @@ flowchart LR
     F2["Feishu binding 2<br/>(attached, own permissions)"]
     TUI["fcodex subscriber<br/>(local permissions)"]
     Thread["thread"]
-    Owner["interaction owner"]
+    Owner["current-instance<br/>interaction owner"]
   end
 
   subgraph B["实例 B"]
@@ -326,7 +326,7 @@ flowchart LR
 这张图表达的是当前运行时合同：
 
 - 多个 `attached` 订阅者可以同时收到同一 thread 的 backend 普通消息
-- 多订阅不等于多方都能写；真正的写入与交互控制由 `interaction owner` 独占
+- 多订阅不等于多方都能写；真正的写入与交互控制由当前实例内的 `interaction owner` 独占
 - 跨实例 attach / resume 会先过 `loaded gate`；若别的运行中实例仍把该 thread 保持为 `loaded`，就直接拒绝
 - 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 

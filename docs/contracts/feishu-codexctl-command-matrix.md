@@ -69,7 +69,7 @@ Do not conflate them.
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] binding list` | List bindings visible in the target instance | read-only | none |
-| `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
+| `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, current-instance interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
 | `feishu-codexctl [--instance <name>] binding attach <binding_id>` | Restore Feishu push for one binding | mutating | Feishu `/attach binding` |
 | `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping its bookmark | mutating | binding-scoped counterpart of Feishu `/detach` |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear one binding bookmark | mutating | none |
@@ -125,7 +125,7 @@ Implementation note:
 | --- | --- | --- |
 | `service reset-backend` | `/reset-backend` | both are instance-level backend actions; one is CLI, one is a Feishu card flow |
 | `service attach` | `/attach service` | both are instance-level recovery actions; the Feishu primary entry usually comes from a reset result card |
-| `binding status <binding_id>` | `/status`, `/preflight` | local output is lower-level and includes binding ids, reason codes, and interaction owner details |
+| `binding status <binding_id>` | `/status`, `/preflight` | local output is lower-level and includes binding ids, reason codes, and current-instance interaction owner details |
 | `binding attach <binding_id>` | `/attach binding` | local command can target any known binding id directly; Feishu defaults to the current chat binding |
 | `binding detach <binding_id>` | `/detach` | Feishu `/detach` is only current-chat scoped; local command can target any known binding id directly |
 | `prompt send --binding-id <binding_id>` | none | local CLI can synthesize a future or system-triggered prompt through the service control plane; there is no equivalent Feishu slash command today |

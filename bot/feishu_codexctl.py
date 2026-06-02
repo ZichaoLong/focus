@@ -336,7 +336,7 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
     print(f"backend running turn: {'yes' if snapshot['backend_running_turn'] else 'no'}")
     print(f"live runtime owner: {live_runtime_owner}")
     print(f"live runtime holders: {', '.join(live_runtime_holders) or '（无）'}")
-    print(f"interaction owner: {snapshot['interaction_owner']['label']}")
+    print(f"current-instance interaction owner: {snapshot['interaction_owner']['label']}")
     if snapshot["next_prompt_allowed"]:
         print("next prompt: accepted")
     else:
@@ -453,7 +453,7 @@ def _print_thread_status(data_dir: pathlib.Path, target_params: dict[str, str], 
     print(f"bound bindings: {', '.join(snapshot['bound_binding_ids']) or '（无）'}")
     print(f"attached bindings: {', '.join(snapshot['attached_binding_ids']) or '（无）'}")
     print(f"detached bindings: {', '.join(snapshot['detached_binding_ids']) or '（无）'}")
-    print(f"interaction owner: {snapshot['interaction_owner']['label']}")
+    print(f"current-instance interaction owner: {snapshot['interaction_owner']['label']}")
     availability = "available" if snapshot["detach_available"] else "blocked"
     print(f"detach: {availability}")
     if snapshot["detach_reason_code"]:

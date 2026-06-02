@@ -625,6 +625,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
         self.assertIn("binding: p2p:ou_user:chat-1", rendered)
+        self.assertIn("current-instance interaction owner: none", rendered)
 
     def test_thread_status_renders_resolved_instance_name(self) -> None:
         stdout = io.StringIO()
@@ -656,6 +657,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
         self.assertIn("thread: thread-1 demo", rendered)
+        self.assertIn("current-instance interaction owner: none", rendered)
 
     def test_print_thread_goal_renders_goal_snapshot(self) -> None:
         stdout = io.StringIO()

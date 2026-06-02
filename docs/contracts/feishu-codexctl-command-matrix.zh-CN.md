@@ -67,7 +67,7 @@
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
 | `feishu-codexctl [--instance <name>] binding list` | 列出当前实例可见 binding | 只读 | 无 |
-| `feishu-codexctl [--instance <name>] binding status <binding_id>` | 查看单个 binding 的 chat、thread、推送状态、next prompt、interaction owner、会话设置 | 只读 | 飞书 `/status`、`/preflight` 的底层诊断面 |
+| `feishu-codexctl [--instance <name>] binding status <binding_id>` | 查看单个 binding 的 chat、thread、推送状态、next prompt、当前实例 interaction owner、会话设置 | 只读 | 飞书 `/status`、`/preflight` 的底层诊断面 |
 | `feishu-codexctl [--instance <name>] binding attach <binding_id>` | 恢复单个 binding 的飞书推送 | 变更 | 飞书 `/attach binding` |
 | `feishu-codexctl [--instance <name>] binding detach <binding_id>` | 暂停单个 binding 的飞书推送，但保留 bookmark | 变更 | 飞书 `/detach` 的 binding 级对应 |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | 清除单个 binding bookmark | 变更 | 无 |
@@ -123,7 +123,7 @@
 | --- | --- | --- |
 | `service reset-backend` | `/reset-backend` | 都是实例级 backend 管理；一个是 CLI，一个是飞书卡片流 |
 | `service attach` | `/attach service` | 都是实例级恢复动作；飞书主入口通常来自 reset 结果卡 |
-| `binding status <binding_id>` | `/status`、`/preflight` | 本地输出更底层，带 binding id、reason code、interaction owner |
+| `binding status <binding_id>` | `/status`、`/preflight` | 本地输出更底层，带 binding id、reason code、当前实例 interaction owner |
 | `binding attach <binding_id>` | `/attach binding` | 本地可直接按任意 binding id 定位；飞书默认作用于当前 chat |
 | `binding detach <binding_id>` | `/detach` | 飞书 `/detach` 只作用于当前 chat；本地可直接按任意 binding id 定位 |
 | `prompt send --binding-id <binding_id>` | 无 | 本地可以从 service control plane 合成一条未来或系统触发的 prompt；飞书侧当前没有等价 slash 命令 |

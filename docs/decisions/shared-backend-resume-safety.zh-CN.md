@@ -314,7 +314,7 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
 
 具体来说：
 
-- 同实例 Feishu / `fcodex` 的写入准入与审批、补充输入、中断等交互准入，统一由 `interaction owner` 控制
+- 同实例 Feishu / `fcodex` 的写入准入与审批、补充输入、中断等交互准入，统一由当前实例内的 `interaction owner` 控制
 - 当某线程当前没有显式 owner，但只有一个 Feishu subscriber 时，运行时可以按“唯一 subscriber”补位路由；一旦出现多个 subscriber，就必须依赖明确 owner，而不再靠“最后一个绑定”猜测
 
 这带来的用户侧结论是：

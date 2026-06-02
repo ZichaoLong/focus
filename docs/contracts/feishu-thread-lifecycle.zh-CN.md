@@ -50,7 +50,7 @@
 
 在运行控制层面，还必须把 `交互 owner` 与 binding/runtime 这两条状态轴区分开。
 
-`交互 owner` 是临时租约；它负责同实例 Feishu / `fcodex` 前端的 turn 发起权与审批、补充输入、中断等交互路由。精确定义见 `docs/contracts/runtime-control-surface.zh-CN.md`。
+`交互 owner` 是当前实例内的临时租约；它负责同实例 Feishu / `fcodex` 前端的 turn 发起权与审批、补充输入、中断等交互路由。精确定义见 `docs/contracts/runtime-control-surface.zh-CN.md`。
 
 ## 3. 为什么飞书侧不能照搬 `fcodex`
 

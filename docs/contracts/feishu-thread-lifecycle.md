@@ -54,7 +54,7 @@ the requirement to keep it distinct from `binding` and `loaded runtime`.
 
 For operational control, keep `interaction owner` separate from the binding/runtime state axes.
 
-`interaction owner` is a temporary lease. It controls same-instance Feishu / `fcodex` turn admission and routes approvals, user-input requests, and interrupts. The exact contract is defined in `docs/contracts/runtime-control-surface.md`.
+`interaction owner` is a current-instance temporary lease. It controls same-instance Feishu / `fcodex` turn admission and routes approvals, user-input requests, and interrupts. The exact contract is defined in `docs/contracts/runtime-control-surface.md`.
 
 ## 3. Why Feishu Cannot Copy `fcodex` Literally
 

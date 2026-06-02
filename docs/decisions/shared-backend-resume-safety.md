@@ -363,7 +363,7 @@ The more accurate description now is:
 
 Concretely:
 
-- Same-instance Feishu / `fcodex` write admission, approvals, user-input requests, and interrupts are controlled by the `interaction owner`
+- Same-instance Feishu / `fcodex` write admission, approvals, user-input requests, and interrupts are controlled by the current-instance `interaction owner`
 - when a thread has no explicit owner but exactly one Feishu subscriber, the
   runtime may fall back to that sole subscriber for routing; once multiple
   subscribers exist, routing must depend on explicit owner state rather than
