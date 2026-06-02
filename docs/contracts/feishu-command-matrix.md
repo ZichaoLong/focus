@@ -14,7 +14,7 @@ It answers four questions only:
 It does not redefine:
 
 - binding / attach / detach / backend state semantics
-- fact sources or effectivity boundaries of the setting families
+- fact sources or effectivity boundaries of the remaining setting family
 - the full group-chat contract for `assistant / mention-only / all`
 
 ## 1. Reading Rules
@@ -40,8 +40,6 @@ It does not redefine:
 | `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
-| `/profile [name]` | Show or change the current instance managed backend startup profile | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
-| `/profile-clear` | Clear the current instance managed backend startup-profile override | no; also available via card button | admin only | admin only | no direct local equivalent |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
@@ -98,7 +96,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - execution card: `Cancel Execution`
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
-- `/profile` / `/reset-backend` result cards: `Apply And Reset Backend`, `Force Apply And Reset Backend`, `Clear Profile`, `Clear And Reset Backend`, `Attach Current Thread`, `Attach Current Instance`, `Keep Detached`
+- `/reset-backend` result cards: attach/detach follow-up buttons such as `Attach Current Thread`, `Attach Current Instance`, and `Keep Detached`
 - shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 

@@ -203,51 +203,6 @@ def build_terminal_result_card(
     }
 
 
-def build_profile_card(
-    *,
-    content: str,
-    profile_names: list[str],
-    current_profile: str,
-    extra_action_rows: list[dict] | None = None,
-    title: str = "Codex Backend Startup Profile",
-) -> dict:
-    """构造 profile 选择卡片。"""
-    elements: list[dict] = [
-        {"tag": "markdown", "content": content},
-    ]
-    if profile_names:
-        elements.extend(
-            [
-                {"tag": "hr"},
-                {
-                    "tag": "action",
-                    "actions": [
-                        {
-                            "tag": "button",
-                            "text": {"tag": "plain_text", "content": profile_name},
-                            "type": "primary" if profile_name == current_profile else "default",
-                            "value": {
-                                "action": "set_profile",
-                                "profile": profile_name,
-                            },
-                        }
-                        for profile_name in profile_names
-                    ],
-                },
-            ]
-        )
-    if extra_action_rows:
-        elements.extend(extra_action_rows)
-    return {
-        "config": _card_config(),
-        "header": {
-            "title": {"tag": "plain_text", "content": title},
-            "template": "blue",
-        },
-        "elements": elements,
-    }
-
-
 def build_backend_reset_card(
     *,
     content: str,

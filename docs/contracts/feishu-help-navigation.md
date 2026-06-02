@@ -54,16 +54,14 @@ Its body should remind the user that:
 Owns:
 
 - `/goal`
-- `/profile`
 - `/compact`
 - `/archive`
 - the rename form
 
 Its body should remind the user that:
 
-- `/profile` manages the instance startup profile
 - thread creation, resume, and browsing belong to `Start`
-- there is no longer a thread-wise memory control surface here
+- there is no longer a project-owned profile or thread-memory control surface here
 
 ### 3.3 Turn Settings
 
@@ -118,21 +116,3 @@ Owns:
 - every back button occupies its own row
 
 ## 5. Compatibility entries
-
-These direct topics must remain compatible:
-
-- `/help`
-- `/help overview`
-- `/help start`
-- `/help thread-settings`
-- `/help turn`
-- `/help connection`
-- `/help group`
-- `/help more`
-
-These legacy aliases must remain compatible:
-
-- `chat`
-- `thread`
-- `runtime`
-- `identity`

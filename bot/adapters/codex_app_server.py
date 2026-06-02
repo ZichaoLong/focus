@@ -13,16 +13,10 @@ from bot.adapters.base import (
     AgentAdapter,
     RuntimeConfigSummary,
     RuntimeModelSummary,
-    RuntimeProfileSummary,
     ThreadGoalSummary,
     ThreadSnapshot,
     ThreadSummary,
     TurnInputItem,
-)
-from bot.codex_config_reader import (
-    list_profile_v2_names,
-    profile_v2_is_usable,
-    resolve_profile_from_codex_config,
 )
 from bot.codex_protocol.client import CodexRpcClient
 from bot.constants import DEFAULT_APP_SERVER_MODE, DEFAULT_APP_SERVER_URL, DEFAULT_SOURCE_KINDS
@@ -57,7 +51,6 @@ class CodexAppServerConfig:
     service_tier: str = ""
     reasoning_effort: str = ""
     collaboration_mode: str = "default"
-    managed_startup_profile: str = ""
     app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
@@ -70,10 +63,15 @@ class CodexAppServerConfig:
         source_kinds = config.get("source_kinds") or DEFAULT_SOURCE_KINDS
         collaboration_mode = str(config.get("collaboration_mode", "default")).strip().lower() or "default"
         app_server_mode = str(config.get("app_server_mode", DEFAULT_APP_SERVER_MODE)).strip().lower() or DEFAULT_APP_SERVER_MODE
+        if "managed_startup_profile" in config:
+            raise ValueError(
+                "`managed_startup_profile` 已移除；本项目不再提供 profile 启动基线功能。"
+                "如需使用 profile，请直接使用上游 Codex 自己的配置或启动参数。"
+            )
         if "default_thread_memory_mode" in config:
             raise ValueError("`default_thread_memory_mode` 已移除；请改用上游 Codex memories 配置。")
         if "new_thread_memory_mode_seed" in config:
-            raise ValueError("`new_thread_memory_mode_seed` 已移除；请改用实例 profile 或上游 Codex memories 配置。")
+            raise ValueError("`new_thread_memory_mode_seed` 已移除；请改用上游 Codex memories 配置。")
         if collaboration_mode not in {"default", "plan"}:
             raise ValueError("collaboration_mode 仅支持 default 或 plan")
         if app_server_mode not in {"managed", "remote"}:
@@ -104,7 +102,6 @@ class CodexAppServerConfig:
             service_tier=str(config.get("service_tier", "")),
             reasoning_effort=str(config.get("reasoning_effort", "")),
             collaboration_mode=collaboration_mode,
-            managed_startup_profile=str(config.get("managed_startup_profile", "") or "").strip(),
             source_kinds=[str(item) for item in source_kinds],
         )
 
@@ -141,7 +138,6 @@ class CodexAppServerAdapter(AgentAdapter):
             on_disconnect=on_disconnect,
             app_server_runtime_store=app_server_runtime_store,
             app_server_data_dir=config.app_server_data_dir or None,
-            managed_startup_profile=config.managed_startup_profile or None,
         )
 
     def start(self) -> None:
@@ -166,7 +162,6 @@ class CodexAppServerAdapter(AgentAdapter):
         self,
         *,
         cwd: str,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -177,7 +172,6 @@ class CodexAppServerAdapter(AgentAdapter):
         params = self._thread_params(
             cwd=cwd,
             include_service_name=True,
-            profile=profile,
             config_overrides=config_overrides,
             model=model,
             model_provider=model_provider,
@@ -197,23 +191,17 @@ class CodexAppServerAdapter(AgentAdapter):
         self,
         thread_id: str,
         *,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
     ) -> ThreadSnapshot:
-        effective_model, effective_model_provider = self._materialize_profile_slice(
-            profile=profile,
-            model=model,
-            model_provider=model_provider,
-        )
         params: dict[str, Any] = {"threadId": thread_id}
-        if effective_model:
-            params["model"] = effective_model
-        if effective_model_provider:
-            params["modelProvider"] = effective_model_provider
+        if model:
+            params["model"] = model
+        if model_provider:
+            params["modelProvider"] = model_provider
         if approval_policy:
             params["approvalPolicy"] = approval_policy
         if permissions_profile_id:
@@ -221,7 +209,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 permissions_profile_id,
                 fallback=self._config.permissions_profile_id,
             )
-        merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
+        merged_config = self._merge_request_config(config_overrides=config_overrides)
         if merged_config:
             params["config"] = merged_config
         result = self._request_with_permissions_fallback(
@@ -358,10 +346,6 @@ class CodexAppServerAdapter(AgentAdapter):
             legacy_value=self._legacy_sandbox_policy(permissions_profile_id),
         )
 
-    def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
-        del profile
-        raise RuntimeError("上游已不支持运行时 active profile 切换；请改用实例级 startup `/profile`。")
-
     def compact_thread(self, thread_id: str) -> None:
         self._rpc.request(
             "thread/compact/start",
@@ -384,7 +368,6 @@ class CodexAppServerAdapter(AgentAdapter):
         cwd: str | None = None,
         model: str | None = None,
         model_provider: str | None = None,
-        profile: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
@@ -461,7 +444,6 @@ class CodexAppServerAdapter(AgentAdapter):
         *,
         cwd: str,
         include_service_name: bool,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -469,25 +451,20 @@ class CodexAppServerAdapter(AgentAdapter):
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
     ) -> dict[str, Any]:
-        resolved_model, resolved_model_provider = self._materialize_profile_slice(
-            profile=profile,
-            model=model,
-            model_provider=model_provider,
-        )
         params: dict[str, Any] = {
             "cwd": cwd,
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "personality": self._config.personality or None,
-            "model": resolved_model or self._config.model or None,
-            "modelProvider": resolved_model_provider or self._config.model_provider or None,
+            "model": model or self._config.model or None,
+            "modelProvider": model_provider or self._config.model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
         params["permissions"] = normalize_permissions_profile_id(
             permissions_profile_id or sandbox or self._config.permissions_profile_id,
             fallback=self._config.permissions_profile_id,
         )
-        merged_config = self._merge_request_config(profile=profile, config_overrides=config_overrides)
+        merged_config = self._merge_request_config(config_overrides=config_overrides)
         if merged_config:
             params["config"] = merged_config
         if include_service_name:
@@ -554,34 +531,9 @@ class CodexAppServerAdapter(AgentAdapter):
     @staticmethod
     def _merge_request_config(
         *,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        del profile
-        # profile-v2 is materialized locally to model/modelProvider instead of
-        # being forwarded as legacy `config.profile`.
         return deep_merge_config_overrides(config_overrides)
-
-    @staticmethod
-    def _materialize_profile_slice(
-        *,
-        profile: str | None,
-        model: str | None,
-        model_provider: str | None,
-    ) -> tuple[str | None, str | None]:
-        effective_model = str(model or "").strip() or None
-        effective_model_provider = str(model_provider or "").strip() or None
-        normalized_profile = str(profile or "").strip()
-        if not normalized_profile or (effective_model and effective_model_provider):
-            return effective_model, effective_model_provider
-        resolved = resolve_profile_from_codex_config(normalized_profile)
-        if not effective_model:
-            resolved_model = str(resolved.model or "").strip()
-            effective_model = resolved_model or None
-        if not effective_model_provider:
-            resolved_provider = str(resolved.model_provider or "").strip()
-            effective_model_provider = resolved_provider or None
-        return effective_model, effective_model_provider
 
     def _collaboration_mode_payload(
         self,
@@ -606,8 +558,8 @@ class CodexAppServerAdapter(AgentAdapter):
     def _resolve_collaboration_mode_model(self, configured_model: str | None, *, thread_id: str = "") -> str:
         if configured_model:
             return configured_model
-        # 优先使用线程创建/恢复时后端解析的 model（来自 profile），
-        # 避免用 model/list 全局默认值覆盖 profile 指定的 model。
+        # 优先使用线程创建/恢复时后端解析的 model，
+        # 避免用 model/list 全局默认值覆盖上游已有的线程/运行时选择。
         thread_model = self._thread_resolved_model.get(thread_id) if thread_id else None
         if thread_model:
             return thread_model
@@ -648,27 +600,11 @@ class CodexAppServerAdapter(AgentAdapter):
     def _runtime_config_from_result(result: dict[str, Any]) -> RuntimeConfigSummary:
         config = result.get("config") or {}
         memories_raw = config.get("memories") or {}
-        layers_raw = result.get("layers") or []
-        profiles: list[RuntimeProfileSummary] = []
-        for name in list_profile_v2_names():
-            if not profile_v2_is_usable(name):
-                logger.debug("skip unusable profile-v2 candidate %s", name)
-                continue
-            resolved = resolve_profile_from_codex_config(name)
-            profiles.append(
-                RuntimeProfileSummary(
-                    name=name,
-                    model_provider=str(resolved.model_provider or "").strip() or None,
-                )
-            )
         return RuntimeConfigSummary(
-            current_profile=_read_current_profile_from_layers(layers_raw)
-            or _read_string(config, "profile", "activeProfile", "active_profile"),
             current_model_provider=_read_string(config, "modelProvider", "model_provider"),
             current_memory_mode=thread_memory_mode_from_memories_config(
                 memories_raw if isinstance(memories_raw, dict) else None
             ),
-            profiles=profiles,
         )
 
     @staticmethod
@@ -732,21 +668,4 @@ def _read_string(data: dict[str, Any], *keys: str) -> str | None:
         value = data.get(key)
         if value not in (None, ""):
             return str(value)
-    return None
-
-
-def _read_current_profile_from_layers(layers_raw: Any) -> str | None:
-    if not isinstance(layers_raw, list):
-        return None
-    for layer in layers_raw:
-        if not isinstance(layer, dict):
-            continue
-        name = layer.get("name")
-        if not isinstance(name, dict):
-            continue
-        if str(name.get("type", "") or "").strip() != "user":
-            continue
-        profile = name.get("profile")
-        if profile not in (None, ""):
-            return str(profile)
     return None

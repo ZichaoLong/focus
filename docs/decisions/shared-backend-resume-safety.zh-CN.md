@@ -130,7 +130,8 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 - `resume` 不会借机改写这个 live runtime 的 profile 或 provider
 
 这是安全的，因为该线程已经活在同一个 backend 里。
-如果用户后续改了 `/profile`，那也只会影响下一次 managed backend 启动，或 reset 后的 backend 重启；`resume` 本身不会把这条已加载线程再按额外的项目自管 profile/provider slice 重解释一次。
+`resume` 本身不会把这条已加载线程再按额外的项目自管
+profile/provider slice 重解释一次。
 
 ### 6.3 未加载于当前 backend
 
@@ -146,7 +147,6 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
   - owner 仍 busy / pending 时，必须明确拒绝
 - `resume` 不会回放任何额外的项目自管 thread-wise
   profile/memory/provider slice
-- 若配置了 managed backend startup profile，它已经在 backend 启动或重启时生效，而不是在 `thread/resume` 时才生效
 
 这条路径的前提是：
 

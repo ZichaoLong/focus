@@ -187,8 +187,8 @@ Current module split:
 - `bot/codex_goal_domain.py`: owns the thread-level `/goal` read/write surface,
   goal-card rendering flow, and local goal projection updates for the current binding
 - `bot/codex_settings_domain.py`: owns user-facing settings and identity
-  commands such as `/profile`, `/approval`, `/permissions`,
-  `/collab-mode`, `/whoami`, and `/init`; it crosses bot/runtime/profile boundaries
+  commands such as `/model`, `/effort`, `/approval`, `/permissions`,
+  `/collab-mode`, `/whoami`, and `/init`; it crosses bot/runtime boundaries
   through explicit `SettingsDomainPorts` rather than retaining a handler owner
 - `bot/execution_transcript.py`: an internal transcript assembler for execution-card
   presentation; it builds display-only `reply_segments` / `process_log`
@@ -388,7 +388,7 @@ So:
 
 Exact command semantics are documented outside this design document:
 
-- `docs/contracts/thread-profile-semantics.md` covers `/threads`, `/resume`, `/profile`,
+- `docs/contracts/thread-profile-semantics.md` covers `/threads`, `/resume`,
   `/archive`, and wrapper semantics
 - `docs/decisions/shared-backend-resume-safety.md` covers current `/resume` semantics and
   backend safety rules
@@ -463,7 +463,7 @@ full-tree dump.
     canonical Feishu/backend runtime status vocabulary; other modules should
     import those symbols rather than redefining partial local variants
   - shared UI / helper boundaries: `cards.py`, `card_text_projection.py`,
-    `shared_command_surface.py`, `feishu_types.py`, `codex_config_reader.py`
+    `shared_command_surface.py`, `feishu_types.py`
   - wrapper and service-admin path: `fcodex.py`, `fcodex_proxy.py`,
     `feishu_codexctl.py`, `service_control_plane.py`, `instance_layout.py`,
     `instance_resolution.py`, `thread_resolution.py`, `binding_identity.py`

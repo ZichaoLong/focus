@@ -14,7 +14,6 @@ from bot.cards import (
     build_group_activation_card,
     build_group_mode_card,
     build_permissions_profile_card,
-    build_profile_card,
     build_rename_card,
     build_threads_card,
 )
@@ -122,7 +121,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", start_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", start_markdown)
         self.assertIn("测试规则", start_markdown)
-        self.assertIn("`/profile", thread_settings_markdown)
+        self.assertNotIn("`/profile", thread_settings_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", threads_markdown)
         self.assertIn("`feishu-codexctl thread list --scope cwd`", threads_markdown)
         self.assertIn(f"`{resume_command.feishu_usage}`", threads_markdown)
@@ -132,7 +131,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in thread_settings_help["elements"][2]["actions"]],
-            ["查看 Goal", "改 Profile", "压缩上下文"],
+            ["查看 Goal", "压缩上下文"],
         )
         self.assertEqual(execution_card["header"]["title"]["content"], "Codex 执行过程（执行中）")
         self.assertNotIn("`/help`", json.dumps(execution_card, ensure_ascii=False))
@@ -176,7 +175,6 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         cards = [
             help_domain.reply_help("chat-1").card,
             help_domain.reply_help("chat-1", "thread").card,
-            build_profile_card(content="切换 profile", profile_names=["p1"], current_profile="p1"),
             build_backend_reset_card(content="预览", force=False),
             build_execution_card("log", [], running=True),
             build_command_approval_card("req-1", command="ls", cwd="/tmp/project", reason="需要执行"),

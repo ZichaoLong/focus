@@ -35,18 +35,6 @@ _SHARED_COMMAND_SPECS = (
         feishu_summary="按帮助分组查看常用命令列表。",
     ),
     SharedCommandSpec(
-        key="profile",
-        slash_name="/profile",
-        feishu_usage="/profile [name]",
-        feishu_summary="查看或切换当前实例 managed backend 的 startup profile。",
-    ),
-    SharedCommandSpec(
-        key="profile-clear",
-        slash_name="/profile-clear",
-        feishu_usage="/profile-clear",
-        feishu_summary="清空当前实例 managed backend 的 startup profile override。",
-    ),
-    SharedCommandSpec(
         key="goal",
         slash_name="/goal",
         feishu_usage=feishu_visible_command_syntax("/goal [show|set <objective>|pause|resume|clear]"),

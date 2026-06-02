@@ -60,7 +60,6 @@
 
 - [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)
 - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
-- [`managed-backend-startup-profile.zh-CN.md`](./decisions/managed-backend-startup-profile.zh-CN.md)
 - [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md)
 - [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md)
 - [`feishu-raw-card-retrieval.zh-CN.md`](./decisions/feishu-raw-card-retrieval.zh-CN.md)
@@ -84,13 +83,12 @@
 | 飞书侧线程生命周期是什么？哪些状态绝不能混淆？ | [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md) |
 | `/status`、`/detach`、`feishu-codexctl` 共享的状态词汇与管理面合同是什么？ | [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | 某个运行时设置“刚写了什么”“持久化在哪”“什么时候才算生效”“provisional 阶段是否已有正式事实源”这些问题该怎么区分？ | [`runtime-settings-fact-sources.zh-CN.md`](./contracts/runtime-settings-fact-sources.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
-| 历史上的 thread-wise next-load 设置为何被收缩掉、现在 `/profile` 还剩下什么语义？ | [`thread-next-load-settings-semantics.zh-CN.md`](./contracts/thread-next-load-settings-semantics.zh-CN.md)、[`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
-| `/threads`、`/resume`、`/profile`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
+| 历史上的 thread-wise next-load 设置为何被收缩掉、收缩后还剩什么？ | [`thread-next-load-settings-semantics.zh-CN.md`](./contracts/thread-next-load-settings-semantics.zh-CN.md)、[`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
+| `/threads`、`/resume`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
 | 历史上的 thread memory 控制面为何被移除、现在应改看哪两层设置？ | [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)、[`runtime-settings-fact-sources.zh-CN.md`](./contracts/runtime-settings-fact-sources.zh-CN.md) |
 | 如何在未来时点继续当前 Feishu 绑定 thread？`binding/submit-prompt`、`feishu-codexctl prompt send`、Linux `systemd --user` skill 的正式边界是什么？ | [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md) |
-| 本地命令面应如何重划？`/detach`、`fcodex` thin wrapper、`feishu-codexctl` 分工、以及实例 startup profile 的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
+| 本地命令面应如何重划？`/detach`、`fcodex` thin wrapper、`feishu-codexctl` 分工的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
 | 多实例下 `default` / 命名实例、共享 thread 可见面、`fcodex --instance`、全局 runtime lease 怎么工作？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)、[`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md) |
-| provider 专属 catalog、`remote`、以及未来 `managed backend startup profile` 之间应如何取舍？为什么它不是“实例级默认 profile”？ | [`managed-backend-startup-profile.zh-CN.md`](./decisions/managed-backend-startup-profile.zh-CN.md)、[`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md) |
 | 飞书 `/help` 的信息架构、按钮导航与 slash 语义一致性合同是什么？ | [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md) |
 | 群激活、群聊模式、历史回捞、群命令触发的正式合同是什么？ | [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md) |
 | approval、sandbox、writable roots、受保护路径的语义是什么？ | [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md) |
@@ -131,7 +129,6 @@
 - 改 `fcodex` wrapper、shared backend、本地代理相关逻辑时：
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)
-  - [`managed-backend-startup-profile.zh-CN.md`](./decisions/managed-backend-startup-profile.zh-CN.md)
   - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
 - 改多实例、共享 thread 可见面、`feishu-codexctl --instance` 或跨实例 runtime lease 相关逻辑时：
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)

@@ -2,9 +2,9 @@
 
 Chinese original: `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
 
-This file keeps its historical name, but its focus is no longer "thread
-profile." It now defines the boundary between local entry points and the
-current settings model.
+This file keeps its historical filename, but it no longer defines any
+project-owned profile surface. It defines the boundary between local entry
+points and the remaining settings model.
 
 ## 1. Three local entry points
 
@@ -27,8 +27,8 @@ Responsible for:
 
 It is not:
 
-- a replacement for a Feishu `/memory` surface
-- a second turn-settings frontend
+- a second frontend for turn settings
+- a local mirror of Feishu setting cards
 
 ### 1.3 `fcodex`
 
@@ -41,46 +41,39 @@ Responsible for:
 It is not:
 
 - a service-management CLI
-- a local mirror of Feishu setting cards
+- a project-owned settings surface
 
-## 2. Only two project-owned setting families remain
+## 2. Only one project-owned writable setting family remains
 
-### 2.1 Instance startup baseline
-
-- scope: instance
-- Feishu entries: `/profile`, `/profile-clear`
-- local meaning: mutate the startup baseline of the instance backend
-
-### 2.2 Binding-wise next-turn settings
+### 2.1 Binding-wise next-turn settings
 
 - scope: Feishu binding
 - Feishu entries: `/model`, `/effort`, `/approval`, `/permissions`, `/collab-mode`
-- local `fcodex` / upstream TUI keep their own local state; they do not auto-merge
-  with persisted Feishu binding settings
+- local `fcodex` / upstream TUI keep their own local state; they do not
+  auto-merge with persisted Feishu binding settings
 
-## 3. Removed local thread-memory contract
+## 3. Removed project-owned settings
 
 The project no longer supports:
 
+- legacy project-owned profile commands
+- `/memory`
 - `feishu-codexctl thread memory`
-- any project-owned thread-memory restore semantics
-- `fcodex resume <thread>` consuming an extra project-owned persisted memory
-  setting
+- any project-owned thread-memory or provider restore semantics
 
-If an operator wants to switch memory/provider behavior, they must use:
-
-- the instance startup profile
-- upstream config / profile-v2
+If an operator wants upstream profile/provider behavior, they must use
+upstream Codex config, upstream profile-v2 files, or upstream launch
+parameters directly.
 
 ## 4. Current meaning of `fcodex -p/--profile`
 
-The project no longer treats `fcodex -p/--profile` as a thread-wise persisted
-mutation entry.
+The project no longer treats `fcodex -p/--profile` as a persisted mutation
+entry.
 
 Its role is now:
 
-- an upstream / local-TUI parameter
-- not a local mirror of Feishu `/profile`
+- an upstream / local-TUI launch parameter
+- not a local mirror of any Feishu command
 - not something this project persists as thread truth
 
 ## 5. What `fcodex resume` still promises
@@ -93,16 +86,16 @@ Its role is now:
 
 It no longer promises:
 
-- restoring a project-owned thread memory/provider slice
+- restoring a project-owned profile slice
+- restoring a project-owned memory/provider slice
 
 ## 6. One maintenance rule
 
 If a new setting is introduced into this project, it must first be classified
 as exactly one of:
 
-1. instance startup baseline
-2. binding-wise next-turn settings
-3. read-only diagnostic view
+1. binding-wise next-turn settings
+2. read-only diagnostic view
 
 Until that classification exists, the project must not add a new local command
 surface for it.

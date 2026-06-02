@@ -1,40 +1,40 @@
-# 飞书 `/help` 导航合同
+# Feishu `/help` 导航合同
 
 英文原文：`docs/contracts/feishu-help-navigation.md`
 
-本文只定义 `/help` 与 `/commands` 的导航合同。
+本文件只定义 `/help` 与 `/commands` 的导航合同。
 
 ## 1. 首页目标
 
-`/help` 不是完整文档站，也不是把所有命令平铺出来。
+`/help` 不是完整文档站，也不是把所有命令平铺罗列出来。
 
 它的职责是：
 
-1. 先给出紧凑的当前状态摘要
-2. 再把用户送到固定工作区
-3. 低频动作放到下级页或结果卡
+1. 给出紧凑的当前状态摘要
+2. 把用户路由到固定工作区
+3. 让低频动作留在下级页面或结果卡里
 
-## 2. 首页固定工作区
+## 2. 固定首页工作区
 
-首页必须暴露这六个工作区：
+首页必须只暴露这六个工作区：
 
-- `开始`
-- `线程设置`
-- `本轮设置`
-- `连接状态`
-- `群聊设置`
-- `更多`
+- `Start`
+- `Thread Settings`
+- `Turn Settings`
+- `Connection Status`
+- `Group Settings`
+- `More`
 
-首页摘要至少包含：
+首页摘要至少应包含：
 
-- 当前目录
-- 当前线程
+- 当前工作目录
+- 当前 thread
 - 当前推送状态
-- 当前本轮设置摘要
+- 当前 turn-setting 摘要
 
 ## 3. 页面合同
 
-### 3.1 开始
+### 3.1 Start
 
 负责：
 
@@ -43,28 +43,26 @@
 - `/resume`
 - `/cd`
 
-正文应提示：
+正文应提醒用户：
 
-- 同一 thread 可多端观察，但 live turn 只有一个 interaction owner
-- 本地继续同一 live thread 用 `fcodex resume <thread_id|thread_name>`
+- 同一 thread 可以被多个端观察，但同一 live turn 只有一个 interaction owner
+- 本地继续同一个 live thread 使用 `fcodex resume <thread_id|thread_name>`
 
-### 3.2 线程设置
+### 3.2 Thread Settings
 
 负责：
 
 - `/goal`
-- `/profile`
 - `/compact`
 - `/archive`
-- 重命名表单
+- rename form
 
-正文应提示：
+正文应提醒用户：
 
-- `/profile` 管的是实例 startup profile
-- 新建、恢复、浏览线程在“开始”
-- 这里不再提供 thread-wise memory 控制面
+- thread 创建、恢复与浏览属于 `Start`
+- 这里已经不再有项目自管的 profile 或 thread-memory 控制面
 
-### 3.3 本轮设置
+### 3.3 Turn Settings
 
 负责：
 
@@ -75,12 +73,12 @@
 - `/collab-mode`
 - `/last text`
 
-正文应提示：
+正文应提醒用户：
 
-- 这些设置作用于当前飞书会话后续 turn
-- 推荐先用 `/permissions`
+- 这些设置只影响当前 Feishu binding 的后续 turn
+- `/permissions` 是推荐的第一个入口
 
-### 3.4 连接状态
+### 3.4 Connection Status
 
 负责：
 
@@ -88,9 +86,9 @@
 - `/preflight`
 - `/detach`
 - `/attach`
-- 相关附着下级页
+- 相关 attach 下级页
 
-### 3.5 群聊设置
+### 3.5 Group Settings
 
 负责：
 
@@ -99,7 +97,7 @@
 - `/group deactivate`
 - `/group-mode`
 
-### 3.6 更多
+### 3.6 More
 
 负责：
 
@@ -112,26 +110,8 @@
 
 ## 4. 返回按钮规则
 
-- 一级工作区页必须提供 `返回首页`
-- 下级页只保留 `返回上一页`
-- 返回按钮独占一整行
+- 一级工作区页面必须暴露 `Back Home`
+- 下级页面只暴露 `Back`
+- 每个返回按钮各占一整行
 
 ## 5. 兼容入口
-
-以下直接主题入口仍需兼容：
-
-- `/help`
-- `/help overview`
-- `/help start`
-- `/help thread-settings`
-- `/help turn`
-- `/help connection`
-- `/help group`
-- `/help more`
-
-以下旧 alias 仍需兼容：
-
-- `chat`
-- `thread`
-- `runtime`
-- `identity`

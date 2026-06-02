@@ -48,7 +48,6 @@ from bot.instance_layout import current_instance_name, global_data_dir
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.codex_protocol.client import CodexRpcError
 from bot.codex_goal_domain import CodexGoalDomain, GoalDomainPorts
-from bot.codex_config_reader import list_profile_v2_names, profile_v2_is_usable
 from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
 from bot.codex_help_domain import CodexHelpDomain
 from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts, ThreadsUiRuntimePorts
@@ -357,23 +356,8 @@ class CodexHandler(BotHandler):
                 get_bot_identity_snapshot=lambda: self.bot.get_bot_identity_snapshot(),
                 add_admin_open_id=lambda open_id: self.bot.add_admin_open_id(open_id),
                 set_configured_bot_open_id=lambda open_id: self.bot.set_configured_bot_open_id(open_id),
-                load_codex_config=lambda: load_config_file("codex"),
-                save_codex_config=lambda config: save_config_file("codex", config),
-                reset_current_instance_backend=self._reset_current_instance_backend,
                 get_runtime_view=self._get_runtime_view,
                 update_runtime_settings=self._update_runtime_settings,
-                safe_read_runtime_config=self._safe_read_runtime_config,
-                list_local_profile_names=lambda: [
-                    name for name in list_profile_v2_names()
-                    if profile_v2_is_usable(name)
-                ],
-                read_thread_summary=lambda thread_id: self._adapter.read_thread(thread_id, include_turns=False).summary,
-                clear_thread_binding=lambda sender_id, chat_id, message_id="": self._clear_thread_binding(
-                    sender_id,
-                    chat_id,
-                    message_id=message_id,
-                ),
-                is_thread_not_found_error=self._is_thread_not_found_error,
             ),
             approval_policies=_APPROVAL_POLICIES,
         )
@@ -509,7 +493,6 @@ class CodexHandler(BotHandler):
             cancel_mirror_watchdog_locked=self._cancel_mirror_watchdog_locked,
             is_thread_not_found_error=self._is_thread_not_found_error,
             is_thread_not_loaded_error=self._is_thread_not_loaded_error,
-            load_managed_startup_profile=lambda: str(load_config_file("codex").get("managed_startup_profile", "") or "").strip(),
         )
         self._prompt_turn_entry = PromptTurnEntryController(
             lock=self._lock,
@@ -1660,16 +1643,6 @@ class CodexHandler(BotHandler):
                 scope="p2p",
                 scope_denied_text=f"请私聊机器人执行 `{_DEBUG_CONTACT_COMMAND}`。",
             ),
-            "/profile": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_profile_command(
-                    sender_id, chat_id, arg, message_id=message_id
-                ),
-            ),
-            "/profile-clear": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_profile_clear_command(
-                    sender_id, chat_id, arg, message_id=message_id
-                ),
-            ),
             "/reset-backend": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._runtime_admin.handle_reset_backend_command(
                     arg
@@ -1849,30 +1822,6 @@ class CodexHandler(BotHandler):
             ),
             "set_reasoning_effort": ActionRoute(
                 handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_reasoning_effort(
-                    sender_id, chat_id, message_id, action_value
-                ),
-                group_guard="group_admin",
-            ),
-            "set_profile": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_profile(
-                    sender_id, chat_id, message_id, action_value
-                ),
-                group_guard="group_admin",
-            ),
-            "clear_profile": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_clear_profile(
-                    sender_id, chat_id, message_id, action_value
-                ),
-                group_guard="group_admin",
-            ),
-            "apply_profile_with_backend_reset": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_apply_profile_with_backend_reset(
-                    sender_id, chat_id, message_id, action_value
-                ),
-                group_guard="group_admin",
-            ),
-            "clear_profile_with_backend_reset": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_clear_profile_with_backend_reset(
                     sender_id, chat_id, message_id, action_value
                 ),
                 group_guard="group_admin",

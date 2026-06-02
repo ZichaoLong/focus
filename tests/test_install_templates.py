@@ -262,7 +262,7 @@ class InstallTemplateTests(unittest.TestCase):
     def test_codex_yaml_template_documents_sparse_instance_override_behavior(self) -> None:
         self.assertIn("override 文件", CODEX_YAML_TEMPLATE)
         self.assertIn("命名实例不会继承 default 实例", CODEX_YAML_TEMPLATE)
-        self.assertIn("managed_startup_profile", CODEX_YAML_TEMPLATE)
+        self.assertNotIn("managed_startup_profile", CODEX_YAML_TEMPLATE)
         self.assertIn("mirror_watchdog_seconds", CODEX_YAML_TEMPLATE)
 
     def test_load_template_falls_back_to_packaged_resource_when_repo_example_missing(self) -> None:

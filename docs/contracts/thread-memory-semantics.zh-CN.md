@@ -2,28 +2,28 @@
 
 英文原文：`docs/contracts/thread-memory-semantics.md`
 
-本文保留原文件名，仅作为退役说明。
+本文件只作为历史名称下的退役说明保留。
 
 ## 当前状态
 
-本项目已移除 thread-wise memory 控制面。
+本项目已经移除了 thread-wise memory 控制面。
 
-因此，以下入口都不再属于正式合同：
+下列入口已不再属于正式合同：
 
 - `/memory`
 - `feishu-codexctl thread memory`
 - `new_thread_memory_mode_seed`
-- 项目自管的 thread memory 持久化与恢复链路
+- 任何项目自管的 thread-memory persistence / restore 路径
 
-## 替代方案
+## 现在应使用什么
 
-如果用户希望改变上游 memory/provider 相关行为，应通过：
+如果操作者想调整上游 memory/provider 行为，请使用：
 
-- 实例 startup profile
-- 上游 `~/.codex/config.toml`
-- profile-v2
+- 上游 Codex 配置
+- 上游 profile-v2 文件
+- 本项目命令面之外的上游启动参数
 
-如果用户希望改变某个飞书会话后续 turn 的运行时行为，应通过：
+如果操作者想调整某个 Feishu binding 的后续 turn 行为，请使用：
 
 - `/model`
 - `/effort`
@@ -31,8 +31,8 @@
 - `/permissions`
 - `/collab-mode`
 
-## 相关正式文档
+## 当前正式文档
 
-- 当前设置分层：`docs/contracts/runtime-settings-fact-sources.zh-CN.md`
-- 当前飞书控制面：`docs/contracts/runtime-control-surface.zh-CN.md`
-- 退役后的 next-load 说明：`docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
+- 设置分层：`docs/contracts/runtime-settings-fact-sources.zh-CN.md`
+- 飞书控制面：`docs/contracts/runtime-control-surface.zh-CN.md`
+- next-load 退役说明：`docs/contracts/thread-next-load-settings-semantics.zh-CN.md`

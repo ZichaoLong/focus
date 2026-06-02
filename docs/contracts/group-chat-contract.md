@@ -134,7 +134,6 @@ Those remain owned by their dedicated documents.
   - `/resume`
   - `/detach`
   - `/reset-backend`
-  - `/profile`
   - `/approval`
   - `/permissions`
   - group activation and group-mode management commands

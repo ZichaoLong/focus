@@ -1,6 +1,6 @@
 # 说明：真实 `codex.yaml` 是当前实例自己的 override 文件。
 # 命名实例不会继承 default 实例的这份文件。
-# 后续通过 `/profile` 等入口保存后，文件可能只保留显式设置过的键。
+# 真实配置文件只会保留显式设置过的键。
 # 完整可配项始终以同目录 `codex.yaml.example` 为准。
 #
 # 默认工作目录；默认值：当前用户 Home 目录
@@ -31,13 +31,6 @@
 # app-server 请求超时（秒）；默认值：30
 # request_timeout_seconds: 30
 
-# managed backend 启动时叠加的 startup profile；默认值：空
-# 说明：只对 `app_server_mode: managed` 生效。
-# 说明：这里填写的是共享 `CODEX_HOME` 下的 profile-v2 名称，例如 `work`，
-# 实际等价于把 `work.config.toml` 作为 managed backend 的启动基线层。
-# 修改后不会立刻改动已加载 backend；如需立即应用，请执行 `/reset-backend`。
-# managed_startup_profile: work
-
 # 线程创建时声明的服务名；默认值：feishu-codex
 # service_name: feishu-codex
 
@@ -62,8 +55,6 @@
 # model: gpt-5.4
 
 # 默认 model provider；默认值：空
-# 说明：如需让 shared backend 通过 `/profile` 在多个 profile/provider 之间切换，建议保持为空。
-# 说明：如果这里写死了 model_provider，feishu-codex 新建线程时会优先用这里的值，可能覆盖 shared profile 的作用。
 # model_provider: openai
 
 # 默认 service tier；默认值：空

@@ -13,7 +13,6 @@ from bot.adapters.base import (
     RuntimeConfigSummary,
     ThreadGoalSummary,
     RuntimeModelSummary,
-    RuntimeProfileSummary,
     ThreadSnapshot,
     ThreadSummary,
 )
@@ -31,7 +30,6 @@ from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
 
 _DISPLAY_INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DISPLAY_DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
-_DISPLAY_PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
 _DISPLAY_RESUME_COMMAND = feishu_visible_command_syntax("/resume <thread_id|thread_name>")
 _DISPLAY_LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <thread_id|thread_name>")
 _DISPLAY_CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
@@ -57,8 +55,6 @@ class _FakeAdapter:
         self.on_disconnect = on_disconnect
         self.app_server_runtime_store = app_server_runtime_store
         self.start_calls = 0
-        self.last_profile = "provider1"
-        self.set_active_profile_calls: list[str] = []
         self.create_thread_calls: list[dict] = []
         self.resume_thread_calls: list[dict] = []
         self.set_thread_goal_calls: list[dict] = []
@@ -91,7 +87,6 @@ class _FakeAdapter:
         self,
         *,
         cwd: str,
-        profile: str | None = None,
         config_overrides: dict | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -102,7 +97,6 @@ class _FakeAdapter:
         self.create_thread_calls.append(
             {
                 "cwd": cwd,
-                "profile": profile,
                 "config_overrides": config_overrides,
                 "model": model,
                 "model_provider": model_provider,
@@ -187,14 +181,7 @@ class _FakeAdapter:
         return self.thread_goals.pop(thread_id, None) is not None
 
     def read_runtime_config(self, *, cwd: str | None = None) -> RuntimeConfigSummary:
-        return RuntimeConfigSummary(
-            current_profile=self.last_profile,
-            current_model_provider=f"{self.last_profile}_api",
-            profiles=[
-                RuntimeProfileSummary(name="provider1", model_provider="provider1_api"),
-                RuntimeProfileSummary(name="provider2", model_provider="provider2_api"),
-            ],
-        )
+        return RuntimeConfigSummary(current_model_provider="provider1_api")
 
     def list_models(self, *, include_hidden: bool = False) -> list[RuntimeModelSummary]:
         if include_hidden:
@@ -212,16 +199,10 @@ class _FakeAdapter:
             }
         )
 
-    def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
-        self.set_active_profile_calls.append(profile)
-        self.last_profile = profile
-        return self.read_runtime_config()
-
     def resume_thread(
         self,
         thread_id: str,
         *,
-        profile: str | None = None,
         config_overrides: dict | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -230,7 +211,6 @@ class _FakeAdapter:
     ):
         self.resume_thread_calls.append({
             "thread_id": thread_id,
-            "profile": profile,
             "config_overrides": config_overrides,
             "model": model,
             "model_provider": model_provider,
@@ -338,7 +318,6 @@ class _FakeAdapter:
         cwd: str | None = None,
         model: str | None = None,
         model_provider: str | None = None,
-        profile: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
@@ -358,7 +337,6 @@ class _FakeAdapter:
                 "cwd": cwd,
                 "model": model,
                 "model_provider": model_provider,
-                "profile": profile,
                 "approval_policy": approval_policy,
                 "permissions_profile_id": permissions_profile_id,
                 "sandbox": sandbox,
@@ -1339,7 +1317,6 @@ class CodexHandlerTests(unittest.TestCase):
             [
                 {
                     "thread_id": "thread-created",
-                    "profile": None,
                     "config_overrides": None,
                     "model": None,
                     "model_provider": None,
@@ -1384,7 +1361,6 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.resume_thread_calls[-1],
             {
                 "thread_id": "thread-created",
-                "profile": None,
                 "config_overrides": None,
                 "model": None,
                 "model_provider": None,
@@ -3056,7 +3032,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "返回帮助")
 
     def test_model_command_without_arg_shows_model_card(self) -> None:
-        handler, bot = self._make_handler({"managed_startup_profile": "work"})
+        handler, bot = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "/model")
 
@@ -3065,7 +3041,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex 模型 / Effort")
         self.assertIn("当前会话 model override：`auto`", card["elements"][0]["content"])
         self.assertIn("当前会话 effort override：`auto`", card["elements"][0]["content"])
-        self.assertIn("当前实例 startup profile：`work`", card["elements"][0]["content"])
+        self.assertNotIn("startup profile", card["elements"][0]["content"])
         action_elements = self._action_elements(card)
         self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "✓ auto")
 
@@ -3356,8 +3332,8 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertNotIn("当前 provider", content)
         self.assertNotIn("binding：", content)
 
-    def test_status_shows_startup_profile_and_hides_runtime_debug_fields(self) -> None:
-        handler, bot = self._make_handler({"managed_startup_profile": "work"})
+    def test_status_hides_runtime_debug_fields(self) -> None:
+        handler, bot = self._make_handler()
         thread = ThreadSummary(
             thread_id="thread-1",
             cwd="/tmp/project",
@@ -3375,10 +3351,10 @@ class CodexHandlerTests(unittest.TestCase):
 
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
-        self.assertIn("实例 startup profile：`work`", content)
         self.assertIn("权限基线：`Danger Full Access`", content)
         self.assertIn("Codex 协作模式：`default`", content)
         self.assertIn("Codex effort override：`auto`", content)
+        self.assertNotIn("startup profile", content)
         self.assertNotIn("binding：", content)
         self.assertNotIn("feishu runtime：", content)
         self.assertNotIn("backend thread status：", content)
@@ -3702,7 +3678,6 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.resume_thread_calls[-1],
             {
                 "thread_id": "thread-1",
-                "profile": None,
                 "config_overrides": {"model_reasoning_effort": "high"},
                 "model": "gpt-5.4",
                 "model_provider": None,
@@ -4774,130 +4749,6 @@ class CodexHandlerTests(unittest.TestCase):
                 {"thread_id": "thread-1", "thread_name": "demo"},
             )
 
-    def test_profile_command_without_arg_shows_startup_profile_summary(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/profile")
-
-        _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
-        content = card["elements"][0]["content"]
-        self.assertIn("当前实例 startup profile：`auto`", content)
-        self.assertIn("作用范围：managed backend 的启动基线。", content)
-        self.assertIn("如需让当前实例马上切到这套基线，请重置 backend。", content)
-
-    def test_profile_command_sets_managed_startup_profile(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/profile provider2")
-
-        _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
-        self.assertIn("已设置当前实例的 startup profile：`provider2`", card["elements"][0]["content"])
-        self.assertEqual(handler._adapter.set_active_profile_calls, [])
-
-    def test_profile_command_with_existing_startup_profile_shows_profile_reset_actions(self) -> None:
-        handler, bot = self._make_handler({"managed_startup_profile": "provider2"})
-
-        handler.handle_message("ou_user", "c1", "/profile")
-
-        _, card = bot.cards[-1]
-        action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[1]["actions"][0]["value"]["action"], "apply_profile_with_backend_reset")
-        self.assertEqual(action_elements[1]["actions"][1]["value"]["action"], "apply_profile_with_backend_reset")
-        self.assertEqual(action_elements[2]["actions"][0]["value"]["action"], "clear_profile")
-        self.assertEqual(action_elements[2]["actions"][1]["value"]["action"], "clear_profile_with_backend_reset")
-
-    def test_profile_command_fail_open_uses_local_profile_names_when_runtime_config_unreadable(self) -> None:
-        handler, bot = self._make_handler()
-        handler._adapter.read_runtime_config = lambda **kwargs: (_ for _ in ()).throw(RuntimeError("broken runtime"))
-
-        with patch("bot.codex_handler.list_profile_v2_names", return_value=["work"]), patch(
-            "bot.codex_handler.profile_v2_is_usable",
-            return_value=True,
-        ):
-            handler.handle_message("ou_user", "c1", "/profile")
-
-        _, card = bot.cards[-1]
-        self.assertIn("当前未能读取 live runtime config", card["elements"][0]["content"])
-        action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[0]["actions"][0]["text"]["content"], "work")
-
-    def test_profile_command_can_switch_to_profile_named_clear(self) -> None:
-        handler, bot = self._make_handler()
-        handler._adapter.read_runtime_config = lambda **kwargs: RuntimeConfigSummary(
-            current_profile="provider1",
-            current_model_provider="provider1_api",
-            profiles=[
-                RuntimeProfileSummary(name="clear", model_provider="clear-provider"),
-                RuntimeProfileSummary(name="provider1", model_provider="provider1_api"),
-            ],
-        )
-
-        handler.handle_message("ou_user", "c1", "/profile clear")
-
-        _, card = bot.cards[-1]
-        self.assertIn("已设置当前实例的 startup profile：`clear`", card["elements"][0]["content"])
-
-    def test_profile_card_action_updates_startup_profile(self) -> None:
-        handler, _ = self._make_handler()
-
-        response = self._unpack_card_response(
-            handler.handle_card_action(
-                "ou_user",
-                "c1",
-                "m1",
-                {"action": "set_profile", "profile": "provider2"},
-            )
-        )
-
-        self.assertEqual(response["toast_type"], "success")
-        self.assertIn("provider2", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex Backend Startup Profile")
-
-    def test_profile_command_clear_clears_startup_profile(self) -> None:
-        handler, bot = self._make_handler({"managed_startup_profile": "provider2"})
-
-        handler.handle_message("ou_user", "c1", "/profile-clear")
-
-        _, card = bot.cards[-1]
-        self.assertIn("已清空当前实例的 startup profile override。", card["elements"][0]["content"])
-
-    def test_profile_clear_card_action_clears_startup_profile(self) -> None:
-        handler, _ = self._make_handler({"managed_startup_profile": "provider2"})
-
-        response = self._unpack_card_response(
-            handler.handle_card_action(
-                "ou_user",
-                "c1",
-                "m1",
-                {"action": "clear_profile"},
-            )
-        )
-
-        self.assertEqual(response["toast_type"], "success")
-        self.assertIn("已清空当前实例的 startup profile override", response["toast"])
-
-    def test_profile_command_with_unknown_name_shows_usage(self) -> None:
-        handler, bot = self._make_handler()
-        thread = ThreadSummary(
-            thread_id="thread-1",
-            cwd="/tmp/project",
-            name="demo",
-            preview="hello",
-            created_at=0,
-            updated_at=0,
-            source="appServer",
-            status="idle",
-        )
-        handler._bind_thread("ou_user", "c1", thread)
-
-        handler.handle_message("ou_user", "c1", "/profile provider9")
-
-        self.assertIn("未找到 profile：`provider9`", bot.replies[-1][1])
-        self.assertIn(f"用法：`{_DISPLAY_PROFILE_WITH_NAME_COMMAND}`", bot.replies[-1][1])
-        self.assertIn("先发 `/profile` 查看可用 profile。", bot.replies[-1][1])
-
     def test_archive_command_archives_current_thread_and_clears_binding(self) -> None:
         handler, bot = self._make_handler()
         thread = ThreadSummary(
@@ -4980,15 +4831,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("explorer", bot.replies[-1][1])
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_thread_id"], "thread-1")
 
-    def test_profile_command_without_bound_thread_still_shows_startup_profile(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/profile")
-
-        _, card = bot.cards[-1]
-        self.assertEqual(card["header"]["title"]["content"], "Codex Backend Startup Profile")
-        self.assertIn("当前实例 startup profile：`auto`", card["elements"][0]["content"])
-
     def test_status_hides_removed_new_thread_seed_profile_row(self) -> None:
         handler, bot = self._make_handler()
 
@@ -4997,12 +4839,12 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         self.assertNotIn("新 thread seed profile", card["elements"][0]["content"])
 
-    def test_new_thread_does_not_inject_instance_default_profile(self) -> None:
+    def test_new_thread_uses_current_runtime_overrides_without_profile_injection(self) -> None:
         handler, _ = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "/new")
 
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
 
     def test_new_thread_reports_bind_failure_instead_of_silently_dropping_command(self) -> None:
         handler, bot = self._make_handler()
@@ -5053,13 +4895,13 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._thread_subscribers("thread-created"), ())
         self.assertEqual(self._service_runtime_holder_ids(handler, "thread-created"), ())
 
-    def test_prompt_without_threadwise_profile_starts_without_profile_override(self) -> None:
+    def test_prompt_starts_without_project_profile_override(self) -> None:
         handler, _ = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "hello")
 
-        self.assertIsNone(handler._adapter.create_thread_calls[-1]["profile"])
-        self.assertIsNone(handler._adapter.start_turn_calls[-1]["profile"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.start_turn_calls[-1]["model"])
 
     def test_prompt_without_configured_default_working_dir_uses_home_directory(self) -> None:
         with patch("bot.codex_handler.default_working_dir", return_value=pathlib.Path("/home/tester")):
@@ -5314,34 +5156,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIn("卡片里的资源当前无法通过飞书 API 下载", bot.replies[-1][1])
 
-    def test_profile_command_does_not_depend_on_loaded_state_verification(self) -> None:
-        handler, bot = self._make_handler()
-        state = handler._get_runtime_state("ou_user", "c1")
-        with handler._lock:
-            state["current_thread_id"] = "thread-1"
-            state["current_thread_title"] = "demo"
-            state["feishu_runtime_state"] = "detached"
-        thread_snapshot = ThreadSnapshot(
-            summary=ThreadSummary(
-                thread_id="thread-1",
-                cwd="/tmp/project",
-                name="demo",
-                preview="hello",
-                created_at=0,
-                updated_at=0,
-                source="appServer",
-                status="notLoaded",
-            )
-        )
-        handler._adapter.thread_snapshots[("thread-1", None)] = thread_snapshot
-        handler._adapter.thread_snapshots[("thread-1", False)] = thread_snapshot
-        handler._runtime_admin._read_thread = lambda thread_id: thread_snapshot
-        handler.handle_message("ou_user", "c1", "/profile provider2")
-
-        _, card = bot.cards[-1]
-        content = card["elements"][0]["content"]
-        self.assertIn("已设置当前实例的 startup profile：`provider2`", content)
-
     def test_prompt_after_switching_back_to_default_uses_default_collaboration_mode(self) -> None:
         handler, _ = self._make_handler()
 
@@ -5550,7 +5364,6 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.resume_thread_calls[-1],
             {
                 "thread_id": "thread-1",
-                "profile": None,
                 "config_overrides": {"model_reasoning_effort": "high"},
                 "model": "gpt-5.5",
                 "model_provider": None,
@@ -5657,7 +5470,6 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.resume_thread_calls[-1],
             {
                 "thread_id": "thread-1",
-                "profile": None,
                 "config_overrides": {"model_reasoning_effort": "high"},
                 "model": "gpt-5.5",
                 "model_provider": None,
@@ -5729,7 +5541,6 @@ class CodexHandlerTests(unittest.TestCase):
             handler._adapter.resume_thread_calls[-1],
             {
                 "thread_id": "thread-1",
-                "profile": None,
                 "config_overrides": None,
                 "model": None,
                 "model_provider": None,
@@ -6543,7 +6354,7 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["查看 Goal", "改 Profile", "压缩上下文"],
+            ["查看 Goal", "压缩上下文"],
         )
 
     def test_help_runtime_mentions_permissions_as_recommended_entry(self) -> None:
@@ -6744,7 +6555,7 @@ class CodexHandlerTests(unittest.TestCase):
         action_elements = self._action_elements(response["card"])
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],
-            ["查看 Goal", "改 Profile", "压缩上下文"],
+            ["查看 Goal", "压缩上下文"],
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[1]["actions"]],

@@ -1,24 +1,12 @@
-# 运行时设置的事实源与生效边界
+# Runtime 设置事实源与生效边界
 
 英文原文：`docs/contracts/runtime-settings-fact-sources.md`
 
-本文定义当前项目在“设置写入后，哪里才算事实源”这个问题上的统一口径。
+本文定义统一规则：一个设置写入之后，哪一层才是它的权威事实源？
 
-## 1. 当前只保留两类可写设置
+## 1. 只剩一个可写设置族
 
-### 1.1 实例 startup baseline
-
-当前唯一正式成员：
-
-- managed backend startup profile
-
-它的特点是：
-
-- 作用对象是实例，不是 thread
-- 写后持久化在实例配置里
-- 真正生效点是 backend 启动或 reset 后重启
-
-### 1.2 binding-wise next-turn settings
+### 1.1 binding-wise next-turn settings
 
 当前正式成员：
 
@@ -28,86 +16,70 @@
 - permissions
 - collaboration mode
 
-它们的特点是：
+它们的属性：
 
-- 作用对象是当前飞书 binding
-- 写后持久化在 binding runtime settings
-- 主生效点是 `turn/start`
+- 作用域是当前 Feishu binding
+- 持久化在 binding runtime settings 中
+- 主要在 `turn/start` 被消费
 
-## 2. 当前不再保留项目自管的 thread-wise next-load 设置
+## 2. 本项目不再拥有任何 thread-wise next-load setting
 
-以下能力已经移除，不再是本项目合同的一部分：
+下列表面已被移出本项目合同：
 
+- 历史上的项目自管 profile 命令
 - `/memory`
 - `feishu-codexctl thread memory`
 - `new_thread_memory_mode_seed`
-- `ThreadMemoryModeStore`
-- 项目自管的 thread 级 memory/provider 恢复状态
+- 任何项目自管的 thread-level memory/provider/profile restore state
 
-因此，当前项目不会再维护一份“下次 resume 某个 thread 时，本项目额外注入什么 memory 配置”的持久化事实源。
+因此，本项目不再维护“某个 thread 下次 resume 时还会额外注入什么配置”这类
+持久化事实源。
 
-## 3. 仍然存在的一类只读事实：live runtime / upstream snapshot
+## 3. 只读事实族：live runtime / upstream snapshot
 
-有些信息仍然会被本项目读取，但它们不是本项目持久化设置：
+有些值仍会被读取，但它们不是项目自管的持久化设置：
 
-- 当前 loaded backend 的 live 状态
+- live loaded-backend state
 - 上游 thread snapshot
-- 上游 `config/read` 读到的 runtime 视图
+- 上游 `config/read` 返回的 runtime view
 
-这些值可用于：
+这些值可以展示在：
 
 - `/status`
-- 调试输出
-- 诊断卡片
+- diagnostics
+- admin cards
 
-但它们不应被解释成：
+但不得把它们当成：
 
-- 本项目自己的可写设置层
-- 飞书 `/profile` 或 `/model` 之类命令的持久化事实源
+- 一个可写的项目设置层
+- 某个已移除 legacy profile 命令背后的持久化事实源
 
-## 4. 两类可写设置对照表
+## 4. 可写设置表
 
-| 设置类 | 写后持久源 | 正式生效边界 | 主要读侧 |
+| 设置族 | 持久化源 | 正式生效边界 | 主要读侧 |
 | --- | --- | --- | --- |
-| 实例 startup profile | 实例配置 `managed_startup_profile` | backend 启动 / reset 后重启 | `/profile`、`/status`、本地实例诊断 |
-| binding-wise next-turn | 当前 binding 的持久化 runtime settings | `turn/start` | `/status`、设置卡片、preflight |
+| binding-wise next-turn | 当前 binding 的 persisted runtime settings | `turn/start` | `/status`、setting cards、preflight |
 
-## 5. 实例 startup baseline 的判断原则
+## 5. binding-wise next-turn 的判定规则
 
-如果问题是在问：
+如果问题是：
 
-- “这个实例下次启动 backend 会吃什么基线”
+- “这个 Feishu chat 的下一轮 turn 会使用什么 model / effort / permissions？”
 
-先看：
+首先看：
 
-- 实例配置里的 startup profile
+- 当前 binding 的 persisted runtime settings
 
-不要先看：
+在这个设置族里：
 
-- 当前 thread
-- 当前飞书会话的 turn-time override
+- `auto` 仍表示“不显式 override”
+- 它不再映射到任何项目自管 thread-level persisted state
 
-## 6. binding-wise next-turn 的判断原则
+## 6. 一条维护规则
 
-如果问题是在问：
+如果将来要新增设置，必须先被归类为且只归类为：
 
-- “这个飞书会话下一轮会带什么 model / effort / permissions”
+1. binding-wise next-turn settings
+2. 只读诊断视图
 
-先看：
-
-- 当前 binding 的持久化 runtime settings
-
-其中：
-
-- `auto` 的语义仍是“不显式覆盖”
-- 它不再对应任何项目自管的 thread 级持久化状态
-
-## 7. 一条维护规则
-
-后续若再新增设置，必须先明确它属于哪一类：
-
-1. 实例 startup baseline
-2. binding-wise next-turn settings
-3. 只读诊断视图
-
-在没有完成归类之前，不应把它做成新的命令面或持久化状态层。
+在这个归类存在之前，该设置不得成为新的命令面或新的项目持久化状态层。

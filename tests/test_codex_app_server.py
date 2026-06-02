@@ -4,7 +4,6 @@ import queue
 import tempfile
 import threading
 import time
-import tomllib
 import unittest
 from typing import get_type_hints
 from websockets.datastructures import Headers
@@ -20,12 +19,10 @@ from bot import process_utils
 from bot.adapters.base import (
     RuntimeConfigSummary,
     RuntimeModelSummary,
-    RuntimeProfileSummary,
     ThreadGoalSummary,
     ThreadSummary,
 )
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
-from bot.codex_config_reader import ResolvedProfileConfig
 from bot.codex_command_resolver import DEFAULT_CODEX_COMMAND
 from bot.codex_protocol.client import CodexRpcClient, CodexRpcError
 from bot.fcodex import (
@@ -162,54 +159,25 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "default_thread_memory_mode"):
             CodexAppServerConfig.from_dict({"default_thread_memory_mode": "read"})
 
-    def test_create_thread_can_attach_profile_override(self) -> None:
+    def test_from_dict_rejects_removed_managed_startup_profile(self) -> None:
+        with self.assertRaisesRegex(ValueError, "managed_startup_profile"):
+            CodexAppServerConfig.from_dict({"managed_startup_profile": "work"})
+
+    def test_create_thread_merges_memory_config_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        with patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
-        ):
-            adapter.create_thread(cwd="/tmp/project", profile="provider2")
-
-        self.assertEqual(
-            fake_rpc.calls[0],
-            (
-                "thread/start",
-                {
-                    "cwd": "/tmp/project",
-                    "permissions": ":danger-full-access",
-                    "approvalPolicy": "never",
-                    "approvalsReviewer": "user",
-                    "personality": "pragmatic",
-                    "serviceName": "feishu-codex",
-                    "model": "provider2-model",
-                    "modelProvider": "provider2_api",
-                },
-            ),
+        adapter.create_thread(
+            cwd="/tmp/project",
+            config_overrides={
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": False,
+                }
+            },
         )
 
-    def test_create_thread_merges_profile_with_memory_config_overrides(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        with patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
-        ):
-            adapter.create_thread(
-                cwd="/tmp/project",
-                profile="provider2",
-                config_overrides={
-                    "memories": {
-                        "use_memories": True,
-                        "generate_memories": False,
-                    }
-                }
-            )
-
         self.assertEqual(
             fake_rpc.calls[0],
             (
@@ -221,8 +189,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
                     "serviceName": "feishu-codex",
-                    "model": "provider2-model",
-                    "modelProvider": "provider2_api",
                     "config": {
                         "memories": {
                             "use_memories": True,
@@ -240,7 +206,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
 
         adapter.create_thread(
             cwd="/tmp/project",
-            profile="provider2",
             model="gpt-5.4",
             model_provider="provider2_api",
         )
@@ -301,29 +266,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertNotIn("permissions", fake_rpc.calls[1][1])
         self.assertEqual(fake_rpc.calls[1][1]["sandbox"], "danger-full-access")
 
-    def test_resume_thread_can_attach_profile_override(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        with patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
-        ):
-            adapter.resume_thread("thread-1", profile="provider2")
-
-        self.assertEqual(
-            fake_rpc.calls[0],
-            (
-                "thread/resume",
-                {
-                    "threadId": "thread-1",
-                    "model": "provider2-model",
-                    "modelProvider": "provider2_api",
-                },
-            ),
-        )
-
     def test_resume_thread_can_attach_model_and_provider_hints(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
@@ -347,25 +289,20 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
-    def test_resume_thread_merges_profile_with_memory_config_overrides(self) -> None:
+    def test_resume_thread_merges_memory_config_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        with patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            return_value=ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
-        ):
-            adapter.resume_thread(
-                "thread-1",
-                profile="provider2",
-                config_overrides={
-                    "memories": {
-                        "use_memories": True,
-                        "generate_memories": True,
-                    }
+        adapter.resume_thread(
+            "thread-1",
+            config_overrides={
+                "memories": {
+                    "use_memories": True,
+                    "generate_memories": True,
                 }
-            )
+            },
+        )
 
         self.assertEqual(
             fake_rpc.calls[0],
@@ -373,8 +310,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 "thread/resume",
                 {
                     "threadId": "thread-1",
-                    "model": "provider2-model",
-                    "modelProvider": "provider2_api",
                     "config": {
                         "memories": {
                             "use_memories": True,
@@ -657,24 +592,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(params["collaborationMode"]["mode"], "default")
         self.assertEqual(params["collaborationMode"]["settings"]["model"], "gpt-5.3-codex")
 
-    def test_start_turn_drops_unsupported_profile_override(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        adapter.start_turn(
-            thread_id="thread-1",
-            input_items=[{"type": "text", "text": "hello"}],
-            cwd="/tmp",
-            profile="provider2",
-        )
-
-        self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
-        self.assertEqual(fake_rpc.calls[1][0], "turn/start")
-        self.assertNotIn("config", fake_rpc.calls[1][1])
-        self.assertNotIn("modelProvider", fake_rpc.calls[1][1])
-
-    def test_start_turn_uses_model_but_drops_profile_and_provider_overrides(self) -> None:
+    def test_start_turn_uses_model_but_drops_provider_override(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -685,7 +603,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             cwd="/tmp",
             model="provider2-model",
             model_provider="provider2_api",
-            profile="provider2",
         )
 
         self.assertEqual(fake_rpc.calls[0][0], "turn/start")
@@ -767,58 +684,15 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
-    def test_read_runtime_config_parses_profiles_and_memory_mode(self) -> None:
+    def test_read_runtime_config_parses_model_provider_and_memory_mode(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
 
-        with patch(
-            "bot.adapters.codex_app_server.list_profile_v2_names",
-            return_value=["provider1", "provider2"],
-        ), patch(
-            "bot.adapters.codex_app_server.profile_v2_is_usable",
-            side_effect=[True, True],
-        ), patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            side_effect=[
-                ResolvedProfileConfig(model="provider1-model", model_provider="provider1_api"),
-                ResolvedProfileConfig(model="provider2-model", model_provider="provider2_api"),
-            ],
-        ):
-            runtime = adapter.read_runtime_config()
+        runtime = adapter.read_runtime_config()
 
-        self.assertEqual(runtime.current_profile, "provider1")
         self.assertEqual(runtime.current_model_provider, "provider1_api")
         self.assertEqual(runtime.current_memory_mode, "read")
-        self.assertEqual(
-            [(item.name, item.model_provider) for item in runtime.profiles],
-            [("provider1", "provider1_api"), ("provider2", "provider2_api")],
-        )
-
-    def test_read_runtime_config_skips_non_concrete_profile_candidates(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        with patch(
-            "bot.adapters.codex_app_server.list_profile_v2_names",
-            return_value=["provider1", "broken"],
-        ), patch(
-            "bot.adapters.codex_app_server.profile_v2_is_usable",
-            side_effect=[True, False],
-        ), patch(
-            "bot.adapters.codex_app_server.resolve_profile_from_codex_config",
-            side_effect=[
-                ResolvedProfileConfig(model="provider1-model", model_provider="provider1_api"),
-                ResolvedProfileConfig(model="broken-model", model_provider=""),
-            ],
-        ):
-            runtime = adapter.read_runtime_config()
-
-        self.assertEqual(
-            [(item.name, item.model_provider) for item in runtime.profiles],
-            [("provider1", "provider1_api")],
-        )
 
     def test_list_models_reads_visible_models(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -835,15 +709,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 RuntimeModelSummary(model="gpt-5.4", display_name=None, is_default=False, hidden=False),
             ],
         )
-
-    def test_set_active_profile_is_unsupported(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig())
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        with self.assertRaisesRegex(RuntimeError, "active profile"):
-            adapter.set_active_profile("provider2")
-        self.assertEqual(fake_rpc.calls, [])
 
     def test_stop_clears_cached_models(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -1357,52 +1222,6 @@ class CodexRpcClientTests(unittest.TestCase):
             self.assertEqual(
                 resolve_effective_app_server_url("ws://127.0.0.1:8765", data_dir=Path(tmpdir)),
                 fallback_url,
-            )
-
-    def test_managed_process_env_materializes_selected_startup_profile_into_synthetic_codex_home(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as codex_tmpdir:
-            codex_home = Path(codex_tmpdir)
-            original_config_text = (
-                """
-model_provider = "custom"
-model = "gpt-5.4"
-
-[mcp_servers.docs]
-command = "docs-base"
-""".lstrip()
-            )
-            (codex_home / "config.toml").write_text(
-                original_config_text.lstrip(),
-                encoding="utf-8",
-            )
-            (codex_home / "moonbridge.config.toml").write_text(
-                """
-model_provider = "moonbridge"
-model = "deepseek-v4-flash"
-
-[mcp_servers.docs]
-args = ["--profile"]
-""".lstrip(),
-                encoding="utf-8",
-            )
-            client = CodexRpcClient(
-                app_server_data_dir=Path(tmpdir),
-                managed_startup_profile="moonbridge",
-            )
-
-            with patch.dict("os.environ", {"CODEX_HOME": codex_tmpdir}, clear=False):
-                env = client._managed_process_env()
-
-            synthetic_home = Path(env["CODEX_HOME"])
-            merged = tomllib.loads((synthetic_home / "config.toml").read_text(encoding="utf-8"))
-            self.assertEqual(merged["model_provider"], "moonbridge")
-            self.assertEqual(merged["model"], "deepseek-v4-flash")
-            self.assertEqual(merged["mcp_servers"]["docs"]["command"], "docs-base")
-            self.assertEqual(merged["mcp_servers"]["docs"]["args"], ["--profile"])
-            self.assertTrue((synthetic_home / "moonbridge.config.toml").exists())
-            self.assertEqual(
-                (codex_home / "config.toml").read_text(encoding="utf-8"),
-                original_config_text.lstrip(),
             )
 
     def test_reader_loop_notifies_disconnect_once_for_unexpected_close(self) -> None:

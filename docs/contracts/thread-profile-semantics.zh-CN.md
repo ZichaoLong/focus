@@ -1,93 +1,103 @@
-# Startup Profile 语义
+# Thread 与 Resume 语义
 
 英文原文：`docs/contracts/thread-profile-semantics.md`
 
-说明：本文件沿用历史文件名，但当前定义的已经不是“thread-wise profile”，而是
-**managed backend 的实例级 startup profile**。
+本文件保留历史文件名，但已不再定义任何项目自管 `profile` 功能。它现在记录
+`/threads`、`/resume`、`/archive` 与本地 shared-backend continuation 的语义。
 
-## 1. 定义
+## 1. 当前范围
 
-- startup profile 是 **实例级** 设置，不是 thread-wise 状态。
-- 它只适用于 `app_server_mode=managed` 的实例。
-- 它的事实源是实例配置里的 `managed_startup_profile`。
-- 它的取值空间来自共享 `CODEX_HOME` 下可用的 profile-v2 名称。
-- 它的作用是：为下一次启动的 managed backend 提供一层启动基线。
+本文定义的是：
 
-它不表示：
+- 飞书侧 thread 浏览怎么工作
+- `/resume` 现在承诺什么
+- `/archive` 会改什么
+- 本地 `fcodex resume` 在 shared-backend 模型里的含义
 
-- 当前 thread 的 next-load profile
-- 当前 Feishu 会话的 turn-time override
-- 当前已加载 backend 的即时 live truth
+本文不定义：
 
-## 2. `/profile` 与 `/profile-clear`
+- 任何项目自管 profile 设置
+- 任何项目自管 thread-wise next-load 设置
+- 对上游 `codex --profile` 的本地镜像
 
-飞书侧：
+## 2. thread identity 与 ownership
 
-- `/profile`
-  - 无参数：查看当前实例的 startup profile 与可选 profile 列表
-  - 带参数：把当前实例的 startup profile override 改为目标 profile
-- `/profile-clear`
-  - 清空当前实例的 startup profile override
-  - 回落到共享 `CODEX_HOME/config.toml` 顶层默认配置
+本项目始终区分三件事：
 
-这些命令：
+1. thread identity
+   - 来自上游 Codex 的 thread 元数据
+2. Feishu binding
+   - 决定当前聊天逻辑上指向哪个 thread
+3. live runtime ownership
+   - 决定哪个 backend 当前实际承载这个 loaded thread
 
-- 不直接改写当前 thread
-- 不写 thread-wise 持久化状态
-- 不保证当前已加载 backend 立即变更
+这三者不得混淆。
 
-## 3. 何时生效
+## 3. `/threads`
 
-startup profile 会在以下边界被消费：
+`/threads` 是当前工作目录的 thread 浏览面。
 
-- managed backend 启动
-- managed backend reset 后重启
+它会：
 
-因此：
+- 列出当前目录上下文里的候选线程
+- 帮助用户选择后续要 resume 或 archive 的线程
+- 自身不直接改 runtime settings
 
-- 改完 `/profile` 后，下一次 managed backend 启动才会真正吃到它
-- 若希望当前实例立刻切过去，应再执行 reset backend
+## 4. `/resume`
 
-## 4. reset backend 后的可观察结果
+`/resume <thread_id|thread_name>` 现在只承诺：
 
-当用户通过 `/profile` 或 `/profile-clear` 选择“应用并重置 backend”时：
+- 解析目标线程
+- 在 live reuse 之前做跨实例安全准入
+- 对着正确的 backend 做恢复
+- 把当前飞书会话绑定到该线程
 
-- 新 backend 会按新的 startup profile 启动
-- 若当前 bookmark 指向正常 thread，binding bookmark 保留
-- 若当前 bookmark 仍是 provisional shell，或该 thread 已不存在，实现可在 reset 恢复时清空当前会话 bookmark
-- 当前实例的相关飞书推送会先变成 `detached`
-- 结果卡会继续提供 `附着当前线程` / `附着当前实例` / `保持 detached`
+它不再承诺：
 
-这一步改变的是：
+- 回放项目自管的 profile slice
+- 回放项目自管的 memory/provider slice
+- 重建任何由本项目拥有的 thread-level setting layer
 
-- backend 进程启动基线
+如果目标线程已经加载在当前 backend 中，resume 直接复用该 live runtime。
+如果当前未加载，则在通过仓库定义的安全闸门后，调用上游 `thread/resume` 恢复。
 
-不是：
+## 5. `/archive`
 
-- 某个 thread 的逻辑身份
-- 某个会话的绑定关系
+`/archive [thread_id|thread_name]` 用于归档当前线程或显式指定的目标线程。
 
-## 5. 与其他设置的边界
+它会：
 
-当前项目当前只保留两类可写设置：
+- 改 Codex 里的 thread archive 状态
+- 在当前线程被归档时，按需要清理或更新当前 binding
 
-1. 实例 startup baseline
-   - 本文件定义的 startup profile
-2. binding-wise next-turn 设置
-   - `docs/contracts/runtime-control-surface.zh-CN.md`
+它不会：
 
-`/profile` 只属于第 1 类。
+- 修改 runtime-setting family
+- 隐含任何 profile 或 memory 语义
 
-## 6. 非目标
+## 6. 本地 `fcodex` continuation
 
-当前合同明确不再承诺：
+`fcodex resume <thread_id|thread_name>` 是 live shared-backend thread 的本地继续入口。
 
-- “profile 是 thread-wise next-load truth”
-- “同一个 thread resume 时应自动沿用持久化 profile slice”
-- “飞书侧 `/profile` 与本地 `fcodex -p` 在语义上等价”
-- “只要 thread unloaded，就能在本项目里把 profile 当 thread 设置来写”
+它承诺：
 
-本项目现在把这些旧心智收缩为：
+- 相同的 thread identity 解析模型
+- 相同的跨实例 loaded/runtime 安全检查
+- 把本地 TUI continuation 接到正确的 backend 上
 
-- startup profile 只管理 managed backend 的启动基线
-- 不再保留项目自管的 thread-wise next-load 设置层
+`fcodex -p/--profile` 仍只保留为上游 Codex 的启动参数。
+本项目不会持久化它、不会把它映射进飞书，也不会把它当成 thread truth。
+
+## 7. 非目标
+
+本项目不再承诺：
+
+- “飞书 `/resume` 会回放旧 thread profile”
+- “飞书与 `fcodex` 共享一个项目自管的 profile 事实源”
+- “thread unloaded 后仍带着一个项目自管的 next-load profile 层”
+
+当前合同是刻意收窄的：
+
+- thread identity 归上游所有
+- resume safety 归本仓库所有
+- turn-time override 归 binding 所有

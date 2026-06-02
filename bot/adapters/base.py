@@ -46,12 +46,6 @@ class ThreadGoalSummary:
 
 
 @dataclass(slots=True)
-class RuntimeProfileSummary:
-    name: str
-    model_provider: str | None = None
-
-
-@dataclass(slots=True)
 class RuntimeModelSummary:
     model: str
     display_name: str | None = None
@@ -61,10 +55,8 @@ class RuntimeModelSummary:
 
 @dataclass(slots=True)
 class RuntimeConfigSummary:
-    current_profile: str | None = None
     current_model_provider: str | None = None
     current_memory_mode: str | None = None
-    profiles: list[RuntimeProfileSummary] = field(default_factory=list)
 
 
 class TextTurnInputItem(TypedDict):
@@ -96,7 +88,6 @@ class AgentAdapter(ABC):
         self,
         *,
         cwd: str,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -110,7 +101,6 @@ class AgentAdapter(ABC):
         self,
         thread_id: str,
         *,
-        profile: str | None = None,
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -181,11 +171,6 @@ class AgentAdapter(ABC):
     ) -> None:
         ...
 
-    @abstractmethod
-    def set_active_profile(self, profile: str) -> RuntimeConfigSummary:
-        ...
-
-    @abstractmethod
     def compact_thread(self, thread_id: str) -> None:
         ...
 
@@ -205,7 +190,6 @@ class AgentAdapter(ABC):
         cwd: str | None = None,
         model: str | None = None,
         model_provider: str | None = None,
-        profile: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         reasoning_effort: str | None = None,

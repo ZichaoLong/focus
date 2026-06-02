@@ -101,7 +101,6 @@
   - `/resume`
   - `/detach`
   - `/reset-backend`
-  - `/profile`
   - `/approval`
   - `/permissions`
   - 群激活与群工作态管理命令

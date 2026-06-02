@@ -1,34 +1,26 @@
-# Thread Next-Load Settings 语义
+# Thread Next-Load 设置语义
 
 英文原文：`docs/contracts/thread-next-load-settings-semantics.md`
 
-本文保留原文件名，作为退役说明。
+本文件以历史名称保留，作为退役说明。
 
 ## 1. 当前结论
 
-本项目现在**不再保留任何项目自管的 thread-wise next-load 设置**。
+本项目已经不再保留任何项目自管的 thread-wise next-load setting。
 
-也就是说，当前正式合同里已经没有：
+这意味着正式合同里已不再包括：
 
-- thread memory setting
-- thread provider setting
+- 任何 thread memory setting
+- 任何 thread provider setting
+- 任何 thread profile setting
 - `new_thread_memory_mode_seed`
-- 任何“先持久化到本项目，再在下次 resume 时额外注入”的 thread 级设置层
+- 任何先由本项目持久化、再在 resume 时重新注入的 thread-level setting layer
 
-## 2. 现在由哪两层替代
+## 2. 现在还剩什么
 
-### 2.1 实例 startup baseline
+### 2.1 binding-wise next-turn settings
 
-由 `/profile` / `/profile-clear` 管理。
-
-它的语义是：
-
-- 作用于实例 backend 的下次启动
-- 不是 thread 真相
-
-### 2.2 binding-wise next-turn settings
-
-由：
+通过以下入口管理：
 
 - `/model`
 - `/effort`
@@ -36,42 +28,49 @@
 - `/permissions`
 - `/collab-mode`
 
-管理。
+它们的语义：
 
-它们的语义是：
+- 只作用于当前 Feishu binding 的后续 turn
+- 主要在 `turn/start` 被消费
+- 不是 thread-level persisted restore settings
 
-- 作用于当前飞书会话后续 turn
-- 主生效点是 `turn/start`
-- 不是 thread 级持久化恢复设置
+### 2.2 上游拥有的 process 与 thread 状态
 
-## 3. `resume` 的当前合同
+如果操作者想使用上游 profile/provider 或 memory 行为，应直接使用上游
+Codex 配置、上游 profile-v2 文件，或上游启动参数。
 
-本项目支持的恢复路径当前只承诺：
+本项目不会把这些选择镜像成一个项目自管 next-load 层。
 
-- 做 thread 身份解析与安全准入
-- 恢复到正确实例 backend
-- 保留实例级 startup baseline 与当前 frontend 自己的运行时语义
+## 3. 当前 `resume` 合同
 
-它不再承诺：
+本项目支持的 resume 路径现在只承诺：
 
-- 为某个 thread 额外恢复一份本项目持久化的 memory/provider 设置
+- 线程身份解析与安全准入
+- 对着正确的实例 backend 做恢复
+- 保持 frontend 自己的 runtime 语义
 
-## 4. 为什么保留这个文件
+它们不承诺：
 
-因为“thread-wise next-load 设置”这个概念本身仍然重要：
+- 为某个 thread 恢复额外的项目自管 profile/memory/provider slice
 
-- 它提醒维护者不要把实例基线、binding override、live runtime 诊断混为一谈
+## 4. 为何本文件仍保留
 
-但在当前版本里，这一类设置的正式成员数是：
+“thread-wise next-load settings” 这个概念仍然有价值，因为它能阻止维护者混淆：
+
+- binding overrides
+- live-runtime diagnostics
+- 上游拥有的 process state
+
+但在当前版本里，这个类别中的正式成员数量是：
 
 - `0`
 
-## 5. 后续维护规则
+## 5. 未来维护规则
 
-如果将来要重新引入某个 thread-wise next-load 设置，必须先明确：
+如果未来要重新引入 thread-wise next-load setting，项目必须先文档化：
 
-1. 写后持久源是什么
-2. 正式生效边界是什么
-3. 与实例 baseline、binding override 如何区分
+1. 写入后的持久化事实源
+2. 正式生效边界
+3. 它与 binding overrides 以及上游 process state 的区别
 
-在文档先收敛之前，不应直接恢复命令面。
+在这些内容存在之前，命令面不得重新引入它。

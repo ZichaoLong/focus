@@ -178,7 +178,7 @@ feishu-codex config init-token
 - 发送 `/help` 或 `/h` 看可用命令导航
 - 发送 `/commands` 看可用命令列表
 - 直接发送普通文本开始对话
-- 手动发送命令 `/new`、`/resume`、`/cd` 管理当前会话绑定的 thread；`/profile` 用于切换当前实例 managed backend 的 startup profile
+- 手动发送命令 `/new`、`/resume`、`/cd` 管理当前会话绑定的 thread
 - 如果想让同一个机器人同时服务多个项目，建议为每个项目单独建一个群聊；每个群聊固定在自己的目录和 thread 上，避免在单聊里反复 `/cd`、`/resume`
 - 群聊里管理员先用 `/group activate` 激活，再按群模式使用
 
@@ -236,7 +236,7 @@ fcodex --instance corp-a
 
 - 命名实例只读取自己实例目录下的 `system.yaml` / `codex.yaml`
 - 它不会继承 `default` 实例的 `codex.yaml`
-- 真实 `codex.yaml` 是实例级 override 文件；后续通过 `/profile` 等入口保存后，文件可能只保留显式设置过的键
+- 真实 `codex.yaml` 是实例级 override 文件；通常只保留显式设置过的键
 - 如需查看完整可配项，应看同目录 `codex.yaml.example`
 
 所有实例共享：

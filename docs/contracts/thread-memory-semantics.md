@@ -19,9 +19,9 @@ The following entry points are no longer part of the formal contract:
 
 If an operator wants to change upstream memory/provider-related behavior, use:
 
-- the instance startup profile
-- upstream `~/.codex/config.toml`
-- profile-v2
+- upstream Codex config
+- upstream profile-v2 files
+- upstream launch parameters outside this project's command surface
 
 If an operator wants to change future-turn behavior for one Feishu binding, use:
 

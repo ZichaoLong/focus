@@ -12,8 +12,6 @@ import subprocess
 import sys
 import venv
 
-from bot.platform_paths import default_data_root
-
 _DEFAULT_PIP_EXTRA_INDEX_URL = "https://pypi.org/simple"
 
 
@@ -43,8 +41,8 @@ def _recreate_venv(venv_dir: pathlib.Path) -> None:
     venv.EnvBuilder(with_pip=True).create(venv_dir)
 
 
-def _run_checked(command: list[str]) -> None:
-    subprocess.run(command, check=True)
+def _run_checked(command: list[str], *, env: dict[str, str] | None = None) -> None:
+    subprocess.run(command, check=True, env=env)
 
 
 def _run_pip_install(venv_python: pathlib.Path, *args: str) -> None:
@@ -101,6 +99,8 @@ def _ensure_venv_pip(venv_python: pathlib.Path) -> None:
 def main() -> None:
     _ensure_supported_python()
     install_dir = pathlib.Path(__file__).resolve().parent
+    from bot.platform_paths import default_data_root
+
     venv_dir = default_data_root() / ".venv"
     if not _venv_is_complete(venv_dir):
         _recreate_venv(venv_dir)

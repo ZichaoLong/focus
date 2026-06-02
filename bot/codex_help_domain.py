@@ -20,8 +20,6 @@ from bot.runtime_state import FEISHU_RUNTIME_DETACHED
 from bot.shared_command_surface import get_shared_command
 
 
-_SHARED_PROFILE_COMMAND = get_shared_command("profile")
-_SHARED_PROFILE_CLEAR_COMMAND = get_shared_command("profile-clear")
 _SHARED_RESET_BACKEND_COMMAND = get_shared_command("reset-backend")
 _SHARED_PREFLIGHT_COMMAND = get_shared_command("preflight")
 _SHARED_ARCHIVE_COMMAND = get_shared_command("archive")
@@ -46,9 +44,6 @@ _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 _CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
 _RENAME_COMMAND = feishu_visible_command_syntax("/rename <title>")
-_PROFILE_WITH_NAME_COMMAND = feishu_visible_command_syntax("/profile <name>")
-
-
 @dataclass(frozen=True)
 class _HelpPageButtonSpec:
     label: str
@@ -233,12 +228,10 @@ class CodexHelpDomain:
             "thread-settings": _HelpPageSpec(
                 title="Codex 工作台：线程设置",
                 markdown=(
-                    "处理当前绑定 thread 的 goal、实例 startup profile、压缩、重命名与归档。\n\n"
+                    "处理当前绑定 thread 的 goal、压缩、重命名与归档。\n\n"
                     "新建、恢复、浏览线程与切换目录，请到“开始”。\n\n"
                     f"当前 goal 可通过 `{_SHARED_GOAL_COMMAND.slash_name}` 查看，"
-                    f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。\n\n"
-                    f"如需切换当前实例 managed backend 的 startup profile，可直接使用 `{_PROFILE_WITH_NAME_COMMAND}`；"
-                    f"如需清空 startup profile override，可直接使用 `{_SHARED_PROFILE_CLEAR_COMMAND.slash_name}`。"
+                    f"也可直接使用 `{_SHARED_GOAL_COMMAND.feishu_usage}`。"
                 ),
                 action_rows=(
                     _HelpActionRowSpec(
@@ -247,11 +240,6 @@ class CodexHelpDomain:
                                 label="查看 Goal",
                                 command="/goal",
                                 title="Codex Goal",
-                            ),
-                            _HelpCommandButtonSpec(
-                                label="改 Profile",
-                                command="/profile",
-                                title="Codex Backend Startup Profile",
                             ),
                             _HelpCommandButtonSpec(
                                 label="压缩上下文",
@@ -960,7 +948,6 @@ class CodexHelpDomain:
                 "- `/cd [path]`\n\n"
                 "`线程设置`\n"
                 f"- `{_SHARED_GOAL_COMMAND.feishu_usage}`\n"
-                f"- `{_SHARED_PROFILE_COMMAND.feishu_usage}`\n"
                 f"- `{_SHARED_COMPACT_COMMAND.feishu_usage}`\n"
                 "- `/rename <title>`\n"
                 f"- `{_SHARED_ARCHIVE_COMMAND.feishu_usage}`\n\n"

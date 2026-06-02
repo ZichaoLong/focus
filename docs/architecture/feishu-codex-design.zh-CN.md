@@ -134,7 +134,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/interaction_request_controller.py`：审批 / 用户输入这类交互请求的 pending 状态与 fail-close 收口
 - `bot/codex_threads_ui_domain.py`：当前目录线程卡片 UI 流程，包括重命名表单这类瞬时 UI 状态，以及通过 `RuntimeLoop` 串行化的 resume 目标解析
 - `bot/codex_goal_domain.py`：thread-level `/goal` 读写面、goal 卡片生成流程，以及当前 binding 的本地 goal 投影更新
-- `bot/codex_settings_domain.py`：用户侧设置与身份命令，包括 `/profile`、`/approval`、`/permissions`、`/collab-mode`、`/whoami` 与 `/init`；它通过显式 `SettingsDomainPorts` 穿过 bot/runtime/profile 边界，而不是继续持有宽泛的 handler owner
+- `bot/codex_settings_domain.py`：用户侧设置与身份命令，包括 `/model`、`/effort`、`/approval`、`/permissions`、`/collab-mode`、`/whoami` 与 `/init`；它通过显式 `SettingsDomainPorts` 穿过 bot/runtime 边界，而不是继续持有宽泛的 handler owner
 - `bot/execution_transcript.py`：执行卡片展示层的内部 transcript 组装器；负责 display-only 的 `reply_segments` / `process_log` 片段拼装，并支持在权威终态结果已经单独送达后，把最后一段最终答案从 execution card 的 reply 面板里剔除；它不承担 thread、owner 或 binding 级状态职责
 - `bot/stores/generated_image_delivery_store.py`：每实例的已投递生成图片账本；按 binding/thread/turn/item 去重，避免 reconcile 或重复终态信号下重复发图
 - `bot/stores/instance_registry_store.py`：机器级运行中实例注册表
@@ -275,7 +275,7 @@ shared backend 与 wrapper 的具体机制，见
 
 精确命令语义不在本文展开，而是交给专门文档：
 
-- `docs/contracts/thread-profile-semantics.zh-CN.md` 说明 `/threads`、`/resume`、`/profile`、`/archive` 与 wrapper 语义
+- `docs/contracts/thread-profile-semantics.zh-CN.md` 说明 `/threads`、`/resume`、`/archive` 与 wrapper 语义
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md` 说明当前 `/resume` 合同与 backend 安全规则
 
 本文只固定这些边界：
@@ -338,7 +338,7 @@ shared backend 与 wrapper 的具体机制，见
     schema、reducer message 与 Feishu/backend 运行时状态词汇的代码级单一事实源；
     其他模块应直接 import，而不是再各自定义局部 TypedDict 或半套字面量
   - 共享 UI / helper 边界：`cards.py`、`card_text_projection.py`、
-    `shared_command_surface.py`、`feishu_types.py`、`codex_config_reader.py`
+    `shared_command_surface.py`、`feishu_types.py`
   - wrapper 与服务管理路径：`fcodex.py`、`fcodex_proxy.py`、
     `feishu_codexctl.py`、`service_control_plane.py`、`instance_layout.py`、
     `instance_resolution.py`、`thread_resolution.py`、`binding_identity.py`

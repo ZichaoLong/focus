@@ -1,102 +1,108 @@
-# Startup Profile Semantics
+# Thread and Resume Semantics
 
 Chinese original: `docs/contracts/thread-profile-semantics.zh-CN.md`
 
-Note: this file keeps its historical filename, but it no longer defines a
-"thread-wise profile". It now defines the **instance-level startup profile for
-a managed backend**.
+This file keeps its historical filename, but it no longer defines any
+project-owned "profile" feature. It now records the semantics of `/threads`,
+`/resume`, `/archive`, and local shared-backend continuation.
 
-## 1. Definition
+## 1. Current scope
 
-- the startup profile is an **instance-level** setting, not thread-wise state
-- it only applies when `app_server_mode=managed`
-- its fact source is the instance config field `managed_startup_profile`
-- its value space is the set of usable profile-v2 names in the shared
-  `CODEX_HOME`
-- its purpose is to provide one startup baseline layer for the next managed
-  backend process
+This document defines:
 
-It does not mean:
+- how Feishu-side thread browsing works
+- what `/resume` promises
+- what `/archive` changes
+- what local `fcodex resume` means in the shared-backend model
 
-- the current thread's next-load profile
-- the current Feishu binding's turn-time override
-- the immediate live truth of an already loaded backend
+It does not define:
 
-## 2. `/profile` and `/profile-clear`
+- any project-owned profile setting
+- any project-owned thread-wise next-load setting
+- any local mirror of upstream `codex --profile`
 
-On the Feishu side:
+## 2. Thread identity and ownership
 
-- `/profile`
-  - without args: show the current instance startup profile and available
-    profile list
-  - with an arg: set the current instance startup-profile override
-- `/profile-clear`
-  - clear the current instance startup-profile override
-  - fall back to top-level defaults from shared `CODEX_HOME/config.toml`
+The project keeps three distinct concepts:
 
-These commands:
+1. thread identity
+   - comes from upstream Codex thread metadata
+2. Feishu binding
+   - decides which thread the current chat points to
+3. live runtime ownership
+   - decides which backend currently hosts the loaded thread
 
-- do not rewrite the current thread
-- do not write any thread-wise persisted state
-- do not guarantee immediate mutation of the currently loaded backend
+Those concepts must not be conflated.
 
-## 3. When it takes effect
+## 3. `/threads`
 
-The startup profile is consumed at:
+`/threads` is a browse surface for the current working directory.
 
-- managed backend startup
-- managed backend restart after reset
+It:
 
-Therefore:
+- lists candidate threads for the current directory context
+- helps the operator choose a thread to resume or archive
+- does not mutate runtime settings by itself
 
-- changing `/profile` only affects the next managed backend start
-- if the operator wants the current instance to switch immediately, they must
-  reset the backend
+## 4. `/resume`
 
-## 4. Observable result after backend reset
+`/resume <thread_id|thread_name>` now promises only:
 
-When the operator chooses "apply and reset backend" from `/profile` or
-`/profile-clear`:
+- resolving the intended thread
+- applying cross-instance safety admission before live reuse
+- resuming against the correct backend
+- binding the current Feishu chat to that thread
 
-- the new backend starts with the new startup profile
-- if the current bookmark points to a normal thread, the binding bookmark stays
-- if the current bookmark is still a provisional shell, or that thread no
-  longer exists, the implementation may clear the current binding bookmark as
-  part of reset recovery
-- relevant Feishu push paths become `detached` first
-- the result card offers `Attach Current Thread`, `Attach Current Instance`, and
-  `Keep Detached`
+It no longer promises:
 
-What changes here is:
+- replaying a project-owned profile slice
+- replaying a project-owned memory/provider slice
+- reconstructing any extra thread-level setting layer owned by this project
 
-- the backend process startup baseline
+If the target thread is already loaded in the current backend, resume reuses
+that live runtime directly. If it is not loaded, the implementation resumes it
+through upstream `thread/resume` after passing the repository's safety gates.
 
-What does not change here is:
+## 5. `/archive`
 
-- thread identity
-- binding identity
+`/archive [thread_id|thread_name]` archives the current thread or an explicit
+target thread.
 
-## 5. Boundary against other setting families
+It:
 
-The project now keeps only two writable setting families:
+- changes thread archival state in Codex
+- may clear or update the current binding when the current thread is archived
 
-1. instance startup baseline
-   - the startup profile defined here
-2. binding-wise next-turn settings
-   - `docs/contracts/runtime-control-surface.md`
+It does not:
 
-`/profile` belongs only to family 1.
+- change runtime-setting families
+- imply any profile or memory behavior
 
-## 6. Non-goals
+## 6. Local `fcodex` continuation
+
+`fcodex resume <thread_id|thread_name>` is the local continuation entry point
+for a live shared-backend thread.
+
+It promises:
+
+- the same thread identity resolution model
+- the same cross-instance loaded/runtime safety checks
+- attaching local TUI continuation to the correct backend
+
+`fcodex -p/--profile` still exists only as an upstream Codex launch parameter.
+This project does not persist it, reflect it into Feishu, or treat it as
+thread truth.
+
+## 7. Non-goals
 
 The project no longer promises:
 
-- "profile is thread-wise next-load truth"
-- "the same thread resume automatically reuses a persisted profile slice"
-- "Feishu `/profile` is semantically equivalent to local `fcodex -p`"
-- "once a thread is unloaded, profile can still be treated as a thread setting"
+- "Feishu `/resume` replays an old thread profile"
+- "Feishu and `fcodex` share a project-owned profile fact source"
+- "unloaded threads still carry a project-owned next-load profile layer"
 
-The new contract is deliberately narrower:
+The current contract is intentionally narrower:
 
-- startup profile only manages the managed backend startup baseline
-- the project no longer owns any thread-wise next-load setting layer
+- thread identity is upstream-owned
+- resume safety is repository-owned
+- turn-time overrides remain binding-owned

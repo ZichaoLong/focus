@@ -158,9 +158,8 @@ If the target thread is already loaded in the current `feishu-codex` backend:
   provider
 
 This is safe because the thread already lives in the same backend.
-If the operator later changes `/profile`, that only affects the next managed
-backend start or restart after reset. `resume` still does not reinterpret the
-loaded thread through an extra project-owned profile/provider slice.
+`resume` still does not reinterpret the loaded thread through an extra
+project-owned profile/provider slice.
 
 ### 6.3 Not loaded in current backend
 
@@ -179,8 +178,6 @@ Behavior:
   - busy / pending owner state must reject clearly
 - `resume` does not replay any extra project-owned thread-wise
   profile/memory/provider slice
-- the managed backend startup profile, if configured, has already taken effect
-  at backend start or restart rather than at `thread/resume`
 
 This path assumes:
 

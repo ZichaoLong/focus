@@ -161,7 +161,7 @@ class InstallTests(unittest.TestCase):
             def fake_run_checked(command: list[str]) -> None:
                 checked_calls.append(list(command))
 
-            with patch("install.default_data_root", return_value=data_root):
+            with patch("bot.platform_paths.default_data_root", return_value=data_root):
                 with patch("install._ensure_supported_python"):
                     with patch("install.pathlib.Path.resolve", return_value=install_script):
                         with patch("install._recreate_venv", side_effect=fake_recreate):
