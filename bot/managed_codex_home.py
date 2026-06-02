@@ -5,7 +5,11 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from bot.codex_config_reader import codex_home_dir, normalize_profile_v2_name, read_profile_v2_text
+from bot.codex_config_reader import (
+    codex_home_dir,
+    materialize_profile_v2_text,
+    normalize_profile_v2_name,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,18 +32,16 @@ def prepare_managed_codex_home(
     if real_codex_home is None:
         raise RuntimeError("无法解析 CODEX_HOME。")
 
-    managed_config_text = read_profile_v2_text(normalized_profile)
+    merged_config_text = materialize_profile_v2_text(normalized_profile)
     synthetic_home = app_server_data_dir / "managed-codex-home"
     _recreate_directory(synthetic_home)
 
     if real_codex_home.is_dir():
         for child in real_codex_home.iterdir():
-            if child.name == "managed_config.toml":
-                continue
             _link_or_copy(child, synthetic_home / child.name)
 
-    managed_config_path = synthetic_home / "managed_config.toml"
-    managed_config_path.write_text(managed_config_text, encoding="utf-8")
+    config_path = synthetic_home / "config.toml"
+    config_path.write_text(merged_config_text, encoding="utf-8")
 
     return PreparedManagedCodexHome(
         path=synthetic_home,

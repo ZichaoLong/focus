@@ -4,6 +4,7 @@ import queue
 import tempfile
 import threading
 import time
+import tomllib
 import unittest
 from typing import get_type_hints
 from websockets.datastructures import Headers
@@ -1357,6 +1358,45 @@ class CodexRpcClientTests(unittest.TestCase):
                 resolve_effective_app_server_url("ws://127.0.0.1:8765", data_dir=Path(tmpdir)),
                 fallback_url,
             )
+
+    def test_managed_process_env_materializes_selected_startup_profile_into_synthetic_codex_home(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir, tempfile.TemporaryDirectory() as codex_tmpdir:
+            codex_home = Path(codex_tmpdir)
+            (codex_home / "config.toml").write_text(
+                """
+model_provider = "custom"
+model = "gpt-5.4"
+
+[mcp_servers.docs]
+command = "docs-base"
+""".lstrip(),
+                encoding="utf-8",
+            )
+            (codex_home / "moonbridge.config.toml").write_text(
+                """
+model_provider = "moonbridge"
+model = "deepseek-v4-flash"
+
+[mcp_servers.docs]
+args = ["--profile"]
+""".lstrip(),
+                encoding="utf-8",
+            )
+            client = CodexRpcClient(
+                app_server_data_dir=Path(tmpdir),
+                managed_startup_profile="moonbridge",
+            )
+
+            with patch.dict("os.environ", {"CODEX_HOME": codex_tmpdir}, clear=False):
+                env = client._managed_process_env()
+
+            synthetic_home = Path(env["CODEX_HOME"])
+            merged = tomllib.loads((synthetic_home / "config.toml").read_text(encoding="utf-8"))
+            self.assertEqual(merged["model_provider"], "moonbridge")
+            self.assertEqual(merged["model"], "deepseek-v4-flash")
+            self.assertEqual(merged["mcp_servers"]["docs"]["command"], "docs-base")
+            self.assertEqual(merged["mcp_servers"]["docs"]["args"], ["--profile"])
+            self.assertTrue((synthetic_home / "moonbridge.config.toml").exists())
 
     def test_reader_loop_notifies_disconnect_once_for_unexpected_close(self) -> None:
         disconnects: list[str] = []

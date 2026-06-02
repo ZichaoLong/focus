@@ -1,5 +1,6 @@
 import json
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -7,6 +8,7 @@ from unittest.mock import patch
 from bot.codex_config_reader import (
     ResolvedProfileConfig,
     list_profile_v2_names,
+    materialize_profile_v2_text,
     resolve_profile_from_codex_config,
     resolve_profile_model_metadata,
 )
@@ -81,6 +83,55 @@ model_provider = "global-provider"
             resolved,
             ResolvedProfileConfig(model="work-model", model_provider="global-provider"),
         )
+
+    def test_materialize_profile_v2_text_merges_base_and_profile_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = Path(tmpdir)
+            (codex_home / "config.toml").write_text(
+                """
+model_provider = "custom"
+model = "gpt-5.4"
+
+[mcp_servers.docs]
+command = "docs-base"
+args = ["--shared"]
+""".lstrip(),
+                encoding="utf-8",
+            )
+            (codex_home / "moonbridge.config.toml").write_text(
+                """
+model_provider = "moonbridge"
+model = "deepseek-v4-flash"
+
+[mcp_servers.docs]
+args = ["--profile"]
+env = { MODE = "moonbridge" }
+""".lstrip(),
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"CODEX_HOME": tmpdir}):
+                merged_text = materialize_profile_v2_text("moonbridge")
+
+        merged = tomllib.loads(merged_text)
+        self.assertEqual(merged["model_provider"], "moonbridge")
+        self.assertEqual(merged["model"], "deepseek-v4-flash")
+        self.assertEqual(merged["mcp_servers"]["docs"]["command"], "docs-base")
+        self.assertEqual(merged["mcp_servers"]["docs"]["args"], ["--profile"])
+        self.assertEqual(merged["mcp_servers"]["docs"]["env"]["MODE"], "moonbridge")
+
+    def test_materialize_profile_v2_text_works_without_base_config_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            codex_home = Path(tmpdir)
+            (codex_home / "work.config.toml").write_text(
+                'model_provider = "work-provider"\nmodel = "work-model"\n',
+                encoding="utf-8",
+            )
+            with patch.dict("os.environ", {"CODEX_HOME": tmpdir}):
+                merged_text = materialize_profile_v2_text("work")
+
+        merged = tomllib.loads(merged_text)
+        self.assertEqual(merged["model_provider"], "work-provider")
+        self.assertEqual(merged["model"], "work-model")
 
     def test_resolve_profile_works_without_base_config_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

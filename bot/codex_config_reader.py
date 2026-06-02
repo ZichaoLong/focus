@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -10,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 import re
+import toml
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +156,17 @@ def read_profile_v2_text(profile_name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def materialize_profile_v2_text(profile_name: str) -> str:
+    normalized_profile = normalize_profile_v2_name(profile_name)
+    if not normalized_profile:
+        raise ValueError("profile 名称不能为空。")
+    base_config = _load_base_user_config_strict()
+    _raise_if_matching_legacy_profile_conflict(base_config, normalized_profile)
+    profile_config = _load_selected_profile_v2_strict(normalized_profile)
+    merged = _merge_toml_values(base_config.data, profile_config.data)
+    return toml.dumps(merged)
+
+
 def _load_profile_v2_layers(profile_name: str) -> tuple[_LoadedUserConfig, _LoadedUserConfig] | None:
     base_config = _load_base_user_config()
     if base_config is None:
@@ -193,6 +206,30 @@ def _load_selected_profile_v2(profile_name: str) -> _LoadedUserConfig | None:
     return _LoadedUserConfig(path=path, data=config)
 
 
+def _load_base_user_config_strict() -> _LoadedUserConfig:
+    config_path = _base_config_path()
+    if config_path is None:
+        raise RuntimeError("无法解析 CODEX_HOME/config.toml。")
+    if not config_path.is_file():
+        return _LoadedUserConfig(path=config_path, data={})
+    return _load_toml_file_strict(config_path)
+
+
+def _load_selected_profile_v2_strict(profile_name: str) -> _LoadedUserConfig:
+    path = _selected_profile_v2_path(profile_name)
+    if path is None:
+        raise FileNotFoundError(f"未找到 profile-v2 文件：`{profile_name}`")
+    return _load_toml_file_strict(path)
+
+
+def _load_toml_file_strict(path: Path) -> _LoadedUserConfig:
+    with open(path, "rb") as fh:
+        config = tomllib.load(fh)
+    if not isinstance(config, dict):
+        raise ValueError(f"`{path}` 不是有效的 TOML table。")
+    return _LoadedUserConfig(path=path, data=config)
+
+
 def _raise_if_matching_legacy_profile_conflict(base_config: _LoadedUserConfig, profile_name: str) -> None:
     top_level_profile = _read_string(base_config.data, "profile")
     profiles = base_config.data.get("profiles")
@@ -205,6 +242,25 @@ def _raise_if_matching_legacy_profile_conflict(base_config: _LoadedUserConfig, p
         "与 profile-v2 文件中。请删除 legacy 配置，并改用 "
         f"`{profile_name}.config.toml`。"
     )
+
+
+def _merge_toml_values(base: object, overlay: object) -> dict[str, object]:
+    merged = _merge_toml_node(base, overlay)
+    if not isinstance(merged, dict):
+        raise ValueError("profile-v2 合并结果必须是 TOML table。")
+    return merged
+
+
+def _merge_toml_node(base: object, overlay: object) -> object:
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged: dict[str, object] = {key: copy.deepcopy(value) for key, value in base.items()}
+        for key, value in overlay.items():
+            if key in merged:
+                merged[key] = _merge_toml_node(merged[key], value)
+            else:
+                merged[key] = copy.deepcopy(value)
+        return merged
+    return copy.deepcopy(overlay)
 
 
 def codex_home_dir() -> Path | None:
