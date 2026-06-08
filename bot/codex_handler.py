@@ -2033,7 +2033,13 @@ class CodexHandler(BotHandler):
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         binding_id = format_binding_id(resolved.binding)
         if runtime.running:
-            if not self._owner_binding_queue_allowed(resolved, sender_id, chat_id, message_id=message_id):
+            if not self._owner_binding_queue_allowed(
+                resolved,
+                sender_id,
+                chat_id,
+                message_id=message_id,
+                actor_open_id=actor_open_id,
+            ):
                 if surface_failures:
                     self._reply_text(chat_id, "当前线程仍在执行，请等待结束或先执行 `/cancel`。", message_id=message_id)
                 return {
@@ -2101,13 +2107,17 @@ class CodexHandler(BotHandler):
         chat_id: str,
         *,
         message_id: str = "",
+        actor_open_id: str = "",
     ) -> bool:
         del chat_id
-        incoming_actor = self._group_actor_open_id(message_id)
+        incoming_actor = str(actor_open_id or "").strip() or self._group_actor_open_id(message_id)
         runtime = build_runtime_view(resolved.state)
         current_actor = runtime.execution.current_actor_open_id.strip()
-        if current_actor and incoming_actor and current_actor != incoming_actor:
-            return False
+        if current_actor:
+            if incoming_actor and current_actor != incoming_actor:
+                return False
+            if not incoming_actor and resolved.binding[0] == GROUP_SHARED_BINDING_OWNER_ID:
+                return False
         if resolved.binding[0] != GROUP_SHARED_BINDING_OWNER_ID and resolved.binding[0] != sender_id:
             return False
         return True
@@ -2254,6 +2264,9 @@ class CodexHandler(BotHandler):
             )
         card_id = self._send_execution_card(chat_id, message_id, reply_in_thread=reply_in_thread) or ""
         if not card_id:
+            error_text = "执行卡片发送失败，未启动 compact；请稍后重试。"
+            with self._lock:
+                self._turn_execution.record_start_failure_locked(state, error_text=error_text)
             self._retire_execution_anchor(sender_id, chat_id)
             return {
                 "accepted": False,
@@ -2263,7 +2276,7 @@ class CodexHandler(BotHandler):
                 "thread_id": thread_id,
                 "turn_id": "",
                 "reason_code": "compact_execution_card_failed",
-                "reason": "执行卡片发送失败，未启动 compact；请稍后重试。",
+                "reason": error_text,
             }
         with self._lock:
             self._apply_runtime_state_message_locked(state, ExecutionStateChanged(current_message_id=card_id))

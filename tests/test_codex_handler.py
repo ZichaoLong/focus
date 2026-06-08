@@ -4613,6 +4613,46 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.start_turn_calls, [])
         self.assertEqual(bot.replies, [])
 
+    def test_service_control_plane_group_binding_submit_prompt_rejects_different_running_actor(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        handler, bot = self._make_handler(data_dir=data_dir)
+        handler.on_register(bot)
+        bot.chat_types["chat-group"] = "group"
+        thread = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="hello",
+            created_at=0,
+            updated_at=0,
+            source="appServer",
+            status="idle",
+        )
+        handler._bind_thread("__group__", "chat-group", thread)
+        state = handler._get_runtime_state("__group__", "chat-group")
+        state["running"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-1"
+        state["current_actor_open_id"] = "ou_actor_1"
+
+        result = control_request(
+            data_dir,
+            "binding/submit-prompt",
+            {
+                "binding_id": "p2p:__group__:chat-group",
+                "text": "继续分析",
+                "actor_open_id": "ou_actor_2",
+            },
+        )
+
+        self.assertFalse(result["started"])
+        self.assertFalse(result["queued"])
+        self.assertEqual(result["reason_code"], "prompt_denied_by_running_turn")
+        self.assertEqual(handler._adapter.start_turn_calls, [])
+        self.assertEqual(bot.replies, [])
+
     def test_service_control_plane_binding_submit_prompt_announce_does_not_reply_when_start_fails(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
@@ -6356,6 +6396,21 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.compact_thread_calls, ["thread-1"])
         self.assertEqual(bot.cards[-1][1]["header"]["title"]["content"], "Codex Compact 已开始")
         self.assertIn("`thread-1", bot.cards[-1][1]["elements"][0]["content"])
+
+    def test_compact_command_card_failure_clears_running_state(self) -> None:
+        handler, _ = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["current_thread_title"] = "demo"
+        state["feishu_runtime_state"] = "attached"
+        handler._send_execution_card = lambda *args, **kwargs: ""
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertFalse(state["running"])
+        self.assertEqual(state["current_turn_id"], "")
+        self.assertEqual(handler._adapter.compact_thread_calls, [])
+        self.assertIn("执行卡片发送失败，未启动 compact", state["execution_transcript"].reply_text())
 
     def test_prompt_compact_prompt_queue_runs_fifo(self) -> None:
         handler, bot = self._make_handler()
