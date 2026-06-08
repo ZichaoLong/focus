@@ -233,7 +233,9 @@ When an ordinary `interactive` message arrives:
 
 1. keep best-effort projection as the cheap immediate path
 2. when high-fidelity read is needed, query `message/get` with that message's own `message_id`
-3. if raw card JSON is returned, parse authoritative terminal content through the repository contract
+3. if raw card JSON is returned, parse terminal-card identity through the repository contract
+   and restore authoritative text from the local terminal result store when the card carries
+   `fc_tr_<result_id>_<checksum>`
 4. otherwise, fall back to text projection
 
 The key point is:
@@ -272,7 +274,9 @@ Projection fallback remains an important compatibility path, especially for:
 This decision leads to the following concrete repository expectations:
 
 - terminal-card sending may prefer JSON 2.0 for display quality
-- terminal-card reading should prefer raw-card retrieval whenever `message_id` is available
+- terminal-card reading should prefer raw-card retrieval whenever `message_id` is available,
+  but new self-authored terminal cards treat the card body as a degraded projection unless
+  their `result_id` resolves in the local thread-scoped terminal result store
 - merge-forward support should be implemented as outer-message expansion plus per-child read
 - `/last text` should align with the same card-reading stack instead of using a separate weaker path
 - ingress logging should preserve enough facts to verify what message type and read path the system actually saw

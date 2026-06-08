@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import threading
 import time
+import uuid
 from typing import Any, Callable, Protocol, TypeAlias
 
-from bot.card_text_projection import render_final_reply_text_block
+from bot.card_text_projection import render_final_reply_text_block, terminal_result_checksum
 from bot.runtime_card_publisher import (
     ExecutionCardModel,
     RuntimeCardPublisher,
@@ -47,6 +48,9 @@ class _RecordTerminalResultCard(Protocol):
         message_id: str,
         execution_message_id: str,
         final_reply_text: str,
+        terminal_result_id: str = "",
+        thread_id: str = "",
+        checksum: str = "",
     ) -> None: ...
 
 
@@ -276,17 +280,22 @@ class ExecutionOutputController:
         source_execution_message_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        thread_id: str = "",
     ) -> bool:
         normalized = str(final_reply_text or "").strip()
         if not normalized:
             return False
         budget = int(self._terminal_result_card_limit())
         payload = render_final_reply_text_block(normalized)
+        terminal_result_id = uuid.uuid4().hex
+        checksum = terminal_result_checksum(normalized)
         if len(payload) <= budget:
             published = self._card_publisher_factory().publish_terminal_result_card(
                 chat_id=chat_id,
                 parent_message_id=prompt_message_id,
                 final_reply_text=normalized,
+                terminal_result_id=terminal_result_id,
+                checksum=checksum,
                 reply_in_thread=prompt_reply_in_thread,
             )
             if published:
@@ -294,6 +303,9 @@ class ExecutionOutputController:
                     message_id=published,
                     execution_message_id=str(source_execution_message_id or "").strip(),
                     final_reply_text=normalized,
+                    terminal_result_id=terminal_result_id,
+                    thread_id=thread_id,
+                    checksum=checksum,
                 )
                 return True
         text_message_id = self._reply_text_get_id(
@@ -307,6 +319,9 @@ class ExecutionOutputController:
                 message_id=text_message_id,
                 execution_message_id=str(source_execution_message_id or "").strip(),
                 final_reply_text=normalized,
+                terminal_result_id=terminal_result_id,
+                thread_id=thread_id,
+                checksum=checksum,
             )
             return True
         return False

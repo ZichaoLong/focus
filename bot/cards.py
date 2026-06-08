@@ -18,6 +18,8 @@ from bot.adapters.base import ThreadGoalSummary
 from bot.card_text_projection import (
     TERMINAL_RESULT_CARD_TITLE,
     render_final_reply_text_block,
+    terminal_result_checksum,
+    terminal_result_element_id,
 )
 from bot.constants import display_path, format_timestamp, shorten
 from bot.execution_transcript import ExecutionReplySegment
@@ -245,10 +247,22 @@ def decorate_help_navigation_card(card: dict, *, page: str = "overview") -> dict
 
 def build_terminal_result_card(
     final_reply_text: str,
+    *,
+    terminal_result_id: str = "",
+    checksum: str = "",
 ) -> dict:
     """构造终态结果卡。"""
     raw_text = str(final_reply_text or "")
     normalized = sanitize_terminal_result_markdown_for_feishu_json2(raw_text)
+    normalized_result_id = str(terminal_result_id or "").strip().lower()
+    normalized_checksum = str(checksum or "").strip().lower() or terminal_result_checksum(raw_text)
+    element: dict[str, str] = {
+        "tag": "markdown",
+        "content": render_final_reply_text_block(normalized),
+    }
+    element_id = terminal_result_element_id(normalized_result_id, normalized_checksum)
+    if element_id:
+        element["element_id"] = element_id
     return {
         "schema": "2.0",
         "config": _card_config_v2(),
@@ -257,12 +271,7 @@ def build_terminal_result_card(
             "template": "green",
         },
         "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": render_final_reply_text_block(normalized),
-                }
-            ]
+            "elements": [element]
         },
     }
 

@@ -12,6 +12,7 @@ from lark_oapi.api.im.v1 import (
 )
 
 from bot.cards import build_execution_card, build_terminal_result_card
+from bot.card_text_projection import terminal_result_checksum
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_bot import FeishuBot
 from bot.message_patch_result import MessagePatchResult
@@ -436,6 +437,36 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
             bot.read_interactive_message_text("msg-terminal", content_dict={"text": "请升级至最新版本客户端，以查看内容"}),
             "# 示例标题\n\n正文",
         )
+
+    def test_read_interactive_message_restores_terminal_result_from_local_resolver(self) -> None:
+        bot = self._make_bot()
+        result_id = "0123456789abcdef0123456789abcdef"
+        original = "| 证据 |\n|---|\n| `tool_use` 和 [protocol.rs](/tmp/protocol.rs:1) |"
+        checksum = terminal_result_checksum(original)
+        forwarded = build_terminal_result_card(
+            "| 证据 |\n| -------- |\n|  和  |",
+            terminal_result_id=result_id,
+            checksum=checksum,
+        )
+        bot.raw_message_items["msg-forwarded"] = [
+            SimpleNamespace(
+                message_id="msg-forwarded",
+                body=SimpleNamespace(content=json.dumps(forwarded, ensure_ascii=False)),
+            )
+        ]
+        bot.set_terminal_result_text_resolver(
+            lambda projection: original
+            if projection.terminal_result_id == result_id
+            and projection.terminal_result_checksum == checksum[:16]
+            else ""
+        )
+
+        result = bot.read_interactive_message("msg-forwarded", content_dict=forwarded)
+
+        self.assertEqual(result.text, original)
+        self.assertTrue(result.has_authoritative_text)
+        self.assertEqual(result.terminal_result_id, result_id)
+        self.assertEqual(result.text_source, "store")
 
     def test_history_entry_projects_interactive_terminal_result_from_other_app_sender(self) -> None:
         bot = self._make_bot()

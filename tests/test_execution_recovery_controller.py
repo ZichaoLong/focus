@@ -93,7 +93,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             )
             or True,
             remove_execution_card_message=lambda message_id: deletes.append(message_id) or True,
-            publish_terminal_result=lambda chat_id, *, final_reply_text, source_execution_message_id="", prompt_message_id="", prompt_reply_in_thread=False: (
+            publish_terminal_result=lambda chat_id, *, final_reply_text, source_execution_message_id="", prompt_message_id="", prompt_reply_in_thread=False, thread_id="": (
                 terminal_results.append(
                     {
                         "chat_id": chat_id,

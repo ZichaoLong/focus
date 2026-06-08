@@ -279,6 +279,7 @@ class ExecutionRecoveryController:
         final_reply_text: str,
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        thread_id: str = "",
     ) -> bool:
         normalized = str(final_reply_text or "").strip()
         if not normalized:
@@ -294,6 +295,7 @@ class ExecutionRecoveryController:
             source_execution_message_id=execution_message_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
+            thread_id=thread_id,
         )
         if published:
             self._remember_terminal_result_text(
@@ -316,6 +318,7 @@ class ExecutionRecoveryController:
         cancelled: bool,
         elapsed: int,
         projection: SnapshotReplyProjection,
+        thread_id: str = "",
     ) -> bool:
         full_transcript = self._transcript_from_snapshot_projection(
             current_transcript,
@@ -329,6 +332,7 @@ class ExecutionRecoveryController:
             final_reply_text=projection.final_reply_text,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
+            thread_id=thread_id,
         )
         display_transcript = full_transcript
         if carrier_available:
@@ -363,6 +367,7 @@ class ExecutionRecoveryController:
         final_reply_text: str,
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        thread_id: str = "",
     ) -> bool:
         return self._publish_terminal_result_if_needed(
             sender_id=sender_id,
@@ -371,6 +376,7 @@ class ExecutionRecoveryController:
             final_reply_text=final_reply_text,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
+            thread_id=thread_id,
         )
 
     def _deliver_generated_images_if_available(
@@ -455,6 +461,7 @@ class ExecutionRecoveryController:
                     final_reply_text=fallback_reply_text,
                     prompt_message_id=target.prompt_message_id,
                     prompt_reply_in_thread=target.prompt_reply_in_thread,
+                    thread_id=target.thread_id,
                 )
                 if published and self._can_remove_terminal_only_execution_card(
                     target.transcript,
@@ -481,6 +488,7 @@ class ExecutionRecoveryController:
                 cancelled=target.cancelled,
                 elapsed=target.elapsed,
                 projection=projection,
+                thread_id=target.thread_id,
             )
             if carrier_available:
                 self._deliver_generated_images_if_available(
@@ -503,6 +511,7 @@ class ExecutionRecoveryController:
                 final_reply_text=fallback_reply_text,
                 prompt_message_id=target.prompt_message_id,
                 prompt_reply_in_thread=target.prompt_reply_in_thread,
+                thread_id=target.thread_id,
             )
             if published and self._can_remove_terminal_only_execution_card(
                 target.transcript,
@@ -641,6 +650,7 @@ class ExecutionRecoveryController:
                     final_reply_text=fallback_reply_text,
                     prompt_message_id=prompt_message_id,
                     prompt_reply_in_thread=prompt_reply_in_thread,
+                    thread_id=thread_id,
                 )
                 if published and self._can_remove_terminal_only_execution_card(
                     runtime.execution.transcript,
@@ -687,6 +697,7 @@ class ExecutionRecoveryController:
                         final_reply_text=fallback_reply_text,
                         prompt_message_id=prompt_message_id,
                         prompt_reply_in_thread=prompt_reply_in_thread,
+                        thread_id=thread_id,
                     )
                     if published and self._can_remove_terminal_only_execution_card(
                         runtime.execution.transcript,
@@ -761,6 +772,7 @@ class ExecutionRecoveryController:
                 cancelled=cancelled,
                 elapsed=elapsed,
                 projection=projection,
+                thread_id=normalized_thread_id,
             )
             if carrier_available:
                 self._deliver_generated_images_if_available(
@@ -782,6 +794,7 @@ class ExecutionRecoveryController:
                 final_reply_text=fallback_reply_text,
                 prompt_message_id=prompt_message_id,
                 prompt_reply_in_thread=prompt_reply_in_thread,
+                thread_id=normalized_thread_id,
             )
             if published and self._can_remove_terminal_only_execution_card(
                 current_transcript,

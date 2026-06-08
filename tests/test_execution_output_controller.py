@@ -101,11 +101,14 @@ class ExecutionOutputControllerTests(unittest.TestCase):
                 replies.append((chat_id, text, message_id, reply_in_thread))
                 or ("text-reply-1" if message_id else "text-message-1")
             ),
-            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: recorded_terminal_results.append(
+            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text, terminal_result_id="", thread_id="", checksum="": recorded_terminal_results.append(
                 {
                     "message_id": message_id,
                     "execution_message_id": execution_message_id,
                     "final_reply_text": final_reply_text,
+                    "terminal_result_id": terminal_result_id,
+                    "thread_id": thread_id,
+                    "checksum": checksum,
                 }
             ),
             card_reply_limit=lambda: card_reply_limit,
@@ -152,10 +155,14 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(card["header"]["title"]["content"], "Codex")
         self.assertIn(TERMINAL_RESULT_CARD_MARKER, card["body"]["elements"][-1]["content"])
         self.assertIn("done", card["body"]["elements"][-1]["content"])
+        self.assertRegex(card["body"]["elements"][-1]["element_id"], r"^fc_tr_[0-9a-f]{32}_[0-9a-f]{16}$")
         self.assertEqual(
-            recorded,
-            [{"message_id": "plan-card-1", "execution_message_id": "", "final_reply_text": "done"}],
+            [(item["message_id"], item["execution_message_id"], item["final_reply_text"]) for item in recorded],
+            [("plan-card-1", "", "done")],
         )
+        self.assertRegex(recorded[0]["terminal_result_id"], r"^[0-9a-f]{32}$")
+        self.assertEqual(recorded[0]["thread_id"], "")
+        self.assertRegex(recorded[0]["checksum"], r"^[0-9a-f]{64}$")
 
     def test_publish_terminal_result_uses_independent_budget_from_execution_card_reply_limit(self) -> None:
         state = self._make_state()
@@ -200,14 +207,8 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             [("c1", "# 标题\n\n## 小节\n\n- 条目", "msg-3b", False)],
         )
         self.assertEqual(
-            recorded,
-            [
-                {
-                    "message_id": "text-reply-1",
-                    "execution_message_id": "",
-                    "final_reply_text": "# 标题\n\n## 小节\n\n- 条目",
-                }
-            ],
+            [(item["message_id"], item["execution_message_id"], item["final_reply_text"]) for item in recorded],
+            [("text-reply-1", "", "# 标题\n\n## 小节\n\n- 条目")],
         )
 
     def test_publish_terminal_result_with_embedded_image_markdown_uses_sanitized_card(self) -> None:
@@ -273,8 +274,8 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(bot.sent_messages[-1][0], "c1")
         self.assertEqual(bot.sent_messages[-1][1], "interactive")
         self.assertEqual(
-            recorded,
-            [{"message_id": "plan-card-2", "execution_message_id": "", "final_reply_text": "done"}],
+            [(item["message_id"], item["execution_message_id"], item["final_reply_text"]) for item in recorded],
+            [("plan-card-2", "", "done")],
         )
 
     def test_publish_terminal_result_returns_false_when_text_fallback_fails(self) -> None:
@@ -300,7 +301,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             reply_text_get_id=lambda chat_id, text, *, message_id="", reply_in_thread=False: (
                 replies.append((chat_id, text, message_id, reply_in_thread)) or ""
             ),
-            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text: None,
+            record_terminal_result_card=lambda *, message_id, execution_message_id, final_reply_text, terminal_result_id="", thread_id="", checksum="": None,
             card_reply_limit=lambda: 5,
             terminal_result_card_limit=lambda: 0,
             card_log_limit=lambda: 100,

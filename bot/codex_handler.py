@@ -624,6 +624,9 @@ class CodexHandler(BotHandler):
 
     def on_register(self, bot) -> None:
         super().on_register(bot)
+        set_terminal_result_text_resolver = getattr(bot, "set_terminal_result_text_resolver", None)
+        if callable(set_terminal_result_text_resolver):
+            set_terminal_result_text_resolver(self._resolve_terminal_result_text)
         try:
             self._service_instance_lease.acquire()
             self._runtime_loop.start()
@@ -2464,20 +2467,24 @@ class CodexHandler(BotHandler):
         return self._runtime_admin.handle_status_command(binding)
 
     def _handle_last_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
-        del sender_id
         if str(arg or "").strip().lower() != "text":
             return CommandResult(text="用法：`/last text`")
-        text = self._find_last_card_text(chat_id, message_id=message_id)
+        text = self._find_last_card_text(sender_id, chat_id, message_id=message_id)
         return CommandResult(text=text)
 
     def _handle_goal_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         return self._goal_domain.handle_goal_command(sender_id, chat_id, arg, message_id=message_id)
 
-    def _find_last_card_text(self, chat_id: str, *, message_id: str = "") -> str:
+    def _find_last_card_text(self, sender_id: str, chat_id: str, *, message_id: str = "") -> str:
         thread_id = ""
         if message_id and hasattr(self.bot, "get_message_context"):
             context = self.bot.get_message_context(message_id) or {}
             thread_id = str(context.get("thread_id", "") or "").strip()
+        if not thread_id:
+            try:
+                thread_id = self._get_runtime_view(sender_id, chat_id, message_id).current_thread_id.strip()
+            except Exception:
+                thread_id = ""
 
         try:
             items = self.bot.list_recent_messages(
@@ -2533,6 +2540,10 @@ class CodexHandler(BotHandler):
 
         if fallback_text:
             return fallback_text
+        if thread_id:
+            latest_thread_text = self._terminal_result_store.latest_for_thread(thread_id)
+            if latest_thread_text:
+                return latest_thread_text
         return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"
 
     def _record_terminal_result_card(self, *, message_id: str, final_reply_text: str) -> None:
@@ -2548,6 +2559,9 @@ class CodexHandler(BotHandler):
         message_id: str,
         execution_message_id: str,
         final_reply_text: str,
+        terminal_result_id: str = "",
+        thread_id: str = "",
+        checksum: str = "",
     ) -> None:
         normalized_message_id = str(message_id or "").strip()
         normalized_execution_message_id = str(execution_message_id or "").strip()
@@ -2560,7 +2574,19 @@ class CodexHandler(BotHandler):
                 execution_message_id=normalized_execution_message_id,
                 final_reply_text=normalized_text,
                 recorded_at=time.time(),
+                terminal_result_id=str(terminal_result_id or "").strip().lower(),
+                thread_id=str(thread_id or "").strip(),
+                checksum=str(checksum or "").strip().lower(),
             )
+        )
+
+    def _resolve_terminal_result_text(self, projection) -> str:
+        terminal_result_id = str(getattr(projection, "terminal_result_id", "") or "").strip().lower()
+        if not terminal_result_id:
+            return ""
+        return self._terminal_result_store.get_by_terminal_result_id(
+            terminal_result_id,
+            checksum=str(getattr(projection, "terminal_result_checksum", "") or "").strip().lower(),
         )
 
     def _has_recorded_terminal_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
@@ -3474,13 +3500,22 @@ class CodexHandler(BotHandler):
         source_execution_message_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        thread_id: str = "",
     ) -> bool:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id and prompt_message_id and hasattr(self.bot, "get_message_context"):
+            try:
+                context = self.bot.get_message_context(prompt_message_id) or {}
+                normalized_thread_id = str(context.get("thread_id", "") or "").strip()
+            except Exception:
+                normalized_thread_id = ""
         return self._execution_output.publish_terminal_result(
             chat_id,
             final_reply_text=final_reply_text,
             source_execution_message_id=source_execution_message_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
+            thread_id=normalized_thread_id,
         )
 
     def _clear_plan_state(self, state: RuntimeStateDict) -> None:

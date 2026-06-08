@@ -2,9 +2,12 @@ import unittest
 
 from bot.card_text_projection import (
     CardTextProjection,
+    TERMINAL_RESULT_SOURCE_CARD_DEGRADED,
+    TERMINAL_RESULT_SOURCE_CARD_LEGACY,
     TERMINAL_RESULT_CARD_MARKER,
     can_render_terminal_result_card,
     project_interactive_card_text,
+    terminal_result_checksum,
 )
 from bot.cards import build_execution_card, build_terminal_result_card
 from bot.execution_transcript import ExecutionReplySegment
@@ -16,6 +19,7 @@ class CardTextProjectionTests(unittest.TestCase):
 
         self.assertIsInstance(projection, CardTextProjection)
         self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertEqual(projection.final_reply_source, TERMINAL_RESULT_SOURCE_CARD_LEGACY)
         self.assertEqual(projection.final_reply_text, "最终答复")
         self.assertEqual(projection.text, "最终答复")
         self.assertIn("Codex", projection.visible_text)
@@ -180,3 +184,19 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertTrue(projection.has_authoritative_final_reply)
         self.assertEqual(projection.final_reply_text, "# 标题")
         self.assertEqual(projection.text, "# 标题")
+
+    def test_terminal_result_card_with_result_id_projects_as_degraded_until_store_resolution(self) -> None:
+        checksum = terminal_result_checksum("最终答复")
+        projection = project_interactive_card_text(
+            build_terminal_result_card(
+                "最终答复",
+                terminal_result_id="0123456789abcdef0123456789abcdef",
+                checksum=checksum,
+            )
+        )
+
+        self.assertFalse(projection.has_authoritative_final_reply)
+        self.assertEqual(projection.final_reply_source, TERMINAL_RESULT_SOURCE_CARD_DEGRADED)
+        self.assertEqual(projection.final_reply_text, "最终答复")
+        self.assertEqual(projection.terminal_result_id, "0123456789abcdef0123456789abcdef")
+        self.assertEqual(projection.terminal_result_checksum, checksum[:16])

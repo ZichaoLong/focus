@@ -306,10 +306,13 @@ JSON 2.0 的强项是：
 - 标题与模板合同
 - `final_reply_text` 正文
 - 隐藏 marker
+- 新版卡片正文元素上的 `fc_tr_<result_id>_<checksum>` 引用
 
 因此当前行为变成：
 
-- 原卡查询成功时：直接以原卡正文为准
+- 原卡查询成功且 `result_id` 可从本地 terminal result store 恢复时：以
+  store 正文为权威结果
+- 原卡查询成功但 store miss 时：卡片正文只作为 degraded projection 回退
 - 原卡查询失败时：只剩 best-effort 投影，不再依赖结构摘要修复标题层级
 
 ## 8. 当前仓库与目标状态的差距

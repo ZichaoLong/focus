@@ -227,11 +227,17 @@
 - header 标题为 `Codex`
 - header template 为 `green`
 - 卡片内至少存在一个 markdown 区块，其内容末尾携带一段不可见 marker
+- 新版卡片的正文 markdown 元素应携带 `fc_tr_<result_id>_<checksum>` 形态的
+  `element_id`
 
 接收侧对这个 markdown 区块的解释是：
 
-- 用户可见部分，就是权威 `final_reply_text`
-- 不可见 marker 只用于声明“这是一张权威 terminal result card”
+- 如果存在 `result_id` 且本地 thread-scoped terminal result store 命中，则
+  store 中的正文是权威 `final_reply_text`
+- 如果存在 `result_id` 但本地 store 缺失，则用户可见部分只能作为
+  degraded projection 回退，不再被标记为权威
+- 没有 `result_id` 的历史终态卡继续按旧 marker 合同解析，以保持既有卡片可读
+- 不可见 marker 只用于声明“这是一张 terminal result card”
 
 也就是说，接收侧强合同不再依赖任何额外的说明性提示文案，也不把用户可见提示文案本身当作合同。
 

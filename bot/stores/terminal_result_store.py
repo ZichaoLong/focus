@@ -7,7 +7,7 @@ import pathlib
 import threading
 from dataclasses import asdict, dataclass
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 logger = logging.getLogger(__name__)
 
 
@@ -17,6 +17,9 @@ class TerminalResultRecord:
     execution_message_id: str
     final_reply_text: str
     recorded_at: float
+    terminal_result_id: str = ""
+    thread_id: str = ""
+    checksum: str = ""
 
 
 class TerminalResultStore:
@@ -30,7 +33,15 @@ class TerminalResultStore:
             return
         try:
             with self._lock:
-                records = [item for item in self._read_all() if item.message_id != normalized.message_id]
+                records = [
+                    item
+                    for item in self._read_all()
+                    if item.message_id != normalized.message_id
+                    and (
+                        not normalized.terminal_result_id
+                        or item.terminal_result_id != normalized.terminal_result_id
+                    )
+                ]
                 records.append(normalized)
                 self._write_all(records)
         except Exception as exc:
@@ -47,6 +58,48 @@ class TerminalResultStore:
                         return item.final_reply_text
         except Exception as exc:
             logger.warning("terminal result store get failed: %s", exc)
+        return ""
+
+    def get_by_terminal_result_id(
+        self,
+        terminal_result_id: str,
+        *,
+        checksum: str = "",
+        thread_id: str = "",
+    ) -> str:
+        normalized_result_id = str(terminal_result_id or "").strip().lower()
+        normalized_checksum = str(checksum or "").strip().lower()
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_result_id:
+            return ""
+        try:
+            with self._lock:
+                for item in reversed(self._read_all()):
+                    if item.terminal_result_id != normalized_result_id:
+                        continue
+                    if normalized_thread_id and item.thread_id and item.thread_id != normalized_thread_id:
+                        continue
+                    if normalized_checksum and item.checksum and not item.checksum.startswith(normalized_checksum):
+                        continue
+                    return item.final_reply_text
+        except Exception as exc:
+            logger.warning("terminal result store get_by_terminal_result_id failed: %s", exc)
+        return ""
+
+    def latest_for_thread(self, thread_id: str) -> str:
+        normalized_thread_id = str(thread_id or "").strip()
+        try:
+            with self._lock:
+                for item in sorted(
+                    self._read_all(),
+                    key=lambda record: (record.recorded_at, record.message_id),
+                    reverse=True,
+                ):
+                    if normalized_thread_id and item.thread_id != normalized_thread_id:
+                        continue
+                    return item.final_reply_text
+        except Exception as exc:
+            logger.warning("terminal result store latest_for_thread failed: %s", exc)
         return ""
 
     def has_execution_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
@@ -88,6 +141,11 @@ class TerminalResultStore:
         if not isinstance(raw, dict):
             raise RuntimeError("terminal_results.json 格式损坏：顶层必须是对象。")
         schema_version = int(raw.get("schema_version", 0) or 0)
+        if schema_version == 1:
+            raw_items = raw.get("results")
+            if not isinstance(raw_items, list):
+                raise RuntimeError("terminal_results.json 格式损坏：results 必须是数组。")
+            return [self._record_from_dict(item) for item in raw_items]
         if schema_version != _SCHEMA_VERSION:
             raise RuntimeError(
                 f"terminal_results.json schema_version={schema_version}，期望 {_SCHEMA_VERSION}。"
@@ -115,6 +173,9 @@ class TerminalResultStore:
             execution_message_id=str(record.execution_message_id or "").strip(),
             final_reply_text=str(record.final_reply_text or "").strip(),
             recorded_at=float(record.recorded_at),
+            terminal_result_id=str(record.terminal_result_id or "").strip().lower(),
+            thread_id=str(record.thread_id or "").strip(),
+            checksum=str(record.checksum or "").strip().lower(),
         )
 
     @classmethod
@@ -128,6 +189,9 @@ class TerminalResultStore:
                     execution_message_id=str(raw.get("execution_message_id", "")),
                     final_reply_text=str(raw["final_reply_text"]),
                     recorded_at=float(raw["recorded_at"]),
+                    terminal_result_id=str(raw.get("terminal_result_id", "")),
+                    thread_id=str(raw.get("thread_id", "")),
+                    checksum=str(raw.get("checksum", "")),
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:

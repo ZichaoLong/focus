@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -8,7 +10,13 @@ from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdow
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
 TERMINAL_RESULT_CARD_MARKER = "\u2063\u2060\u2064\u2060\u2063"
+TERMINAL_RESULT_ELEMENT_ID_PREFIX = "fc_tr_"
+TERMINAL_RESULT_SOURCE_NONE = "none"
+TERMINAL_RESULT_SOURCE_STORE = "store"
+TERMINAL_RESULT_SOURCE_CARD_LEGACY = "card_legacy"
+TERMINAL_RESULT_SOURCE_CARD_DEGRADED = "card_degraded"
 EXECUTION_CARD_TITLE_PREFIX = "Codex 执行过程"
+_TERMINAL_RESULT_ELEMENT_ID_RE = re.compile(r"^fc_tr_([0-9a-f]{32})_([0-9a-f]{16})$")
 _TEXT_NODE_TAGS = {"markdown", "plain_text", "lark_md"}
 _IGNORED_TAGS = {
     "action",
@@ -34,10 +42,31 @@ class CardTextProjection:
     text: str
     visible_text: str
     final_reply_text: str = ""
+    terminal_result_id: str = ""
+    terminal_result_checksum: str = ""
+    final_reply_source: str = TERMINAL_RESULT_SOURCE_NONE
 
     @property
     def has_authoritative_final_reply(self) -> bool:
-        return bool(self.final_reply_text)
+        return bool(self.final_reply_text) and self.final_reply_source in {
+            TERMINAL_RESULT_SOURCE_STORE,
+            TERMINAL_RESULT_SOURCE_CARD_LEGACY,
+        }
+
+
+def terminal_result_checksum(final_reply_text: str) -> str:
+    normalized = str(final_reply_text or "").strip()
+    if not normalized:
+        return ""
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def terminal_result_element_id(terminal_result_id: str, checksum: str) -> str:
+    normalized_id = str(terminal_result_id or "").strip().lower()
+    normalized_checksum = str(checksum or "").strip().lower()
+    if not normalized_id or not normalized_checksum:
+        return ""
+    return f"{TERMINAL_RESULT_ELEMENT_ID_PREFIX}{normalized_id}_{normalized_checksum[:16]}"
 
 
 def render_final_reply_text_block(final_reply_text: str) -> str:
@@ -112,10 +141,19 @@ def _project_terminal_result_card_text(
     final_reply_text = _extract_terminal_result_card_final_reply_text(content_dict)
     if not final_reply_text:
         return CardTextProjection(text="", visible_text=visible_text)
+    terminal_result_id, checksum = _extract_terminal_result_card_id(content_dict)
+    source = (
+        TERMINAL_RESULT_SOURCE_CARD_DEGRADED
+        if terminal_result_id
+        else TERMINAL_RESULT_SOURCE_CARD_LEGACY
+    )
     return CardTextProjection(
         text=final_reply_text,
         visible_text=visible_text,
         final_reply_text=final_reply_text,
+        terminal_result_id=terminal_result_id,
+        terminal_result_checksum=checksum,
+        final_reply_source=source,
     )
 
 
@@ -152,6 +190,17 @@ def _extract_terminal_result_card_final_reply_text(content_dict: dict[str, Any])
     if history_rendered:
         return history_rendered
     return ""
+
+
+def _extract_terminal_result_card_id(content_dict: dict[str, Any]) -> tuple[str, str]:
+    for element in _collect_root_elements(content_dict):
+        if not isinstance(element, dict):
+            continue
+        element_id = str(element.get("element_id", "") or "").strip()
+        match = _TERMINAL_RESULT_ELEMENT_ID_RE.match(element_id)
+        if match:
+            return match.group(1), match.group(2)
+    return "", ""
 
 
 def _matches_history_rendered_terminal_result_contract(content_dict: dict[str, Any]) -> bool:

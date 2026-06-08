@@ -121,8 +121,15 @@ def render_execution_card(model: ExecutionCardModel) -> dict:
 
 def render_terminal_result_card(
     final_reply_text: str,
+    *,
+    terminal_result_id: str = "",
+    checksum: str = "",
 ) -> dict:
-    return build_terminal_result_card(final_reply_text)
+    return build_terminal_result_card(
+        final_reply_text,
+        terminal_result_id=terminal_result_id,
+        checksum=checksum,
+    )
 
 
 def build_plan_card_model(plan: PlanView) -> PlanCardModel:
@@ -202,10 +209,16 @@ class RuntimeCardPublisher:
         chat_id: str,
         parent_message_id: str,
         final_reply_text: str,
+        terminal_result_id: str = "",
+        checksum: str = "",
         reply_in_thread: bool = False,
     ) -> str | None:
         content = json.dumps(
-            render_terminal_result_card(final_reply_text),
+            render_terminal_result_card(
+                final_reply_text,
+                terminal_result_id=terminal_result_id,
+                checksum=checksum,
+            ),
             ensure_ascii=False,
         )
         normalized_parent = str(parent_message_id or "").strip()

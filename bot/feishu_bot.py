@@ -44,6 +44,9 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 )
 
 from bot.card_text_projection import (
+    TERMINAL_RESULT_SOURCE_CARD_DEGRADED,
+    TERMINAL_RESULT_SOURCE_STORE,
+    CardTextProjection,
     is_execution_card,
     is_terminal_result_card,
     project_interactive_card_text,
@@ -180,6 +183,8 @@ class InteractiveMessageReadResult:
     text: str
     card_kind: str
     has_authoritative_text: bool = False
+    terminal_result_id: str = ""
+    text_source: str = ""
 
 
 def _scan_tables(text: str) -> list[tuple[int, int]]:
@@ -277,6 +282,7 @@ class FeishuBot(ABC):
         self._sender_name_cache_lock = threading.Lock()
         self._sender_name_warning_timestamps: dict[tuple[str, str], float] = {}
         self._sender_name_warning_lock = threading.Lock()
+        self._terminal_result_text_resolver: Callable[[CardTextProjection], str] | None = None
         config = system_config or {}
         self._admin_open_ids = {
             str(item).strip()
@@ -351,6 +357,9 @@ class FeishuBot(ABC):
             .register_p2_card_action_trigger(self._on_raw_card_action) \
             .register_p2_application_bot_menu_v6(self._on_raw_bot_menu) \
             .build()
+
+    def set_terminal_result_text_resolver(self, resolver: Callable[[CardTextProjection], str] | None) -> None:
+        self._terminal_result_text_resolver = resolver
 
     # ---- 消息收发层 ----
 
@@ -731,35 +740,55 @@ class FeishuBot(ABC):
         if raw_content_dict:
             projection = project_interactive_card_text(raw_content_dict)
             if projection.text:
+                resolved_text, source, authoritative = self._resolve_terminal_result_projection(projection)
                 self._log_card_ingress_event(
                     "resolution",
                     message_id=normalized_message_id,
                     msg_type="interactive",
                     path="raw_card_direct",
-                    has_authoritative=projection.has_authoritative_final_reply,
+                    has_authoritative=authoritative,
+                    terminal_result_id=projection.terminal_result_id,
+                    text_source=source,
                 )
                 return InteractiveMessageReadResult(
-                    text=projection.text,
+                    text=resolved_text,
                     card_kind=self._interactive_card_kind(raw_content_dict),
-                    has_authoritative_text=projection.has_authoritative_final_reply,
+                    has_authoritative_text=authoritative,
+                    terminal_result_id=projection.terminal_result_id,
+                    text_source=source,
                 )
 
         if isinstance(content_dict, dict):
             projection = project_interactive_card_text(content_dict)
             if projection.text:
+                resolved_text, source, authoritative = self._resolve_terminal_result_projection(projection)
                 self._log_card_ingress_event(
                     "resolution",
                     message_id=normalized_message_id,
                     msg_type="interactive",
                     path="best_effort_projection",
-                    has_authoritative=False,
+                    has_authoritative=authoritative,
+                    terminal_result_id=projection.terminal_result_id,
+                    text_source=source,
                 )
                 return InteractiveMessageReadResult(
-                    text=projection.text,
+                    text=resolved_text,
                     card_kind=self._interactive_card_kind(content_dict),
-                    has_authoritative_text=False,
+                    has_authoritative_text=authoritative,
+                    terminal_result_id=projection.terminal_result_id,
+                    text_source=source,
                 )
         return InteractiveMessageReadResult(text="", card_kind="")
+
+    def _resolve_terminal_result_projection(self, projection: CardTextProjection) -> tuple[str, str, bool]:
+        if projection.terminal_result_id and self._terminal_result_text_resolver is not None:
+            resolved = str(self._terminal_result_text_resolver(projection) or "").strip()
+            if resolved:
+                return resolved, TERMINAL_RESULT_SOURCE_STORE, True
+        source = projection.final_reply_source
+        if projection.terminal_result_id and source == TERMINAL_RESULT_SOURCE_CARD_DEGRADED:
+            return projection.text, TERMINAL_RESULT_SOURCE_CARD_DEGRADED, False
+        return projection.text, source, projection.has_authoritative_final_reply
 
     def read_interactive_message_text(
         self,
