@@ -42,7 +42,7 @@
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | 查看或管理当前 thread 的 goal | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/compact` | 压缩当前绑定 thread 的上下文历史 | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/rename <title>` | 重命名当前 thread | 是；`Thread Settings` 表单 | 仅管理员 | 仅管理员 | 无 |
-| `/archive [thread_id\|thread_name]` | 归档当前线程，或归档显式指定目标 | 是；`Thread Settings` 按钮或表单 | 仅管理员 | 仅管理员 | `feishu-codexctl thread archive --thread-id/--thread-name` |
+| `/archive [thread_id\|thread_name]` | 归档当前线程，或归档显式指定目标 | 是；`Thread Settings` 按钮或表单 | 仅管理员 | 仅管理员 | `feishu-codexctl thread archive --thread-id/--thread-name`；本地 CLI 额外支持重复 `--thread-id` 批量归档 |
 | `/detach` | 保留 binding bookmark，但停止当前 chat 接收当前 thread 的飞书推送 | 是；`Connection Status` 的动态按钮 | 仅管理员 | 仅管理员 | `feishu-codexctl binding detach <binding_id>`；thread 维度是 `feishu-codexctl thread detach ...` |
 | `/attach [binding\|thread\|service]` | 恢复当前 chat、当前 thread 或当前实例的飞书推送 | 是；`Connection Status` 及其下级页，也会出现在上下文结果卡片里 | 仅管理员 | 仅管理员 | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | 取消当前执行 | 否；主入口是执行卡按钮 | 仅管理员 | 仅管理员 | 无 |

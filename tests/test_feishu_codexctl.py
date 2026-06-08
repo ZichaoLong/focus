@@ -9,6 +9,7 @@ from unittest.mock import patch
 from bot.adapters.base import ThreadSummary
 from bot.feishu_codexctl import (
     _archive_thread,
+    _archive_threads,
     _build_parser,
     _clear_thread_goal,
     _image_send_target_params,
@@ -23,6 +24,7 @@ from bot.feishu_codexctl import (
     _send_binding_prompt,
     _set_thread_goal,
     _resolve_thread_archive_target,
+    _resolve_thread_archive_targets,
     _remote_adapter,
     _terminal_display_width,
     _print_thread_status,
@@ -30,6 +32,7 @@ from bot.feishu_codexctl import (
     main as feishu_codexctl_main,
 )
 from bot.instance_resolution import CliInstanceTarget
+from bot.service_control_plane import ServiceControlError
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 
@@ -58,6 +61,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("thread archive --thread-name demo", rendered)
         self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
+        self.assertIn("thread archive --thread-id <id-1> --thread-id <id-2>", rendered)
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
         parser = _build_parser()
@@ -339,7 +343,24 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         args = parser.parse_args(["thread", "archive", "--thread-name", "demo"])
 
-        self.assertEqual(_thread_target_params(args), {"thread_name": "demo"})
+        self.assertEqual(args.thread_name, "demo")
+
+    def test_thread_archive_accepts_repeated_thread_ids(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(
+            ["thread", "archive", "--thread-id", "thread-1", "--thread-id", "thread-2"]
+        )
+
+        self.assertEqual(args.thread_ids, ["thread-1", "thread-2"])
+
+    def test_thread_archive_rejects_mixing_thread_id_and_thread_name(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "archive", "--thread-id", "thread-1", "--thread-name", "demo"])
+
+        with self.assertRaisesRegex(ValueError, "不能同时提供"):
+            _resolve_thread_archive_targets(args)
 
     def test_image_send_accepts_explicit_thread_selector_and_path(self) -> None:
         parser = _build_parser()
@@ -839,6 +860,67 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("cleared bindings in this instance: p2p:ou_user:chat-1", rendered)
         self.assertIn("只清理当前目标实例", rendered)
 
+    def test_archive_threads_batches_partial_failures(self) -> None:
+        stdout = io.StringIO()
+        target_a = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
+        target_b = CliInstanceTarget(instance_name="default", data_dir=Path("/tmp/default-data"))
+
+        def _fake_request(data_dir: Path, method: str, params: dict[str, str]):
+            self.assertEqual(method, "thread/archive")
+            if params["thread_id"] == "thread-2":
+                raise ServiceControlError("busy")
+            return {
+                "thread_id": params["thread_id"],
+                "thread_title": "demo",
+                "working_dir": str(data_dir),
+                "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+            }
+
+        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "default"]):
+            with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[target_a, target_b]):
+                with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+                    with redirect_stdout(stdout):
+                        result = _archive_threads(["thread-1", "thread-2"])
+
+        self.assertEqual(result, 1)
+        rendered = stdout.getvalue()
+        self.assertIn("batch archive: total=2", rendered)
+        self.assertIn("[1/2] thread: thread-1", rendered)
+        self.assertIn("[2/2] thread: thread-2", rendered)
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("instance: default", rendered)
+        self.assertIn("status: archived", rendered)
+        self.assertIn("status: failed", rendered)
+        self.assertIn("summary: archived=1 failed=1", rendered)
+
+    def test_archive_threads_continues_after_target_resolution_failure(self) -> None:
+        stdout = io.StringIO()
+        target_b = CliInstanceTarget(instance_name="default", data_dir=Path("/tmp/default-data"))
+
+        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "default"]):
+            with patch(
+                "bot.feishu_codexctl._resolve_target_instance",
+                side_effect=[ValueError("ambiguous instance"), target_b],
+            ):
+                with patch(
+                    "bot.feishu_codexctl._request",
+                    return_value={
+                        "thread_id": "thread-2",
+                        "thread_title": "demo",
+                        "working_dir": "/tmp/default-data",
+                        "cleared_binding_ids": [],
+                    },
+                ):
+                    with redirect_stdout(stdout):
+                        result = _archive_threads(["thread-1", "thread-2"])
+
+        self.assertEqual(result, 1)
+        rendered = stdout.getvalue()
+        self.assertIn("ambiguous instance", rendered)
+        self.assertIn("status: failed", rendered)
+        self.assertIn("status: archived", rendered)
+        self.assertIn("summary: archived=1 failed=1", rendered)
+
     def test_resolve_thread_archive_target_prefers_live_runtime_owner_for_thread_name(self) -> None:
         parser = _build_parser()
         args = parser.parse_args(["thread", "archive", "--thread-name", "demo"])
@@ -859,3 +941,44 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(target.instance_name, "explorer")
         self.assertEqual(target.data_dir, Path("/tmp/explorer-data"))
         self.assertEqual(target_params, {"thread_id": "thread-1"})
+
+    def test_resolve_thread_archive_targets_prefers_live_runtime_owner_for_each_thread_id(self) -> None:
+        parser = _build_parser()
+        args = parser.parse_args(
+            ["thread", "archive", "--thread-id", "thread-1", "--thread-id", "thread-2"]
+        )
+        target_a = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
+        target_b = CliInstanceTarget(instance_name="aft", data_dir=Path("/tmp/aft-data"))
+
+        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "aft"]):
+            with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[target_a, target_b]):
+                targets = _resolve_thread_archive_targets(args)
+
+        self.assertEqual(
+            targets,
+            [
+                (target_a, {"thread_id": "thread-1"}),
+                (target_b, {"thread_id": "thread-2"}),
+            ],
+        )
+
+    def test_main_thread_archive_batch_dispatches_all_targets(self) -> None:
+        with patch("bot.feishu_codexctl._archive_threads", return_value=1) as mock_archive:
+            with patch(
+                "bot.feishu_codexctl.sys.argv",
+                [
+                    "feishu-codexctl",
+                    "thread",
+                    "archive",
+                    "--thread-id",
+                    "thread-1",
+                    "--thread-id",
+                    "thread-2",
+                ],
+            ):
+                with self.assertRaises(SystemExit) as exc:
+                    feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 1)
+        self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])
+        self.assertEqual(mock_archive.call_args.kwargs["explicit_instance"], "")

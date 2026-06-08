@@ -114,15 +114,44 @@ def _image_send_target_params(args: argparse.Namespace) -> tuple[dict[str, str],
     )
 
 
+def _thread_archive_inputs(args: argparse.Namespace) -> tuple[list[str], str]:
+    raw_thread_ids = list(getattr(args, "thread_ids", []) or [])
+    thread_ids = [str(item or "").strip() for item in raw_thread_ids if str(item or "").strip()]
+    thread_name = str(getattr(args, "thread_name", "") or "").strip()
+    if thread_ids and thread_name:
+        raise ValueError("thread archive 不能同时提供 `--thread-id` 和 `--thread-name`。")
+    if not thread_ids and not thread_name:
+        raise ValueError("thread archive 必须提供至少一个 `--thread-id`；单线程也可改用 `--thread-name`。")
+    return thread_ids, thread_name
+
+
 def _resolve_thread_archive_target(args: argparse.Namespace):
-    target_params = _thread_target_params(args)
+    targets = _resolve_thread_archive_targets(args)
+    if len(targets) != 1:
+        raise ValueError("thread archive 批量模式请改用 _resolve_thread_archive_targets().")
+    return targets[0]
+
+
+def _resolve_thread_archive_targets(args: argparse.Namespace):
+    thread_ids, thread_name = _thread_archive_inputs(args)
     explicit_instance = str(getattr(args, "instance", "") or "").strip()
+    if thread_ids:
+        if explicit_instance:
+            target = _resolve_target_instance(explicit_instance)
+            return [(target, {"thread_id": thread_id}) for thread_id in thread_ids]
+        targets = []
+        for thread_id in thread_ids:
+            preferred_instance = _lease_owner_instance(thread_id)
+            targets.append(
+                (
+                    _resolve_target_instance(None, preferred_running_instance=preferred_instance),
+                    {"thread_id": thread_id},
+                )
+            )
+        return targets
+    target_params = {"thread_name": thread_name}
     if explicit_instance:
-        return _resolve_target_instance(explicit_instance), target_params
-    thread_id = str(target_params.get("thread_id", "") or "").strip()
-    if thread_id:
-        preferred_instance = _lease_owner_instance(thread_id)
-        return _resolve_target_instance(None, preferred_running_instance=preferred_instance), target_params
+        return [(_resolve_target_instance(explicit_instance), target_params)]
     bootstrap_target = _resolve_target_instance(None)
     snapshot = _request(bootstrap_target.data_dir, "thread/status", target_params)
     resolved_thread_id = str(snapshot.get("thread_id", "") or "").strip()
@@ -133,8 +162,8 @@ def _resolve_thread_archive_target(args: argparse.Namespace):
     if resolved_thread_id:
         target_params = {"thread_id": resolved_thread_id}
     if owner_instance:
-        return _resolve_target_instance(None, preferred_running_instance=owner_instance), target_params
-    return bootstrap_target, target_params
+        return [(_resolve_target_instance(None, preferred_running_instance=owner_instance), target_params)]
+    return [(bootstrap_target, target_params)]
 
 
 def _prompt_text_from_args(args: argparse.Namespace) -> str:
@@ -613,6 +642,65 @@ def _archive_thread(data_dir: pathlib.Path, target_params: dict[str, str], *, in
     return 0
 
 
+def _archive_threads(thread_ids: list[str], *, explicit_instance: str = "") -> int:
+    normalized_thread_ids = [str(item or "").strip() for item in thread_ids if str(item or "").strip()]
+    if not normalized_thread_ids:
+        raise ValueError("thread archive 缺少目标。")
+    if len(normalized_thread_ids) == 1:
+        thread_id = normalized_thread_ids[0]
+        target = _resolve_target_instance(
+            explicit_instance or None,
+            preferred_running_instance="" if explicit_instance else _lease_owner_instance(thread_id),
+        )
+        return _archive_thread(
+            target.data_dir,
+            {"thread_id": thread_id},
+            instance_name=target.instance_name,
+        )
+
+    success_count = 0
+    failure_count = 0
+    resolved_explicit_target = _resolve_target_instance(explicit_instance) if explicit_instance else None
+    print(f"batch archive: total={len(normalized_thread_ids)}")
+    for index, requested_thread_id in enumerate(normalized_thread_ids, start=1):
+        print(f"[{index}/{len(normalized_thread_ids)}] thread: {requested_thread_id or '-'}")
+        try:
+            target = resolved_explicit_target or _resolve_target_instance(
+                None,
+                preferred_running_instance=_lease_owner_instance(requested_thread_id),
+            )
+        except ValueError as exc:
+            failure_count += 1
+            print("status: failed")
+            print(f"reason: {exc}")
+            if index != len(normalized_thread_ids):
+                print()
+            continue
+        print(f"instance: {target.instance_name}")
+        try:
+            result = _request(target.data_dir, "thread/archive", {"thread_id": requested_thread_id})
+        except ServiceControlError as exc:
+            failure_count += 1
+            print("status: failed")
+            print(f"reason: {exc}")
+        else:
+            success_count += 1
+            print("status: archived")
+            print(f"resolved thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
+            print(f"working_dir: {display_path(result['working_dir'])}")
+            print(
+                "cleared bindings in this instance: "
+                + (", ".join(result.get("cleared_binding_ids") or []) or "（无）")
+            )
+        if index != len(normalized_thread_ids):
+            print()
+    print()
+    print(f"summary: archived={success_count} failed={failure_count}")
+    print("note: 每个 thread 都按现有单线程 archive 语义独立路由、独立执行。")
+    print("note: 该动作只清理各自目标实例里的相关 bindings；不会跨实例联动清理。")
+    return 0 if failure_count == 0 else 1
+
+
 def _send_thread_image(
     data_dir: pathlib.Path,
     target_params: dict[str, str],
@@ -684,6 +772,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl thread status --thread-id <id>\n"
             "  feishu-codexctl thread goal --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
+            "  feishu-codexctl thread archive --thread-id <id-1> --thread-id <id-2>\n"
             "  feishu-codexctl thread attach --thread-id <id>\n"
             "  feishu-codexctl thread detach --thread-name <name>\n"
             "  feishu-codexctl image send --thread-id <id> --path ./diagram.png\n"
@@ -937,16 +1026,25 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_goal_clear_target.add_argument("--thread-name", help="目标 thread 名称。")
     thread_archive = thread_sub.add_parser(
         "archive",
-        help="归档某个 thread，并清理当前实例里指向它的 bindings。",
+        help="归档一个或多个 thread，并清理当前实例里指向它们的 bindings。",
         description=(
             "归档目标 thread，使其从常规列表中隐藏，而不是硬删除。\n"
+            "可重复提供 `--thread-id` 做批量归档；批量时每个 thread 都独立按当前单线程语义路由并执行。\n"
             "该动作只清理当前目标实例里指向该 thread 的 bindings；不跨实例联动清理。"
         ),
         formatter_class=_HelpFormatter,
     )
-    thread_archive_target = thread_archive.add_mutually_exclusive_group(required=True)
-    thread_archive_target.add_argument("--thread-id", help="目标 thread id。")
-    thread_archive_target.add_argument("--thread-name", help="目标 thread 名称。")
+    thread_archive.add_argument(
+        "--thread-id",
+        dest="thread_ids",
+        action="append",
+        default=[],
+        help="目标 thread id。可重复提供以批量归档。",
+    )
+    thread_archive.add_argument(
+        "--thread-name",
+        help="目标 thread 名称。仅单线程归档时可用，不能与 `--thread-id` 连用。",
+    )
     thread_detach = thread_sub.add_parser(
         "detach",
         help="暂停某个 thread 的飞书推送。",
@@ -1015,14 +1113,17 @@ def main() -> None:
                 )
             )
         if args.resource == "thread" and args.action == "archive":
-            target, target_params = _resolve_thread_archive_target(args)
-            raise SystemExit(
-                _archive_thread(
-                    target.data_dir,
-                    target_params,
-                    instance_name=target.instance_name,
+            thread_ids, thread_name = _thread_archive_inputs(args)
+            if thread_name:
+                target, target_params = _resolve_thread_archive_target(args)
+                raise SystemExit(
+                    _archive_thread(
+                        target.data_dir,
+                        target_params,
+                        instance_name=target.instance_name,
+                    )
                 )
-            )
+            raise SystemExit(_archive_threads(thread_ids, explicit_instance=str(args.instance or "").strip()))
         target = _resolve_target_instance(args.instance)
         data_dir = target.data_dir
         if args.resource == "service" and args.action == "status":

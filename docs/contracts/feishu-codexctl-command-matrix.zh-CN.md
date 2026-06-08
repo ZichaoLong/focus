@@ -24,9 +24,12 @@
 - 显式 `--instance` 始终优先。
 - 这里使用的命名实例必须已经先通过 `feishu-codex instance create <name>` 创建；`feishu-codexctl` 不会隐式创建它。
 - 省略时按 `preferred-running -> unique-running -> default-running -> current-instance-paths` 规则解析。
-- `thread status`、`thread bindings`、`thread goal`、`thread archive`、`thread attach`、`thread detach` 必须二选一：
+- `thread status`、`thread bindings`、`thread goal`、`thread attach`、`thread detach` 必须二选一：
   - `--thread-id <id>`
   - `--thread-name <name>`
+- `thread archive` 支持两种目标形式：
+  - 单线程：`--thread-name <name>` 或 `--thread-id <id>`
+  - 批量：重复提供 `--thread-id <id>`；每个目标 thread 都独立按现有单线程 archive 语义路由并执行
 
 ## 3. 资源层
 
@@ -100,7 +103,7 @@
 | `feishu-codexctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | 查看某个 thread 当前 goal；这是默认 show 形态 | 只读 | 飞书 `/goal` |
 | `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | 对某个 thread goal 执行原始 persisted 状态改写，供调试或运维使用；至少提供 `--objective` 或 `--status` 之一 | 变更 | 写 objective 时最接近飞书 `/goal set <objective>`；原始 `--status active\|paused` 改写没有精确飞书等价物 |
 | `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | 清除某个 thread 当前 goal | 变更 | 飞书 `/goal clear` |
-| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | 归档目标 thread，并清理当前目标实例里仍指向它的 bindings | 变更 | 飞书 `/archive` 的本地实例级对应 |
+| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | 归档一个或多个目标 thread，并按每个目标各自的实例路由清理当前目标实例里仍指向它的 bindings | 变更 | 飞书 `/archive` 的本地实例级对应；批量能力仅本地 CLI 提供 |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | 恢复某个 thread 当前所有 detached bindings 的飞书推送 | 变更 | 飞书 `/attach thread`，以及 reset 结果卡里的“附着当前线程” |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | 暂停某个 thread 的飞书推送，同时保留 thread 与 binding 关系 | 变更 | 飞书 thread-scoped 的 detach 管理动作 |
 

@@ -26,9 +26,12 @@ It answers:
   `feishu-codex instance create <name>`; `feishu-codexctl` never creates it
   implicitly.
 - Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
-- `thread status`, `thread bindings`, `thread goal`, `thread archive`, `thread attach`, and `thread detach` require exactly one of:
+- `thread status`, `thread bindings`, `thread goal`, `thread attach`, and `thread detach` require exactly one of:
   - `--thread-id <id>`
   - `--thread-name <name>`
+- `thread archive` supports two target forms:
+  - single-thread: `--thread-name <name>` or `--thread-id <id>`
+  - batch: repeat `--thread-id <id>`; each target thread is routed and executed independently using the existing single-thread archive semantics
 
 ## 3. Resource Layers
 
@@ -102,7 +105,7 @@ Notes:
 | `feishu-codexctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | Show the current goal for one thread; this is the default show form | read-only | Feishu `/goal` |
 | `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | Apply a raw persisted-thread goal mutation for debugging or ops; at least one of `--objective` or `--status` is required | mutating | Feishu `/goal set <objective>` for objective writes; no exact Feishu equivalent for raw `--status active\|paused` edits |
 | `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | Clear the current goal on one thread | mutating | Feishu `/goal clear` |
-| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> \| --thread-name <name>)` | Archive a target thread and clear bindings that still point to it in the target instance | mutating | local instance-scoped counterpart of Feishu `/archive` |
+| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | Archive one or more target threads, and for each target clear bindings that still point to it in that target instance | mutating | local instance-scoped counterpart of Feishu `/archive`; batch is local-CLI only |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |
 

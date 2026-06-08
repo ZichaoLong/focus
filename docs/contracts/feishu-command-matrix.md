@@ -42,7 +42,7 @@ It does not redefine:
 | `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |
-| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name` |
+| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name`; local CLI additionally supports repeated `--thread-id` for batch archive |
 | `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding bookmark | yes; dynamic button on `Connection Status` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
 | `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | yes; `Connection Status` and its lower-level page, and also contextual result cards | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
 | `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
