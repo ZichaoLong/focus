@@ -20,7 +20,7 @@
 
 当前明确不支持：
 
-- 内建 job queue
+- 持久化 scheduler / job queue
 - 跨 binding fan-out prompt
 - 另起一个裸 Codex backend 去恢复同一 thread
 
@@ -49,6 +49,10 @@ control plane 新增：
 
 - `started=true`
   - 表示 turn 已成功发起
+- `queued=true`
+  - 表示目标 binding 正在执行，且该 synthetic prompt 已进入同一 owner binding 的本地 FIFO
+  - 返回值应包含 `queue_position`
+  - 出队时必须重新读取该 binding 的最新 next-turn 设置，如 `/model`、`/effort`、`/approval`、`/permissions`、`/collab-mode`
 - `started=false`
   - 表示 fail-closed 拒绝或启动失败
   - 必须返回 `reason`；若有明确 reason code，也应返回 `reason_code`
@@ -70,6 +74,7 @@ control plane 新增：
 - 目标 binding 当前不可写时：
   - 退出码必须非零
   - 输出必须带拒绝原因
+- 如果目标 binding 只是“自己的当前 turn 正在执行”，则不视为不可写；该 prompt 进入同一 owner binding 的本地 FIFO，并由当前实例在 active execution 结束后继续执行
 
 ## 4. `display_mode`
 
@@ -112,9 +117,19 @@ skill helper 当前提供：
 
 1. 定时任务只是“未来时点发起一次新的 prompt”。
 2. 定时任务不能绕过当前实例的 interaction / attach / running-turn 保护。
-3. 不可写时必须 fail-closed；当前不做静默排队。
+3. 只有“当前 owner binding 自己”的 running-turn 冲突可以进入本地内存 FIFO；跨 binding、interaction owner 冲突、attach/preflight 失败仍必须 fail-closed。
 4. 当前不做跨实例自动抢占 live runtime owner。
 5. Linux skill 只是调度壳；真正执行面仍是 `binding/submit-prompt`。
+
+## 6.1 Owner Binding FIFO
+
+Feishu 普通 prompt、`feishu-codexctl prompt send` / `binding/submit-prompt`、以及 `/compact` 共享同一个 owner-binding admission 语义：
+
+- 当前 binding idle 时，立即执行
+- 当前 binding 有 active execution 时，只有同一个 owner binding 可入队
+- 队列只保存在当前进程内存中，不承诺服务重启恢复、列表、取消或跨 binding 排队
+- `/compact` 入队后出队时会先建立本地 execution anchor，再调用上游 `thread/compact/start`，避免 compact 后的 prompt 穿透
+- `/model`、`/effort`、`/approval`、`/permissions`、`/collab-mode` 等设置命令不入队，立即修改 binding-wise next-turn 设置；后续出队 prompt 读取最新设置
 
 ## 7. 平台边界
 

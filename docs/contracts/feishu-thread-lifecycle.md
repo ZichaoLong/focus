@@ -211,6 +211,11 @@ time:
 Therefore a soft `thread/read` failure must never clear the current anchor and
 then let later notifications create a second card for the same execution.
 
+The owner-binding FIFO does not weaken the "one active execution card" rule.
+Queued prompts or `/compact` items may only dequeue after the current execution
+anchor retires. When `/compact` dequeues or starts immediately, it must establish
+a local execution anchor before calling upstream `thread/compact/start`.
+
 ## 6. Relationship With `fcodex`
 
 `fcodex` and Feishu still share the same backend contract:

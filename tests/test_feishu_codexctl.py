@@ -449,6 +449,37 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("started: no", rendered)
         self.assertIn("reason code: prompt_denied_by_running_turn", rendered)
 
+    def test_send_binding_prompt_reports_queued_as_success(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "binding_id": "p2p:ou_user:chat-1",
+            "thread_id": "thread-1",
+            "started": False,
+            "queued": True,
+            "queue_position": 2,
+            "turn_id": "",
+            "reason_code": "",
+            "reason": "",
+            "display_mode": "silent",
+            "synthetic_source": "schedule",
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with redirect_stdout(stdout):
+                result = _send_binding_prompt(
+                    Path("/tmp/instance-data"),
+                    binding_id="p2p:ou_user:chat-1",
+                    text="继续执行",
+                    synthetic_source="schedule",
+                    instance_name="explorer",
+                )
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("instance: explorer", rendered)
+        self.assertIn("started: no", rendered)
+        self.assertIn("queued: yes", rendered)
+        self.assertIn("queue_position: 2", rendered)
+
     def test_parser_accepts_global_instance_selector(self) -> None:
         parser = _build_parser()
 

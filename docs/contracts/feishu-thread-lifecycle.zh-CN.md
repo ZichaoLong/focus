@@ -165,6 +165,10 @@ flowchart TD
 
 因此，`thread/read` 软失败不能导致“先把当前卡片判死、清空锚点，再被后续事件新开一张卡片”。
 
+owner binding FIFO 不放宽“一张当前执行卡片”规则。入队的 prompt 或 `/compact`
+只能在当前 execution anchor retire 之后出队；`/compact` 出队或立即执行时，也必须先建立本地
+execution anchor，再调用上游 `thread/compact/start`。
+
 ## 6. 与 `fcodex` 的关系
 
 `fcodex` 与飞书侧仍共享同一套 backend 合同：

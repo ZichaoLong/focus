@@ -1370,14 +1370,19 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(handler._adapter.unsubscribe_thread_calls, [])
 
-    def test_running_p2p_prompt_replies_wait_or_cancel(self) -> None:
+    def test_running_p2p_prompt_queues_and_drains_after_current_turn(self) -> None:
         handler, bot = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "hello")
         handler.handle_message("ou_user", "c1", "follow up", message_id="m-2")
 
         self.assertEqual(len(handler._adapter.start_turn_calls), 1)
-        self.assertEqual(bot.replies[-1], ("c1", "当前线程仍在执行，请等待结束或先执行 `/cancel`。"))
+        self.assertEqual(bot.replies[-1], ("c1", "已排队，将在当前执行结束后继续。队列位置：1"))
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "follow up")
 
     def test_running_group_prompt_replies_wait_or_cancel(self) -> None:
         handler, bot = self._make_handler()
@@ -4570,7 +4575,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertTrue(result["started"])
         self.assertEqual(bot.replies, [("c1", "schedule触发，开始新一轮执行。")])
 
-    def test_service_control_plane_binding_submit_prompt_fail_closes_without_chat_reply(self) -> None:
+    def test_service_control_plane_binding_submit_prompt_queues_without_chat_reply(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -4588,7 +4593,7 @@ class CodexHandlerTests(unittest.TestCase):
         )
         handler._bind_thread("ou_user", "c1", thread)
         state = handler._get_runtime_state("ou_user", "c1")
-        state["running_turn"] = True
+        state["running"] = True
         state["current_thread_id"] = "thread-1"
         state["current_turn_id"] = "turn-1"
 
@@ -4602,7 +4607,9 @@ class CodexHandlerTests(unittest.TestCase):
         )
 
         self.assertFalse(result["started"])
-        self.assertEqual(result["reason_code"], "prompt_denied_by_running_turn")
+        self.assertTrue(result["queued"])
+        self.assertEqual(result["queue_position"], 1)
+        self.assertEqual(result["reason_code"], "")
         self.assertEqual(handler._adapter.start_turn_calls, [])
         self.assertEqual(bot.replies, [])
 
@@ -5003,7 +5010,12 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertFalse(second.is_alive())
         self.assertEqual(create_thread_calls, 1)
         self.assertEqual(len(handler._adapter.start_turn_calls), 1)
-        self.assertEqual(bot.replies[-1], ("c1", "当前线程仍在执行，请等待结束或先执行 `/cancel`。"))
+        self.assertEqual(bot.replies[-1], ("c1", "已排队，将在当前执行结束后继续。队列位置：1"))
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
 
     def test_file_attachment_is_staged_and_consumed_by_next_prompt(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
@@ -6337,6 +6349,7 @@ class CodexHandlerTests(unittest.TestCase):
         state = handler._get_runtime_state("ou_user", "c1")
         state["current_thread_id"] = "thread-1"
         state["current_thread_title"] = "demo"
+        state["feishu_runtime_state"] = "attached"
 
         handler.handle_message("ou_user", "c1", "/compact")
 
@@ -6344,10 +6357,64 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.cards[-1][1]["header"]["title"]["content"], "Codex Compact 已开始")
         self.assertIn("`thread-1", bot.cards[-1][1]["elements"][0]["content"])
 
+    def test_prompt_compact_prompt_queue_runs_fifo(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "first")
+        handler.handle_message("ou_user", "c1", "/compact")
+        handler.handle_message("ou_user", "c1", "second", message_id="m-2")
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+        self.assertEqual(handler._adapter.compact_thread_calls, [])
+        self.assertEqual(bot.replies[-2], ("c1", "已排队，compact 将在当前执行结束后开始。队列位置：1"))
+        self.assertEqual(bot.replies[-1], ("c1", "已排队，将在当前执行结束后继续。队列位置：2"))
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(handler._adapter.compact_thread_calls, ["thread-created"])
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "compact-turn", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
+
+    def test_compact_then_prompt_queues_until_compact_completes(self) -> None:
+        handler, _ = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["current_thread_title"] = "demo"
+        state["feishu_runtime_state"] = "attached"
+
+        handler.handle_message("ou_user", "c1", "/compact")
+        handler.handle_message("ou_user", "c1", "after compact", message_id="m-2")
+
+        self.assertEqual(handler._adapter.compact_thread_calls, ["thread-1"])
+        self.assertEqual(len(handler._adapter.start_turn_calls), 0)
+
+        handler._finalize_execution_card_from_state("ou_user", "c1")
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "after compact")
+
+    def test_queued_prompt_uses_latest_model_setting_at_dequeue(self) -> None:
+        handler, _ = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "first")
+        handler.handle_message("ou_user", "c1", "second", message_id="m-2")
+        handler.handle_message("ou_user", "c1", "/model gpt-5.5")
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["model"], "gpt-5.5")
+
     def test_compact_command_surfaces_thread_not_loaded_hint(self) -> None:
         handler, bot = self._make_handler()
         state = handler._get_runtime_state("ou_user", "c1")
         state["current_thread_id"] = "thread-1"
+        state["feishu_runtime_state"] = "attached"
 
         def _raise_not_loaded(thread_id: str) -> None:
             del thread_id

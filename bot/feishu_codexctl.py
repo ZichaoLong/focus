@@ -460,6 +460,11 @@ def _send_binding_prompt(
         print("started: yes")
         print(f"turn_id: {result.get('turn_id') or '-'}")
         return 0
+    if result.get("queued"):
+        print("started: no")
+        print("queued: yes")
+        print(f"queue_position: {int(result.get('queue_position') or 0)}")
+        return 0
     print("started: no")
     if result.get("reason_code"):
         print(f"reason code: {result['reason_code']}")

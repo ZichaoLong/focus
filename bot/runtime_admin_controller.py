@@ -363,11 +363,13 @@ class RuntimeAdminController:
         if normalized_display_mode not in {"silent", "announce"}:
             raise ValueError("binding/submit-prompt 的 display_mode 只支持 `silent` 或 `announce`。")
         check = self.binding_prompt_check(binding)
-        if not check.allowed:
+        if not check.allowed and check.reason_code != PROMPT_DENIED_BY_RUNNING_TURN:
             return {
                 "binding_id": format_binding_id(binding),
                 "thread_id": "",
                 "started": False,
+                "queued": False,
+                "queue_position": 0,
                 "turn_id": "",
                 "reason_code": check.reason_code,
                 "reason": check.reason_text,

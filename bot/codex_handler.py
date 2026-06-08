@@ -75,6 +75,7 @@ from bot.permissions_profile import (
     permissions_profile_label,
 )
 from bot.inbound_surface_controller import ActionRoute, CommandRoute, InboundSurfaceController
+from bot.owner_binding_queue import OwnerBindingQueue, OwnerBindingQueueItem
 from bot.prompt_turn_entry_controller import PromptTurnEntryController, PromptTurnEntryPorts
 from bot.runtime_admin_controller import RuntimeAdminController
 from bot.runtime_card_publisher import (
@@ -207,6 +208,7 @@ class CodexHandler(BotHandler):
         self._chat_binding_store = ChatBindingStore(self._data_dir)
         self._pending_attachment_store = PendingAttachmentStore(self._data_dir)
         self._terminal_result_store = TerminalResultStore(self._data_dir)
+        self._owner_binding_queue = OwnerBindingQueue()
         self._binding_runtime = BindingRuntimeManager(
             lock=self._lock,
             default_working_dir=self._default_working_dir,
@@ -1671,7 +1673,7 @@ class CodexHandler(BotHandler):
                 handler=self._threads_ui_domain.handle_archive_command,
             ),
             "/compact": CommandRoute(
-                handler=self._threads_ui_domain.handle_compact_command,
+                handler=self._handle_compact_command,
             ),
             "/rename": CommandRoute(
                 handler=self._threads_ui_domain.handle_rename_command,
@@ -1912,15 +1914,18 @@ class CodexHandler(BotHandler):
         return ExecutionRecoveryController.snapshot_reply(snapshot, turn_id=turn_id)
 
     def _finalize_execution_card_from_state(self, sender_id: str, chat_id: str) -> bool:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id)
         state = self._get_runtime_state(sender_id, chat_id)
         with self._lock:
             transition = self._turn_execution.prepare_finalize_locked(state)
             self._cancel_mirror_watchdog_locked(state)
         if not transition.had_card:
             self._retire_execution_anchor(sender_id, chat_id)
+            self._drain_owner_binding_queue(resolved.binding)
             return False
         self._flush_execution_card(sender_id, chat_id, immediate=True, background=True)
         self._retire_execution_anchor(sender_id, chat_id)
+        self._drain_owner_binding_queue(resolved.binding)
         return True
 
     def _finalize_execution_from_terminal_signal(
@@ -2001,15 +2006,340 @@ class CodexHandler(BotHandler):
                 reply_in_thread=self._message_reply_in_thread(message_id),
             )
             return
-        started = self._prompt_turn_entry.handle_prompt(
+        prompt_admission = self._start_or_enqueue_prompt(
             sender_id,
             chat_id,
             text,
             message_id=message_id,
             input_items=list(prepared.input_items),
         )
-        if not started and prepared.consumed_attachments:
+        if not prompt_admission.get("accepted") and prepared.consumed_attachments:
             self._file_message_domain.restore_consumed_attachments(prepared.consumed_attachments)
+
+    def _start_or_enqueue_prompt(
+        self,
+        sender_id: str,
+        chat_id: str,
+        text: str,
+        *,
+        message_id: str = "",
+        actor_open_id: str = "",
+        input_items: list[dict[str, Any]] | None = None,
+        synthetic_source: str = "",
+        display_mode: str = "silent",
+        surface_failures: bool = True,
+    ) -> dict[str, Any]:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
+        binding_id = format_binding_id(resolved.binding)
+        if runtime.running:
+            if not self._owner_binding_queue_allowed(resolved, sender_id, chat_id, message_id=message_id):
+                if surface_failures:
+                    self._reply_text(chat_id, "当前线程仍在执行，请等待结束或先执行 `/cancel`。", message_id=message_id)
+                return {
+                    "accepted": False,
+                    "queued": False,
+                    "started": False,
+                    "binding_id": binding_id,
+                    "thread_id": runtime.current_thread_id,
+                    "turn_id": "",
+                    "reason_code": "prompt_denied_by_running_turn",
+                    "reason": "当前线程仍在执行，请等待结束或先执行 `/cancel`。",
+                }
+            item = OwnerBindingQueueItem(
+                kind="prompt",
+                binding=resolved.binding,
+                sender_id=sender_id,
+                chat_id=chat_id,
+                message_id=str(message_id or "").strip(),
+                text=str(text or "").strip(),
+                actor_open_id=str(actor_open_id or "").strip(),
+                input_items=tuple(dict(item) for item in (input_items or ())),
+                synthetic_source=str(synthetic_source or "").strip(),
+                display_mode=str(display_mode or "silent").strip().lower() or "silent",
+                surface_failures=surface_failures,
+            )
+            with self._lock:
+                depth = self._owner_binding_queue.enqueue(item)
+            if surface_failures:
+                self._reply_text(chat_id, f"已排队，将在当前执行结束后继续。队列位置：{depth}", message_id=message_id)
+            return {
+                "accepted": True,
+                "queued": True,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": runtime.current_thread_id,
+                "turn_id": "",
+                "reason_code": "",
+                "reason": "",
+                "queue_position": depth,
+            }
+        result = self._prompt_turn_entry.start_prompt_turn_result(
+            sender_id,
+            chat_id,
+            text,
+            message_id=message_id,
+            actor_open_id=actor_open_id,
+            input_items=input_items,
+            surface_failures=surface_failures,
+        )
+        return {
+            "accepted": result.started,
+            "queued": False,
+            "started": result.started,
+            "binding_id": binding_id,
+            "thread_id": result.thread_id,
+            "turn_id": result.turn_id,
+            "reason_code": result.reason_code,
+            "reason": result.reason_text,
+        }
+
+    def _owner_binding_queue_allowed(
+        self,
+        resolved: ResolvedRuntimeBinding,
+        sender_id: str,
+        chat_id: str,
+        *,
+        message_id: str = "",
+    ) -> bool:
+        del chat_id
+        incoming_actor = self._group_actor_open_id(message_id)
+        runtime = build_runtime_view(resolved.state)
+        current_actor = runtime.execution.current_actor_open_id.strip()
+        if current_actor and incoming_actor and current_actor != incoming_actor:
+            return False
+        if resolved.binding[0] != GROUP_SHARED_BINDING_OWNER_ID and resolved.binding[0] != sender_id:
+            return False
+        return True
+
+    def _handle_compact_command(
+        self,
+        sender_id: str,
+        chat_id: str,
+        arg: str,
+        message_id: str = "",
+    ) -> CommandResult:
+        if arg.strip():
+            return CommandResult(text="用法：`/compact`")
+        result = self._start_or_enqueue_compact(sender_id, chat_id, message_id=message_id)
+        if result.get("queued"):
+            return CommandResult(text=f"已排队，compact 将在当前执行结束后开始。队列位置：{result['queue_position']}")
+        if not result.get("started"):
+            return CommandResult(text=str(result.get("reason") or "compact 失败。"))
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
+        title = runtime.current_thread_title or "（无标题）"
+        return CommandResult(
+            card=build_markdown_card(
+                "Codex Compact 已开始",
+                (
+                    f"已发起当前 thread 的 compact：`{result['thread_id'][:8]}…` {title}\n"
+                    "这是上游 Codex 的 thread 级上下文压缩动作；完成后会继续在同一 thread 内工作。"
+                ),
+                template="green",
+            )
+        )
+
+    def _start_or_enqueue_compact(self, sender_id: str, chat_id: str, *, message_id: str = "") -> dict[str, Any]:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        runtime = self._get_runtime_view(sender_id, chat_id, message_id)
+        binding_id = format_binding_id(resolved.binding)
+        if not runtime.current_thread_id:
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": "",
+                "turn_id": "",
+                "reason_code": "compact_denied_no_thread",
+                "reason": "当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
+            }
+        if runtime.running:
+            if not self._owner_binding_queue_allowed(resolved, sender_id, chat_id, message_id=message_id):
+                return {
+                    "accepted": False,
+                    "queued": False,
+                    "started": False,
+                    "binding_id": binding_id,
+                    "thread_id": runtime.current_thread_id,
+                    "turn_id": "",
+                    "reason_code": "compact_denied_by_running_turn",
+                    "reason": "当前线程仍在执行，请等待结束或先执行 `/cancel`。",
+                }
+            item = OwnerBindingQueueItem(
+                kind="compact",
+                binding=resolved.binding,
+                sender_id=sender_id,
+                chat_id=chat_id,
+                message_id=str(message_id or "").strip(),
+            )
+            with self._lock:
+                depth = self._owner_binding_queue.enqueue(item)
+            return {
+                "accepted": True,
+                "queued": True,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": runtime.current_thread_id,
+                "turn_id": "",
+                "reason_code": "",
+                "reason": "",
+                "queue_position": depth,
+            }
+        return self._start_compact_execution(sender_id, chat_id, message_id=message_id)
+
+    def _start_compact_execution(self, sender_id: str, chat_id: str, *, message_id: str = "") -> dict[str, Any]:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        state = resolved.state
+        runtime = build_runtime_view(state)
+        binding_id = format_binding_id(resolved.binding)
+        thread_id = runtime.current_thread_id.strip()
+        if not thread_id:
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": "",
+                "turn_id": "",
+                "reason_code": "compact_denied_no_thread",
+                "reason": "当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
+            }
+        denial_text = self._thread_access_policy.prompt_write_denial_text(
+            resolved.binding,
+            chat_id,
+            thread_id,
+            message_id=message_id,
+        )
+        if denial_text:
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": thread_id,
+                "turn_id": "",
+                "reason_code": "compact_denied_by_thread_owner",
+                "reason": denial_text,
+            }
+        with self._lock:
+            interaction_lease = self._acquire_interaction_lease_for_binding(resolved.binding, thread_id)
+        if not interaction_lease.granted:
+            denial_text = self._thread_access_policy.interaction_denied_text(interaction_lease.lease)
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": thread_id,
+                "turn_id": "",
+                "reason_code": "compact_denied_by_interaction_owner",
+                "reason": denial_text,
+            }
+        reply_in_thread = self._message_reply_in_thread(message_id)
+        with self._lock:
+            started_at = time.monotonic()
+            self._turn_execution.prime_prompt_turn_locked(
+                state,
+                prompt_message_id=str(message_id or "").strip(),
+                prompt_reply_in_thread=reply_in_thread,
+                actor_open_id=self._group_actor_open_id(message_id),
+                started_at=started_at,
+                awaiting_attach_status_settle=False,
+            )
+            self._turn_execution.append_process_note_locked(
+                state,
+                text="正在压缩上下文。",
+                marks_work=True,
+            )
+        card_id = self._send_execution_card(chat_id, message_id, reply_in_thread=reply_in_thread) or ""
+        if not card_id:
+            self._retire_execution_anchor(sender_id, chat_id)
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": thread_id,
+                "turn_id": "",
+                "reason_code": "compact_execution_card_failed",
+                "reason": "执行卡片发送失败，未启动 compact；请稍后重试。",
+            }
+        with self._lock:
+            self._apply_runtime_state_message_locked(state, ExecutionStateChanged(current_message_id=card_id))
+        try:
+            self._adapter.compact_thread(thread_id)
+        except Exception as exc:
+            if self._is_thread_not_loaded_error(exc):
+                error_text = (
+                    "当前 thread 尚未加载到本实例 backend，无法 compact。\n"
+                    "先执行 `/attach`，或直接发送一条普通消息恢复该 thread。"
+                )
+            else:
+                logger.exception("compact 线程失败")
+                error_text = f"compact 失败：{exc}"
+            with self._lock:
+                self._turn_execution.record_start_failure_locked(state, error_text=error_text)
+            self._flush_execution_card(sender_id, chat_id, immediate=True)
+            self._retire_execution_anchor(sender_id, chat_id)
+            return {
+                "accepted": False,
+                "queued": False,
+                "started": False,
+                "binding_id": binding_id,
+                "thread_id": thread_id,
+                "turn_id": "",
+                "reason_code": "compact_start_failed",
+                "reason": error_text,
+            }
+        self._schedule_mirror_watchdog(sender_id, chat_id)
+        return {
+            "accepted": True,
+            "queued": False,
+            "started": True,
+            "binding_id": binding_id,
+            "thread_id": thread_id,
+            "turn_id": "",
+            "reason_code": "",
+            "reason": "",
+        }
+
+    def _drain_owner_binding_queue(self, binding: tuple[str, str]) -> None:
+        with self._lock:
+            item = self._owner_binding_queue.begin_drain(binding)
+        if item is None:
+            return
+        consumed = False
+        try:
+            runtime = self._get_runtime_view(item.sender_id, item.chat_id, item.message_id)
+            if runtime.running:
+                return
+            if item.kind == "prompt":
+                result = self._start_or_enqueue_prompt(
+                    item.sender_id,
+                    item.chat_id,
+                    item.text,
+                    message_id=item.message_id,
+                    actor_open_id=item.actor_open_id,
+                    input_items=[dict(input_item) for input_item in item.input_items],
+                    synthetic_source=item.synthetic_source,
+                    display_mode=item.display_mode,
+                    surface_failures=item.surface_failures,
+                )
+                consumed = not result.get("queued")
+                if result.get("started") and item.display_mode == "announce":
+                    label = item.synthetic_source or "系统任务"
+                    self._reply_text(item.chat_id, f"{label}触发，开始新一轮执行。", reply_in_thread=False)
+            else:
+                result = self._start_compact_execution(item.sender_id, item.chat_id, message_id=item.message_id)
+                consumed = True
+                if not result.get("started"):
+                    self._reply_text(item.chat_id, str(result.get("reason") or "compact 失败。"), message_id=item.message_id)
+        finally:
+            with self._lock:
+                self._owner_binding_queue.finish_drain(binding, started=consumed)
+        if consumed and not self._get_runtime_view(item.sender_id, item.chat_id, item.message_id).running:
+            self._drain_owner_binding_queue(binding)
 
     def _handle_cd_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
@@ -2290,24 +2620,28 @@ class CodexHandler(BotHandler):
         normalized_text = str(text or "").strip()
         normalized_source = str(synthetic_source or "").strip()
         normalized_display_mode = str(display_mode or "silent").strip().lower() or "silent"
-        result = self._prompt_turn_entry.start_prompt_turn_result(
+        result = self._start_or_enqueue_prompt(
             binding[0],
             binding[1],
             normalized_text,
             actor_open_id=str(actor_open_id or "").strip(),
             input_items=list(input_items) if input_items is not None else None,
+            synthetic_source=normalized_source,
+            display_mode=normalized_display_mode,
             surface_failures=False,
         )
-        if normalized_display_mode == "announce" and result.started:
+        if normalized_display_mode == "announce" and result.get("started"):
             label = normalized_source or "系统任务"
             self._reply_text(binding[1], f"{label}触发，开始新一轮执行。", reply_in_thread=False)
         return {
             "binding_id": binding_id,
-            "thread_id": result.thread_id,
-            "started": result.started,
-            "turn_id": result.turn_id,
-            "reason_code": result.reason_code,
-            "reason": result.reason_text,
+            "thread_id": str(result.get("thread_id", "") or ""),
+            "started": bool(result.get("started")),
+            "queued": bool(result.get("queued")),
+            "queue_position": int(result.get("queue_position") or 0),
+            "turn_id": str(result.get("turn_id", "") or ""),
+            "reason_code": str(result.get("reason_code", "") or ""),
+            "reason": str(result.get("reason", "") or ""),
             "synthetic_source": normalized_source,
             "display_mode": normalized_display_mode,
         }

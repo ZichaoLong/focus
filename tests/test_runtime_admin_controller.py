@@ -11,7 +11,6 @@ from bot.reason_codes import (
     PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER,
     PROMPT_DENIED_BINDING_NOT_FOUND,
     PROMPT_DENIED_BY_INTERACTION_OWNER,
-    PROMPT_DENIED_BY_RUNNING_TURN,
     DETACH_BLOCKED_BY_PENDING_REQUEST,
     ReasonedCheck,
 )
@@ -1435,7 +1434,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(submitted_prompts[0]["synthetic_source"], "schedule")
         self.assertEqual(submitted_prompts[0]["display_mode"], "announce")
 
-    def test_handle_service_control_request_binding_submit_prompt_fail_closes_on_preflight_denial(self) -> None:
+    def test_handle_service_control_request_binding_submit_prompt_defers_running_check_to_admission(self) -> None:
         (
             lock,
             binding_runtime,
@@ -1474,9 +1473,11 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             },
         )
 
-        self.assertFalse(result["started"])
-        self.assertEqual(result["reason_code"], PROMPT_DENIED_BY_RUNNING_TURN)
-        self.assertEqual(getattr(controller, "_submitted_prompts"), [])
+        self.assertTrue(result["started"])
+        submitted_prompts = getattr(controller, "_submitted_prompts")
+        self.assertEqual(len(submitted_prompts), 1)
+        self.assertEqual(submitted_prompts[0]["binding"], ("ou_user", "c1"))
+        self.assertEqual(submitted_prompts[0]["text"], "继续执行")
 
     def test_handle_service_control_request_binding_submit_prompt_rejects_missing_binding(self) -> None:
         (
