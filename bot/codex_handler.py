@@ -2533,7 +2533,7 @@ class CodexHandler(BotHandler):
                 message_id=item_message_id,
                 content_dict=content_dict,
             )
-            if resolved.card_kind == "terminal" and resolved.text:
+            if resolved.card_kind == "terminal" and resolved.text and resolved.has_authoritative_text:
                 return resolved.text
             if not fallback_text and resolved.card_kind == "execution" and resolved.text:
                 fallback_text = resolved.text

@@ -17,7 +17,7 @@ from bot.adapters.base import (
     ThreadSummary,
 )
 from bot.feishu_bot import InteractiveMessageReadResult
-from bot.card_text_projection import project_interactive_card_text
+from bot.card_text_projection import project_interactive_card_text, terminal_result_checksum
 from bot.codex_handler import CodexHandler
 from bot.codex_protocol.client import CodexRpcError
 from bot.execution_transcript import ExecutionReplySegment
@@ -488,7 +488,11 @@ class _FakeBot:
             card_kind = "terminal"
         elif title.startswith("Codex 执行过程"):
             card_kind = "execution"
-        return InteractiveMessageReadResult(text=projection.text, card_kind=card_kind)
+        return InteractiveMessageReadResult(
+            text=projection.text,
+            card_kind=card_kind,
+            has_authoritative_text=projection.has_authoritative_final_reply,
+        )
 
     def read_interactive_message_text(self, message_id: str, *, content_dict: dict | None = None) -> str:
         return self.read_interactive_message(message_id, content_dict=content_dict).text
@@ -880,6 +884,45 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/last text")
 
         self.assertIn("最近执行输出", bot.replies[-1][1])
+
+    def test_last_text_skips_degraded_terminal_result_card_when_store_misses(self) -> None:
+        handler, bot = self._make_handler()
+        checksum = terminal_result_checksum("权威原文")
+        bot.history_messages = [
+            SimpleNamespace(
+                message_id="msg-terminal",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_terminal_result_card(
+                            "降级投影正文",
+                            terminal_result_id="0123456789abcdef0123456789abcdef",
+                            checksum=checksum,
+                        ),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+            SimpleNamespace(
+                message_id="msg-execution",
+                msg_type="interactive",
+                sender=SimpleNamespace(sender_type="app", id=bot.app_id),
+                body=SimpleNamespace(
+                    content=json.dumps(
+                        build_execution_card("最近执行输出", [], running=False),
+                        ensure_ascii=False,
+                    )
+                ),
+                thread_id="",
+            ),
+        ]
+
+        handler.handle_message("ou_user", "c1", "/last text")
+
+        self.assertIn("最近执行输出", bot.replies[-1][1])
+        self.assertNotIn("降级投影正文", bot.replies[-1][1])
 
     def test_last_text_prefers_latest_authoritative_text_message(self) -> None:
         handler, bot = self._make_handler()
