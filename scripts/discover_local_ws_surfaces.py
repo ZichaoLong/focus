@@ -235,7 +235,7 @@ def _probe_surface_without_auth(url: str, *, open_timeout: float) -> dict[str, A
                 return payload
 
     try:
-        with connect(url, open_timeout=open_timeout, max_size=None) as ws:
+        with connect(url, open_timeout=open_timeout, max_size=None, proxy=None) as ws:
             initialize = _rpc_call(
                 ws,
                 request_id=1,

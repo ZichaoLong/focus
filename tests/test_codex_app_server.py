@@ -1010,6 +1010,7 @@ class CodexRpcClientTests(unittest.TestCase):
         _, kwargs = mock_connect.call_args
         self.assertEqual(kwargs["open_timeout"], client._connect_timeout_seconds)
         self.assertIsNone(kwargs["max_size"])
+        self.assertIsNone(kwargs["proxy"])
 
     def test_connect_ws_uses_bearer_auth_for_remote_backend_when_token_file_exists(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1309,6 +1310,31 @@ class FCodexTests(unittest.TestCase):
             mock_exec.call_args.args[2][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
             mock_proxy.call_args.kwargs["proxy_auth_token"],
         )
+
+    def test_fcodex_adds_loopback_no_proxy_without_dropping_user_proxy_env(self) -> None:
+        with patch.dict(
+            "bot.fcodex.os.environ",
+            {
+                "HTTP_PROXY": "http://proxy.example:8080",
+                "HTTPS_PROXY": "http://proxy.example:8443",
+                "NO_PROXY": "example.com,localhost",
+            },
+            clear=True,
+        ):
+            with patch(
+                "bot.fcodex.load_config_file",
+                return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"},
+            ):
+                with patch("bot.fcodex._launch_local_cwd_proxy", return_value=("ws://127.0.0.1:9100", Mock())):
+                    with patch("bot.fcodex.os.execvpe") as mock_exec:
+                        with patch("sys.argv", ["fcodex"]):
+                            fcodex_main()
+
+        env = mock_exec.call_args.args[2]
+        self.assertEqual(env["HTTP_PROXY"], "http://proxy.example:8080")
+        self.assertEqual(env["HTTPS_PROXY"], "http://proxy.example:8443")
+        self.assertEqual(env["NO_PROXY"], "127.0.0.1,localhost,::1,example.com")
+        self.assertEqual(env["no_proxy"], "127.0.0.1,localhost,::1,example.com")
 
     def test_fcodex_uses_resolved_codex_command_when_instance_override_omits_it(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"app_server_url": "ws://127.0.0.1:8765"}):

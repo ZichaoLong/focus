@@ -64,6 +64,7 @@ _REMOVED_WRAPPER_COMMAND_HINTS = {
     "/archive": "请改用 `feishu-codexctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
 _HELP_FLAGS = ("-h", "--help")
+_LOCAL_WEBSOCKET_NO_PROXY_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
 def _has_option(user_args: list[str], names: tuple[str, ...]) -> bool:
@@ -126,8 +127,31 @@ def _print_wrapper_resume_help() -> None:
     )
 
 
+def _prepend_no_proxy_hosts(env: dict[str, str], hosts: tuple[str, ...] = _LOCAL_WEBSOCKET_NO_PROXY_HOSTS) -> None:
+    existing_items: list[str] = []
+    for key in ("NO_PROXY", "no_proxy"):
+        existing_items.extend(item.strip() for item in str(env.get(key, "") or "").split(",") if item.strip())
+
+    seen: set[str] = set()
+    merged: list[str] = []
+    for item in [*hosts, *existing_items]:
+        normalized = item.strip()
+        if not normalized:
+            continue
+        dedupe_key = normalized.lower()
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        merged.append(normalized)
+
+    value = ",".join(merged)
+    env["NO_PROXY"] = value
+    env["no_proxy"] = value
+
+
 def _has_explicit_remote(user_args: list[str]) -> bool:
     return _has_option(user_args, ("--remote",))
+
 
 def _has_explicit_remote_auth_token_env(user_args: list[str]) -> bool:
     return _has_option(user_args, ("--remote-auth-token-env",))
@@ -729,6 +753,7 @@ def main() -> None:
     env["FC_INSTANCE"] = resolved_target.instance_name
     if proxy_auth_token:
         env[FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
+        _prepend_no_proxy_hosts(env)
     exit_code = _run_upstream_codex(argv, env, proxy_process=proxy_process)
     if exit_code is not None:
         raise SystemExit(exit_code)

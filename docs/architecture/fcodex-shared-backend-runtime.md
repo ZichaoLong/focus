@@ -232,6 +232,11 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
   own separate tokens, and neither reuses the service token
 - the proxy only carries transport-layer fixes; it no longer synthesizes or
   persists any project-owned thread-level settings contract
+- local control-plane websockets shouldn't be hijacked by user
+  `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY` settings: Python-side shared
+  backend connections explicitly disable websocket proxying, while the wrapper
+  only strengthens loopback entries in `NO_PROXY/no_proxy` for the upstream
+  Codex TUI process without removing the user's outbound proxy environment
 
 The split is explicit:
 

@@ -195,6 +195,9 @@ fcodex shell wrapper
 - 通过一个轻量本地代理修补 cwd
 - 对 shared-backend 路径上的 websocket 面做本地鉴权收口：backend 与 proxy 各自持有独立 token，且都不再复用 service token
 - proxy 只负责传输层修补；它不再综合或持久化任何项目自管的 thread 级设置合同
+- 本地控制面 websocket 不应被用户的 `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`
+  劫持：Python 侧连接 shared backend 时显式禁用 websocket proxy；wrapper 启动上游
+  Codex TUI 时只补强 `NO_PROXY/no_proxy` 的 loopback 项，不删除用户外网代理环境变量
 
 其中职责边界是显式的：
 

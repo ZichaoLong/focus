@@ -73,6 +73,7 @@ def probe_surface(*, url: str, token: str, open_timeout: float) -> dict[str, Any
         connect_kwargs: dict[str, Any] = {
             "open_timeout": open_timeout,
             "max_size": None,
+            "proxy": None,
         }
         if headers:
             connect_kwargs["additional_headers"] = headers

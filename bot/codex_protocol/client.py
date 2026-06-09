@@ -318,6 +318,7 @@ class CodexRpcClient:
                 connect_kwargs: dict[str, Any] = {
                     "open_timeout": self._connect_timeout_seconds,
                     "max_size": None,
+                    "proxy": None,
                 }
                 auth_headers = self._websocket_auth_headers_for_connect()
                 if auth_headers:
