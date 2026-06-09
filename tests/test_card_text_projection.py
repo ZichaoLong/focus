@@ -14,11 +14,11 @@ from bot.execution_transcript import ExecutionReplySegment
 
 
 class CardTextProjectionTests(unittest.TestCase):
-    def test_terminal_result_card_projects_authoritative_final_reply_text(self) -> None:
+    def test_legacy_terminal_result_card_projects_final_reply_text_as_non_authoritative(self) -> None:
         projection = project_interactive_card_text(build_terminal_result_card("最终答复"))
 
         self.assertIsInstance(projection, CardTextProjection)
-        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertFalse(projection.has_authoritative_final_reply)
         self.assertEqual(projection.final_reply_source, TERMINAL_RESULT_SOURCE_CARD_LEGACY)
         self.assertEqual(projection.final_reply_text, "最终答复")
         self.assertEqual(projection.text, "最终答复")
@@ -32,7 +32,7 @@ class CardTextProjectionTests(unittest.TestCase):
             )
         )
 
-        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertFalse(projection.has_authoritative_final_reply)
         self.assertEqual(
             projection.final_reply_text,
             "- [示例地图链接](https://maps.example.invalid/shanghai/live)",
@@ -181,7 +181,7 @@ class CardTextProjectionTests(unittest.TestCase):
             }
         )
 
-        self.assertTrue(projection.has_authoritative_final_reply)
+        self.assertFalse(projection.has_authoritative_final_reply)
         self.assertEqual(projection.final_reply_text, "# 标题")
         self.assertEqual(projection.text, "# 标题")
 

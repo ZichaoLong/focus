@@ -221,25 +221,30 @@ JSON 2.0 的强项是：
 
 ### 6.1 总体原则
 
-读取路径不再按“1.0 / 2.0”分支，而按“是否可精确追查”分支：
+读取路径不再按“1.0 / 2.0”分支，而按“文本来源权威性与读取保真度”分支：
 
-1. 可按 `message_id` 查询原卡
-2. `merge_forward`，可先展开子消息
-3. 其他情况只能投影
+1. 本地 terminal result store 命中：权威终态文本
+2. 可按 `message_id` 查询当前消息的原卡 JSON：raw-card projection
+3. 其他情况：payload / best-effort projection
 
 ### 6.2 普通 `interactive` 消息
 
 当收到一条普通 `interactive` 消息时：
 
-1. 先保留当前 best-effort 投影能力，作为廉价即时路径
-2. 若后续需要高保真读取，则对当前这条消息自己的 `message_id` 调 `message/get`
-3. 若能拿到原卡 JSON，则按本项目终态卡协议解析权威内容
-4. 否则回退到文本投影
+1. 优先对当前这条消息自己的 `message_id` 调 `message/get`，并设置
+   `card_msg_content_type=user_card_content`
+2. 若能拿到原卡 JSON，则按本项目卡片协议做 raw-card projection
+3. 对新版终态卡，只有 `terminal_result_id` 能在本地 terminal result store 命中时，
+   store 正文才是权威文本
+4. 对 store miss 的新版终态卡、没有 `result_id` 的历史终态卡、以及其他交互卡片，
+   原卡 JSON 只能提供非权威投影
+5. 若原卡读取失败，则回退到事件 payload / 默认结构的 best-effort 投影
 
 这里要特别注意：
 
 - 不需要先知道“原始源消息 ID”
-- 当前消息自己的 `message_id` 就足够成为精确读取入口
+- 当前消息自己的 `message_id` 就足够成为高保真读取入口
+- 高保真读取不等于权威文本；权威文本只来自本地 store 命中
 
 ### 6.3 `merge_forward`
 
@@ -251,7 +256,7 @@ JSON 2.0 的强项是：
 4. 对每条子消息分别处理：
    - 若是 `interactive`，再按其 `message_id` 查询原卡 JSON
    - 若是 `text` / `post` 等，走现有文本路径
-5. 对本项目终态卡候选子消息，优先按协议提取权威终态内容
+5. 对本项目终态卡候选子消息，仍按同一套三档合同处理
 
 所以：
 
@@ -267,7 +272,7 @@ JSON 2.0 的强项是：
 
 就只能回退到：
 
-- 当前 best-effort 投影
+- 当前 payload / best-effort 投影
 - 或 `/last text`
 
 ## 7. 终态卡协议方向
@@ -281,7 +286,8 @@ JSON 2.0 的强项是：
 
 原因：
 
-- 如果原卡查询能力可用，权威读取应直接从原卡 JSON 来
+- 如果原卡查询能力可用，卡片正文可作为高保真 projection 输入；是否权威仍取决于
+  本地 terminal result store 是否命中
 - 双份正文只是在默认投影链路受限时的补偿手段
 
 ### 7.2 结构化正文块

@@ -221,27 +221,30 @@ So the formal boundary is:
 
 ### 6.1 Overall Rule
 
-Read paths should not branch on "1.0 vs 2.0". They should branch on whether exact traceability exists:
+Read paths should not branch on "1.0 vs 2.0". They should branch on authority and read fidelity:
 
-1. exact raw-card read by `message_id`
-2. `merge_forward` with child expansion
-3. projection-only fallback
+1. local terminal result store hit: authoritative terminal text
+2. raw card JSON by `message_id`: raw-card projection
+3. remaining cases: payload / best-effort projection
 
 ### 6.2 Ordinary `interactive` Messages
 
 When an ordinary `interactive` message arrives:
 
-1. keep best-effort projection as the cheap immediate path
-2. when high-fidelity read is needed, query `message/get` with that message's own `message_id`
-3. if raw card JSON is returned, parse terminal-card identity through the repository contract
-   and restore authoritative text from the local terminal result store when the card carries
-   `fc_tr_<result_id>_<checksum>`
-4. otherwise, fall back to text projection
+1. first query `message/get` with that message's own `message_id` and
+   `card_msg_content_type=user_card_content`
+2. if raw card JSON is returned, project it through the repository card contract
+3. for new terminal result cards, only a local terminal result store hit for
+   `fc_tr_<result_id>_<checksum>` yields authoritative text
+4. store-missed new terminal cards, legacy marker-only terminal cards, and ordinary
+   interactive cards remain non-authoritative projections
+5. otherwise, fall back to payload / best-effort projection
 
 The key point is:
 
 - ordinary forwarding does not need the original source message ID to be useful
 - it is enough that the newly forwarded `interactive` message can still be queried as a complete card
+- high-fidelity raw-card retrieval is not the same as terminal text authority
 
 ### 6.3 `merge_forward`
 

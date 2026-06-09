@@ -775,7 +775,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(handler._adapter.start_calls, 0)
 
-    def test_last_text_prefers_latest_terminal_card(self) -> None:
+    def test_last_text_skips_legacy_terminal_card_and_falls_back_to_execution_card(self) -> None:
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
@@ -806,7 +806,8 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "/last text")
 
-        self.assertEqual(bot.replies[-1][1], "最新终态")
+        self.assertIn("旧执行输出", bot.replies[-1][1])
+        self.assertNotIn("最新终态", bot.replies[-1][1])
 
     def test_last_text_prefers_local_authoritative_terminal_text_when_protocol_is_lost(self) -> None:
         handler, bot = self._make_handler()
@@ -960,7 +961,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(bot.replies[-1][1], "最新纯文本终态")
 
-    def test_last_text_falls_back_to_best_effort_when_raw_card_fetch_fails(self) -> None:
+    def test_last_text_does_not_export_legacy_terminal_projection_when_raw_card_fetch_fails(self) -> None:
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
@@ -979,7 +980,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "/last text")
 
-        self.assertEqual(bot.replies[-1][1], "最近终态")
+        self.assertEqual(bot.replies[-1][1], "最近没有找到可导出的终态卡；也没有可回退的执行卡。")
 
     def test_last_text_prefers_raw_terminal_when_history_projection_loses_marker(self) -> None:
         handler, bot = self._make_handler()
@@ -1051,12 +1052,22 @@ class CodexHandlerTests(unittest.TestCase):
                 thread_id="",
             ),
         ]
+        bot.raw_card_results["msg-thread-terminal"] = InteractiveMessageReadResult(
+            text="线程内终态",
+            card_kind="terminal",
+            has_authoritative_text=True,
+        )
+        bot.raw_card_results["msg-main-terminal"] = InteractiveMessageReadResult(
+            text="主会话终态",
+            card_kind="terminal",
+            has_authoritative_text=True,
+        )
 
         handler.handle_message("ou_admin", "c1", "/last text", message_id="msg-thread")
 
         self.assertEqual(bot.replies[-1][1], "线程内终态")
 
-    def test_last_text_supports_history_rendered_terminal_card_shape(self) -> None:
+    def test_last_text_does_not_export_history_rendered_legacy_terminal_card_shape(self) -> None:
         handler, bot = self._make_handler()
         bot.history_messages = [
             SimpleNamespace(
@@ -1086,7 +1097,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "/last text")
 
-        self.assertEqual(bot.replies[-1][1], "## 结论\n第一条\n第二条")
+        self.assertEqual(bot.replies[-1][1], "最近没有找到可导出的终态卡；也没有可回退的执行卡。")
 
     def test_last_text_requires_text_subcommand(self) -> None:
         handler, bot = self._make_handler()

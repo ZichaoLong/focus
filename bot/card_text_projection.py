@@ -48,10 +48,7 @@ class CardTextProjection:
 
     @property
     def has_authoritative_final_reply(self) -> bool:
-        return bool(self.final_reply_text) and self.final_reply_source in {
-            TERMINAL_RESULT_SOURCE_STORE,
-            TERMINAL_RESULT_SOURCE_CARD_LEGACY,
-        }
+        return bool(self.final_reply_text) and self.final_reply_source == TERMINAL_RESULT_SOURCE_STORE
 
 
 def terminal_result_checksum(final_reply_text: str) -> str:

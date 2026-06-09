@@ -236,7 +236,8 @@
   store 中的正文是权威 `final_reply_text`
 - 如果存在 `result_id` 但本地 store 缺失，则用户可见部分只能作为
   degraded projection 回退，不再被标记为权威
-- 没有 `result_id` 的历史终态卡继续按旧 marker 合同解析，以保持既有卡片可读
+- 没有 `result_id` 的历史终态卡继续按旧 marker 合同解析，以保持既有卡片可读，
+  但同样只属于非权威 raw-card projection / payload projection
 - 不可见 marker 只用于声明“这是一张 terminal result card”
 
 也就是说，接收侧强合同不再依赖任何额外的说明性提示文案，也不把用户可见提示文案本身当作合同。
