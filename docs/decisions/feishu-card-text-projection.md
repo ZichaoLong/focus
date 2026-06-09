@@ -290,7 +290,8 @@ The receiver interprets that markdown block as:
 - if `result_id` exists but the local store misses, the user-visible portion is
   only a degraded projection fallback and is not marked authoritative
 - legacy terminal cards without `result_id` keep the old marker-based parsing
-  path so existing cards remain readable
+  path so existing cards remain readable, but they are likewise only
+  non-authoritative raw-card / payload projections
 - the invisible marker only declares that this card is a terminal-result carrier
 
 In other words, the strong contract no longer depends on any extra explanatory
