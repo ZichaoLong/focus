@@ -1605,6 +1605,31 @@ class CodexHandlerTests(unittest.TestCase):
             },
         )
 
+    def test_queued_prompt_prepare_failure_does_not_block_following_queue_item(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+        bot.message_contexts["m-2"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_user2",
+            "assistant_context_mode": "deferred_recovery",
+            "assistant_context_seq": 7,
+            "created_at": 1712476800000,
+            "sender_name": "Alice",
+        }
+        bot.message_contexts["m-3"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+        bot.queued_prompt_text_overrides["m-2"] = None
+
+        handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
+        handler.handle_message("ou_user2", "chat-group", "会失败的 queued mention", message_id="m-2")
+        handler.handle_message("ou_user", "chat-group", "后续 prompt", message_id="m-3")
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual([call["message_id"] for call in bot.queued_prompt_preparations], ["m-2", "m-3"])
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "后续 prompt")
+
     def test_snapshot_timeout_only_marks_runtime_degraded(self) -> None:
         handler, _ = self._make_handler()
 

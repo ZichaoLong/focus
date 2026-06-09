@@ -2470,25 +2470,26 @@ class CodexHandler(BotHandler):
                     )
                     if prepared_text is None:
                         consumed = True
-                        return
-                    queued_text = str(prepared_text or "")
-                    if queued_text != item.text:
-                        queued_input_items = _replace_text_input_items(queued_input_items or [], queued_text)
-                result = self._start_or_enqueue_prompt(
-                    item.sender_id,
-                    item.chat_id,
-                    queued_text,
-                    message_id=item.message_id,
-                    actor_open_id=item.actor_open_id,
-                    input_items=queued_input_items,
-                    synthetic_source=item.synthetic_source,
-                    display_mode=item.display_mode,
-                    surface_failures=item.surface_failures,
-                )
-                consumed = not result.get("queued")
-                if result.get("started") and item.display_mode == "announce":
-                    label = item.synthetic_source or "系统任务"
-                    self._reply_text(item.chat_id, f"{label}触发，开始新一轮执行。", reply_in_thread=False)
+                    else:
+                        queued_text = str(prepared_text or "")
+                        if queued_text != item.text:
+                            queued_input_items = _replace_text_input_items(queued_input_items or [], queued_text)
+                if not consumed:
+                    result = self._start_or_enqueue_prompt(
+                        item.sender_id,
+                        item.chat_id,
+                        queued_text,
+                        message_id=item.message_id,
+                        actor_open_id=item.actor_open_id,
+                        input_items=queued_input_items,
+                        synthetic_source=item.synthetic_source,
+                        display_mode=item.display_mode,
+                        surface_failures=item.surface_failures,
+                    )
+                    consumed = not result.get("queued")
+                    if result.get("started") and item.display_mode == "announce":
+                        label = item.synthetic_source or "系统任务"
+                        self._reply_text(item.chat_id, f"{label}触发，开始新一轮执行。", reply_in_thread=False)
             else:
                 result = self._start_compact_execution(item.sender_id, item.chat_id, message_id=item.message_id)
                 consumed = True
