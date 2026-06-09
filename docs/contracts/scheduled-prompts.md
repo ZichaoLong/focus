@@ -59,7 +59,7 @@ Return contract:
   - the turn was started successfully
 - `queued=true`
   - the target binding is currently executing, and the synthetic prompt was
-    admitted into that same owner binding's local FIFO
+    admitted into that same binding's local FIFO
   - `queue_position` should be returned
   - when dequeued, the prompt must read the binding's latest next-turn settings
     such as `/model`, `/effort`, `/approval`, `/permissions`, and
@@ -86,7 +86,7 @@ Its contract:
   - the exit code must be non-zero
   - the refusal reason must be printed
 - when the only conflict is that the target binding's own current turn is
-  running, the prompt is not considered unwritable; it enters the same owner
+  running, the prompt is not considered unwritable; it enters the same
   binding's local FIFO and the current instance starts it after the active
   execution ends
 
@@ -133,21 +133,25 @@ The following are normative:
 
 1. a scheduled task is only "start one new prompt at a future time"
 2. scheduled work may not bypass interaction / attach / running-turn admission
-3. only a running-turn conflict from the current owner binding itself may enter
-   the local in-memory FIFO; cross-binding conflicts, interaction-owner
-   conflicts, and attach/preflight failures must still fail closed
+3. only a running-turn conflict from the target binding itself may enter the
+   local in-memory FIFO; cross-binding conflicts, interaction-owner conflicts,
+   and attach/preflight failures must still fail closed
 4. there is no automatic cross-instance live-runtime takeover
 5. the Linux skill is only a scheduling shell; the real execution surface
    remains `binding/submit-prompt`
 
-## 6.1 Owner Binding FIFO
+## 6.1 Binding FIFO
 
 Normal Feishu prompts, `feishu-codexctl prompt send` / `binding/submit-prompt`,
-and `/compact` share the same owner-binding admission semantics:
+and `/compact` share the same binding admission semantics:
 
 - if the current binding is idle, execute immediately
-- if the current binding has an active execution, only that same owner binding
-  may enqueue follow-up work
+- if the current binding has an active execution, only that same binding may
+  enqueue follow-up work; admission does not additionally require
+  `actor_open_id` to match the actor of the currently running turn
+- `actor_open_id` remains part of identity, audit, runtime-interaction
+  ownership, and reply context, but it is not an extra partition key for
+  same-binding queueing
 - the queue is process-local memory only; it does not promise restart recovery,
   listing, cancellation, or cross-binding scheduling
 - when dequeued, `/compact` establishes a local execution anchor before calling

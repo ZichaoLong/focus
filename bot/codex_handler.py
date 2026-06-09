@@ -147,6 +147,35 @@ _LOCAL_THREAD_SAFETY_RULE = (
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")
 ChatBindingKey: TypeAlias = tuple[str, str]
+
+
+def _non_negative_int(value: Any) -> int:
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _replace_text_input_items(input_items: list[dict[str, Any]], text: str) -> list[dict[str, Any]]:
+    normalized_text = str(text or "")
+    replaced: list[dict[str, Any]] = []
+    inserted_text = False
+    for item in input_items:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            if not inserted_text:
+                replacement = dict(item)
+                replacement["text"] = normalized_text
+                replaced.append(replacement)
+                inserted_text = True
+            continue
+        replaced.append(dict(item))
+    if not inserted_text:
+        replaced.insert(0, {"type": "text", "text": normalized_text})
+    return replaced
+
+
 def _permissions_summary(permissions_profile_id: str) -> str:
     choice = permissions_profile_choice_key(permissions_profile_id)
     if choice:
@@ -1408,6 +1437,10 @@ class CodexHandler(BotHandler):
             "origin_sender_user_id": str(context.get("sender_user_id", "") or "").strip(),
             "origin_sender_type": str(context.get("sender_type", "") or "").strip(),
             "origin_feishu_thread_id": str(context.get("thread_id", "") or "").strip(),
+            "assistant_context_mode": str(context.get("assistant_context_mode", "") or "").strip(),
+            "assistant_context_created_at": _non_negative_int(context.get("created_at")),
+            "assistant_context_seq": _non_negative_int(context.get("assistant_context_seq")),
+            "assistant_context_sender_name": str(context.get("sender_name", "") or "").strip(),
         }
 
     def _restore_queued_message_origin(self, item: OwnerBindingQueueItem) -> None:
@@ -1420,6 +1453,10 @@ class CodexHandler(BotHandler):
             "sender_user_id": str(item.origin_sender_user_id or "").strip(),
             "sender_type": str(item.origin_sender_type or "").strip(),
             "thread_id": str(item.origin_feishu_thread_id or "").strip(),
+            "assistant_context_mode": str(item.assistant_context_mode or "").strip(),
+            "created_at": _non_negative_int(item.assistant_context_created_at),
+            "assistant_context_seq": _non_negative_int(item.assistant_context_seq),
+            "sender_name": str(item.assistant_context_sender_name or "").strip(),
         }
         restored = {key: value for key, value in restored.items() if value}
         if not restored:
@@ -2190,14 +2227,10 @@ class CodexHandler(BotHandler):
         actor_open_id: str = "",
     ) -> bool:
         del chat_id
-        incoming_actor = str(actor_open_id or "").strip() or self._group_actor_open_id(message_id)
-        runtime = build_runtime_view(resolved.state)
-        current_actor = runtime.execution.current_actor_open_id.strip()
-        if current_actor:
-            if incoming_actor and current_actor != incoming_actor:
-                return False
-            if not incoming_actor and resolved.binding[0] == GROUP_SHARED_BINDING_OWNER_ID:
-                return False
+        del message_id
+        del actor_open_id
+        if resolved.binding[0] == GROUP_SHARED_BINDING_OWNER_ID:
+            return True
         if resolved.binding[0] != GROUP_SHARED_BINDING_OWNER_ID and resolved.binding[0] != sender_id:
             return False
         return True
@@ -2419,13 +2452,35 @@ class CodexHandler(BotHandler):
             if runtime.running:
                 return
             if item.kind == "prompt":
+                queued_text = item.text
+                queued_input_items: list[dict[str, Any]] | None = [
+                    dict(input_item) for input_item in item.input_items
+                ]
+                prepare_queued_prompt_text = getattr(self.bot, "prepare_queued_prompt_text", None)
+                if callable(prepare_queued_prompt_text):
+                    prepared_text = prepare_queued_prompt_text(
+                        chat_id=item.chat_id,
+                        message_id=item.message_id,
+                        text=item.text,
+                        assistant_context_mode=item.assistant_context_mode,
+                        assistant_context_created_at=item.assistant_context_created_at,
+                        assistant_context_seq=item.assistant_context_seq,
+                        assistant_context_sender_name=item.assistant_context_sender_name,
+                        origin_feishu_thread_id=item.origin_feishu_thread_id,
+                    )
+                    if prepared_text is None:
+                        consumed = True
+                        return
+                    queued_text = str(prepared_text or "")
+                    if queued_text != item.text:
+                        queued_input_items = _replace_text_input_items(queued_input_items or [], queued_text)
                 result = self._start_or_enqueue_prompt(
                     item.sender_id,
                     item.chat_id,
-                    item.text,
+                    queued_text,
                     message_id=item.message_id,
                     actor_open_id=item.actor_open_id,
-                    input_items=[dict(input_item) for input_item in item.input_items],
+                    input_items=queued_input_items,
                     synthetic_source=item.synthetic_source,
                     display_mode=item.display_mode,
                     surface_failures=item.surface_failures,

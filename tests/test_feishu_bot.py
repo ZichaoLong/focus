@@ -732,7 +732,7 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         self.assertEqual(len(logged), 1)
         self.assertEqual(logged[0]["text"], "第一条讨论")
 
-    def test_assistant_mode_routes_unmentioned_followup_when_runtime_allows_queue(self) -> None:
+    def test_assistant_mode_does_not_route_unmentioned_followup_even_when_runtime_allows_queue(self) -> None:
         bot = self._make_bot()
         bot.set_group_mode("chat-1", "assistant")
         bot.activate_group_chat("chat-1", activated_by="ou-admin")
@@ -748,10 +748,115 @@ class FeishuBotGroupModeTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(bot.received_messages, [("ou-user", "chat-1", "请提交", "m-1")])
+        self.assertEqual(bot.received_messages, [])
         logged = bot._group_store.read_messages_between("chat-1")
         self.assertEqual(len(logged), 1)
         self.assertEqual(logged[0]["text"], "请提交")
+
+    def test_assistant_mode_routes_mentioned_followup_when_runtime_allows_queue(self) -> None:
+        bot = self._make_bot()
+        bot.set_group_mode("chat-1", "assistant")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+        bot.allow_group_prompt_result = False
+        bot.route_group_followup_prompt_result = True
+
+        bot._handle_raw_message(
+            _message_event(
+                message_id="m-1",
+                chat_id="chat-1",
+                text="@_user_1 请提交",
+                sender_user_id="u-user",
+                sender_open_id="ou-user",
+                mentions=[
+                    {
+                        "key": "@_user_1",
+                        "id": {"user_id": "u-bot", "open_id": "ou-bot"},
+                        "name": "Codex",
+                    }
+                ],
+                create_time=1712476800000,
+            )
+        )
+
+        self.assertEqual(bot.received_messages, [("ou-user", "chat-1", "请提交", "m-1")])
+        self.assertEqual(bot.history_fetch_calls, [])
+        context = bot.get_message_context("m-1")
+        self.assertEqual(context["assistant_context_mode"], "deferred_recovery")
+        self.assertEqual(context["assistant_context_seq"], 1)
+        self.assertEqual(context["created_at"], 1712476800000)
+        self.assertEqual(context["sender_name"], "ou-user")
+
+    def test_prepare_queued_assistant_prompt_recovers_to_original_mention_boundary(self) -> None:
+        bot = self._make_bot()
+        bot.set_group_mode("chat-1", "assistant")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+        seq_1 = bot._append_group_log_entry(
+            chat_id="chat-1",
+            message_id="m-prev",
+            created_at=1712476700000,
+            sender_user_id="u-user",
+            sender_open_id="ou-user",
+            sender_type="user",
+            msg_type="text",
+            text="上一轮触发",
+        )
+        bot._group_store.set_last_boundary(
+            "chat-1",
+            seq=seq_1,
+            created_at=1712476700000,
+            message_ids=["m-prev"],
+        )
+        seq_2 = bot._append_group_log_entry(
+            chat_id="chat-1",
+            message_id="m-between",
+            created_at=1712476750000,
+            sender_user_id="u-user",
+            sender_open_id="ou-user",
+            sender_type="user",
+            msg_type="text",
+            text="排队前的普通消息",
+        )
+        seq_3 = bot._append_group_log_entry(
+            chat_id="chat-1",
+            message_id="m-queued",
+            created_at=1712476800000,
+            sender_user_id="u-user2",
+            sender_open_id="ou-user2",
+            sender_type="user",
+            msg_type="text",
+            text="请处理",
+        )
+        bot._append_group_log_entry(
+            chat_id="chat-1",
+            message_id="m-after",
+            created_at=1712476850000,
+            sender_user_id="u-user",
+            sender_open_id="ou-user",
+            sender_type="user",
+            msg_type="text",
+            text="排队后的普通消息",
+        )
+
+        text = bot.prepare_queued_prompt_text(
+            chat_id="chat-1",
+            message_id="m-queued",
+            text="请处理",
+            assistant_context_mode="deferred_recovery",
+            assistant_context_created_at=1712476800000,
+            assistant_context_seq=seq_3,
+            assistant_context_sender_name="Alice",
+        )
+
+        self.assertIsNotNone(text)
+        assert text is not None
+        self.assertIn("排队前的普通消息", text)
+        self.assertIn("请处理", text)
+        self.assertIn("sender_name: Alice", text)
+        self.assertNotIn("排队后的普通消息", text)
+        self.assertEqual(seq_2, 2)
+        self.assertEqual(bot._group_store.get_last_boundary_seq("chat-1"), seq_3)
+        self.assertEqual(bot._group_store.get_last_boundary_created_at("chat-1"), 1712476800000)
+        self.assertIn("m-queued", bot._group_store.get_last_boundary_message_ids("chat-1"))
 
     def test_assistant_mode_includes_prior_group_messages_on_authorized_mention(self) -> None:
         bot = self._make_bot()

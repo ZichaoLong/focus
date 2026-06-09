@@ -22,6 +22,10 @@ class OwnerBindingQueueItem:
     origin_sender_user_id: str = ""
     origin_sender_type: str = ""
     origin_feishu_thread_id: str = ""
+    assistant_context_mode: str = ""
+    assistant_context_created_at: int = 0
+    assistant_context_seq: int = 0
+    assistant_context_sender_name: str = ""
     input_items: tuple[dict[str, Any], ...] = ()
     synthetic_source: str = ""
     display_mode: str = "silent"

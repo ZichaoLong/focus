@@ -82,6 +82,12 @@ Those remain owned by their dedicated documents.
 
 - only logs messages from human users who are currently allowed to use the bot
 - replies only when a valid trigger mention is present
+- plain messages without a valid trigger mention are always context only; they
+  do not become queued prompts merely because the current group binding is
+  executing
+- valid trigger mentions execute immediately when the current group binding is
+  idle; when that binding is already executing, they enter the same-binding
+  local FIFO
 - includes group context since the last trigger boundary
 - maintains separate context boundaries for the main chat flow and each group
   thread; the main flow does not automatically read thread replies, and a
@@ -102,6 +108,8 @@ Those remain owned by their dedicated documents.
 
 - group messages from users currently allowed to use the bot can trigger
   directly
+- plain text executes immediately when the current group binding is idle; when
+  that binding is already executing, it enters the same-binding local FIFO
 - backend input is passed through like p2p by default: no history context and
   no extra `group turn` wrapper
 - has the highest spam risk
@@ -206,7 +214,45 @@ Those remain owned by their dedicated documents.
   denials, and long-text follow-ups should stay in that thread instead of
   jumping back to the main flow
 
-## 8. Denial Feedback
+## 8. Group Queueing Contract
+
+- group queued-prompt admission is scoped to the current Feishu binding, not to
+  the sender actor
+- after the group is activated, any sender who passes the group usage check and
+  whose message resolves to the current group binding may queue while that
+  binding is executing; the sender's `open_id` does not need to match the actor
+  that started the active turn
+- sender identity must still be preserved on the queue item for execution
+  cards, terminal cards, reply anchors, audit, and later interactions
+- the queue is process-local memory only; it does not promise restart recovery,
+  listing, cancellation, or cross-binding scheduling
+- in `all`, plain text may queue while the current group binding is executing
+- in `assistant`, only valid trigger mentions can trigger or queue; plain
+  messages without a valid trigger mention only enter the context log
+- an `assistant` queued mention freezes only the original message metadata at
+  enqueue time; it does not recover history immediately
+- when that queued mention is dequeued, history recovery runs using the queued
+  mention's original position:
+  - recovery happens at dequeue time
+  - the start of the interval is the currently recorded assistant context
+    boundary
+  - the end of the interval is the queued mention's original `created_at` /
+    `message_id` / local-log `seq`
+  - the queued mention itself is the current turn and must not be mixed into
+    the history context
+  - after the context is built and the queued turn starts, the assistant
+    boundary advances to that queued mention
+- interval membership is based on a message's initial creation time, not on the
+  last update time of a card or message
+- messages inside the interval are read as their current Feishu-visible content
+  at dequeue-time recovery; if an external bot card keeps updating after it has
+  been consumed, later valid mentions do not automatically recover that update
+  again
+- recovered content includes messages whose initial creation time falls in the
+  interval and that were not sent by this bot; this bot's own messages do not
+  enter assistant history context
+
+## 9. Denial Feedback
 
 - while a group is deactivated, non-admin users in `assistant` /
   `mention-only` receive a denial message when they explicitly mention the
@@ -217,7 +263,7 @@ Those remain owned by their dedicated documents.
   denial message when they explicitly mention the trigger target or send a
   group command
 
-## 9. Other Bots and History
+## 10. Other Bots and History
 
 - other bots cannot directly trigger `feishu-codex`
 - if group history is visible to the bot, messages from other bots can still
@@ -225,7 +271,7 @@ Those remain owned by their dedicated documents.
 - if history recovery is disabled, other bots' messages do not automatically
   enter the `assistant` context
 
-## 10. Explicit Limitations
+## 11. Explicit Limitations
 
 - thread history recovery cannot enforce the same strict time-window cutoff as
   the main flow; that is a public Feishu API limitation, not an intentional

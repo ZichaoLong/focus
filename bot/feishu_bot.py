@@ -1593,6 +1593,64 @@ class FeishuBot(ABC):
             sender_name=sender_name,
         )
 
+    def prepare_queued_prompt_text(
+        self,
+        *,
+        chat_id: str,
+        message_id: str,
+        text: str,
+        assistant_context_mode: str = "",
+        assistant_context_created_at: int = 0,
+        assistant_context_seq: int = 0,
+        assistant_context_sender_name: str = "",
+        origin_feishu_thread_id: str = "",
+    ) -> str | None:
+        if str(assistant_context_mode or "").strip() != "deferred_recovery":
+            return str(text or "")
+        current_seq = max(int(assistant_context_seq or 0), 0)
+        current_created_at = max(int(assistant_context_created_at or 0), 0)
+        thread_id = str(origin_feishu_thread_id or "").strip()
+        sender_name = str(assistant_context_sender_name or "").strip()
+        if self._history_recovery_enabled():
+            self._prepare_group_history_execution_card(chat_id, message_id)
+        try:
+            context_entries = self._collect_assistant_context_entries(
+                chat_id=chat_id,
+                current_message_id=message_id,
+                current_create_time=current_created_at,
+                current_seq=current_seq,
+                thread_id=thread_id,
+            )
+        except Exception as exc:
+            logger.warning("queued 群历史回捞失败: chat=%s, error=%s", chat_id, exc)
+            self._notify_group_history_fetch_failed(
+                chat_id=chat_id,
+                parent_message_id=message_id,
+                error=exc,
+            )
+            return None
+        assistant_text = self._build_assistant_turn_text(
+            self._format_group_context_entries(context_entries),
+            text,
+            self._group_store.log_path(chat_id),
+            thread_id=thread_id,
+            current_sender_name=sender_name,
+        )
+        if current_seq:
+            boundary_message_ids = self._collect_boundary_message_ids(
+                current_message_id=message_id,
+                current_created_at=current_created_at,
+                context_entries=context_entries,
+            )
+            self._group_store.set_last_boundary(
+                chat_id,
+                seq=current_seq,
+                created_at=current_created_at,
+                message_ids=boundary_message_ids,
+                scope=self._group_scope_key(thread_id),
+            )
+        return assistant_text
+
     @staticmethod
     def _group_activation_denied_text(group_mode: str) -> str:
         normalized_mode = str(group_mode or "").strip().lower()
@@ -1857,6 +1915,8 @@ class FeishuBot(ABC):
                 "parent_id": parent_id,
                 "text": text,
                 "mentions": self._mention_payloads(mentions),
+                "created_at": int(message.create_time or 0),
+                "sender_name": sender_name,
             },
         )
 
@@ -1902,14 +1962,25 @@ class FeishuBot(ABC):
                             text=log_text,
                         )
                     if not bot_mentioned:
-                        if not control_text and self.should_route_group_followup_prompt(
-                            sender_id,
-                            chat_id,
-                            message_id=message_id,
-                        ):
-                            self.on_message(sender_id, chat_id, text, message_id=message_id)
                         return
                     if control_text:
+                        self.on_message(sender_id, chat_id, text, message_id=message_id)
+                        return
+                    if self.should_route_group_followup_prompt(
+                        sender_id,
+                        chat_id,
+                        message_id=message_id,
+                    ):
+                        self._remember_message_context(
+                            message_id,
+                            {
+                                **(self.get_message_context(message_id) or {}),
+                                "assistant_context_mode": "deferred_recovery",
+                                "assistant_context_seq": current_seq,
+                                "created_at": int(message.create_time or 0),
+                                "sender_name": sender_name,
+                            },
+                        )
                         self.on_message(sender_id, chat_id, text, message_id=message_id)
                         return
                     if not self.allow_group_prompt(sender_id, chat_id, message_id=message_id):
@@ -2512,7 +2583,7 @@ class FeishuBot(ABC):
         return True
 
     def should_route_group_followup_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
-        """Whether an unmentioned assistant-mode group message is an in-flight follow-up prompt."""
+        """Whether this group message should bypass preflight and enter the binding FIFO."""
         del sender_id
         del chat_id
         del message_id

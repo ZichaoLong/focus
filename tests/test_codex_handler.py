@@ -18,7 +18,7 @@ from bot.adapters.base import (
 )
 from bot.feishu_bot import InteractiveMessageReadResult
 from bot.card_text_projection import project_interactive_card_text, terminal_result_checksum
-from bot.codex_handler import CodexHandler
+from bot.codex_handler import CodexHandler, _replace_text_input_items
 from bot.codex_protocol.client import CodexRpcError
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_command_syntax import feishu_visible_command_syntax
@@ -390,6 +390,8 @@ class _FakeBot:
         self.history_messages: list[object] = []
         self.list_recent_messages_calls: list[dict[str, object]] = []
         self.raw_card_results: dict[str, InteractiveMessageReadResult] = {}
+        self.queued_prompt_preparations: list[dict[str, object]] = []
+        self.queued_prompt_text_overrides: dict[str, str | None] = {}
 
     def reply(self, chat_id: str, text: str, *, parent_message_id: str = "", reply_in_thread: bool = False) -> bool:
         self.replies.append((chat_id, text))
@@ -496,6 +498,13 @@ class _FakeBot:
 
     def read_interactive_message_text(self, message_id: str, *, content_dict: dict | None = None) -> str:
         return self.read_interactive_message(message_id, content_dict=content_dict).text
+
+    def prepare_queued_prompt_text(self, **kwargs) -> str | None:
+        self.queued_prompt_preparations.append(dict(kwargs))
+        message_id = str(kwargs.get("message_id", "") or "")
+        if message_id in self.queued_prompt_text_overrides:
+            return self.queued_prompt_text_overrides[message_id]
+        return str(kwargs.get("text", "") or "")
 
     def download_message_resource(self, message_id: str, resource_key: str, *, resource_type: str):
         resource = self.downloaded_resources.get((message_id, resource_type, resource_key))
@@ -660,6 +669,23 @@ class CodexHandlerTests(unittest.TestCase):
     @staticmethod
     def _register_pending_rename_form(handler: CodexHandler, message_id: str, *, thread_id: str) -> None:
         handler._threads_ui_domain.register_pending_rename_form(message_id, thread_id=thread_id)
+
+    def test_replace_text_input_items_preserves_non_text_items(self) -> None:
+        items = [
+            {"type": "text", "text": "old"},
+            {"type": "input_image", "image_url": "file:///tmp/a.png"},
+            {"type": "text", "text": "duplicate"},
+        ]
+
+        replaced = _replace_text_input_items(items, "new")
+
+        self.assertEqual(
+            replaced,
+            [
+                {"type": "text", "text": "new"},
+                {"type": "input_image", "image_url": "file:///tmp/a.png"},
+            ],
+        )
 
     @staticmethod
     def _service_runtime_holder_ids(handler: CodexHandler, thread_id: str) -> tuple[str, ...]:
@@ -1509,7 +1535,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.reply_ref_calls[-1][0], "m-2")
         self.assertTrue(bot.reply_ref_calls[-1][3])
 
-    def test_running_group_turn_routes_same_actor_unmentioned_followup(self) -> None:
+    def test_running_group_turn_routes_same_binding_followup(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"
         bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
@@ -1519,7 +1545,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertTrue(handler.should_route_group_followup_prompt("ou_user", "chat-group", message_id="m-2"))
 
-    def test_group_followup_route_is_closed_without_running_turn_or_for_different_actor(self) -> None:
+    def test_group_followup_route_requires_running_turn_but_not_same_actor(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"
         bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
@@ -1529,9 +1555,9 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
 
-        self.assertFalse(handler.should_route_group_followup_prompt("ou_user2", "chat-group", message_id="m-2"))
+        self.assertTrue(handler.should_route_group_followup_prompt("ou_user2", "chat-group", message_id="m-2"))
 
-    def test_running_group_prompt_replies_wait_or_cancel(self) -> None:
+    def test_running_group_prompt_queues_for_different_actor_on_same_binding(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"
         bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
@@ -1540,9 +1566,43 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
         handler.handle_message("ou_user2", "chat-group", "插播", message_id="m-2")
 
+        self.assertEqual(bot.reply_parents[-1], ("chat-group", "已排队，将在当前执行结束后继续。队列位置：1", "m-2"))
+
+    def test_queued_prompt_prepares_deferred_assistant_context_before_dequeue_start(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+        bot.message_contexts["m-2"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_user2",
+            "sender_user_id": "u-user2",
+            "thread_id": "om-thread",
+            "assistant_context_mode": "deferred_recovery",
+            "assistant_context_seq": 7,
+            "created_at": 1712476800000,
+            "sender_name": "Alice",
+        }
+        bot.queued_prompt_text_overrides["m-2"] = "prepared assistant prompt"
+
+        handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
+        handler.handle_message("ou_user2", "chat-group", "请处理", message_id="m-2")
+        bot.message_contexts.pop("m-2", None)
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "prepared assistant prompt")
         self.assertEqual(
-            bot.reply_parents[-1],
-            ("chat-group", "当前线程仍在执行，请等待结束或先执行 `/cancel`。", "m-2"),
+            bot.queued_prompt_preparations[-1],
+            {
+                "chat_id": "chat-group",
+                "message_id": "m-2",
+                "text": "请处理",
+                "assistant_context_mode": "deferred_recovery",
+                "assistant_context_created_at": 1712476800000,
+                "assistant_context_seq": 7,
+                "assistant_context_sender_name": "Alice",
+                "origin_feishu_thread_id": "om-thread",
+            },
         )
 
     def test_snapshot_timeout_only_marks_runtime_degraded(self) -> None:
@@ -4760,7 +4820,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler._adapter.start_turn_calls, [])
         self.assertEqual(bot.replies, [])
 
-    def test_service_control_plane_group_binding_submit_prompt_rejects_different_running_actor(self) -> None:
+    def test_service_control_plane_group_binding_submit_prompt_queues_different_running_actor(self) -> None:
         tempdir = tempfile.TemporaryDirectory()
         self.addCleanup(tempdir.cleanup)
         data_dir = pathlib.Path(tempdir.name)
@@ -4788,15 +4848,16 @@ class CodexHandlerTests(unittest.TestCase):
             data_dir,
             "binding/submit-prompt",
             {
-                "binding_id": "p2p:__group__:chat-group",
+                "binding_id": "group:chat-group",
                 "text": "继续分析",
                 "actor_open_id": "ou_actor_2",
             },
         )
 
         self.assertFalse(result["started"])
-        self.assertFalse(result["queued"])
-        self.assertEqual(result["reason_code"], "prompt_denied_by_running_turn")
+        self.assertTrue(result["queued"])
+        self.assertEqual(result["queue_position"], 1)
+        self.assertEqual(result["reason_code"], "")
         self.assertEqual(handler._adapter.start_turn_calls, [])
         self.assertEqual(bot.replies, [])
 

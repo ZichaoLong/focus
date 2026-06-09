@@ -27,6 +27,10 @@ class MessageContextPayload(TypedDict, total=False):
     parent_id: str
     text: str
     mentions: list[MentionPayload]
+    created_at: int
+    sender_name: str
+    assistant_context_mode: str
+    assistant_context_seq: int
 
 
 class GroupMessageEntry(TypedDict):
