@@ -116,7 +116,7 @@ def _image_send_target_params(args: argparse.Namespace) -> tuple[dict[str, str],
 
 def _thread_archive_inputs(args: argparse.Namespace) -> tuple[list[str], str]:
     raw_thread_ids = list(getattr(args, "thread_ids", []) or [])
-    thread_ids = [str(item or "").strip() for item in raw_thread_ids if str(item or "").strip()]
+    thread_ids = list(dict.fromkeys(str(item or "").strip() for item in raw_thread_ids if str(item or "").strip()))
     thread_name = str(getattr(args, "thread_name", "") or "").strip()
     if thread_ids and thread_name:
         raise ValueError("thread archive 不能同时提供 `--thread-id` 和 `--thread-name`。")

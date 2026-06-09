@@ -1067,6 +1067,50 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(bot.replies[-1][1], "线程内终态")
 
+    def test_last_text_does_not_use_codex_thread_id_as_feishu_thread_container(self) -> None:
+        handler, bot = self._make_handler()
+        bot.message_contexts["msg-main"] = {"chat_type": "group", "sender_open_id": "ou_admin"}
+        state = handler._get_runtime_state("ou_admin", "c1", "msg-main")
+        state["current_thread_id"] = "codex-thread-1"
+        handler._terminal_result_store.upsert(
+            TerminalResultRecord(
+                message_id="msg-terminal",
+                execution_message_id="",
+                final_reply_text="本地终态",
+                recorded_at=1.0,
+                thread_id="codex-thread-1",
+            )
+        )
+
+        handler.handle_message("ou_admin", "c1", "/last text", message_id="msg-main")
+
+        self.assertEqual(bot.list_recent_messages_calls[-1]["thread_id"], "")
+        self.assertEqual(bot.replies[-1][1], "本地终态")
+
+    def test_last_text_uses_feishu_thread_for_history_and_codex_thread_for_local_fallback(self) -> None:
+        handler, bot = self._make_handler()
+        bot.message_contexts["msg-thread"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_admin",
+            "thread_id": "feishu-thread-1",
+        }
+        state = handler._get_runtime_state("ou_admin", "c1", "msg-thread")
+        state["current_thread_id"] = "codex-thread-1"
+        handler._terminal_result_store.upsert(
+            TerminalResultRecord(
+                message_id="msg-terminal",
+                execution_message_id="",
+                final_reply_text="本地线程终态",
+                recorded_at=1.0,
+                thread_id="codex-thread-1",
+            )
+        )
+
+        handler.handle_message("ou_admin", "c1", "/last text", message_id="msg-thread")
+
+        self.assertEqual(bot.list_recent_messages_calls[-1]["thread_id"], "feishu-thread-1")
+        self.assertEqual(bot.replies[-1][1], "本地线程终态")
+
     def test_last_text_does_not_export_history_rendered_legacy_terminal_card_shape(self) -> None:
         handler, bot = self._make_handler()
         bot.history_messages = [
@@ -1437,6 +1481,33 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(handler._adapter.start_turn_calls), 2)
         self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "follow up")
+
+    def test_queued_group_prompt_keeps_origin_context_after_message_context_expires(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_user",
+            "thread_id": "om_thread",
+        }
+        bot.message_contexts["m-2"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_user",
+            "thread_id": "om_thread",
+        }
+
+        handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
+        handler.handle_message("ou_user", "chat-group", "第二轮", message_id="m-2")
+        bot.message_contexts.pop("m-2", None)
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        state = handler._get_runtime_state("ou_user", "chat-group", "m-2")
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "第二轮")
+        self.assertEqual(state["current_actor_open_id"], "ou_user")
+        self.assertEqual(bot.reply_ref_calls[-1][0], "m-2")
+        self.assertTrue(bot.reply_ref_calls[-1][3])
 
     def test_running_group_prompt_replies_wait_or_cancel(self) -> None:
         handler, bot = self._make_handler()
@@ -6487,6 +6558,32 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(len(handler._adapter.start_turn_calls), 2)
         self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
+
+    def test_queued_compact_keeps_origin_context_after_message_context_expires(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_admin",
+            "thread_id": "om_thread",
+        }
+        bot.message_contexts["m-compact"] = {
+            "chat_type": "group",
+            "sender_open_id": "ou_admin",
+            "thread_id": "om_thread",
+        }
+
+        handler.handle_message("ou_admin", "chat-group", "first", message_id="m-1")
+        handler.handle_message("ou_admin", "chat-group", "/compact", message_id="m-compact")
+        bot.message_contexts.pop("m-compact", None)
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        state = handler._get_runtime_state("ou_admin", "chat-group", "m-compact")
+        self.assertEqual(handler._adapter.compact_thread_calls, ["thread-created"])
+        self.assertEqual(state["current_actor_open_id"], "ou_admin")
+        self.assertEqual(bot.reply_ref_calls[-1][0], "m-compact")
+        self.assertTrue(bot.reply_ref_calls[-1][3])
 
     def test_compact_then_prompt_queues_until_compact_completes(self) -> None:
         handler, _ = self._make_handler()

@@ -1389,6 +1389,51 @@ class CodexHandler(BotHandler):
         context = self.bot.get_message_context(message_id)
         return bool(str(context.get("thread_id", "") or "").strip())
 
+    def _queued_message_origin(self, message_id: str) -> dict[str, str]:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return {}
+        context = self.bot.get_message_context(normalized_message_id) or {}
+        return {
+            "origin_chat_type": str(context.get("chat_type", "") or "").strip(),
+            "origin_sender_open_id": str(context.get("sender_open_id", "") or "").strip(),
+            "origin_sender_user_id": str(context.get("sender_user_id", "") or "").strip(),
+            "origin_sender_type": str(context.get("sender_type", "") or "").strip(),
+            "origin_feishu_thread_id": str(context.get("thread_id", "") or "").strip(),
+        }
+
+    def _restore_queued_message_origin(self, item: OwnerBindingQueueItem) -> None:
+        normalized_message_id = str(item.message_id or "").strip()
+        if not normalized_message_id:
+            return
+        restored = {
+            "chat_type": str(item.origin_chat_type or "").strip(),
+            "sender_open_id": str(item.origin_sender_open_id or "").strip(),
+            "sender_user_id": str(item.origin_sender_user_id or "").strip(),
+            "sender_type": str(item.origin_sender_type or "").strip(),
+            "thread_id": str(item.origin_feishu_thread_id or "").strip(),
+        }
+        restored = {key: value for key, value in restored.items() if value}
+        if not restored:
+            return
+        current_context = self.bot.get_message_context(normalized_message_id) or {}
+        merged_context = dict(current_context)
+        changed = False
+        for key, value in restored.items():
+            if str(merged_context.get(key, "") or "").strip():
+                continue
+            merged_context[key] = value
+            changed = True
+        if not changed:
+            return
+        remember_message_context = getattr(self.bot, "_remember_message_context", None)
+        if callable(remember_message_context):
+            remember_message_context(normalized_message_id, merged_context)
+            return
+        message_contexts = getattr(self.bot, "message_contexts", None)
+        if isinstance(message_contexts, dict):
+            message_contexts[normalized_message_id] = merged_context
+
     def _preflight_group_prompt_impl(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
         return self._prompt_turn_entry.preflight_group_prompt(
             sender_id,
@@ -2036,12 +2081,16 @@ class CodexHandler(BotHandler):
         runtime = self._get_runtime_view(sender_id, chat_id, message_id)
         binding_id = format_binding_id(resolved.binding)
         if runtime.running:
+            origin = self._queued_message_origin(message_id)
+            queued_actor_open_id = str(actor_open_id or "").strip() or str(
+                origin.get("origin_sender_open_id", "") or ""
+            ).strip()
             if not self._owner_binding_queue_allowed(
                 resolved,
                 sender_id,
                 chat_id,
                 message_id=message_id,
-                actor_open_id=actor_open_id,
+                actor_open_id=queued_actor_open_id,
             ):
                 if surface_failures:
                     self._reply_text(chat_id, "当前线程仍在执行，请等待结束或先执行 `/cancel`。", message_id=message_id)
@@ -2062,7 +2111,8 @@ class CodexHandler(BotHandler):
                 chat_id=chat_id,
                 message_id=str(message_id or "").strip(),
                 text=str(text or "").strip(),
-                actor_open_id=str(actor_open_id or "").strip(),
+                actor_open_id=queued_actor_open_id,
+                **origin,
                 input_items=tuple(dict(item) for item in (input_items or ())),
                 synthetic_source=str(synthetic_source or "").strip(),
                 display_mode=str(display_mode or "silent").strip().lower() or "silent",
@@ -2168,7 +2218,15 @@ class CodexHandler(BotHandler):
                 "reason": "当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。",
             }
         if runtime.running:
-            if not self._owner_binding_queue_allowed(resolved, sender_id, chat_id, message_id=message_id):
+            origin = self._queued_message_origin(message_id)
+            queued_actor_open_id = str(origin.get("origin_sender_open_id", "") or "").strip()
+            if not self._owner_binding_queue_allowed(
+                resolved,
+                sender_id,
+                chat_id,
+                message_id=message_id,
+                actor_open_id=queued_actor_open_id,
+            ):
                 return {
                     "accepted": False,
                     "queued": False,
@@ -2185,6 +2243,8 @@ class CodexHandler(BotHandler):
                 sender_id=sender_id,
                 chat_id=chat_id,
                 message_id=str(message_id or "").strip(),
+                actor_open_id=queued_actor_open_id,
+                **origin,
             )
             with self._lock:
                 depth = self._owner_binding_queue.enqueue(item)
@@ -2327,6 +2387,7 @@ class CodexHandler(BotHandler):
             return
         consumed = False
         try:
+            self._restore_queued_message_origin(item)
             runtime = self._get_runtime_view(item.sender_id, item.chat_id, item.message_id)
             if runtime.running:
                 return
@@ -2476,27 +2537,27 @@ class CodexHandler(BotHandler):
         return self._goal_domain.handle_goal_command(sender_id, chat_id, arg, message_id=message_id)
 
     def _find_last_card_text(self, sender_id: str, chat_id: str, *, message_id: str = "") -> str:
-        thread_id = ""
+        feishu_thread_id = ""
         if message_id and hasattr(self.bot, "get_message_context"):
             context = self.bot.get_message_context(message_id) or {}
-            thread_id = str(context.get("thread_id", "") or "").strip()
-        if not thread_id:
-            try:
-                thread_id = self._get_runtime_view(sender_id, chat_id, message_id).current_thread_id.strip()
-            except Exception:
-                thread_id = ""
+            feishu_thread_id = str(context.get("thread_id", "") or "").strip()
+        try:
+            codex_thread_id = self._get_runtime_view(sender_id, chat_id, message_id).current_thread_id.strip()
+        except Exception:
+            codex_thread_id = ""
 
         try:
             items = self.bot.list_recent_messages(
                 chat_id=chat_id,
-                thread_id=thread_id,
+                thread_id=feishu_thread_id,
                 limit=20,
             )
         except Exception as exc:
             logger.warning(
-                "读取最近卡片失败: chat_id=%s thread_id=%s message_id=%s error=%s",
+                "读取最近卡片失败: chat_id=%s feishu_thread_id=%s codex_thread_id=%s message_id=%s error=%s",
                 chat_id,
-                thread_id,
+                feishu_thread_id,
+                codex_thread_id,
                 message_id,
                 exc,
             )
@@ -2540,8 +2601,8 @@ class CodexHandler(BotHandler):
 
         if fallback_text:
             return fallback_text
-        if thread_id:
-            latest_thread_text = self._terminal_result_store.latest_for_thread(thread_id)
+        if codex_thread_id:
+            latest_thread_text = self._terminal_result_store.latest_for_thread(codex_thread_id)
             if latest_thread_text:
                 return latest_thread_text
         return "最近没有找到可导出的终态卡；也没有可回退的执行卡。"

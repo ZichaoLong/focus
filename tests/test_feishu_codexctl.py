@@ -1013,3 +1013,25 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 1)
         self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])
         self.assertEqual(mock_archive.call_args.kwargs["explicit_instance"], "")
+
+    def test_main_thread_archive_batch_deduplicates_thread_ids(self) -> None:
+        with patch("bot.feishu_codexctl._archive_threads", return_value=0) as mock_archive:
+            with patch(
+                "bot.feishu_codexctl.sys.argv",
+                [
+                    "feishu-codexctl",
+                    "thread",
+                    "archive",
+                    "--thread-id",
+                    "thread-1",
+                    "--thread-id",
+                    "thread-2",
+                    "--thread-id",
+                    "thread-1",
+                ],
+            ):
+                with self.assertRaises(SystemExit) as exc:
+                    feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])

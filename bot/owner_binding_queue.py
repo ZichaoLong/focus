@@ -17,6 +17,11 @@ class OwnerBindingQueueItem:
     message_id: str = ""
     text: str = ""
     actor_open_id: str = ""
+    origin_chat_type: str = ""
+    origin_sender_open_id: str = ""
+    origin_sender_user_id: str = ""
+    origin_sender_type: str = ""
+    origin_feishu_thread_id: str = ""
     input_items: tuple[dict[str, Any], ...] = ()
     synthetic_source: str = ""
     display_mode: str = "silent"
