@@ -1509,6 +1509,28 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(bot.reply_ref_calls[-1][0], "m-2")
         self.assertTrue(bot.reply_ref_calls[-1][3])
 
+    def test_running_group_turn_routes_same_actor_unmentioned_followup(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+        bot.message_contexts["m-2"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+
+        handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
+
+        self.assertTrue(handler.should_route_group_followup_prompt("ou_user", "chat-group", message_id="m-2"))
+
+    def test_group_followup_route_is_closed_without_running_turn_or_for_different_actor(self) -> None:
+        handler, bot = self._make_handler()
+        bot.chat_types["chat-group"] = "group"
+        bot.message_contexts["m-1"] = {"chat_type": "group", "sender_open_id": "ou_user"}
+        bot.message_contexts["m-2"] = {"chat_type": "group", "sender_open_id": "ou_user2"}
+
+        self.assertFalse(handler.should_route_group_followup_prompt("ou_user", "chat-group", message_id="m-1"))
+
+        handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
+
+        self.assertFalse(handler.should_route_group_followup_prompt("ou_user2", "chat-group", message_id="m-2"))
+
     def test_running_group_prompt_replies_wait_or_cancel(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"

@@ -64,5 +64,8 @@ class CodexBot(FeishuBot):
     def allow_group_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
         return self._handler.preflight_group_prompt(sender_id, chat_id, message_id=message_id)
 
+    def should_route_group_followup_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
+        return self._handler.should_route_group_followup_prompt(sender_id, chat_id, message_id=message_id)
+
     def on_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         self._handler.handle_chat_unavailable(chat_id, reason=reason)

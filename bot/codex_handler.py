@@ -1031,6 +1031,14 @@ class CodexHandler(BotHandler):
             message_id=message_id,
         )
 
+    def should_route_group_followup_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
+        return self._runtime_call(
+            self._should_route_group_followup_prompt_impl,
+            sender_id,
+            chat_id,
+            message_id=message_id,
+        )
+
     def handle_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         self._runtime_call(self._handle_chat_unavailable_impl, chat_id, reason=reason)
 
@@ -1439,6 +1447,25 @@ class CodexHandler(BotHandler):
             sender_id,
             chat_id,
             message_id=message_id,
+        )
+
+    def _should_route_group_followup_prompt_impl(
+        self,
+        sender_id: str,
+        chat_id: str,
+        *,
+        message_id: str = "",
+    ) -> bool:
+        resolved = self._resolve_runtime_binding(sender_id, chat_id, message_id)
+        runtime = build_runtime_view(resolved.state)
+        if not runtime.running:
+            return False
+        return self._owner_binding_queue_allowed(
+            resolved,
+            sender_id,
+            chat_id,
+            message_id=message_id,
+            actor_open_id=self._group_actor_open_id(message_id),
         )
 
     def _is_group_admin_actor(

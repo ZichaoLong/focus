@@ -44,6 +44,7 @@ class _RecordingBot(FeishuBot):
         self.history_fetch_error: Exception | None = None
         self.raw_message_items: dict[str, list[object]] = {}
         self.allow_group_prompt_result = True
+        self.route_group_followup_prompt_result = False
         self.chat_unavailable_events: list[tuple[str, str]] = []
 
     def on_message(self, sender_id: str, chat_id: str, text: str, message_id: str = "") -> None:
@@ -96,6 +97,12 @@ class _RecordingBot(FeishuBot):
         del chat_id
         del message_id
         return bool(self.allow_group_prompt_result)
+
+    def should_route_group_followup_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
+        del sender_id
+        del chat_id
+        del message_id
+        return bool(self.route_group_followup_prompt_result)
 
     def on_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         self.chat_unavailable_events.append((chat_id, reason))
@@ -724,6 +731,27 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         logged = bot._group_store.read_messages_between("chat-1")
         self.assertEqual(len(logged), 1)
         self.assertEqual(logged[0]["text"], "第一条讨论")
+
+    def test_assistant_mode_routes_unmentioned_followup_when_runtime_allows_queue(self) -> None:
+        bot = self._make_bot()
+        bot.set_group_mode("chat-1", "assistant")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+        bot.route_group_followup_prompt_result = True
+
+        bot._handle_raw_message(
+            _message_event(
+                message_id="m-1",
+                chat_id="chat-1",
+                text="请提交",
+                sender_user_id="u-user",
+                sender_open_id="ou-user",
+            )
+        )
+
+        self.assertEqual(bot.received_messages, [("ou-user", "chat-1", "请提交", "m-1")])
+        logged = bot._group_store.read_messages_between("chat-1")
+        self.assertEqual(len(logged), 1)
+        self.assertEqual(logged[0]["text"], "请提交")
 
     def test_assistant_mode_includes_prior_group_messages_on_authorized_mention(self) -> None:
         bot = self._make_bot()

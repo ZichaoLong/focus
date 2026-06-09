@@ -1902,6 +1902,12 @@ class FeishuBot(ABC):
                             text=log_text,
                         )
                     if not bot_mentioned:
+                        if not control_text and self.should_route_group_followup_prompt(
+                            sender_id,
+                            chat_id,
+                            message_id=message_id,
+                        ):
+                            self.on_message(sender_id, chat_id, text, message_id=message_id)
                         return
                     if control_text:
                         self.on_message(sender_id, chat_id, text, message_id=message_id)
@@ -2498,6 +2504,13 @@ class FeishuBot(ABC):
         del chat_id
         del message_id
         return True
+
+    def should_route_group_followup_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
+        """Whether an unmentioned assistant-mode group message is an in-flight follow-up prompt."""
+        del sender_id
+        del chat_id
+        del message_id
+        return False
 
     def on_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         """群聊解散或机器人出群后的生命周期回调，子类可覆写。"""
