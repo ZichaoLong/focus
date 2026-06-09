@@ -171,6 +171,10 @@ time:
 
 - the active execution is anchored by `prompt_message_id`, `card_message_id`,
   and `turn_id`
+- a live notification's `thread_id` only selects candidate bindings; when the
+  notification carries a `turn_id`, that `turn_id` must also match the local
+  active execution anchor before the notification may mutate the execution
+  card, transcript, plan, or terminal finalization
 - live deltas, terminal notifications, and watchdog reconciliation may only
   update that active card
 - once an execution is finalized, that card stops being the active anchor

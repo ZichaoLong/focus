@@ -117,10 +117,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                current_turn_id = runtime.execution.current_turn_id.strip()
-                if current_turn_id and turn_id and current_turn_id != turn_id:
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 if will_retry:
                     self._turn_execution.append_process_note_locked(
@@ -141,10 +138,18 @@ class AdapterNotificationController:
         return self._thread_subscribers(normalized_thread_id)
 
     @staticmethod
-    def _notification_matches_current_execution(runtime, turn_id: str, *, allow_missing: bool = True) -> bool:
+    def _resolve_current_execution_target(
+        runtime,
+        *,
+        thread_id: str,
+        turn_id: str,
+        allow_missing_turn_id: bool = True,
+    ) -> bool:
+        if runtime.current_thread_id.strip() != thread_id:
+            return False
         normalized_turn_id = str(turn_id or "").strip()
         if not normalized_turn_id:
-            return allow_missing
+            return allow_missing_turn_id
         current_turn_id = runtime.execution.current_turn_id.strip()
         if current_turn_id and current_turn_id != normalized_turn_id:
             return False
@@ -297,9 +302,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                if not self._notification_matches_current_execution(runtime, turn_id):
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 transition = self._turn_execution.prepare_turn_started_locked(
                     state,
@@ -319,7 +322,10 @@ class AdapterNotificationController:
                 card_id = self._send_execution_card(binding[1], "")
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.execution.current_turn_id.strip() == turn_id:
+                    if (
+                        runtime.current_thread_id.strip() == thread_id
+                        and runtime.execution.current_turn_id.strip() == turn_id
+                    ):
                         self._apply_runtime_state_message_locked(
                             state,
                             ExecutionStateChanged(
@@ -358,7 +364,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 if not self._turn_execution.update_plan_outline_locked(
                     state,
@@ -382,9 +388,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                if not self._notification_matches_current_execution(runtime, turn_id):
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 if item_type == "commandExecution":
                     command = item.get("command") or ""
@@ -422,9 +426,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                if not self._notification_matches_current_execution(runtime, turn_id):
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 self._turn_execution.append_assistant_delta_locked(
                     state,
@@ -456,9 +458,7 @@ class AdapterNotificationController:
             if item_type == "commandExecution":
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.current_thread_id.strip() != thread_id:
-                        continue
-                    if not self._notification_matches_current_execution(runtime, turn_id):
+                    if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                         continue
                     self._turn_execution.finish_process_block_locked(
                         state,
@@ -476,18 +476,14 @@ class AdapterNotificationController:
                     suffix = f"\n[文件变更]\n{summary}\n"
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.current_thread_id.strip() != thread_id:
-                        continue
-                    if not self._notification_matches_current_execution(runtime, turn_id):
+                    if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                         continue
                     self._turn_execution.finish_process_block_locked(state, suffix=suffix)
                 self._schedule_execution_card_update(*binding)
             elif item_type == "agentMessage" and item.get("text"):
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.current_thread_id.strip() != thread_id:
-                        continue
-                    if not self._notification_matches_current_execution(runtime, turn_id):
+                    if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                         continue
                     self._turn_execution.reconcile_current_assistant_text_locked(
                         state,
@@ -497,18 +493,14 @@ class AdapterNotificationController:
             elif item_type in WORK_ITEM_LABELS:
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.current_thread_id.strip() != thread_id:
-                        continue
-                    if not self._notification_matches_current_execution(runtime, turn_id):
+                    if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                         continue
                     self._turn_execution.finish_process_block_locked(state)
                 self._schedule_execution_card_update(*binding)
             elif item_type == "plan" and item.get("text"):
                 with self._lock:
                     runtime = build_runtime_view(state)
-                    if runtime.current_thread_id.strip() != thread_id:
-                        continue
-                    if not self._notification_matches_current_execution(runtime, turn_id):
+                    if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                         continue
                     if not self._turn_execution.update_plan_text_locked(
                         state,
@@ -532,9 +524,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                if not self._notification_matches_current_execution(runtime, turn_id):
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 self._turn_execution.apply_turn_completed_locked(
                     state,
@@ -558,9 +548,7 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if runtime.current_thread_id.strip() != thread_id:
-                    continue
-                if not self._notification_matches_current_execution(runtime, turn_id):
+                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
                     continue
                 self._turn_execution.append_process_delta_locked(state, text=text)
             self._schedule_execution_card_update(*binding)

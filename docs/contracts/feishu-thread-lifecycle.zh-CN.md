@@ -150,6 +150,7 @@ flowchart TD
 对同一个飞书会话，任一时刻最多只允许一张“当前执行卡片”：
 
 - 当前执行卡片由 `prompt_message_id`、`card_message_id`、`turn_id` 共同锚定
+- live notification 的 `thread_id` 只用于定位候选 binding；如果通知携带 `turn_id`，必须再与本地当前执行锚点的 `turn_id` 匹配，才允许修改执行卡片、transcript、plan 或触发终态收口
 - live delta、终态通知、watchdog 补账都只能更新这张当前执行卡片
 - 当执行结束后，这张卡片会被收口并退出“当前执行锚点”
 - 如果终态后还需要补最终文本，只允许后台按旧 `card_message_id` 回写这张已结束的旧卡片
