@@ -140,6 +140,14 @@ class AdapterNotificationController:
             return ()
         return self._thread_subscribers(normalized_thread_id)
 
+    @staticmethod
+    def _turn_completed_matches_current_execution(runtime, turn_id: str) -> bool:
+        normalized_turn_id = str(turn_id or "").strip()
+        current_turn_id = runtime.execution.current_turn_id.strip()
+        if normalized_turn_id and current_turn_id and normalized_turn_id != current_turn_id:
+            return False
+        return True
+
     def handle_thread_status_changed(self, params: dict[str, Any]) -> None:
         thread_id = str(params.get("threadId", "") or "").strip()
         bindings = self._bindings_for_thread(thread_id)
@@ -503,6 +511,8 @@ class AdapterNotificationController:
             with self._lock:
                 runtime = build_runtime_view(state)
                 if runtime.current_thread_id.strip() != thread_id:
+                    continue
+                if not self._turn_completed_matches_current_execution(runtime, turn_id):
                     continue
                 self._turn_execution.apply_turn_completed_locked(
                     state,

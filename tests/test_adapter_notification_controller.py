@@ -346,6 +346,28 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(note_events, [binding])
         self.assertEqual(finalizations, [("ou_user", "chat-1", "thread-1", "turn-1")])
 
+    def test_handle_turn_completed_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+
+        controller, note_events, _, _, _, _, _, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_turn_completed({"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(state["current_turn_id"], "turn-2")
+        self.assertEqual(state["current_message_id"], "queued-card")
+        self.assertTrue(state["running"])
+
     def test_handle_turn_completed_finalizes_each_subscriber(self) -> None:
         binding_a = ("ou_user", "chat-a")
         binding_b = ("ou_user", "chat-b")
