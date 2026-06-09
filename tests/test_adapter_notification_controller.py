@@ -259,6 +259,38 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(watchdogs, [binding_a, binding_b])
         self.assertEqual(updates, [binding_a, binding_b])
 
+    def test_handle_turn_started_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "queued-card"
+        state["current_turn_id"] = "turn-2"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+
+        (
+            controller,
+            note_events,
+            patches,
+            sent_cards,
+            watchdogs,
+            updates,
+            *_,
+        ) = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_turn_started({"threadId": "thread-1", "turn": {"id": "turn-1"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(patches, [])
+        self.assertEqual(sent_cards, [])
+        self.assertEqual(watchdogs, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_message_id"], "queued-card")
+        self.assertEqual(state["current_turn_id"], "turn-2")
+
     def test_handle_thread_status_changed_ignores_idle_while_waiting_for_turn_started(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()
@@ -367,6 +399,69 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(state["current_turn_id"], "turn-2")
         self.assertEqual(state["current_message_id"], "queued-card")
         self.assertTrue(state["running"])
+
+    def test_handle_agent_message_delta_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_agent_message_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old"})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["execution_transcript"].reply_text(), "")
+
+    def test_handle_command_delta_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_command_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old stdout"})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+
+    def test_handle_item_completed_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_item_completed(
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {"type": "agentMessage", "text": "old final text"},
+            }
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["execution_transcript"].reply_text(), "")
 
     def test_handle_turn_completed_finalizes_each_subscriber(self) -> None:
         binding_a = ("ou_user", "chat-a")
