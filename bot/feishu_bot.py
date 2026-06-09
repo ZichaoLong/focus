@@ -1967,12 +1967,18 @@ class FeishuBot(ABC):
                         parent_message_id=message_id,
                     )
                 return
-            if not is_attachment_message and not control_text and not self.allow_group_prompt(
-                sender_id,
-                chat_id,
-                message_id=message_id,
-            ):
-                return
+            if not is_attachment_message and not control_text:
+                route_followup = self.should_route_group_followup_prompt(
+                    sender_id,
+                    chat_id,
+                    message_id=message_id,
+                )
+                if not route_followup and not self.allow_group_prompt(
+                    sender_id,
+                    chat_id,
+                    message_id=message_id,
+                ):
+                    return
         if is_attachment_message:
             resource_key = self._attachment_resource_key(msg_type, content_dict)
             attachment_name = self._attachment_message_name(msg_type, content_dict)

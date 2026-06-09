@@ -811,6 +811,44 @@ class FeishuBotGroupModeTests(unittest.TestCase):
         _, _, text, _ = bot.received_messages[0]
         self.assertEqual(text, "请直接总结今天讨论")
 
+    def test_group_all_mode_routes_followup_when_runtime_allows_queue_even_if_preflight_blocks(self) -> None:
+        bot = self._make_bot()
+        bot.set_group_mode("chat-1", "all")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+        bot.allow_group_prompt_result = False
+        bot.route_group_followup_prompt_result = True
+
+        bot._handle_raw_message(
+            _message_event(
+                message_id="m-1",
+                chat_id="chat-1",
+                text="请提交",
+                sender_user_id="u-user",
+                sender_open_id="ou-user",
+            )
+        )
+
+        self.assertEqual(bot.received_messages, [("ou-user", "chat-1", "请提交", "m-1")])
+
+    def test_group_all_mode_blocks_prompt_when_preflight_blocks_and_runtime_does_not_allow_queue(self) -> None:
+        bot = self._make_bot()
+        bot.set_group_mode("chat-1", "all")
+        bot.activate_group_chat("chat-1", activated_by="ou-admin")
+        bot.allow_group_prompt_result = False
+        bot.route_group_followup_prompt_result = False
+
+        bot._handle_raw_message(
+            _message_event(
+                message_id="m-1",
+                chat_id="chat-1",
+                text="插播",
+                sender_user_id="u-user",
+                sender_open_id="ou-user",
+            )
+        )
+
+        self.assertEqual(bot.received_messages, [])
+
     def test_group_mention_only_wraps_current_turn_with_sender_name(self) -> None:
         bot = self._make_bot()
         bot.set_group_mode("chat-1", "mention_only")
