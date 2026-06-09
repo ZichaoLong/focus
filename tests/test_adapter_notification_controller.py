@@ -438,6 +438,50 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].process_text(), "")
 
+    def test_handle_file_change_delta_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_file_change_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old patch"})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+
+    def test_handle_item_started_ignores_stale_turn_for_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "queued-card"
+        state["running"] = True
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_item_started(
+            {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "item": {"type": "commandExecution", "command": "echo old", "cwd": "/tmp"},
+            }
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+
     def test_handle_item_completed_ignores_stale_turn_for_current_execution(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()

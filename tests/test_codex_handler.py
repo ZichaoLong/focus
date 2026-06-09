@@ -1777,9 +1777,9 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(handler2._thread_subscribers("thread-created"), ())
 
         handler2.handle_message("ou_user", "c1", "follow up")
-        handler2._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-2"}})
+        handler2._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-1"}})
         handler2._handle_agent_message_delta({"threadId": "thread-created", "delta": "恢复后事件正常路由"})
-        handler2._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-2", "status": "completed"}})
+        handler2._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-created")
         self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-created")
