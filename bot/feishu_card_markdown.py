@@ -6,6 +6,7 @@ _MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]\n]*)\]\(([^)\n]+)\)")
 _MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 _FENCED_CODE_OPEN_RE = re.compile(r"^([ \t]*)(`{3,}|~{3,})([^\n]*)$")
+_MARKDOWN_FENCE_INFO_RE = re.compile(r"^(?:md|markdown)(?:[ \t].*)?$", re.IGNORECASE)
 
 
 def contains_unsupported_embedded_image_markdown(text: str) -> bool:
@@ -112,6 +113,19 @@ def _normalize_fenced_code_blocks_for_feishu(text: str) -> str:
         fence_char = fence[0]
         fence_len = len(fence)
         info = str(match.group(3) or "").strip()
+        if _is_markdown_fence_info(info):
+            block, index = _collect_markdown_fence_block(
+                lines,
+                index,
+                fence=fence,
+                info=info,
+                opening_newline=newline or "\n",
+            )
+            _append_blank_line_before_code_block(output)
+            output.extend(block)
+            _append_blank_line_after_code_block(output, lines, index)
+            continue
+
         opening_newline = newline or "\n"
         block: list[str] = [f"{fence}{info}{opening_newline}"]
         index += 1
@@ -135,6 +149,74 @@ def _normalize_fenced_code_blocks_for_feishu(text: str) -> str:
         output.extend(block)
         _append_blank_line_after_code_block(output, lines, index)
     return "".join(output)
+
+
+def _is_markdown_fence_info(info: str) -> bool:
+    return bool(_MARKDOWN_FENCE_INFO_RE.fullmatch(str(info or "").strip()))
+
+
+def _collect_markdown_fence_block(
+    lines: list[str],
+    opening_index: int,
+    *,
+    fence: str,
+    info: str,
+    opening_newline: str,
+) -> tuple[list[str], int]:
+    fence_char = fence[0]
+    fence_len = len(fence)
+    closing_index = _find_markdown_fence_closing_index(lines, opening_index + 1, fence_char, fence_len)
+    if closing_index is None:
+        return [f"{fence}{info}{opening_newline}"], opening_index + 1
+    content = lines[opening_index + 1:closing_index]
+    closing_line = lines[closing_index]
+    closing_body = closing_line.rstrip("\r\n")
+    closing_newline = closing_line[len(closing_body):] or "\n"
+    required_len = max(fence_len, _max_line_start_fence_len(content, fence_char) + 1)
+    upgraded_fence = fence_char * required_len
+    block = [f"{upgraded_fence}{info}{opening_newline}"]
+    block.extend(content)
+    block.append(f"{upgraded_fence}{closing_newline}")
+    return block, closing_index + 1
+
+
+def _find_markdown_fence_closing_index(
+    lines: list[str],
+    start_index: int,
+    fence_char: str,
+    fence_len: int,
+) -> int | None:
+    nested_closings_to_skip = 0
+    last_matching_fence: int | None = None
+    index = start_index
+    while index < len(lines):
+        line = lines[index]
+        body = line.rstrip("\r\n")
+        stripped = body.strip()
+        opener = re.fullmatch(rf"{re.escape(fence_char)}{{{fence_len},}}[^\s`~].*", stripped)
+        if opener:
+            nested_closings_to_skip += 1
+            index += 1
+            continue
+        if re.fullmatch(rf"{re.escape(fence_char)}{{{fence_len},}}", stripped):
+            last_matching_fence = index
+            if nested_closings_to_skip:
+                nested_closings_to_skip -= 1
+            else:
+                return index
+        index += 1
+    return last_matching_fence
+
+
+def _max_line_start_fence_len(lines: list[str], fence_char: str) -> int:
+    max_len = 0
+    for line in lines:
+        body = line.rstrip("\r\n")
+        stripped = body.strip()
+        match = re.match(rf"{re.escape(fence_char)}{{3,}}", stripped)
+        if match:
+            max_len = max(max_len, len(match.group(0)))
+    return max_len
 
 
 def _append_blank_line_before_code_block(output: list[str]) -> None:

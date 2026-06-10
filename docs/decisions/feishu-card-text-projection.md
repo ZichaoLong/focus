@@ -228,6 +228,9 @@ The current fixed rules are:
 - fenced code blocks may be normalized into a more conservative Feishu display
   projection, for example by moving fences to line start and adding blank lines
   around the block so surrounding lists, quotes, or text do not swallow it
+- when an outer `md` / `markdown` code block demonstrates an inner fenced code
+  block, the outer fence may be upgraded to a longer standard Markdown fence,
+  for example four backticks wrapping an inner triple-backtick block
 
 This normalization applies only to the **Feishu card display projection** and
 must not alter the authoritative `final_reply_text`:

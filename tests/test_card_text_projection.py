@@ -232,6 +232,31 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertIn("python*/site-packages", content)
         self.assertNotIn("  ssh bot@localhost", content)
 
+    def test_terminal_result_card_upgrades_markdown_fence_wrapping_nested_fences(self) -> None:
+        card = build_terminal_result_card(
+            "示例：\n"
+            "```markdown\n"
+            "- Python 参数检查：\n"
+            "\n"
+            "  ```python\n"
+            "  {\"open_timeout\": ..., \"max_size\": None, \"proxy\": None}\n"
+            "  ```\n"
+            "```\n"
+            "\n"
+            "后续命令：\n"
+            "```bash\n"
+            "echo after\n"
+            "```"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("````markdown\n", content)
+        self.assertIn("  ```python\n", content)
+        self.assertIn("  ```\n", content)
+        self.assertIn("````\n\n后续命令", content)
+        self.assertIn("```bash\necho after\n```", content)
+
     def test_terminal_result_card_separates_marker_from_closing_code_fence(self) -> None:
         card = build_terminal_result_card("```bash\necho ok\n```")
         content = card["body"]["elements"][-1]["content"]
