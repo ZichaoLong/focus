@@ -32,6 +32,7 @@ from bot.platform_paths import default_data_root, is_windows
 from bot.thread_resolution import looks_like_thread_id, resolve_resume_name_via_remote_backend
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_runtime_coordination import preview_thread_global_loaded_gate
+from bot.version import __version__
 
 _OPTIONS_WITH_VALUE = {
     "-C",
@@ -64,6 +65,7 @@ _REMOVED_WRAPPER_COMMAND_HINTS = {
     "/archive": "请改用 `feishu-codexctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
 _HELP_FLAGS = ("-h", "--help")
+_VERSION_FLAGS = ("--version",)
 _LOCAL_WEBSOCKET_NO_PROXY_HOSTS = ("127.0.0.1", "localhost", "::1")
 
 
@@ -84,6 +86,10 @@ def _wrapper_help_request_kind(user_args: list[str]) -> str | None:
     if user_args[first_positional_index] == "resume":
         return "resume"
     return None
+
+
+def _is_wrapper_version_request(user_args: list[str]) -> bool:
+    return len(user_args) == 1 and user_args[0] in _VERSION_FLAGS
 
 
 def _print_wrapper_help() -> None:
@@ -656,6 +662,9 @@ def _run_upstream_codex(
 def main() -> None:
     load_env_file()
     explicit_instance, user_args = _consume_instance_arg(sys.argv[1:])
+    if _is_wrapper_version_request(user_args):
+        print(f"fcodex {__version__}")
+        raise SystemExit(0)
     help_request = _wrapper_help_request_kind(user_args)
     if help_request == "top":
         _print_wrapper_help()

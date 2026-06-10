@@ -37,6 +37,7 @@ from bot.manage_cli import (
 from bot.service_manager import AutostartStatus
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.stores.service_instance_lease import ServiceInstanceLease
+from bot.version import __version__
 
 
 class ManageCliTests(unittest.TestCase):
@@ -83,6 +84,16 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("安装或卸载 feishu-codex 提供的工作区 skill", rendered)
         self.assertNotIn("    install            ", rendered)
         self.assertNotIn("bootstrap-install", rendered)
+
+    def test_top_level_version_prints_project_version(self) -> None:
+        parser = _build_parser()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exc:
+                parser.parse_args(["--version"])
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(stdout.getvalue().strip(), f"feishu-codex {__version__}")
 
     def test_parser_collects_repeated_instance_flags(self) -> None:
         parser = _build_parser()

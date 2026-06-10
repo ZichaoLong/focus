@@ -59,6 +59,12 @@ class ShellCompletionTests(unittest.TestCase):
         self.assertEqual(instance_matches, ["corp-a", "corp-b", "default"])
         self.assertEqual(remove_matches, ["corp-a", "corp-b"])
 
+    def test_public_commands_complete_version_option(self) -> None:
+        self.assertIn("--version", complete_words("feishu-codex", ["feishu-codex", "--"], 1))
+        self.assertIn("--version", complete_words("feishu-codexctl", ["feishu-codexctl", "--"], 1))
+        self.assertIn("--version", complete_words("feishu-codexd", ["feishu-codexd", "--"], 1))
+        self.assertIn("--version", complete_words("fcodex", ["fcodex", "--"], 1))
+
     def test_feishu_codexctl_completes_thread_goal_subcommands(self) -> None:
         matches = complete_words(
             "feishu-codexctl",

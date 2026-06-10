@@ -1730,6 +1730,18 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("codex --help", rendered)
         self.assertIn("feishu-codexctl --help", rendered)
 
+    def test_fcodex_version_prints_project_version_without_loading_codex_config(self) -> None:
+        stdout = StringIO()
+        with patch("bot.fcodex.sys.stdout", stdout):
+            with patch("bot.fcodex.load_config_file") as mock_load_config:
+                with patch("sys.argv", ["fcodex", "--version"]):
+                    with self.assertRaises(SystemExit) as exc:
+                        fcodex_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(stdout.getvalue().strip(), f"fcodex {__version__}")
+        mock_load_config.assert_not_called()
+
     def test_fcodex_top_level_help_accepts_instance_after_help_flag(self) -> None:
         stdout = StringIO()
         with patch("bot.fcodex.sys.stdout", stdout):

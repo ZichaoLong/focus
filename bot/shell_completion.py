@@ -543,6 +543,7 @@ def _complete_feishu_codex(context: CompletionContext) -> list[str]:
             current,
             [
                 "--instance",
+                "--version",
                 "--help",
                 "-h",
                 "start",
@@ -604,6 +605,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
             current,
             [
                 "--instance",
+                "--version",
                 "--help",
                 "-h",
                 "instance",
@@ -693,7 +695,7 @@ def _complete_feishu_codexd(context: CompletionContext) -> list[str]:
     matches = _complete_choice_option(context, "--instance", list_known_instance_names())
     if matches is not None:
         return matches
-    return _complete_candidates(context.current, ["--instance", "--help", "-h"])
+    return _complete_candidates(context.current, ["--instance", "--version", "--help", "-h"])
 
 
 def _complete_fcodex(context: CompletionContext) -> list[str]:
@@ -707,7 +709,7 @@ def _complete_fcodex(context: CompletionContext) -> list[str]:
     positional_index = len(positionals)
     if positional_index == 0:
         if not args_before:
-            return _complete_candidates(current, ["--instance", "resume"])
+            return _complete_candidates(current, ["--instance", "--version", "resume"])
         return _complete_candidates(current, ["resume"])
     return []
 

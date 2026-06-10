@@ -23,6 +23,7 @@ from bot.stores.service_instance_lease import ServiceInstanceLease
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_resolution import list_current_dir_threads, list_global_threads
+from bot.version import __version__
 
 _CODEX_THREAD_ID_ENV_VAR = "CODEX_THREAD_ID"
 
@@ -788,6 +789,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"feishu-codexctl {__version__}")
     parser.add_argument(
         "--instance",
         help=(

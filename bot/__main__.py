@@ -17,10 +17,12 @@ from bot.constants import DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS
 from bot.env_file import load_env_file
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, apply_instance_environment, resolve_instance_paths, validate_instance_name
 from bot.logging_setup import configure_logging
+from bot.version import __version__
 
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="feishu-codexd")
+    parser.add_argument("--version", action="version", version=f"feishu-codexd {__version__}")
     parser.add_argument("--instance", default=DEFAULT_INSTANCE_NAME)
     return parser
 

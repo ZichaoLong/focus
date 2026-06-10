@@ -35,6 +35,7 @@ from bot.instance_resolution import CliInstanceTarget
 from bot.service_control_plane import ServiceControlError
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
+from bot.version import __version__
 
 
 class FeishuCodexCtlTests(unittest.TestCase):
@@ -62,6 +63,16 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
         self.assertIn("thread archive --thread-id <id-1> --thread-id <id-2>", rendered)
+
+    def test_top_level_version_prints_project_version(self) -> None:
+        parser = _build_parser()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exc:
+                parser.parse_args(["--version"])
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(stdout.getvalue().strip(), f"feishu-codexctl {__version__}")
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
         parser = _build_parser()

@@ -41,6 +41,7 @@ from bot.platform_paths import (
 from bot.shell_completion import CompletionInstallResult, install_shell_completion_files, remove_shell_completion_files
 from bot.service_manager import ServiceManagerError, build_service_definition, current_service_manager
 from bot.stores.service_instance_lease import ServiceInstanceLease
+from bot.version import __version__
 
 
 class _HelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -323,6 +324,7 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=_HelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"feishu-codex {__version__}")
     parser.add_argument(
         "--instance",
         action="append",

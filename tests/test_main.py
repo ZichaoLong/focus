@@ -1,14 +1,26 @@
+import io
 import pathlib
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from bot.__main__ import main
+from bot.version import __version__
 
 
 class MainEntrypointTests(unittest.TestCase):
+    def test_main_version_prints_project_version(self) -> None:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exc:
+                main(["--version"])
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(stdout.getvalue().strip(), f"feishu-codexd {__version__}")
+
     def test_main_uses_five_second_default_feishu_request_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
