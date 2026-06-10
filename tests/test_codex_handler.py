@@ -5514,7 +5514,7 @@ class CodexHandlerTests(unittest.TestCase):
         thread = ThreadSummary(
             thread_id="019d2e94-a475-7bc1-b2f7-a3ce37628ede",
             cwd="/tmp/project",
-            name="feishu-cc",
+            name="clfeishu",
             preview="分析本项目",
             created_at=0,
             updated_at=0,

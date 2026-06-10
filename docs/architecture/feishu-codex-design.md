@@ -15,7 +15,7 @@ older Claude integration.
 
 Historical context still matters:
 
-- [`feishu-cc`](https://github.com/ZichaoLong/feishu-cc) proved the Feishu-side
+- [`clfeishu`](https://github.com/ZichaoLong/clfeishu) proved the Feishu-side
   interaction model
 - but that project depended on Claude-specific local file formats and hook
   behavior
@@ -58,7 +58,7 @@ bridge:
 - Recreate the Codex TUI screen inside Feishu
 - Depend on undocumented Codex disk layouts for thread discovery or metadata
 - Support every experimental Codex feature in the first iteration
-- Reuse `feishu-cc` code as a hard architectural dependency
+- Reuse `clfeishu` code as a hard architectural dependency
 - Treat bare `codex` and shared-backend `fcodex` as the same operational path
 
 ## 4. Current Design Principles

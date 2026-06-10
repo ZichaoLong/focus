@@ -16,7 +16,7 @@
 
 历史背景仍然重要：
 
-- [`feishu-cc`](https://github.com/ZichaoLong/feishu-cc) 验证了“飞书消息 + 卡片 + 审批 + 会话管理”这条交互路径是有价值的
+- [`clfeishu`](https://github.com/ZichaoLong/clfeishu) 验证了“飞书消息 + 卡片 + 审批 + 会话管理”这条交互路径是有价值的
 - 但它依赖 Claude 特有的本地文件格式和 hook 行为
 - `feishu-codex` 保留飞书侧交互经验，同时把 agent/runtime 集成层切换到 Codex 原生能力
 
@@ -49,7 +49,7 @@
 - 不在飞书里重建 Codex TUI 屏幕
 - 不依赖未公开的 Codex 磁盘布局来做线程发现或元数据同步
 - 第一版不追求覆盖 Codex 的所有实验特性
-- 不把 `feishu-cc` 代码复用当作当前架构前提
+- 不把 `clfeishu` 代码复用当作当前架构前提
 - 不把裸 `codex` 与 shared-backend `fcodex` 视为同一条运行路径
 
 ## 4. 当前设计原则
