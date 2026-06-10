@@ -171,6 +171,18 @@ def _find_fence_closing_index(
             index += 1
             continue
         if re.fullmatch(rf"{re.escape(fence_char)}{{{fence_len},}}", stripped):
+            if (
+                not nested_closings_to_skip
+                and _bare_fence_opens_nested_block_before_outer_close(
+                    lines,
+                    index + 1,
+                    fence_char,
+                    fence_len,
+                )
+            ):
+                nested_closings_to_skip += 1
+                index += 1
+                continue
             last_matching_fence = index
             if nested_closings_to_skip:
                 nested_closings_to_skip -= 1
@@ -178,6 +190,46 @@ def _find_fence_closing_index(
                 return index
         index += 1
     return last_matching_fence
+
+
+def _bare_fence_opens_nested_block_before_outer_close(
+    lines: list[str],
+    start_index: int,
+    fence_char: str,
+    fence_len: int,
+) -> bool:
+    inner_closing_index = _next_matching_fence_index(lines, start_index, fence_char, fence_len)
+    if inner_closing_index is None:
+        return False
+    outer_closing_index = _next_nonblank_index(lines, inner_closing_index + 1)
+    if outer_closing_index is None:
+        return False
+    return _is_same_length_bare_fence(lines[outer_closing_index], fence_char, fence_len)
+
+
+def _next_matching_fence_index(
+    lines: list[str],
+    start_index: int,
+    fence_char: str,
+    fence_len: int,
+) -> int | None:
+    for index in range(start_index, len(lines)):
+        if _is_same_length_bare_fence(lines[index], fence_char, fence_len):
+            return index
+    return None
+
+
+def _next_nonblank_index(lines: list[str], start_index: int) -> int | None:
+    for index in range(start_index, len(lines)):
+        if lines[index].strip():
+            return index
+    return None
+
+
+def _is_same_length_bare_fence(line: str, fence_char: str, fence_len: int) -> bool:
+    body = line.rstrip("\r\n")
+    stripped = body.strip()
+    return stripped == fence_char * fence_len
 
 
 def _is_same_length_fence_opener(stripped_line: str, fence_char: str, fence_len: int) -> bool:

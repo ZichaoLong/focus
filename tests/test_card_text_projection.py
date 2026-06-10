@@ -257,6 +257,37 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertIn("````\n\n后续命令", content)
         self.assertIn("```bash\necho after\n```", content)
 
+    def test_terminal_result_card_upgrades_markdown_fence_wrapping_bare_nested_fence(self) -> None:
+        card = build_terminal_result_card(
+            "```markdown\n"
+            "```\n"
+            "hello\n"
+            "```\n"
+            "```\n"
+            "after"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("````markdown\n```\nhello\n```\n````\n\nafter", content)
+
+    def test_terminal_result_card_does_not_swallow_following_bare_fence_block(self) -> None:
+        card = build_terminal_result_card(
+            "```markdown\n"
+            "content\n"
+            "```\n"
+            "after\n"
+            "```\n"
+            "later\n"
+            "```"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("```markdown\ncontent\n```", content)
+        self.assertIn("after\n\n```\nlater\n```", content)
+        self.assertNotIn("````markdown\ncontent\n```\nafter", content)
+
     def test_terminal_result_card_treats_spaced_fence_info_as_nested_opener(self) -> None:
         card = build_terminal_result_card(
             "```text\n"
