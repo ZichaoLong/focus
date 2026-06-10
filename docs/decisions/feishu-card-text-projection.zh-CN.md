@@ -180,8 +180,8 @@
 - Markdown 图片不属于这条规则；它仍然不应进入文本型终态卡强合同
 - 代码块可以为了飞书渲染被规范化为更保守的展示形态，例如把 fenced
   code block 的围栏移到行首、在代码块前后补空行，避免被列表、引用或前后文本吞掉
-- `md` / `markdown` 外层代码块如果展示了内部 fenced code block，可把外层
-  fence 升级为比内部 fence 更长的标准 Markdown fence，例如四反引包三反引
+- 外层代码块如果展示了内部 fenced code block，可把外层 fence 升级为比内部
+  fence 更长的标准 Markdown fence，例如四反引包三反引、五反引包四反引
 
 这类规范化只作用于**飞书卡片展示投影**，不改变 `final_reply_text` 的权威原文：
 

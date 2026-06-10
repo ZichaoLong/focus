@@ -257,6 +257,56 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertIn("````\n\n后续命令", content)
         self.assertIn("```bash\necho after\n```", content)
 
+    def test_terminal_result_card_treats_spaced_fence_info_as_nested_opener(self) -> None:
+        card = build_terminal_result_card(
+            "```text\n"
+            "``` python\n"
+            "print(1)\n"
+            "```\n"
+            "```\n"
+            "\n"
+            "after"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("````text\n``` python", content)
+        self.assertIn("print(1)\n```\n````\n\nafter", content)
+
+    def test_terminal_result_card_upgrades_text_fence_wrapping_nested_fences(self) -> None:
+        card = build_terminal_result_card(
+            "示例投影会从容易错配的：\n"
+            "\n"
+            "```text\n"
+            "```markdown\n"
+            "...\n"
+            "  ```python\n"
+            "  ...\n"
+            "  ```\n"
+            "```\n"
+            "```\n"
+            "\n"
+            "变成：\n"
+            "\n"
+            "````text\n"
+            "````markdown\n"
+            "...\n"
+            "  ```python\n"
+            "  ...\n"
+            "  ```\n"
+            "````\n"
+            "````\n"
+            "\n"
+            "预期效果是：后续普通段落不应进入代码块。"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("````text\n```markdown", content)
+        self.assertIn("````\n\n变成：", content)
+        self.assertIn("`````text\n````markdown", content)
+        self.assertIn("`````\n\n预期效果是：", content)
+
     def test_terminal_result_card_separates_marker_from_closing_code_fence(self) -> None:
         card = build_terminal_result_card("```bash\necho ok\n```")
         content = card["body"]["elements"][-1]["content"]
