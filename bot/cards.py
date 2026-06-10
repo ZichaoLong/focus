@@ -17,7 +17,7 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 from bot.adapters.base import ThreadGoalSummary
 from bot.card_text_projection import (
     TERMINAL_RESULT_CARD_TITLE,
-    render_final_reply_text_block,
+    render_terminal_result_card_content_for_feishu,
     terminal_result_checksum,
     terminal_result_element_id,
 )
@@ -25,7 +25,6 @@ from bot.constants import display_path, format_timestamp, shorten
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_card_markdown import (
     sanitize_runtime_markdown_for_feishu_card,
-    sanitize_terminal_result_markdown_for_feishu_json2,
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
 from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
@@ -253,12 +252,11 @@ def build_terminal_result_card(
 ) -> dict:
     """构造终态结果卡。"""
     raw_text = str(final_reply_text or "")
-    normalized = sanitize_terminal_result_markdown_for_feishu_json2(raw_text)
     normalized_result_id = str(terminal_result_id or "").strip().lower()
     normalized_checksum = str(checksum or "").strip().lower() or terminal_result_checksum(raw_text)
     element: dict[str, str] = {
         "tag": "markdown",
-        "content": render_final_reply_text_block(normalized),
+        "content": render_terminal_result_card_content_for_feishu(raw_text),
     }
     element_id = terminal_result_element_id(normalized_result_id, normalized_checksum)
     if element_id:

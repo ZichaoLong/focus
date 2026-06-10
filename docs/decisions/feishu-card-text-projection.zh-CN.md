@@ -178,6 +178,18 @@
 
 - 行内 Markdown 链接可改写为“显式可见 URL”形状，例如 `标题 (https://...)`
 - Markdown 图片不属于这条规则；它仍然不应进入文本型终态卡强合同
+- 代码块可以为了飞书渲染被规范化为更保守的展示形态，例如把 fenced
+  code block 的围栏移到行首、在代码块前后补空行，避免被列表、引用或前后文本吞掉
+
+这类规范化只作用于**飞书卡片展示投影**，不改变 `final_reply_text` 的权威原文：
+
+- terminal result store 记录 app-server 给出的原始终态文本
+- `terminal_result_id` / checksum 仍按原始终态文本计算
+- 卡片 markdown 区块中的正文可以是 Feishu-safe projection
+- 接收侧如果本地 store 命中，必须以 store 原文为权威文本；如果 store miss，
+  卡片正文只能作为 degraded projection，不得被标记为权威原文
+- `/last text` 是本机器人本实例的导出命令；它不应把 store miss 的新版
+  terminal result card projection 当作可导出的终态文本
 
 ### 5.3 终态超长时优先发文本，不发“部分终态卡”
 

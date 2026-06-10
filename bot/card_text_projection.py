@@ -5,7 +5,11 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from bot.feishu_card_markdown import contains_unsupported_embedded_image_markdown
+from bot.feishu_card_markdown import (
+    contains_unsupported_embedded_image_markdown,
+    ends_with_fenced_code_block,
+    sanitize_terminal_result_markdown_for_feishu_json2,
+)
 
 
 TERMINAL_RESULT_CARD_TITLE = "Codex"
@@ -70,7 +74,17 @@ def render_final_reply_text_block(final_reply_text: str) -> str:
     normalized = str(final_reply_text or "").strip()
     if not normalized:
         return ""
+    if ends_with_fenced_code_block(normalized):
+        return f"{normalized}\n{TERMINAL_RESULT_CARD_MARKER}"
     return f"{normalized}{TERMINAL_RESULT_CARD_MARKER}"
+
+
+def render_terminal_result_card_content_for_feishu(final_reply_text: str) -> str:
+    normalized = str(final_reply_text or "").strip()
+    if not normalized:
+        return ""
+    projection = sanitize_terminal_result_markdown_for_feishu_json2(normalized)
+    return render_final_reply_text_block(projection)
 
 
 def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -> bool:
@@ -84,7 +98,7 @@ def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -
     budget = max(int(char_limit), 0)
     if budget <= 0:
         return False
-    return len(render_final_reply_text_block(normalized)) <= budget
+    return len(render_terminal_result_card_content_for_feishu(normalized)) <= budget
 
 
 def _contains_terminal_result_marker(text: str) -> bool:

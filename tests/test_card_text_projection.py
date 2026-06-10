@@ -200,3 +200,41 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertEqual(projection.final_reply_text, "最终答复")
         self.assertEqual(projection.terminal_result_id, "0123456789abcdef0123456789abcdef")
         self.assertEqual(projection.terminal_result_checksum, checksum[:16])
+
+    def test_terminal_result_card_normalizes_indented_fenced_code_blocks_for_feishu(self) -> None:
+        card = build_terminal_result_card(
+            "- 检查参数\n"
+            "  ```python\n"
+            "  {\"open_timeout\": ..., \"max_size\": None, \"proxy\": None}\n"
+            "  ```\n"
+            "继续说明"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("- 检查参数\n\n```python\n", content)
+        self.assertIn('{"open_timeout": ..., "max_size": None, "proxy": None}\n', content)
+        self.assertIn("```\n\n继续说明", content)
+
+    def test_terminal_result_card_keeps_shell_glob_inside_normalized_code_block(self) -> None:
+        card = build_terminal_result_card(
+            "命令：\n"
+            "  ```bash\n"
+            "  ssh bot@localhost 'bash -lc \"grep -n \\\"proxy.: None\\\" "
+            "/home/bot/.local/share/feishu-codex/.venv/lib/python*/site-packages/bot/codex_protocol/client.py\"'\n"
+            "  ```"
+        )
+
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn("```bash\nssh bot@localhost", content)
+        self.assertIn('\\"proxy.: None\\"', content)
+        self.assertIn("python*/site-packages", content)
+        self.assertNotIn("  ssh bot@localhost", content)
+
+    def test_terminal_result_card_separates_marker_from_closing_code_fence(self) -> None:
+        card = build_terminal_result_card("```bash\necho ok\n```")
+        content = card["body"]["elements"][-1]["content"]
+
+        self.assertIn(f"```\n{TERMINAL_RESULT_CARD_MARKER}", content)
+        self.assertNotIn(f"```{TERMINAL_RESULT_CARD_MARKER}", content)

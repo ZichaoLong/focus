@@ -225,6 +225,22 @@ The current fixed rules are:
   as `label (https://...)`
 - Markdown images are not part of this rule; they still must not enter the
   strong-contract text terminal card
+- fenced code blocks may be normalized into a more conservative Feishu display
+  projection, for example by moving fences to line start and adding blank lines
+  around the block so surrounding lists, quotes, or text do not swallow it
+
+This normalization applies only to the **Feishu card display projection** and
+must not alter the authoritative `final_reply_text`:
+
+- the terminal result store records the original terminal text emitted by the
+  app-server
+- `terminal_result_id` and checksum are still computed from that original text
+- the markdown body inside the card may contain a Feishu-safe projection
+- when the receiver can resolve the local store, the store text is authoritative;
+  when the store misses, the card body is only a degraded projection and must not
+  be marked as authoritative
+- `/last text` is an export command for this bot instance; it must not treat a
+  store-missing new terminal result card projection as exportable terminal text
 
 ### 5.3 If the terminal result is too long, send plain text
 

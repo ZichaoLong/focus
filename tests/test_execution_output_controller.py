@@ -5,7 +5,7 @@ import time
 import unittest
 import json
 
-from bot.card_text_projection import TERMINAL_RESULT_CARD_MARKER
+from bot.card_text_projection import TERMINAL_RESULT_CARD_MARKER, render_final_reply_text_block, terminal_result_checksum
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.execution_output_controller import ExecutionOutputController
 from bot.runtime_card_publisher import RuntimeCardPublisher
@@ -211,6 +211,27 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             [("text-reply-1", "", "# 标题\n\n## 小节\n\n- 条目")],
         )
 
+    def test_publish_terminal_result_budget_uses_feishu_projection_payload(self) -> None:
+        state = self._make_state()
+        raw_text = "![x](a.png)"
+        controller, bot, replies, _, recorded = self._make_controller(
+            state,
+            terminal_result_card_limit=len(render_final_reply_text_block(raw_text)),
+        )
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text=raw_text,
+            prompt_message_id="msg-budget",
+            prompt_reply_in_thread=True,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(bot.reply_refs, [])
+        self.assertEqual(replies, [("c1", raw_text, "msg-budget", True)])
+        self.assertEqual(recorded[-1]["message_id"], "text-reply-1")
+        self.assertEqual(recorded[-1]["final_reply_text"], raw_text)
+
     def test_publish_terminal_result_with_embedded_image_markdown_uses_sanitized_card(self) -> None:
         state = self._make_state()
         controller, bot, replies, _, _ = self._make_controller(state)
@@ -231,6 +252,31 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         card = json.loads(content)
         self.assertIn("【图片】示意图", card["body"]["elements"][-1]["content"])
         self.assertIn("PNG 已生成。", card["body"]["elements"][-1]["content"])
+
+    def test_publish_terminal_result_records_raw_text_while_card_uses_feishu_projection(self) -> None:
+        state = self._make_state()
+        controller, bot, replies, _, recorded = self._make_controller(state)
+        raw_text = (
+            "- 检查参数\n"
+            "  ```python\n"
+            "  {\"open_timeout\": ..., \"max_size\": None, \"proxy\": None}\n"
+            "  ```"
+        )
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text=raw_text,
+            prompt_message_id="msg-code",
+            prompt_reply_in_thread=False,
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(replies, [])
+        card = json.loads(bot.reply_refs[-1][2])
+        content = card["body"]["elements"][-1]["content"]
+        self.assertIn("- 检查参数\n\n```python\n", content)
+        self.assertEqual(recorded[-1]["final_reply_text"], raw_text)
+        self.assertEqual(recorded[-1]["checksum"], terminal_result_checksum(raw_text))
 
     def test_publish_terminal_result_sanitizes_headings_for_feishu_card(self) -> None:
         state = self._make_state()

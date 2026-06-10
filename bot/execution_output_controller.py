@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Any, Callable, Protocol, TypeAlias
 
-from bot.card_text_projection import render_final_reply_text_block, terminal_result_checksum
+from bot.card_text_projection import render_terminal_result_card_content_for_feishu, terminal_result_checksum
 from bot.runtime_card_publisher import (
     ExecutionCardModel,
     RuntimeCardPublisher,
@@ -286,7 +286,7 @@ class ExecutionOutputController:
         if not normalized:
             return False
         budget = int(self._terminal_result_card_limit())
-        payload = render_final_reply_text_block(normalized)
+        payload = render_terminal_result_card_content_for_feishu(normalized)
         terminal_result_id = uuid.uuid4().hex
         checksum = terminal_result_checksum(normalized)
         if len(payload) <= budget:
