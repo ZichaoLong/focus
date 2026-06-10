@@ -14,6 +14,7 @@ from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerC
 from bot.binding_identity import format_binding_id
 from bot.config import load_config_file
 from bot.constants import display_path, format_timestamp
+from bot.codex_protocol.client import CodexRpcError
 from bot.env_file import load_env_file
 from bot.instance_layout import global_data_dir, list_known_instance_names, resolve_instance_paths
 from bot.instance_resolution import (
@@ -434,6 +435,298 @@ def _clear_all_bindings(data_dir: pathlib.Path) -> int:
         return 0
     print(f"cleared bindings: {', '.join(cleared_binding_ids) or '（无）'}")
     return 0
+
+
+def _is_cli_thread_not_found_error(exc: Exception) -> bool:
+    if not isinstance(exc, CodexRpcError):
+        return False
+    message = str(exc.error.get("message", "") or "").strip().lower()
+    return message.startswith("no rollout found for thread id ") or message.startswith("thread not found:")
+
+
+def _resolve_stale_binding_query_target() -> tuple[str, pathlib.Path, InstanceRegistryEntry]:
+    running_instances = list_running_instances()
+    if not running_instances:
+        raise ValueError(
+            "binding clear-stale 需要至少一个运行中的实例，以便通过 app-server 验证 thread 是否仍存在。"
+        )
+    selected = sorted(
+        running_instances,
+        key=lambda item: (0 if str(item.instance_name or "").strip().lower() == "default" else 1, item.instance_name),
+    )[0]
+    return selected.instance_name, pathlib.Path(selected.data_dir), selected
+
+
+def _build_thread_presence_checker(
+    data_dir: pathlib.Path,
+    *,
+    running_entry: InstanceRegistryEntry,
+):
+    adapter, _cfg, _app_server_url = _remote_adapter(pathlib.Path(data_dir), running_entry=running_entry)
+    cache: dict[str, tuple[str, str]] = {}
+
+    def _check(thread_id: str) -> tuple[str, str]:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return "skip", "empty_thread_id"
+        cached = cache.get(normalized_thread_id)
+        if cached is not None:
+            return cached
+        try:
+            adapter.read_thread(normalized_thread_id, include_turns=False)
+        except Exception as exc:
+            if _is_cli_thread_not_found_error(exc):
+                result = ("stale", str(exc) or "thread not found")
+            else:
+                result = ("unknown", str(exc) or type(exc).__name__)
+        else:
+            result = ("present", "")
+        cache[normalized_thread_id] = result
+        return result
+
+    return adapter, _check
+
+
+def _clear_stale_bindings_from_store(
+    data_dir: pathlib.Path,
+    thread_presence_check,
+    *,
+    dry_run: bool = False,
+) -> dict[str, Any]:
+    store = ChatBindingStore(pathlib.Path(data_dir))
+    interaction_leases = InteractionLeaseStore(pathlib.Path(data_dir))
+    clear_bindings: list[tuple[tuple[str, str], str]] = []
+    retained_binding_ids: list[str] = []
+    skipped_binding_ids: list[str] = []
+    unknown_threads: dict[str, str] = {}
+    stale_thread_ids: set[str] = set()
+    for binding, state in sorted(store.load_all().items(), key=lambda item: format_binding_id(item[0])):
+        binding_id = format_binding_id(binding)
+        thread_id = str(state.get("current_thread_id", "") or "").strip()
+        if not thread_id:
+            skipped_binding_ids.append(binding_id)
+            continue
+        status, reason = thread_presence_check(thread_id)
+        if status == "stale":
+            clear_bindings.append((binding, thread_id))
+            stale_thread_ids.add(thread_id)
+            continue
+        if status == "unknown":
+            unknown_threads.setdefault(thread_id, reason)
+            retained_binding_ids.append(binding_id)
+            continue
+        retained_binding_ids.append(binding_id)
+
+    if not dry_run:
+        for binding, thread_id in clear_bindings:
+            store.clear(binding)
+            interaction_leases.release(
+                thread_id,
+                make_feishu_interaction_holder(binding[0], binding[1], owner_pid=0),
+            )
+    cleared_binding_ids = [format_binding_id(binding) for binding, _thread_id in clear_bindings]
+    return {
+        "cleared_binding_ids": [] if dry_run else cleared_binding_ids,
+        "would_clear_binding_ids": cleared_binding_ids if dry_run else [],
+        "stale_thread_ids": sorted(stale_thread_ids),
+        "unknown_threads": [
+            {"thread_id": thread_id, "reason": reason}
+            for thread_id, reason in sorted(unknown_threads.items())
+        ],
+        "retained_binding_ids": retained_binding_ids,
+        "skipped_binding_ids": skipped_binding_ids,
+        "dry_run": bool(dry_run),
+    }
+
+
+def _cleanup_stale_bindings_in_running_instance(
+    data_dir: pathlib.Path,
+    *,
+    dry_run: bool,
+) -> dict[str, Any]:
+    result = _request(
+        pathlib.Path(data_dir),
+        "binding/clear-stale",
+        {
+            "dry_run": bool(dry_run),
+        },
+    )
+    return dict(result)
+
+
+def _clear_stale_bindings(
+    *,
+    explicit_instance: str = "",
+    dry_run: bool = False,
+) -> int:
+    normalized_explicit_instance = str(explicit_instance or "").strip()
+    cleanup_results: list[dict[str, Any]] = []
+    cleanup_failures: list[dict[str, str]] = []
+
+    if normalized_explicit_instance:
+        target = _resolve_target_instance(normalized_explicit_instance)
+        if target.running_entry is not None:
+            try:
+                result = _cleanup_stale_bindings_in_running_instance(target.data_dir, dry_run=dry_run)
+            except Exception as exc:
+                cleanup_failures.append(
+                    {"instance_name": target.instance_name, "mode": "control-plane", "reason": str(exc)}
+                )
+            else:
+                cleanup_results.append({"instance_name": target.instance_name, "mode": "control-plane", **result})
+        else:
+            query_instance_name, query_data_dir, query_running_entry = _resolve_stale_binding_query_target()
+            adapter, thread_presence_check = _build_thread_presence_checker(
+                query_data_dir,
+                running_entry=query_running_entry,
+            )
+            try:
+                try:
+                    result = _clear_stale_bindings_from_store(
+                        target.data_dir,
+                        thread_presence_check,
+                        dry_run=dry_run,
+                    )
+                except Exception as exc:
+                    cleanup_failures.append(
+                        {"instance_name": target.instance_name, "mode": "local-store", "reason": str(exc)}
+                    )
+                else:
+                    cleanup_results.append(
+                        {
+                            "instance_name": target.instance_name,
+                            "mode": "local-store",
+                            "query_instance_name": query_instance_name,
+                            **result,
+                        }
+                    )
+            finally:
+                adapter.stop()
+    else:
+        running_entries = list_running_instances()
+        if not running_entries:
+            raise ValueError(
+                "binding clear-stale 需要至少一个运行中的实例，以便通过 app-server 验证 thread 是否仍存在。"
+            )
+        running_instance_names: set[str] = set()
+        for entry in running_entries:
+            running_instance_names.add(str(entry.instance_name or "").strip().lower())
+        stopped_instance_names = [
+            str(instance_name or "").strip().lower()
+            for instance_name in list_known_instance_names()
+            if str(instance_name or "").strip().lower()
+            and str(instance_name or "").strip().lower() not in running_instance_names
+        ]
+        adapter = None
+        thread_presence_check = None
+        query_instance_name = ""
+        if stopped_instance_names:
+            query_instance_name, query_data_dir, query_running_entry = _resolve_stale_binding_query_target()
+            adapter, thread_presence_check = _build_thread_presence_checker(
+                query_data_dir,
+                running_entry=query_running_entry,
+            )
+        for entry in running_entries:
+            instance_name = str(entry.instance_name or "").strip().lower()
+            try:
+                result = _cleanup_stale_bindings_in_running_instance(pathlib.Path(entry.data_dir), dry_run=dry_run)
+            except Exception as exc:
+                cleanup_failures.append(
+                    {"instance_name": instance_name, "mode": "control-plane", "reason": str(exc)}
+                )
+            else:
+                cleanup_results.append({"instance_name": instance_name, "mode": "control-plane", **result})
+
+        try:
+            for normalized_instance_name in stopped_instance_names:
+                if thread_presence_check is None:
+                    raise RuntimeError("stale binding thread presence checker was not initialized")
+                paths = resolve_instance_paths(normalized_instance_name)
+                try:
+                    result = _clear_stale_bindings_from_store(
+                        paths.data_dir,
+                        thread_presence_check,
+                        dry_run=dry_run,
+                    )
+                except Exception as exc:
+                    cleanup_failures.append(
+                        {
+                            "instance_name": normalized_instance_name,
+                            "mode": "local-store",
+                            "reason": str(exc),
+                        }
+                    )
+                    continue
+                cleanup_results.append(
+                    {
+                        "instance_name": normalized_instance_name,
+                        "mode": "local-store",
+                        "query_instance_name": query_instance_name,
+                        **result,
+                    }
+                )
+        finally:
+            if adapter is not None:
+                adapter.stop()
+
+    _print_stale_binding_cleanup_results(
+        cleanup_results,
+        cleanup_failures,
+        dry_run=dry_run,
+        scope_label=normalized_explicit_instance or "all known instances",
+    )
+    unknown_count = sum(len(item.get("unknown_threads") or []) for item in cleanup_results)
+    return 1 if cleanup_failures or unknown_count else 0
+
+
+def _print_stale_binding_cleanup_results(
+    cleanup_results: list[dict[str, Any]],
+    cleanup_failures: list[dict[str, str]],
+    *,
+    dry_run: bool,
+    scope_label: str,
+) -> None:
+    action_key = "would_clear_binding_ids" if dry_run else "cleared_binding_ids"
+    action_label = "would clear stale bindings" if dry_run else "cleared stale bindings"
+    total_stale = 0
+    total_unknown = 0
+    print(f"scope: {scope_label}")
+    if dry_run:
+        print("mode: dry-run")
+    if not cleanup_results and not cleanup_failures:
+        print("instances: （无）")
+        return
+    for item in cleanup_results:
+        binding_ids = list(item.get(action_key) or [])
+        stale_thread_ids = list(item.get("stale_thread_ids") or [])
+        unknown_threads = list(item.get("unknown_threads") or [])
+        total_stale += len(binding_ids)
+        total_unknown += len(unknown_threads)
+        print(f"- {item.get('instance_name', '-')} ({item.get('mode', '-')}):")
+        query_instance = str(item.get("query_instance_name", "") or "").strip()
+        if query_instance:
+            print(f"  query instance: {query_instance}")
+        print(f"  {action_label}: {', '.join(binding_ids) or '（无）'}")
+        if stale_thread_ids:
+            print(f"  stale threads: {', '.join(stale_thread_ids)}")
+        if unknown_threads:
+            print("  unknown threads:")
+            for unknown in unknown_threads:
+                print(f"  - {unknown.get('thread_id', '-')}: {unknown.get('reason', '')}")
+    if cleanup_failures:
+        print("cleanup warnings:")
+        for item in cleanup_failures:
+            print(
+                f"- {item.get('instance_name', '-')}"
+                f" ({item.get('mode', '-')}): {item.get('reason', 'unknown error')}"
+            )
+    print(
+        "summary: "
+        f"instances={len(cleanup_results)} "
+        f"{'would_clear' if dry_run else 'cleared'}={total_stale} "
+        f"unknown_threads={total_unknown} "
+        f"cleanup_failed={len(cleanup_failures)}"
+    )
 
 
 def _send_binding_prompt(
@@ -1159,6 +1452,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl binding status <binding_id>\n"
             "  feishu-codexctl binding attach <binding_id>\n"
             "  feishu-codexctl binding detach <binding_id>\n"
+            "  feishu-codexctl binding clear-stale --dry-run\n"
             "  feishu-codexctl prompt send --binding-id <binding_id> --text '继续执行'\n"
             "  feishu-codexctl thread list --scope cwd\n"
             "  feishu-codexctl thread status --thread-id <id>\n"
@@ -1240,7 +1534,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="查看或清理目标实例里的 Feishu binding。",
         description=(
             "Binding 管理面。\n"
-            "`clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`。"
+            "`clear` / `clear-all` / `clear-stale` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -1284,6 +1578,21 @@ def _build_parser() -> argparse.ArgumentParser:
         help="清除当前实例下全部 binding bookmark。",
         description="清除当前实例下全部 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
+    )
+    binding_clear_stale = binding_sub.add_parser(
+        "clear-stale",
+        help="清理指向已不可读取 thread 的 stale binding bookmark。",
+        description=(
+            "扫描本项目本地 binding，并通过运行中的 app-server 验证其 thread 是否仍可读取。\n"
+            "明确不可读取的 thread 视为 stale 并清理对应 bookmark；查询失败或无法判断时 fail-closed 保留。\n"
+            "默认扫描所有运行中实例和已知非运行实例；传全局 `--instance <name>` 时只作用于该实例。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    binding_clear_stale.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只预览会清理哪些 binding，不修改本地数据。",
     )
 
     prompt = subparsers.add_parser(
@@ -1548,6 +1857,13 @@ def main() -> None:
                 _clear_archived_thread_bindings(
                     getattr(args, "thread_id", "") or "",
                     all_archived=bool(getattr(args, "all_archived", False)),
+                    explicit_instance=str(args.instance or "").strip(),
+                    dry_run=bool(args.dry_run),
+                )
+            )
+        if args.resource == "binding" and args.action == "clear-stale":
+            raise SystemExit(
+                _clear_stale_bindings(
                     explicit_instance=str(args.instance or "").strip(),
                     dry_run=bool(args.dry_run),
                 )

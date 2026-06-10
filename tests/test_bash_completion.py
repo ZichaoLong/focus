@@ -89,6 +89,21 @@ class ShellCompletionTests(unittest.TestCase):
         self.assertEqual(action_matches, ["clear-archived-bindings"])
         self.assertEqual(option_matches, ["--thread-id", "--all", "--dry-run", "--help"])
 
+    def test_feishu_codexctl_completes_binding_clear_stale(self) -> None:
+        action_matches = complete_words(
+            "feishu-codexctl",
+            ["feishu-codexctl", "binding", "clear-"],
+            2,
+        )
+        option_matches = complete_words(
+            "feishu-codexctl",
+            ["feishu-codexctl", "binding", "clear-stale", "--"],
+            3,
+        )
+
+        self.assertEqual(action_matches, ["clear-all", "clear-stale"])
+        self.assertEqual(option_matches, ["--dry-run", "--help"])
+
     def test_feishu_codexctl_completes_thread_goal_set_options_and_status(self) -> None:
         option_matches = complete_words(
             "feishu-codexctl",

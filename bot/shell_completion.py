@@ -628,7 +628,12 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         return []
     if resource == "binding":
         if positional_index == 1:
-            return _complete_candidates(current, ["list", "status", "clear", "attach", "detach", "clear-all"])
+            return _complete_candidates(
+                current,
+                ["list", "status", "clear", "attach", "detach", "clear-all", "clear-stale"],
+            )
+        if len(positionals) >= 2 and positionals[1] == "clear-stale" and current.startswith("-"):
+            return _complete_candidates(current, ["--dry-run", "--help", "-h"])
         return []
     if resource == "prompt":
         if positional_index == 1:

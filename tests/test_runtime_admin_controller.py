@@ -551,6 +551,88 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         with lock:
             self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
 
+    def test_clear_stale_bindings_for_control_dry_run_keeps_bindings(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        live_binding = ("ou_live", "chat-live")
+        stale_binding = ("ou_stale", "chat-stale")
+        self._bind_thread(lock, binding_runtime, live_binding, thread_id="thread-live")
+        self._bind_thread(lock, binding_runtime, stale_binding, thread_id="thread-stale")
+        summaries["thread-live"] = ThreadSummary(
+            thread_id="thread-live",
+            cwd="/tmp/project",
+            name="live",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        controller._is_thread_not_found_error = lambda exc: isinstance(exc, KeyError)
+
+        result = controller.clear_stale_bindings_for_control(dry_run=True)
+
+        self.assertEqual(result["would_clear_binding_ids"], ["p2p:ou_stale:chat-stale"])
+        self.assertEqual(result["stale_thread_ids"], ["thread-stale"])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(live_binding))
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(stale_binding))
+
+    def test_clear_stale_bindings_for_control_clears_missing_thread_bindings(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        live_binding = ("ou_live", "chat-live")
+        stale_binding = ("ou_stale", "chat-stale")
+        self._bind_thread(lock, binding_runtime, live_binding, thread_id="thread-live")
+        self._bind_thread(lock, binding_runtime, stale_binding, thread_id="thread-stale")
+        summaries["thread-live"] = ThreadSummary(
+            thread_id="thread-live",
+            cwd="/tmp/project",
+            name="live",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+        controller._is_thread_not_found_error = lambda exc: isinstance(exc, KeyError)
+
+        result = controller.clear_stale_bindings_for_control()
+
+        self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_stale:chat-stale"])
+        self.assertEqual(result["stale_thread_ids"], ["thread-stale"])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(live_binding))
+            self.assertIsNone(binding_runtime.binding_runtime_snapshot_locked(stale_binding))
+        self.assertEqual(unsubscribed, ["thread-stale"])
+        self.assertEqual(released_runtime_leases, ["thread-stale"])
+
     def test_fail_close_service_attached_runtime_downgrades_attached_without_backend_unsubscribe(self) -> None:
         (
             lock,
@@ -1554,6 +1636,31 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(released_runtime_leases, [])
         with lock:
             self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-1"), [binding])
+
+    def test_handle_service_control_request_binding_clear_stale_dispatches_local_cleanup(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_stale", "chat-stale")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-stale")
+        controller._is_thread_not_found_error = lambda exc: isinstance(exc, KeyError)
+
+        result = controller.handle_service_control_request("binding/clear-stale", {"dry_run": False})
+
+        self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_stale:chat-stale"])
+        self.assertEqual(released_runtime_leases, ["thread-stale"])
 
     def test_handle_service_control_request_thread_send_image_fanouts_to_attached_bindings(self) -> None:
         (

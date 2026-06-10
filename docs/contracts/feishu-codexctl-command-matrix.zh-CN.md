@@ -78,11 +78,20 @@
 | `feishu-codexctl [--instance <name>] binding detach <binding_id>` | 暂停单个 binding 的飞书推送，但保留 bookmark | 变更 | 飞书 `/detach` 的 binding 级对应 |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | 清除单个 binding bookmark | 变更 | 无 |
 | `feishu-codexctl [--instance <name>] binding clear-all` | 清除当前实例下全部 binding bookmark | 变更 | 无 |
+| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | 清理指向已不可读取 thread 的 stale binding bookmark；默认扫描所有运行中实例和已知非运行实例，显式 `--instance` 时只作用于该实例 | 变更 | 无；这是本地 bookmark 修复 / 运维入口 |
 
-`binding clear` / `clear-all` 不是 `detach`：
+`binding clear` / `clear-all` / `clear-stale` 不是 `detach`：
 
 - `clear` 清的是本地 bookmark
 - `detach` 清的是当前飞书推送附着状态
+
+`binding clear-stale` 是保留逻辑：
+
+- 它先通过运行中的 app-server 验证 binding 指向的 `current_thread_id` 是否仍可 `thread/read`。
+- 能读取的 thread 视为保留对象。
+- 明确不可读取的 thread 视为 stale，清理对应本地 bookmark。
+- 查询失败、超时、协议错误或无法判断时 fail-closed：保留 binding 并在输出中列为 unknown。
+- 运行中实例通过各自 service control plane 清理；已知但未运行的实例直接通过本项目的 binding store API 清理。
 
 ### 4.4 `prompt`
 

@@ -1505,6 +1505,93 @@ class RuntimeAdminController:
             "cleared": bool(cleared_binding_ids),
         }
 
+    def clear_stale_bindings_for_control(self, *, dry_run: bool = False) -> dict[str, Any]:
+        with self._lock:
+            self._binding_runtime.hydrate_missing_stored_bindings_locked()
+            snapshots = [
+                snapshot
+                for binding in self._binding_runtime.binding_keys_locked()
+                for snapshot in [self._binding_runtime.binding_runtime_snapshot_locked(binding)]
+                if snapshot is not None and snapshot.thread_id
+            ]
+        thread_ids = sorted({snapshot.thread_id for snapshot in snapshots})
+        stale_thread_ids: list[str] = []
+        unknown_threads: list[dict[str, str]] = []
+        retained_thread_ids: list[str] = []
+        for thread_id in thread_ids:
+            _summary, backend_thread_status = self.read_thread_summary_for_status(thread_id)
+            if backend_thread_status == BACKEND_THREAD_LOOKUP_MISSING:
+                stale_thread_ids.append(thread_id)
+            elif backend_thread_status == BACKEND_THREAD_LOOKUP_ERROR:
+                unknown_threads.append(
+                    {
+                        "thread_id": thread_id,
+                        "reason": backend_thread_status,
+                    }
+                )
+            else:
+                retained_thread_ids.append(thread_id)
+
+        stale_bindings: list[ChatBindingKey] = []
+        running_binding_ids: list[str] = []
+        pending_binding_ids: list[str] = []
+        with self._lock:
+            for thread_id in stale_thread_ids:
+                bound_bindings, thread_running_binding_ids, thread_pending_binding_ids = (
+                    self._local_thread_binding_clear_plan_locked(thread_id)
+                )
+                stale_bindings.extend(bound_bindings)
+                running_binding_ids.extend(thread_running_binding_ids)
+                pending_binding_ids.extend(thread_pending_binding_ids)
+            self._raise_local_thread_binding_clear_blockers(
+                running_binding_ids,
+                pending_binding_ids,
+                action_text="清理 stale bindings",
+            )
+            existing_bindings = [
+                binding
+                for binding in stale_bindings
+                if self._binding_runtime.binding_runtime_snapshot_locked(binding) is not None
+            ]
+            existing_binding_thread_ids = {
+                binding: (
+                    snapshot.thread_id
+                    if (
+                        snapshot := self._binding_runtime.binding_runtime_snapshot_locked(binding)
+                    ) is not None
+                    else ""
+                )
+                for binding in existing_bindings
+            }
+            if dry_run:
+                return {
+                    "would_clear_binding_ids": [
+                        format_binding_id(binding)
+                        for binding in existing_bindings
+                    ],
+                    "stale_thread_ids": sorted(stale_thread_ids),
+                    "unknown_threads": unknown_threads,
+                    "retained_thread_ids": retained_thread_ids,
+                    "dry_run": True,
+                }
+            unsubscribe_thread_ids = self._binding_runtime.deactivate_bindings_locked(existing_bindings)
+            cleared_binding_ids = [format_binding_id(binding) for binding in existing_bindings]
+
+        unique_unsubscribe_thread_ids = sorted(set(unsubscribe_thread_ids))
+        for unsubscribe_thread_id in unique_unsubscribe_thread_ids:
+            self._unsubscribe_thread(unsubscribe_thread_id)
+            self._release_service_thread_runtime_lease(unsubscribe_thread_id)
+        for thread_id in sorted(set(existing_binding_thread_ids.values()) - set(unique_unsubscribe_thread_ids)):
+            if thread_id:
+                self._release_service_thread_runtime_lease(thread_id)
+        return {
+            "cleared_binding_ids": cleared_binding_ids,
+            "stale_thread_ids": sorted(stale_thread_ids),
+            "unknown_threads": unknown_threads,
+            "retained_thread_ids": retained_thread_ids,
+            "cleared": bool(cleared_binding_ids),
+        }
+
     def send_image_to_thread_attached_bindings(
         self,
         thread_id: str,
@@ -1792,6 +1879,8 @@ class RuntimeAdminController:
             return self.clear_binding_for_control(binding)
         if method == "binding/clear-all":
             return self.clear_all_bindings_for_control()
+        if method == "binding/clear-stale":
+            return self.clear_stale_bindings_for_control(dry_run=bool(params.get("dry_run")))
         if method == "thread/clear-archived-bindings":
             thread_id = str(params.get("thread_id", "") or "").strip()
             if not thread_id:

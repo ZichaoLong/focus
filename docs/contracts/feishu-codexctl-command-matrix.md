@@ -80,11 +80,20 @@ Do not conflate them.
 | `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping its bookmark | mutating | binding-scoped counterpart of Feishu `/detach` |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear one binding bookmark | mutating | none |
 | `feishu-codexctl [--instance <name>] binding clear-all` | Clear all binding bookmarks in the target instance | mutating | none |
+| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Clear stale binding bookmarks that point at threads that can no longer be read; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local bookmark repair / ops entry |
 
-`binding clear` is not `detach`:
+`binding clear` / `clear-all` / `clear-stale` are not `detach`:
 
 - `clear` removes the local bookmark
 - `detach` removes the current Feishu push attachment
+
+`binding clear-stale` is retain-oriented:
+
+- it first verifies each bound `current_thread_id` through `thread/read` on a running app-server
+- readable threads are retained
+- threads that are explicitly unreadable are treated as stale, and matching local bookmarks are cleared
+- query failures, timeouts, protocol errors, and ambiguous states fail closed: the binding is retained and reported as unknown
+- running instances are cleaned through their service control plane; known stopped instances are cleaned through this project's binding store API
 
 ### 4.4 `prompt`
 

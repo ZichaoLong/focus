@@ -15,6 +15,8 @@ from bot.feishu_codexctl import (
     _cleanup_archived_thread_bindings_in_other_instances,
     _clear_archived_thread_bindings,
     _clear_archived_thread_bindings_from_store,
+    _clear_stale_bindings,
+    _clear_stale_bindings_from_store,
     _list_archived_thread_ids_from_running_instance,
     _clear_thread_goal,
     _image_send_target_params,
@@ -128,6 +130,15 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertEqual(args.resource, "binding")
         self.assertEqual(args.action, "clear-all")
+
+    def test_binding_clear_stale_accepts_dry_run(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["binding", "clear-stale", "--dry-run"])
+
+        self.assertEqual(args.resource, "binding")
+        self.assertEqual(args.action, "clear-stale")
+        self.assertTrue(args.dry_run)
 
     def test_thread_status_accepts_explicit_thread_id(self) -> None:
         parser = _build_parser()
@@ -1306,6 +1317,153 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(store.load(matched), None)
             self.assertIsNotNone(store.load(retained))
 
+    def test_clear_stale_bindings_from_store_only_clears_missing_threads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            store = ChatBindingStore(data_dir)
+            stale = ("ou_user", "chat-stale")
+            retained = ("ou_user", "chat-live")
+            unknown = ("ou_user", "chat-unknown")
+            for binding, thread_id in (
+                (stale, "thread-stale"),
+                (retained, "thread-live"),
+                (unknown, "thread-unknown"),
+            ):
+                store.save(
+                    binding,
+                    {
+                        "working_dir": "/tmp/project",
+                        "current_thread_id": thread_id,
+                        "current_thread_title": "demo",
+                        "feishu_runtime_state": "detached",
+                        "approval_policy": "never",
+                        "permissions_profile_id": ":danger-full-access",
+                        "collaboration_mode": "default",
+                        "model": "",
+                        "reasoning_effort": "",
+                    },
+                )
+
+            def _presence(thread_id: str):
+                if thread_id == "thread-stale":
+                    return "stale", "not found"
+                if thread_id == "thread-unknown":
+                    return "unknown", "timeout"
+                return "present", ""
+
+            result = _clear_stale_bindings_from_store(data_dir, _presence)
+
+            self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_user:chat-stale"])
+            self.assertEqual(result["stale_thread_ids"], ["thread-stale"])
+            self.assertEqual(result["unknown_threads"], [{"thread_id": "thread-unknown", "reason": "timeout"}])
+            self.assertEqual(store.load(stale), None)
+            self.assertIsNotNone(store.load(retained))
+            self.assertIsNotNone(store.load(unknown))
+
+    def test_clear_stale_bindings_from_store_dry_run_does_not_clear(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            store = ChatBindingStore(data_dir)
+            binding = ("ou_user", "chat-stale")
+            store.save(
+                binding,
+                {
+                    "working_dir": "/tmp/project",
+                    "current_thread_id": "thread-stale",
+                    "current_thread_title": "demo",
+                    "feishu_runtime_state": "detached",
+                    "approval_policy": "never",
+                    "permissions_profile_id": ":danger-full-access",
+                    "collaboration_mode": "default",
+                    "model": "",
+                    "reasoning_effort": "",
+                },
+            )
+
+            result = _clear_stale_bindings_from_store(
+                data_dir,
+                lambda _thread_id: ("stale", "not found"),
+                dry_run=True,
+            )
+
+            self.assertEqual(result["cleared_binding_ids"], [])
+            self.assertEqual(result["would_clear_binding_ids"], ["p2p:ou_user:chat-stale"])
+            self.assertIsNotNone(store.load(binding))
+
+    def test_clear_stale_bindings_explicit_running_instance_uses_control_plane(self) -> None:
+        stdout = io.StringIO()
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+        target = CliInstanceTarget(
+            instance_name="explorer",
+            data_dir=Path("/tmp/explorer-data"),
+            running_entry=explorer_entry,
+        )
+
+        def _fake_request(data_dir: Path, method: str, params: dict[str, object]):
+            self.assertEqual(data_dir, Path("/tmp/explorer-data"))
+            self.assertEqual(method, "binding/clear-stale")
+            self.assertEqual(params, {"dry_run": True})
+            return {
+                "would_clear_binding_ids": ["p2p:ou_user:chat-stale"],
+                "stale_thread_ids": ["thread-stale"],
+                "unknown_threads": [],
+                "dry_run": True,
+            }
+
+        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+            with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+                with redirect_stdout(stdout):
+                    result = _clear_stale_bindings(explicit_instance="explorer", dry_run=True)
+
+        self.assertEqual(result, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("scope: explorer", rendered)
+        self.assertIn("mode: dry-run", rendered)
+        self.assertIn("explorer (control-plane)", rendered)
+        self.assertIn("would clear stale bindings: p2p:ou_user:chat-stale", rendered)
+
+    def test_clear_stale_bindings_returns_nonzero_when_threads_are_unknown(self) -> None:
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+        target = CliInstanceTarget(
+            instance_name="explorer",
+            data_dir=Path("/tmp/explorer-data"),
+            running_entry=explorer_entry,
+        )
+
+        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+            with patch(
+                "bot.feishu_codexctl._request",
+                return_value={
+                    "cleared_binding_ids": [],
+                    "stale_thread_ids": [],
+                    "unknown_threads": [{"thread_id": "thread-unknown", "reason": "lookup_error"}],
+                },
+            ):
+                with redirect_stdout(io.StringIO()):
+                    result = _clear_stale_bindings(explicit_instance="explorer")
+
+        self.assertEqual(result, 1)
+
     def test_archive_threads_batches_partial_failures(self) -> None:
         stdout = io.StringIO()
         target_a = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
@@ -1502,6 +1660,26 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_clear.call_args.args[0], "")
         self.assertTrue(mock_clear.call_args.kwargs["all_archived"])
+        self.assertEqual(mock_clear.call_args.kwargs["explicit_instance"], "")
+        self.assertTrue(mock_clear.call_args.kwargs["dry_run"])
+        mock_resolve.assert_not_called()
+
+    def test_main_binding_clear_stale_dispatches_before_default_target_resolution(self) -> None:
+        with patch("bot.feishu_codexctl._clear_stale_bindings", return_value=0) as mock_clear:
+            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+                with patch(
+                    "bot.feishu_codexctl.sys.argv",
+                    [
+                        "feishu-codexctl",
+                        "binding",
+                        "clear-stale",
+                        "--dry-run",
+                    ],
+                ):
+                    with self.assertRaises(SystemExit) as exc:
+                        feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_clear.call_args.kwargs["explicit_instance"], "")
         self.assertTrue(mock_clear.call_args.kwargs["dry_run"])
         mock_resolve.assert_not_called()
