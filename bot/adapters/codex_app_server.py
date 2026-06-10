@@ -231,6 +231,7 @@ class CodexAppServerAdapter(AgentAdapter):
         sort_key: str | None = None,
         source_kinds: list[str] | None = None,
         model_providers: list[str] | None = None,
+        archived: bool | None = None,
     ) -> tuple[list[ThreadSummary], str | None]:
         params = _compact(
             {
@@ -240,6 +241,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 "searchTerm": search_term,
                 "sortKey": sort_key,
                 "sourceKinds": source_kinds or self._config.source_kinds,
+                "archived": archived,
             }
         )
         if model_providers is not None:
@@ -420,6 +422,7 @@ class CodexAppServerAdapter(AgentAdapter):
         sort_key: str = "updated_at",
         source_kinds: list[str] | None = None,
         model_providers: list[str] | None = None,
+        archived: bool | None = None,
     ) -> list[ThreadSummary]:
         items: list[ThreadSummary] = []
         cursor: str | None = None
@@ -433,6 +436,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 sort_key=sort_key,
                 source_kinds=source_kinds,
                 model_providers=model_providers,
+                archived=archived,
             )
             items.extend(page)
             if not cursor:

@@ -11,14 +11,21 @@ from dataclasses import replace
 from typing import Any
 
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
+from bot.binding_identity import format_binding_id
 from bot.config import load_config_file
 from bot.constants import display_path, format_timestamp
 from bot.env_file import load_env_file
-from bot.instance_layout import global_data_dir
-from bot.instance_resolution import list_running_instances, resolve_cli_instance_target, resolve_running_instance_app_server_url
+from bot.instance_layout import global_data_dir, list_known_instance_names, resolve_instance_paths
+from bot.instance_resolution import (
+    list_running_instances,
+    resolve_cli_instance_target,
+    resolve_running_instance_app_server_url,
+)
 from bot.platform_paths import default_data_root
 from bot.service_control_plane import ServiceControlError, control_request
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
+from bot.stores.chat_binding_store import ChatBindingStore
+from bot.stores.interaction_lease_store import InteractionLeaseStore, make_feishu_interaction_holder
 from bot.stores.service_instance_lease import ServiceInstanceLease
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
@@ -636,16 +643,387 @@ def _attach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int
     return 0
 
 
+def _same_path(left: pathlib.Path | str, right: pathlib.Path | str) -> bool:
+    left_path = pathlib.Path(left).expanduser().resolve(strict=False)
+    right_path = pathlib.Path(right).expanduser().resolve(strict=False)
+    return left_path == right_path
+
+
+def _clear_archived_thread_bindings_from_store(
+    data_dir: pathlib.Path,
+    thread_id: str,
+    *,
+    dry_run: bool = False,
+) -> list[str]:
+    normalized_thread_id = str(thread_id or "").strip()
+    if not normalized_thread_id:
+        return []
+    store = ChatBindingStore(pathlib.Path(data_dir))
+    interaction_leases = InteractionLeaseStore(pathlib.Path(data_dir))
+    cleared_binding_ids: list[str] = []
+    for binding, state in sorted(store.load_all().items(), key=lambda item: format_binding_id(item[0])):
+        if str(state.get("current_thread_id", "") or "").strip() != normalized_thread_id:
+            continue
+        if not dry_run:
+            store.clear(binding)
+            interaction_leases.release(
+                normalized_thread_id,
+                make_feishu_interaction_holder(binding[0], binding[1], owner_pid=0),
+            )
+        cleared_binding_ids.append(format_binding_id(binding))
+    return cleared_binding_ids
+
+
+def _cleanup_archived_thread_bindings_in_running_instance(
+    data_dir: pathlib.Path,
+    thread_id: str,
+    *,
+    dry_run: bool,
+) -> list[str]:
+    result = _request(
+        pathlib.Path(data_dir),
+        "thread/clear-archived-bindings",
+        {
+            "thread_id": thread_id,
+            "dry_run": bool(dry_run),
+        },
+    )
+    return list(result.get("would_clear_binding_ids") or result.get("cleared_binding_ids") or [])
+
+
+def _cleanup_archived_thread_bindings_in_scope(
+    thread_id: str,
+    *,
+    explicit_instance: str = "",
+    exclude_instance_name: str = "",
+    exclude_data_dir: pathlib.Path | None = None,
+    dry_run: bool = False,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    normalized_thread_id = str(thread_id or "").strip()
+    if not normalized_thread_id:
+        return [], []
+
+    normalized_exclude_instance = str(exclude_instance_name or "").strip().lower()
+    normalized_exclude_data_dir = pathlib.Path(exclude_data_dir) if exclude_data_dir is not None else None
+    normalized_explicit_instance = str(explicit_instance or "").strip()
+    cleanup_results: list[dict[str, Any]] = []
+    cleanup_failures: list[dict[str, str]] = []
+    running_instance_names: set[str] = set()
+
+    if normalized_explicit_instance:
+        target = _resolve_target_instance(normalized_explicit_instance)
+        try:
+            if target.running_entry is not None:
+                cleared_binding_ids = _cleanup_archived_thread_bindings_in_running_instance(
+                    target.data_dir,
+                    normalized_thread_id,
+                    dry_run=dry_run,
+                )
+                mode = "control-plane"
+            else:
+                cleared_binding_ids = _clear_archived_thread_bindings_from_store(
+                    target.data_dir,
+                    normalized_thread_id,
+                    dry_run=dry_run,
+                )
+                mode = "local-store"
+        except Exception as exc:
+            return [], [
+                {
+                    "instance_name": target.instance_name,
+                    "mode": "control-plane" if target.running_entry is not None else "local-store",
+                    "reason": str(exc),
+                }
+            ]
+        return [
+            {
+                "instance_name": target.instance_name,
+                "mode": mode,
+                "cleared_binding_ids": cleared_binding_ids,
+            }
+        ], []
+
+    for entry in list_running_instances():
+        instance_name = str(entry.instance_name or "").strip().lower()
+        running_instance_names.add(instance_name)
+        entry_data_dir = pathlib.Path(entry.data_dir)
+        if instance_name == normalized_exclude_instance:
+            continue
+        if normalized_exclude_data_dir is not None and _same_path(entry_data_dir, normalized_exclude_data_dir):
+            continue
+        try:
+            cleared_binding_ids = _cleanup_archived_thread_bindings_in_running_instance(
+                entry_data_dir,
+                normalized_thread_id,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            cleanup_failures.append(
+                {
+                    "instance_name": instance_name,
+                    "mode": "control-plane",
+                    "reason": str(exc),
+                }
+            )
+            continue
+        cleanup_results.append(
+            {
+                "instance_name": instance_name,
+                "mode": "control-plane",
+                "cleared_binding_ids": cleared_binding_ids,
+            }
+        )
+
+    for instance_name in list_known_instance_names():
+        normalized_instance_name = str(instance_name or "").strip().lower()
+        if (
+            not normalized_instance_name
+            or normalized_instance_name == normalized_exclude_instance
+            or normalized_instance_name in running_instance_names
+        ):
+            continue
+        paths = resolve_instance_paths(normalized_instance_name)
+        if normalized_exclude_data_dir is not None and _same_path(paths.data_dir, normalized_exclude_data_dir):
+            continue
+        try:
+            cleared_binding_ids = _clear_archived_thread_bindings_from_store(
+                paths.data_dir,
+                normalized_thread_id,
+                dry_run=dry_run,
+            )
+        except Exception as exc:
+            cleanup_failures.append(
+                {
+                    "instance_name": normalized_instance_name,
+                    "mode": "local-store",
+                    "reason": str(exc),
+                }
+            )
+            continue
+        cleanup_results.append(
+            {
+                "instance_name": normalized_instance_name,
+                "mode": "local-store",
+                "cleared_binding_ids": cleared_binding_ids,
+            }
+        )
+
+    return cleanup_results, cleanup_failures
+
+
+def _cleanup_archived_thread_bindings_in_other_instances(
+    thread_id: str,
+    *,
+    target_instance_name: str,
+    target_data_dir: pathlib.Path,
+    dry_run: bool = False,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    return _cleanup_archived_thread_bindings_in_scope(
+        thread_id,
+        exclude_instance_name=target_instance_name,
+        exclude_data_dir=target_data_dir,
+        dry_run=dry_run,
+    )
+
+
+def _resolve_archived_thread_listing_target(
+    explicit_instance: str = "",
+) -> tuple[str, pathlib.Path, InstanceRegistryEntry]:
+    normalized_explicit_instance = str(explicit_instance or "").strip()
+    if normalized_explicit_instance:
+        target = _resolve_target_instance(normalized_explicit_instance)
+        if target.running_entry is None:
+            raise ValueError(
+                "thread clear-archived-bindings --all 需要目标实例正在运行，"
+                "以便查询上游 archived thread 列表；若已知 thread id，请改用 --thread-id。"
+            )
+        return target.instance_name, target.data_dir, target.running_entry
+
+    running_instances = list_running_instances()
+    if not running_instances:
+        raise ValueError(
+            "thread clear-archived-bindings --all 需要至少一个运行中的实例，"
+            "以便查询上游 archived thread 列表；若已知 thread id，请改用 --thread-id。"
+        )
+    selected = sorted(
+        running_instances,
+        key=lambda item: (0 if str(item.instance_name or "").strip().lower() == "default" else 1, item.instance_name),
+    )[0]
+    return selected.instance_name, pathlib.Path(selected.data_dir), selected
+
+
+def _list_archived_thread_ids_from_running_instance(
+    data_dir: pathlib.Path,
+    *,
+    running_entry: InstanceRegistryEntry,
+    page_size: int = 100,
+) -> list[str]:
+    adapter, _cfg, _app_server_url = _remote_adapter(pathlib.Path(data_dir), running_entry=running_entry)
+    seen_thread_ids: set[str] = set()
+    archived_thread_ids: list[str] = []
+    seen_cursors: set[str] = set()
+    cursor: str | None = None
+    try:
+        while True:
+            page, cursor = adapter.list_threads(
+                limit=page_size,
+                cursor=cursor,
+                sort_key="updated_at",
+                model_providers=[],
+                archived=True,
+            )
+            for thread in page:
+                thread_id = str(thread.thread_id or "").strip()
+                if not thread_id or thread_id in seen_thread_ids:
+                    continue
+                seen_thread_ids.add(thread_id)
+                archived_thread_ids.append(thread_id)
+            if not cursor:
+                break
+            if cursor in seen_cursors:
+                raise RuntimeError(f"thread/list archived pagination returned a repeated cursor: {cursor}")
+            seen_cursors.add(cursor)
+    finally:
+        adapter.stop()
+    return archived_thread_ids
+
+
+def _print_archive_cleanup_results(
+    cleanup_results: list[dict[str, Any]],
+    cleanup_failures: list[dict[str, str]],
+    *,
+    dry_run: bool = False,
+    scope_label: str = "in other instances",
+) -> None:
+    non_empty_results = [item for item in cleanup_results if item.get("cleared_binding_ids")]
+    action = "would clear bindings" if dry_run else "cleared bindings"
+    header = f"{action} {scope_label}:" if scope_label else f"{action}:"
+    if non_empty_results:
+        print(header)
+        for item in non_empty_results:
+            print(
+                f"- {item.get('instance_name', '-')}"
+                f" ({item.get('mode', '-')}): "
+                + (", ".join(item.get("cleared_binding_ids") or []) or "（无）")
+            )
+    elif cleanup_results:
+        print(f"{header} （无）")
+    if cleanup_failures:
+        print("cleanup warnings:")
+        for item in cleanup_failures:
+            print(
+                f"- {item.get('instance_name', '-')}"
+                f" ({item.get('mode', '-')}): {item.get('reason', 'unknown error')}"
+            )
+
+
+def _clear_all_archived_thread_bindings(
+    *,
+    explicit_instance: str = "",
+    dry_run: bool = False,
+) -> int:
+    query_instance_name, query_data_dir, query_running_entry = _resolve_archived_thread_listing_target(explicit_instance)
+    archived_thread_ids = _list_archived_thread_ids_from_running_instance(
+        query_data_dir,
+        running_entry=query_running_entry,
+    )
+    print(f"archived query instance: {query_instance_name}")
+    print(f"archived threads: {len(archived_thread_ids)}")
+    print(f"scope: {explicit_instance or 'all known instances'}")
+    if dry_run:
+        print("mode: dry-run")
+    if not archived_thread_ids:
+        print("bindings: （无）")
+        return 0
+
+    changed_thread_count = 0
+    cleared_binding_count = 0
+    cleanup_failure_count = 0
+    for thread_id in archived_thread_ids:
+        cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_scope(
+            thread_id,
+            explicit_instance=explicit_instance,
+            dry_run=dry_run,
+        )
+        thread_cleared_count = sum(len(item.get("cleared_binding_ids") or []) for item in cleanup_results)
+        if thread_cleared_count or cleanup_failures:
+            print()
+            print(f"thread: {thread_id}")
+            _print_archive_cleanup_results(
+                cleanup_results,
+                cleanup_failures,
+                dry_run=dry_run,
+                scope_label="",
+            )
+        if thread_cleared_count:
+            changed_thread_count += 1
+            cleared_binding_count += thread_cleared_count
+        cleanup_failure_count += len(cleanup_failures)
+
+    action = "would_clear_bindings" if dry_run else "cleared_bindings"
+    print()
+    print(
+        "summary: "
+        f"archived_threads={len(archived_thread_ids)} "
+        f"threads_with_bindings={changed_thread_count} "
+        f"{action}={cleared_binding_count} "
+        f"cleanup_failed={cleanup_failure_count}"
+    )
+    return 1 if cleanup_failure_count else 0
+
+
+def _clear_archived_thread_bindings(
+    thread_id: str = "",
+    *,
+    all_archived: bool = False,
+    explicit_instance: str = "",
+    dry_run: bool = False,
+) -> int:
+    normalized_thread_id = str(thread_id or "").strip()
+    if bool(normalized_thread_id) == bool(all_archived):
+        raise ValueError("thread clear-archived-bindings 必须且只能提供 --thread-id 或 --all。")
+    if all_archived:
+        return _clear_all_archived_thread_bindings(
+            explicit_instance=explicit_instance,
+            dry_run=dry_run,
+        )
+    cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_scope(
+        normalized_thread_id,
+        explicit_instance=explicit_instance,
+        dry_run=dry_run,
+    )
+    print(f"thread: {normalized_thread_id}")
+    print(f"scope: {explicit_instance or 'all known instances'}")
+    if dry_run:
+        print("mode: dry-run")
+    if not cleanup_results and not cleanup_failures:
+        print("instances: （无）")
+        return 0
+    _print_archive_cleanup_results(
+        cleanup_results,
+        cleanup_failures,
+        dry_run=dry_run,
+        scope_label="",
+    )
+    return 1 if cleanup_failures else 0
+
+
 def _archive_thread(data_dir: pathlib.Path, target_params: dict[str, str], *, instance_name: str = "") -> int:
     result = _request(data_dir, "thread/archive", target_params)
+    cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_other_instances(
+        str(result["thread_id"]),
+        target_instance_name=instance_name,
+        target_data_dir=data_dir,
+    )
     if instance_name:
         print(f"instance: {instance_name}")
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
     print(f"cleared bindings in this instance: {', '.join(result.get('cleared_binding_ids') or []) or '（无）'}")
+    _print_archive_cleanup_results(cleanup_results, cleanup_failures)
     print("note: 归档完成；该 thread 会从常规列表中隐藏，不是硬删除。")
-    print("note: 该动作只清理当前目标实例里的相关 bindings；其他实例若仍保留 bookmark，需要分别处理。")
-    return 0
+    print("note: 已同时清理其他可达运行实例与已知非运行实例里指向该 thread 的本地 bindings。")
+    return 1 if cleanup_failures else 0
 
 
 def _archive_threads(thread_ids: list[str], *, explicit_instance: str = "") -> int:
@@ -666,6 +1044,7 @@ def _archive_threads(thread_ids: list[str], *, explicit_instance: str = "") -> i
 
     success_count = 0
     failure_count = 0
+    cleanup_failure_count = 0
     resolved_explicit_target = _resolve_target_instance(explicit_instance) if explicit_instance else None
     print(f"batch archive: total={len(normalized_thread_ids)}")
     for index, requested_thread_id in enumerate(normalized_thread_ids, start=1):
@@ -698,13 +1077,20 @@ def _archive_threads(thread_ids: list[str], *, explicit_instance: str = "") -> i
                 "cleared bindings in this instance: "
                 + (", ".join(result.get("cleared_binding_ids") or []) or "（无）")
             )
+            cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_other_instances(
+                str(result["thread_id"]),
+                target_instance_name=target.instance_name,
+                target_data_dir=target.data_dir,
+            )
+            _print_archive_cleanup_results(cleanup_results, cleanup_failures)
+            cleanup_failure_count += len(cleanup_failures)
         if index != len(normalized_thread_ids):
             print()
     print()
-    print(f"summary: archived={success_count} failed={failure_count}")
+    print(f"summary: archived={success_count} failed={failure_count} cleanup_failed={cleanup_failure_count}")
     print("note: 每个 thread 都按现有单线程 archive 语义独立路由、独立执行。")
-    print("note: 该动作只清理各自目标实例里的相关 bindings；不会跨实例联动清理。")
-    return 0 if failure_count == 0 else 1
+    print("note: archive 成功后会清理其他可达运行实例与已知非运行实例里指向该 thread 的本地 bindings。")
+    return 0 if failure_count == 0 and cleanup_failure_count == 0 else 1
 
 
 def _send_thread_image(
@@ -779,6 +1165,8 @@ def _build_parser() -> argparse.ArgumentParser:
             "  feishu-codexctl thread goal --thread-id <id>\n"
             "  feishu-codexctl thread archive --thread-name demo\n"
             "  feishu-codexctl thread archive --thread-id <id-1> --thread-id <id-2>\n"
+            "  feishu-codexctl thread clear-archived-bindings --thread-id <id> --dry-run\n"
+            "  feishu-codexctl thread clear-archived-bindings --all --dry-run\n"
             "  feishu-codexctl thread attach --thread-id <id>\n"
             "  feishu-codexctl thread detach --thread-name <name>\n"
             "  feishu-codexctl image send --thread-id <id> --path ./diagram.png\n"
@@ -946,7 +1334,7 @@ def _build_parser() -> argparse.ArgumentParser:
         description=(
             "Thread 管理面。\n"
             "- `list` 默认列当前目录线程；也支持 `--scope global`\n"
-            "- 其他 thread 子命令必须显式指定 `--thread-id` 或 `--thread-name`\n"
+            "- 其他 thread 子命令必须按各自帮助显式指定目标 thread\n"
             "- `goal` 是 thread-scoped 的本地调试 / 运维面，默认查看，也支持 set/clear\n"
             "- 所有实例共享同一套 persisted thread 发现面；实例差异主要体现在 live runtime 持有"
         ),
@@ -1033,11 +1421,11 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_goal_clear_target.add_argument("--thread-name", help="目标 thread 名称。")
     thread_archive = thread_sub.add_parser(
         "archive",
-        help="归档一个或多个 thread，并清理当前实例里指向它们的 bindings。",
+        help="归档一个或多个 thread，并清理指向它们的本地 bindings。",
         description=(
             "归档目标 thread，使其从常规列表中隐藏，而不是硬删除。\n"
             "可重复提供 `--thread-id` 做批量归档；批量时每个 thread 都独立按当前单线程语义路由并执行。\n"
-            "该动作只清理当前目标实例里指向该 thread 的 bindings；不跨实例联动清理。"
+            "归档成功后，会清理当前目标实例、其他可达运行实例，以及已知非运行实例里指向该 thread 的 bindings。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -1051,6 +1439,30 @@ def _build_parser() -> argparse.ArgumentParser:
     thread_archive.add_argument(
         "--thread-name",
         help="目标 thread 名称。仅单线程归档时可用，不能与 `--thread-id` 连用。",
+    )
+    thread_clear_archived = thread_sub.add_parser(
+        "clear-archived-bindings",
+        help="清理已归档 thread 残留的本地 bindings。",
+        description=(
+            "只清理本项目本地 binding bookmark，不调用上游 Codex archive。\n"
+            "必须显式选择 `--thread-id <id>` 或 `--all`；`--all` 会先通过运行中的实例查询上游 archived thread 列表。\n"
+            "默认扫描所有运行中实例和已知非运行实例；传全局 `--instance <name>` 时只作用于该实例。\n"
+            "适合补救旧版本 archive、外部归档，或服务重启后无 live owner 导致的跨实例残留。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    thread_clear_archived_target = thread_clear_archived.add_mutually_exclusive_group(required=True)
+    thread_clear_archived_target.add_argument("--thread-id", help="要清理本地 binding 的 archived thread id。")
+    thread_clear_archived_target.add_argument(
+        "--all",
+        dest="all_archived",
+        action="store_true",
+        help="查询上游 archived thread 列表，并清理命中的本地 binding bookmark。",
+    )
+    thread_clear_archived.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="只预览会清理哪些 binding，不修改本地数据。",
     )
     thread_detach = thread_sub.add_parser(
         "detach",
@@ -1131,6 +1543,15 @@ def main() -> None:
                     )
                 )
             raise SystemExit(_archive_threads(thread_ids, explicit_instance=str(args.instance or "").strip()))
+        if args.resource == "thread" and args.action == "clear-archived-bindings":
+            raise SystemExit(
+                _clear_archived_thread_bindings(
+                    getattr(args, "thread_id", "") or "",
+                    all_archived=bool(getattr(args, "all_archived", False)),
+                    explicit_instance=str(args.instance or "").strip(),
+                    dry_run=bool(args.dry_run),
+                )
+            )
         target = _resolve_target_instance(args.instance)
         data_dir = target.data_dir
         if args.resource == "service" and args.action == "status":

@@ -1374,34 +1374,19 @@ class RuntimeAdminController:
                 "请改在该实例执行 archive。"
             )
         with self._lock:
+            self._binding_runtime.hydrate_missing_stored_bindings_locked()
             snapshot = self._binding_runtime.thread_binding_snapshot_locked(
                 normalized_thread_id,
                 detach_availability=self.detach_thread_availability_locked,
             )
-            bound_bindings = list(self.bound_bindings_for_thread_locked(normalized_thread_id))
-            running_binding_ids = [
-                format_binding_id(binding)
-                for binding in bound_bindings
-                if (
-                    runtime_snapshot := self._binding_runtime.binding_runtime_snapshot_locked(binding)
-                ) is not None
-                and runtime_snapshot.has_inflight_turn
-            ]
-            pending_binding_ids = [
-                format_binding_id(binding)
-                for binding in bound_bindings
-                if self.binding_has_pending_request_locked(binding)
-            ]
-        if running_binding_ids:
-            raise ValueError(
-                "当前实例仍有飞书侧 turn 正在运行，不能 archive 该 thread："
-                + ", ".join(f"`{binding_id}`" for binding_id in running_binding_ids)
+            bound_bindings, running_binding_ids, pending_binding_ids = (
+                self._local_thread_binding_clear_plan_locked(normalized_thread_id)
             )
-        if pending_binding_ids:
-            raise ValueError(
-                "当前实例仍有待处理审批或补充输入，不能 archive 该 thread："
-                + ", ".join(f"`{binding_id}`" for binding_id in pending_binding_ids)
-            )
+        self._raise_local_thread_binding_clear_blockers(
+            running_binding_ids,
+            pending_binding_ids,
+            action_text="archive 该 thread",
+        )
         self._archive_thread(normalized_thread_id)
         cleared_binding_ids: list[str] = []
         unsubscribe_thread_ids: list[str] = []
@@ -1428,6 +1413,96 @@ class RuntimeAdminController:
             "detached_binding_ids": snapshot["detached_binding_ids"],
             "cleared_binding_ids": cleared_binding_ids,
             "live_runtime_owner": live_runtime_owner,
+        }
+
+    def _local_thread_binding_clear_plan_locked(
+        self,
+        normalized_thread_id: str,
+    ) -> tuple[list[ChatBindingKey], list[str], list[str]]:
+        bound_bindings = list(self.bound_bindings_for_thread_locked(normalized_thread_id))
+        running_binding_ids = [
+            format_binding_id(binding)
+            for binding in bound_bindings
+            if (
+                runtime_snapshot := self._binding_runtime.binding_runtime_snapshot_locked(binding)
+            ) is not None
+            and runtime_snapshot.has_inflight_turn
+        ]
+        pending_binding_ids = [
+            format_binding_id(binding)
+            for binding in bound_bindings
+            if self.binding_has_pending_request_locked(binding)
+        ]
+        return bound_bindings, running_binding_ids, pending_binding_ids
+
+    @staticmethod
+    def _raise_local_thread_binding_clear_blockers(
+        running_binding_ids: list[str],
+        pending_binding_ids: list[str],
+        *,
+        action_text: str,
+    ) -> None:
+        if running_binding_ids:
+            raise ValueError(
+                f"当前实例仍有飞书侧 turn 正在运行，不能 {action_text}："
+                + ", ".join(f"`{binding_id}`" for binding_id in running_binding_ids)
+            )
+        if pending_binding_ids:
+            raise ValueError(
+                f"当前实例仍有待处理审批或补充输入，不能 {action_text}："
+                + ", ".join(f"`{binding_id}`" for binding_id in pending_binding_ids)
+            )
+
+    def clear_archived_thread_bindings_for_control(
+        self,
+        thread_id: str,
+        *,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            raise ValueError("thread_id 不能为空。")
+
+        unsubscribe_thread_ids: list[str] = []
+        cleared_binding_ids: list[str] = []
+        with self._lock:
+            self._binding_runtime.hydrate_missing_stored_bindings_locked()
+            bound_bindings, running_binding_ids, pending_binding_ids = (
+                self._local_thread_binding_clear_plan_locked(normalized_thread_id)
+            )
+            self._raise_local_thread_binding_clear_blockers(
+                running_binding_ids,
+                pending_binding_ids,
+                action_text="清理该已归档 thread 的本地 bindings",
+            )
+
+            existing_bindings = [
+                binding
+                for binding in bound_bindings
+                if self._binding_runtime.binding_runtime_snapshot_locked(binding) is not None
+            ]
+            if dry_run:
+                return {
+                    "thread_id": normalized_thread_id,
+                    "would_clear_binding_ids": [
+                        format_binding_id(binding)
+                        for binding in existing_bindings
+                    ],
+                    "dry_run": True,
+                }
+            unsubscribe_thread_ids.extend(self._binding_runtime.deactivate_bindings_locked(existing_bindings))
+            cleared_binding_ids.extend(format_binding_id(binding) for binding in existing_bindings)
+
+        unique_unsubscribe_thread_ids = sorted(set(unsubscribe_thread_ids))
+        for unsubscribe_thread_id in unique_unsubscribe_thread_ids:
+            self._unsubscribe_thread(unsubscribe_thread_id)
+            self._release_service_thread_runtime_lease(unsubscribe_thread_id)
+        if cleared_binding_ids and normalized_thread_id not in unique_unsubscribe_thread_ids:
+            self._release_service_thread_runtime_lease(normalized_thread_id)
+        return {
+            "thread_id": normalized_thread_id,
+            "cleared_binding_ids": cleared_binding_ids,
+            "cleared": bool(cleared_binding_ids),
         }
 
     def send_image_to_thread_attached_bindings(
@@ -1717,6 +1792,14 @@ class RuntimeAdminController:
             return self.clear_binding_for_control(binding)
         if method == "binding/clear-all":
             return self.clear_all_bindings_for_control()
+        if method == "thread/clear-archived-bindings":
+            thread_id = str(params.get("thread_id", "") or "").strip()
+            if not thread_id:
+                raise ValueError("thread/clear-archived-bindings 缺少 thread_id。")
+            return self.clear_archived_thread_bindings_for_control(
+                thread_id,
+                dry_run=bool(params.get("dry_run")),
+            )
         if method in {
             "thread/status",
             "thread/bindings",

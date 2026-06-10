@@ -26,6 +26,7 @@ class ThreadListingAdapter(Protocol):
         sort_key: str = "updated_at",
         source_kinds: list[str] | None = None,
         model_providers: list[str] | None = None,
+        archived: bool | None = None,
     ) -> tuple[list[ThreadSummary], str | None]:
         ...
 
@@ -38,6 +39,7 @@ class ThreadListingAdapter(Protocol):
         sort_key: str = "updated_at",
         source_kinds: list[str] | None = None,
         model_providers: list[str] | None = None,
+        archived: bool | None = None,
     ) -> list[ThreadSummary]:
         ...
 

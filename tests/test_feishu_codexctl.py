@@ -11,6 +11,11 @@ from bot.feishu_codexctl import (
     _archive_thread,
     _archive_threads,
     _build_parser,
+    _cleanup_archived_thread_bindings_in_scope,
+    _cleanup_archived_thread_bindings_in_other_instances,
+    _clear_archived_thread_bindings,
+    _clear_archived_thread_bindings_from_store,
+    _list_archived_thread_ids_from_running_instance,
     _clear_thread_goal,
     _image_send_target_params,
     _list_running_instances,
@@ -33,6 +38,7 @@ from bot.feishu_codexctl import (
 )
 from bot.instance_resolution import CliInstanceTarget
 from bot.service_control_plane import ServiceControlError
+from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.version import __version__
@@ -63,6 +69,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
         self.assertIn("thread archive --thread-id <id-1> --thread-id <id-2>", rendered)
+        self.assertIn("thread clear-archived-bindings --thread-id <id> --dry-run", rendered)
 
     def test_top_level_version_prints_project_version(self) -> None:
         parser = _build_parser()
@@ -85,10 +92,11 @@ class FeishuCodexCtlTests(unittest.TestCase):
         rendered = stdout.getvalue()
         self.assertIn("Thread 管理面", rendered)
         self.assertIn("`list` 默认列当前目录线程", rendered)
-        self.assertIn("`--thread-id` 或 `--thread-name`", rendered)
+        self.assertIn("显式指定目标 thread", rendered)
         self.assertIn("thread commands", rendered)
         self.assertIn("goal", rendered)
         self.assertIn("archive", rendered)
+        self.assertIn("clear-archived-bindings", rendered)
         self.assertIn("detach", rendered)
         self.assertIn("attach", rendered)
         self.assertIn("persisted thread", rendered)
@@ -372,6 +380,38 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "不能同时提供"):
             _resolve_thread_archive_targets(args)
+
+    def test_thread_clear_archived_bindings_accepts_thread_id_and_dry_run(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "clear-archived-bindings", "--thread-id", "thread-1", "--dry-run"])
+
+        self.assertEqual(args.resource, "thread")
+        self.assertEqual(args.action, "clear-archived-bindings")
+        self.assertEqual(args.thread_id, "thread-1")
+        self.assertTrue(args.dry_run)
+
+    def test_thread_clear_archived_bindings_accepts_all_and_dry_run(self) -> None:
+        parser = _build_parser()
+
+        args = parser.parse_args(["thread", "clear-archived-bindings", "--all", "--dry-run"])
+
+        self.assertEqual(args.resource, "thread")
+        self.assertEqual(args.action, "clear-archived-bindings")
+        self.assertTrue(args.all_archived)
+        self.assertTrue(args.dry_run)
+
+    def test_thread_clear_archived_bindings_rejects_missing_target(self) -> None:
+        parser = _build_parser()
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["thread", "clear-archived-bindings"])
+
+    def test_thread_clear_archived_bindings_rejects_thread_id_and_all(self) -> None:
+        parser = _build_parser()
+
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["thread", "clear-archived-bindings", "--thread-id", "thread-1", "--all"])
 
     def test_image_send_accepts_explicit_thread_selector_and_path(self) -> None:
         parser = _build_parser()
@@ -880,7 +920,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("delivered bindings: p2p:ou_user:chat-1", rendered)
         self.assertIn("failed bindings: p2p:ou_other:chat-2", rendered)
 
-    def test_archive_thread_prints_scope_note(self) -> None:
+    def test_archive_thread_cleans_other_instances_after_archive(self) -> None:
         stdout = io.StringIO()
         snapshot = {
             "thread_id": "thread-1",
@@ -888,19 +928,383 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "working_dir": "/tmp/project",
             "cleared_binding_ids": ["p2p:ou_user:chat-1"],
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
-            with redirect_stdout(stdout):
-                result = _archive_thread(
-                    Path("/tmp/instance-data"),
-                    {"thread_id": "thread-1"},
-                    instance_name="explorer",
-                )
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+        calls: list[tuple[Path, str, dict[str, object]]] = []
+
+        def _fake_request(data_dir: Path, method: str, params: dict[str, object]):
+            calls.append((data_dir, method, params))
+            if method == "thread/archive":
+                return snapshot
+            self.assertEqual(method, "thread/clear-archived-bindings")
+            self.assertEqual(params, {"thread_id": "thread-1", "dry_run": False})
+            return {"thread_id": "thread-1", "cleared_binding_ids": ["p2p:ou_other:chat-2"]}
+
+        with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+            with patch("bot.feishu_codexctl.list_running_instances", return_value=[explorer_entry]):
+                with patch("bot.feishu_codexctl.list_known_instance_names", return_value=["default", "explorer"]):
+                    with redirect_stdout(stdout):
+                        result = _archive_thread(
+                            Path("/tmp/default-data"),
+                            {"thread_id": "thread-1"},
+                            instance_name="default",
+                        )
 
         self.assertEqual(result, 0)
+        self.assertEqual(
+            [(str(data_dir), method) for data_dir, method, _params in calls],
+            [
+                ("/tmp/default-data", "thread/archive"),
+                ("/tmp/explorer-data", "thread/clear-archived-bindings"),
+            ],
+        )
+        rendered = stdout.getvalue()
+        self.assertIn("instance: default", rendered)
+        self.assertIn("cleared bindings in this instance: p2p:ou_user:chat-1", rendered)
+        self.assertIn("explorer (control-plane): p2p:ou_other:chat-2", rendered)
+        self.assertIn("其他可达运行实例与已知非运行实例", rendered)
+
+    def test_archive_thread_reports_cleanup_failure(self) -> None:
+        stdout = io.StringIO()
+        snapshot = {
+            "thread_id": "thread-1",
+            "thread_title": "demo",
+            "working_dir": "/tmp/project",
+            "cleared_binding_ids": [],
+        }
+        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+            with patch(
+                "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                return_value=(
+                    [],
+                    [{"instance_name": "explorer", "mode": "control-plane", "reason": "down"}],
+                ),
+            ):
+                with redirect_stdout(stdout):
+                    result = _archive_thread(
+                        Path("/tmp/instance-data"),
+                        {"thread_id": "thread-1"},
+                        instance_name="explorer",
+                    )
+
+        self.assertEqual(result, 1)
         rendered = stdout.getvalue()
         self.assertIn("instance: explorer", rendered)
-        self.assertIn("cleared bindings in this instance: p2p:ou_user:chat-1", rendered)
-        self.assertIn("只清理当前目标实例", rendered)
+        self.assertIn("cleanup warnings:", rendered)
+        self.assertIn("explorer (control-plane): down", rendered)
+
+    def test_cleanup_archived_thread_bindings_clears_stopped_known_instance_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "explorer-data"
+            store = ChatBindingStore(data_dir)
+            binding = ("ou_user", "chat-1")
+            store.save(
+                binding,
+                {
+                    "working_dir": "/tmp/project",
+                    "current_thread_id": "thread-1",
+                    "current_thread_title": "demo",
+                    "feishu_runtime_state": "detached",
+                    "approval_policy": "never",
+                    "permissions_profile_id": ":danger-full-access",
+                    "collaboration_mode": "default",
+                    "model": "",
+                    "reasoning_effort": "",
+                },
+            )
+            with patch("bot.feishu_codexctl.list_running_instances", return_value=[]):
+                with patch("bot.feishu_codexctl.list_known_instance_names", return_value=["default", "explorer"]):
+                    with patch(
+                        "bot.feishu_codexctl.resolve_instance_paths",
+                        return_value=CliInstanceTarget(instance_name="explorer", data_dir=data_dir),
+                    ):
+                        cleanup_results, cleanup_failures = (
+                            _cleanup_archived_thread_bindings_in_other_instances(
+                                "thread-1",
+                                target_instance_name="default",
+                                target_data_dir=Path("/tmp/default-data"),
+                            )
+                        )
+            self.assertEqual(ChatBindingStore(data_dir).load(binding), None)
+
+        self.assertEqual(cleanup_failures, [])
+        self.assertEqual(
+            cleanup_results,
+            [
+                {
+                    "instance_name": "explorer",
+                    "mode": "local-store",
+                    "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+                }
+            ],
+        )
+
+    def test_cleanup_archived_thread_bindings_dry_run_does_not_clear_stopped_store(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "explorer-data"
+            store = ChatBindingStore(data_dir)
+            binding = ("ou_user", "chat-1")
+            store.save(
+                binding,
+                {
+                    "working_dir": "/tmp/project",
+                    "current_thread_id": "thread-1",
+                    "current_thread_title": "demo",
+                    "feishu_runtime_state": "detached",
+                    "approval_policy": "never",
+                    "permissions_profile_id": ":danger-full-access",
+                    "collaboration_mode": "default",
+                    "model": "",
+                    "reasoning_effort": "",
+                },
+            )
+
+            cleared = _clear_archived_thread_bindings_from_store(data_dir, "thread-1", dry_run=True)
+
+            self.assertEqual(cleared, ["p2p:ou_user:chat-1"])
+            self.assertIsNotNone(store.load(binding))
+
+    def test_cleanup_archived_thread_bindings_scope_explicit_instance_only(self) -> None:
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+        target = CliInstanceTarget(
+            instance_name="explorer",
+            data_dir=Path("/tmp/explorer-data"),
+            running_entry=explorer_entry,
+        )
+
+        def _fake_request(data_dir: Path, method: str, params: dict[str, object]):
+            self.assertEqual(data_dir, Path("/tmp/explorer-data"))
+            self.assertEqual(method, "thread/clear-archived-bindings")
+            self.assertEqual(params, {"thread_id": "thread-1", "dry_run": True})
+            return {"thread_id": "thread-1", "would_clear_binding_ids": ["p2p:ou_user:chat-1"]}
+
+        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+            with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+                with patch("bot.feishu_codexctl.list_running_instances") as mock_list_running:
+                    cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_scope(
+                        "thread-1",
+                        explicit_instance="explorer",
+                        dry_run=True,
+                    )
+
+        mock_list_running.assert_not_called()
+        self.assertEqual(cleanup_failures, [])
+        self.assertEqual(
+            cleanup_results,
+            [
+                {
+                    "instance_name": "explorer",
+                    "mode": "control-plane",
+                    "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+                }
+            ],
+        )
+
+    def test_clear_archived_thread_bindings_public_command_prints_dry_run(self) -> None:
+        stdout = io.StringIO()
+        with patch(
+            "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_scope",
+            return_value=(
+                [
+                    {
+                        "instance_name": "explorer",
+                        "mode": "local-store",
+                        "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+                    }
+                ],
+                [],
+            ),
+        ) as mock_cleanup:
+            with redirect_stdout(stdout):
+                result = _clear_archived_thread_bindings("thread-1", dry_run=True)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(mock_cleanup.call_args.kwargs["explicit_instance"], "")
+        self.assertTrue(mock_cleanup.call_args.kwargs["dry_run"])
+        rendered = stdout.getvalue()
+        self.assertIn("thread: thread-1", rendered)
+        self.assertIn("scope: all known instances", rendered)
+        self.assertIn("mode: dry-run", rendered)
+        self.assertIn("would clear bindings:", rendered)
+        self.assertIn("explorer (local-store): p2p:ou_user:chat-1", rendered)
+
+    def test_clear_archived_thread_bindings_all_requires_running_instance_to_query(self) -> None:
+        with patch("bot.feishu_codexctl.list_running_instances", return_value=[]):
+            with self.assertRaisesRegex(ValueError, "至少一个运行中的实例"):
+                _clear_archived_thread_bindings(all_archived=True)
+
+    def test_clear_archived_thread_bindings_all_rejects_stopped_explicit_instance(self) -> None:
+        target = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
+
+        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+            with self.assertRaisesRegex(ValueError, "目标实例正在运行"):
+                _clear_archived_thread_bindings(all_archived=True, explicit_instance="explorer")
+
+    def test_clear_archived_thread_bindings_all_cleans_each_archived_thread(self) -> None:
+        stdout = io.StringIO()
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+
+        def _fake_cleanup(thread_id: str, **kwargs):
+            self.assertEqual(kwargs["explicit_instance"], "")
+            self.assertTrue(kwargs["dry_run"])
+            if thread_id == "thread-2":
+                return [], []
+            return [
+                {
+                    "instance_name": "explorer",
+                    "mode": "local-store",
+                    "cleared_binding_ids": ["p2p:ou_user:chat-1"],
+                }
+            ], []
+
+        with patch(
+            "bot.feishu_codexctl._resolve_archived_thread_listing_target",
+            return_value=("explorer", Path("/tmp/explorer-data"), explorer_entry),
+        ) as mock_resolve:
+            with patch(
+                "bot.feishu_codexctl._list_archived_thread_ids_from_running_instance",
+                return_value=["thread-2", "thread-1"],
+            ) as mock_list_archived:
+                with patch(
+                    "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_scope",
+                    side_effect=_fake_cleanup,
+                ) as mock_cleanup:
+                    with redirect_stdout(stdout):
+                        result = _clear_archived_thread_bindings(all_archived=True, dry_run=True)
+
+        self.assertEqual(result, 0)
+        mock_resolve.assert_called_once_with("")
+        self.assertEqual(mock_list_archived.call_args.kwargs["running_entry"], explorer_entry)
+        self.assertEqual([call.args[0] for call in mock_cleanup.call_args_list], ["thread-2", "thread-1"])
+        rendered = stdout.getvalue()
+        self.assertIn("archived query instance: explorer", rendered)
+        self.assertIn("archived threads: 2", rendered)
+        self.assertIn("scope: all known instances", rendered)
+        self.assertIn("thread: thread-1", rendered)
+        self.assertIn("would clear bindings:", rendered)
+        self.assertIn(
+            "summary: archived_threads=2 threads_with_bindings=1 would_clear_bindings=1 cleanup_failed=0",
+            rendered,
+        )
+
+    def test_list_archived_thread_ids_pages_with_archived_filter(self) -> None:
+        class _PagedArchivedAdapter:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, object]] = []
+                self.stopped = False
+
+            def list_threads(self, **kwargs):
+                self.calls.append(kwargs)
+                if kwargs.get("cursor") is None:
+                    return [
+                        ThreadSummary(
+                            thread_id="thread-1",
+                            cwd="/tmp/project",
+                            name="demo 1",
+                            preview="",
+                            created_at=1,
+                            updated_at=1,
+                            source="cli",
+                            status="notLoaded",
+                        )
+                    ], "cursor-1"
+                return [
+                    ThreadSummary(
+                        thread_id="thread-2",
+                        cwd="/tmp/project",
+                        name="demo 2",
+                        preview="",
+                        created_at=2,
+                        updated_at=2,
+                        source="cli",
+                        status="notLoaded",
+                    )
+                ], None
+
+            def stop(self) -> None:
+                self.stopped = True
+
+        adapter = _PagedArchivedAdapter()
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+
+        with patch("bot.feishu_codexctl._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
+            archived_thread_ids = _list_archived_thread_ids_from_running_instance(
+                Path("/tmp/explorer-data"),
+                running_entry=explorer_entry,
+            )
+
+        self.assertEqual(archived_thread_ids, ["thread-1", "thread-2"])
+        self.assertTrue(adapter.stopped)
+        self.assertEqual(adapter.calls[0]["archived"], True)
+        self.assertEqual(adapter.calls[0]["model_providers"], [])
+        self.assertEqual(adapter.calls[1]["cursor"], "cursor-1")
+
+    def test_clear_archived_thread_bindings_from_store_only_clears_matching_thread(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            store = ChatBindingStore(data_dir)
+            matched = ("ou_user", "chat-1")
+            retained = ("ou_user", "chat-2")
+            for binding, thread_id in ((matched, "thread-1"), (retained, "thread-2")):
+                store.save(
+                    binding,
+                    {
+                        "working_dir": "/tmp/project",
+                        "current_thread_id": thread_id,
+                        "current_thread_title": "demo",
+                        "feishu_runtime_state": "detached",
+                        "approval_policy": "never",
+                        "permissions_profile_id": ":danger-full-access",
+                        "collaboration_mode": "default",
+                        "model": "",
+                        "reasoning_effort": "",
+                    },
+                )
+
+            cleared = _clear_archived_thread_bindings_from_store(data_dir, "thread-1")
+
+            self.assertEqual(cleared, ["p2p:ou_user:chat-1"])
+            self.assertEqual(store.load(matched), None)
+            self.assertIsNotNone(store.load(retained))
 
     def test_archive_threads_batches_partial_failures(self) -> None:
         stdout = io.StringIO()
@@ -921,8 +1325,12 @@ class FeishuCodexCtlTests(unittest.TestCase):
         with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "default"]):
             with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[target_a, target_b]):
                 with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
-                    with redirect_stdout(stdout):
-                        result = _archive_threads(["thread-1", "thread-2"])
+                    with patch(
+                        "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                        return_value=([], []),
+                    ):
+                        with redirect_stdout(stdout):
+                            result = _archive_threads(["thread-1", "thread-2"])
 
         self.assertEqual(result, 1)
         rendered = stdout.getvalue()
@@ -953,8 +1361,12 @@ class FeishuCodexCtlTests(unittest.TestCase):
                         "cleared_binding_ids": [],
                     },
                 ):
-                    with redirect_stdout(stdout):
-                        result = _archive_threads(["thread-1", "thread-2"])
+                    with patch(
+                        "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                        return_value=([], []),
+                    ):
+                        with redirect_stdout(stdout):
+                            result = _archive_threads(["thread-1", "thread-2"])
 
         self.assertEqual(result, 1)
         rendered = stdout.getvalue()
@@ -1046,3 +1458,50 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])
+
+    def test_main_thread_clear_archived_bindings_dispatches_before_default_target_resolution(self) -> None:
+        with patch("bot.feishu_codexctl._clear_archived_thread_bindings", return_value=0) as mock_clear:
+            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+                with patch(
+                    "bot.feishu_codexctl.sys.argv",
+                    [
+                        "feishu-codexctl",
+                        "thread",
+                        "clear-archived-bindings",
+                        "--thread-id",
+                        "thread-1",
+                        "--dry-run",
+                    ],
+                ):
+                    with self.assertRaises(SystemExit) as exc:
+                        feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(mock_clear.call_args.args[0], "thread-1")
+        self.assertFalse(mock_clear.call_args.kwargs["all_archived"])
+        self.assertEqual(mock_clear.call_args.kwargs["explicit_instance"], "")
+        self.assertTrue(mock_clear.call_args.kwargs["dry_run"])
+        mock_resolve.assert_not_called()
+
+    def test_main_thread_clear_archived_bindings_all_dispatches_before_default_target_resolution(self) -> None:
+        with patch("bot.feishu_codexctl._clear_archived_thread_bindings", return_value=0) as mock_clear:
+            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+                with patch(
+                    "bot.feishu_codexctl.sys.argv",
+                    [
+                        "feishu-codexctl",
+                        "thread",
+                        "clear-archived-bindings",
+                        "--all",
+                        "--dry-run",
+                    ],
+                ):
+                    with self.assertRaises(SystemExit) as exc:
+                        feishu_codexctl_main()
+
+        self.assertEqual(exc.exception.code, 0)
+        self.assertEqual(mock_clear.call_args.args[0], "")
+        self.assertTrue(mock_clear.call_args.kwargs["all_archived"])
+        self.assertEqual(mock_clear.call_args.kwargs["explicit_instance"], "")
+        self.assertTrue(mock_clear.call_args.kwargs["dry_run"])
+        mock_resolve.assert_not_called()

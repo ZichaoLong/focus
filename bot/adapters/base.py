@@ -120,6 +120,7 @@ class AgentAdapter(ABC):
         sort_key: str | None = None,
         source_kinds: list[str] | None = None,
         model_providers: list[str] | None = None,
+        archived: bool | None = None,
     ) -> tuple[list[ThreadSummary], str | None]:
         ...
 

@@ -355,6 +355,57 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(unsubscribed, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
 
+    def test_archive_thread_for_control_clears_store_only_binding(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_stale", "c1")
+        binding_runtime._chat_binding_store.save(
+            binding,
+            {
+                "working_dir": "/tmp/project",
+                "current_thread_id": "thread-1",
+                "current_thread_title": "demo",
+                "feishu_runtime_state": "detached",
+                "approval_policy": "never",
+                "permissions_profile_id": ":danger-full-access",
+                "collaboration_mode": "default",
+                "model": "",
+                "reasoning_effort": "",
+            },
+        )
+        summaries["thread-1"] = ThreadSummary(
+            thread_id="thread-1",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="idle",
+        )
+
+        result = controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, ["thread-1"])
+        self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_stale:c1"])
+        self.assertEqual(binding_runtime._chat_binding_store.load(binding), None)
+        with lock:
+            self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-1"), [])
+        self.assertEqual(released_runtime_leases, ["thread-1"])
+
     def test_archive_thread_for_control_rejects_other_instance_live_runtime_owner(self) -> None:
         (
             lock,
@@ -395,6 +446,106 @@ class RuntimeAdminControllerTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "explorer"):
             controller.archive_thread_for_control("thread-1", summary=summaries["thread-1"])
+
+        self.assertEqual(archived, [])
+        with lock:
+            self.assertIsNotNone(binding_runtime.binding_runtime_snapshot_locked(binding))
+
+    def test_clear_archived_thread_bindings_for_control_clears_without_archiving(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding_a = ("ou_user", "c1")
+        binding_b = ("ou_user2", "c2")
+        self._bind_thread(lock, binding_runtime, binding_a, thread_id="thread-1")
+        self._bind_thread(lock, binding_runtime, binding_b, thread_id="thread-1")
+
+        result = controller.clear_archived_thread_bindings_for_control("thread-1")
+
+        self.assertEqual(archived, [])
+        self.assertEqual(
+            result,
+            {
+                "thread_id": "thread-1",
+                "cleared_binding_ids": ["p2p:ou_user:c1", "p2p:ou_user2:c2"],
+                "cleared": True,
+            },
+        )
+        self.assertEqual(unsubscribed, ["thread-1"])
+        self.assertEqual(released_runtime_leases, ["thread-1"])
+        with lock:
+            self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-1"), [])
+
+    def test_clear_archived_thread_bindings_for_control_dry_run_does_not_clear(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+
+        result = controller.clear_archived_thread_bindings_for_control("thread-1", dry_run=True)
+
+        self.assertEqual(archived, [])
+        self.assertEqual(unsubscribed, [])
+        self.assertEqual(released_runtime_leases, [])
+        self.assertEqual(
+            result,
+            {
+                "thread_id": "thread-1",
+                "would_clear_binding_ids": ["p2p:ou_user:c1"],
+                "dry_run": True,
+            },
+        )
+        with lock:
+            self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-1"), [binding])
+
+    def test_clear_archived_thread_bindings_for_control_rejects_running_binding(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            _released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        state = self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+        with lock:
+            state["current_turn_id"] = "turn-1"
+
+        with self.assertRaisesRegex(ValueError, "正在运行"):
+            controller.clear_archived_thread_bindings_for_control("thread-1")
 
         self.assertEqual(archived, [])
         with lock:
@@ -1337,6 +1488,72 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         self.assertEqual(result["thread_id"], "thread-1")
         self.assertEqual(archived, ["thread-1"])
         self.assertEqual(released_runtime_leases, ["thread-1"])
+
+    def test_handle_service_control_request_clear_archived_bindings_dispatches_local_cleanup(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+
+        result = controller.handle_service_control_request(
+            "thread/clear-archived-bindings",
+            {"thread_id": "thread-1"},
+        )
+
+        self.assertEqual(result["thread_id"], "thread-1")
+        self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_user:c1"])
+        self.assertEqual(archived, [])
+        self.assertEqual(released_runtime_leases, ["thread-1"])
+
+    def test_handle_service_control_request_clear_archived_bindings_supports_dry_run(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "c1")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-1")
+
+        result = controller.handle_service_control_request(
+            "thread/clear-archived-bindings",
+            {"thread_id": "thread-1", "dry_run": True},
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "thread_id": "thread-1",
+                "would_clear_binding_ids": ["p2p:ou_user:c1"],
+                "dry_run": True,
+            },
+        )
+        self.assertEqual(archived, [])
+        self.assertEqual(released_runtime_leases, [])
+        with lock:
+            self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-1"), [binding])
 
     def test_handle_service_control_request_thread_send_image_fanouts_to_attached_bindings(self) -> None:
         (

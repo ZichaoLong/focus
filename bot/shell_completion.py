@@ -652,7 +652,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
         if positional_index == 1:
             return _complete_candidates(
                 current,
-                ["list", "status", "bindings", "goal", "archive", "attach", "detach"],
+                ["list", "status", "bindings", "goal", "archive", "clear-archived-bindings", "attach", "detach"],
             )
         if len(positionals) < 2:
             return []
@@ -679,6 +679,8 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
                 return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
             if action in {"status", "bindings", "archive", "attach", "detach"}:
                 return _complete_candidates(current, ["--thread-id", "--thread-name", "--help", "-h"])
+            if action == "clear-archived-bindings":
+                return _complete_candidates(current, ["--thread-id", "--all", "--dry-run", "--help", "-h"])
         if action == "goal" and positional_index == 2:
             return _complete_candidates(current, ["show", "set", "clear"])
         return []

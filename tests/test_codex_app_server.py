@@ -684,6 +684,27 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ),
         )
 
+    def test_list_threads_can_request_archived_threads(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.list_threads(cwd="/tmp/project", limit=5, model_providers=[], archived=True)
+
+        self.assertEqual(
+            fake_rpc.calls[0],
+            (
+                "thread/list",
+                {
+                    "cwd": "/tmp/project",
+                    "limit": 5,
+                    "sourceKinds": ["cli", "vscode", "exec", "appServer"],
+                    "archived": True,
+                    "modelProviders": [],
+                },
+            ),
+        )
+
     def test_read_runtime_config_parses_model_provider_and_memory_mode(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
