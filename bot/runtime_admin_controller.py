@@ -91,6 +91,7 @@ class RuntimeAdminController:
         clear_all_stored_bindings: Callable[[], None],
         deactivate_binding_locked: Callable[[ChatBindingKey], str],
         read_thread: Callable[[str], Any],
+        read_thread_for_stale_cleanup: Callable[[str], Any],
         list_loaded_thread_ids: Callable[[], list[str]],
         current_app_server_url: Callable[[], str],
         app_server_mode: Callable[[], str],
@@ -126,6 +127,7 @@ class RuntimeAdminController:
         self._clear_all_stored_bindings = clear_all_stored_bindings
         self._deactivate_binding_locked = deactivate_binding_locked
         self._read_thread = read_thread
+        self._read_thread_for_stale_cleanup = read_thread_for_stale_cleanup
         self._list_loaded_thread_ids = list_loaded_thread_ids
         self._current_app_server_url = current_app_server_url
         self._app_server_mode = app_server_mode
@@ -209,6 +211,19 @@ class RuntimeAdminController:
             logger.exception("读取线程状态失败: thread=%s", normalized_thread_id[:12])
             return None, BACKEND_THREAD_LOOKUP_ERROR
         return summary, str(summary.status or BACKEND_THREAD_STATUS_UNKNOWN).strip() or BACKEND_THREAD_STATUS_UNKNOWN
+
+    def _classify_thread_for_stale_binding_cleanup(self, thread_id: str) -> tuple[str, str]:
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return "skip", "empty_thread_id"
+        try:
+            self._read_thread_for_stale_cleanup(normalized_thread_id)
+        except Exception as exc:
+            if self._is_thread_not_found_error(exc) or self._is_thread_not_loaded_error(exc):
+                return "stale", str(exc) or "thread is not readable"
+            logger.exception("验证 stale binding 线程失败: thread=%s", normalized_thread_id[:12])
+            return "unknown", str(exc) or type(exc).__name__
+        return "present", ""
 
     @staticmethod
     def _live_runtime_owner_snapshot(lease: ThreadRuntimeLease | None) -> dict[str, str]:
@@ -1519,14 +1534,14 @@ class RuntimeAdminController:
         unknown_threads: list[dict[str, str]] = []
         retained_thread_ids: list[str] = []
         for thread_id in thread_ids:
-            _summary, backend_thread_status = self.read_thread_summary_for_status(thread_id)
-            if backend_thread_status == BACKEND_THREAD_LOOKUP_MISSING:
+            presence, reason = self._classify_thread_for_stale_binding_cleanup(thread_id)
+            if presence == "stale":
                 stale_thread_ids.append(thread_id)
-            elif backend_thread_status == BACKEND_THREAD_LOOKUP_ERROR:
+            elif presence == "unknown":
                 unknown_threads.append(
                     {
                         "thread_id": thread_id,
-                        "reason": backend_thread_status,
+                        "reason": reason,
                     }
                 )
             else:

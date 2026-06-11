@@ -496,6 +496,10 @@ class CodexHandler(BotHandler):
             clear_all_stored_bindings=self._chat_binding_store.clear_all,
             deactivate_binding_locked=self._deactivate_binding_locked,
             read_thread=lambda thread_id: self._adapter.read_thread(thread_id, include_turns=False),
+            read_thread_for_stale_cleanup=lambda thread_id: self._adapter.read_thread(
+                thread_id,
+                include_turns=True,
+            ),
             list_loaded_thread_ids=lambda: self._adapter.list_loaded_thread_ids(),
             current_app_server_url=lambda: self._adapter.current_app_server_url(),
             app_server_mode=lambda: self._adapter_config.app_server_mode,

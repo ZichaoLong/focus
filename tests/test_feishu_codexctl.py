@@ -10,6 +10,7 @@ from bot.adapters.base import ThreadSummary
 from bot.feishu_codexctl import (
     _archive_thread,
     _archive_threads,
+    _build_thread_presence_checker,
     _build_parser,
     _cleanup_archived_thread_bindings_in_scope,
     _cleanup_archived_thread_bindings_in_other_instances,
@@ -38,6 +39,7 @@ from bot.feishu_codexctl import (
     _thread_target_params,
     main as feishu_codexctl_main,
 )
+from bot.codex_protocol.client import CodexRpcError
 from bot.instance_resolution import CliInstanceTarget
 from bot.service_control_plane import ServiceControlError
 from bot.stores.chat_binding_store import ChatBindingStore
@@ -1389,6 +1391,43 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(result["cleared_binding_ids"], [])
             self.assertEqual(result["would_clear_binding_ids"], ["p2p:ou_user:chat-stale"])
             self.assertIsNotNone(store.load(binding))
+
+    def test_thread_presence_checker_uses_turns_and_treats_not_loaded_as_stale(self) -> None:
+        class _FakeAdapter:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, bool]] = []
+                self.stopped = False
+
+            def read_thread(self, thread_id: str, *, include_turns: bool = False):
+                self.calls.append((thread_id, include_turns))
+                raise CodexRpcError("thread/read", {"message": f"thread not loaded: {thread_id}"})
+
+            def stop(self) -> None:
+                self.stopped = True
+
+        adapter = _FakeAdapter()
+        explorer_entry = InstanceRegistryEntry(
+            instance_name="explorer",
+            owner_pid=123,
+            service_token="svc-token",
+            control_endpoint="tcp://127.0.0.1:32002",
+            app_server_url="ws://127.0.0.1:9002",
+            config_dir="/tmp/explorer-config",
+            data_dir="/tmp/explorer-data",
+            started_at=1.0,
+            updated_at=1.0,
+        )
+
+        with patch("bot.feishu_codexctl._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
+            _adapter, check = _build_thread_presence_checker(
+                Path("/tmp/explorer-data"),
+                running_entry=explorer_entry,
+            )
+            result = check("thread-stale")
+
+        self.assertIs(_adapter, adapter)
+        self.assertEqual(result[0], "stale")
+        self.assertEqual(adapter.calls, [("thread-stale", True)])
 
     def test_clear_stale_bindings_explicit_running_instance_uses_control_plane(self) -> None:
         stdout = io.StringIO()

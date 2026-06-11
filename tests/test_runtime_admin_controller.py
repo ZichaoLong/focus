@@ -100,6 +100,7 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             clear_all_stored_bindings=chat_binding_store.clear_all,
             deactivate_binding_locked=lambda binding: binding_runtime.deactivate_binding_locked(binding),
             read_thread=_read_thread,
+            read_thread_for_stale_cleanup=_read_thread,
             list_loaded_thread_ids=lambda: list(loaded_thread_ids),
             current_app_server_url=lambda: "http://127.0.0.1:1234",
             app_server_mode=lambda: "managed",
@@ -1660,6 +1661,74 @@ class RuntimeAdminControllerTests(unittest.TestCase):
         result = controller.handle_service_control_request("binding/clear-stale", {"dry_run": False})
 
         self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_stale:chat-stale"])
+        self.assertEqual(released_runtime_leases, ["thread-stale"])
+
+    def test_binding_clear_stale_retains_readable_not_loaded_thread(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "chat-live")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-readable")
+        summaries["thread-readable"] = ThreadSummary(
+            thread_id="thread-readable",
+            cwd="/tmp/project",
+            name="demo",
+            preview="",
+            created_at=0,
+            updated_at=0,
+            source="cli",
+            status="notLoaded",
+        )
+
+        result = controller.handle_service_control_request("binding/clear-stale", {"dry_run": True})
+
+        self.assertEqual(result["would_clear_binding_ids"], [])
+        self.assertEqual(result["retained_thread_ids"], ["thread-readable"])
+        self.assertEqual(released_runtime_leases, [])
+        with lock:
+            self.assertEqual(binding_runtime.bound_bindings_for_thread_locked("thread-readable"), [binding])
+
+    def test_binding_clear_stale_clears_thread_not_loaded_lookup_error(self) -> None:
+        (
+            lock,
+            binding_runtime,
+            controller,
+            _summaries,
+            _loaded_thread_ids,
+            _unsubscribed,
+            _archived,
+            released_runtime_leases,
+            _pending_by_thread,
+            _pending_by_binding,
+            _pending_requests,
+            _reset_calls,
+            _sent_images,
+        ) = self._make_controller()
+        binding = ("ou_user", "chat-stale")
+        self._bind_thread(lock, binding_runtime, binding, thread_id="thread-stale")
+
+        def _raise_not_loaded(_thread_id: str):
+            raise RuntimeError("thread not loaded: thread-stale")
+
+        controller._read_thread_for_stale_cleanup = _raise_not_loaded
+        controller._is_thread_not_loaded_error = lambda exc: str(exc).startswith("thread not loaded:")
+
+        result = controller.handle_service_control_request("binding/clear-stale", {"dry_run": False})
+
+        self.assertEqual(result["cleared_binding_ids"], ["p2p:ou_user:chat-stale"])
+        self.assertEqual(result["stale_thread_ids"], ["thread-stale"])
         self.assertEqual(released_runtime_leases, ["thread-stale"])
 
     def test_handle_service_control_request_thread_send_image_fanouts_to_attached_bindings(self) -> None:

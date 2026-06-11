@@ -437,11 +437,15 @@ def _clear_all_bindings(data_dir: pathlib.Path) -> int:
     return 0
 
 
-def _is_cli_thread_not_found_error(exc: Exception) -> bool:
+def _is_cli_thread_unreadable_for_stale_cleanup_error(exc: Exception) -> bool:
     if not isinstance(exc, CodexRpcError):
         return False
     message = str(exc.error.get("message", "") or "").strip().lower()
-    return message.startswith("no rollout found for thread id ") or message.startswith("thread not found:")
+    return (
+        message.startswith("no rollout found for thread id ")
+        or message.startswith("thread not found:")
+        or message.startswith("thread not loaded:")
+    )
 
 
 def _resolve_stale_binding_query_target() -> tuple[str, pathlib.Path, InstanceRegistryEntry]:
@@ -473,9 +477,9 @@ def _build_thread_presence_checker(
         if cached is not None:
             return cached
         try:
-            adapter.read_thread(normalized_thread_id, include_turns=False)
+            adapter.read_thread(normalized_thread_id, include_turns=True)
         except Exception as exc:
-            if _is_cli_thread_not_found_error(exc):
+            if _is_cli_thread_unreadable_for_stale_cleanup_error(exc):
                 result = ("stale", str(exc) or "thread not found")
             else:
                 result = ("unknown", str(exc) or type(exc).__name__)
