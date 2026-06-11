@@ -551,15 +551,6 @@ class ExecutionRecoveryController:
             reason,
         )
 
-    def note_runtime_event(self, sender_id: str, chat_id: str) -> None:
-        state = self._get_runtime_state(sender_id, chat_id)
-        with self._lock:
-            self._turn_execution.mark_runtime_event_locked(
-                state,
-                occurred_at=time.monotonic(),
-            )
-        self.schedule_mirror_watchdog(sender_id, chat_id)
-
     def schedule_mirror_watchdog(self, sender_id: str, chat_id: str) -> None:
         state = self._get_runtime_state(sender_id, chat_id)
         with self._lock:

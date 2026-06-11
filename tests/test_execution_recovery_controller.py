@@ -326,20 +326,6 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         )
         self.assertEqual(delivered_images, [])
 
-    def test_note_runtime_event_arms_watchdog_for_running_thread(self) -> None:
-        state = self._make_state()
-        controller, _, _, _, _, _, _ = self._make_controller(state)
-        state["running"] = True
-        state["current_thread_id"] = "thread-1"
-
-        controller.note_runtime_event("ou_user", "c1")
-
-        self.assertGreater(state["last_runtime_event_at"], 0.0)
-        self.assertEqual(state["mirror_watchdog_generation"], 1)
-        self.assertIsNotNone(state["mirror_watchdog_timer"])
-        controller.cancel_mirror_watchdog_locked(state)
-        self.assertIsNone(state["mirror_watchdog_timer"])
-
     def test_run_terminal_execution_reconcile_keeps_minimal_execution_card_when_snapshot_only_has_final_reply(self) -> None:
         state = self._make_state()
         controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
@@ -469,9 +455,10 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
     def test_run_terminal_execution_reconcile_strips_terminal_final_reply_after_publish(self) -> None:
         state = self._make_state()
         controller, snapshots, patches, deletes, _, terminal_results, delivered_images = self._make_controller(state)
+        raw_final_reply = "  最终答案\n"
         state["current_message_id"] = "card-1"
         state["last_execution_message_id"] = "card-1"
-        state["execution_transcript"].set_reply_text("阶段总结\n\n最终答案")
+        state["execution_transcript"].set_reply_text(f"阶段总结\n\n{raw_final_reply}")
         snapshots.append(
             ThreadSnapshot(
                 summary=ThreadSummary(
@@ -490,7 +477,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                         "items": [
                             {"type": "agentMessage", "text": "阶段总结"},
                             {"type": "commandExecution"},
-                            {"type": "agentMessage", "text": "最终答案"},
+                            {"type": "agentMessage", "text": raw_final_reply},
                         ],
                     }
                 ],
@@ -526,13 +513,13 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         )
         self.assertEqual(deletes, [])
         self.assertEqual(state["execution_transcript"].reply_text(), "阶段总结")
-        self.assertEqual(state["terminal_result_text"], "最终答案")
+        self.assertEqual(state["terminal_result_text"], raw_final_reply)
         self.assertEqual(
             terminal_results,
             [
                 {
                     "chat_id": "c1",
-                    "final_reply_text": "最终答案",
+                    "final_reply_text": raw_final_reply,
                     "source_execution_message_id": "card-1",
                     "prompt_message_id": "msg-1",
                     "prompt_reply_in_thread": True,
