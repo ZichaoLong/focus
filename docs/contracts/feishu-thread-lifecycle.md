@@ -175,6 +175,13 @@ time:
   notification carries a `turn_id`, that `turn_id` must also match the local
   active execution anchor before the notification may mutate the execution
   card, transcript, plan, or terminal finalization
+- for operations such as `/compact`, whose upstream request returns immediately
+  and whose `turn_id` is only learned from a later `turn/started`, the local
+  execution card is in an "unbound turn identity" state while
+  `awaiting_local_turn_started` is true and `turn_id` is still empty; in that
+  state only `turn/started` may bind the new `turn_id` to the active anchor, and
+  item/delta/completed events, `thread/status=idle`, `thread/closed`, and
+  watchdog snapshots must not finalize the card or advance the binding FIFO
 - live deltas, terminal notifications, and watchdog reconciliation may only
   update that active card
 - once an execution is finalized, that card stops being the active anchor
@@ -219,7 +226,9 @@ The binding FIFO does not weaken the "one active execution card" rule.
 Queued prompts or `/compact` items may only dequeue after the current execution
 anchor retires. When `/compact` dequeues or starts immediately, it must establish
 a local execution anchor before calling upstream `thread/compact/start`. FIFO
-admission details are defined by `docs/contracts/scheduled-prompts.md`.
+admission details are defined by `docs/contracts/scheduled-prompts.md`. Until
+that anchor has learned its upstream `turn_id`, stale terminal signals from an
+older turn must not let later prompts pass through the compact operation.
 
 ## 6. Relationship With `fcodex`
 

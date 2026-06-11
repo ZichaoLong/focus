@@ -225,6 +225,50 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         self.assertEqual(finalized, [])
         self.assertEqual(state["runtime_channel_state"], "degraded")
 
+    def test_reconcile_execution_snapshot_waits_for_unbound_turn_id(self) -> None:
+        state = self._make_state()
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)
+        state["running"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "compact-card"
+        state["awaiting_local_turn_started"] = True
+        state["current_turn_id"] = ""
+        snapshots.append(
+            ThreadSnapshot(
+                summary=ThreadSummary(
+                    thread_id="thread-1",
+                    cwd="/tmp/project",
+                    name="demo",
+                    preview="",
+                    created_at=0,
+                    updated_at=0,
+                    source="appServer",
+                    status="idle",
+                ),
+                turns=[
+                    {
+                        "id": "old-turn",
+                        "items": [{"type": "agentMessage", "text": "old final"}],
+                    }
+                ],
+            )
+        )
+
+        finalized_now = controller.reconcile_execution_snapshot(
+            "ou_user",
+            "c1",
+            thread_id="thread-1",
+            turn_id="",
+        )
+
+        self.assertFalse(finalized_now)
+        self.assertEqual(finalized, [])
+        self.assertEqual(terminal_results, [])
+        self.assertEqual(delivered_images, [])
+        self.assertEqual(state["current_message_id"], "compact-card")
+        self.assertTrue(state["running"])
+        self.assertEqual(len(snapshots), 1)
+
     def test_reconcile_execution_snapshot_not_found_finalizes(self) -> None:
         state = self._make_state()
         controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(state)

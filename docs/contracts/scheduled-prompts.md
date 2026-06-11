@@ -155,7 +155,9 @@ and `/compact` share the same binding admission semantics:
 - the queue is process-local memory only; it does not promise restart recovery,
   listing, cancellation, or cross-binding scheduling
 - when dequeued, `/compact` establishes a local execution anchor before calling
-  upstream `thread/compact/start`, so a following prompt cannot pass through it
+  upstream `thread/compact/start`; until that anchor receives its own
+  `turn/started` or an explicit start failure, a following prompt cannot pass
+  through it
 - `/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode` do not
   queue; they update binding-wise next-turn settings immediately, and later
   dequeued prompts read the latest settings

@@ -28,6 +28,7 @@ WORK_ITEM_LABELS = {
     "commandExecution": "命令执行",
     "fileChange": "文件修改",
     "imageGeneration": "图片生成",
+    "contextCompaction": "上下文压缩",
     "mcpToolCall": "MCP 工具调用",
     "patchApply": "补丁应用",
     "viewImageToolCall": "查看图片",
@@ -144,6 +145,7 @@ class AdapterNotificationController:
         thread_id: str,
         turn_id: str,
         allow_missing_turn_id: bool = True,
+        allow_unbound_turn_id: bool = False,
     ) -> bool:
         if runtime.current_thread_id.strip() != thread_id:
             return False
@@ -152,6 +154,8 @@ class AdapterNotificationController:
             return allow_missing_turn_id
         current_turn_id = runtime.execution.current_turn_id.strip()
         if current_turn_id and current_turn_id != normalized_turn_id:
+            return False
+        if not current_turn_id and not allow_unbound_turn_id:
             return False
         return True
 
@@ -302,7 +306,12 @@ class AdapterNotificationController:
             state = self._get_runtime_state(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
-                if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
+                if not self._resolve_current_execution_target(
+                    runtime,
+                    thread_id=thread_id,
+                    turn_id=turn_id,
+                    allow_unbound_turn_id=True,
+                ):
                     continue
                 transition = self._turn_execution.prepare_turn_started_locked(
                     state,

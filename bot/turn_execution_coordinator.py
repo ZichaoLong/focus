@@ -63,7 +63,7 @@ class TurnExecutionCoordinator:
         return (
             bool(state["current_message_id"])
             and bool(state["awaiting_local_turn_started"])
-            and bool(state["awaiting_attach_status_settle"])
+            and (bool(state["awaiting_attach_status_settle"]) or not bool(state["current_turn_id"]))
         )
 
     def mark_runtime_event_locked(self, state: RuntimeState, *, occurred_at: float) -> None:

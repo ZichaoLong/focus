@@ -54,6 +54,21 @@ class TurnExecutionCoordinatorTests(unittest.TestCase):
         self.assertEqual(state["execution_transcript"].reply_text(), "")
         self.assertEqual(state["terminal_result_text"], "")
 
+    def test_awaiting_remote_turn_started_includes_unbound_execution_anchor(self) -> None:
+        coordinator = TurnExecutionCoordinator()
+        state = self._make_state()
+        state["current_message_id"] = "card-1"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+
+        self.assertTrue(coordinator.awaiting_remote_turn_started_locked(state))
+
+        state["current_turn_id"] = "turn-1"
+        self.assertFalse(coordinator.awaiting_remote_turn_started_locked(state))
+
+        state["awaiting_attach_status_settle"] = True
+        self.assertTrue(coordinator.awaiting_remote_turn_started_locked(state))
+
     def test_prepare_turn_started_locked_reuses_existing_execution_card(self) -> None:
         coordinator = TurnExecutionCoordinator()
         state = self._make_state()

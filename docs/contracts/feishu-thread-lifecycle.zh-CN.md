@@ -151,6 +151,7 @@ flowchart TD
 
 - 当前执行卡片由 `prompt_message_id`、`card_message_id`、`turn_id` 共同锚定
 - live notification 的 `thread_id` 只用于定位候选 binding；如果通知携带 `turn_id`，必须再与本地当前执行锚点的 `turn_id` 匹配，才允许修改执行卡片、transcript、plan 或触发终态收口
+- 对于 `/compact` 这类上游请求立即返回但 `turn_id` 只能等待后续 `turn/started` 才知道的操作，本地执行卡片在 `awaiting_local_turn_started` 且尚无 `turn_id` 时处于“turn 身份未确认”状态；此时只有 `turn/started` 可以把新 `turn_id` 绑定到当前锚点，其他 item/delta/completed、`thread/status=idle`、`thread/closed`、watchdog snapshot 都不能收口当前卡片或推进 binding FIFO
 - live delta、终态通知、watchdog 补账都只能更新这张当前执行卡片
 - 当执行结束后，这张卡片会被收口并退出“当前执行锚点”
 - 如果终态后还需要补最终文本，只允许后台按旧 `card_message_id` 回写这张已结束的旧卡片
@@ -168,7 +169,8 @@ flowchart TD
 
 binding FIFO 不放宽“一张当前执行卡片”规则。入队的 prompt 或 `/compact`
 只能在当前 execution anchor retire 之后出队；`/compact` 出队或立即执行时，也必须先建立本地
-execution anchor，再调用上游 `thread/compact/start`。FIFO 准入细节由
+execution anchor，再调用上游 `thread/compact/start`。在该 anchor 获得上游 `turn_id` 之前，
+迟到的旧 turn 终态信号不能让后续 prompt 穿透执行。FIFO 准入细节由
 `docs/contracts/scheduled-prompts.zh-CN.md` 定义。
 
 ## 6. 与 `fcodex` 的关系

@@ -605,8 +605,12 @@ class ExecutionRecoveryController:
             runtime = build_runtime_view(state)
             if not runtime.running:
                 return
+            awaiting_started = self._turn_execution.awaiting_remote_turn_started_locked(state)
             thread_id = runtime.current_thread_id.strip()
             turn_id = runtime.execution.current_turn_id.strip()
+        if awaiting_started:
+            self.schedule_mirror_watchdog(sender_id, chat_id)
+            return
         if not thread_id:
             return
         finalized = self.reconcile_execution_snapshot(
@@ -627,6 +631,12 @@ class ExecutionRecoveryController:
         turn_id: str = "",
     ) -> bool:
         normalized_thread_id = str(thread_id or "").strip()
+        normalized_turn_id = str(turn_id or "").strip()
+        if normalized_thread_id and not normalized_turn_id:
+            state = self._get_runtime_state(sender_id, chat_id)
+            with self._lock:
+                if self._turn_execution.awaiting_remote_turn_started_locked(state):
+                    return False
         if not normalized_thread_id:
             state = self._get_runtime_state(sender_id, chat_id)
             with self._lock:
@@ -722,7 +732,7 @@ class ExecutionRecoveryController:
             logger.exception("读取线程快照失败: thread=%s", normalized_thread_id[:12])
             return False
 
-        projection = self.snapshot_reply(snapshot, turn_id=turn_id)
+        projection = self.snapshot_reply(snapshot, turn_id=normalized_turn_id)
         resolved = self._resolve_runtime_binding(sender_id, chat_id)
         state = resolved.state
         should_finalize = snapshot.summary.status != BACKEND_THREAD_STATUS_ACTIVE
@@ -780,7 +790,7 @@ class ExecutionRecoveryController:
                     chat_id=chat_id,
                     thread_id=normalized_thread_id,
                     snapshot=snapshot,
-                    turn_id=turn_id,
+                    turn_id=normalized_turn_id,
                     prompt_message_id=prompt_message_id,
                     prompt_reply_in_thread=prompt_reply_in_thread,
                 )
@@ -814,7 +824,7 @@ class ExecutionRecoveryController:
                 chat_id=chat_id,
                 thread_id=normalized_thread_id,
                 snapshot=snapshot,
-                turn_id=turn_id,
+                turn_id=normalized_turn_id,
                 prompt_message_id=prompt_message_id,
                 prompt_reply_in_thread=prompt_reply_in_thread,
             )

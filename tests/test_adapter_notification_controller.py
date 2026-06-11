@@ -315,6 +315,31 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(state["current_message_id"], "card-1")
         self.assertTrue(state["awaiting_local_turn_started"])
 
+    def test_handle_thread_status_changed_ignores_idle_while_turn_id_unbound(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "compact-card"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["awaiting_attach_status_settle"] = False
+        state["current_turn_id"] = ""
+
+        controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "idle"}})
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_message_id"], "compact-card")
+        self.assertTrue(state["running"])
+        self.assertTrue(state["awaiting_local_turn_started"])
+
     def test_handle_thread_status_changed_active_does_not_clear_waiting_for_turn_started(self) -> None:
         binding = ("ou_user", "chat-1")
         state = self._make_state()
@@ -360,6 +385,35 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(finalizations, [])
         self.assertEqual(state["current_message_id"], "card-1")
         self.assertTrue(state["awaiting_local_turn_started"])
+
+    def test_item_delta_does_not_bind_unstarted_execution_to_stale_turn(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "compact-card"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["current_turn_id"] = ""
+
+        controller, note_events, _, _, _, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_agent_message_delta({"threadId": "thread-1", "turnId": "old-turn", "delta": "old"})
+        controller.handle_item_started(
+            {
+                "threadId": "thread-1",
+                "turnId": "old-turn",
+                "item": {"type": "contextCompaction", "id": "compact-1"},
+            }
+        )
+
+        self.assertEqual(note_events, [binding, binding])
+        self.assertEqual(updates, [])
+        self.assertEqual(state["current_turn_id"], "")
+        self.assertEqual(state["execution_transcript"].reply_text(), "")
+        self.assertEqual(state["execution_transcript"].process_text(), "")
 
     def test_handle_turn_completed_delegates_terminal_finalize(self) -> None:
         binding = ("ou_user", "chat-1")
