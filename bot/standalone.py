@@ -61,6 +61,9 @@ class CodexBot(FeishuBot):
             file_name,
         )
 
+    def on_message_recalled(self, chat_id: str, message_id: str) -> None:
+        self._handler.handle_message_recalled(chat_id, message_id)
+
     def allow_group_prompt(self, sender_id: str, chat_id: str, *, message_id: str = "") -> bool:
         return self._handler.preflight_group_prompt(sender_id, chat_id, message_id=message_id)
 

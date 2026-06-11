@@ -809,6 +809,23 @@ class CodexHandler(BotHandler):
             message_id=message_id,
         )
 
+    def handle_message_recalled(self, chat_id: str, message_id: str) -> None:
+        self._runtime_submit(self._handle_message_recalled_impl, chat_id, message_id)
+
+    def _handle_message_recalled_impl(self, chat_id: str, message_id: str) -> None:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return
+        with self._lock:
+            removed = self._owner_binding_queue.remove_by_message_id(normalized_message_id)
+        if removed:
+            logger.info(
+                "已取消撤回消息对应的排队请求: chat=%s message=%s removed=%s",
+                chat_id,
+                normalized_message_id,
+                removed,
+            )
+
     def _activate_binding_if_needed(self, sender_id: str, chat_id: str, message_id: str = "") -> None:
         state = self._get_runtime_state(sender_id, chat_id, message_id)
         with self._lock:

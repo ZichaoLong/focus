@@ -245,6 +245,27 @@ older turn must not let later prompts pass through the compact operation. Only
 `turn/started` or the `/compact`-specific `contextCompaction item/started`
 fallback may bind the anchor before a later `turn/completed` can finalize it.
 
+### 5.6 Recalled Queued Messages
+
+Feishu message recall is a queue-admission signal, not a running-turn control
+signal:
+
+- if the service receives `im.message.recalled_v1` for a message that is still
+  waiting in the owner-binding FIFO, that queued item must be removed before it
+  can dequeue
+- if the message has already dequeued and the prompt has been sent to
+  app-server, recall must not automatically cancel the running turn; users
+  should use `/cancel` or the execution-card cancel action
+- deleting a message in the client is not a reliable cancellation signal unless
+  Feishu also emits a recall event that the bot receives
+- this behavior requires the Feishu app to subscribe to
+  `im.message.recalled_v1`; without that event, queued prompts remain governed
+  by the normal FIFO contract
+
+The repository deliberately does not add a freshness gate for delayed receive
+events in this contract. A late receive event is still admitted normally unless
+it is cancelled by a received recall event before it dequeues.
+
 ## 6. Relationship With `fcodex`
 
 `fcodex` and Feishu still share the same backend contract:

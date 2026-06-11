@@ -179,6 +179,20 @@ execution anchor，再调用上游 `thread/compact/start`。在该 anchor 获得
 FIFO 准入细节由
 `docs/contracts/scheduled-prompts.zh-CN.md` 定义。
 
+### 5.6 已撤回的排队消息
+
+飞书消息撤回是队列准入信号，不是 running turn 控制信号：
+
+- 如果服务收到某条消息的 `im.message.recalled_v1`，且该消息仍在当前
+  owner-binding FIFO 中等待出队，则必须移除这条 queued item，避免它后续出队执行
+- 如果该消息已经出队并把 prompt 发给 app-server，撤回事件不能自动取消 running turn；
+  用户应使用 `/cancel` 或执行卡片取消按钮
+- 客户端里的“删除消息”不是可靠取消信号；只有飞书同时发出并被机器人收到的撤回事件才进入这个合同
+- 该行为要求飞书应用订阅 `im.message.recalled_v1`；如果没有该事件，queued prompt
+  仍按普通 FIFO 合同处理
+
+本合同暂不引入迟到 receive event 的 freshness gate。迟到送达的消息仍会正常准入，除非它在出队前又被收到的撤回事件取消。
+
 ## 6. 与 `fcodex` 的关系
 
 `fcodex` 与飞书侧仍共享同一套 backend 合同：

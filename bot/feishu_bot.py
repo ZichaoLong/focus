@@ -27,6 +27,7 @@ from lark_oapi.api.im.v1 import (
     ListMessageRequest,
     P2ImChatDisbandedV1,
     P2ImChatMemberBotDeletedV1,
+    P2ImMessageRecalledV1,
     P2ImMessageReceiveV1,
     PatchMessageRequest,
     PatchMessageRequestBody,
@@ -295,6 +296,7 @@ class FeishuBot(ABC):
 
         self._event_handler = lark.EventDispatcherHandler.builder("", "") \
             .register_p2_im_message_receive_v1(self._on_raw_message) \
+            .register_p2_im_message_recalled_v1(self._on_raw_message_recalled) \
             .register_p2_im_chat_disbanded_v1(self._on_raw_chat_disbanded) \
             .register_p2_im_chat_member_bot_deleted_v1(self._on_raw_chat_member_bot_deleted) \
             .register_p2_card_action_trigger(self._on_raw_card_action) \
@@ -2097,6 +2099,17 @@ class FeishuBot(ABC):
         except Exception as e:
             logger.error("处理机器人出群事件异常: %s", e, exc_info=True)
 
+    def _on_raw_message_recalled(self, data: P2ImMessageRecalledV1) -> None:
+        try:
+            message_id = str(data.event.message_id or "").strip()
+            chat_id = str(data.event.chat_id or "").strip()
+            if not message_id:
+                return
+            logger.info("消息已撤回: chat=%s message_id=%s", chat_id, message_id)
+            self.on_message_recalled(chat_id, message_id)
+        except Exception as e:
+            logger.error("处理消息撤回事件异常: %s", e, exc_info=True)
+
     @staticmethod
     def _detect_id_type(receive_id: str) -> str:
         """根据 ID 前缀自动判断 receive_id_type（ou_ → open_id，默认 chat_id）"""
@@ -2512,6 +2525,10 @@ class FeishuBot(ABC):
         file_name: str,
     ) -> None:
         """处理收到的附件消息，子类可覆写"""
+        pass
+
+    def on_message_recalled(self, chat_id: str, message_id: str) -> None:
+        """处理飞书消息撤回事件，子类可覆写"""
         pass
 
     def on_bot_menu(self, open_id: str, event_key: str) -> None:

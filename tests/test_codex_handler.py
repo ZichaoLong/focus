@@ -1508,6 +1508,30 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler._adapter.start_turn_calls), 2)
         self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "follow up")
 
+    def test_recalled_queued_prompt_is_removed_before_drain(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "hello", message_id="m-1")
+        handler.handle_message("ou_user", "c1", "follow up", message_id="m-2")
+
+        self.assertEqual(bot.replies[-1], ("c1", "已排队，将在当前执行结束后继续。队列位置：1"))
+
+        handler._handle_message_recalled_impl("c1", "m-2")
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+
+    def test_recalled_running_prompt_does_not_cancel_current_turn(self) -> None:
+        handler, _ = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "hello", message_id="m-1")
+        handler._handle_message_recalled_impl("c1", "m-1")
+
+        state = handler._get_runtime_state("ou_user", "c1")
+        self.assertTrue(state["running"])
+        self.assertEqual(state["current_prompt_message_id"], "m-1")
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+
     def test_queued_group_prompt_keeps_origin_context_after_message_context_expires(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"

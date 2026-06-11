@@ -75,6 +75,10 @@ class BotHandler(ABC):
         """处理附件消息，默认忽略，需要处理附件的子类覆写此方法"""
         pass
 
+    def handle_message_recalled(self, chat_id: str, message_id: str) -> None:
+        """处理飞书消息撤回事件，默认忽略。"""
+        pass
+
     # ---- 会话状态 ----
 
     def is_sender_active(self, sender_id: str, chat_id: str = "") -> bool:

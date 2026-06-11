@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from lark_oapi.api.im.v1 import (
     P2ImChatDisbandedV1,
     P2ImChatMemberBotDeletedV1,
+    P2ImMessageRecalledV1,
     P2ImMessageReceiveV1,
 )
 
@@ -46,6 +47,7 @@ class _RecordingBot(FeishuBot):
         self.allow_group_prompt_result = True
         self.route_group_followup_prompt_result = False
         self.chat_unavailable_events: list[tuple[str, str]] = []
+        self.recalled_messages: list[tuple[str, str]] = []
 
     def on_message(self, sender_id: str, chat_id: str, text: str, message_id: str = "") -> None:
         self.received_messages.append((sender_id, chat_id, text, message_id))
@@ -106,6 +108,9 @@ class _RecordingBot(FeishuBot):
 
     def on_chat_unavailable(self, chat_id: str, *, reason: str = "") -> None:
         self.chat_unavailable_events.append((chat_id, reason))
+
+    def on_message_recalled(self, chat_id: str, message_id: str) -> None:
+        self.recalled_messages.append((chat_id, message_id))
 
     def get_message_items(self, message_id: str, *, card_msg_content_type: str = "") -> list[object]:
         del card_msg_content_type
@@ -1212,6 +1217,15 @@ class FeishuBotGroupModeTests(unittest.TestCase):
 
         self.assertEqual(bot.get_group_mode("chat-1"), "assistant")
         self.assertEqual(bot.chat_unavailable_events[-1], ("chat-1", "bot_removed"))
+
+    def test_message_recalled_event_notifies_subclass(self) -> None:
+        bot = self._make_bot()
+
+        bot._on_raw_message_recalled(
+            P2ImMessageRecalledV1({"event": {"chat_id": "chat-1", "message_id": "m-queued"}})
+        )
+
+        self.assertEqual(bot.recalled_messages, [("chat-1", "m-queued")])
 
     def test_assistant_mode_persists_boundary_message_ids_for_same_timestamp_entries(self) -> None:
         bot = self._make_bot()

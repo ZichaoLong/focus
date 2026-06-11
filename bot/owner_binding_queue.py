@@ -44,6 +44,23 @@ class OwnerBindingQueue:
         queue.append(item)
         return len(queue)
 
+    def remove_by_message_id(self, message_id: str) -> int:
+        normalized_message_id = str(message_id or "").strip()
+        if not normalized_message_id:
+            return 0
+        removed = 0
+        empty_bindings: list[ChatBindingKey] = []
+        for binding, queue in list(self._items.items()):
+            kept = deque(item for item in queue if item.message_id != normalized_message_id)
+            removed += len(queue) - len(kept)
+            if kept:
+                self._items[binding] = kept
+            else:
+                empty_bindings.append(binding)
+        for binding in empty_bindings:
+            self._items.pop(binding, None)
+        return removed
+
     def begin_drain(self, binding: ChatBindingKey) -> OwnerBindingQueueItem | None:
         if binding in self._draining:
             return None
