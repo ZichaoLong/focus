@@ -32,7 +32,7 @@
    如需让 `/whoami` 和日志里稳定看到 `user_id`，再补 `contact:user.employee_id:readonly`；缺少时 `user_id` 允许为空
    如需用 `/bot-status` 实时探测机器人 `open_id`，再补 `application:application:self_manage`
 3. 确认事件与回调已启用：
-   `im.message.receive_v1`、`card.action.trigger`
+   `im.message.receive_v1`、`im.message.recalled_v1`、`card.action.trigger`
 4. 让 `Admin` 私聊机器人执行 `/whoami`，确认已把正确的 `open_id` 写入 `system.yaml.admin_open_ids`
 5. 让 `Admin` 私聊机器人执行 `/bot-status`，确认返回里包含 `configured bot_open_id`、`discovered open_id`，并把需要启用的值写入 `system.yaml.bot_open_id`
 6. 如需验证“别人 @我本人时由机器人代答”，再把对应成员的 `open_id` 写入 `system.yaml.trigger_open_ids`

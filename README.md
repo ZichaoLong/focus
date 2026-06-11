@@ -121,6 +121,7 @@ Windows 当前不安装 shell completion。
 
 - WebSocket 长连接模式
 - 事件：`im.message.receive_v1`
+- 事件：`im.message.recalled_v1`（用于撤回仍在队列中的消息）
 - 回调：`card.action.trigger`
 
 本项目默认走长连接，不需要公网 webhook URL。
