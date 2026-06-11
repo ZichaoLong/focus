@@ -114,8 +114,14 @@ class AdapterNotificationController:
             return
         will_retry = bool(params.get("willRetry"))
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
@@ -137,6 +143,30 @@ class AdapterNotificationController:
         if not normalized_thread_id:
             return ()
         return self._thread_subscribers(normalized_thread_id)
+
+    def _note_if_current_execution_target(
+        self,
+        binding: ChatBindingKey,
+        state: RuntimeState,
+        *,
+        thread_id: str,
+        turn_id: str,
+        allow_missing_turn_id: bool = True,
+        allow_unbound_turn_id: bool = False,
+    ) -> bool:
+        with self._lock:
+            runtime = build_runtime_view(state)
+            matches = self._resolve_current_execution_target(
+                runtime,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                allow_missing_turn_id=allow_missing_turn_id,
+                allow_unbound_turn_id=allow_unbound_turn_id,
+            )
+        if not matches:
+            return False
+        self._note_runtime_event(*binding)
+        return True
 
     @staticmethod
     def _resolve_current_execution_target(
@@ -314,8 +344,15 @@ class AdapterNotificationController:
         interrupt_sent = False
         interrupt_succeeded = False
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+                allow_unbound_turn_id=True,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(
@@ -381,8 +418,14 @@ class AdapterNotificationController:
         plan = params.get("plan") or []
         explanation = params.get("explanation") or ""
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
@@ -407,10 +450,23 @@ class AdapterNotificationController:
         interrupt_sent = False
         interrupt_succeeded = False
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
             bound_unstarted_compact = False
             should_interrupt_started_turn = False
+            with self._lock:
+                runtime = build_runtime_view(state)
+                can_handle = self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id)
+                can_bind_compact = False
+                if not can_handle:
+                    can_bind_compact = self._can_bind_unbound_compact_item_started(
+                        runtime,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        item_type=item_type,
+                    )
+                if not can_handle and not can_bind_compact:
+                    continue
+            self._note_runtime_event(*binding)
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
@@ -478,8 +534,14 @@ class AdapterNotificationController:
             return
         delta = str(params.get("delta", "") or "")
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
@@ -509,8 +571,14 @@ class AdapterNotificationController:
         if not bindings:
             return
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             if item_type == "commandExecution":
                 with self._lock:
                     runtime = build_runtime_view(state)
@@ -576,8 +644,14 @@ class AdapterNotificationController:
         status = str(turn.get("status", "") or "").strip()
         turn_id = str(turn.get("id", "") or "").strip()
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
@@ -600,8 +674,14 @@ class AdapterNotificationController:
         if not bindings:
             return
         for binding in bindings:
-            self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            if not self._note_if_current_execution_target(
+                binding,
+                state,
+                thread_id=thread_id,
+                turn_id=turn_id,
+            ):
+                continue
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):

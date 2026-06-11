@@ -164,6 +164,21 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         self.assertEqual(recorded[0]["thread_id"], "")
         self.assertRegex(recorded[0]["checksum"], r"^[0-9a-f]{64}$")
 
+    def test_publish_terminal_result_records_authoritative_text_without_stripping(self) -> None:
+        state = self._make_state()
+        controller, _bot, _replies, _, recorded = self._make_controller(state)
+        raw_text = "  code output\n"
+
+        ok = controller.publish_terminal_result(
+            "c1",
+            final_reply_text=raw_text,
+            prompt_message_id="msg-preserve",
+        )
+
+        self.assertTrue(ok)
+        self.assertEqual(recorded[-1]["final_reply_text"], raw_text)
+        self.assertEqual(recorded[-1]["checksum"], terminal_result_checksum(raw_text))
+
     def test_publish_terminal_result_uses_independent_budget_from_execution_card_reply_limit(self) -> None:
         state = self._make_state()
         controller, bot, replies, _, recorded = self._make_controller(

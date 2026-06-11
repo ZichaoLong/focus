@@ -283,7 +283,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
 
         controller.handle_turn_started({"threadId": "thread-1", "turn": {"id": "turn-1"}})
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(patches, [])
         self.assertEqual(sent_cards, [])
         self.assertEqual(watchdogs, [])
@@ -410,7 +410,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(note_events, [binding, binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["current_turn_id"], "")
         self.assertEqual(state["execution_transcript"].reply_text(), "")
@@ -469,7 +469,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(state["current_turn_id"], "")
         self.assertTrue(state["awaiting_local_turn_started"])
         self.assertEqual(state["execution_transcript"].process_text(), "")
@@ -509,7 +509,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
 
         controller.handle_turn_completed({"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}})
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(finalizations, [])
         self.assertEqual(state["current_turn_id"], "turn-2")
         self.assertEqual(state["current_message_id"], "queued-card")
@@ -530,7 +530,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
 
         controller.handle_agent_message_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old"})
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].reply_text(), "")
 
@@ -549,7 +549,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
 
         controller.handle_command_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old stdout"})
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].process_text(), "")
 
@@ -568,7 +568,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
 
         controller.handle_file_change_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "old patch"})
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].process_text(), "")
 
@@ -593,7 +593,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].process_text(), "")
 
@@ -618,7 +618,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(note_events, [binding])
+        self.assertEqual(note_events, [])
         self.assertEqual(updates, [])
         self.assertEqual(state["execution_transcript"].reply_text(), "")
 

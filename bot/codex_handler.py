@@ -139,6 +139,7 @@ _CARD_REPLY_LIMIT_DEFAULT = 12000
 _TERMINAL_RESULT_CARD_LIMIT_DEFAULT = 12000
 _CARD_LOG_LIMIT_DEFAULT = 8000
 _MIRROR_WATCHDOG_SECONDS_DEFAULT = 8.0
+_COMPACT_START_TIMEOUT_SECONDS_DEFAULT = 60.0
 _ATTACHMENT_TTL_SECONDS_DEFAULT = 1800.0
 _APPROVAL_POLICIES = set(USER_SELECTABLE_APPROVAL_POLICIES)
 _LOCAL_THREAD_SAFETY_RULE = (
@@ -228,6 +229,9 @@ class CodexHandler(BotHandler):
         self._mirror_watchdog_seconds = float(
             cfg.get("mirror_watchdog_seconds", _MIRROR_WATCHDOG_SECONDS_DEFAULT)
         )
+        self._compact_start_timeout_seconds = float(
+            cfg.get("compact_start_timeout_seconds", _COMPACT_START_TIMEOUT_SECONDS_DEFAULT)
+        )
         self._attachment_ttl_seconds = float(
             cfg.get("attachment_ttl_seconds", _ATTACHMENT_TTL_SECONDS_DEFAULT)
         )
@@ -308,6 +312,7 @@ class CodexHandler(BotHandler):
             is_request_timeout_error=self._is_request_timeout_error,
             runtime_recovery_reason=self._runtime_recovery_reason,
             mirror_watchdog_seconds=lambda: self._mirror_watchdog_seconds,
+            compact_start_timeout_seconds=lambda: self._compact_start_timeout_seconds,
             terminal_empty_retry_count=lambda: 6,
             terminal_empty_retry_delay_seconds=lambda: 0.5,
         )
@@ -2079,8 +2084,8 @@ class CodexHandler(BotHandler):
         final_reply_text: str,
     ) -> None:
         normalized_message_id = str(execution_message_id or "").strip()
-        normalized_text = str(final_reply_text or "").strip()
-        if not normalized_message_id or not normalized_text:
+        raw_text = str(final_reply_text or "")
+        if not normalized_message_id or not raw_text:
             return
         state = self._get_runtime_state(sender_id, chat_id)
         with self._lock:
@@ -2089,7 +2094,7 @@ class CodexHandler(BotHandler):
                 return
             self._apply_runtime_state_message_locked(
                 state,
-                ExecutionStateChanged(terminal_result_text=normalized_text),
+                ExecutionStateChanged(terminal_result_text=raw_text),
             )
 
     def _reconcile_execution_snapshot(
@@ -2714,14 +2719,14 @@ class CodexHandler(BotHandler):
     ) -> None:
         normalized_message_id = str(message_id or "").strip()
         normalized_execution_message_id = str(execution_message_id or "").strip()
-        normalized_text = str(final_reply_text or "").strip()
-        if not normalized_message_id or not normalized_text:
+        raw_text = str(final_reply_text or "")
+        if not normalized_message_id or not raw_text:
             return
         self._terminal_result_store.upsert(
             TerminalResultRecord(
                 message_id=normalized_message_id,
                 execution_message_id=normalized_execution_message_id,
-                final_reply_text=normalized_text,
+                final_reply_text=raw_text,
                 recorded_at=time.time(),
                 terminal_result_id=str(terminal_result_id or "").strip().lower(),
                 thread_id=str(thread_id or "").strip(),

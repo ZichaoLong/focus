@@ -104,14 +104,14 @@ class TerminalResultStore:
 
     def has_execution_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
         normalized_execution_message_id = str(execution_message_id or "").strip()
-        normalized_text = str(final_reply_text or "").strip()
-        if not normalized_execution_message_id or not normalized_text:
+        text = str(final_reply_text or "")
+        if not normalized_execution_message_id or not text:
             return False
         try:
             with self._lock:
                 return any(
                     item.execution_message_id == normalized_execution_message_id
-                    and item.final_reply_text == normalized_text
+                    and item.final_reply_text == text
                     for item in self._read_all()
                 )
         except Exception as exc:
@@ -171,7 +171,7 @@ class TerminalResultStore:
         return TerminalResultRecord(
             message_id=str(record.message_id or "").strip(),
             execution_message_id=str(record.execution_message_id or "").strip(),
-            final_reply_text=str(record.final_reply_text or "").strip(),
+            final_reply_text=str(record.final_reply_text or ""),
             recorded_at=float(record.recorded_at),
             terminal_result_id=str(record.terminal_result_id or "").strip().lower(),
             thread_id=str(record.thread_id or "").strip(),

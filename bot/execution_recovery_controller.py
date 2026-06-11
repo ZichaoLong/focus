@@ -70,6 +70,7 @@ class ExecutionRecoveryController:
         is_request_timeout_error: Callable[[Exception], bool],
         runtime_recovery_reason: Callable[[Exception], str],
         mirror_watchdog_seconds: Callable[[], float],
+        compact_start_timeout_seconds: Callable[[], float],
         terminal_empty_retry_count: Callable[[], int],
         terminal_empty_retry_delay_seconds: Callable[[], float],
     ) -> None:
@@ -93,6 +94,7 @@ class ExecutionRecoveryController:
         self._is_request_timeout_error = is_request_timeout_error
         self._runtime_recovery_reason = runtime_recovery_reason
         self._mirror_watchdog_seconds = mirror_watchdog_seconds
+        self._compact_start_timeout_seconds = compact_start_timeout_seconds
         self._terminal_empty_retry_count = terminal_empty_retry_count
         self._terminal_empty_retry_delay_seconds = terminal_empty_retry_delay_seconds
 
@@ -229,8 +231,8 @@ class ExecutionRecoveryController:
         final_reply_text: str,
     ) -> None:
         normalized_message_id = str(execution_message_id or "").strip()
-        normalized = str(final_reply_text or "").strip()
-        if not normalized_message_id or not normalized:
+        raw_text = str(final_reply_text or "")
+        if not normalized_message_id or not raw_text:
             return
         state = self._get_runtime_state(sender_id, chat_id)
         with self._lock:
@@ -239,7 +241,7 @@ class ExecutionRecoveryController:
                 return
             self._apply_runtime_state_message_locked(
                 state,
-                ExecutionStateChanged(terminal_result_text=normalized),
+                ExecutionStateChanged(terminal_result_text=raw_text),
             )
 
     def _clear_and_refresh_execution_card(
@@ -281,17 +283,17 @@ class ExecutionRecoveryController:
         prompt_reply_in_thread: bool = False,
         thread_id: str = "",
     ) -> bool:
-        normalized = str(final_reply_text or "").strip()
-        if not normalized:
+        raw_text = str(final_reply_text or "")
+        if not raw_text.strip():
             return False
         if self._has_recorded_terminal_result(
             execution_message_id=execution_message_id,
-            final_reply_text=normalized,
+            final_reply_text=raw_text,
         ):
             return True
         published = self._publish_terminal_result(
             chat_id,
-            final_reply_text=normalized,
+            final_reply_text=raw_text,
             source_execution_message_id=execution_message_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
@@ -302,7 +304,7 @@ class ExecutionRecoveryController:
                 sender_id=sender_id,
                 chat_id=chat_id,
                 execution_message_id=execution_message_id,
-                final_reply_text=normalized,
+                final_reply_text=raw_text,
             )
         return published
 
@@ -608,7 +610,32 @@ class ExecutionRecoveryController:
             awaiting_started = self._turn_execution.awaiting_remote_turn_started_locked(state)
             thread_id = runtime.current_thread_id.strip()
             turn_id = runtime.execution.current_turn_id.strip()
+            compact_start_timed_out = False
+            if awaiting_started and runtime.execution.current_execution_kind.strip() == "compact":
+                timeout_seconds = max(float(self._compact_start_timeout_seconds()), 0.0)
+                started_at = float(runtime.execution.started_at or 0.0)
+                compact_start_timed_out = bool(
+                    timeout_seconds
+                    and started_at
+                    and time.monotonic() - started_at >= timeout_seconds
+                )
+                if compact_start_timed_out:
+                    self._turn_execution.apply_terminal_error_locked(
+                        state,
+                        error_message=(
+                            "compact 已发起，但未收到上游 turn 启动通知；"
+                            "本地状态不可确认，已收口当前执行卡并继续处理队列。"
+                        ),
+                    )
         if awaiting_started:
+            if compact_start_timed_out:
+                logger.warning(
+                    "compact 启动通知超时，按不可确认状态收口: chat=%s thread=%s",
+                    chat_id,
+                    thread_id[:12],
+                )
+                self._finalize_execution_card_from_state(sender_id, chat_id)
+                return
             self.schedule_mirror_watchdog(sender_id, chat_id)
             return
         if not thread_id:
@@ -845,7 +872,7 @@ class ExecutionRecoveryController:
         for turn in reversed(target_turns):
             items = turn.get("items") or []
             parts = [
-                str(item.get("text", "") or "").strip()
+                str(item.get("text", "") or "")
                 for item in items
                 if item.get("type") == "agentMessage" and str(item.get("text", "") or "").strip()
             ]

@@ -282,18 +282,18 @@ class ExecutionOutputController:
         prompt_reply_in_thread: bool = False,
         thread_id: str = "",
     ) -> bool:
-        normalized = str(final_reply_text or "").strip()
-        if not normalized:
+        raw_text = str(final_reply_text or "")
+        if not raw_text.strip():
             return False
         budget = int(self._terminal_result_card_limit())
-        payload = render_terminal_result_card_content_for_feishu(normalized)
+        payload = render_terminal_result_card_content_for_feishu(raw_text)
         terminal_result_id = uuid.uuid4().hex
-        checksum = terminal_result_checksum(normalized)
+        checksum = terminal_result_checksum(raw_text)
         if len(payload) <= budget:
             published = self._card_publisher_factory().publish_terminal_result_card(
                 chat_id=chat_id,
                 parent_message_id=prompt_message_id,
-                final_reply_text=normalized,
+                final_reply_text=raw_text,
                 terminal_result_id=terminal_result_id,
                 checksum=checksum,
                 reply_in_thread=prompt_reply_in_thread,
@@ -302,7 +302,7 @@ class ExecutionOutputController:
                 self._record_terminal_result_card(
                     message_id=published,
                     execution_message_id=str(source_execution_message_id or "").strip(),
-                    final_reply_text=normalized,
+                    final_reply_text=raw_text,
                     terminal_result_id=terminal_result_id,
                     thread_id=thread_id,
                     checksum=checksum,
@@ -310,7 +310,7 @@ class ExecutionOutputController:
                 return True
         text_message_id = self._reply_text_get_id(
             chat_id,
-            normalized,
+            raw_text,
             message_id=prompt_message_id,
             reply_in_thread=prompt_reply_in_thread,
         )
@@ -318,7 +318,7 @@ class ExecutionOutputController:
             self._record_terminal_result_card(
                 message_id=text_message_id,
                 execution_message_id=str(source_execution_message_id or "").strip(),
-                final_reply_text=normalized,
+                final_reply_text=raw_text,
                 terminal_result_id=terminal_result_id,
                 thread_id=thread_id,
                 checksum=checksum,

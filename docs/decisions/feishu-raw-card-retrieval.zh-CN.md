@@ -234,8 +234,8 @@ JSON 2.0 的强项是：
 1. 优先对当前这条消息自己的 `message_id` 调 `message/get`，并设置
    `card_msg_content_type=user_card_content`
 2. 若能拿到原卡 JSON，则按本项目卡片协议做 raw-card projection
-3. 对新版终态卡，只有 `terminal_result_id` 能在本地 terminal result store 命中时，
-   store 正文才是权威文本
+3. 对新版终态卡，只有 `terminal_result_id` 能在本机器人实例本地 terminal result store
+   中命中且 checksum 匹配时，store 正文才是权威文本
 4. 对 store miss 的新版终态卡、没有 `result_id` 的历史终态卡、以及其他交互卡片，
    原卡 JSON 只能提供非权威投影
 5. 若原卡读取失败，则回退到事件 payload / 默认结构的 best-effort 投影

@@ -279,7 +279,7 @@ This decision leads to the following concrete repository expectations:
 - terminal-card sending may prefer JSON 2.0 for display quality
 - terminal-card reading should prefer raw-card retrieval whenever `message_id` is available,
   but new self-authored terminal cards treat the card body as a degraded projection unless
-  their `result_id` resolves in the local thread-scoped terminal result store
+  their `result_id` resolves with a matching checksum in the local bot-instance terminal result store
 - merge-forward support should be implemented as outer-message expansion plus per-child read
 - `/last text` should align with the same card-reading stack instead of using a separate weaker path
 - ingress logging should preserve enough facts to verify what message type and read path the system actually saw

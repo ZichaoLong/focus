@@ -98,6 +98,10 @@
 # 说明：仅用于运行态补偿；调大可减少误补偿，调小可更快收敛漏通知。
 # mirror_watchdog_seconds: 8
 
+# /compact 出队后等待上游启动通知的最长秒数；默认值：60
+# 说明：如果 turn/started 和 contextCompaction item/started 都丢失，超时后会按“状态不可确认”收口本地卡片并释放队列。
+# compact_start_timeout_seconds: 60
+
 # 运行中主卡片最小 patch 间隔（毫秒）；默认值：700
 # stream_patch_interval_ms: 700
 

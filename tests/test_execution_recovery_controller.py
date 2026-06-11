@@ -43,7 +43,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         )
         return manager.build_default_runtime_state()
 
-    def _make_controller(self, state):
+    def _make_controller(self, state, *, compact_start_timeout_seconds: float = 60.0):
         lock = threading.RLock()
         binding = ("ou_user", "c1")
         turn_execution = TurnExecutionCoordinator()
@@ -119,6 +119,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             and str(exc).startswith("Codex request timed out:"),
             runtime_recovery_reason=str,
             mirror_watchdog_seconds=lambda: 60.0,
+            compact_start_timeout_seconds=lambda: compact_start_timeout_seconds,
             terminal_empty_retry_count=lambda: 3,
             terminal_empty_retry_delay_seconds=lambda: 0.0,
         )
@@ -268,6 +269,28 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         self.assertEqual(state["current_message_id"], "compact-card")
         self.assertTrue(state["running"])
         self.assertEqual(len(snapshots), 1)
+
+    def test_mirror_watchdog_finalizes_unbound_compact_after_start_timeout(self) -> None:
+        state = self._make_state()
+        controller, snapshots, _, _, finalized, terminal_results, delivered_images = self._make_controller(
+            state,
+            compact_start_timeout_seconds=0.1,
+        )
+        state["running"] = True
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "compact-card"
+        state["awaiting_local_turn_started"] = True
+        state["current_execution_kind"] = "compact"
+        state["current_turn_id"] = ""
+        state["started_at"] = time.monotonic() - 1.0
+
+        controller.run_mirror_watchdog("ou_user", "c1", state["mirror_watchdog_generation"])
+
+        self.assertEqual(finalized, [("ou_user", "c1")])
+        self.assertIn("状态不可确认", state["execution_transcript"].reply_text())
+        self.assertEqual(snapshots, [])
+        self.assertEqual(terminal_results, [])
+        self.assertEqual(delivered_images, [])
 
     def test_reconcile_execution_snapshot_not_found_finalizes(self) -> None:
         state = self._make_state()

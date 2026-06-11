@@ -51,6 +51,8 @@ from bot.card_text_projection import (
     is_terminal_result_card,
     project_interactive_card_text,
 )
+from bot.card_limits import MAX_CARD_TABLES as _MAX_CARD_TABLES
+from bot.card_limits import count_card_tables, limit_card_tables
 from bot.constants import DEFAULT_FEISHU_REQUEST_TIMEOUT_SECONDS
 from bot.feishu_types import (
     BotIdentitySnapshot,
@@ -77,9 +79,6 @@ logger = logging.getLogger(__name__)
 # 消息去重缓存最大容量和过期时间
 _DEDUP_MAX_SIZE = 500
 _DEDUP_TTL = 300  # 5 分钟
-
-# 飞书卡片限制：单张卡片中 markdown 表格数量上限（实测约 5~10，取保守值）
-_MAX_CARD_TABLES = 5
 
 # 消息上下文缓存
 _MESSAGE_CONTEXT_MAX_SIZE = 1000
@@ -185,62 +184,6 @@ class InteractiveMessageReadResult:
     has_authoritative_text: bool = False
     terminal_result_id: str = ""
     text_source: str = ""
-
-
-def _scan_tables(text: str) -> list[tuple[int, int]]:
-    """扫描 markdown 文本中 **代码块外** 的表格，返回 (start, end) 行号列表
-
-    会跟踪 ``` 代码块状态，已在代码块内的表格不会被识别。
-    """
-    lines = text.split("\n")
-    tables: list[tuple[int, int]] = []
-    in_fence = False
-    i = 0
-    while i < len(lines):
-        stripped = lines[i].strip()
-        # 跟踪代码块开关（兼容 ```python 等带语言标记的情况）
-        if stripped.startswith("```"):
-            in_fence = not in_fence
-            i += 1
-            continue
-        if not in_fence and stripped.startswith("|") and stripped.endswith("|") and i + 1 < len(lines):
-            sep = lines[i + 1].strip()
-            if sep.startswith("|") and "---" in sep:
-                start = i
-                j = i + 2
-                while j < len(lines) and lines[j].strip().startswith("|"):
-                    j += 1
-                tables.append((start, j))
-                i = j
-                continue
-        i += 1
-    return tables
-
-
-def limit_card_tables(text: str, max_tables: int = _MAX_CARD_TABLES) -> str:
-    """限制 markdown 文本中的表格数量，超出部分转为代码块
-
-    飞书卡片对单张卡片中的 markdown 表格数量有上限，超出后
-    API 会返回 ErrCode 11310 (card table number over limit)。
-    此函数将超出限制的表格用代码块包裹，保留可读性的同时避免触发限制。
-    已在代码块内的表格不受影响。
-    """
-    tables = _scan_tables(text)
-    if len(tables) <= max_tables:
-        return text
-
-    lines = text.split("\n")
-    # 从后往前替换超出的表格为代码块（保持前面的行号不变）
-    for start, end in reversed(tables[max_tables:]):
-        table_lines = lines[start:end]
-        lines[start:end] = ["```", *table_lines, "```"]
-
-    return "\n".join(lines)
-
-
-def count_card_tables(text: str) -> int:
-    """统计 markdown 文本中代码块外的表格数量"""
-    return len(_scan_tables(text))
 
 
 class FeishuBot(ABC):
@@ -782,7 +725,7 @@ class FeishuBot(ABC):
 
     def _resolve_terminal_result_projection(self, projection: CardTextProjection) -> tuple[str, str, bool]:
         if projection.terminal_result_id and self._terminal_result_text_resolver is not None:
-            resolved = str(self._terminal_result_text_resolver(projection) or "").strip()
+            resolved = str(self._terminal_result_text_resolver(projection) or "")
             if resolved:
                 return resolved, TERMINAL_RESULT_SOURCE_STORE, True
         source = projection.final_reply_source

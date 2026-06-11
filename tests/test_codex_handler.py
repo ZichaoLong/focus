@@ -1858,9 +1858,9 @@ class CodexHandlerTests(unittest.TestCase):
 
         bot2.message_contexts["m-prompt"] = {"chat_type": "group", "sender_open_id": "ou_user2"}
         handler2.handle_message("ou_user2", "chat-group", "继续", message_id="m-prompt")
-        handler2._handle_turn_started({"threadId": "thread-group", "turn": {"id": "turn-2"}})
+        handler2._handle_turn_started({"threadId": "thread-group", "turn": {"id": "turn-1"}})
         handler2._handle_agent_message_delta({"threadId": "thread-group", "delta": "群重启后事件正常路由"})
-        handler2._handle_turn_completed({"threadId": "thread-group", "turn": {"id": "turn-2", "status": "completed"}})
+        handler2._handle_turn_completed({"threadId": "thread-group", "turn": {"id": "turn-1", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
         self.assertEqual(handler2._adapter.resume_thread_calls[-1]["thread_id"], "thread-group")

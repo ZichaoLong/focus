@@ -151,7 +151,11 @@ flowchart TD
 
 - 当前执行卡片由 `prompt_message_id`、`card_message_id`、`turn_id` 共同锚定
 - live notification 的 `thread_id` 只用于定位候选 binding；如果通知携带 `turn_id`，必须再与本地当前执行锚点的 `turn_id` 匹配，才允许修改执行卡片、transcript、plan 或触发终态收口
+- 同一条 `turn_id` 校验也约束当前执行的 heartbeat/watchdog：同 thread 的 stale notification
+  可以说明后端还活着，但不能刷新当前卡片的 `last_runtime_event_at`，也不能推迟当前卡片的 watchdog 对账
 - 对于 `/compact` 这类上游请求立即返回但 `turn_id` 只能等待后续通知才知道的操作，本地执行卡片在 `awaiting_local_turn_started` 且尚无 `turn_id` 时处于“turn 身份未确认”状态；`turn/started` 是主绑定点，若错过该通知，只有当前锚点明确是 `/compact` 且收到 `contextCompaction` 的 `item/started` 时，才允许把该 `turn_id` 补绑定到当前锚点；普通 item/delta/completed、`turn/completed`、`thread/status=idle`、`thread/closed`、watchdog snapshot 都不能单独收口当前卡片或推进 binding FIFO
+- 如果未绑定的 `/compact` anchor 在 `compact_start_timeout_seconds` 内既没有收到
+  `turn/started`，也没有收到 `contextCompaction item/started` 补绑定，则本地状态明确不可确认。飞书侧必须 fail closed：用“状态不可确认”消息收口这张执行卡片并释放 binding FIFO；不能声称上游 compact 已成功或已失败
 - live delta、终态通知、watchdog 补账都只能更新这张当前执行卡片
 - 当执行结束后，这张卡片会被收口并退出“当前执行锚点”
 - 如果终态后还需要补最终文本，只允许后台按旧 `card_message_id` 回写这张已结束的旧卡片

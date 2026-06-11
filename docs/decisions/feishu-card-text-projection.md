@@ -236,7 +236,7 @@ This normalization applies only to the **Feishu card display projection** and
 must not alter the authoritative `final_reply_text`:
 
 - the terminal result store records the original terminal text emitted by the
-  app-server
+  app-server, including leading and trailing whitespace
 - `terminal_result_id` and checksum are still computed from that original text
 - the markdown body inside the card may contain a Feishu-safe projection
 - when the receiver can resolve the local store, the store text is authoritative;
@@ -304,8 +304,9 @@ For the current phase-one rollout, the strong receiver-side identification of a
 
 The receiver interprets that markdown block as:
 
-- if `result_id` exists and the local thread-scoped terminal result store has a
-  matching record, the store body is the authoritative `final_reply_text`
+- if `result_id` exists and the local bot-instance terminal result store has a
+  checksum-matching record, the store body is the authoritative
+  `final_reply_text`
 - if `result_id` exists but the local store misses, the user-visible portion is
   only a degraded projection fallback and is not marked authoritative
 - legacy terminal cards without `result_id` keep the old marker-based parsing

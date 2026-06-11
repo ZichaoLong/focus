@@ -21,13 +21,13 @@ from bot.card_text_projection import (
     terminal_result_checksum,
     terminal_result_element_id,
 )
+from bot.card_limits import MAX_CARD_TABLES, count_card_tables, limit_card_tables
 from bot.constants import display_path, format_timestamp, shorten
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_card_markdown import (
     sanitize_runtime_markdown_for_feishu_card,
 )
 from bot.feishu_command_syntax import feishu_visible_command_syntax
-from bot.feishu_bot import _MAX_CARD_TABLES, count_card_tables, limit_card_tables
 from bot.permissions_profile import PERMISSION_PROFILE_CHOICES, permissions_profile_choice_key, permissions_profile_label
 from bot.shared_command_surface import get_shared_command
 
@@ -645,7 +645,7 @@ def build_execution_card(
 
     def _reply_panel_elements(segments: list[ExecutionReplySegment]) -> list[dict]:
         panel_elements: list[dict] = []
-        remaining = _MAX_CARD_TABLES
+        remaining = MAX_CARD_TABLES
         for segment in segments:
             if segment.kind == "divider":
                 if panel_elements:
@@ -667,8 +667,8 @@ def build_execution_card(
     reply_panel_elements = _reply_panel_elements(reply_segments)
     if log_text and reply_panel_elements:
         log_tables = count_card_tables(log_text)
-        if log_tables > _MAX_CARD_TABLES:
-            log_text = limit_card_tables(log_text, _MAX_CARD_TABLES)
+        if log_tables > MAX_CARD_TABLES:
+            log_text = limit_card_tables(log_text, MAX_CARD_TABLES)
         elements.append(_panel("执行过程", log_text, expanded=False))
         elements.append(_panel_with_elements("回复", reply_panel_elements, expanded=True))
     elif reply_panel_elements:

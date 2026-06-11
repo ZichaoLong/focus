@@ -185,7 +185,7 @@
 
 这类规范化只作用于**飞书卡片展示投影**，不改变 `final_reply_text` 的权威原文：
 
-- terminal result store 记录 app-server 给出的原始终态文本
+- terminal result store 记录 app-server 给出的原始终态文本，包括首尾空白
 - `terminal_result_id` / checksum 仍按原始终态文本计算
 - 卡片 markdown 区块中的正文可以是 Feishu-safe projection
 - 接收侧如果本地 store 命中，必须以 store 原文为权威文本；如果 store miss，
@@ -246,8 +246,8 @@
 
 接收侧对这个 markdown 区块的解释是：
 
-- 如果存在 `result_id` 且本地 thread-scoped terminal result store 命中，则
-  store 中的正文是权威 `final_reply_text`
+- 如果存在 `result_id` 且本机器人实例本地 terminal result store 中有 checksum
+  匹配的记录，则 store 中的正文是权威 `final_reply_text`
 - 如果存在 `result_id` 但本地 store 缺失，则用户可见部分只能作为
   degraded projection 回退，不再被标记为权威
 - 没有 `result_id` 的历史终态卡继续按旧 marker 合同解析，以保持既有卡片可读，

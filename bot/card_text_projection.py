@@ -56,10 +56,10 @@ class CardTextProjection:
 
 
 def terminal_result_checksum(final_reply_text: str) -> str:
-    normalized = str(final_reply_text or "").strip()
-    if not normalized:
+    raw_text = str(final_reply_text or "")
+    if not raw_text:
         return ""
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+    return hashlib.sha256(raw_text.encode("utf-8")).hexdigest()
 
 
 def terminal_result_element_id(terminal_result_id: str, checksum: str) -> str:
@@ -71,8 +71,8 @@ def terminal_result_element_id(terminal_result_id: str, checksum: str) -> str:
 
 
 def render_final_reply_text_block(final_reply_text: str) -> str:
-    normalized = str(final_reply_text or "").strip()
-    if not normalized:
+    normalized = str(final_reply_text or "")
+    if not normalized.strip():
         return ""
     if ends_with_fenced_code_block(normalized):
         return f"{normalized}\n{TERMINAL_RESULT_CARD_MARKER}"
@@ -80,16 +80,16 @@ def render_final_reply_text_block(final_reply_text: str) -> str:
 
 
 def render_terminal_result_card_content_for_feishu(final_reply_text: str) -> str:
-    normalized = str(final_reply_text or "").strip()
-    if not normalized:
+    normalized = str(final_reply_text or "")
+    if not normalized.strip():
         return ""
     projection = sanitize_terminal_result_markdown_for_feishu_json2(normalized)
     return render_final_reply_text_block(projection)
 
 
 def can_render_terminal_result_card(final_reply_text: str, *, char_limit: int) -> bool:
-    normalized = str(final_reply_text or "").strip()
-    if not normalized:
+    normalized = str(final_reply_text or "")
+    if not normalized.strip():
         return False
     if TERMINAL_RESULT_CARD_MARKER in normalized:
         return False

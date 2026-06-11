@@ -175,6 +175,10 @@ time:
   notification carries a `turn_id`, that `turn_id` must also match the local
   active execution anchor before the notification may mutate the execution
   card, transcript, plan, or terminal finalization
+- the same `turn_id` check also gates the active execution heartbeat/watchdog:
+  stale same-thread notifications may prove that the backend is alive, but they
+  must not refresh the current card's `last_runtime_event_at` or postpone its
+  watchdog reconciliation
 - for operations such as `/compact`, whose upstream request returns immediately
   and whose `turn_id` is only learned from later notifications, the local
   execution card is in an "unbound turn identity" state while
@@ -185,6 +189,12 @@ time:
   `/compact`. Other item/delta/completed events, `turn/completed`,
   `thread/status=idle`, `thread/closed`, and watchdog snapshots must not
   finalize the card or advance the binding FIFO on their own
+- if an unbound `/compact` anchor receives neither `turn/started` nor the
+  `contextCompaction item/started` fallback before
+  `compact_start_timeout_seconds`, local state is explicitly unknown. The Feishu
+  side must fail closed by closing that execution card with an "unconfirmed
+  state" message and releasing the binding FIFO; it must not claim the compact
+  succeeded or failed upstream.
 - live deltas, terminal notifications, and watchdog reconciliation may only
   update that active card
 - once an execution is finalized, that card stops being the active anchor
