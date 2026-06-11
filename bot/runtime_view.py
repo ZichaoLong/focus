@@ -54,6 +54,7 @@ class ExecutionView:
     current_turn_id: str
     current_message_id: str
     last_execution_message_id: str
+    current_execution_kind: str
     current_prompt_message_id: str
     current_prompt_reply_in_thread: bool
     current_actor_open_id: str
@@ -178,6 +179,7 @@ def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
             current_turn_id=str(state["current_turn_id"] or ""),
             current_message_id=str(state["current_message_id"] or ""),
             last_execution_message_id=str(state["last_execution_message_id"] or ""),
+            current_execution_kind=str(state.get("current_execution_kind") or ""),
             current_prompt_message_id=str(state["current_prompt_message_id"] or ""),
             current_prompt_reply_in_thread=bool(state["current_prompt_reply_in_thread"]),
             current_actor_open_id=str(state["current_actor_open_id"] or ""),

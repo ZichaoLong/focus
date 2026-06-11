@@ -46,6 +46,7 @@ class TurnExecutionCoordinatorTests(unittest.TestCase):
         self.assertTrue(state["running"])
         self.assertTrue(state["awaiting_local_turn_started"])
         self.assertEqual(state["current_turn_id"], "")
+        self.assertEqual(state["current_execution_kind"], "prompt")
         self.assertEqual(state["current_prompt_message_id"], "msg-1")
         self.assertTrue(state["current_prompt_reply_in_thread"])
         self.assertEqual(state["current_actor_open_id"], "ou-actor")
@@ -331,6 +332,7 @@ class TurnExecutionCoordinatorTests(unittest.TestCase):
         self.assertFalse(state["running"])
         self.assertFalse(state["pending_cancel"])
         self.assertEqual(state["current_turn_id"], "")
+        self.assertEqual(state["current_execution_kind"], "")
 
         coordinator.retire_execution_locked(state)
 

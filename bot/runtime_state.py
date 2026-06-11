@@ -66,6 +66,7 @@ class RuntimeStateDict(TypedDict):
     pending_cancel: bool
     current_message_id: str
     last_execution_message_id: str
+    current_execution_kind: str
     current_prompt_message_id: str
     current_prompt_reply_in_thread: bool
     current_actor_open_id: str
@@ -183,6 +184,7 @@ class ExecutionStateChanged(RuntimeStateEvent):
     current_turn_id: Any = UNSET
     current_message_id: Any = UNSET
     last_execution_message_id: Any = UNSET
+    current_execution_kind: Any = UNSET
     current_prompt_message_id: Any = UNSET
     current_prompt_reply_in_thread: Any = UNSET
     current_actor_open_id: Any = UNSET
@@ -294,6 +296,7 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             if clear_card_message:
                 state["current_message_id"] = ""
             state["current_turn_id"] = ""
+            state["current_execution_kind"] = ""
             state["current_prompt_message_id"] = ""
             state["current_prompt_reply_in_thread"] = False
             state["current_actor_open_id"] = ""
@@ -327,6 +330,8 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
                 state["current_message_id"] = change.current_message_id
             if change.last_execution_message_id is not UNSET:
                 state["last_execution_message_id"] = change.last_execution_message_id
+            if change.current_execution_kind is not UNSET:
+                state["current_execution_kind"] = change.current_execution_kind
             if change.current_prompt_message_id is not UNSET:
                 state["current_prompt_message_id"] = change.current_prompt_message_id
             if change.current_prompt_reply_in_thread is not UNSET:

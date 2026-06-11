@@ -159,6 +159,18 @@ class AdapterNotificationController:
             return False
         return True
 
+    @staticmethod
+    def _can_bind_unbound_compact_item_started(runtime, *, thread_id: str, turn_id: str, item_type: str) -> bool:
+        return (
+            item_type == "contextCompaction"
+            and bool(str(turn_id or "").strip())
+            and runtime.current_thread_id.strip() == thread_id
+            and bool(runtime.execution.current_message_id.strip())
+            and bool(runtime.execution.awaiting_local_turn_started)
+            and not bool(runtime.execution.current_turn_id.strip())
+            and runtime.execution.current_execution_kind.strip() == "compact"
+        )
+
     def handle_thread_status_changed(self, params: dict[str, Any]) -> None:
         thread_id = str(params.get("threadId", "") or "").strip()
         bindings = self._bindings_for_thread(thread_id)
@@ -392,13 +404,31 @@ class AdapterNotificationController:
         item_type = str(item.get("type", "") or "").strip()
         if not bindings:
             return
+        interrupt_sent = False
+        interrupt_succeeded = False
         for binding in bindings:
             self._note_runtime_event(*binding)
             state = self._get_runtime_state(*binding)
+            bound_unstarted_compact = False
+            should_interrupt_started_turn = False
             with self._lock:
                 runtime = build_runtime_view(state)
                 if not self._resolve_current_execution_target(runtime, thread_id=thread_id, turn_id=turn_id):
-                    continue
+                    if not self._can_bind_unbound_compact_item_started(
+                        runtime,
+                        thread_id=thread_id,
+                        turn_id=turn_id,
+                        item_type=item_type,
+                    ):
+                        continue
+                    transition = self._turn_execution.prepare_turn_started_locked(
+                        state,
+                        turn_id=turn_id,
+                        started_at=time.monotonic(),
+                    )
+                    self._turn_execution.clear_plan_state_locked(state)
+                    bound_unstarted_compact = True
+                    should_interrupt_started_turn = transition.should_interrupt_started_turn
                 if item_type == "commandExecution":
                     command = item.get("command") or ""
                     cwd = item.get("cwd") or ""
@@ -421,6 +451,23 @@ class AdapterNotificationController:
                     )
                 else:
                     continue
+            if should_interrupt_started_turn:
+                if not interrupt_sent:
+                    interrupt_sent = True
+                    try:
+                        self._interrupt_running_turn(thread_id=thread_id, turn_id=turn_id)
+                    except Exception:
+                        logger.exception("turn 启动后自动取消失败")
+                    else:
+                        interrupt_succeeded = True
+                if interrupt_succeeded:
+                    with self._lock:
+                        self._apply_runtime_state_message_locked(
+                            state,
+                            ExecutionStateChanged(pending_cancel=False),
+                        )
+            if bound_unstarted_compact:
+                self._schedule_mirror_watchdog(*binding)
             self._schedule_execution_card_update(*binding)
 
     def handle_agent_message_delta(self, params: dict[str, Any]) -> None:

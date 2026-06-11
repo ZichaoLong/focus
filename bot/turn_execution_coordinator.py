@@ -88,6 +88,7 @@ class TurnExecutionCoordinator:
                 pending_cancel=False,
                 current_message_id="" if clear_card_message else UNSET,
                 last_execution_message_id="",
+                current_execution_kind="",
                 current_turn_id="",
                 current_prompt_message_id="",
                 current_prompt_reply_in_thread=False,
@@ -111,7 +112,9 @@ class TurnExecutionCoordinator:
         actor_open_id: str,
         started_at: float,
         awaiting_attach_status_settle: bool = False,
+        execution_kind: str = "prompt",
     ) -> None:
+        normalized_execution_kind = str(execution_kind or "").strip() or "prompt"
         self.apply_runtime_state_message_locked(
             state,
             ExecutionStateChanged(
@@ -119,6 +122,7 @@ class TurnExecutionCoordinator:
                 cancelled=False,
                 pending_cancel=False,
                 current_turn_id="",
+                current_execution_kind=normalized_execution_kind,
                 last_execution_message_id="",
                 current_prompt_message_id=prompt_message_id,
                 current_prompt_reply_in_thread=prompt_reply_in_thread,
@@ -445,6 +449,7 @@ class TurnExecutionCoordinator:
                 pending_cancel=False,
                 awaiting_local_turn_started=False,
                 awaiting_attach_status_settle=False,
+                current_execution_kind="",
                 current_turn_id="",
             ),
         )

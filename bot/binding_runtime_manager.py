@@ -171,6 +171,7 @@ class BindingRuntimeManager:
             "pending_cancel": False,
             "current_message_id": "",
             "last_execution_message_id": "",
+            "current_execution_kind": "",
             "current_prompt_message_id": "",
             "current_prompt_reply_in_thread": False,
             "current_actor_open_id": "",

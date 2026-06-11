@@ -6712,6 +6712,44 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(len(handler._adapter.start_turn_calls), 2)
         self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
 
+    def test_queued_compact_binds_from_context_compaction_item_started_when_turn_started_missing(self) -> None:
+        handler, bot = self._make_handler()
+
+        handler.handle_message("ou_user", "c1", "first", message_id="m-1")
+        handler.handle_message("ou_user", "c1", "/compact", message_id="m-compact")
+        handler.handle_message("ou_user", "c1", "second", message_id="m-2")
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+        self.assertEqual(handler._adapter.compact_thread_calls, [])
+        self.assertEqual(bot.replies[-2], ("c1", "已排队，compact 将在当前执行结束后开始。队列位置：1"))
+        self.assertEqual(bot.replies[-1], ("c1", "已排队，将在当前执行结束后继续。队列位置：2"))
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
+
+        state = handler._get_runtime_state("ou_user", "c1", "m-compact")
+        self.assertEqual(handler._adapter.compact_thread_calls, ["thread-created"])
+        self.assertEqual(len(handler._adapter.start_turn_calls), 1)
+        self.assertEqual(state["current_execution_kind"], "compact")
+        self.assertEqual(state["current_turn_id"], "")
+        self.assertTrue(state["awaiting_local_turn_started"])
+
+        handler._handle_item_started(
+            {
+                "threadId": "thread-created",
+                "turnId": "compact-turn",
+                "item": {"type": "contextCompaction", "id": "compact-item"},
+            }
+        )
+
+        self.assertEqual(state["current_turn_id"], "compact-turn")
+        self.assertFalse(state["awaiting_local_turn_started"])
+        self.assertIn("上下文压缩", state["execution_transcript"].process_text())
+
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "compact-turn", "status": "completed"}})
+
+        self.assertEqual(len(handler._adapter.start_turn_calls), 2)
+        self.assertEqual(handler._adapter.start_turn_calls[-1]["text"], "second")
+
     def test_queued_compact_keeps_origin_context_after_message_context_expires(self) -> None:
         handler, bot = self._make_handler()
         bot.chat_types["chat-group"] = "group"

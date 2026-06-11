@@ -393,6 +393,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         state["current_message_id"] = "compact-card"
         state["running"] = True
         state["awaiting_local_turn_started"] = True
+        state["current_execution_kind"] = "prompt"
         state["current_turn_id"] = ""
 
         controller, note_events, _, _, _, updates, *_ = self._make_controller(
@@ -414,6 +415,66 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(state["current_turn_id"], "")
         self.assertEqual(state["execution_transcript"].reply_text(), "")
         self.assertEqual(state["execution_transcript"].process_text(), "")
+
+    def test_context_compaction_item_started_binds_unstarted_compact_anchor(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "compact-card"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["current_execution_kind"] = "compact"
+        state["current_turn_id"] = ""
+
+        controller, note_events, _, _, watchdogs, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_item_started(
+            {
+                "threadId": "thread-1",
+                "turnId": "compact-turn",
+                "item": {"type": "contextCompaction", "id": "compact-1"},
+            }
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(state["current_turn_id"], "compact-turn")
+        self.assertFalse(state["awaiting_local_turn_started"])
+        self.assertIn("上下文压缩", state["execution_transcript"].process_text())
+        self.assertEqual(watchdogs, [binding])
+        self.assertEqual(updates, [binding])
+
+    def test_context_compaction_item_started_does_not_bind_unstarted_prompt_anchor(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "prompt-card"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["current_execution_kind"] = "prompt"
+        state["current_turn_id"] = ""
+
+        controller, note_events, _, _, watchdogs, updates, *_ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_item_started(
+            {
+                "threadId": "thread-1",
+                "turnId": "compact-turn",
+                "item": {"type": "contextCompaction", "id": "compact-1"},
+            }
+        )
+
+        self.assertEqual(note_events, [binding])
+        self.assertEqual(state["current_turn_id"], "")
+        self.assertTrue(state["awaiting_local_turn_started"])
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+        self.assertEqual(watchdogs, [])
+        self.assertEqual(updates, [])
 
     def test_handle_turn_completed_delegates_terminal_finalize(self) -> None:
         binding = ("ou_user", "chat-1")

@@ -2383,6 +2383,7 @@ class CodexHandler(BotHandler):
                 actor_open_id=self._group_actor_open_id(message_id),
                 started_at=started_at,
                 awaiting_attach_status_settle=False,
+                execution_kind="compact",
             )
             self._turn_execution.append_process_note_locked(
                 state,

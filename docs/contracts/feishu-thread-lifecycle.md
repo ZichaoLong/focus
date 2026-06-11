@@ -176,12 +176,15 @@ time:
   active execution anchor before the notification may mutate the execution
   card, transcript, plan, or terminal finalization
 - for operations such as `/compact`, whose upstream request returns immediately
-  and whose `turn_id` is only learned from a later `turn/started`, the local
+  and whose `turn_id` is only learned from later notifications, the local
   execution card is in an "unbound turn identity" state while
-  `awaiting_local_turn_started` is true and `turn_id` is still empty; in that
-  state only `turn/started` may bind the new `turn_id` to the active anchor, and
-  item/delta/completed events, `thread/status=idle`, `thread/closed`, and
-  watchdog snapshots must not finalize the card or advance the binding FIFO
+  `awaiting_local_turn_started` is true and `turn_id` is still empty;
+  `turn/started` is the primary binding point. If that notification is missed,
+  only a `contextCompaction` `item/started` notification may bind the `turn_id`
+  to the active anchor, and only when the active anchor is explicitly marked as
+  `/compact`. Other item/delta/completed events, `turn/completed`,
+  `thread/status=idle`, `thread/closed`, and watchdog snapshots must not
+  finalize the card or advance the binding FIFO on their own
 - live deltas, terminal notifications, and watchdog reconciliation may only
   update that active card
 - once an execution is finalized, that card stops being the active anchor
@@ -228,7 +231,9 @@ anchor retires. When `/compact` dequeues or starts immediately, it must establis
 a local execution anchor before calling upstream `thread/compact/start`. FIFO
 admission details are defined by `docs/contracts/scheduled-prompts.md`. Until
 that anchor has learned its upstream `turn_id`, stale terminal signals from an
-older turn must not let later prompts pass through the compact operation.
+older turn must not let later prompts pass through the compact operation. Only
+`turn/started` or the `/compact`-specific `contextCompaction item/started`
+fallback may bind the anchor before a later `turn/completed` can finalize it.
 
 ## 6. Relationship With `fcodex`
 

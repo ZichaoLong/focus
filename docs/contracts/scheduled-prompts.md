@@ -156,8 +156,8 @@ and `/compact` share the same binding admission semantics:
   listing, cancellation, or cross-binding scheduling
 - when dequeued, `/compact` establishes a local execution anchor before calling
   upstream `thread/compact/start`; until that anchor receives its own
-  `turn/started` or an explicit start failure, a following prompt cannot pass
-  through it
+  `turn/started`, the `contextCompaction item/started` fallback binding, or an
+  explicit start failure, a following prompt cannot pass through it
 - `/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode` do not
   queue; they update binding-wise next-turn settings immediately, and later
   dequeued prompts read the latest settings
