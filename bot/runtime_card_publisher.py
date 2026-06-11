@@ -8,6 +8,7 @@ These helpers keep Feishu card payload assembly and message IO out of
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import threading
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from bot.cards import build_execution_card, build_plan_card, build_terminal_resu
 from bot.execution_transcript import ExecutionReplySegment, ExecutionTranscript
 from bot.message_patch_result import MessagePatchResult
 from bot.runtime_view import PlanView
+
+logger = logging.getLogger(__name__)
 
 _LOG_TRUNCATION_NOTICE = "\n\n**[日志已截断，仅保留最近部分]**"
 
@@ -192,10 +195,20 @@ class RuntimeCardPublisher:
         normalized_message_id = str(message_id or "").strip()
         if not normalized_message_id:
             return MessagePatchResult.failure()
-        return self._patch_message_result(
+        result = self._patch_message_result(
             normalized_message_id,
             json.dumps(render_execution_card(model), ensure_ascii=False),
         )
+        if result.ok and not model.running:
+            logger.info(
+                "执行卡片终态更新成功: message_id=%s elapsed=%s cancelled=%s log_chars=%s reply_segments=%s",
+                normalized_message_id,
+                model.elapsed,
+                model.cancelled,
+                len(model.log_text),
+                len(model.reply_segments),
+            )
+        return result
 
     def delete_card_message(self, message_id: str) -> bool:
         normalized_message_id = str(message_id or "").strip()

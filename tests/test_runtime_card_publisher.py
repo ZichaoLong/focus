@@ -148,6 +148,52 @@ class RuntimeCardPublisherTests(unittest.TestCase):
         card = json.loads(content)
         self.assertEqual(card["header"]["title"]["content"], "Codex 执行过程（执行中 3s）")
 
+    def test_patch_execution_card_logs_only_successful_terminal_update(self) -> None:
+        bot = _FakeBot()
+        publisher = RuntimeCardPublisher(bot)
+        running_model = build_execution_card_model(
+            ExecutionTranscript(),
+            running=True,
+            elapsed=1,
+            cancelled=False,
+            log_limit=100,
+            reply_limit=100,
+        )
+        final_model = build_execution_card_model(
+            ExecutionTranscript(),
+            running=False,
+            elapsed=2,
+            cancelled=False,
+            log_limit=100,
+            reply_limit=100,
+        )
+
+        with self.assertNoLogs("bot.runtime_card_publisher", level="INFO"):
+            self.assertTrue(publisher.patch_execution_card("exec-1", running_model).ok)
+
+        with self.assertLogs("bot.runtime_card_publisher", level="INFO") as logs:
+            self.assertTrue(publisher.patch_execution_card("exec-1", final_model).ok)
+
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("执行卡片终态更新成功", logs.output[0])
+        self.assertIn("message_id=exec-1", logs.output[0])
+
+    def test_patch_execution_card_does_not_log_failed_terminal_update(self) -> None:
+        bot = _FakeBot()
+        bot.patch_results["exec-1"] = False
+        publisher = RuntimeCardPublisher(bot)
+        final_model = build_execution_card_model(
+            ExecutionTranscript(),
+            running=False,
+            elapsed=2,
+            cancelled=False,
+            log_limit=100,
+            reply_limit=100,
+        )
+
+        with self.assertNoLogs("bot.runtime_card_publisher", level="INFO"):
+            self.assertFalse(publisher.patch_execution_card("exec-1", final_model).ok)
+
     def test_delete_card_message_delegates_to_bot(self) -> None:
         bot = _FakeBot()
         publisher = RuntimeCardPublisher(bot)
