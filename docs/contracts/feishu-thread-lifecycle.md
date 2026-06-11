@@ -171,10 +171,13 @@ time:
 
 - the active execution is anchored by `prompt_message_id`, `card_message_id`,
   and `turn_id`
-- a live notification's `thread_id` only selects candidate bindings; when the
-  notification carries a `turn_id`, that `turn_id` must also match the local
-  active execution anchor before the notification may mutate the execution
-  card, transcript, plan, or terminal finalization
+- a live notification's `thread_id` only selects candidate bindings;
+  turn-scoped notifications must carry `turn_id`, and that `turn_id` must match
+  the local active execution anchor before the notification may mutate the
+  execution card, transcript, plan, heartbeat/watchdog, or terminal finalization
+- thread-level notifications such as status, close, title, and goal updates may
+  omit `turn_id`, but they may refresh the active execution heartbeat only after
+  the candidate binding still confirms the same current `thread_id`
 - the same `turn_id` check also gates the active execution heartbeat/watchdog:
   stale same-thread notifications may prove that the backend is alive, but they
   must not refresh the current card's `last_runtime_event_at` or postpone its

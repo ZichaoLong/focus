@@ -350,7 +350,7 @@ class CodexHandler(BotHandler):
             turn_execution=self._turn_execution,
             thread_subscribers=self._thread_subscribers,
             get_runtime_state=lambda sender_id, chat_id: self._get_runtime_state(sender_id, chat_id),
-            note_runtime_event=self._note_runtime_event,
+            on_runtime_event_accepted=lambda sender_id, chat_id: None,
             apply_runtime_state_message_locked=self._apply_runtime_state_message_locked,
             apply_persisted_runtime_state_message_locked=self._apply_persisted_runtime_state_message_locked,
             cancel_mirror_watchdog_locked=self._cancel_mirror_watchdog_locked,
@@ -1376,9 +1376,6 @@ class CodexHandler(BotHandler):
 
     def _mark_runtime_degraded(self, sender_id: str, chat_id: str, *, reason: str) -> None:
         self._execution_recovery.mark_runtime_degraded(sender_id, chat_id, reason=reason)
-
-    def _note_runtime_event(self, sender_id: str, chat_id: str) -> None:
-        self._execution_recovery.note_runtime_event(sender_id, chat_id)
 
     def _schedule_mirror_watchdog(self, sender_id: str, chat_id: str) -> None:
         self._execution_recovery.schedule_mirror_watchdog(sender_id, chat_id)

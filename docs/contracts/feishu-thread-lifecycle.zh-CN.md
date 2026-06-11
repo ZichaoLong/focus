@@ -150,7 +150,10 @@ flowchart TD
 对同一个飞书会话，任一时刻最多只允许一张“当前执行卡片”：
 
 - 当前执行卡片由 `prompt_message_id`、`card_message_id`、`turn_id` 共同锚定
-- live notification 的 `thread_id` 只用于定位候选 binding；如果通知携带 `turn_id`，必须再与本地当前执行锚点的 `turn_id` 匹配，才允许修改执行卡片、transcript、plan 或触发终态收口
+- live notification 的 `thread_id` 只用于定位候选 binding；turn-scoped notification
+  必须携带 `turn_id`，且必须与本地当前执行锚点的 `turn_id` 匹配，才允许修改执行卡片、transcript、plan、heartbeat/watchdog 或触发终态收口
+- `thread/status`、`thread/closed`、标题、goal 等 thread-level notification 可以没有
+  `turn_id`，但必须在候选 binding 仍确认当前 `thread_id` 相同后，才允许刷新当前执行 heartbeat
 - 同一条 `turn_id` 校验也约束当前执行的 heartbeat/watchdog：同 thread 的 stale notification
   可以说明后端还活着，但不能刷新当前卡片的 `last_runtime_event_at`，也不能推迟当前卡片的 watchdog 对账
 - 对于 `/compact` 这类上游请求立即返回但 `turn_id` 只能等待后续通知才知道的操作，本地执行卡片在 `awaiting_local_turn_started` 且尚无 `turn_id` 时处于“turn 身份未确认”状态；`turn/started` 是主绑定点，若错过该通知，只有当前锚点明确是 `/compact` 且收到 `contextCompaction` 的 `item/started` 时，才允许把该 `turn_id` 补绑定到当前锚点；普通 item/delta/completed、`turn/completed`、`thread/status=idle`、`thread/closed`、watchdog snapshot 都不能单独收口当前卡片或推进 binding FIFO

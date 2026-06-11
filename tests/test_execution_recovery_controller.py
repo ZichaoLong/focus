@@ -103,12 +103,12 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                         "prompt_reply_in_thread": prompt_reply_in_thread,
                     }
                 ),
-                recorded_terminal_results.add((str(source_execution_message_id or "").strip(), str(final_reply_text or "").strip())),
+                recorded_terminal_results.add((str(source_execution_message_id or "").strip(), str(final_reply_text or ""))),
                 True,
             )[-1],
             has_recorded_terminal_result=lambda *, execution_message_id, final_reply_text: (
                 str(execution_message_id or "").strip(),
-                str(final_reply_text or "").strip(),
+                str(final_reply_text or ""),
             ) in recorded_terminal_results,
             deliver_generated_images_from_snapshot=_deliver_generated_images_from_snapshot,
             read_thread=_read_thread,
@@ -628,6 +628,49 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
         )
         self.assertEqual(deletes, [])
         self.assertEqual(delivered_images, [])
+
+    def test_run_terminal_execution_reconcile_dedupes_terminal_text_by_raw_exact_value(self) -> None:
+        state = self._make_state()
+        controller, snapshots, _, _, _, terminal_results, _ = self._make_controller(state)
+        state["execution_transcript"].set_reply_text("fallback answer")
+        snapshots.append(_ThreadNotFound("thread not found"))
+
+        controller.run_terminal_execution_reconcile(
+            TerminalReconcileTarget(
+                sender_id="ou_user",
+                chat_id="c1",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                card_message_id="card-1",
+                prompt_message_id="msg-9",
+                prompt_reply_in_thread=False,
+                transcript=state["execution_transcript"],
+                cancelled=False,
+                elapsed=5,
+            )
+        )
+
+        state["execution_transcript"].set_reply_text("fallback answer\n")
+        snapshots.append(_ThreadNotFound("thread not found"))
+        controller.run_terminal_execution_reconcile(
+            TerminalReconcileTarget(
+                sender_id="ou_user",
+                chat_id="c1",
+                thread_id="thread-1",
+                turn_id="turn-1",
+                card_message_id="card-1",
+                prompt_message_id="msg-9",
+                prompt_reply_in_thread=False,
+                transcript=state["execution_transcript"],
+                cancelled=False,
+                elapsed=5,
+            )
+        )
+
+        self.assertEqual(
+            [item["final_reply_text"] for item in terminal_results],
+            ["fallback answer", "fallback answer\n"],
+        )
 
     def test_run_terminal_execution_reconcile_keeps_final_reply_on_execution_card_when_result_publish_fails(self) -> None:
         state = self._make_state()

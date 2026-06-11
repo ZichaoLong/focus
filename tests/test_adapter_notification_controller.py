@@ -62,7 +62,7 @@ class AdapterNotificationControllerTests(unittest.TestCase):
             turn_execution=TurnExecutionCoordinator(),
             thread_subscribers=lambda thread_id: subscribers_for_thread.get(thread_id, ()),
             get_runtime_state=lambda sender_id, chat_id: states[(sender_id, chat_id)],
-            note_runtime_event=lambda sender_id, chat_id: note_events.append((sender_id, chat_id)),
+            on_runtime_event_accepted=lambda sender_id, chat_id: note_events.append((sender_id, chat_id)),
             apply_runtime_state_message_locked=apply_runtime_state_message,
             apply_persisted_runtime_state_message_locked=lambda binding, state, message: apply_runtime_state_message(
                 state,
@@ -290,6 +290,85 @@ class AdapterNotificationControllerTests(unittest.TestCase):
         self.assertEqual(updates, [])
         self.assertEqual(state["current_message_id"], "queued-card")
         self.assertEqual(state["current_turn_id"], "turn-2")
+
+    def test_turn_scoped_notifications_without_turn_id_do_not_touch_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-1"
+        state["current_message_id"] = "queued-card"
+        state["current_turn_id"] = "turn-2"
+        state["running"] = True
+        state["awaiting_local_turn_started"] = True
+        state["current_execution_kind"] = "compact"
+
+        controller, note_events, patches, sent_cards, watchdogs, updates, flushes, plan_flushes, _, finalizations, _ = (
+            self._make_controller({binding: state}, {"thread-1": (binding,)})
+        )
+
+        cases = [
+            lambda: controller.handle_turn_started({"threadId": "thread-1", "turn": {}}),
+            lambda: controller.handle_turn_plan_updated({"threadId": "thread-1", "plan": [{"step": "old"}]}),
+            lambda: controller.handle_item_started(
+                {"threadId": "thread-1", "item": {"type": "contextCompaction", "id": "compact-1"}}
+            ),
+            lambda: controller.handle_agent_message_delta({"threadId": "thread-1", "delta": "old"}),
+            lambda: controller.handle_command_delta({"threadId": "thread-1", "delta": "old stdout"}),
+            lambda: controller.handle_file_change_delta({"threadId": "thread-1", "delta": "old patch"}),
+            lambda: controller.handle_item_completed(
+                {"threadId": "thread-1", "item": {"type": "agentMessage", "text": "old final text"}}
+            ),
+            lambda: controller.handle_turn_completed({"threadId": "thread-1", "turn": {"status": "completed"}}),
+        ]
+        for index, call in enumerate(cases):
+            with self.subTest(index=index):
+                call()
+
+        self.assertEqual(note_events, [])
+        self.assertEqual(patches, [])
+        self.assertEqual(sent_cards, [])
+        self.assertEqual(watchdogs, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(plan_flushes, [])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(state["current_turn_id"], "turn-2")
+        self.assertEqual(state["current_message_id"], "queued-card")
+        self.assertTrue(state["running"])
+        self.assertEqual(state["execution_transcript"].reply_text(), "")
+        self.assertEqual(state["execution_transcript"].process_text(), "")
+
+    def test_thread_level_events_for_stale_subscription_do_not_refresh_current_execution(self) -> None:
+        binding = ("ou_user", "chat-1")
+        state = self._make_state()
+        state["current_thread_id"] = "thread-2"
+        state["current_thread_title"] = "current"
+        state["current_turn_id"] = "turn-2"
+        state["current_message_id"] = "card-2"
+        state["running"] = True
+        state["goal_objective"] = "keep"
+        state["goal_status"] = "active"
+
+        controller, note_events, _, _, _, updates, flushes, _, _, finalizations, _ = self._make_controller(
+            {binding: state},
+            {"thread-1": (binding,)},
+        )
+
+        controller.handle_thread_status_changed({"threadId": "thread-1", "status": {"type": "idle"}})
+        controller.handle_thread_closed({"threadId": "thread-1"})
+        controller.handle_thread_name_updated({"threadId": "thread-1", "threadName": "stale"})
+        controller.handle_thread_goal_updated({"threadId": "thread-1", "goal": {"objective": "stale"}})
+        controller.handle_thread_goal_cleared({"threadId": "thread-1"})
+
+        self.assertEqual(note_events, [])
+        self.assertEqual(updates, [])
+        self.assertEqual(flushes, [])
+        self.assertEqual(finalizations, [])
+        self.assertEqual(state["current_thread_id"], "thread-2")
+        self.assertEqual(state["current_thread_title"], "current")
+        self.assertEqual(state["current_turn_id"], "turn-2")
+        self.assertEqual(state["current_message_id"], "card-2")
+        self.assertEqual(state["goal_objective"], "keep")
+        self.assertEqual(state["goal_status"], "active")
 
     def test_handle_thread_status_changed_ignores_idle_while_waiting_for_turn_started(self) -> None:
         binding = ("ou_user", "chat-1")

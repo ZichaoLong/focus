@@ -1316,7 +1316,7 @@ class CodexHandlerTests(unittest.TestCase):
             state["running"] = False
 
         handler._handle_turn_started({"threadId": "thread-1", "turn": {"id": "turn-2"}})
-        handler._handle_agent_message_delta({"threadId": "thread-1", "delta": "新的回复"})
+        handler._handle_agent_message_delta({"threadId": "thread-1", "turnId": "turn-2", "delta": "新的回复"})
 
         self.assertEqual(len(bot.sent_messages), 1)
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["current_message_id"], "plan-card-2")
@@ -1742,7 +1742,7 @@ class CodexHandlerTests(unittest.TestCase):
         bot.message_contexts["m-2"] = {"chat_type": "group", "sender_open_id": "ou_user2"}
 
         handler.handle_message("ou_user", "chat-group", "第一轮", message_id="m-1")
-        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"status": "completed"}})
+        handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
         handler.handle_message("ou_user2", "chat-group", "第二轮", message_id="m-2")
 
         self.assertEqual(len(handler._adapter.create_thread_calls), 1)
@@ -1802,7 +1802,9 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler2.handle_message("ou_user", "c1", "follow up")
         handler2._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-1"}})
-        handler2._handle_agent_message_delta({"threadId": "thread-created", "delta": "恢复后事件正常路由"})
+        handler2._handle_agent_message_delta(
+            {"threadId": "thread-created", "turnId": "turn-1", "delta": "恢复后事件正常路由"}
+        )
         handler2._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-created")
@@ -1883,7 +1885,9 @@ class CodexHandlerTests(unittest.TestCase):
         bot2.message_contexts["m-prompt"] = {"chat_type": "group", "sender_open_id": "ou_user2"}
         handler2.handle_message("ou_user2", "chat-group", "继续", message_id="m-prompt")
         handler2._handle_turn_started({"threadId": "thread-group", "turn": {"id": "turn-1"}})
-        handler2._handle_agent_message_delta({"threadId": "thread-group", "delta": "群重启后事件正常路由"})
+        handler2._handle_agent_message_delta(
+            {"threadId": "thread-group", "turnId": "turn-1", "delta": "群重启后事件正常路由"}
+        )
         handler2._handle_turn_completed({"threadId": "thread-group", "turn": {"id": "turn-1", "status": "completed"}})
 
         self.assertEqual(handler2._adapter.start_turn_calls[0]["thread_id"], "thread-group")
@@ -1935,7 +1939,7 @@ class CodexHandlerTests(unittest.TestCase):
                 "reason": "need approval",
             },
         )
-        handler2._handle_agent_message_delta({"threadId": "thread-1", "delta": "恢复后继续"})
+        handler2._handle_agent_message_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "恢复后继续"})
 
         self.assertEqual(bot2.sent_messages, [])
         self.assertEqual(handler2._get_runtime_state("ou_user", "chat-a")["execution_transcript"].reply_text(), "")
@@ -1946,7 +1950,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "hello")
         handler._handle_turn_started({"threadId": "thread-created", "turn": {"id": "turn-1"}})
-        handler._handle_agent_message_delta({"threadId": "thread-created", "delta": "partial"})
+        handler._handle_agent_message_delta({"threadId": "thread-created", "turnId": "turn-1", "delta": "partial"})
 
         handler._handle_adapter_disconnect_impl()
 
@@ -2022,7 +2026,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler, bot = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "hello")
-        handler._handle_agent_message_delta({"threadId": "thread-created", "delta": "完整"})
+        handler._handle_agent_message_delta({"threadId": "thread-created", "turnId": "turn-1", "delta": "完整"})
         with patch.object(handler, "_schedule_terminal_execution_reconcile") as schedule_reconcile:
             handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
 
@@ -2444,7 +2448,7 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "chat-b", "second turn")
 
         handler._handle_turn_started({"threadId": "thread-1", "turn": {"id": "turn-1"}})
-        handler._handle_agent_message_delta({"threadId": "thread-1", "delta": "done"})
+        handler._handle_agent_message_delta({"threadId": "thread-1", "turnId": "turn-1", "delta": "done"})
         handler._handle_turn_completed({"threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed"}})
 
         self.assertNotIn(
@@ -2700,7 +2704,7 @@ class CodexHandlerTests(unittest.TestCase):
 
         handler.handle_message("ou_user", "c1", "hello", message_id="msg-1")
         bot.patch_results["plan-card-1"] = False
-        handler._handle_agent_message_delta({"threadId": "thread-created", "delta": "123456789"})
+        handler._handle_agent_message_delta({"threadId": "thread-created", "turnId": "turn-1", "delta": "123456789"})
         target = handler._capture_terminal_reconcile_target("ou_user", "c1", thread_id="thread-created", turn_id="turn-1")
         assert target is not None
         handler._handle_turn_completed({"threadId": "thread-created", "turn": {"id": "turn-1", "status": "completed"}})
@@ -2830,22 +2834,25 @@ class CodexHandlerTests(unittest.TestCase):
         handler, bot = self._make_handler()
 
         handler.handle_message("ou_user", "c1", "hello")
-        handler._handle_agent_message_delta({"threadId": "thread-created", "delta": "第一段"})
+        handler._handle_agent_message_delta({"threadId": "thread-created", "turnId": "turn-1", "delta": "第一段"})
         handler._handle_item_started(
             {
                 "threadId": "thread-created",
+                "turnId": "turn-1",
                 "item": {"type": "commandExecution", "command": "ls", "cwd": "/tmp/project"},
             }
         )
         handler._handle_item_completed(
             {
                 "threadId": "thread-created",
+                "turnId": "turn-1",
                 "item": {"type": "commandExecution", "status": "completed", "exitCode": 0},
             }
         )
         handler._handle_item_completed(
             {
                 "threadId": "thread-created",
+                "turnId": "turn-1",
                 "item": {"type": "agentMessage", "text": "第二段"},
             }
         )
