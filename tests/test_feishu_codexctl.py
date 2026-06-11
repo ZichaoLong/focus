@@ -1392,7 +1392,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(result["would_clear_binding_ids"], ["p2p:ou_user:chat-stale"])
             self.assertIsNotNone(store.load(binding))
 
-    def test_thread_presence_checker_uses_turns_and_treats_not_loaded_as_stale(self) -> None:
+    def test_thread_presence_checker_uses_metadata_only_read_and_treats_not_loaded_as_stale(self) -> None:
         class _FakeAdapter:
             def __init__(self) -> None:
                 self.calls: list[tuple[str, bool]] = []
@@ -1427,7 +1427,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertIs(_adapter, adapter)
         self.assertEqual(result[0], "stale")
-        self.assertEqual(adapter.calls, [("thread-stale", True)])
+        self.assertEqual(adapter.calls, [("thread-stale", False)])
 
     def test_clear_stale_bindings_explicit_running_instance_uses_control_plane(self) -> None:
         stdout = io.StringIO()

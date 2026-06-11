@@ -477,7 +477,7 @@ def _build_thread_presence_checker(
         if cached is not None:
             return cached
         try:
-            adapter.read_thread(normalized_thread_id, include_turns=True)
+            adapter.read_thread(normalized_thread_id, include_turns=False)
         except Exception as exc:
             if _is_cli_thread_unreadable_for_stale_cleanup_error(exc):
                 result = ("stale", str(exc) or "thread not found")

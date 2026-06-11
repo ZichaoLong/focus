@@ -80,7 +80,7 @@ Do not conflate them.
 | `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping its bookmark | mutating | binding-scoped counterpart of Feishu `/detach` |
 | `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear one binding bookmark | mutating | none |
 | `feishu-codexctl [--instance <name>] binding clear-all` | Clear all binding bookmarks in the target instance | mutating | none |
-| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Clear stale binding bookmarks that point at threads whose recoverable history can no longer be read; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local bookmark repair / ops entry |
+| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Clear stale binding bookmarks that point at threads that can no longer be verified as recoverable; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local bookmark repair / ops entry |
 
 `binding clear` / `clear-all` / `clear-stale` are not `detach`:
 
@@ -89,9 +89,9 @@ Do not conflate them.
 
 `binding clear-stale` is retain-oriented. Its source of truth is a cleanup-specific thread operability check, not the generic status display path:
 
-- it first verifies each bound `current_thread_id` through a running app-server by checking whether recoverable thread history can still be read
-- threads with readable history are retained; a readable thread whose generic status is `notLoaded` is not stale
-- explicitly unreadable threads, threads that are not loaded and have no persisted history, and metadata-only threads that can no longer be recovered are stale, and their local bookmarks are cleared
+- it first verifies each bound `current_thread_id` through a running app-server with a metadata-only `thread/read` presence check; it does not load full turns/history
+- threads with successful metadata-only reads are retained; a readable thread whose generic status is `notLoaded` is not stale
+- explicitly unreadable threads, threads that are not loaded and have no persisted metadata, and metadata-only threads that can no longer be recovered are stale, and their local bookmarks are cleared
 - query failures, timeouts, protocol errors, and ambiguous states fail closed: the binding is retained and reported as unknown
 - running instances are cleaned through their service control plane; known stopped instances are cleaned through this project's binding store API
 - precise archived-thread cleanup is handled by `thread clear-archived-bindings`; `binding clear-stale` does not treat unstable path strings as an archived-state source of truth
