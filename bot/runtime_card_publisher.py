@@ -14,7 +14,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Protocol
 
-from bot.cards import build_execution_card, build_plan_card, build_terminal_result_card
+from bot.cards import build_execution_card, build_plan_card, build_terminal_result_card_message_content
 from bot.execution_transcript import ExecutionReplySegment, ExecutionTranscript
 from bot.message_patch_result import MessagePatchResult
 from bot.runtime_view import PlanView
@@ -226,13 +226,10 @@ class RuntimeCardPublisher:
         checksum: str = "",
         reply_in_thread: bool = False,
     ) -> str | None:
-        content = json.dumps(
-            render_terminal_result_card(
-                final_reply_text,
-                terminal_result_id=terminal_result_id,
-                checksum=checksum,
-            ),
-            ensure_ascii=False,
+        content = build_terminal_result_card_message_content(
+            final_reply_text,
+            terminal_result_id=terminal_result_id,
+            checksum=checksum,
         )
         normalized_parent = str(parent_message_id or "").strip()
         if normalized_parent:

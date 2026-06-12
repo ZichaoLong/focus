@@ -2084,7 +2084,7 @@ class CodexHandlerTests(unittest.TestCase):
 
     def test_watchdog_reconciles_missed_terminal_notifications(self) -> None:
         handler, bot = self._make_handler()
-        handler._terminal_result_card_limit = 200
+        handler._terminal_result_card_limit = 1000
 
         handler.handle_message("ou_user", "c1", "hello")
         handler._adapter.thread_snapshots[("thread-created", True)] = ThreadSnapshot(
@@ -2266,7 +2266,7 @@ class CodexHandlerTests(unittest.TestCase):
             "sender_open_id": "ou_user",
             "thread_id": "om_thread",
         }
-        handler._terminal_result_card_limit = 200
+        handler._terminal_result_card_limit = 1000
 
         handler.handle_message("ou_user", "chat-group", "thread prompt", message_id="m-thread")
         target = handler._capture_terminal_reconcile_target(
@@ -2312,7 +2312,7 @@ class CodexHandlerTests(unittest.TestCase):
             "sender_open_id": "ou_user",
             "thread_id": "om_thread",
         }
-        handler._terminal_result_card_limit = 200
+        handler._terminal_result_card_limit = 1000
 
         handler.handle_message("ou_user", "chat-group", "thread prompt", message_id="m-thread")
         target = handler._capture_terminal_reconcile_target(
@@ -2734,7 +2734,7 @@ class CodexHandlerTests(unittest.TestCase):
 
     def test_terminal_reconcile_sends_authoritative_result_card_from_snapshot_without_live_reply_delta(self) -> None:
         handler, bot = self._make_handler()
-        handler._terminal_result_card_limit = 200
+        handler._terminal_result_card_limit = 1000
 
         handler.handle_message("ou_user", "c1", "hello")
         target = handler._capture_terminal_reconcile_target("ou_user", "c1", thread_id="thread-created", turn_id="turn-1")

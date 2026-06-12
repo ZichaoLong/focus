@@ -274,6 +274,23 @@ def build_terminal_result_card(
     }
 
 
+def build_terminal_result_card_message_content(
+    final_reply_text: str,
+    *,
+    terminal_result_id: str = "",
+    checksum: str = "",
+) -> str:
+    """Return the exact Feishu `interactive` message content for a terminal result card."""
+    return json.dumps(
+        build_terminal_result_card(
+            final_reply_text,
+            terminal_result_id=terminal_result_id,
+            checksum=checksum,
+        ),
+        ensure_ascii=False,
+    )
+
+
 def build_backend_reset_card(
     *,
     content: str,

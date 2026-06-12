@@ -5,7 +5,8 @@ import time
 import unittest
 import json
 
-from bot.card_text_projection import TERMINAL_RESULT_CARD_MARKER, render_final_reply_text_block, terminal_result_checksum
+from bot.card_text_projection import TERMINAL_RESULT_CARD_MARKER, terminal_result_checksum
+from bot.cards import build_terminal_result_card_message_content
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.execution_output_controller import ExecutionOutputController
 from bot.runtime_card_publisher import RuntimeCardPublisher
@@ -62,7 +63,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         state,
         *,
         card_reply_limit: int = 5,
-        terminal_result_card_limit: int = 200,
+        terminal_result_card_limit: int = 1000,
     ):
         bot = _FakeBot()
         replies: list[tuple[str, str, str, bool]] = []
@@ -184,7 +185,7 @@ class ExecutionOutputControllerTests(unittest.TestCase):
         controller, bot, replies, _, recorded = self._make_controller(
             state,
             card_reply_limit=3,
-            terminal_result_card_limit=200,
+            terminal_result_card_limit=1000,
         )
 
         ok = controller.publish_terminal_result(
@@ -226,12 +227,17 @@ class ExecutionOutputControllerTests(unittest.TestCase):
             [("text-reply-1", "", "# 标题\n\n## 小节\n\n- 条目")],
         )
 
-    def test_publish_terminal_result_budget_uses_feishu_projection_payload(self) -> None:
+    def test_publish_terminal_result_budget_uses_terminal_result_card_payload_bytes(self) -> None:
         state = self._make_state()
         raw_text = "![x](a.png)"
+        card_content = build_terminal_result_card_message_content(
+            raw_text,
+            terminal_result_id="0" * 32,
+            checksum="1" * 64,
+        )
         controller, bot, replies, _, recorded = self._make_controller(
             state,
-            terminal_result_card_limit=len(render_final_reply_text_block(raw_text)),
+            terminal_result_card_limit=len(card_content.encode("utf-8")) - 1,
         )
 
         ok = controller.publish_terminal_result(

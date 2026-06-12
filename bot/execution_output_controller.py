@@ -5,7 +5,8 @@ import time
 import uuid
 from typing import Any, Callable, Protocol, TypeAlias
 
-from bot.card_text_projection import render_terminal_result_card_content_for_feishu, terminal_result_checksum
+from bot.card_text_projection import terminal_result_checksum
+from bot.cards import build_terminal_result_card_message_content
 from bot.runtime_card_publisher import (
     ExecutionCardModel,
     RuntimeCardPublisher,
@@ -285,11 +286,15 @@ class ExecutionOutputController:
         raw_text = str(final_reply_text or "")
         if not raw_text.strip():
             return False
-        budget = int(self._terminal_result_card_limit())
-        payload = render_terminal_result_card_content_for_feishu(raw_text)
         terminal_result_id = uuid.uuid4().hex
         checksum = terminal_result_checksum(raw_text)
-        if len(payload) <= budget:
+        budget = int(self._terminal_result_card_limit())
+        card_content = build_terminal_result_card_message_content(
+            raw_text,
+            terminal_result_id=terminal_result_id,
+            checksum=checksum,
+        )
+        if len(card_content.encode("utf-8")) <= budget:
             published = self._card_publisher_factory().publish_terminal_result_card(
                 chat_id=chat_id,
                 parent_message_id=prompt_message_id,
