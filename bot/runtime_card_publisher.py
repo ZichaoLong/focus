@@ -122,19 +122,6 @@ def render_execution_card(model: ExecutionCardModel) -> dict:
     )
 
 
-def render_terminal_result_card(
-    final_reply_text: str,
-    *,
-    terminal_result_id: str = "",
-    checksum: str = "",
-) -> dict:
-    return build_terminal_result_card(
-        final_reply_text,
-        terminal_result_id=terminal_result_id,
-        checksum=checksum,
-    )
-
-
 def build_plan_card_model(plan: PlanView) -> PlanCardModel:
     return PlanCardModel(
         turn_id=plan.turn_id,
