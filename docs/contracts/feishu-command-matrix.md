@@ -39,7 +39,7 @@ It does not redefine:
 | `/new` | Create a new current thread | yes; `Start` page | admin only | admin only | none |
 | `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
-| `/goal [show\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal | yes; `Thread Settings` page | admin only | admin only | none |
+| `/goal [show\|text\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal; `text` exports plain text | yes; `Thread Settings` page | admin only | admin only | none |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |
 | `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name`; local CLI additionally supports repeated `--thread-id` for batch archive |

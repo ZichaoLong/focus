@@ -3757,6 +3757,15 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["goal_objective"], "ship goal support")
         self.assertEqual(state["goal_status"], "active")
 
+        card_count = len(bot.cards)
+        handler.handle_message("ou_user", "c1", "/goal text")
+        self.assertEqual(len(bot.cards), card_count)
+        goal_text = bot.replies[-1][1]
+        self.assertIn("thread: thread-1", goal_text)
+        self.assertIn("title: demo", goal_text)
+        self.assertIn("status: active", goal_text)
+        self.assertIn("objective:\nship goal support", goal_text)
+
         handler.handle_message("ou_user", "c1", "/goal pause")
         _, pause_card = bot.cards[-1]
         self.assertIn("状态：`paused`", pause_card["elements"][0]["content"])
@@ -6627,7 +6636,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("`/commands`", reply)
         self.assertIn("`/help [overview|start|thread-settings|turn|connection|group|more]`", reply)
         self.assertIn("`/status`", reply)
-        self.assertIn("`/goal [show|set 〈objective〉|pause|resume|clear]`", reply)
+        self.assertIn("`/goal [show|text|set 〈objective〉|pause|resume|clear]`", reply)
         self.assertIn("`/compact`", reply)
         self.assertIn("`/detach`", reply)
         self.assertIn("`/attach [binding|thread|service]`", reply)

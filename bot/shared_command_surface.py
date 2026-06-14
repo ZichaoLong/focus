@@ -37,7 +37,7 @@ _SHARED_COMMAND_SPECS = (
     SharedCommandSpec(
         key="goal",
         slash_name="/goal",
-        feishu_usage=feishu_visible_command_syntax("/goal [show|set <objective>|pause|resume|clear]"),
+        feishu_usage=feishu_visible_command_syntax("/goal [show|text|set <objective>|pause|resume|clear]"),
         feishu_summary="查看或管理当前绑定 thread 的 goal。",
     ),
     SharedCommandSpec(

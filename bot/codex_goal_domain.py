@@ -14,14 +14,17 @@ from bot.cards import (
     build_goal_card,
     build_goal_detached_confirm_card,
     build_markdown_card,
+    goal_status_label,
     make_card_response,
 )
+from bot.constants import format_timestamp
 from bot.runtime_state import FEISHU_RUNTIME_DETACHED
 from bot.runtime_view import RuntimeView
 
 _GOAL_USAGE = (
     "用法：`/goal`\n"
     "别名：`/goal show`\n"
+    "导出文本：`/goal text`\n"
     "设置：`/goal set <objective>`\n"
     "暂停：`/goal pause`\n"
     "恢复：`/goal resume`\n"
@@ -34,6 +37,35 @@ def _is_goals_feature_disabled_error(exc: Exception) -> bool:
     if not isinstance(exc, CodexRpcError):
         return False
     return str(exc.error.get("message", "") or "").strip().lower() == "goals feature is disabled"
+
+
+def _render_goal_text(*, thread_id: str, thread_title: str, goal: ThreadGoalSummary | None) -> str:
+    normalized_thread_id = str(thread_id or "").strip()
+    normalized_thread_title = str(thread_title or "").strip()
+    lines = [
+        f"thread: {normalized_thread_id or '-'}",
+        f"title: {normalized_thread_title or '（无标题）'}",
+    ]
+    if goal is None or not str(goal.objective or "").strip():
+        lines.extend(["", "当前 thread 暂无 goal。"])
+        return "\n".join(lines)
+
+    status = str(goal.status or "").strip()
+    token_budget = str(goal.token_budget) if goal.token_budget is not None else "未设置"
+    lines.extend(
+        [
+            f"status: {status or '-'} ({goal_status_label(status)})",
+            f"token_budget: {token_budget}",
+            f"tokens_used: {int(goal.tokens_used or 0)}",
+            f"time_used_seconds: {int(goal.time_used_seconds or 0)}",
+            f"created_at: {format_timestamp(goal.created_at)}",
+            f"updated_at: {format_timestamp(goal.updated_at)}",
+            "",
+            "objective:",
+            str(goal.objective or "").strip(),
+        ]
+    )
+    return "\n".join(lines)
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +103,10 @@ class CodexGoalDomain:
                 if payload:
                     return CommandResult(text=_GOAL_USAGE)
                 return self._show_goal(sender_id, chat_id, message_id=message_id)
+            if subcommand == "text":
+                if payload:
+                    return CommandResult(text=_GOAL_USAGE)
+                return self._show_goal_text(sender_id, chat_id, message_id=message_id)
             if subcommand == "set":
                 if not payload:
                     return CommandResult(text=_GOAL_USAGE)
@@ -169,6 +205,12 @@ class CodexGoalDomain:
         goal = self._get_thread_goal_or_raise(thread_id)
         self._project_goal(sender_id, chat_id, goal, message_id=message_id)
         return CommandResult(card=build_goal_card(thread_id=thread_id, thread_title=thread_title, goal=goal))
+
+    def _show_goal_text(self, sender_id: str, chat_id: str, *, message_id: str = "") -> CommandResult:
+        thread_id, thread_title = self._current_thread(sender_id, chat_id, message_id=message_id)
+        goal = self._get_thread_goal_or_raise(thread_id)
+        self._project_goal(sender_id, chat_id, goal, message_id=message_id)
+        return CommandResult(text=_render_goal_text(thread_id=thread_id, thread_title=thread_title, goal=goal))
 
     def _set_goal(
         self,

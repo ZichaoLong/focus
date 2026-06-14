@@ -39,7 +39,7 @@
 | `/new` | 创建新的当前 thread | 是；`Start` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/threads` | 浏览当前目录线程 | 是；`Start` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread list --scope cwd` |
 | `/resume <thread_id\|thread_name>` | 把目标线程恢复到当前 chat | 是；`Start` 表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 用 `fcodex resume <thread_id\|thread_name>` |
-| `/goal [show\|set <objective>\|pause\|resume\|clear]` | 查看或管理当前 thread 的 goal | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无 |
+| `/goal [show\|text\|set <objective>\|pause\|resume\|clear]` | 查看或管理当前 thread 的 goal；`text` 导出纯文本 | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/compact` | 压缩当前绑定 thread 的上下文历史 | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/rename <title>` | 重命名当前 thread | 是；`Thread Settings` 表单 | 仅管理员 | 仅管理员 | 无 |
 | `/archive [thread_id\|thread_name]` | 归档当前线程，或归档显式指定目标 | 是；`Thread Settings` 按钮或表单 | 仅管理员 | 仅管理员 | `feishu-codexctl thread archive --thread-id/--thread-name`；本地 CLI 额外支持重复 `--thread-id` 批量归档 |
