@@ -168,7 +168,6 @@ class AgentAdapter(ABC):
         permissions_profile_id: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ) -> None:
         ...
 
@@ -190,11 +189,9 @@ class AgentAdapter(ABC):
         input_items: list[TurnInputItem],
         cwd: str | None = None,
         model: str | None = None,
-        model_provider: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ) -> dict[str, Any]:
         ...
 

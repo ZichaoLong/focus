@@ -745,7 +745,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "detach_reason": "",
             "approval_policy": "on-request",
             "permissions_profile_id": ":workspace",
-            "collaboration_mode": "default",
         }
         with patch("bot.feishu_codexctl._request", return_value=snapshot):
             with redirect_stdout(stdout):
@@ -1029,7 +1028,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     "feishu_runtime_state": "detached",
                     "approval_policy": "never",
                     "permissions_profile_id": ":danger-full-access",
-                    "collaboration_mode": "default",
                     "model": "",
                     "reasoning_effort": "",
                 },
@@ -1075,7 +1073,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     "feishu_runtime_state": "detached",
                     "approval_policy": "never",
                     "permissions_profile_id": ":danger-full-access",
-                    "collaboration_mode": "default",
                     "model": "",
                     "reasoning_effort": "",
                 },
@@ -1307,7 +1304,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                         "feishu_runtime_state": "detached",
                         "approval_policy": "never",
                         "permissions_profile_id": ":danger-full-access",
-                        "collaboration_mode": "default",
                         "model": "",
                         "reasoning_effort": "",
                     },
@@ -1340,7 +1336,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                         "feishu_runtime_state": "detached",
                         "approval_policy": "never",
                         "permissions_profile_id": ":danger-full-access",
-                        "collaboration_mode": "default",
                         "model": "",
                         "reasoning_effort": "",
                     },
@@ -1376,7 +1371,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     "feishu_runtime_state": "detached",
                     "approval_policy": "never",
                     "permissions_profile_id": ":danger-full-access",
-                    "collaboration_mode": "default",
                     "model": "",
                     "reasoning_effort": "",
                 },

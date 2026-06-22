@@ -55,7 +55,6 @@
 | `/model [name\|auto]` | 设置当前 Feishu 会话的 turn-time model override；无参数时打开共享 model/effort 卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | 设置当前 Feishu 会话的 turn-time effort override；无参数时打开共享 model/effort 卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/approval [untrusted\|on-request\|never]` | 设置 approval policy | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/collab-mode [default\|plan]` | 为当前 Feishu 会话后续 turn 设置 collaboration mode | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/last text` | 导出当前会话最近的权威终态文本；优先 terminal result，其次回退最近执行卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/reset-backend` | 预览并重置当前实例 backend，用于恢复 | 是；`More -> Advanced Actions` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
 | `/whoami` | 查看调用者身份 | 是；`More` 页 | 任何人 | 不支持 | 无 |
@@ -97,7 +96,7 @@
 - `/threads` 列表卡：`Resume/Current`、`Archive`、`More`、`Collapse`
 - `/goal` 卡：`Refresh`、`Pause` / `Resume`、`Clear`
 - `/reset-backend` 结果卡：后续 attach/detach 按钮，例如 `附着当前线程`、`附着当前实例`、`保持 detached`
-- 共享 `/model` / `/effort` 卡，以及 `/permissions` / `/approval` / `/collab-mode` 卡：turn-time runtime-setting toggle buttons
+- 共享 `/model` / `/effort` 卡，以及 `/permissions` / `/approval` 卡：turn-time runtime-setting toggle buttons
 - approval / extra-input cards：各自请求类型对应的 allow / deny / submit 按钮
 
 ## 5. 边界

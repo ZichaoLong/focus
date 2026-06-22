@@ -247,7 +247,6 @@ class CodexHandler(BotHandler):
             default_working_dir=self._default_working_dir,
             default_approval_policy=self._adapter_config.approval_policy,
             default_permissions_profile_id=self._adapter_config.permissions_profile_id,
-            default_collaboration_mode=self._adapter_config.collaboration_mode,
             default_model=self._adapter_config.model,
             default_reasoning_effort=self._adapter_config.reasoning_effort,
             chat_binding_store=self._chat_binding_store,
@@ -1220,7 +1219,6 @@ class CodexHandler(BotHandler):
         message_id: str = "",
         approval_policy: Any = UNSET,
         permissions_profile_id: Any = UNSET,
-        collaboration_mode: Any = UNSET,
         model: Any = UNSET,
         reasoning_effort: Any = UNSET,
     ) -> None:
@@ -1232,7 +1230,6 @@ class CodexHandler(BotHandler):
                 RuntimeSettingsChanged(
                     approval_policy=approval_policy,
                     permissions_profile_id=permissions_profile_id,
-                    collaboration_mode=collaboration_mode,
                     model=model,
                     reasoning_effort=reasoning_effort,
                 ),
@@ -1833,11 +1830,6 @@ class CodexHandler(BotHandler):
                     sender_id, chat_id, arg, message_id=message_id
                 ),
             ),
-            "/collab-mode": CommandRoute(
-                handler=lambda sender_id, chat_id, arg, message_id: self._settings_domain.handle_collab_mode_command(
-                    sender_id, chat_id, arg, message_id=message_id
-                ),
-            ),
             "/group-mode": CommandRoute(
                 handler=lambda sender_id, chat_id, arg, message_id: self._group_domain.handle_group_mode_command(
                     chat_id,
@@ -1978,12 +1970,6 @@ class CodexHandler(BotHandler):
             ),
             "dismiss_attach": ActionRoute(
                 handler=lambda sender_id, chat_id, message_id, action_value: self._runtime_admin.handle_dismiss_attach_action(),
-                group_guard="group_admin",
-            ),
-            "set_collaboration_mode": ActionRoute(
-                handler=lambda sender_id, chat_id, message_id, action_value: self._settings_domain.handle_set_collaboration_mode(
-                    sender_id, chat_id, message_id, action_value
-                ),
                 group_guard="group_admin",
             ),
             "set_group_mode": ActionRoute(
@@ -2945,7 +2931,6 @@ class CodexHandler(BotHandler):
         permissions_profile_id = runtime.permissions_profile_id or None
         model = runtime.model or None
         reasoning_effort = runtime.reasoning_effort or None
-        collaboration_mode = runtime.collaboration_mode or None
         goal = None
         goal_is_active = False
         loaded_thread_ids = set(self._adapter.list_loaded_thread_ids())
@@ -2990,7 +2975,6 @@ class CodexHandler(BotHandler):
                 permissions_profile_id=permissions_profile_id,
                 model=model,
                 reasoning_effort=reasoning_effort,
-                collaboration_mode=collaboration_mode,
             )
         except Exception as exc:
             if paused_for_cold_sync:
@@ -3168,7 +3152,6 @@ class CodexHandler(BotHandler):
         permissions_profile_id = runtime.permissions_profile_id or None
         model = runtime.model or None
         reasoning_effort = runtime.reasoning_effort or None
-        collaboration_mode = runtime.collaboration_mode or None
         loaded_thread_ids = set(self._adapter.list_loaded_thread_ids())
         was_loaded = thread_id in loaded_thread_ids
         snapshot: ThreadSnapshot | None = None
@@ -3197,7 +3180,6 @@ class CodexHandler(BotHandler):
                 permissions_profile_id=permissions_profile_id,
                 model=model,
                 reasoning_effort=reasoning_effort,
-                collaboration_mode=collaboration_mode,
             )
             if goal.status != "active" or paused_for_cold_sync:
                 effective_goal = self._adapter.set_thread_goal(thread_id, status="active")

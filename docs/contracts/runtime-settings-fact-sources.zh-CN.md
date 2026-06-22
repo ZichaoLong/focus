@@ -14,7 +14,6 @@
 - effort
 - approval
 - permissions
-- collaboration mode
 
 它们的属性：
 
@@ -77,8 +76,51 @@
 
 - `auto` 仍表示“不显式 override”
 - 它不再映射到任何项目自管 thread-level persisted state
+- adapter 不得把 `auto` materialize 成完整的上游 settings 对象并发送旧
+  snapshot 值；普通 auto turn 应让上游当前 thread state 自己延续。
+- `codex.yaml` 中的 `model` 与 `reasoning_effort` 只 seed 新 binding 的
+  初始 runtime state；进入 binding 后，`thread/start` 与普通
+  `turn/start` 都只看 binding runtime settings，不再从 adapter config
+  fallback。
+- `model_provider` 不是 binding runtime setting；它不会在 `/new`、首条
+  prompt 创建 thread 或普通 turn 中从 adapter config 自动注入。`codex.yaml`
+  不再接受 `model_provider`；provider 应交给上游 Codex 配置，或仅在调用方
+  显式传入 provider hint 时发送。
+- collaboration mode 不再是 Feishu runtime setting。如需使用，交给上游
+  Codex 配置/行为；本项目不再构造或发送上游 `collaborationMode`
+  payload。
 
-## 6. 一条维护规则
+## 6. binding store 的空值规则
+
+`chat_bindings.json` 是持久化投影，不是运行语义事实源。runtime-setting
+的值和 runtime-setting 的显式配置意图是两类不同事实。store 层只负责：
+
+- 保存和读取字符串字段，以及 `configured_settings` 列表
+- 校验结构和非空枚举值
+- 兼容旧字段名（例如 legacy `sandbox` -> `permissions_profile_id` 字段）
+
+store 层不得引入实例默认 fallback。空字符串必须原样保留，直到
+`BindingRuntimeManager` hydrate 时，才按当前实例配置解释：
+
+- `approval_policy` 空值 -> 当前实例默认审批策略
+- `permissions_profile_id` 空值 -> 当前实例默认权限基线
+- 旧 `collaboration_mode` 字段读取时忽略，新保存不再写出
+- `model` / `reasoning_effort` 空值 -> `auto`，不显式 override
+
+`configured_settings` 是 binding-local 的显式用户意图事实源。它只由
+`/model`、`/effort`、`/approval`、`/permissions` 或对应卡片交互写入；
+`codex.yaml` seed 不产生 intent。即使某个 value 等于实例默认值，只要对应
+setting 名字出现在这个列表里，它仍表示用户显式配置过。旧记录没有
+`configured_settings` 时，store 会按规范化后的非空 setting value 保守推断
+intent；历史上的空值 `auto` intent 无法恢复，这个歧义可以接受。
+
+未绑定但已保存过 setting 的 binding 是合法状态：没有 `thread_id`，但承载了
+用户的下一轮配置决策。具体来说，`configured/unbound` 表示没有 thread
+bookmark，但持久化 binding 仍有 `configured_settings` 或其他必须保留的
+binding-local fact。管理面可显示为 `configured/unbound`；它不是 stale thread
+binding，不应被 `binding clear-stale` 清理。
+
+## 7. 一条维护规则
 
 如果将来要新增设置，必须先被归类为且只归类为：
 

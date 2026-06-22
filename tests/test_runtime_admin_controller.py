@@ -35,7 +35,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
             default_working_dir="/tmp/default",
             default_approval_policy="on-request",
             default_permissions_profile_id=":workspace",
-            default_collaboration_mode="default",
             default_model="gpt-5.4",
             default_reasoning_effort="medium",
             chat_binding_store=chat_binding_store,
@@ -382,7 +381,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 "feishu_runtime_state": "detached",
                 "approval_policy": "never",
                 "permissions_profile_id": ":danger-full-access",
-                "collaboration_mode": "default",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -1338,7 +1336,6 @@ class RuntimeAdminControllerTests(unittest.TestCase):
                 "feishu_runtime_state": "detached",
                 "approval_policy": "never",
                 "sandbox": "danger-full-access",
-                "collaboration_mode": "default",
                 "model": "",
             },
         )

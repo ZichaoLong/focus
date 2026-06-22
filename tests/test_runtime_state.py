@@ -51,9 +51,9 @@ def _build_state() -> dict[str, object]:
         "awaiting_local_turn_started": True,
         "approval_policy": "on-request",
         "permissions_profile_id": ":workspace",
-        "collaboration_mode": "default",
         "model": "",
         "reasoning_effort": "",
+        "configured_settings": [],
         "plan_message_id": "plan-1",
         "plan_turn_id": "turn-1",
         "plan_explanation": "old explanation",
@@ -123,9 +123,12 @@ class RuntimeStateReducerTests(unittest.TestCase):
 
         self.assertEqual(state["approval_policy"], "never")
         self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
-        self.assertEqual(state["collaboration_mode"], "default")
         self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["reasoning_effort"], "high")
+        self.assertEqual(
+            state["configured_settings"],
+            ["approval_policy", "model", "permissions_profile_id", "reasoning_effort"],
+        )
         self.assertEqual(state["current_thread_title"], "renamed")
         self.assertEqual(state["working_dir"], "/tmp/project")
         self.assertEqual(state["current_thread_id"], "thread-1")

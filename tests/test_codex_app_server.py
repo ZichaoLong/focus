@@ -69,6 +69,8 @@ class _FakeRpc:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict]] = []
         self.default_model = "gpt-5.3-codex"
+        self.thread_model = ""
+        self.thread_reasoning_effort = ""
         self.stopped = False
 
     def request(self, method: str, params: dict | None = None, *, timeout: float | None = None) -> dict:
@@ -103,7 +105,7 @@ class _FakeRpc:
                 ],
             }
         if method in {"thread/start", "thread/resume"}:
-            return {
+            response = {
                 "thread": {
                     "id": "thread-1",
                     "cwd": "/tmp/project",
@@ -115,6 +117,11 @@ class _FakeRpc:
                     "status": {"type": "idle", "activeFlags": []},
                 }
             }
+            if self.thread_model:
+                response["model"] = self.thread_model
+            if self.thread_reasoning_effort:
+                response["reasoningEffort"] = self.thread_reasoning_effort
+            return response
         if method in {"thread/goal/get", "thread/goal/set"}:
             return {
                 "goal": {
@@ -162,6 +169,10 @@ class CodexAppServerAdapterTests(unittest.TestCase):
     def test_from_dict_rejects_removed_managed_startup_profile(self) -> None:
         with self.assertRaisesRegex(ValueError, "managed_startup_profile"):
             CodexAppServerConfig.from_dict({"managed_startup_profile": "work"})
+
+    def test_from_dict_rejects_removed_collaboration_mode(self) -> None:
+        with self.assertRaisesRegex(ValueError, "collaboration_mode"):
+            CodexAppServerConfig.from_dict({"collaboration_mode": "plan"})
 
     def test_create_thread_merges_memory_config_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -226,6 +237,22 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                 },
             ),
         )
+
+    def test_create_thread_does_not_fallback_to_configured_model(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig(model="gpt-5.4"))
+        fake_rpc = _FakeRpc()
+        adapter._rpc = fake_rpc
+
+        adapter.create_thread(cwd="/tmp/project")
+
+        method, params = fake_rpc.calls[0]
+        self.assertEqual(method, "thread/start")
+        self.assertNotIn("model", params)
+        self.assertNotIn("modelProvider", params)
+
+    def test_config_rejects_model_provider(self) -> None:
+        with self.assertRaisesRegex(ValueError, "model_provider"):
+            CodexAppServerConfig.from_dict({"model_provider": "provider2_api"})
 
     def test_create_thread_allows_permission_overrides(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -371,7 +398,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             permissions_profile_id=":workspace",
             model="gpt-5.4",
             reasoning_effort="high",
-            collaboration_mode="plan",
         )
 
         self.assertEqual(
@@ -384,14 +410,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "permissions": ":workspace",
                     "model": "gpt-5.4",
                     "effort": "high",
-                    "collaborationMode": {
-                        "mode": "plan",
-                        "settings": {
-                            "model": "gpt-5.4",
-                            "reasoning_effort": "high",
-                            "developer_instructions": None,
-                        },
-                    },
                 },
             ),
         )
@@ -487,7 +505,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(fake_rpc.calls[0], ("thread/goal/clear", {"threadId": "thread-1"}))
         self.assertTrue(cleared)
 
-    def test_start_turn_default_mode_sends_explicit_collaboration_mode(self) -> None:
+    def test_start_turn_default_mode_does_not_send_complete_collaboration_mode(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -501,7 +519,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(
             fake_rpc.calls,
             [
-                ("model/list", {}),
                 (
                     "turn/start",
                     {
@@ -512,22 +529,14 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                         "approvalsReviewer": "user",
                         "permissions": ":danger-full-access",
                         "personality": "pragmatic",
-                        "collaborationMode": {
-                            "mode": "default",
-                            "settings": {
-                                "model": "gpt-5.3-codex",
-                                "reasoning_effort": None,
-                                "developer_instructions": None,
-                            },
-                        },
                     },
                 )
             ],
         )
 
-    def test_start_turn_plan_mode_uses_configured_model(self) -> None:
+    def test_start_turn_config_seed_does_not_materialize_model_or_effort(self) -> None:
         adapter = CodexAppServerAdapter(
-            CodexAppServerConfig(model="gpt-5.4", reasoning_effort="high", collaboration_mode="plan")
+            CodexAppServerConfig(model="gpt-5.4", reasoning_effort="high")
         )
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -541,58 +550,11 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(len(fake_rpc.calls), 1)
         method, params = fake_rpc.calls[0]
         self.assertEqual(method, "turn/start")
-        self.assertEqual(params["collaborationMode"]["mode"], "plan")
-        self.assertEqual(params["collaborationMode"]["settings"]["model"], "gpt-5.4")
-        self.assertEqual(params["collaborationMode"]["settings"]["reasoning_effort"], "high")
+        self.assertNotIn("collaborationMode", params)
+        self.assertNotIn("model", params)
+        self.assertNotIn("effort", params)
 
-    def test_start_turn_plan_mode_resolves_default_model_once(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig(collaboration_mode="plan"))
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        adapter.start_turn(
-            thread_id="thread-1",
-            input_items=[{"type": "text", "text": "hello"}],
-            cwd="/tmp",
-        )
-        adapter.start_turn(
-            thread_id="thread-2",
-            input_items=[{"type": "text", "text": "again"}],
-            cwd="/tmp",
-        )
-
-        self.assertEqual(fake_rpc.calls[0][0], "model/list")
-        self.assertEqual(fake_rpc.calls[1][0], "turn/start")
-        self.assertEqual(fake_rpc.calls[2][0], "turn/start")
-        self.assertEqual(
-            fake_rpc.calls[1][1]["collaborationMode"]["settings"]["model"],
-            "gpt-5.3-codex",
-        )
-        self.assertEqual(
-            fake_rpc.calls[2][1]["collaborationMode"]["settings"]["model"],
-            "gpt-5.3-codex",
-        )
-
-    def test_start_turn_allows_per_turn_collaboration_mode_override(self) -> None:
-        adapter = CodexAppServerAdapter(CodexAppServerConfig(collaboration_mode="plan"))
-        fake_rpc = _FakeRpc()
-        adapter._rpc = fake_rpc
-
-        adapter.start_turn(
-            thread_id="thread-1",
-            input_items=[{"type": "text", "text": "hello"}],
-            cwd="/tmp",
-            collaboration_mode="default",
-        )
-
-        self.assertEqual(len(fake_rpc.calls), 2)
-        self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
-        method, params = fake_rpc.calls[1]
-        self.assertEqual(method, "turn/start")
-        self.assertEqual(params["collaborationMode"]["mode"], "default")
-        self.assertEqual(params["collaborationMode"]["settings"]["model"], "gpt-5.3-codex")
-
-    def test_start_turn_uses_model_but_drops_provider_override(self) -> None:
+    def test_start_turn_uses_model_without_provider_override_surface(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
@@ -602,7 +564,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             input_items=[{"type": "text", "text": "hello"}],
             cwd="/tmp",
             model="provider2-model",
-            model_provider="provider2_api",
         )
 
         self.assertEqual(fake_rpc.calls[0][0], "turn/start")
@@ -610,13 +571,17 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(params["model"], "provider2-model")
         self.assertNotIn("modelProvider", params)
         self.assertNotIn("config", params)
-        self.assertEqual(params["collaborationMode"]["settings"]["model"], "provider2-model")
+        self.assertNotIn("collaborationMode", params)
 
-    def test_start_turn_uses_cached_thread_model_for_collaboration_mode(self) -> None:
+    def test_start_turn_auto_effort_omits_complete_collaboration_mode_to_preserve_backend_state(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
+        fake_rpc.thread_model = "gpt-5.5"
+        fake_rpc.thread_reasoning_effort = "xhigh"
         adapter._rpc = fake_rpc
-        adapter._thread_resolved_model["thread-1"] = "provider2-model"
+
+        adapter.create_thread(cwd="/tmp/project")
+        fake_rpc.calls.clear()
 
         adapter.start_turn(
             thread_id="thread-1",
@@ -627,8 +592,56 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         self.assertEqual(len(fake_rpc.calls), 1)
         method, params = fake_rpc.calls[0]
         self.assertEqual(method, "turn/start")
-        self.assertNotIn("model", params)
-        self.assertEqual(params["collaborationMode"]["settings"]["model"], "provider2-model")
+        self.assertNotIn("effort", params)
+        self.assertNotIn("collaborationMode", params)
+
+    def test_start_turn_explicit_reasoning_effort_overrides_cached_thread_effort(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        fake_rpc.thread_model = "gpt-5.5"
+        fake_rpc.thread_reasoning_effort = "xhigh"
+        adapter._rpc = fake_rpc
+
+        adapter.create_thread(cwd="/tmp/project")
+        fake_rpc.calls.clear()
+
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "hello"}],
+            cwd="/tmp",
+            reasoning_effort="high",
+        )
+
+        self.assertEqual(len(fake_rpc.calls), 1)
+        method, params = fake_rpc.calls[0]
+        self.assertEqual(method, "turn/start")
+        self.assertEqual(params["effort"], "high")
+        self.assertNotIn("collaborationMode", params)
+
+    def test_start_turn_explicit_effort_is_not_reinjected_on_auto(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = _FakeRpc()
+        fake_rpc.thread_model = "gpt-5.5"
+        fake_rpc.thread_reasoning_effort = "xhigh"
+        adapter._rpc = fake_rpc
+
+        adapter.create_thread(cwd="/tmp/project")
+        fake_rpc.calls.clear()
+
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "low"}],
+            cwd="/tmp",
+            reasoning_effort="low",
+        )
+        adapter.start_turn(
+            thread_id="thread-1",
+            input_items=[{"type": "text", "text": "auto"}],
+            cwd="/tmp",
+        )
+        self.assertEqual(fake_rpc.calls[0][1]["effort"], "low")
+        self.assertNotIn("effort", fake_rpc.calls[1][1])
+        self.assertNotIn("collaborationMode", fake_rpc.calls[1][1])
 
     def test_start_turn_can_override_sandbox_policy(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -642,9 +655,8 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             sandbox="danger-full-access",
         )
 
-        self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
-        self.assertEqual(fake_rpc.calls[1][0], "turn/start")
-        self.assertEqual(fake_rpc.calls[1][1]["permissions"], ":danger-full-access")
+        self.assertEqual(fake_rpc.calls[0][0], "turn/start")
+        self.assertEqual(fake_rpc.calls[0][1]["permissions"], ":danger-full-access")
 
     def test_start_turn_falls_back_to_legacy_sandbox_policy_when_permissions_unsupported(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -657,12 +669,11 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             cwd="/tmp",
         )
 
-        self.assertEqual(fake_rpc.calls[0], ("model/list", {}))
+        self.assertEqual(fake_rpc.calls[0][0], "turn/start")
+        self.assertEqual(fake_rpc.calls[0][1]["permissions"], ":danger-full-access")
         self.assertEqual(fake_rpc.calls[1][0], "turn/start")
-        self.assertEqual(fake_rpc.calls[1][1]["permissions"], ":danger-full-access")
-        self.assertEqual(fake_rpc.calls[2][0], "turn/start")
-        self.assertNotIn("permissions", fake_rpc.calls[2][1])
-        self.assertEqual(fake_rpc.calls[2][1]["sandboxPolicy"], {"type": "dangerFullAccess"})
+        self.assertNotIn("permissions", fake_rpc.calls[1][1])
+        self.assertEqual(fake_rpc.calls[1][1]["sandboxPolicy"], {"type": "dangerFullAccess"})
 
     def test_list_threads_can_explicitly_disable_provider_filter(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -731,18 +742,14 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             ],
         )
 
-    def test_stop_clears_cached_models(self) -> None:
+    def test_stop_stops_rpc_client(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
         fake_rpc = _FakeRpc()
         adapter._rpc = fake_rpc
-        adapter._collaboration_mode_model = "gpt-stale"
-        adapter._thread_resolved_model["thread-1"] = "thread-model"
 
         adapter.stop()
 
         self.assertTrue(fake_rpc.stopped)
-        self.assertIsNone(adapter._collaboration_mode_model)
-        self.assertEqual(adapter._thread_resolved_model, {})
 
     def test_archive_thread_calls_public_archive_api(self) -> None:
         adapter = CodexAppServerAdapter(CodexAppServerConfig())
@@ -752,10 +759,6 @@ class CodexAppServerAdapterTests(unittest.TestCase):
         adapter.archive_thread("thread-1")
 
         self.assertEqual(fake_rpc.calls[0], ("thread/archive", {"threadId": "thread-1"}))
-
-    def test_config_rejects_invalid_collaboration_mode(self) -> None:
-        with self.assertRaises(ValueError):
-            CodexAppServerConfig.from_dict({"collaboration_mode": "broken"})
 
     def test_config_rejects_invalid_app_server_mode(self) -> None:
         with self.assertRaises(ValueError):

@@ -47,7 +47,7 @@
 ### 2.1 binding-wise next-turn settings
 
 - scope：Feishu binding
-- 飞书入口：`/model`、`/effort`、`/approval`、`/permissions`、`/collab-mode`
+- 飞书入口：`/model`、`/effort`、`/approval`、`/permissions`
 - 本地 `fcodex` / 上游 TUI 仍保持各自本地状态，不会自动与飞书侧持久化 binding 设置合并
 
 ## 3. 已移除的项目自管设置

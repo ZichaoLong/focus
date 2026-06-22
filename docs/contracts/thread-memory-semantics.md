@@ -29,7 +29,6 @@ If an operator wants to change future-turn behavior for one Feishu binding, use:
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 ## Current normative docs
 

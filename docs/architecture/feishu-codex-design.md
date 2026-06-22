@@ -187,9 +187,9 @@ Current module split:
 - `bot/codex_goal_domain.py`: owns the thread-level `/goal` read/write surface,
   goal-card rendering flow, and local goal projection updates for the current binding
 - `bot/codex_settings_domain.py`: owns user-facing settings and identity
-  commands such as `/model`, `/effort`, `/approval`, `/permissions`,
-  `/collab-mode`, `/whoami`, and `/init`; it crosses bot/runtime boundaries
-  through explicit `SettingsDomainPorts` rather than retaining a handler owner
+  commands such as `/model`, `/effort`, `/approval`, `/permissions`, `/whoami`,
+  and `/init`; it crosses bot/runtime boundaries through explicit
+  `SettingsDomainPorts` rather than retaining a handler owner
 - `bot/execution_transcript.py`: an internal transcript assembler for execution-card
   presentation; it builds display-only `reply_segments` / `process_log`
   fragments, and can support hiding the terminal final-answer segment from the

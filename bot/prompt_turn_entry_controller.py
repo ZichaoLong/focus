@@ -10,7 +10,11 @@ from bot.adapters.base import ThreadSnapshot, ThreadSummary, TurnInputItem
 from bot.cards import build_markdown_card
 from bot.execution_transcript import ExecutionTranscript
 from bot.runtime_card_publisher import build_execution_card_model
-from bot.runtime_state import BACKEND_THREAD_STATUS_IDLE, ExecutionStateChanged, RuntimeStateDict
+from bot.runtime_state import (
+    BACKEND_THREAD_STATUS_IDLE,
+    ExecutionStateChanged,
+    RuntimeStateDict,
+)
 from bot.runtime_view import build_runtime_view
 from bot.turn_execution_coordinator import TurnExecutionCoordinator
 from bot.reason_codes import ReasonedCheck
@@ -512,7 +516,6 @@ class PromptTurnEntryController:
                 approval_policy=state["approval_policy"] or None,
                 permissions_profile_id=state["permissions_profile_id"] or None,
                 reasoning_effort=runtime_reasoning_effort or None,
-                collaboration_mode=state["collaboration_mode"] or None,
             )
 
         try:

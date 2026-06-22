@@ -6,7 +6,7 @@ Feishu 绑定级持久化状态。
 - 当前绑定 thread
 - 当前线程标题
 - 当前飞书会话的 runtime settings
-  （权限 / 协作模式 / model override / reasoning effort override）
+  （权限 / model override / reasoning effort override）
 
 运行中的 turn、执行卡片、审批请求等瞬时状态不落盘。
 """
@@ -23,14 +23,13 @@ from bot.approval_policy import normalize_approval_policy
 from bot.constants import GROUP_SHARED_BINDING_OWNER_ID
 from bot.feishu_types import ChatBindingsFileData, StoredChatBinding
 from bot.permissions_profile import (
-    BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
-    LEGACY_SANDBOX_TO_PERMISSION_PROFILE_ID,
     normalize_permissions_profile_id,
 )
 from bot.runtime_state import VALID_FEISHU_RUNTIME_STATES
+from bot.runtime_state import CONFIGURABLE_RUNTIME_SETTING_KEYS
 
-CHAT_BINDING_STORE_SCHEMA_VERSION = 6
-SUPPORTED_CHAT_BINDING_STORE_SCHEMA_VERSIONS = frozenset({4, 5, CHAT_BINDING_STORE_SCHEMA_VERSION})
+CHAT_BINDING_STORE_SCHEMA_VERSION = 9
+SUPPORTED_CHAT_BINDING_STORE_SCHEMA_VERSIONS = frozenset({4, 5, 6, 7, 8, CHAT_BINDING_STORE_SCHEMA_VERSION})
 
 
 class ChatBindingStore:
@@ -184,7 +183,6 @@ class ChatBindingStore:
             "feishu_runtime_state": raw_state.get("feishu_runtime_state", ""),
             "approval_policy": raw_state.get("approval_policy", ""),
             "permissions_profile_id": raw_state.get("permissions_profile_id", raw_state.get("sandbox", "")),
-            "collaboration_mode": raw_state.get("collaboration_mode", ""),
             "model": raw_state.get("model", ""),
             "reasoning_effort": raw_state.get("reasoning_effort", ""),
         }
@@ -195,9 +193,13 @@ class ChatBindingStore:
             normalized[key] = value.strip()
         if normalized["approval_policy"]:
             normalized["approval_policy"] = normalize_approval_policy(normalized["approval_policy"])
-        normalized["permissions_profile_id"] = normalize_permissions_profile_id(
-            normalized["permissions_profile_id"],
-            fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
+        if normalized["permissions_profile_id"]:
+            normalized["permissions_profile_id"] = normalize_permissions_profile_id(
+                normalized["permissions_profile_id"]
+            )
+        normalized["configured_settings"] = ChatBindingStore._normalize_configured_settings(
+            raw_state,
+            normalized,
         )
         current_thread_id = normalized["current_thread_id"]
         runtime_state = normalized["feishu_runtime_state"]
@@ -212,6 +214,32 @@ class ChatBindingStore:
                     "invalid chat_bindings.json: feishu_runtime_state must be empty when current_thread_id is empty"
                 )
         return normalized
+
+    @staticmethod
+    def _normalize_configured_settings(
+        raw_state: dict[str, Any],
+        normalized_state: dict[str, Any],
+    ) -> list[str]:
+        raw_configured = raw_state.get("configured_settings")
+        if raw_configured is None:
+            inferred = [
+                key
+                for key in sorted(CONFIGURABLE_RUNTIME_SETTING_KEYS)
+                if isinstance(normalized_state.get(key, ""), str)
+                and normalized_state.get(key, "").strip()
+            ]
+            return inferred
+        if not isinstance(raw_configured, list):
+            raise ValueError("invalid chat_bindings.json: configured_settings must be a list")
+        configured: list[str] = []
+        for item in raw_configured:
+            if not isinstance(item, str):
+                raise ValueError("invalid chat_bindings.json: configured_settings entries must be strings")
+            normalized_item = item.strip()
+            if normalized_item in CONFIGURABLE_RUNTIME_SETTING_KEYS and normalized_item not in configured:
+                configured.append(normalized_item)
+        configured.sort()
+        return configured
 
     @staticmethod
     def _load_from_data(

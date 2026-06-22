@@ -26,7 +26,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "current_thread_write_owner_thread_id": "thread-p2p",
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
-                "collaboration_mode": "default",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
             },
@@ -41,7 +40,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "current_thread_write_owner_thread_id": "",
                 "approval_policy": "never",
                 "sandbox": "danger-full-access",
-                "collaboration_mode": "plan",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -52,10 +50,48 @@ class ChatBindingStoreTests(unittest.TestCase):
         self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["current_thread_id"], "thread-p2p")
         self.assertNotIn("current_thread_write_owner_thread_id", raw["p2p_bindings"]["oc_p2p"]["ou_user"])
         self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["reasoning_effort"], "high")
+        self.assertEqual(
+            raw["p2p_bindings"]["oc_p2p"]["ou_user"]["configured_settings"],
+            ["approval_policy", "model", "permissions_profile_id", "reasoning_effort"],
+        )
         self.assertEqual(raw["group_bindings"]["oc_group"]["current_thread_id"], "thread-group")
 
         self.assertEqual(store.load(("ou_user", "oc_p2p"))["current_thread_title"], "p2p title")
-        self.assertEqual(store.load(("__group__", "oc_group"))["collaboration_mode"], "plan")
+
+    def test_load_ignores_legacy_pending_collaboration_mode_sync_field(self) -> None:
+        _, store, state_path = self._make_store()
+        state_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 6,
+                    "p2p_bindings": {
+                        "oc_p2p": {
+                            "ou_user": {
+                                "working_dir": "/tmp/p2p",
+                                "current_thread_id": "thread-p2p",
+                                "current_thread_title": "",
+                                "feishu_runtime_state": "attached",
+                                "approval_policy": "on-request",
+                                "permissions_profile_id": ":workspace",
+                                "collaboration_mode": "plan",
+                                "pending_collaboration_mode_sync": "true",
+                                "model": "",
+                                "reasoning_effort": "",
+                            }
+                        }
+                    },
+                    "group_bindings": {},
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+
+        loaded = store.load(("ou_user", "oc_p2p"))
+
+        assert loaded is not None
+        self.assertNotIn("pending_collaboration_mode_sync", loaded)
+        self.assertNotIn("collaboration_mode", loaded)
 
     def test_load_all_returns_all_normalized_bindings(self) -> None:
         _, store, _ = self._make_store()
@@ -70,7 +106,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "current_thread_write_owner_thread_id": "thread-p2p",
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
-                "collaboration_mode": "default",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
             },
@@ -85,7 +120,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "current_thread_write_owner_thread_id": "",
                 "approval_policy": "never",
                 "sandbox": "danger-full-access",
-                "collaboration_mode": "plan",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -96,6 +130,31 @@ class ChatBindingStoreTests(unittest.TestCase):
         self.assertNotIn("current_thread_write_owner_thread_id", loaded[("ou_user", "oc_p2p")])
         self.assertEqual(loaded[("__group__", "oc_group")]["current_thread_title"], "group title")
         self.assertEqual(loaded[("ou_user", "oc_p2p")]["reasoning_effort"], "high")
+        self.assertEqual(
+            loaded[("ou_user", "oc_p2p")]["configured_settings"],
+            ["approval_policy", "model", "permissions_profile_id", "reasoning_effort"],
+        )
+
+    def test_store_ignores_unknown_configured_settings(self) -> None:
+        _, store, _ = self._make_store()
+
+        saved = store.save(
+            ("ou_user", "oc_p2p"),
+            {
+                "working_dir": "",
+                "current_thread_id": "",
+                "current_thread_title": "",
+                "feishu_runtime_state": "",
+                "approval_policy": "",
+                "permissions_profile_id": "",
+                "model": "",
+                "reasoning_effort": "",
+                "configured_settings": ["model", "future_setting", "model"],
+            },
+        )
+
+        self.assertEqual(saved["configured_settings"], ["model"])
+        self.assertEqual(store.load(("ou_user", "oc_p2p"))["configured_settings"], ["model"])
 
     def test_clear_all_removes_state_file(self) -> None:
         _, store, state_path = self._make_store()
@@ -110,7 +169,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "current_thread_write_owner_thread_id": "",
                 "approval_policy": "on-request",
                 "sandbox": "workspace-write",
-                "collaboration_mode": "default",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -173,7 +231,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "current_thread_write_owner_thread_id": "",
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
-                                "collaboration_mode": "default",
                                 "model": "",
                                 "reasoning_effort": "",
                             }
@@ -205,7 +262,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "current_thread_write_owner_thread_id": "thread-1",
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
-                                "collaboration_mode": "default",
                                 "model": "",
                                 "reasoning_effort": "",
                             }
@@ -237,7 +293,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "current_thread_write_owner_thread_id": "",
                                 "approval_policy": "on-request",
                                 "sandbox": "workspace-write",
-                                "collaboration_mode": "default",
                                 "model": "",
                                 "reasoning_effort": "",
                             }
@@ -268,7 +323,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                                 "feishu_runtime_state": "",
                                 "approval_policy": "on-failure",
                                 "sandbox": "workspace-write",
-                                "collaboration_mode": "default",
                                 "model": "",
                                 "reasoning_effort": "",
                             }
@@ -298,7 +352,6 @@ class ChatBindingStoreTests(unittest.TestCase):
                 "feishu_runtime_state": "",
                 "approval_policy": "",
                 "sandbox": "",
-                "collaboration_mode": "",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -309,3 +362,26 @@ class ChatBindingStoreTests(unittest.TestCase):
         loaded = store.load(("ou_user", "oc_p2p"))
         assert loaded is not None
         self.assertEqual(loaded["approval_policy"], "")
+
+    def test_store_keeps_empty_permissions_profile_id_empty(self) -> None:
+        _, store, state_path = self._make_store()
+
+        store.save(
+            ("ou_user", "oc_p2p"),
+            {
+                "working_dir": "/tmp/p2p",
+                "current_thread_id": "",
+                "current_thread_title": "",
+                "feishu_runtime_state": "",
+                "approval_policy": "",
+                "permissions_profile_id": "",
+                "model": "",
+                "reasoning_effort": "",
+            },
+        )
+
+        raw = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(raw["p2p_bindings"]["oc_p2p"]["ou_user"]["permissions_profile_id"], "")
+        loaded = store.load(("ou_user", "oc_p2p"))
+        assert loaded is not None
+        self.assertEqual(loaded["permissions_profile_id"], "")

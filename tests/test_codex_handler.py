@@ -239,7 +239,6 @@ class _FakeAdapter:
         permissions_profile_id: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ) -> None:
         self.update_thread_settings_calls.append(
             {
@@ -248,7 +247,6 @@ class _FakeAdapter:
                 "permissions_profile_id": permissions_profile_id,
                 "model": model,
                 "reasoning_effort": reasoning_effort,
-                "collaboration_mode": collaboration_mode,
             }
         )
         self.operation_log.append(("update_thread_settings", thread_id, model))
@@ -317,12 +315,10 @@ class _FakeAdapter:
         input_items,
         cwd: str | None = None,
         model: str | None = None,
-        model_provider: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ):
         text_items = [
             item.get("text", "")
@@ -336,12 +332,10 @@ class _FakeAdapter:
                 "input_items": [dict(item) for item in input_items or []],
                 "cwd": cwd,
                 "model": model,
-                "model_provider": model_provider,
                 "approval_policy": approval_policy,
                 "permissions_profile_id": permissions_profile_id,
                 "sandbox": sandbox,
                 "reasoning_effort": reasoning_effort,
-                "collaboration_mode": collaboration_mode,
             }
         )
         return {"turn": {"id": "turn-1"}}
@@ -728,16 +722,6 @@ class CodexHandlerTests(unittest.TestCase):
         bot = _FakeBot(data_dir)
         handler.bot = bot
         return handler, bot
-
-    def test_collab_mode_command_updates_state(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/collab-mode plan")
-
-        state = handler._get_runtime_state("ou_user", "c1")
-        self.assertEqual(state["collaboration_mode"], "plan")
-        self.assertIn("已切换协作模式：`plan`", bot.replies[-1][1])
-        self.assertIn("只影响当前飞书会话的后续 turn", bot.replies[-1][1])
 
     def test_model_command_updates_state(self) -> None:
         handler, bot = self._make_handler()
@@ -1764,7 +1748,6 @@ class CodexHandlerTests(unittest.TestCase):
         handler1.handle_message("ou_user", "c1", "/permissions danger-full-access")
         handler1.handle_message("ou_user", "c1", "/model gpt-5.5")
         handler1.handle_message("ou_user", "c1", "/effort high")
-        handler1.handle_message("ou_user", "c1", "/collab-mode plan")
         handler1.handle_message("ou_user", "c1", "hello")
 
         handler2, _ = self._make_handler(data_dir=data_dir)
@@ -1777,7 +1760,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertEqual(state["permissions_profile_id"], ":danger-full-access")
         self.assertEqual(state["model"], "gpt-5.5")
         self.assertEqual(state["reasoning_effort"], "high")
-        self.assertEqual(state["collaboration_mode"], "plan")
         self.assertFalse(state["running"])
 
         handler2.handle_message("ou_user", "c1", "follow up")
@@ -2767,25 +2749,6 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("snapshot final answer", card["body"]["elements"][-1]["content"])
         self.assertEqual(bot.deletes, [])
 
-    def test_collab_mode_command_without_arg_shows_mode_card(self) -> None:
-        handler, bot = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/collab-mode")
-
-        self.assertEqual(len(bot.cards), 1)
-        _, card = bot.cards[0]
-        self.assertEqual(card["header"]["title"]["content"], "Codex 协作模式")
-        content = "\n".join(
-            element.get("content", "")
-            for element in card["elements"]
-            if isinstance(element, dict) and element.get("tag") == "markdown"
-        )
-        self.assertIn("更接近直接执行", content)
-        self.assertIn("更容易先规划、提问，并展示计划卡片", content)
-        action_elements = self._action_elements(card)
-        self.assertEqual(action_elements[0]["layout"], "trisection")
-        self.assertEqual(action_elements[1]["actions"][0]["text"]["content"], "返回帮助")
-
     def test_execution_card_is_patchable_shared_card(self) -> None:
         card = build_execution_card("", [], running=True)
 
@@ -3252,15 +3215,15 @@ class CodexHandlerTests(unittest.TestCase):
                 "ou_user",
                 "chat-group",
                 "m-group",
-                {"action": "set_collaboration_mode", "mode": "plan", "_operator_open_id": "ou_admin"},
+                {"action": "set_model", "model": "gpt-5.5", "_operator_open_id": "ou_admin"},
             )
         )
 
-        self.assertEqual(handler._get_runtime_state("ou_user", "chat-group", "m-group")["collaboration_mode"], "plan")
+        self.assertEqual(handler._get_runtime_state("ou_user", "chat-group", "m-group")["model"], "gpt-5.5")
         self.assertIn(("__group__", "chat-group"), self._binding_keys(handler))
         self.assertNotIn(("ou_user", "chat-group"), self._binding_keys(handler))
         self.assertEqual(response["toast_type"], "success")
-        self.assertIn("plan", response["toast"])
+        self.assertIn("gpt-5.5", response["toast"])
 
     def test_resolve_runtime_binding_reuses_existing_group_state(self) -> None:
         handler, bot = self._make_handler()
@@ -3372,22 +3335,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 工作台")
         self.assertEqual(len(self._action_elements(response["card"])), 3)
-
-    def test_collab_mode_card_action_updates_state(self) -> None:
-        handler, _ = self._make_handler()
-
-        response = self._unpack_card_response(handler.handle_card_action(
-            "ou_user",
-            "c1",
-            "m1",
-            {"action": "set_collaboration_mode", "mode": "plan"},
-        ))
-
-        self.assertEqual(handler._get_runtime_state("ou_user", "c1")["collaboration_mode"], "plan")
-        self.assertEqual(response["toast_type"], "success")
-        self.assertIn("plan", response["toast"])
-        self.assertEqual(response["card"]["header"]["title"]["content"], "Codex 协作模式")
-        self.assertEqual(self._action_elements(response["card"])[1]["actions"][0]["text"]["content"], "返回帮助")
 
     def test_model_card_action_updates_state(self) -> None:
         handler, _ = self._make_handler()
@@ -3633,7 +3580,7 @@ class CodexHandlerTests(unittest.TestCase):
         content = card["elements"][0]["content"]
         self.assertIn("权限基线：`Danger Full Access`", content)
         self.assertIn("审批策略：`never`", content)
-        self.assertIn("Codex 协作模式：`default`", content)
+        self.assertNotIn("Codex 协作模式", content)
         self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("新 thread seed profile", content)
         self.assertNotIn("当前 provider", content)
@@ -3659,7 +3606,7 @@ class CodexHandlerTests(unittest.TestCase):
         _, card = bot.cards[-1]
         content = card["elements"][0]["content"]
         self.assertIn("权限基线：`Danger Full Access`", content)
-        self.assertIn("Codex 协作模式：`default`", content)
+        self.assertNotIn("Codex 协作模式", content)
         self.assertIn("Codex effort override：`auto`", content)
         self.assertNotIn("startup profile", content)
         self.assertNotIn("binding：", content)
@@ -3985,7 +3932,6 @@ class CodexHandlerTests(unittest.TestCase):
         state["permissions_profile_id"] = ":workspace"
         state["model"] = "gpt-5.4"
         state["reasoning_effort"] = "high"
-        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/goal resume")
         handler._runtime_call(lambda: None)
@@ -4009,7 +3955,6 @@ class CodexHandlerTests(unittest.TestCase):
                 "permissions_profile_id": ":workspace",
                 "model": "gpt-5.4",
                 "reasoning_effort": "high",
-                "collaboration_mode": "plan",
             },
         )
         self.assertEqual(handler._get_runtime_state("ou_user", "c1")["goal_status"], "active")
@@ -4043,7 +3988,6 @@ class CodexHandlerTests(unittest.TestCase):
         state["permissions_profile_id"] = ":danger-full-access"
         state["model"] = "gpt-5.5"
         state["reasoning_effort"] = "high"
-        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/goal resume")
         handler._runtime_call(lambda: None)
@@ -5205,6 +5149,15 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
 
+    def test_new_thread_after_model_auto_does_not_fallback_to_configured_model(self) -> None:
+        handler, _ = self._make_handler({"model": "gpt-5.5"})
+
+        handler.handle_message("ou_user", "c1", "/model auto")
+        handler.handle_message("ou_user", "c1", "/new")
+
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model"])
+        self.assertIsNone(handler._adapter.create_thread_calls[-1]["model_provider"])
+
     def test_new_thread_reports_bind_failure_instead_of_silently_dropping_command(self) -> None:
         handler, bot = self._make_handler()
 
@@ -5520,15 +5473,6 @@ class CodexHandlerTests(unittest.TestCase):
 
         self.assertIn("卡片里的资源当前无法通过飞书 API 下载", bot.replies[-1][1])
 
-    def test_prompt_after_switching_back_to_default_uses_default_collaboration_mode(self) -> None:
-        handler, _ = self._make_handler()
-
-        handler.handle_message("ou_user", "c1", "/collab-mode plan")
-        handler.handle_message("ou_user", "c1", "/collab-mode default")
-        handler.handle_message("ou_user", "c1", "hello")
-
-        self.assertEqual(handler._adapter.start_turn_calls[-1]["collaboration_mode"], "default")
-
     def test_permissions_command_applies_to_thread_creation_and_turn_start(self) -> None:
         handler, _ = self._make_handler()
 
@@ -5716,7 +5660,6 @@ class CodexHandlerTests(unittest.TestCase):
         state["permissions_profile_id"] = ":danger-full-access"
         state["model"] = "gpt-5.5"
         state["reasoning_effort"] = "high"
-        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/resume demo")
 
@@ -5743,7 +5686,6 @@ class CodexHandlerTests(unittest.TestCase):
                 "permissions_profile_id": ":danger-full-access",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
-                "collaboration_mode": "plan",
             },
         )
 
@@ -5811,7 +5753,6 @@ class CodexHandlerTests(unittest.TestCase):
         state["permissions_profile_id"] = ":danger-full-access"
         state["model"] = "gpt-5.5"
         state["reasoning_effort"] = "high"
-        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/resume demo")
         response = self._unpack_card_response(handler.handle_card_action(
@@ -5882,7 +5823,6 @@ class CodexHandlerTests(unittest.TestCase):
         state["permissions_profile_id"] = ":danger-full-access"
         state["model"] = "gpt-5.5"
         state["reasoning_effort"] = "high"
-        state["collaboration_mode"] = "plan"
 
         handler.handle_message("ou_user", "c1", "/resume demo")
         response = self._unpack_card_response(handler.handle_card_action(
@@ -5920,7 +5860,6 @@ class CodexHandlerTests(unittest.TestCase):
                 "permissions_profile_id": ":danger-full-access",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
-                "collaboration_mode": "plan",
             },
         )
         self.assertEqual(handler._adapter.set_thread_goal_calls, [])
@@ -6979,14 +6918,10 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[2]["actions"]],
-            ["协作模式"],
-        )
-        self.assertEqual(
-            [item["text"]["content"] for item in action_elements[3]["actions"]],
             ["最近文本"],
         )
         self.assertEqual(
-            [item["text"]["content"] for item in action_elements[4]["actions"]],
+            [item["text"]["content"] for item in action_elements[3]["actions"]],
             ["返回首页"],
         )
 
@@ -7065,14 +7000,10 @@ class CodexHandlerTests(unittest.TestCase):
         )
         self.assertEqual(
             [item["text"]["content"] for item in self._action_elements(response["card"])[2]["actions"]],
-            ["协作模式"],
-        )
-        self.assertEqual(
-            [item["text"]["content"] for item in self._action_elements(response["card"])[3]["actions"]],
             ["最近文本"],
         )
         self.assertEqual(
-            [item["text"]["content"] for item in self._action_elements(response["card"])[4]["actions"]],
+            [item["text"]["content"] for item in self._action_elements(response["card"])[3]["actions"]],
             ["返回首页"],
         )
 

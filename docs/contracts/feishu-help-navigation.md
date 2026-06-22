@@ -71,7 +71,6 @@ Owns:
 - `/model`
 - `/effort`
 - `/approval`
-- `/collab-mode`
 - `/last text`
 
 Its body should remind the user that:

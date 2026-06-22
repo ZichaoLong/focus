@@ -4,6 +4,13 @@ app_secret: "your_feishu_bot_app_secret"
 # 飞书 HTTP API 请求超时（秒）；默认值：5
 # request_timeout_seconds: 5
 
+# 飞书事件 WebSocket 的代理策略；默认值：env
+# env：尊重当前进程环境变量 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY / NO_PROXY
+# disabled：禁用飞书事件 WebSocket 代理
+# 仅影响连接飞书开放平台的公网 WebSocket；本地 Codex app-server / fcodex
+# loopback WebSocket 始终不走代理。
+# feishu_ws_proxy: env
+
 # 群聊管理员 open_id 列表；这些人始终具备群聊触发资格，并可使用
 # 所有群里的 `/` 命令（包括 `/group`、`/group-mode`、`/new`、`/threads` 等）。
 # 若群工作态是 `assistant` 或 `mention-only`，他们仍需先显式 mention

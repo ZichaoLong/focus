@@ -54,19 +54,14 @@
 # 默认模型；默认值：空，表示沿用 Codex 默认
 # model: gpt-5.4
 
-# 默认 model provider；默认值：空
-# model_provider: openai
+# model provider 通常应在上游 ~/.codex/config.toml 中配置。
+# 本项目的飞书 runtime settings 不管理 provider；仅底层 adapter 保留显式 provider hint 能力。
 
 # 默认 service tier；默认值：空
 # service_tier: fast
 
 # 默认 reasoning effort；默认值：空
 # reasoning_effort: high
-
-# 协作模式；默认值：default
-# 说明：设为 plan 时，会在 turn/start 中启用 Codex 原生 collaborationMode，并解锁原生 requestUserInput。
-# 说明：这只是当前飞书会话的默认值；运行中可用 /collab-mode 临时切到 plan 或 default。
-# collaboration_mode: default
 
 # /threads 与 /resume 查询时显式纳入的线程来源；默认值：["cli", "vscode", "exec", "appServer"]
 # source_kinds:

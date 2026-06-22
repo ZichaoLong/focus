@@ -21,7 +21,6 @@ class _SettingsPortsStub:
             running=False,
             approval_policy="on-request",
             permissions_profile_id=":workspace",
-            collaboration_mode="default",
             model="",
             reasoning_effort="",
             current_thread_id="thread-1",
@@ -177,6 +176,32 @@ class CodexSettingsDomainTests(unittest.TestCase):
             [("ou_user", "chat-a", {"message_id": "msg-1", "model": "gpt-5.5"})],
         )
 
+    def test_model_command_same_value_still_records_explicit_intent(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime.model = ""
+        domain = _make_domain(stub)
+
+        result = domain.handle_model_command("ou_user", "chat-a", "auto", message_id="msg-1")
+
+        self.assertIn("当前会话的 model override 已是：`auto`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "model": ""})],
+        )
+
+    def test_effort_command_same_value_still_records_explicit_intent(self) -> None:
+        stub = _SettingsPortsStub()
+        stub.runtime.reasoning_effort = ""
+        domain = _make_domain(stub)
+
+        result = domain.handle_effort_command("ou_user", "chat-a", "auto", message_id="msg-1")
+
+        self.assertIn("当前会话的 effort override 已是：`auto`", result.text)
+        self.assertEqual(
+            stub.update_calls,
+            [("ou_user", "chat-a", {"message_id": "msg-1", "reasoning_effort": ""})],
+        )
+
     def test_effort_command_rejects_invalid_value(self) -> None:
         stub = _SettingsPortsStub()
         domain = _make_domain(stub)
@@ -216,25 +241,6 @@ class CodexSettingsDomainTests(unittest.TestCase):
             [("ou_user", "chat-a", {"message_id": "msg-1", "permissions_profile_id": ":danger-full-access"})],
         )
         self.assertIsNotNone(response.card)
-
-    def test_collab_mode_command_returns_card_and_action_updates_setting(self) -> None:
-        stub = _SettingsPortsStub()
-        domain = _make_domain(stub)
-
-        result = domain.handle_collab_mode_command("ou_user", "chat-a", "", message_id="msg-1")
-        response = domain.handle_set_collaboration_mode(
-            "ou_user",
-            "chat-a",
-            "msg-1",
-            {"mode": "plan"},
-        )
-
-        self.assertIsNotNone(result.card)
-        self.assertEqual(response.toast.content, "已切换协作模式：plan")
-        self.assertEqual(
-            stub.update_calls,
-            [("ou_user", "chat-a", {"message_id": "msg-1", "collaboration_mode": "plan"})],
-        )
 
     def test_bot_status_command_uses_system_yaml_as_authority(self) -> None:
         stub = _SettingsPortsStub()

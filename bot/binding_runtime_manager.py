@@ -9,6 +9,7 @@ from bot.approval_policy import normalize_approval_policy
 from bot.binding_identity import binding_kind, format_binding_id
 from bot.constants import GROUP_SHARED_BINDING_OWNER_ID
 from bot.execution_transcript import ExecutionTranscript
+from bot.feishu_types import StoredChatBinding
 from bot.permissions_profile import (
     BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
     normalize_permissions_profile_id,
@@ -94,7 +95,6 @@ class BindingRuntimeManager:
         default_working_dir: str,
         default_approval_policy: str,
         default_permissions_profile_id: str = "",
-        default_collaboration_mode: str,
         default_model: str,
         default_reasoning_effort: str,
         chat_binding_store: ChatBindingStore,
@@ -109,7 +109,6 @@ class BindingRuntimeManager:
             str(default_permissions_profile_id or "").strip(),
             fallback=BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS,
         )
-        self._default_collaboration_mode = str(default_collaboration_mode or "").strip()
         self._default_model = str(default_model or "").strip()
         self._default_reasoning_effort = str(default_reasoning_effort or "").strip()
         self._chat_binding_store = chat_binding_store
@@ -138,7 +137,7 @@ class BindingRuntimeManager:
         )
         self.apply_runtime_state_message_locked(state, message)
 
-    def build_default_stored_binding(self) -> dict[str, str]:
+    def build_default_stored_binding(self) -> StoredChatBinding:
         return {
             "working_dir": "",
             "current_thread_id": "",
@@ -146,9 +145,9 @@ class BindingRuntimeManager:
             "feishu_runtime_state": "",
             "approval_policy": "",
             "permissions_profile_id": "",
-            "collaboration_mode": "",
             "model": "",
             "reasoning_effort": "",
+            "configured_settings": [],
         }
 
     def build_default_runtime_state(self) -> RuntimeStateDict:
@@ -190,9 +189,9 @@ class BindingRuntimeManager:
             "awaiting_attach_status_settle": False,
             "approval_policy": self._default_approval_policy,
             "permissions_profile_id": self._default_permissions_profile_id,
-            "collaboration_mode": self._default_collaboration_mode,
-            "model": "",
-            "reasoning_effort": "",
+            "model": self._default_model,
+            "reasoning_effort": self._default_reasoning_effort,
+            "configured_settings": [],
             "plan_message_id": "",
             "plan_turn_id": "",
             "plan_explanation": "",
@@ -200,7 +199,7 @@ class BindingRuntimeManager:
             "plan_text": "",
         }
 
-    def hydrate_stored_binding_locked(self, state: RuntimeStateDict, stored_binding: dict[str, str]) -> bool:
+    def hydrate_stored_binding_locked(self, state: RuntimeStateDict, stored_binding: StoredChatBinding) -> bool:
         feishu_runtime_state = stored_binding["feishu_runtime_state"]
         downgraded_attached = False
         if feishu_runtime_state == FEISHU_RUNTIME_ATTACHED:
@@ -223,9 +222,9 @@ class BindingRuntimeManager:
                     stored_binding.get("permissions_profile_id", "") or self._default_permissions_profile_id,
                     fallback=self._default_permissions_profile_id,
                 ),
-                collaboration_mode=stored_binding["collaboration_mode"] or self._default_collaboration_mode,
                 model=str(stored_binding.get("model", "") or "").strip(),
                 reasoning_effort=str(stored_binding.get("reasoning_effort", "") or "").strip(),
+                configured_settings=list(stored_binding.get("configured_settings", [])),
             ),
         )
         return downgraded_attached
@@ -354,7 +353,7 @@ class BindingRuntimeManager:
         with self._lock:
             return build_runtime_view(state)
 
-    def stored_binding_from_runtime(self, binding: ChatBindingKey, state: RuntimeStateDict) -> dict[str, str]:
+    def stored_binding_from_runtime(self, binding: ChatBindingKey, state: RuntimeStateDict) -> StoredChatBinding:
         del binding
         current_thread_id = str(state["current_thread_id"]).strip()
         feishu_runtime_state = str(state["feishu_runtime_state"]).strip()
@@ -366,7 +365,6 @@ class BindingRuntimeManager:
             str(state["permissions_profile_id"]).strip(),
             fallback=self._default_permissions_profile_id,
         )
-        collaboration_mode = str(state["collaboration_mode"]).strip()
         model = str(state["model"]).strip()
         reasoning_effort = str(state["reasoning_effort"]).strip()
         return {
@@ -374,19 +372,11 @@ class BindingRuntimeManager:
             "current_thread_id": current_thread_id,
             "current_thread_title": str(state["current_thread_title"]).strip(),
             "feishu_runtime_state": feishu_runtime_state,
-            "approval_policy": "" if approval_policy == self._default_approval_policy else approval_policy,
-            "permissions_profile_id": (
-                ""
-                if permissions_profile_id == self._default_permissions_profile_id
-                else permissions_profile_id
-            ),
-            "collaboration_mode": (
-                ""
-                if collaboration_mode == self._default_collaboration_mode
-                else collaboration_mode
-            ),
+            "approval_policy": approval_policy,
+            "permissions_profile_id": permissions_profile_id,
             "model": model,
             "reasoning_effort": reasoning_effort,
+            "configured_settings": list(state.get("configured_settings", [])),
         }
 
     def sync_stored_binding_locked(self, binding: ChatBindingKey, state: RuntimeStateDict) -> None:
@@ -396,12 +386,21 @@ class BindingRuntimeManager:
     def _persist_stored_binding_locked(
         self,
         binding: ChatBindingKey,
-        stored_binding: dict[str, str],
+        stored_binding: StoredChatBinding,
     ) -> None:
-        if all(not str(value or "").strip() for value in stored_binding.values()):
+        if self._is_empty_stored_binding(stored_binding):
             self._chat_binding_store.clear(binding)
             return
         self._chat_binding_store.save(binding, stored_binding)
+
+    def _is_empty_stored_binding(self, stored_binding: StoredChatBinding) -> bool:
+        return (
+            not str(stored_binding.get("working_dir", "") or "").strip()
+            and not str(stored_binding.get("current_thread_id", "") or "").strip()
+            and not str(stored_binding.get("current_thread_title", "") or "").strip()
+            and not str(stored_binding.get("feishu_runtime_state", "") or "").strip()
+            and not list(stored_binding.get("configured_settings", []))
+        )
 
     def save_stored_binding(self, sender_id: str, chat_id: str, message_id: str = "") -> None:
         resolved = self.resolve_runtime_binding(sender_id, chat_id, message_id)
@@ -417,7 +416,7 @@ class BindingRuntimeManager:
 
     def hydrate_missing_stored_bindings_locked(
         self,
-        stored_bindings: dict[ChatBindingKey, dict[str, str]] | None = None,
+        stored_bindings: dict[ChatBindingKey, StoredChatBinding] | None = None,
     ) -> tuple[ChatBindingKey, ...]:
         loaded_bindings = stored_bindings if stored_bindings is not None else self._chat_binding_store.load_all()
         if not loaded_bindings:
@@ -465,7 +464,7 @@ class BindingRuntimeManager:
         *,
         on_deactivate_state: Callable[[RuntimeStateDict], None] | None = None,
     ) -> tuple[str, ...]:
-        plans: list[tuple[ChatBindingKey, RuntimeStateDict, str, dict[str, str]]] = []
+        plans: list[tuple[ChatBindingKey, RuntimeStateDict, str, StoredChatBinding]] = []
         seen: set[ChatBindingKey] = set()
         for binding in bindings:
             if binding in seen:
@@ -488,7 +487,7 @@ class BindingRuntimeManager:
         if not plans:
             return ()
 
-        rollback_entries: list[tuple[ChatBindingKey, dict[str, str]]] = []
+        rollback_entries: list[tuple[ChatBindingKey, StoredChatBinding]] = []
         try:
             for binding, _state, _thread_id, original_stored_binding in plans:
                 self._chat_binding_store.clear(binding)
@@ -569,7 +568,7 @@ class BindingRuntimeManager:
 
     def _rollback_stored_binding_updates_locked(
         self,
-        stored_bindings: list[tuple[ChatBindingKey, dict[str, str]]],
+        stored_bindings: list[tuple[ChatBindingKey, StoredChatBinding]],
     ) -> None:
         for binding, stored_binding in reversed(stored_bindings):
             try:
@@ -815,7 +814,7 @@ class BindingRuntimeManager:
             if not detach_available:
                 raise ValueError(detach_reason)
         detach_message = ThreadStateChanged(feishu_runtime_state=FEISHU_RUNTIME_DETACHED)
-        plans: list[tuple[ChatBindingKey, RuntimeStateDict, dict[str, str], dict[str, str]]] = []
+        plans: list[tuple[ChatBindingKey, RuntimeStateDict, StoredChatBinding, StoredChatBinding]] = []
         for binding in attached_bindings:
             state = self._runtime_state_by_binding.get(binding)
             if state is None:
@@ -834,7 +833,7 @@ class BindingRuntimeManager:
                 )
             )
 
-        rollback_entries: list[tuple[ChatBindingKey, dict[str, str]]] = []
+        rollback_entries: list[tuple[ChatBindingKey, StoredChatBinding]] = []
         try:
             for binding, _state, original_stored_binding, detached_stored_binding in plans:
                 self._persist_stored_binding_locked(binding, detached_stored_binding)
@@ -955,12 +954,13 @@ class BindingRuntimeManager:
         if state is None:
             raise ValueError(f"未找到绑定：{format_binding_id(binding)}")
         thread_id = str(state["current_thread_id"] or "").strip()
+        binding_state = "bound" if thread_id else self._unbound_binding_state_label(binding)
         return {
             "binding_id": format_binding_id(binding),
             "binding_kind": binding_kind(binding),
             "sender_id": binding[0],
             "chat_id": binding[1],
-            "binding_state": "bound" if thread_id else "unbound",
+            "binding_state": binding_state,
             "thread_id": thread_id,
             "thread_title": str(state["current_thread_title"] or "").strip(),
             "working_dir": str(state["working_dir"] or "").strip(),
@@ -975,7 +975,6 @@ class BindingRuntimeManager:
             "current_turn_id": str(state["current_turn_id"] or "").strip(),
             "approval_policy": str(state["approval_policy"] or "").strip(),
             "permissions_profile_id": str(state["permissions_profile_id"] or "").strip(),
-            "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
             "model": str(state["model"] or "").strip(),
             "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
             "goal_objective": str(state.get("goal_objective") or "").strip(),
@@ -1028,15 +1027,20 @@ class BindingRuntimeManager:
 
     def binding_inventory_locked(self) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
+        stored_bindings = self._chat_binding_store.load_all()
         for binding, state in sorted(self._runtime_state_by_binding.items(), key=lambda item: format_binding_id(item[0])):
             thread_id = str(state["current_thread_id"] or "").strip()
+            binding_state = "bound" if thread_id else self._unbound_binding_state_label(
+                binding,
+                stored_bindings=stored_bindings,
+            )
             items.append(
                 {
                     "binding_id": format_binding_id(binding),
                     "binding_kind": binding_kind(binding),
                     "sender_id": binding[0],
                     "chat_id": binding[1],
-                    "binding_state": "bound" if thread_id else "unbound",
+                    "binding_state": binding_state,
                     "thread_id": thread_id,
                     "thread_title": str(state["current_thread_title"] or "").strip(),
                     "working_dir": str(state["working_dir"] or "").strip(),
@@ -1046,9 +1050,17 @@ class BindingRuntimeManager:
                     "running_turn": self.binding_has_inflight_turn_locked(state),
                     "approval_policy": str(state["approval_policy"] or "").strip(),
                     "permissions_profile_id": str(state["permissions_profile_id"] or "").strip(),
-                    "collaboration_mode": str(state["collaboration_mode"] or "").strip(),
                     "model": str(state["model"] or "").strip(),
                     "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
                 }
             )
         return items
+
+    def _unbound_binding_state_label(
+        self,
+        binding: ChatBindingKey,
+        *,
+        stored_bindings: dict[ChatBindingKey, StoredChatBinding] | None = None,
+    ) -> str:
+        loaded = stored_bindings if stored_bindings is not None else self._chat_binding_store.load_all()
+        return "configured/unbound" if binding in loaded else "unbound"

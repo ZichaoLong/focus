@@ -8,7 +8,6 @@ from bot.cards import (
     build_approval_policy_card,
     build_ask_user_card,
     build_backend_reset_card,
-    build_collaboration_mode_card,
     build_command_approval_card,
     build_execution_card,
     build_group_activation_card,
@@ -88,7 +87,6 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "feishu_runtime_state": "attached",
                 "approval_policy": "on-request",
                 "permissions_profile_id": ":workspace",
-                "collaboration_mode": "",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -150,7 +148,6 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "feishu_runtime_state": "attached",
                 "approval_policy": "never",
                 "permissions_profile_id": ":danger-full-access",
-                "collaboration_mode": "plan",
                 "model": "gpt-5.5",
                 "reasoning_effort": "high",
             },
@@ -159,7 +156,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         overview_markdown = help_domain.reply_help("chat-1").card["elements"][0]["content"]
 
         self.assertIn(
-            "本轮：权限 `Full` | 模型 `gpt-5.5` | 推理 `High` | `Plan模式`",
+            "本轮：权限 `Full` | 模型 `gpt-5.5` | 推理 `High`",
             overview_markdown,
         )
 
@@ -172,7 +169,6 @@ class SharedCommandSurfaceTests(unittest.TestCase):
                 "feishu_runtime_state": "attached",
                 "approval_policy": "on-request",
                 "permissions_profile_id": ":workspace",
-                "collaboration_mode": "",
                 "model": "",
                 "reasoning_effort": "",
             },
@@ -185,7 +181,6 @@ class SharedCommandSurfaceTests(unittest.TestCase):
             build_command_approval_card("req-1", command="ls", cwd="/tmp/project", reason="需要执行"),
             build_approval_policy_card("on-request", running=True),
             build_permissions_profile_card(":workspace", running=True),
-            build_collaboration_mode_card("plan", running=True),
             build_group_mode_card("assistant", can_manage=True),
             build_group_activation_card(
                 activated=True,

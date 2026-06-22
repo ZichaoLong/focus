@@ -70,7 +70,6 @@
 - `/model`
 - `/effort`
 - `/approval`
-- `/collab-mode`
 - `/last text`
 
 正文应提醒用户：

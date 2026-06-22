@@ -1185,62 +1185,6 @@ def build_model_effort_card(
     }
 
 
-def build_collaboration_mode_card(current_mode: str, *, running: bool = False) -> dict:
-    """构造协作模式选择卡片。"""
-    labels = {
-        "default": "default",
-        "plan": "plan",
-    }
-    descs = {
-        "default": "更接近直接执行。",
-        "plan": "更容易先规划、提问，并展示计划卡片。",
-    }
-
-    current_desc = (
-        f"{descs[current_mode]}\n"
-        "如果你希望模型先澄清再动手，通常用 `plan`。\n"
-        "作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。"
-    )
-    if running:
-        current_desc += "\n\n当前若有执行中的 turn，切换仅对下一轮生效。"
-
-    elements = [
-        {
-            "tag": "markdown",
-            "content": f"当前协作模式：**{labels[current_mode]}**\n{current_desc}",
-        },
-        {"tag": "hr"},
-    ]
-    buttons = []
-    for mode, label in labels.items():
-        elements.append({"tag": "markdown", "content": f"**{label}**\n{descs[mode]}"})
-        buttons.append(
-            {
-                "tag": "button",
-                "text": {
-                    "tag": "plain_text",
-                    "content": f"{'✓ ' if mode == current_mode else ''}{label}",
-                },
-                "type": "primary" if mode == current_mode else "default",
-                "value": {
-                    "action": "set_collaboration_mode",
-                    "mode": mode,
-                },
-            }
-        )
-    elements.append({"tag": "action", "layout": "trisection", "actions": buttons})
-    elements.append(_back_to_help_action())
-
-    return {
-        "config": _card_config(),
-        "header": {
-            "title": {"tag": "plain_text", "content": "Codex 协作模式"},
-            "template": "blue",
-        },
-        "elements": elements,
-    }
-
-
 def build_group_mode_card(current_mode: str, *, can_manage: bool) -> dict:
     """构造群聊工作态选择卡片。"""
     labels = {

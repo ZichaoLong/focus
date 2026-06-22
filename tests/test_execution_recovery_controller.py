@@ -33,7 +33,6 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             default_working_dir="/tmp/default",
             default_approval_policy="on-request",
             default_permissions_profile_id=":workspace",
-            default_collaboration_mode="default",
             default_model="gpt-5.4",
             default_reasoning_effort="medium",
             chat_binding_store=ChatBindingStore(data_dir),

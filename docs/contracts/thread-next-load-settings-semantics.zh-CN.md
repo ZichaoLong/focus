@@ -26,7 +26,6 @@
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 它们的语义：
 

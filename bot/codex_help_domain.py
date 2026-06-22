@@ -306,7 +306,7 @@ class CodexHelpDomain:
                 title="Codex 工作台：本轮设置",
                 markdown=(
                     "调整当前飞书会话后续 turn 的设置。\n\n"
-                    "推荐先用“权限基线”；模型、推理强度、审批与协作模式都从下一轮生效。\n"
+                    "推荐先用“权限基线”；模型、推理强度与审批都从下一轮生效。\n"
                     f"`{_SHARED_LAST_COMMAND.feishu_usage}` 可导出当前会话最近一条权威终态文本；"
                     "如果还没有终态结果，会回退到最近执行卡。\n\n"
                     "实例级 backend reset 在“更多 -> 高级操作”。"
@@ -341,15 +341,6 @@ class CodexHelpDomain:
                             ),
                         ),
                         layout="bisected",
-                    ),
-                    _HelpActionRowSpec(
-                        buttons=(
-                            _HelpCommandButtonSpec(
-                                label="协作模式",
-                                command="/collab-mode",
-                                title="Codex 协作模式",
-                            ),
-                        ),
                     ),
                     _HelpActionRowSpec(
                         buttons=(
@@ -619,14 +610,11 @@ class CodexHelpDomain:
         permissions = self._overview_permissions_label(str(state.get("permissions_profile_id", "") or ""))
         model = str(state.get("model", "") or "").strip() or "Auto"
         effort = self._overview_effort_label(str(state.get("reasoning_effort", "") or ""))
-        collaboration_mode = str(state.get("collaboration_mode", "") or "").strip() or "default"
         turn_parts = [
             f"权限 `{permissions}`",
             f"模型 `{model}`",
             f"推理 `{effort}`",
         ]
-        if collaboration_mode == "plan":
-            turn_parts.append("`Plan模式`")
         lines = [
             f"- 目录：`{working_dir}`",
             f"- 线程：`{thread_summary}`",
@@ -956,8 +944,7 @@ class CodexHelpDomain:
                 "- `/permissions [read-only|workspace|danger-full-access]`\n"
                 "- `/model [name|auto]`\n"
                 "- `/effort [auto|none|minimal|low|medium|high|xhigh]`\n"
-                "- `/approval [untrusted|on-request|never]`\n"
-                "- `/collab-mode [default|plan]`\n\n"
+                "- `/approval [untrusted|on-request|never]`\n\n"
                 "`连接状态`\n"
                 "- `/status`\n"
                 f"- `{_SHARED_PREFLIGHT_COMMAND.feishu_usage}`\n"

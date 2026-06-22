@@ -240,7 +240,7 @@ The most important distinction is between:
     `reasoning_effort`
 - `queued loaded-thread sync`
   - `thread/settings/update`
-  - includes `collaboration_mode`, but upstream only acknowledges that this
+  - used after a loaded-thread resume; upstream only acknowledges that this
     update was queued
 
 #### `/resume`

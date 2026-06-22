@@ -48,7 +48,7 @@ It is not:
 ### 2.1 Binding-wise next-turn settings
 
 - scope: Feishu binding
-- Feishu entries: `/model`, `/effort`, `/approval`, `/permissions`, `/collab-mode`
+- Feishu entries: `/model`, `/effort`, `/approval`, `/permissions`
 - local `fcodex` / upstream TUI keep their own local state; they do not
   auto-merge with persisted Feishu binding settings
 

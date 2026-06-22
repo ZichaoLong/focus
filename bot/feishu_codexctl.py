@@ -389,7 +389,6 @@ def _print_binding_status(data_dir: pathlib.Path, binding_id: str, *, instance_n
             print(f"detach reason: {snapshot['detach_reason']}")
     print(f"approval_policy: {snapshot['approval_policy']}")
     print(f"permissions_profile_id: {snapshot['permissions_profile_id']}")
-    print(f"collaboration_mode: {snapshot['collaboration_mode']}")
     return 0
 
 

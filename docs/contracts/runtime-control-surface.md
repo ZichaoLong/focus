@@ -14,7 +14,6 @@ Entry points:
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 Semantics:
 
@@ -53,7 +52,7 @@ Those axes are parallel to settings and must not be conflated with them.
 
 ## 4. Formal semantics of turn-time settings
 
-`/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode`:
+`/model`, `/effort`, `/approval`, `/permissions`:
 
 - belong to the current binding's next-turn settings
 - read back persisted binding intent by default

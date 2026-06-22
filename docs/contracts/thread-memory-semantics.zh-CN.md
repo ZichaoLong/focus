@@ -29,7 +29,6 @@
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 ## 当前正式文档
 

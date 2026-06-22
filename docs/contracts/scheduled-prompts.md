@@ -62,8 +62,7 @@ Return contract:
     admitted into that same binding's local FIFO
   - `queue_position` should be returned
   - when dequeued, the prompt must read the binding's latest next-turn settings
-    such as `/model`, `/effort`, `/approval`, `/permissions`, and
-    `/collab-mode`
+    such as `/model`, `/effort`, `/approval`, and `/permissions`
 - `started=false`
   - the action fail-closed or startup failed
   - `reason` must be returned; `reason_code` should be returned when available
@@ -158,7 +157,7 @@ and `/compact` share the same binding admission semantics:
   upstream `thread/compact/start`; until that anchor receives its own
   `turn/started`, the `contextCompaction item/started` fallback binding, or an
   explicit start failure, a following prompt cannot pass through it
-- `/model`, `/effort`, `/approval`, `/permissions`, and `/collab-mode` do not
+- `/model`, `/effort`, `/approval`, `/permissions` do not
   queue; they update binding-wise next-turn settings immediately, and later
   dequeued prompts read the latest settings
 

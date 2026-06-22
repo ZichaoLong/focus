@@ -43,7 +43,6 @@ def _build_state() -> dict[str, object]:
         "awaiting_local_turn_started": True,
         "approval_policy": "on-request",
         "permissions_profile_id": ":workspace",
-        "collaboration_mode": "default",
         "model": "gpt-5.4",
         "reasoning_effort": "high",
         "plan_message_id": "plan-1",
@@ -65,7 +64,6 @@ class RuntimeViewTests(unittest.TestCase):
         self.assertTrue(view.running)
         self.assertEqual(view.approval_policy, "on-request")
         self.assertEqual(view.permissions_profile_id, ":workspace")
-        self.assertEqual(view.collaboration_mode, "default")
         self.assertEqual(view.reasoning_effort, "high")
         self.assertTrue(view.goal.exists)
         self.assertEqual(view.goal.objective, "ship goal support")

@@ -205,7 +205,7 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
     `reasoning_effort`
 - `queued loaded-thread sync`
   - 通过 `thread/settings/update` 同步的字段
-  - 其中包含 `collaboration_mode`，但上游只保证“已入队”，不保证调用返回时就已生效
+  - 用于 loaded-thread resume 之后；上游只保证“已入队”，不保证调用返回时就已生效
 
 #### `/resume`
 

@@ -15,7 +15,6 @@ Current formal members:
 - effort
 - approval
 - permissions
-- collaboration mode
 
 Their properties:
 
@@ -68,7 +67,8 @@ But they must not be treated as:
 
 If the question is:
 
-- "what model / effort / permissions will the next turn from this Feishu chat use?"
+- "what model / effort / permissions will the next turn from this Feishu chat
+  use?"
 
 look first at:
 
@@ -78,8 +78,60 @@ Within that family:
 
 - `auto` still means "do not explicitly override"
 - it no longer maps to any project-owned thread-level persisted state
+- adapters must not materialize `auto` into a complete upstream settings object
+  carrying stale snapshot values; ordinary auto turns should let the upstream
+  thread state continue on its own.
+- `model` and `reasoning_effort` in `codex.yaml` only seed a new binding's
+  initial runtime state; once a binding exists, ordinary `thread/start` and
+  `turn/start` calls read binding runtime settings only and do not fall back to
+  adapter config.
+- `model_provider` is not a binding runtime setting; `/new`, first-prompt
+  thread creation, and ordinary turns do not inject it from adapter config. It
+  is not accepted in `codex.yaml`; configure providers in upstream Codex, or
+  send one only when a caller explicitly provides a provider hint.
+- collaboration mode is not a Feishu runtime setting. If needed, configure it
+  in upstream Codex; this project does not construct or send upstream
+  `collaborationMode` payloads.
 
-## 6. One maintenance rule
+## 6. Empty Values In The Binding Store
+
+`chat_bindings.json` is a persisted projection, not the runtime semantic fact
+source. Runtime-setting values and runtime-setting intent are separate facts.
+The store layer is responsible only for:
+
+- saving and reading string fields plus the `configured_settings` list
+- validating structure and non-empty enum values
+- accepting legacy field names, such as legacy `sandbox` as the
+  `permissions_profile_id` field
+
+The store layer must not apply instance-default fallbacks. Empty strings must be
+preserved until `BindingRuntimeManager` hydrates the record and interprets them
+with the current instance config:
+
+- empty `approval_policy` -> current instance default approval policy
+- empty `permissions_profile_id` -> current instance default permissions
+  baseline
+- legacy `collaboration_mode` fields are ignored on read and are not written by
+  new saves
+- empty `model` / `reasoning_effort` -> `auto`, meaning no explicit override
+
+`configured_settings` is the binding-local source of truth for explicit user
+intent. It is set only by explicit `/model`, `/effort`, `/approval`, or
+`/permissions` interactions, not by `codex.yaml` seeds. A value that equals the
+instance default still remains configured when its setting name appears in this
+list. For old records without `configured_settings`, the store conservatively
+infers intent from non-empty normalized setting values; historical empty
+`auto` intent cannot be recovered.
+
+An unbound binding with persisted settings is a valid state: it has no
+`thread_id`, but it carries the user's next-turn configuration decision.
+Concretely, `configured/unbound` means there is no thread bookmark and the
+persisted binding still has `configured_settings` or another binding-local fact
+that must be retained. Admin surfaces may display it as `configured/unbound`;
+it is not a stale thread binding and must not be removed by `binding
+clear-stale`.
+
+## 7. One maintenance rule
 
 If a new setting is added later, it must first be classified as exactly one of:
 

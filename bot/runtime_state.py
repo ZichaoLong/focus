@@ -23,6 +23,14 @@ VALID_FEISHU_RUNTIME_STATES = frozenset(
         FEISHU_RUNTIME_DETACHED,
     }
 )
+CONFIGURABLE_RUNTIME_SETTING_KEYS = frozenset(
+    {
+        "approval_policy",
+        "permissions_profile_id",
+        "model",
+        "reasoning_effort",
+    }
+)
 
 BACKEND_THREAD_STATUS_IDLE = "idle"
 BACKEND_THREAD_STATUS_ACTIVE = "active"
@@ -85,9 +93,9 @@ class RuntimeStateDict(TypedDict):
     awaiting_attach_status_settle: bool
     approval_policy: str
     permissions_profile_id: str
-    collaboration_mode: str
     model: str
     reasoning_effort: str
+    configured_settings: list[str]
     plan_message_id: str
     plan_turn_id: str
     plan_explanation: str
@@ -120,16 +128,15 @@ class StoredBindingHydrated(RuntimeStateCommand):
     feishu_runtime_state: str
     approval_policy: str
     permissions_profile_id: str
-    collaboration_mode: str
     model: str
     reasoning_effort: str
+    configured_settings: list[str]
 
 
 @dataclass(frozen=True, slots=True)
 class RuntimeSettingsChanged(RuntimeStateCommand):
     approval_policy: Any = UNSET
     permissions_profile_id: Any = UNSET
-    collaboration_mode: Any = UNSET
     model: Any = UNSET
     reasoning_effort: Any = UNSET
 
@@ -214,6 +221,16 @@ class PlanStateChanged(RuntimeStateEvent):
     plan_text: Any = UNSET
 
 
+def _mark_configured_runtime_setting(state: RuntimeStateDict, setting: str) -> None:
+    if setting not in CONFIGURABLE_RUNTIME_SETTING_KEYS:
+        return
+    configured = list(state.get("configured_settings", []))
+    if setting not in configured:
+        configured.append(setting)
+        configured.sort()
+    state["configured_settings"] = configured
+
+
 def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMessage) -> None:
     match message:
         case BindingActivated(active=active):
@@ -225,9 +242,9 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             feishu_runtime_state=feishu_runtime_state,
             approval_policy=approval_policy,
             permissions_profile_id=permissions_profile_id,
-            collaboration_mode=collaboration_mode,
             model=model,
             reasoning_effort=reasoning_effort,
+            configured_settings=configured_settings,
         ):
             state["working_dir"] = working_dir
             state["current_thread_id"] = current_thread_id
@@ -235,26 +252,31 @@ def apply_runtime_state_message(state: RuntimeStateDict, message: RuntimeStateMe
             state["feishu_runtime_state"] = feishu_runtime_state
             state["approval_policy"] = approval_policy
             state["permissions_profile_id"] = permissions_profile_id
-            state["collaboration_mode"] = collaboration_mode
             state["model"] = model
             state["reasoning_effort"] = reasoning_effort
+            state["configured_settings"] = [
+                setting
+                for setting in configured_settings
+                if setting in CONFIGURABLE_RUNTIME_SETTING_KEYS
+            ]
         case RuntimeSettingsChanged(
             approval_policy=approval_policy,
             permissions_profile_id=permissions_profile_id,
-            collaboration_mode=collaboration_mode,
             model=model,
             reasoning_effort=reasoning_effort,
         ):
             if approval_policy is not UNSET:
                 state["approval_policy"] = approval_policy
+                _mark_configured_runtime_setting(state, "approval_policy")
             if permissions_profile_id is not UNSET:
                 state["permissions_profile_id"] = permissions_profile_id
-            if collaboration_mode is not UNSET:
-                state["collaboration_mode"] = collaboration_mode
+                _mark_configured_runtime_setting(state, "permissions_profile_id")
             if model is not UNSET:
                 state["model"] = model
+                _mark_configured_runtime_setting(state, "model")
             if reasoning_effort is not UNSET:
                 state["reasoning_effort"] = reasoning_effort
+                _mark_configured_runtime_setting(state, "reasoning_effort")
         case ThreadStateChanged(
             working_dir=working_dir,
             current_thread_id=current_thread_id,

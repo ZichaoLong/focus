@@ -7,7 +7,7 @@ from bot.adapters.base import ThreadSnapshot, ThreadSummary
 from bot.binding_runtime_manager import BindingRuntimeManager, ResolvedRuntimeBinding
 from bot.prompt_turn_entry_controller import PromptTurnEntryController, PromptTurnEntryPorts
 from bot.reason_codes import PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER, ReasonedCheck
-from bot.runtime_state import ThreadStateChanged
+from bot.runtime_state import RuntimeSettingsChanged, ThreadStateChanged
 from bot.runtime_view import build_runtime_view
 from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore
@@ -37,7 +37,6 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
             default_working_dir="/tmp/project",
             default_approval_policy="on-request",
             default_permissions_profile_id=":workspace",
-            default_collaboration_mode="default",
             default_model="gpt-5.4",
             default_reasoning_effort="medium",
             chat_binding_store=chat_binding_store,
@@ -248,6 +247,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         return {
             "lock": lock,
             "binding_runtime": binding_runtime,
+            "chat_binding_store": chat_binding_store,
             "turn_execution": turn_execution,
             "binding": binding,
             "state": state,
@@ -395,7 +395,7 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         self.assertTrue(started)
         self.assertNotIn("profile", env["start_turn_calls"][-1])
 
-    def test_start_prompt_turn_ignores_legacy_thread_profile_store(self) -> None:
+    def test_start_prompt_turn_uses_seeded_runtime_model_and_effort(self) -> None:
         env = self._make_controller()
         controller = env["controller"]
         self._bind_thread(env, thread_id="thread-1")
@@ -403,8 +403,8 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
         result = controller.start_prompt_turn_result("ou_user", "c1", "hello", message_id="msg-1")
 
         self.assertTrue(result.started)
-        self.assertIsNone(env["start_turn_calls"][-1]["model"])
-        self.assertIsNone(env["start_turn_calls"][-1]["reasoning_effort"])
+        self.assertEqual(env["start_turn_calls"][-1]["model"], "gpt-5.4")
+        self.assertEqual(env["start_turn_calls"][-1]["reasoning_effort"], "medium")
 
     def test_start_prompt_turn_uses_runtime_effort_only(self) -> None:
         env = self._make_controller()
@@ -417,6 +417,17 @@ class PromptTurnEntryControllerTests(unittest.TestCase):
 
         self.assertTrue(result.started)
         self.assertEqual(env["start_turn_calls"][-1]["reasoning_effort"], "high")
+
+    def test_start_prompt_turn_does_not_send_collaboration_mode(self) -> None:
+        env = self._make_controller()
+        controller = env["controller"]
+        self._bind_thread(env, thread_id="thread-1")
+        env["start_turn_calls"].clear()
+
+        result = controller.start_prompt_turn_result("ou_user", "c1", "hello", message_id="msg-1")
+
+        self.assertTrue(result.started)
+        self.assertNotIn("collaboration_mode", env["start_turn_calls"][-1])
 
     def test_start_prompt_turn_fails_closed_when_execution_card_cannot_be_sent(self) -> None:
         env = self._make_controller()

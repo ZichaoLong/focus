@@ -17,7 +17,6 @@ from lark_oapi.event.callback.model.p2_card_action_trigger import (
 from bot.cards import (
     CommandResult,
     build_approval_policy_card,
-    build_collaboration_mode_card,
     build_model_effort_card,
     build_permissions_profile_card,
     make_card_response,
@@ -76,7 +75,6 @@ class CodexSettingsDomain:
         message_id: str = "",
         approval_policy: Any = _UNSET,
         permissions_profile_id: Any = _UNSET,
-        collaboration_mode: Any = _UNSET,
         model: Any = _UNSET,
         reasoning_effort: Any = _UNSET,
     ) -> None:
@@ -85,8 +83,6 @@ class CodexSettingsDomain:
             changes["approval_policy"] = approval_policy
         if permissions_profile_id is not _UNSET:
             changes["permissions_profile_id"] = permissions_profile_id
-        if collaboration_mode is not _UNSET:
-            changes["collaboration_mode"] = collaboration_mode
         if model is not _UNSET:
             changes["model"] = model
         if reasoning_effort is not _UNSET:
@@ -358,6 +354,12 @@ class CodexSettingsDomain:
             return CommandResult(text=f"用法：`{_MODEL_WITH_NAME_COMMAND}`")
         normalized_target = target.lower()
         desired_model = "" if normalized_target == _MODEL_AUTO else target
+        self._update_runtime_settings(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+            model=desired_model,
+        )
         if str(runtime.model or "").strip() == desired_model:
             label = self._runtime_model_display_text(desired_model)
             return CommandResult(
@@ -366,12 +368,6 @@ class CodexSettingsDomain:
                     "作用范围：只影响当前飞书会话的后续 turn。"
                 )
             )
-        self._update_runtime_settings(
-            sender_id,
-            chat_id,
-            message_id=message_id,
-            model=desired_model,
-        )
         label = self._runtime_model_display_text(desired_model)
         message = (
             f"已切换当前会话的 model override：`{label}`\n"
@@ -392,6 +388,12 @@ class CodexSettingsDomain:
             desired_effort = self._normalize_reasoning_effort_override(target)
         except ValueError as exc:
             return CommandResult(text=f"非法 reasoning effort：`{target}`\n用法：`{_EFFORT_WITH_NAME_COMMAND}`\n{exc}")
+        self._update_runtime_settings(
+            sender_id,
+            chat_id,
+            message_id=message_id,
+            reasoning_effort=desired_effort,
+        )
         if str(runtime.reasoning_effort or "").strip() == desired_effort:
             label = self._runtime_effort_display_text(desired_effort)
             return CommandResult(
@@ -400,12 +402,6 @@ class CodexSettingsDomain:
                     "作用范围：只影响当前飞书会话的后续 turn。"
                 )
             )
-        self._update_runtime_settings(
-            sender_id,
-            chat_id,
-            message_id=message_id,
-            reasoning_effort=desired_effort,
-        )
         label = self._runtime_effort_display_text(desired_effort)
         message = (
             f"已切换当前会话的 effort override：`{label}`\n"
@@ -463,28 +459,6 @@ class CodexSettingsDomain:
                 running=runtime.running,
             )
         )
-
-    def handle_collab_mode_command(self, sender_id: str, chat_id: str, arg: str, *, message_id: str = "") -> CommandResult:
-        runtime = self._runtime_view(sender_id, chat_id, message_id)
-        if arg:
-            mode = arg.strip().lower()
-            if mode not in {"default", "plan"}:
-                return CommandResult(text="协作模式仅支持：`default`、`plan`")
-            self._update_runtime_settings(
-                sender_id,
-                chat_id,
-                message_id=message_id,
-                collaboration_mode=mode,
-            )
-            running = runtime.running
-            message = f"已切换协作模式：`{mode}`\n作用范围：只影响当前飞书会话的后续 turn，不影响已打开的 `fcodex` TUI。"
-            if running:
-                message += "\n如果当前正在执行，新设置从下一轮生效。"
-            return CommandResult(text=message)
-        return CommandResult(card=build_collaboration_mode_card(
-            runtime.collaboration_mode,
-            running=runtime.running,
-        ))
 
     def handle_set_model(
         self,
@@ -631,33 +605,6 @@ class CodexSettingsDomain:
                 config["profile_id"],
                 running=running,
             ),
-            toast=toast,
-            toast_type="success",
-        )
-
-    def handle_set_collaboration_mode(
-        self,
-        sender_id: str,
-        chat_id: str,
-        message_id: str,
-        action_value: dict,
-    ) -> P2CardActionTriggerResponse:
-        mode = str(action_value.get("mode", "")).strip().lower()
-        if mode not in {"default", "plan"}:
-            return make_card_response(toast="非法协作模式", toast_type="warning")
-        runtime = self._runtime_view(sender_id, chat_id, message_id)
-        self._update_runtime_settings(
-            sender_id,
-            chat_id,
-            message_id=message_id,
-            collaboration_mode=mode,
-        )
-        running = runtime.running
-        toast = f"已切换协作模式：{mode}"
-        if running:
-            toast += "；下一轮生效"
-        return make_card_response(
-            card=build_collaboration_mode_card(mode, running=running),
             toast=toast,
             toast_type="success",
         )

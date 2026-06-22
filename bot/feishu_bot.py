@@ -63,6 +63,11 @@ from bot.feishu_types import (
     MentionPayload,
     MessageContextPayload,
 )
+from bot.feishu_ws_proxy import (
+    DEFAULT_FEISHU_WS_PROXY,
+    configure_feishu_ws_proxy,
+    normalize_feishu_ws_proxy_mode,
+)
 from bot.forward_aggregator import ForwardAggregator, ForwardAggregatorPorts, PendingForward
 from bot.group_history_recovery import (
     GroupHistoryRecovery,
@@ -228,6 +233,9 @@ class FeishuBot(ABC):
         self._sender_name_warning_lock = threading.Lock()
         self._terminal_result_text_resolver: Callable[[CardTextProjection], str] | None = None
         config = system_config or {}
+        self._feishu_ws_proxy_mode = normalize_feishu_ws_proxy_mode(
+            config.get("feishu_ws_proxy", DEFAULT_FEISHU_WS_PROXY)
+        )
         self._admin_open_ids = {
             str(item).strip()
             for item in config.get("admin_open_ids", [])
@@ -2558,6 +2566,7 @@ class FeishuBot(ABC):
 
     def start(self) -> None:
         """启动 WebSocket 长连接，开始监听消息"""
+        configure_feishu_ws_proxy(self._feishu_ws_proxy_mode)
         ws_client = lark.ws.Client(
             self.app_id, self.app_secret,
             event_handler=self._event_handler,

@@ -34,6 +34,7 @@ from bot.codex_protocol.client import CodexRpcError
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass(slots=True)
 class CodexAppServerConfig:
     codex_command: str = "codex"
@@ -47,10 +48,8 @@ class CodexAppServerConfig:
     approvals_reviewer: str = "user"
     personality: str = "pragmatic"
     model: str = ""
-    model_provider: str = ""
     service_tier: str = ""
     reasoning_effort: str = ""
-    collaboration_mode: str = "default"
     app_server_data_dir: str = ""
     source_kinds: list[str] = field(default_factory=lambda: DEFAULT_SOURCE_KINDS.copy())
 
@@ -61,7 +60,6 @@ class CodexAppServerConfig:
     @classmethod
     def from_dict(cls, config: dict[str, Any]) -> "CodexAppServerConfig":
         source_kinds = config.get("source_kinds") or DEFAULT_SOURCE_KINDS
-        collaboration_mode = str(config.get("collaboration_mode", "default")).strip().lower() or "default"
         app_server_mode = str(config.get("app_server_mode", DEFAULT_APP_SERVER_MODE)).strip().lower() or DEFAULT_APP_SERVER_MODE
         if "managed_startup_profile" in config:
             raise ValueError(
@@ -72,8 +70,10 @@ class CodexAppServerConfig:
             raise ValueError("`default_thread_memory_mode` 已移除；请改用上游 Codex memories 配置。")
         if "new_thread_memory_mode_seed" in config:
             raise ValueError("`new_thread_memory_mode_seed` 已移除；请改用上游 Codex memories 配置。")
-        if collaboration_mode not in {"default", "plan"}:
-            raise ValueError("collaboration_mode 仅支持 default 或 plan")
+        if "collaboration_mode" in config:
+            raise ValueError("`collaboration_mode` 已移除；如需使用 collaboration mode，请改用上游 Codex 配置。")
+        if "model_provider" in config:
+            raise ValueError("`model_provider` 已移除；请改用上游 Codex 配置或显式调用方 provider hint。")
         if app_server_mode not in {"managed", "remote"}:
             raise ValueError("app_server_mode 仅支持 managed 或 remote")
         return cls(
@@ -98,10 +98,8 @@ class CodexAppServerConfig:
             approvals_reviewer=str(config.get("approvals_reviewer", "user")),
             personality=str(config.get("personality", "pragmatic")),
             model=str(config.get("model", "")),
-            model_provider=str(config.get("model_provider", "")),
             service_tier=str(config.get("service_tier", "")),
             reasoning_effort=str(config.get("reasoning_effort", "")),
-            collaboration_mode=collaboration_mode,
             source_kinds=[str(item) for item in source_kinds],
         )
 
@@ -119,14 +117,6 @@ class CodexAppServerAdapter(AgentAdapter):
         app_server_runtime_store: AppServerRuntimeStore | None = None,
     ) -> None:
         self._config = config
-        self._collaboration_mode_model: str | None = None
-        # Workaround: turn/start 的稳定上游覆盖面里只有 model /
-        # collaborationMode；startup baseline / create-resume model 只在
-        # thread/start、thread/resume 这类线程边界请求上传递。
-        # 因此缓存 thread/start 和 thread/resume 响应里后端解析好的
-        # model，作为 collaborationMode.settings.model 的 fallback，
-        # 避免后续 turn 退回到 model/list 的全局默认值。
-        self._thread_resolved_model: dict[str, str] = {}
         self._rpc = CodexRpcClient(
             codex_command=config.codex_command,
             app_server_mode=config.app_server_mode,
@@ -145,7 +135,6 @@ class CodexAppServerAdapter(AgentAdapter):
 
     def stop(self) -> None:
         self._rpc.stop()
-        self._clear_model_caches()
 
     def current_app_server_url(self) -> str:
         return self._rpc.current_app_server_url()
@@ -156,7 +145,6 @@ class CodexAppServerAdapter(AgentAdapter):
             self._rpc.request("thread/unsubscribe", {"threadId": thread_id})
         except Exception:
             logger.debug("thread/unsubscribe failed for %s", thread_id[:12], exc_info=True)
-        self._thread_resolved_model.pop(thread_id, None)
 
     def create_thread(
         self,
@@ -184,7 +172,6 @@ class CodexAppServerAdapter(AgentAdapter):
             legacy_field="sandbox",
             legacy_value=self._legacy_sandbox(permissions_profile_id or sandbox),
         )
-        self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
 
     def resume_thread(
@@ -218,7 +205,6 @@ class CodexAppServerAdapter(AgentAdapter):
             legacy_field="sandbox",
             legacy_value=self._legacy_sandbox(permissions_profile_id),
         )
-        self._cache_thread_model(result)
         return self._snapshot_from_thread(result["thread"])
 
     def list_threads(
@@ -318,24 +304,15 @@ class CodexAppServerAdapter(AgentAdapter):
         permissions_profile_id: str | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ) -> None:
         effective_model = model or None
         effective_reasoning = reasoning_effort or None
-        effective_collaboration_mode = collaboration_mode or None
         params: dict[str, Any] = {
             "threadId": thread_id,
             "approvalPolicy": approval_policy or None,
             "model": effective_model,
             "effort": effective_reasoning,
         }
-        if effective_collaboration_mode:
-            params["collaborationMode"] = self._collaboration_mode_payload(
-                effective_collaboration_mode,
-                model=effective_model,
-                thread_id=thread_id,
-                reasoning_effort=effective_reasoning,
-            )
         if permissions_profile_id:
             params["permissions"] = normalize_permissions_profile_id(
                 permissions_profile_id,
@@ -369,16 +346,13 @@ class CodexAppServerAdapter(AgentAdapter):
         input_items: list[TurnInputItem],
         cwd: str | None = None,
         model: str | None = None,
-        model_provider: str | None = None,
         approval_policy: str | None = None,
         permissions_profile_id: str | None = None,
         sandbox: str | None = None,
         reasoning_effort: str | None = None,
-        collaboration_mode: str | None = None,
     ) -> dict[str, Any]:
-        effective_model = model or self._config.model or None
-        effective_reasoning = reasoning_effort or self._config.reasoning_effort or None
-        effective_collaboration_mode = collaboration_mode or self._config.collaboration_mode or "default"
+        effective_model = model or None
+        effective_reasoning = reasoning_effort or None
         params: dict[str, Any] = {
             "threadId": thread_id,
             "input": [dict(item) for item in input_items],
@@ -394,18 +368,13 @@ class CodexAppServerAdapter(AgentAdapter):
             permissions_profile_id or sandbox or self._config.permissions_profile_id,
             fallback=self._config.permissions_profile_id,
         )
-        params["collaborationMode"] = self._collaboration_mode_payload(
-            effective_collaboration_mode,
-            model=effective_model,
-            thread_id=thread_id,
-            reasoning_effort=effective_reasoning,
-        )
-        return self._request_with_permissions_fallback(
+        result = self._request_with_permissions_fallback(
             "turn/start",
             _compact(params),
             legacy_field="sandboxPolicy",
             legacy_value=self._legacy_sandbox_policy(permissions_profile_id or sandbox),
         )
+        return result
 
     def interrupt_turn(self, *, thread_id: str, turn_id: str) -> None:
         self._rpc.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
@@ -460,8 +429,8 @@ class CodexAppServerAdapter(AgentAdapter):
             "approvalPolicy": approval_policy or self._config.approval_policy or None,
             "approvalsReviewer": self._config.approvals_reviewer or None,
             "personality": self._config.personality or None,
-            "model": model or self._config.model or None,
-            "modelProvider": model_provider or self._config.model_provider or None,
+            "model": model or None,
+            "modelProvider": model_provider or None,
             "serviceTier": self._config.service_tier or None,
         }
         params["permissions"] = normalize_permissions_profile_id(
@@ -538,60 +507,6 @@ class CodexAppServerAdapter(AgentAdapter):
         config_overrides: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         return deep_merge_config_overrides(config_overrides)
-
-    def _collaboration_mode_payload(
-        self,
-        mode: str,
-        *,
-        model: str | None,
-        thread_id: str = "",
-        reasoning_effort: str | None,
-    ) -> dict[str, Any]:
-        normalized = str(mode).strip().lower()
-        if normalized not in {"default", "plan"}:
-            raise ValueError("collaboration_mode 仅支持 default 或 plan")
-        return {
-            "mode": normalized,
-            "settings": {
-                "model": self._resolve_collaboration_mode_model(model, thread_id=thread_id),
-                "reasoning_effort": reasoning_effort,
-                "developer_instructions": None,
-            },
-        }
-
-    def _resolve_collaboration_mode_model(self, configured_model: str | None, *, thread_id: str = "") -> str:
-        if configured_model:
-            return configured_model
-        # 优先使用线程创建/恢复时后端解析的 model，
-        # 避免用 model/list 全局默认值覆盖上游已有的线程/运行时选择。
-        thread_model = self._thread_resolved_model.get(thread_id) if thread_id else None
-        if thread_model:
-            return thread_model
-        if self._collaboration_mode_model:
-            return self._collaboration_mode_model
-
-        result = self._rpc.request("model/list", {})
-        models = result.get("data") or []
-        for item in models:
-            if item.get("isDefault") and item.get("model"):
-                self._collaboration_mode_model = str(item["model"])
-                return self._collaboration_mode_model
-        for item in models:
-            if not item.get("hidden") and item.get("model"):
-                self._collaboration_mode_model = str(item["model"])
-                return self._collaboration_mode_model
-        raise RuntimeError("无法解析 Codex 默认模型，无法构造 collaboration mode 参数")
-
-    def _clear_model_caches(self) -> None:
-        self._collaboration_mode_model = None
-        self._thread_resolved_model.clear()
-
-    def _cache_thread_model(self, result: dict[str, Any]) -> None:
-        thread = result.get("thread") or {}
-        thread_id = str(thread.get("id", "")).strip()
-        model = str(result.get("model", "")).strip()
-        if thread_id and model:
-            self._thread_resolved_model[thread_id] = model
 
     @staticmethod
     def _snapshot_from_thread(thread: dict[str, Any]) -> ThreadSnapshot:

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from bot.binding_runtime_manager import BindingRuntimeManager
-from bot.runtime_state import ThreadStateChanged
+from bot.runtime_state import RuntimeSettingsChanged, ThreadStateChanged
 from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore
 from bot.thread_subscription_registry import ThreadSubscriptionRegistry
@@ -28,7 +28,6 @@ class BindingRuntimeManagerTests(unittest.TestCase):
             default_working_dir="/tmp/default",
             default_approval_policy="on-request",
             default_permissions_profile_id=":workspace",
-            default_collaboration_mode="default",
             default_model="gpt-5.4",
             default_reasoning_effort="medium",
             chat_binding_store=ChatBindingStore(data_dir),
@@ -539,7 +538,209 @@ class BindingRuntimeManagerTests(unittest.TestCase):
         self.assertEqual(state["working_dir"], "/tmp/default")
         self.assertEqual(state["approval_policy"], "on-request")
         self.assertEqual(state["permissions_profile_id"], ":workspace")
-        self.assertEqual(state["collaboration_mode"], "default")
+
+    def test_legacy_collaboration_mode_field_is_ignored_on_hydrate(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        ChatBindingStore(data_dir).save(
+            binding,
+            {
+                "working_dir": "",
+                "current_thread_id": "",
+                "current_thread_title": "",
+                "feishu_runtime_state": "",
+                "approval_policy": "",
+                "permissions_profile_id": "",
+                "collaboration_mode": "plan",
+                "model": "",
+                "reasoning_effort": "",
+            },
+        )
+
+        manager = self._make_manager(data_dir=data_dir)
+        manager.hydrate_stored_bindings()
+        state = manager.resolve_runtime_binding(*binding).state
+
+        self.assertNotIn("collaboration_mode", state)
+
+    def test_unbound_model_auto_persists_across_default_changes(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        manager = self._make_manager(data_dir=data_dir)
+        state = manager.resolve_runtime_binding(*binding).state
+
+        with manager._lock:
+            manager.apply_persisted_runtime_state_message_locked(
+                binding,
+                state,
+                RuntimeSettingsChanged(model=""),
+            )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        assert stored is not None
+        self.assertEqual(stored["model"], "")
+        self.assertEqual(stored["configured_settings"], ["model"])
+
+        restarted = BindingRuntimeManager(
+            lock=threading.RLock(),
+            default_working_dir="/tmp/default",
+            default_approval_policy="on-request",
+            default_permissions_profile_id=":workspace",
+            default_model="gpt-6",
+            default_reasoning_effort="medium",
+            chat_binding_store=ChatBindingStore(data_dir),
+            thread_subscription_registry=ThreadSubscriptionRegistry(),
+            interaction_lease_store=InteractionLeaseStore(data_dir),
+            is_group_chat=lambda chat_id, message_id: False,
+        )
+        restarted.hydrate_stored_bindings()
+        restarted_state = restarted.resolve_runtime_binding(*binding).state
+        self.assertEqual(restarted_state["model"], "")
+        self.assertEqual(restarted_state["permissions_profile_id"], ":workspace")
+
+    def test_explicit_default_approval_and_permissions_persist_across_default_changes(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        manager = self._make_manager(data_dir=data_dir)
+        state = manager.resolve_runtime_binding(*binding).state
+
+        with manager._lock:
+            manager.apply_persisted_runtime_state_message_locked(
+                binding,
+                state,
+                RuntimeSettingsChanged(
+                    approval_policy="on-request",
+                    permissions_profile_id=":workspace",
+                ),
+            )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        assert stored is not None
+        self.assertEqual(stored["approval_policy"], "on-request")
+        self.assertEqual(stored["permissions_profile_id"], ":workspace")
+        self.assertEqual(
+            stored["configured_settings"],
+            ["approval_policy", "permissions_profile_id"],
+        )
+
+        restarted = BindingRuntimeManager(
+            lock=threading.RLock(),
+            default_working_dir="/tmp/default",
+            default_approval_policy="never",
+            default_permissions_profile_id=":danger-full-access",
+            default_model="gpt-5.4",
+            default_reasoning_effort="medium",
+            chat_binding_store=ChatBindingStore(data_dir),
+            thread_subscription_registry=ThreadSubscriptionRegistry(),
+            interaction_lease_store=InteractionLeaseStore(data_dir),
+            is_group_chat=lambda chat_id, message_id: False,
+        )
+        restarted.hydrate_stored_bindings()
+        restarted_state = restarted.resolve_runtime_binding(*binding).state
+        self.assertEqual(restarted_state["approval_policy"], "on-request")
+        self.assertEqual(restarted_state["permissions_profile_id"], ":workspace")
+
+    def test_configured_unbound_binding_is_visible_in_status_and_inventory(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        manager = self._make_manager(data_dir=data_dir)
+        state = manager.resolve_runtime_binding(*binding).state
+
+        with manager._lock:
+            manager.apply_persisted_runtime_state_message_locked(
+                binding,
+                state,
+                RuntimeSettingsChanged(model=""),
+            )
+            status = manager.binding_status_state_snapshot_locked(binding)
+            inventory = manager.binding_inventory_locked()
+
+        self.assertEqual(status["binding_state"], "configured/unbound")
+        self.assertEqual(inventory[0]["binding_state"], "configured/unbound")
+        self.assertEqual(status["thread_id"], "")
+
+    def test_configured_settings_survive_clearing_thread_bookmark(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        manager = self._make_manager(data_dir=data_dir)
+        state = manager.resolve_runtime_binding(*binding).state
+
+        with manager._lock:
+            manager.apply_persisted_runtime_state_message_locked(
+                binding,
+                state,
+                RuntimeSettingsChanged(
+                    approval_policy="on-request",
+                    permissions_profile_id=":workspace",
+                    model="",
+                    reasoning_effort="",
+                ),
+            )
+            manager.bind_thread_locked(
+                binding,
+                state,
+                thread_id="thread-1",
+                thread_title="Demo",
+                working_dir="/tmp/default",
+            )
+            manager.clear_thread_binding_locked(binding, state)
+            status = manager.binding_status_state_snapshot_locked(binding)
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        assert stored is not None
+        self.assertEqual(stored["current_thread_id"], "")
+        self.assertEqual(stored["working_dir"], "")
+        self.assertEqual(
+            stored["configured_settings"],
+            ["approval_policy", "model", "permissions_profile_id", "reasoning_effort"],
+        )
+        self.assertEqual(status["binding_state"], "configured/unbound")
+
+    def test_unbound_effort_auto_persists_across_default_changes(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        data_dir = pathlib.Path(tempdir.name)
+        binding = ("ou-user", "chat-1")
+        manager = self._make_manager(data_dir=data_dir)
+        state = manager.resolve_runtime_binding(*binding).state
+
+        with manager._lock:
+            manager.apply_persisted_runtime_state_message_locked(
+                binding,
+                state,
+                RuntimeSettingsChanged(reasoning_effort=""),
+            )
+
+        stored = ChatBindingStore(data_dir).load(binding)
+        assert stored is not None
+        self.assertEqual(stored["reasoning_effort"], "")
+        self.assertEqual(stored["configured_settings"], ["reasoning_effort"])
+
+        restarted = BindingRuntimeManager(
+            lock=threading.RLock(),
+            default_working_dir="/tmp/default",
+            default_approval_policy="on-request",
+            default_permissions_profile_id=":workspace",
+            default_model="gpt-5.4",
+            default_reasoning_effort="xhigh",
+            chat_binding_store=ChatBindingStore(data_dir),
+            thread_subscription_registry=ThreadSubscriptionRegistry(),
+            interaction_lease_store=InteractionLeaseStore(data_dir),
+            is_group_chat=lambda chat_id, message_id: False,
+        )
+        restarted.hydrate_stored_bindings()
+        restarted_state = restarted.resolve_runtime_binding(*binding).state
+        self.assertEqual(restarted_state["reasoning_effort"], "")
 
     def test_unsubscribe_by_thread_id_locked_marks_bindings_detached(self) -> None:
         tempdir = tempfile.TemporaryDirectory()

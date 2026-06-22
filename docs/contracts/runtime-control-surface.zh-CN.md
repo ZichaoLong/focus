@@ -14,7 +14,6 @@
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 语义：
 
@@ -50,7 +49,7 @@ memory 行为，应直接通过上游 Codex 处理，而不是走项目自管的
 
 ## 4. turn-time settings 的正式语义
 
-`/model`、`/effort`、`/approval`、`/permissions`、`/collab-mode`：
+`/model`、`/effort`、`/approval`、`/permissions`：
 
 - 都属于当前 binding 的 next-turn settings
 - 默认回读 persisted binding intent

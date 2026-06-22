@@ -25,7 +25,6 @@ class PlanStepView:
 class RuntimeSettingsView:
     approval_policy: str
     permissions_profile_id: str
-    collaboration_mode: str
     model: str
     reasoning_effort: str
 
@@ -138,10 +137,6 @@ class RuntimeView:
         return self.settings.permissions_profile_id
 
     @property
-    def collaboration_mode(self) -> str:
-        return self.settings.collaboration_mode
-
-    @property
     def model(self) -> str:
         return self.settings.model
 
@@ -199,7 +194,6 @@ def build_runtime_view(state: RuntimeStateDict) -> RuntimeView:
             permissions_profile_id=normalize_permissions_profile_id(
                 str(state.get("permissions_profile_id", "") or "")
             ),
-            collaboration_mode=str(state["collaboration_mode"] or ""),
             model=str(state["model"] or ""),
             reasoning_effort=str(state["reasoning_effort"] or ""),
         ),

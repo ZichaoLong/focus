@@ -4,7 +4,9 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
+import lark_oapi.ws.client as lark_ws_client
 from lark_oapi.api.im.v1 import (
     P2ImChatDisbandedV1,
     P2ImChatMemberBotDeletedV1,
@@ -16,6 +18,7 @@ from bot.cards import build_execution_card, build_terminal_result_card
 from bot.card_text_projection import terminal_result_checksum
 from bot.execution_transcript import ExecutionReplySegment
 from bot.feishu_bot import FeishuBot
+from bot.feishu_ws_proxy import configure_feishu_ws_proxy, normalize_feishu_ws_proxy_mode
 from bot.message_patch_result import MessagePatchResult
 
 
@@ -332,6 +335,58 @@ def _attachment_message_event(
             }
         }
     )
+
+
+class FeishuWebSocketProxyTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._original_ws_connect_kwargs = lark_ws_client._ws_connect_kwargs
+        self.addCleanup(self._restore_ws_connect_kwargs)
+
+    def _restore_ws_connect_kwargs(self) -> None:
+        lark_ws_client._ws_connect_kwargs = self._original_ws_connect_kwargs
+
+    def _websockets_supports_proxy(self) -> bool:
+        return "proxy" in lark_ws_client.inspect.signature(lark_ws_client.websockets.connect).parameters
+
+    def test_feishu_ws_proxy_env_restores_websockets_environment_proxy_discovery(self) -> None:
+        mode = configure_feishu_ws_proxy("env")
+
+        self.assertEqual(mode, "env")
+        self.assertEqual(lark_ws_client._ws_connect_kwargs(), {})
+
+    def test_feishu_ws_proxy_disabled_preserves_direct_sdk_websocket_behavior(self) -> None:
+        mode = configure_feishu_ws_proxy("disabled")
+
+        self.assertEqual(mode, "disabled")
+        kwargs = lark_ws_client._ws_connect_kwargs()
+        if self._websockets_supports_proxy():
+            self.assertEqual(kwargs, {"proxy": None})
+        else:
+            self.assertEqual(kwargs, {})
+
+    def test_feishu_ws_proxy_mode_rejects_unknown_values(self) -> None:
+        with self.assertRaisesRegex(ValueError, "feishu_ws_proxy"):
+            normalize_feishu_ws_proxy_mode("container")
+
+    def test_feishu_ws_proxy_env_fails_loudly_when_lark_proxy_hook_is_missing(self) -> None:
+        delattr(lark_ws_client, "_ws_connect_kwargs")
+
+        with self.assertRaisesRegex(RuntimeError, "feishu_ws_proxy=env"):
+            configure_feishu_ws_proxy("env")
+
+    def test_start_applies_configured_feishu_ws_proxy_mode_before_connecting(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        bot = _RecordingBot(pathlib.Path(tempdir.name), system_config={"feishu_ws_proxy": "disabled"})
+        ws_client = Mock()
+
+        with patch("bot.feishu_bot.lark.ws.Client", return_value=ws_client):
+            bot.start()
+
+        ws_client.start.assert_called_once_with()
+        kwargs = lark_ws_client._ws_connect_kwargs()
+        if self._websockets_supports_proxy():
+            self.assertEqual(kwargs, {"proxy": None})
 
 
 class FeishuBotCardProjectionTests(unittest.TestCase):

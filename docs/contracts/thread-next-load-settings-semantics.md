@@ -27,7 +27,6 @@ Managed through:
 - `/effort`
 - `/approval`
 - `/permissions`
-- `/collab-mode`
 
 Their semantics:
 

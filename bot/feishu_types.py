@@ -79,9 +79,9 @@ class StoredChatBinding(TypedDict):
     feishu_runtime_state: str
     approval_policy: str
     permissions_profile_id: str
-    collaboration_mode: str
     model: str
     reasoning_effort: str
+    configured_settings: list[str]
 
 
 class ChatBindingsFileData(TypedDict):

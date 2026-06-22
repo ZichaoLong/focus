@@ -549,7 +549,6 @@ class RuntimeAdminController:
                 [
                     f"权限基线：`{self._render_permissions_summary(snapshot)}`",
                     f"审批策略：`{snapshot['approval_policy']}`",
-                    f"Codex 协作模式：`{snapshot['collaboration_mode']}`",
                     f"Codex model override：`{snapshot['model'] or 'auto'}`",
                     f"Codex effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",
                 ]
@@ -637,7 +636,7 @@ class RuntimeAdminController:
                 "下一条普通消息："
                 f"`blocked` (`{snapshot['next_prompt_reason_code']}`) {snapshot['next_prompt_reason']}"
             )
-        if snapshot["binding_state"] == "unbound":
+        if not str(snapshot.get("thread_id") or "").strip():
             return "下一条普通消息：`accepted`，会在当前目录新建 thread 后启动 turn。"
         if snapshot["feishu_runtime_state"] == FEISHU_RUNTIME_DETACHED:
             return "下一条普通消息：`accepted`，会先按当前 binding 重新 attach / resume，再启动 turn。"
@@ -683,7 +682,6 @@ class RuntimeAdminController:
                     "",
                     f"权限基线：`{self._render_permissions_summary(snapshot)}`",
                     f"审批策略：`{snapshot['approval_policy']}`",
-                    f"协作模式：`{snapshot['collaboration_mode']}`",
                     f"model override：`{snapshot['model'] or 'auto'}`",
                     f"effort override：`{snapshot.get('reasoning_effort', '') or 'auto'}`",
                 ]

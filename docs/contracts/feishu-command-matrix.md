@@ -55,7 +55,6 @@ It does not redefine:
 | `/model [name\|auto]` | Set the current Feishu session's turn-time model override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | Set the current Feishu session's turn-time effort override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `Turn Settings` page | admin only | admin only | none |
-| `/collab-mode [default\|plan]` | Set collaboration mode for future turns in the current Feishu session | yes; `Turn Settings` page | admin only | admin only | none |
 | `/last text` | Export the latest authoritative terminal text from the current session; prefers terminal result, falls back to the latest execution card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/reset-backend` | Preview and reset the current instance backend for recovery | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
 | `/whoami` | Show the caller's identity | yes; `More` page | anyone | unsupported | none |
@@ -97,7 +96,7 @@ These are part of the formal Feishu user surface and must be maintained together
 - `/threads` list card: `Resume/Current`, `Archive`, `More`, `Collapse`
 - `/goal` card: `Refresh`, `Pause` / `Resume`, `Clear`
 - `/reset-backend` result cards: attach/detach follow-up buttons such as `Attach Current Thread`, `Attach Current Instance`, and `Keep Detached`
-- shared `/model` / `/effort` card, plus `/permissions` / `/approval` / `/collab-mode` cards: turn-time runtime-setting toggle buttons
+- shared `/model` / `/effort` card, plus `/permissions` / `/approval` cards: turn-time runtime-setting toggle buttons
 - approval / extra-input cards: their request-type-specific allow / deny / submit buttons
 
 ## 5. Boundary
