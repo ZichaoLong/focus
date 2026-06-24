@@ -289,7 +289,11 @@ class FeishuBot(ABC):
                 ),
                 fetch_merge_forward_items=self._fetch_merge_forward_items,
                 batch_resolve_sender_names=self._batch_resolve_sender_names,
-                render_message_text=lambda msg_type, content_dict: self._render_message_text(msg_type, content_dict),
+                render_message_text=lambda msg_type, content_dict, message_id: self._render_message_text(
+                    msg_type,
+                    content_dict,
+                    message_id=message_id,
+                ),
             ),
             group_mode_all=self._GROUP_MODE_ALL,
             group_mode_assistant=self._GROUP_MODE_ASSISTANT,

@@ -41,7 +41,9 @@ class ForwardAggregatorTests(unittest.TestCase):
                 ),
                 fetch_merge_forward_items=lambda merge_message_id: list(fetched_items),
                 batch_resolve_sender_names=lambda open_ids: {open_id: f"name:{open_id}" for open_id in open_ids},
-                render_message_text=lambda msg_type, content: str(content.get("text", "") if msg_type == "text" else ""),
+                render_message_text=lambda msg_type, content, message_id: str(
+                    content.get("text", "") if msg_type == "text" else ""
+                ),
             ),
             timer_factory=_timer_factory,
         )

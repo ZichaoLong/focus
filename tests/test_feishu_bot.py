@@ -643,6 +643,74 @@ class FeishuBotCardProjectionTests(unittest.TestCase):
         self.assertIn("来自转发终态卡", forwarded_text)
         self.assertIn("请读取这个", forwarded_text)
 
+    def test_merge_forward_restores_authoritative_terminal_result_from_local_resolver(self) -> None:
+        bot = self._make_bot()
+        result_id = "fedcba9876543210fedcba9876543210"
+        original = "权威原文：`load()` 和 [protocol.rs](/tmp/protocol.rs:1)"
+        checksum = terminal_result_checksum(original)
+        forwarded_card = build_terminal_result_card(
+            "降级投影： 和 ",
+            terminal_result_id=result_id,
+            checksum=checksum,
+        )
+        bot.raw_message_items["sub-card"] = [
+            SimpleNamespace(
+                message_id="sub-card",
+                body=SimpleNamespace(content=json.dumps(forwarded_card, ensure_ascii=False)),
+            )
+        ]
+        bot.set_terminal_result_text_resolver(
+            lambda projection: original
+            if projection.terminal_result_id == result_id
+            and projection.terminal_result_checksum == checksum[:16]
+            else ""
+        )
+
+        def _fetch_merge_forward_items(_message_id: str) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    message_id="sub-card",
+                    upper_message_id="merge-root",
+                    msg_type="interactive",
+                    sender=SimpleNamespace(sender_type="app", id="cli_other_bot"),
+                    body=SimpleNamespace(content=json.dumps(forwarded_card, ensure_ascii=False)),
+                    create_time=1712476800000,
+                )
+            ]
+
+        object.__setattr__(bot._forward_aggregator._ports, "fetch_merge_forward_items", _fetch_merge_forward_items)
+
+        bot._handle_raw_message(
+            _attachment_message_event(
+                message_id="merge-root",
+                chat_id="ou-admin",
+                chat_type="p2p",
+                msg_type="merge_forward",
+                sender_user_id="u-user",
+                sender_open_id="ou-admin",
+                content={"text": "Merged and Forwarded Message"},
+            )
+        )
+
+        pending = bot._forward_aggregator.peek_pending_forward("ou-admin", "ou-admin")
+        assert pending is not None
+        pending.timer.cancel()
+
+        bot._handle_raw_message(
+            _p2p_message_event(
+                message_id="leave-1",
+                chat_id="ou-admin",
+                text="请读取这个",
+                sender_user_id="u-user",
+                sender_open_id="ou-admin",
+            )
+        )
+
+        self.assertEqual(len(bot.received_messages), 1)
+        forwarded_text = bot.received_messages[0][2]
+        self.assertIn(original, forwarded_text)
+        self.assertNotIn("降级投影", forwarded_text)
+
 
 class FeishuBotGroupModeTests(unittest.TestCase):
     def _make_bot(self, *, system_config: dict | None = None) -> _RecordingBot:
