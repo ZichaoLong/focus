@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 _TASK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _UNIT_PREFIX = "feishu-codex-scheduled"
+_UNIT_SCALAR_FORBIDDEN = {"\x00", "\r", "\n"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,19 +102,39 @@ def _is_executable_file(path: pathlib.Path) -> bool:
     return path.is_file() and os.access(path, os.X_OK)
 
 
+def _unit_scalar(value: str, field_name: str, *, allow_empty: bool = True) -> str:
+    normalized = str(value or "").strip()
+    if any(char in normalized for char in _UNIT_SCALAR_FORBIDDEN):
+        raise ValueError(f"{field_name} 不能包含换行或 NUL 字符。")
+    if not allow_empty and not normalized:
+        raise ValueError(f"{field_name} 不能为空。")
+    return normalized
+
+
+def _normalize_executable_path(value: str, field_name: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized or any(char in normalized for char in _UNIT_SCALAR_FORBIDDEN):
+        raise ValueError(f"{field_name} 必须是可执行文件路径。")
+    detected = shutil.which(normalized) if "/" not in normalized else ""
+    path = pathlib.Path(detected or normalized).expanduser().resolve()
+    if not _is_executable_file(path):
+        raise ValueError(f"{field_name} 不存在或不可执行：{path}")
+    return str(path)
+
+
 def detect_ctl_path(explicit_path: str = "") -> str:
     normalized = str(explicit_path or "").strip()
     if normalized:
-        return normalized
+        return _normalize_executable_path(normalized, "--ctl-path")
     detected = shutil.which("feishu-codexctl")
     if detected:
-        return detected
+        return _normalize_executable_path(detected, "feishu-codexctl")
     for candidate in (
         _default_bin_dir() / "feishu-codexctl",
         _default_data_root() / ".venv" / "bin" / "feishu-codexctl",
     ):
         if _is_executable_file(candidate):
-            return str(candidate)
+            return str(candidate.resolve())
     raise ValueError(
         "未找到 `feishu-codexctl`；已检查 PATH、FC_BIN_DIR/default ~/.local/bin "
         "以及 FC_DATA_ROOT/default managed .venv。也可以通过 --ctl-path 显式指定。"
@@ -154,7 +175,11 @@ def _shell_execstart(spec: ScheduledTaskSpec) -> str:
 
 
 def render_service_unit(spec: ScheduledTaskSpec) -> str:
-    description = spec.description or f"Feishu Codex scheduled prompt: {spec.task_id}"
+    description = _unit_scalar(
+        spec.description or f"Feishu Codex scheduled prompt: {spec.task_id}",
+        "description",
+        allow_empty=False,
+    )
     return "\n".join(
         [
             "[Unit]",
@@ -169,14 +194,19 @@ def render_service_unit(spec: ScheduledTaskSpec) -> str:
 
 
 def render_timer_unit(spec: ScheduledTaskSpec) -> str:
-    description = spec.description or f"Feishu Codex scheduled timer: {spec.task_id}"
+    description = _unit_scalar(
+        spec.description or f"Feishu Codex scheduled timer: {spec.task_id}",
+        "description",
+        allow_empty=False,
+    )
+    on_calendar = _unit_scalar(spec.on_calendar, "on_calendar", allow_empty=False)
     return "\n".join(
         [
             "[Unit]",
             f"Description={description}",
             "",
             "[Timer]",
-            f"OnCalendar={spec.on_calendar}",
+            f"OnCalendar={on_calendar}",
             "Persistent=true",
             f"Unit={spec.unit_name}.service",
             "",
@@ -240,8 +270,8 @@ def create_task(args: argparse.Namespace) -> int:
         task_id=task_id,
         instance=str(args.instance or "").strip(),
         binding_id=str(args.binding_id or "").strip(),
-        on_calendar=str(args.on_calendar or "").strip(),
-        description=str(args.description or "").strip(),
+        on_calendar=_unit_scalar(args.on_calendar, "on_calendar", allow_empty=False),
+        description=_unit_scalar(args.description, "description"),
         prompt_file="",
         ctl_path=ctl_path,
         synthetic_source=str(args.synthetic_source or "schedule").strip() or "schedule",

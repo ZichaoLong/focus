@@ -27,11 +27,16 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             normalize_task_id("Bad Task")
 
     def test_detect_ctl_path_prefers_path_command_for_login_shell_users(self) -> None:
-        with patch(
-            "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
-            return_value="/usr/local/bin/feishu-codexctl",
-        ):
-            self.assertEqual(detect_ctl_path(), "/usr/local/bin/feishu-codexctl")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctl = pathlib.Path(tmpdir) / "feishu-codexctl"
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+            ctl.chmod(0o755)
+
+            with patch(
+                "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
+                return_value=str(ctl),
+            ):
+                self.assertEqual(detect_ctl_path(), str(ctl.resolve()))
 
     def test_detect_ctl_path_falls_back_to_managed_wrapper_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -70,6 +75,25 @@ class ScheduledPromptSkillTests(unittest.TestCase):
                 ):
                     self.assertEqual(detect_ctl_path(), str(ctl))
 
+    def test_detect_ctl_path_expands_explicit_user_path_and_requires_executable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            ctl = root / ".local" / "bin" / "feishu-codexctl"
+            ctl.parent.mkdir(parents=True)
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+            ctl.chmod(0o755)
+
+            with patch.dict("os.environ", {"HOME": str(root)}, clear=False):
+                self.assertEqual(detect_ctl_path("~/.local/bin/feishu-codexctl"), str(ctl.resolve()))
+
+    def test_detect_ctl_path_rejects_non_executable_explicit_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            ctl = pathlib.Path(tmpdir) / "feishu-codexctl"
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(ValueError, "--ctl-path"):
+                detect_ctl_path(str(ctl))
+
     def test_rendered_units_route_back_through_prompt_send(self) -> None:
         spec = ScheduledTaskSpec(
             task_id="ashare-close",
@@ -92,11 +116,46 @@ class ScheduledPromptSkillTests(unittest.TestCase):
         self.assertIn("OnCalendar=Mon..Fri 15:25", timer)
         self.assertIn("Persistent=true", timer)
 
+    def test_rendered_units_reject_multiline_description_and_on_calendar(self) -> None:
+        spec = ScheduledTaskSpec(
+            task_id="bad-unit",
+            instance="explorer",
+            binding_id="group:chat-1",
+            on_calendar="Mon..Fri 15:25",
+            description="safe\n[Service]\nExecStart=/bin/false",
+            prompt_file="/tmp/prompt.txt",
+            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            synthetic_source="schedule",
+            display_mode="silent",
+            created_at="2026-05-09T00:00:00+00:00",
+        )
+
+        with self.assertRaisesRegex(ValueError, "description"):
+            render_service_unit(spec)
+
+        spec = ScheduledTaskSpec(
+            task_id="bad-unit",
+            instance="explorer",
+            binding_id="group:chat-1",
+            on_calendar="Mon..Fri 15:25\nAccuracySec=1s",
+            description="safe",
+            prompt_file="/tmp/prompt.txt",
+            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            synthetic_source="schedule",
+            display_mode="silent",
+            created_at="2026-05-09T00:00:00+00:00",
+        )
+        with self.assertRaisesRegex(ValueError, "on_calendar"):
+            render_timer_unit(spec)
+
     def test_create_task_writes_metadata_prompt_and_units(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             prompt_file = root / "prompt.txt"
             prompt_file.write_text("继续明天的分析\n", encoding="utf-8")
+            ctl = root / "feishu-codexctl"
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+            ctl.chmod(0o755)
             args = types.SimpleNamespace(
                 task_id="morning-follow-up",
                 instance="explorer",
@@ -106,7 +165,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
                 description="Morning follow-up",
                 synthetic_source="schedule",
                 display_mode="announce",
-                ctl_path="/home/tester/.local/bin/feishu-codexctl",
+                ctl_path=str(ctl),
             )
             systemctl_calls: list[tuple[str, ...]] = []
 
