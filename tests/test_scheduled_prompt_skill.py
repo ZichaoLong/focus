@@ -7,6 +7,7 @@ from unittest.mock import patch
 from bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt import (
     ScheduledTaskSpec,
     create_task,
+    detect_ctl_path,
     list_specs,
     normalize_task_id,
     render_service_unit,
@@ -24,6 +25,50 @@ class ScheduledPromptSkillTests(unittest.TestCase):
     def test_normalize_task_id_rejects_invalid_characters(self) -> None:
         with self.assertRaises(ValueError):
             normalize_task_id("Bad Task")
+
+    def test_detect_ctl_path_prefers_path_command_for_login_shell_users(self) -> None:
+        with patch(
+            "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
+            return_value="/usr/local/bin/feishu-codexctl",
+        ):
+            self.assertEqual(detect_ctl_path(), "/usr/local/bin/feishu-codexctl")
+
+    def test_detect_ctl_path_falls_back_to_managed_wrapper_dir(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            ctl = root / "bin" / "feishu-codexctl"
+            ctl.parent.mkdir(parents=True)
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+            ctl.chmod(0o755)
+
+            with patch.dict("os.environ", {"FC_BIN_DIR": str(root / "bin")}, clear=False):
+                with patch(
+                    "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
+                    return_value=None,
+                ):
+                    self.assertEqual(detect_ctl_path(), str(ctl))
+
+    def test_detect_ctl_path_falls_back_to_managed_venv_console_script(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            ctl = root / "data" / ".venv" / "bin" / "feishu-codexctl"
+            ctl.parent.mkdir(parents=True)
+            ctl.write_text("#!/bin/sh\n", encoding="utf-8")
+            ctl.chmod(0o755)
+
+            with patch.dict(
+                "os.environ",
+                {
+                    "FC_BIN_DIR": str(root / "missing-bin"),
+                    "FC_DATA_ROOT": str(root / "data"),
+                },
+                clear=False,
+            ):
+                with patch(
+                    "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
+                    return_value=None,
+                ):
+                    self.assertEqual(detect_ctl_path(), str(ctl))
 
     def test_rendered_units_route_back_through_prompt_send(self) -> None:
         spec = ScheduledTaskSpec(

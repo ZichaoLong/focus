@@ -83,14 +83,41 @@ def normalize_task_id(task_id: str) -> str:
     return normalized
 
 
+def _default_data_root() -> pathlib.Path:
+    raw = os.environ.get("FC_DATA_ROOT", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    return pathlib.Path.home() / ".local" / "share" / "feishu-codex"
+
+
+def _default_bin_dir() -> pathlib.Path:
+    raw = os.environ.get("FC_BIN_DIR", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    return pathlib.Path.home() / ".local" / "bin"
+
+
+def _is_executable_file(path: pathlib.Path) -> bool:
+    return path.is_file() and os.access(path, os.X_OK)
+
+
 def detect_ctl_path(explicit_path: str = "") -> str:
     normalized = str(explicit_path or "").strip()
     if normalized:
         return normalized
     detected = shutil.which("feishu-codexctl")
-    if not detected:
-        raise ValueError("未找到 `feishu-codexctl`；请先确认它在 PATH 中。")
-    return detected
+    if detected:
+        return detected
+    for candidate in (
+        _default_bin_dir() / "feishu-codexctl",
+        _default_data_root() / ".venv" / "bin" / "feishu-codexctl",
+    ):
+        if _is_executable_file(candidate):
+            return str(candidate)
+    raise ValueError(
+        "未找到 `feishu-codexctl`；已检查 PATH、FC_BIN_DIR/default ~/.local/bin "
+        "以及 FC_DATA_ROOT/default managed .venv。也可以通过 --ctl-path 显式指定。"
+    )
 
 
 def _run_systemctl(*args: str, check: bool = True) -> subprocess.CompletedProcess[str]:

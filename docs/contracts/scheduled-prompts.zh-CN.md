@@ -111,6 +111,25 @@ skill helper 当前提供：
 
 这些 helper 不是飞书 slash 命令，也不是正式的跨平台公共产品面；它们只是 Linux 本机短期方案。
 
+本地工具解析也是 helper 合同的一部分：
+
+- 普通用户在登录 shell 中使用时，如果 `PATH` 里有 `feishu-codexctl`，可以继续依赖 `PATH`
+- `create --ctl-path <path>` 是显式 override，并会写入生成的 service unit
+- 省略 `--ctl-path` 时，helper 按以下顺序发现 `feishu-codexctl`：
+  1. `PATH`
+  2. `FC_BIN_DIR/feishu-codexctl`，或 `~/.local/bin/feishu-codexctl`
+  3. `FC_DATA_ROOT/.venv/bin/feishu-codexctl`，或
+     `~/.local/share/feishu-codex/.venv/bin/feishu-codexctl`
+- managed skill 指南应使用受管 venv 的 Python 运行 helper，通常是
+  `FC_DATA_ROOT/.venv/bin/python`，而不是假设系统 `python3` 满足本项目运行时
+
+Recurring timer 必须有明确终止策略。`systemd --user` 只理解
+`OnCalendar`，不理解业务任务是否完成。可接受形态是：
+
+- 使用具体未来时间的一次性任务
+- prompt 中包含明确 self-removal 条件和删除命令的 recurring 任务
+- 带已知截止时间、并额外创建 one-shot cleanup prompt 的 recurring 任务
+
 ## 6. 安全边界
 
 以下约束是正式合同：

@@ -23,36 +23,70 @@ Do not use it for:
 - cross-machine scheduling
 - vague "remind me somewhere later" requests without a concrete Feishu-bound thread target
 
+Resolve local tools before running any command. Prefer the user's normal
+`PATH`, but fall back to the repo-managed wrapper and venv because Codex turns
+may not inherit the user's login shell:
+
+```bash
+FC_DATA_ROOT="${FC_DATA_ROOT:-$HOME/.local/share/feishu-codex}"
+FC_BIN_DIR="${FC_BIN_DIR:-$HOME/.local/bin}"
+
+CTL="$(command -v feishu-codexctl || true)"
+if [ -z "$CTL" ] && [ -x "$FC_BIN_DIR/feishu-codexctl" ]; then
+  CTL="$FC_BIN_DIR/feishu-codexctl"
+fi
+if [ -z "$CTL" ] && [ -x "$FC_DATA_ROOT/.venv/bin/feishu-codexctl" ]; then
+  CTL="$FC_DATA_ROOT/.venv/bin/feishu-codexctl"
+fi
+if [ -z "$CTL" ]; then
+  echo "feishu-codexctl not found; run bash install.sh or pass --ctl-path explicitly" >&2
+  exit 1
+fi
+
+PY="$FC_DATA_ROOT/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+  echo "managed Python not found: $PY; run bash install.sh first" >&2
+  exit 1
+fi
+```
+
+Run helper commands from this skill directory, or replace
+`scripts/manage_scheduled_prompt.py` with its absolute path.
+
 Workflow:
 
 1. Confirm you are in a Codex turn with `CODEX_THREAD_ID` available.
 2. Resolve the current thread's attached Feishu binding:
-   - run `feishu-codexctl thread bindings --thread-id "$CODEX_THREAD_ID"`
+   - run `"$CTL" thread bindings --thread-id "$CODEX_THREAD_ID"`
    - if there is exactly one `[attached]` binding, use it
    - if there are zero attached bindings, stop and tell the user there is no attached Feishu chat to receive scheduled output
    - if there are multiple attached bindings, ask the user which one should receive the scheduled task
 3. Resolve the owning instance for that thread:
-   - prefer `feishu-codexctl thread status --thread-id "$CODEX_THREAD_ID"` and read `live runtime owner`
+   - prefer `"$CTL" thread status --thread-id "$CODEX_THREAD_ID"` and read `live runtime owner`
    - if the owner is `none`, ask the user which instance should own future scheduled execution
 4. Convert the user's desired time into a concrete `systemd` `OnCalendar=` expression.
-5. Use the helper script in this skill:
+5. Write the scheduled prompt to a UTF-8 text file. For recurring tasks, include
+   the task id, the exact completion condition, and the exact cleanup command
+   when self-removal is part of the stop strategy.
+6. Use the helper script in this skill:
 
    ```bash
-   python3 scripts/manage_scheduled_prompt.py create \
+   "$PY" scripts/manage_scheduled_prompt.py create \
      --task-id "<short-stable-id>" \
      --instance "<instance-name>" \
      --binding-id "<binding-id>" \
      --on-calendar "<systemd OnCalendar expression>" \
+     --ctl-path "$CTL" \
      --prompt-file "<utf8-text-file>"
    ```
 
-6. For inspection / cleanup, use:
+7. For inspection / cleanup, use:
 
    ```bash
-   python3 scripts/manage_scheduled_prompt.py list
-   python3 scripts/manage_scheduled_prompt.py show --task-id "<task-id>"
-   python3 scripts/manage_scheduled_prompt.py remove --task-id "<task-id>"
-   python3 scripts/manage_scheduled_prompt.py run-now --task-id "<task-id>"
+   "$PY" scripts/manage_scheduled_prompt.py list
+   "$PY" scripts/manage_scheduled_prompt.py show --task-id "<task-id>"
+   "$PY" scripts/manage_scheduled_prompt.py remove --task-id "<task-id>"
+   "$PY" scripts/manage_scheduled_prompt.py run-now --task-id "<task-id>"
    ```
 
 Rules:
@@ -62,6 +96,20 @@ Rules:
 - Default to `--synthetic-source schedule` and `--display-mode silent` unless the user explicitly wants an announcement message before execution.
 - Treat helper failures as authoritative. Do not paper over `systemctl --user` or control-plane errors.
 - Do not try to auto-pick a binding when multiple attached bindings exist.
+- One-shot tasks should use an absolute `OnCalendar=` timestamp when practical,
+  for example `2026-06-29 23:00:00`.
+- Recurring tasks must have a stop strategy. Use self-removal, deterministic
+  cleanup, or both.
+- For recurring self-removal, put the concrete removal command in the scheduled
+  prompt, for example:
+
+  ```text
+  If the job is complete, report the final result, then remove this scheduled task:
+  <managed-python> <absolute-helper-path> remove --task-id <task-id>
+  ```
+
+- For recurring tasks with a known deadline, also create a one-shot cleanup
+  scheduled prompt that removes the recurring task after that deadline.
 
 When reporting back, include:
 

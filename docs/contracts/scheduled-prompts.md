@@ -126,6 +126,32 @@ The helper currently exposes:
 These helpers are not Feishu slash commands and not a formal cross-platform
 public product surface. They are the Linux short-term scheduling shell.
 
+Local tool resolution is part of the helper contract:
+
+- ordinary users in a login shell may rely on `PATH` when it contains
+  `feishu-codexctl`
+- `create --ctl-path <path>` is the explicit override and is stored in the
+  generated service unit
+- when `--ctl-path` is omitted, the helper discovers `feishu-codexctl` in this
+  order:
+  1. `PATH`
+  2. `FC_BIN_DIR/feishu-codexctl`, or `~/.local/bin/feishu-codexctl`
+  3. `FC_DATA_ROOT/.venv/bin/feishu-codexctl`, or
+     `~/.local/share/feishu-codex/.venv/bin/feishu-codexctl`
+- managed skill instructions should invoke the helper with the managed venv
+  Python, normally `FC_DATA_ROOT/.venv/bin/python`, instead of assuming the
+  system `python3` satisfies the project runtime
+
+Recurring timers must have an explicit termination strategy. `systemd --user`
+only evaluates `OnCalendar`; it does not know whether the business task is
+complete. Acceptable patterns are:
+
+- one-shot tasks with a concrete future timestamp
+- recurring tasks whose prompt includes an exact self-removal condition and
+  removal command
+- recurring tasks with a deterministic one-shot cleanup prompt at a known
+  deadline
+
 ## 6. Safety Boundary
 
 The following are normative:
