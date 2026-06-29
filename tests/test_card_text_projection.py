@@ -201,6 +201,24 @@ class CardTextProjectionTests(unittest.TestCase):
         self.assertEqual(projection.terminal_result_id, "0123456789abcdef0123456789abcdef")
         self.assertEqual(projection.terminal_result_checksum, checksum[:16])
 
+    def test_terminal_result_store_miss_projects_feishu_safe_card_body_not_raw_text(self) -> None:
+        raw_text = "1. **明确一次性任务**\n   用精确时间："
+        projection = project_interactive_card_text(
+            build_terminal_result_card(
+                raw_text,
+                terminal_result_id="0123456789abcdef0123456789abcdef",
+                checksum=terminal_result_checksum(raw_text),
+            )
+        )
+
+        self.assertFalse(projection.has_authoritative_final_reply)
+        self.assertEqual(projection.final_reply_source, TERMINAL_RESULT_SOURCE_CARD_DEGRADED)
+        self.assertEqual(
+            projection.final_reply_text,
+            "1. **明确一次性任务**<br>\n   用精确时间：",
+        )
+        self.assertNotEqual(projection.final_reply_text, raw_text)
+
     def test_terminal_result_card_normalizes_indented_fenced_code_blocks_for_feishu(self) -> None:
         card = build_terminal_result_card(
             "- 检查参数\n"

@@ -6,6 +6,7 @@ _MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]\n]*)\]\(([^)\n]+)\)")
 _MARKDOWN_LINK_RE = re.compile(r"(?<!!)\[([^\]\n]*)\]\(([^)\n]+)\)")
 _MARKDOWN_HEADING_RE = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 _FENCED_CODE_OPEN_RE = re.compile(r"^([ \t]*)(`{3,}|~{3,})([^\n]*)$")
+_LIST_ITEM_RE = re.compile(r"^([ \t]*)(?:[-+*]|\d{1,9}[.)])([ \t]+)")
 
 
 def contains_unsupported_embedded_image_markdown(text: str) -> bool:
@@ -71,7 +72,8 @@ def sanitize_runtime_markdown_for_feishu_card(text: str) -> str:
 
     sanitized = _MARKDOWN_HEADING_RE.sub(_replace_heading, normalized)
     sanitized = _MARKDOWN_IMAGE_RE.sub(_replace_image, sanitized)
-    return _MARKDOWN_LINK_RE.sub(_replace_link, sanitized)
+    sanitized = _MARKDOWN_LINK_RE.sub(_replace_link, sanitized)
+    return _harden_list_continuation_soft_breaks_for_feishu(sanitized)
 
 
 def sanitize_terminal_result_markdown_for_feishu_json2(text: str) -> str:
@@ -87,7 +89,104 @@ def sanitize_terminal_result_markdown_for_feishu_json2(text: str) -> str:
         return f"【图片】{alt_text}\n路径：`{target}`"
 
     sanitized = _MARKDOWN_IMAGE_RE.sub(_replace_image, normalized)
-    return _normalize_fenced_code_blocks_for_feishu(sanitized)
+    sanitized = _normalize_fenced_code_blocks_for_feishu(sanitized)
+    return _harden_list_continuation_soft_breaks_for_feishu(sanitized)
+
+
+def _harden_list_continuation_soft_breaks_for_feishu(text: str) -> str:
+    normalized = str(text or "")
+    if not normalized:
+        return ""
+    lines = normalized.splitlines(keepends=True)
+    if len(lines) < 2:
+        return normalized
+
+    output: list[str] = []
+    active_content_indent: int | None = None
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        body = line.rstrip("\r\n")
+        newline = line[len(body):]
+        fence_match = _FENCED_CODE_OPEN_RE.match(body)
+        if fence_match is not None:
+            closing_index = _find_fence_closing_index(
+                lines,
+                index + 1,
+                fence_match.group(2)[0],
+                len(fence_match.group(2)),
+            )
+            end_index = len(lines) if closing_index is None else closing_index + 1
+            output.extend(lines[index:end_index])
+            index = end_index
+            active_content_indent = None
+            continue
+
+        list_match = _LIST_ITEM_RE.match(body)
+        if list_match is not None and _can_open_list_item(body, active_content_indent):
+            active_content_indent = _text_width(list_match.group(0))
+        elif not body.strip():
+            active_content_indent = None
+        elif active_content_indent is not None and _indent_width(body) < active_content_indent:
+            active_content_indent = None
+
+        if (
+            active_content_indent is not None
+            and newline
+            and index + 1 < len(lines)
+            and _is_list_continuation_line(lines[index + 1], active_content_indent)
+        ):
+            line = _append_html_hard_break(line)
+        output.append(line)
+        index += 1
+    return "".join(output)
+
+
+def _can_open_list_item(body: str, active_content_indent: int | None) -> bool:
+    if active_content_indent is not None:
+        return True
+    return _indent_width(body) < 4
+
+
+def _is_list_continuation_line(line: str, content_indent: int) -> bool:
+    body = line.rstrip("\r\n")
+    if not body.strip():
+        return False
+    if _FENCED_CODE_OPEN_RE.match(body):
+        return False
+    if _LIST_ITEM_RE.match(body):
+        return False
+    return _indent_width(body) >= content_indent
+
+
+def _append_html_hard_break(line: str) -> str:
+    body = line.rstrip("\r\n")
+    newline = line[len(body):]
+    stripped = body.rstrip()
+    if re.search(r"(?:<br\s*/?>|\\)$", stripped, flags=re.IGNORECASE):
+        return line
+    if body.endswith(("  ", "\t")):
+        return line
+    return f"{body}<br>{newline}"
+
+
+def _indent_width(text: str) -> int:
+    width = 0
+    for char in str(text or ""):
+        if char == " ":
+            width += 1
+        elif char == "\t":
+            width += 4
+        else:
+            break
+    return width
+
+
+def _text_width(text: str) -> int:
+    width = 0
+    for char in str(text or ""):
+        width += 4 if char == "\t" else 1
+    return width
 
 
 def _normalize_fenced_code_blocks_for_feishu(text: str) -> str:

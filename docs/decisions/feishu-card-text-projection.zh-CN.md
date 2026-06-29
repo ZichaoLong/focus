@@ -182,6 +182,10 @@
   code block 的围栏移到行首、在代码块前后补空行，避免被列表、引用或前后文本吞掉
 - 外层代码块如果展示了内部 fenced code block，可把外层 fence 升级为比内部
   fence 更长的标准 Markdown fence，例如四反引包三反引、五反引包四反引
+- 列表项首行后的缩进续行可以显式插入 `<br>`，避免飞书卡片把列表内
+  soft break 渲染成同一行；这条规则只作用于 fenced code block 外，
+  不会把 nested list marker 当作普通续行改写，也不会把非列表上下文里的
+  四空格缩进代码块当作列表项 opener
 
 这类规范化只作用于**飞书卡片展示投影**，不改变 `final_reply_text` 的权威原文：
 
