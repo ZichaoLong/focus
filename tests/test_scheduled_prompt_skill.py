@@ -2,6 +2,7 @@ import pathlib
 import tempfile
 import types
 import unittest
+from dataclasses import replace
 from unittest.mock import patch
 
 from bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt import (
@@ -147,6 +148,32 @@ class ScheduledPromptSkillTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "on_calendar"):
             render_timer_unit(spec)
+
+    def test_rendered_service_unit_rejects_multiline_execstart_fields(self) -> None:
+        spec = ScheduledTaskSpec(
+            task_id="bad-unit",
+            instance="explorer",
+            binding_id="group:chat-1",
+            on_calendar="Mon..Fri 15:25",
+            description="safe",
+            prompt_file="/tmp/prompt.txt",
+            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            synthetic_source="schedule",
+            display_mode="silent",
+            created_at="2026-05-09T00:00:00+00:00",
+        )
+
+        for field_name in (
+            "ctl_path",
+            "instance",
+            "binding_id",
+            "prompt_file",
+            "synthetic_source",
+            "display_mode",
+        ):
+            with self.subTest(field_name=field_name):
+                with self.assertRaisesRegex(ValueError, field_name):
+                    render_service_unit(replace(spec, **{field_name: "safe\nInjected=1"}))
 
     def test_create_task_writes_metadata_prompt_and_units(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

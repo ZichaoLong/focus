@@ -157,19 +157,19 @@ def _utc_now_iso() -> str:
 
 def _shell_execstart(spec: ScheduledTaskSpec) -> str:
     command = [
-        spec.ctl_path,
+        _unit_scalar(spec.ctl_path, "ctl_path", allow_empty=False),
         "--instance",
-        spec.instance,
+        _unit_scalar(spec.instance, "instance", allow_empty=False),
         "prompt",
         "send",
         "--binding-id",
-        spec.binding_id,
+        _unit_scalar(spec.binding_id, "binding_id", allow_empty=False),
         "--text-file",
-        spec.prompt_file,
+        _unit_scalar(spec.prompt_file, "prompt_file", allow_empty=False),
         "--synthetic-source",
-        spec.synthetic_source,
+        _unit_scalar(spec.synthetic_source, "synthetic_source", allow_empty=False),
         "--display-mode",
-        spec.display_mode,
+        _unit_scalar(spec.display_mode, "display_mode", allow_empty=False),
     ]
     return "/bin/sh -lc " + shlex.quote(" ".join(shlex.quote(part) for part in command))
 
