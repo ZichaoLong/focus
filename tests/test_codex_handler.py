@@ -6791,6 +6791,18 @@ class CodexHandlerTests(unittest.TestCase):
         state = handler._get_runtime_state("ou_user", "c1")
         state["current_thread_id"] = "thread-1"
         state["feishu_runtime_state"] = "attached"
+        handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
+            summary=ThreadSummary(
+                thread_id="thread-1",
+                cwd="/tmp/project",
+                name="demo",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="appServer",
+                status="idle",
+            )
+        )
 
         def _raise_not_loaded(thread_id: str) -> None:
             del thread_id
@@ -6801,6 +6813,77 @@ class CodexHandlerTests(unittest.TestCase):
         handler.handle_message("ou_user", "c1", "/compact")
 
         self.assertIn("当前 thread 尚未加载到本实例 backend", bot.replies[-1][1])
+        self.assertIn("`/attach`", bot.replies[-1][1])
+        self.assertEqual(handler._adapter.read_thread_calls[-1], {"thread_id": "thread-1", "include_turns": False})
+
+    def test_compact_command_thread_not_found_confirms_readable_thread_before_unloaded_hint(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["feishu_runtime_state"] = "attached"
+        handler._adapter.thread_snapshots[("thread-1", False)] = ThreadSnapshot(
+            summary=ThreadSummary(
+                thread_id="thread-1",
+                cwd="/tmp/project",
+                name="demo",
+                preview="",
+                created_at=0,
+                updated_at=0,
+                source="appServer",
+                status="idle",
+            )
+        )
+
+        def _raise_not_found(thread_id: str) -> None:
+            del thread_id
+            raise CodexRpcError("thread/compact/start", {"message": "thread not found: thread-1"})
+
+        handler._adapter.compact_thread = _raise_not_found
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertIn("当前 thread 尚未加载到本实例 backend", bot.replies[-1][1])
+        self.assertEqual(handler._adapter.read_thread_calls[-1], {"thread_id": "thread-1", "include_turns": False})
+
+    def test_compact_command_surfaces_unconfirmed_state_when_read_returns_not_loaded(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["feishu_runtime_state"] = "attached"
+        handler._adapter.thread_snapshots[("thread-1", False)] = CodexRpcError(
+            "thread/read",
+            {"message": "thread not loaded: thread-1"},
+        )
+
+        def _raise_not_found(thread_id: str) -> None:
+            del thread_id
+            raise CodexRpcError("thread/compact/start", {"message": "thread not found: thread-1"})
+
+        handler._adapter.compact_thread = _raise_not_found
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertIn("暂时无法确认它只是未加载", bot.replies[-1][1])
+        self.assertIn("`/attach`", bot.replies[-1][1])
+
+    def test_compact_command_surfaces_unconfirmed_state_when_read_is_unavailable(self) -> None:
+        handler, bot = self._make_handler()
+        state = handler._get_runtime_state("ou_user", "c1")
+        state["current_thread_id"] = "thread-1"
+        state["feishu_runtime_state"] = "attached"
+        handler._adapter.thread_snapshots[("thread-1", False)] = TimeoutError(
+            "Codex request timed out: thread/read"
+        )
+
+        def _raise_not_found(thread_id: str) -> None:
+            del thread_id
+            raise CodexRpcError("thread/compact/start", {"message": "thread not found: thread-1"})
+
+        handler._adapter.compact_thread = _raise_not_found
+
+        handler.handle_message("ou_user", "c1", "/compact")
+
+        self.assertIn("暂时无法确认它只是未加载", bot.replies[-1][1])
         self.assertIn("`/attach`", bot.replies[-1][1])
 
     def test_help_chat_page_mentions_status_preflight_and_cd(self) -> None:

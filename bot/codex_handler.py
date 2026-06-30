@@ -2416,12 +2416,8 @@ class CodexHandler(BotHandler):
         try:
             self._adapter.compact_thread(thread_id)
         except Exception as exc:
-            if self._is_thread_not_loaded_error(exc):
-                error_text = (
-                    "当前 thread 尚未加载到本实例 backend，无法 compact。\n"
-                    "先执行 `/attach`，或直接发送一条普通消息恢复该 thread。"
-                )
-            else:
+            error_text = self._compact_start_failure_text(thread_id, exc)
+            if error_text is None:
                 logger.exception("compact 线程失败")
                 error_text = f"compact 失败：{exc}"
             with self._lock:
@@ -3246,12 +3242,44 @@ class CodexHandler(BotHandler):
             logger.exception("恢复失败后回滚 paused goal 失败: thread=%s", thread_id[:12])
             return None
 
+    def _compact_start_failure_text(self, thread_id: str, exc: Exception) -> str | None:
+        if not self._is_compact_live_runtime_unavailable_error(exc):
+            return None
+        try:
+            self._adapter.read_thread(thread_id, include_turns=False)
+        except Exception as read_exc:
+            logger.warning(
+                "compact 启动失败后无法确认 thread 状态: thread=%s compact_error=%s read_error=%s",
+                thread_id[:12],
+                exc,
+                read_exc,
+            )
+            return (
+                "当前 backend 无法直接 compact 这条 thread，且暂时无法确认它只是未加载，"
+                "还是持久化记录已不可读。\n"
+                "可稍后重试，或先执行 `/attach`，或直接发送一条普通消息尝试恢复。"
+            )
+        return (
+            "当前 thread 尚未加载到本实例 backend，无法 compact。\n"
+            "先执行 `/attach`，或直接发送一条普通消息恢复该 thread。"
+        )
+
     @staticmethod
     def _is_thread_not_loaded_error(exc: Exception) -> bool:
         if not isinstance(exc, CodexRpcError):
             return False
         message = str(exc.error.get("message", "") or "").lower()
         return message.startswith("thread not loaded:")
+
+    @staticmethod
+    def _is_compact_thread_not_found_error(exc: Exception) -> bool:
+        if not isinstance(exc, CodexRpcError):
+            return False
+        message = str(exc.error.get("message", "") or "").lower()
+        return message.startswith("thread not found:")
+
+    def _is_compact_live_runtime_unavailable_error(self, exc: Exception) -> bool:
+        return self._is_thread_not_loaded_error(exc) or self._is_compact_thread_not_found_error(exc)
 
     @staticmethod
     def _is_transport_disconnect(exc: Exception) -> bool:
