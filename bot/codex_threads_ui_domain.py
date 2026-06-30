@@ -36,7 +36,6 @@ logger = logging.getLogger(__name__)
 
 _RESUME_USAGE = feishu_visible_command_syntax("/resume <thread_id|thread_name>")
 _RENAME_USAGE = feishu_visible_command_syntax("/rename <新标题>")
-_COMPACT_USAGE = "/compact"
 
 
 def _is_goals_feature_disabled_error(exc: Exception) -> bool:
@@ -137,10 +136,6 @@ class _PatchMessage(Protocol):
     def __call__(self, message_id: str, content: str) -> bool: ...
 
 
-class _CompactThread(Protocol):
-    def __call__(self, thread_id: str) -> None: ...
-
-
 class _IsThreadNotLoadedError(Protocol):
     def __call__(self, exc: Exception) -> bool: ...
 
@@ -163,7 +158,6 @@ class ThreadsUiPorts:
     read_thread_summary_authoritatively: _ReadThreadSummaryAuthoritatively
     get_thread_goal: _GetThreadGoal
     archive_thread_for_control: _ArchiveThreadForControl
-    compact_thread: _CompactThread
     rename_thread: _RenameThread
     patch_message: _PatchMessage
     is_thread_not_loaded_error: _IsThreadNotLoadedError
@@ -326,44 +320,6 @@ class CodexThreadsUiDomain:
         if cleared_binding_ids:
             lines.append(f"已同步清理当前实例里仍指向该 thread 的 bindings：`{len(cleared_binding_ids)}` 个。")
         return CommandResult(text="\n".join(lines))
-
-    def handle_compact_command(
-        self,
-        sender_id: str,
-        chat_id: str,
-        arg: str,
-        message_id: str = "",
-    ) -> CommandResult:
-        if arg.strip():
-            return CommandResult(text=f"用法：`{_COMPACT_USAGE}`")
-        runtime = self._ports.get_runtime_view(sender_id, chat_id, message_id)
-        if runtime.running:
-            return CommandResult(text="执行中不能 compact 当前线程，请等待结束或先执行 `/cancel`。")
-        if not runtime.current_thread_id:
-            return CommandResult(text="当前还没有绑定 thread；先执行 `/new`，或直接发送第一条普通消息创建线程。")
-        try:
-            self._ports.compact_thread(runtime.current_thread_id)
-        except Exception as exc:
-            if self._ports.is_thread_not_loaded_error(exc):
-                return CommandResult(
-                    text=(
-                        "当前 thread 尚未加载到本实例 backend，无法 compact。\n"
-                        "先执行 `/attach`，或直接发送一条普通消息恢复该 thread。"
-                    )
-                )
-            logger.exception("compact 线程失败")
-            return CommandResult(text=f"compact 失败：{exc}")
-        title = runtime.current_thread_title or "（无标题）"
-        return CommandResult(
-            card=build_markdown_card(
-                "Codex Compact 已开始",
-                (
-                    f"已发起当前 thread 的 compact：`{runtime.current_thread_id[:8]}…` {title}\n"
-                    "这是上游 Codex 的 thread 级上下文压缩动作；完成后会继续在同一 thread 内工作。"
-                ),
-                template="green",
-            )
-        )
 
     def handle_close_threads_card_action(
         self,

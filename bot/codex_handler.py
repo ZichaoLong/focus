@@ -459,7 +459,6 @@ class CodexHandler(BotHandler):
                 read_thread_summary_authoritatively=self._read_thread_summary_authoritatively,
                 get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
                 archive_thread_for_control=self._archive_thread_for_control,
-                compact_thread=lambda thread_id: self._adapter.compact_thread(thread_id),
                 rename_thread=lambda thread_id, name: self._adapter.rename_thread(thread_id, name),
                 patch_message=lambda message_id, content: self.bot.patch_message(message_id, content),
                 is_thread_not_loaded_error=self._is_thread_not_loaded_error,
