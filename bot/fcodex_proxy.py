@@ -32,8 +32,8 @@ from websockets.sync.server import serve
 from bot.instance_layout import global_data_dir as default_global_data_dir
 from bot.local_websocket_auth import (
     AppServerWebsocketAuthTokenStore,
-    FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-    FCODEX_SERVICE_TOKEN_ENV_VAR,
+    FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
+    FOCUS_SERVICE_TOKEN_ENV_VAR,
     build_bearer_authorization_headers,
     parse_bearer_authorization_header,
 )
@@ -149,11 +149,11 @@ def _effective_global_data_dir(path: str | pathlib.Path | None) -> pathlib.Path:
 
 
 def _require_backend_auth_data_dir(data_dir: str | pathlib.Path | None) -> pathlib.Path:
-    normalized = str(data_dir or os.environ.get("FC_DATA_DIR", "") or "").strip()
+    normalized = str(data_dir or os.environ.get("FOCUS_DATA_DIR", "") or "").strip()
     if not normalized:
         raise RuntimeError(
             "fcodex proxy backend websocket auth requires instance data dir；"
-            "请通过 `--data-dir` 或 `FC_DATA_DIR` 指定目标实例数据目录。"
+            "请通过 `--data-dir` 或 `FOCUS_DATA_DIR` 指定目标实例数据目录。"
         )
     return pathlib.Path(normalized)
 
@@ -616,7 +616,7 @@ def run_proxy(
     idle_deadline = 0.0
     runtime_lease_keeper = _ProxyRuntimeLeaseKeeper(
         global_data_dir=global_data_dir,
-        instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
+        instance_name=instance_name or os.environ.get("FOCUS_INSTANCE", ""),
         service_token=service_token,
         holder_pid=parent_pid or os.getpid(),
     )
@@ -686,7 +686,7 @@ def run_proxy(
                     cwd=cwd,
                     data_dir=effective_data_dir,
                     global_data_dir=global_data_dir,
-                    instance_name=instance_name or os.environ.get("FC_INSTANCE", ""),
+                    instance_name=instance_name or os.environ.get("FOCUS_INSTANCE", ""),
                     service_token=service_token,
                     holder_pid=holder_pid,
                     runtime_lease_keeper=runtime_lease_keeper,
@@ -763,14 +763,14 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--listen-port", type=int, default=0)
     parser.add_argument("--parent-pid", type=int, default=0)
     args = parser.parse_args(argv)
-    proxy_auth_token = str(os.environ.get(FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, "")).strip()
+    proxy_auth_token = str(os.environ.get(FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR, "")).strip()
     if not proxy_auth_token:
         print(
-            f"缺少 proxy websocket 鉴权环境变量 `{FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR}`。",
+            f"缺少 proxy websocket 鉴权环境变量 `{FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR}`。",
             file=sys.stderr,
         )
         raise SystemExit(2)
-    service_token = str(os.environ.get(FCODEX_SERVICE_TOKEN_ENV_VAR, "")).strip()
+    service_token = str(os.environ.get(FOCUS_SERVICE_TOKEN_ENV_VAR, "")).strip()
     run_proxy(
         backend_url=args.backend_url,
         cwd=args.cwd,

@@ -73,7 +73,7 @@ def preview_thread_global_loaded_gate(
                     f"无法确认运行中的实例 `{entry.instance_name}` 是否仍将该 thread 保持为 loaded：{exc}。"
                     "当前按 fail-close 拒绝跨实例继续。"
                     f"请先检查该实例状态；若确认可打断，可执行 "
-                    f"`feishu-codexctl --instance {entry.instance_name} service reset-backend` 后再试。"
+                    f"`focusctl --instance {entry.instance_name} service reset-backend` 后再试。"
                 ),
                 blocking_instance=entry.instance_name,
             )
@@ -85,7 +85,7 @@ def preview_thread_global_loaded_gate(
                     f"当前 thread 仍由运行中的实例 `{entry.instance_name}` 保持为 loaded "
                     f"(`{backend_thread_status}`)；当前按 fail-close 拒绝跨实例继续。"
                     "请先在该实例侧继续，或在确认要丢弃其 live runtime 后执行 "
-                    f"`feishu-codexctl --instance {entry.instance_name} service reset-backend`。"
+                    f"`focusctl --instance {entry.instance_name} service reset-backend`。"
                 ),
                 blocking_instance=entry.instance_name,
                 blocking_status=backend_thread_status,
@@ -193,7 +193,7 @@ def _stale_same_instance_owner_message(lease: ThreadRuntimeLease) -> str:
         f"当前线程仍记录为实例 `{lease.owner_instance}` 的上一代 service 持有 live runtime；"
         "当前按 fail-close 拒绝继续。"
         "请先执行 "
-        f"`feishu-codexctl --instance {lease.owner_instance} service reset-backend` "
+        f"`focusctl --instance {lease.owner_instance} service reset-backend` "
         "清理旧 live runtime 后再试。"
     )
 
@@ -204,7 +204,7 @@ def _service_owner_conflict_message(lease: ThreadRuntimeLease) -> str:
         reason=(
             "当前不支持跨实例继续。请先在该实例侧继续，"
             f"或在确认要丢弃其 live runtime 后执行 "
-            f"`feishu-codexctl --instance {lease.owner_instance} service reset-backend`。"
+            f"`focusctl --instance {lease.owner_instance} service reset-backend`。"
         ),
     )
 
@@ -225,7 +225,7 @@ def _external_holder_conflict_message(lease: ThreadRuntimeLease) -> str:
         reason=(
             "当前不支持跨实例继续。请先回到 owner 实例释放该 live runtime，"
             f"或在确认可丢弃后执行 "
-            f"`feishu-codexctl --instance {lease.owner_instance} service reset-backend`。"
+            f"`focusctl --instance {lease.owner_instance} service reset-backend`。"
         ),
     )
 

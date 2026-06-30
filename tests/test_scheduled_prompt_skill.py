@@ -29,7 +29,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
 
     def test_detect_ctl_path_prefers_path_command_for_login_shell_users(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            ctl = pathlib.Path(tmpdir) / "feishu-codexctl"
+            ctl = pathlib.Path(tmpdir) / "focusctl"
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
             ctl.chmod(0o755)
 
@@ -42,12 +42,12 @@ class ScheduledPromptSkillTests(unittest.TestCase):
     def test_detect_ctl_path_falls_back_to_managed_wrapper_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            ctl = root / "bin" / "feishu-codexctl"
+            ctl = root / "bin" / "focusctl"
             ctl.parent.mkdir(parents=True)
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
             ctl.chmod(0o755)
 
-            with patch.dict("os.environ", {"FC_BIN_DIR": str(root / "bin")}, clear=False):
+            with patch.dict("os.environ", {"FOCUS_BIN_DIR": str(root / "bin")}, clear=False):
                 with patch(
                     "bot.managed_skills.feishu_scheduled_prompts.skill.scripts.manage_scheduled_prompt.shutil.which",
                     return_value=None,
@@ -57,7 +57,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
     def test_detect_ctl_path_falls_back_to_managed_venv_console_script(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            ctl = root / "data" / ".venv" / "bin" / "feishu-codexctl"
+            ctl = root / "data" / ".venv" / "bin" / "focusctl"
             ctl.parent.mkdir(parents=True)
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
             ctl.chmod(0o755)
@@ -65,8 +65,8 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             with patch.dict(
                 "os.environ",
                 {
-                    "FC_BIN_DIR": str(root / "missing-bin"),
-                    "FC_DATA_ROOT": str(root / "data"),
+                    "FOCUS_BIN_DIR": str(root / "missing-bin"),
+                    "FOCUS_DATA_ROOT": str(root / "data"),
                 },
                 clear=False,
             ):
@@ -79,17 +79,17 @@ class ScheduledPromptSkillTests(unittest.TestCase):
     def test_detect_ctl_path_expands_explicit_user_path_and_requires_executable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            ctl = root / ".local" / "bin" / "feishu-codexctl"
+            ctl = root / ".local" / "bin" / "focusctl"
             ctl.parent.mkdir(parents=True)
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
             ctl.chmod(0o755)
 
             with patch.dict("os.environ", {"HOME": str(root)}, clear=False):
-                self.assertEqual(detect_ctl_path("~/.local/bin/feishu-codexctl"), str(ctl.resolve()))
+                self.assertEqual(detect_ctl_path("~/.local/bin/focusctl"), str(ctl.resolve()))
 
     def test_detect_ctl_path_rejects_non_executable_explicit_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            ctl = pathlib.Path(tmpdir) / "feishu-codexctl"
+            ctl = pathlib.Path(tmpdir) / "focusctl"
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
 
             with self.assertRaisesRegex(ValueError, "--ctl-path"):
@@ -103,7 +103,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             on_calendar="Mon..Fri 15:25",
             description="A-share close recap",
             prompt_file="/tmp/prompt.txt",
-            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            ctl_path="/home/tester/.local/bin/focusctl",
             synthetic_source="schedule",
             display_mode="silent",
             created_at="2026-05-09T00:00:00+00:00",
@@ -125,7 +125,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             on_calendar="Mon..Fri 15:25",
             description="safe\n[Service]\nExecStart=/bin/false",
             prompt_file="/tmp/prompt.txt",
-            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            ctl_path="/home/tester/.local/bin/focusctl",
             synthetic_source="schedule",
             display_mode="silent",
             created_at="2026-05-09T00:00:00+00:00",
@@ -141,7 +141,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             on_calendar="Mon..Fri 15:25\nAccuracySec=1s",
             description="safe",
             prompt_file="/tmp/prompt.txt",
-            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            ctl_path="/home/tester/.local/bin/focusctl",
             synthetic_source="schedule",
             display_mode="silent",
             created_at="2026-05-09T00:00:00+00:00",
@@ -157,7 +157,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             on_calendar="Mon..Fri 15:25",
             description="safe",
             prompt_file="/tmp/prompt.txt",
-            ctl_path="/home/tester/.local/bin/feishu-codexctl",
+            ctl_path="/home/tester/.local/bin/focusctl",
             synthetic_source="schedule",
             display_mode="silent",
             created_at="2026-05-09T00:00:00+00:00",
@@ -180,7 +180,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             prompt_file = root / "prompt.txt"
             prompt_file.write_text("继续明天的分析\n", encoding="utf-8")
-            ctl = root / "feishu-codexctl"
+            ctl = root / "focusctl"
             ctl.write_text("#!/bin/sh\n", encoding="utf-8")
             ctl.chmod(0o755)
             args = types.SimpleNamespace(
@@ -220,8 +220,8 @@ class ScheduledPromptSkillTests(unittest.TestCase):
                     systemctl_calls,
                     [
                         ("daemon-reload",),
-                        ("enable", "feishu-codex-scheduled-morning-follow-up.timer"),
-                        ("start", "feishu-codex-scheduled-morning-follow-up.timer"),
+                        ("enable", "focus-scheduled-morning-follow-up.timer"),
+                        ("start", "focus-scheduled-morning-follow-up.timer"),
                     ],
                 )
                 self.assertTrue((scheduled_task_root() / "morning-follow-up" / "task.json").exists())
@@ -253,7 +253,7 @@ class ScheduledPromptSkillTests(unittest.TestCase):
   "on_calendar": "Mon..Fri 15:25",
   "description": "Daily recap",
   "prompt_file": "/tmp/prompt.txt",
-  "ctl_path": "/tmp/feishu-codexctl",
+  "ctl_path": "/tmp/focusctl",
   "synthetic_source": "schedule",
   "display_mode": "silent",
   "created_at": "2026-05-09T00:00:00+00:00"

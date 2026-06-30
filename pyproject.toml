@@ -1,5 +1,5 @@
 [project]
-name = "feishu-codex"
+name = "focus"
 dynamic = ["version"]
 description = "Bridge Feishu chats to Codex via the native app-server protocol."
 readme = "README.md"
@@ -12,9 +12,9 @@ dependencies = [
 ]
 
 [project.scripts]
-feishu-codex = "bot.manage_cli:main"
-feishu-codexd = "bot.__main__:main"
-feishu-codexctl = "bot.feishu_codexctl:main"
+focus = "bot.fcodex:main"
+focusd = "bot.__main__:main"
+focusctl = "bot.focusctl:main"
 fcodex = "bot.fcodex:main"
 
 [build-system]

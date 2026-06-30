@@ -34,11 +34,11 @@ _SHARED_MODEL_COMMAND = get_shared_command("model")
 _SHARED_EFFORT_COMMAND = get_shared_command("effort")
 _SHARED_COMPACT_COMMAND = get_shared_command("compact")
 
-_LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
-_LOCAL_THREAD_LIST_GLOBAL = "feishu-codexctl thread list --scope global"
+_LOCAL_THREAD_LIST_CWD = "focusctl thread list --scope cwd"
+_LOCAL_THREAD_LIST_GLOBAL = "focusctl thread list --scope global"
 _LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <thread_id|thread_name>")
 _LOCAL_THREAD_DETACH = feishu_visible_command_syntax(
-    "feishu-codexctl thread detach --thread-id <thread_id>"
+    "focusctl thread detach --thread-id <thread_id>"
 )
 _INIT_COMMAND = feishu_visible_command_syntax("/init <token>")
 _DEBUG_CONTACT_COMMAND = feishu_visible_command_syntax("/debug-contact <open_id>")

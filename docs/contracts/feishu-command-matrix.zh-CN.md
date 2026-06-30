@@ -33,18 +33,18 @@
 | `/commands` | 以纯文本列出常用命令 | 是；`More` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/h` | `/help` 别名 | 否 | 仅管理员 | 仅管理员 | 无 |
 | `/pwd` | 查看当前工作目录 | 否 | 仅管理员 | 仅管理员 | 无 |
-| `/status` | 查看当前 chat 的目录、当前 thread 与当前会话设置摘要 | 是；`Connection Status` 页 | 仅管理员 | 仅管理员 | 深度诊断可用 `feishu-codexctl binding status <binding_id>` |
-| `/preflight` | 对下一条普通消息与当前 chat 的 detach 可用性做 dry-run | 是；`Connection Status` 页 | 仅管理员 | 仅管理员 | 与 `feishu-codexctl binding status <binding_id>` 部分重叠 |
+| `/status` | 查看当前 chat 的目录、当前 thread 与当前会话设置摘要 | 是；`Connection Status` 页 | 仅管理员 | 仅管理员 | 深度诊断可用 `focusctl binding status <binding_id>` |
+| `/preflight` | 对下一条普通消息与当前 chat 的 detach 可用性做 dry-run | 是；`Connection Status` 页 | 仅管理员 | 仅管理员 | 与 `focusctl binding status <binding_id>` 部分重叠 |
 | `/cd [path]` | 查看或切换当前目录；切换时清空当前 thread 绑定 | 是；`Start` 表单 | 仅管理员 | 仅管理员 | 无 |
 | `/new` | 创建新的当前 thread | 是；`Start` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/threads` | 浏览当前目录线程 | 是；`Start` 页 | 仅管理员 | 仅管理员 | `feishu-codexctl thread list --scope cwd` |
-| `/resume <thread_id\|thread_name>` | 把目标线程恢复到当前 chat | 是；`Start` 表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 用 `fcodex resume <thread_id\|thread_name>` |
+| `/threads` | 浏览当前目录线程 | 是；`Start` 页 | 仅管理员 | 仅管理员 | `focusctl thread list --scope cwd` |
+| `/resume <thread_id\|thread_name>` | 把目标线程恢复到当前 chat | 是；`Start` 表单 | 仅管理员 | 仅管理员 | 本地继续 live thread 用 `focus resume <thread_id\|thread_name>` 或 `fcodex resume <thread_id\|thread_name>` |
 | `/goal [show\|text\|set <objective>\|pause\|resume\|clear]` | 查看或管理当前 thread 的 goal；`text` 导出纯文本 | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/compact` | 压缩当前绑定 thread 的上下文历史 | 是；`Thread Settings` 页 | 仅管理员 | 仅管理员 | 无直接本地等价命令 |
 | `/rename <title>` | 重命名当前 thread | 是；`Thread Settings` 表单 | 仅管理员 | 仅管理员 | 无 |
-| `/archive [thread_id\|thread_name]` | 归档当前线程，或归档显式指定目标 | 是；`Thread Settings` 按钮或表单 | 仅管理员 | 仅管理员 | `feishu-codexctl thread archive --thread-id/--thread-name`；本地 CLI 额外支持重复 `--thread-id` 批量归档 |
-| `/detach` | 保留 binding 记录，但停止当前 chat 接收当前 thread 的飞书推送 | 是；`Connection Status` 的动态按钮 | 仅管理员 | 仅管理员 | `feishu-codexctl binding detach <binding_id>`；thread 维度是 `feishu-codexctl thread detach ...` |
-| `/attach [binding\|thread\|service]` | 恢复当前 chat、当前 thread 或当前实例的飞书推送 | 是；`Connection Status` 及其下级页，也会出现在上下文结果卡片里 | 仅管理员 | 仅管理员 | `feishu-codexctl binding/thread/service attach ...` |
+| `/archive [thread_id\|thread_name]` | 归档当前线程，或归档显式指定目标 | 是；`Thread Settings` 按钮或表单 | 仅管理员 | 仅管理员 | `focusctl thread archive --thread-id/--thread-name`；本地 CLI 额外支持重复 `--thread-id` 批量归档 |
+| `/detach` | 保留 binding 记录，但停止当前 chat 接收当前 thread 的飞书推送 | 是；`Connection Status` 的动态按钮 | 仅管理员 | 仅管理员 | `focusctl binding detach <binding_id>`；thread 维度是 `focusctl thread detach ...` |
+| `/attach [binding\|thread\|service]` | 恢复当前 chat、当前 thread 或当前实例的飞书推送 | 是；`Connection Status` 及其下级页，也会出现在上下文结果卡片里 | 仅管理员 | 仅管理员 | `focusctl binding/thread/service attach ...` |
 | `/cancel` | 取消当前执行 | 否；主入口是执行卡按钮 | 仅管理员 | 仅管理员 | 无 |
 
 ### 2.2 Turn Settings 与 More
@@ -56,10 +56,10 @@
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | 设置当前 Feishu 会话的 turn-time effort override；无参数时打开共享 model/effort 卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/approval [untrusted\|on-request\|never]` | 设置 approval policy | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
 | `/last text` | 导出当前会话最近的权威终态文本；优先 terminal result，其次回退最近执行卡 | 是；`Turn Settings` 页 | 仅管理员 | 仅管理员 | 无 |
-| `/reset-backend` | 预览并重置当前实例 backend，用于恢复 | 是；`More -> Advanced Actions` | 仅管理员 | 仅管理员 | `feishu-codexctl service reset-backend` |
+| `/reset-backend` | 预览并重置当前实例 backend，用于恢复 | 是；`More -> Advanced Actions` | 仅管理员 | 仅管理员 | `focusctl service reset-backend` |
 | `/whoami` | 查看调用者身份 | 是；`More` 页 | 任何人 | 不支持 | 无 |
 | `/bot-status` | 查看 bot 身份与配置探测结果 | 是；`More` 页 | 任何人 | 仅管理员 | 无 |
-| `/init <token>` | 初始化 admins 与 `bot_open_id` | 是；`More` 表单 | 任何人 | 不支持 | `feishu-codex config init-token` 仅显示 token |
+| `/init <token>` | 初始化 admins 与 `bot_open_id` | 是；`More` 表单 | 任何人 | 不支持 | `focusctl config init-token` 仅显示 token |
 | `/debug-contact <open_id>` | 排查联系人名称解析 | 是；`More -> Advanced Actions` 表单 | 仅管理员 | 不支持 | 无 |
 
 ### 2.3 群设置
@@ -101,8 +101,8 @@
 
 ## 5. 边界
 
-- `feishu-codex` 负责 install、instance 与 service 生命周期；它不是 Feishu chat 命令面。
-- `feishu-codexctl` 负责本地 binding、thread、service 的查看与管理；它不是第二前端。
-- `fcodex` 是本地 live-thread continuation 入口。
+- FOCUS 负责 install、instance 与 service 生命周期；它不是 Feishu chat 命令面。
+- `focusctl` 负责本地 binding、thread、service 的查看与管理；它不是第二前端。
+- `focus` / `fcodex` 是本地 live-thread continuation 入口。
 
 如果 Feishu 命令有新增、删除、改名、移动 `/help` 工作区，或按钮入口与权限边界发生变化，本文件必须随代码一起更新。

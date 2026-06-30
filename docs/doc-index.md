@@ -44,7 +44,7 @@ Status guidance:
 
 ### Contracts
 
-- [`feishu-codexctl-command-matrix.md`](./contracts/feishu-codexctl-command-matrix.md)
+- [`focusctl-command-matrix.md`](./contracts/focusctl-command-matrix.md)
 - [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md)
 - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
 - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
@@ -60,8 +60,8 @@ Status guidance:
 
 ### Architecture
 
-- [`feishu-codex-design.md`](./architecture/feishu-codex-design.md)
-- [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)
+- [`focus-design.md`](./architecture/focus-design.md)
+- [`focus-shared-backend-runtime.md`](./architecture/focus-shared-backend-runtime.md)
 
 ### Decisions
 
@@ -84,22 +84,22 @@ Status guidance:
 
 | Question | Read |
 | --- | --- |
-| What `feishu-codexctl` subcommands exist, which state layer each operates on, which mutate state, what the parameter constraints are, and how they map to the Feishu surface? | [`feishu-codexctl-command-matrix.md`](./contracts/feishu-codexctl-command-matrix.md) |
+| What `focusctl` subcommands exist, which state layer each operates on, which mutate state, what the parameter constraints are, and how they map to the Feishu surface? | [`focusctl-command-matrix.md`](./contracts/focusctl-command-matrix.md) |
 | What Feishu slash commands currently exist, which are reachable from `/help`, who may execute them, what buttons belong to them, and how do they map to local CLIs? | [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md) |
-| What is the current architecture, layering, module split, and repository structure? | [`feishu-codex-design.md`](./architecture/feishu-codex-design.md) |
+| What is the current architecture, layering, module split, and repository structure? | [`focus-design.md`](./architecture/focus-design.md) |
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |
-| What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `feishu-codexctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
+| What shared state vocabulary and admin-surface contract apply to `/status`, `/detach`, and `focusctl`? | [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | How should questions like “what was just set”, “what is persisted now”, “when does it actually take effect”, and “does provisional state already have a formal fact source” be separated for runtime settings? | [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | Why were historical thread-wise next-load settings retired, and what remains after that retirement? | [`thread-next-load-settings-semantics.md`](./contracts/thread-next-load-settings-semantics.md), [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
-| What do `/threads`, `/resume`, and `/archive` mean across Feishu, `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
+| What do `/threads`, `/resume`, and `/archive` mean across Feishu, `focus` / `fcodex`, and the TUI? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md) |
 | Why was the historical thread-memory surface removed, and which two setting layers replace it now? | [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md), [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md) |
-| What is the formal boundary for continuing a Feishu-bound thread later, including `binding/submit-prompt`, `feishu-codexctl prompt send`, and the Linux `systemd --user` skill? | [`scheduled-prompts.md`](./contracts/scheduled-prompts.md) |
-| What is the current contract for `/detach`, a thinner `fcodex`, and the `feishu-codexctl` split? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
-| How do multi-instance `default` / named-instance behavior, shared thread visibility, `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
+| What is the formal boundary for continuing a Feishu-bound thread later, including `binding/submit-prompt`, `focusctl prompt send`, and the Linux `systemd --user` skill? | [`scheduled-prompts.md`](./contracts/scheduled-prompts.md) |
+| What is the current contract for `/detach`, a thinner `focus` / `fcodex`, and the `focusctl` split? | [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md) |
+| How do multi-instance `default` / named-instance behavior, shared thread visibility, `focus --instance` / `fcodex --instance`, and the global runtime lease work? | [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md), [`focus-shared-backend-runtime.md`](./architecture/focus-shared-backend-runtime.md) |
 | What information architecture and semantic rules does the Feishu `/help` navigation surface follow? | [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md) |
 | What is the formal behavior contract for group activation, group modes, history recovery, and group-command triggering? | [`group-chat-contract.md`](./contracts/group-chat-contract.md) |
 | How do approval, sandbox, writable roots, and protected paths behave? | [`codex-permissions-model.md`](./contracts/codex-permissions-model.md) |
-| How does `fcodex` shared-backend mode work, including wrapper, proxy, and `--cd` semantics? | [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md) |
+| How does `focus` / `fcodex` shared-backend mode work, including wrapper, proxy, and `--cd` semantics? | [`focus-shared-backend-runtime.md`](./architecture/focus-shared-backend-runtime.md) |
 | What safety rules apply to shared backend reuse and `/resume`? | [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md) |
 | What boundary should Feishu attachment / file-message support follow, including what gets downloaded and what remains outside this repository? | [`feishu-attachment-ingress.md`](./decisions/feishu-attachment-ingress.md) |
 | What is the boundary for Feishu card text projection, terminal `final_reply_text`, and best-effort extraction from ordinary cards? | [`feishu-card-text-projection.md`](./decisions/feishu-card-text-projection.md) |
@@ -112,7 +112,7 @@ Status guidance:
 ## Practical Reading Paths
 
 - For architecture or large refactors:
-  - [`feishu-codex-design.md`](./architecture/feishu-codex-design.md)
+  - [`focus-design.md`](./architecture/focus-design.md)
   - then the relevant `contracts/` and `decisions/` docs
 - For session or runtime bugs:
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
@@ -126,23 +126,23 @@ Status guidance:
   - [`group-chat-contract.md`](./contracts/group-chat-contract.md)
   - [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md)
   - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
-- For local `feishu-codexctl` inspection / management work:
-  - [`feishu-codexctl-command-matrix.md`](./contracts/feishu-codexctl-command-matrix.md)
+- For local `focusctl` inspection / management work:
+  - [`focusctl-command-matrix.md`](./contracts/focusctl-command-matrix.md)
   - [`scheduled-prompts.md`](./contracts/scheduled-prompts.md)
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`runtime-settings-fact-sources.md`](./contracts/runtime-settings-fact-sources.md)
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
-- For wrapper or backend work:
+- For `focus` / `fcodex` wrapper or backend work:
   - [`local-command-and-thread-profile-contract.md`](./contracts/local-command-and-thread-profile-contract.md)
-  - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)
+  - [`focus-shared-backend-runtime.md`](./architecture/focus-shared-backend-runtime.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
-- For multi-instance behavior, shared thread visibility, `feishu-codexctl --instance`,
+- For multi-instance behavior, shared thread visibility, `focusctl --instance`,
   or cross-instance runtime lease work:
   - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
   - [`runtime-control-surface.md`](./contracts/runtime-control-surface.md)
   - [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md)
-  - [`fcodex-shared-backend-runtime.md`](./architecture/fcodex-shared-backend-runtime.md)
+  - [`focus-shared-backend-runtime.md`](./architecture/focus-shared-backend-runtime.md)
   - [`shared-backend-resume-safety.md`](./decisions/shared-backend-resume-safety.md)
 - For Feishu attachment ingress, file messages, local staging, or image-input
   upgrade work:
@@ -156,7 +156,7 @@ Status guidance:
   - [`feishu-raw-card-retrieval.md`](./decisions/feishu-raw-card-retrieval.md)
   - [`feishu-output-images.md`](./decisions/feishu-output-images.md)
   - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)
-  - [`feishu-codex-design.md`](./architecture/feishu-codex-design.md)
+  - [`focus-design.md`](./architecture/focus-design.md)
 - For permission or execution wording:
   - [`codex-permissions-model.md`](./contracts/codex-permissions-model.md)
 

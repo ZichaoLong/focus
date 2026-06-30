@@ -1,4 +1,4 @@
-"""Shell completion helpers for feishu-codex command wrappers."""
+"""Shell completion helpers for FOCUS command wrappers."""
 
 from __future__ import annotations
 
@@ -21,14 +21,18 @@ from bot.platform_paths import (
 )
 
 COMPLETION_COMMAND_NAMES = (
+    "focus",
+    "focusctl",
+    "focusd",
+    "fcodex",
+)
+_LEGACY_COMPLETION_COMMAND_NAMES = (
     "feishu-codex",
     "feishu-codexctl",
     "feishu-codexd",
-    "fcodex",
 )
 
-_FEISHU_CODEX_OPTIONS_WITH_VALUE = {"--instance", "--lines"}
-_FEISHU_CODEXCTL_OPTIONS_WITH_VALUE = {
+_FOCUSCTL_OPTIONS_WITH_VALUE = {
     "--instance",
     "--binding-id",
     "--text",
@@ -42,8 +46,9 @@ _FEISHU_CODEXCTL_OPTIONS_WITH_VALUE = {
     "--thread-name",
     "--mode",
     "--path",
+    "--lines",
 }
-_FCODEX_OPTIONS_WITH_VALUE = {
+_FOCUS_TUI_OPTIONS_WITH_VALUE = {
     "-C",
     "--add-dir",
     "-a",
@@ -67,10 +72,14 @@ _FCODEX_OPTIONS_WITH_VALUE = {
     "--sandbox",
 }
 
-_ZSH_PROFILE_BLOCK_START = "# >>> feishu-codex zsh completion >>>"
-_ZSH_PROFILE_BLOCK_END = "# <<< feishu-codex zsh completion <<<"
-_POWERSHELL_PROFILE_BLOCK_START = "# >>> feishu-codex PowerShell completion >>>"
-_POWERSHELL_PROFILE_BLOCK_END = "# <<< feishu-codex PowerShell completion <<<"
+_ZSH_PROFILE_BLOCK_START = "# >>> focus zsh completion >>>"
+_ZSH_PROFILE_BLOCK_END = "# <<< focus zsh completion <<<"
+_LEGACY_ZSH_PROFILE_BLOCK_START = "# >>> feishu-codex zsh completion >>>"
+_LEGACY_ZSH_PROFILE_BLOCK_END = "# <<< feishu-codex zsh completion <<<"
+_POWERSHELL_PROFILE_BLOCK_START = "# >>> focus PowerShell completion >>>"
+_POWERSHELL_PROFILE_BLOCK_END = "# <<< focus PowerShell completion <<<"
+_LEGACY_POWERSHELL_PROFILE_BLOCK_START = "# >>> feishu-codex PowerShell completion >>>"
+_LEGACY_POWERSHELL_PROFILE_BLOCK_END = "# <<< feishu-codex PowerShell completion <<<"
 _POWERSHELL_COMPLETION_METADATA_FILE = "powershell-install-paths.json"
 
 
@@ -118,6 +127,13 @@ def bash_completion_file_paths() -> list[pathlib.Path]:
     return [directory / command_name for command_name in COMPLETION_COMMAND_NAMES]
 
 
+def _legacy_bash_completion_file_paths() -> list[pathlib.Path]:
+    directory = bash_completion_dir()
+    if directory is None:
+        return []
+    return [directory / command_name for command_name in _LEGACY_COMPLETION_COMMAND_NAMES]
+
+
 def zsh_completion_path() -> pathlib.Path | None:
     return default_user_zsh_completion_path()
 
@@ -132,6 +148,28 @@ def powershell_completion_path() -> pathlib.Path | None:
 
 def powershell_profile_path() -> pathlib.Path | None:
     return default_user_powershell_profile_path()
+
+
+def _legacy_config_root() -> pathlib.Path:
+    home = pathlib.Path.home()
+    if os.name == "nt":
+        appdata = pathlib.Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
+        return appdata / "feishu-codex" / "config"
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / "feishu-codex" / "config"
+    return home / ".config" / "feishu-codex"
+
+
+def _legacy_zsh_completion_path() -> pathlib.Path | None:
+    if os.name == "nt":
+        return None
+    return _legacy_config_root() / "shell-completion" / "feishu-codex.zsh"
+
+
+def _legacy_powershell_completion_path() -> pathlib.Path | None:
+    if os.name != "nt":
+        return None
+    return _legacy_config_root() / "shell-completion" / "feishu-codex.ps1"
 
 
 def _powershell_completion_metadata_path() -> pathlib.Path:
@@ -177,7 +215,7 @@ def _write_powershell_completion_metadata(
 
 
 def _powershell_profile_autoload_disabled() -> bool:
-    raw = os.environ.get("FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD", "").strip().lower()
+    raw = os.environ.get("FOCUS_POWERSHELL_SKIP_PROFILE_AUTOLOAD", "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
@@ -208,7 +246,7 @@ def render_bash_completion_script(*, venv_python: pathlib.Path) -> str:
     python_command = shlex.quote(str(pathlib.Path(venv_python)))
     return textwrap.dedent(
         f"""\
-        # Bash completion for feishu-codex wrappers.
+        # Bash completion for FOCUS wrappers.
 
         _fc_complete_dispatch() {{
           local command_name="$1"
@@ -222,26 +260,26 @@ def render_bash_completion_script(*, venv_python: pathlib.Path) -> str:
           done <<< "$output"
         }}
 
-        _fc_complete_feishu_codex() {{
-          _fc_complete_dispatch feishu-codex
+        _focus_complete_focus() {{
+          _fc_complete_dispatch focus
         }}
 
-        _fc_complete_feishu_codexctl() {{
-          _fc_complete_dispatch feishu-codexctl
+        _focus_complete_focusctl() {{
+          _fc_complete_dispatch focusctl
         }}
 
-        _fc_complete_feishu_codexd() {{
-          _fc_complete_dispatch feishu-codexd
+        _focus_complete_focusd() {{
+          _fc_complete_dispatch focusd
         }}
 
-        _fc_complete_fcodex() {{
+        _focus_complete_fcodex() {{
           _fc_complete_dispatch fcodex
         }}
 
-        complete -o bashdefault -o default -F _fc_complete_feishu_codex feishu-codex
-        complete -o bashdefault -o default -F _fc_complete_feishu_codexctl feishu-codexctl
-        complete -o bashdefault -o default -F _fc_complete_feishu_codexd feishu-codexd
-        complete -o bashdefault -o default -F _fc_complete_fcodex fcodex
+        complete -o bashdefault -o default -F _focus_complete_focus focus
+        complete -o bashdefault -o default -F _focus_complete_focusctl focusctl
+        complete -o bashdefault -o default -F _focus_complete_focusd focusd
+        complete -o bashdefault -o default -F _focus_complete_fcodex fcodex
         """
     )
 
@@ -250,7 +288,7 @@ def render_zsh_completion_script(*, venv_python: pathlib.Path) -> str:
     python_command = shlex.quote(str(pathlib.Path(venv_python)))
     return textwrap.dedent(
         f"""\
-        # zsh completion for feishu-codex wrappers.
+        # zsh completion for FOCUS wrappers.
 
         if ! whence compdef >/dev/null 2>&1; then
           autoload -Uz compinit
@@ -268,26 +306,26 @@ def render_zsh_completion_script(*, venv_python: pathlib.Path) -> str:
           compadd -a candidates
         }}
 
-        _fc_complete_feishu_codex() {{
-          _fc_complete_dispatch feishu-codex
+        _focus_complete_focus() {{
+          _fc_complete_dispatch focus
         }}
 
-        _fc_complete_feishu_codexctl() {{
-          _fc_complete_dispatch feishu-codexctl
+        _focus_complete_focusctl() {{
+          _fc_complete_dispatch focusctl
         }}
 
-        _fc_complete_feishu_codexd() {{
-          _fc_complete_dispatch feishu-codexd
+        _focus_complete_focusd() {{
+          _fc_complete_dispatch focusd
         }}
 
-        _fc_complete_fcodex() {{
+        _focus_complete_fcodex() {{
           _fc_complete_dispatch fcodex
         }}
 
-        compdef _fc_complete_feishu_codex feishu-codex
-        compdef _fc_complete_feishu_codexctl feishu-codexctl
-        compdef _fc_complete_feishu_codexd feishu-codexd
-        compdef _fc_complete_fcodex fcodex
+        compdef _focus_complete_focus focus
+        compdef _focus_complete_focusctl focusctl
+        compdef _focus_complete_focusd focusd
+        compdef _focus_complete_fcodex fcodex
         """
     )
 
@@ -297,12 +335,12 @@ def render_powershell_completion_script(*, venv_python: pathlib.Path) -> str:
     command_names = ", ".join(_powershell_quote(name) for name in COMPLETION_COMMAND_NAMES)
     return textwrap.dedent(
         f"""\
-        # PowerShell completion for feishu-codex wrappers.
+        # PowerShell completion for FOCUS wrappers.
 
-        $script:FeishuCodexCompletionPython = {python_command}
-        $script:FeishuCodexCompletionCommands = @({command_names})
+        $script:FocusCompletionPython = {python_command}
+        $script:FocusCompletionCommands = @({command_names})
 
-        function global:__FeishuCodexGetCompletions {{
+        function global:__FocusGetCompletions {{
           param(
             [string] $wordToComplete,
             [System.Management.Automation.Language.CommandAst] $commandAst,
@@ -315,7 +353,7 @@ def render_powershell_completion_script(*, venv_python: pathlib.Path) -> str:
           }}
 
           $commandName = $words[0]
-          if ($script:FeishuCodexCompletionCommands -notcontains $commandName) {{
+          if ($script:FocusCompletionCommands -notcontains $commandName) {{
             return
           }}
 
@@ -328,16 +366,16 @@ def render_powershell_completion_script(*, venv_python: pathlib.Path) -> str:
             $cword = [Math]::Max($words.Count - 1, 0)
           }}
 
-          $results = & $script:FeishuCodexCompletionPython -m bot.shell_completion complete $commandName $cword @words 2>$null
+          $results = & $script:FocusCompletionPython -m bot.shell_completion complete $commandName $cword @words 2>$null
           foreach ($candidate in $results) {{
             [System.Management.Automation.CompletionResult]::new($candidate, $candidate, 'ParameterValue', $candidate)
           }}
         }}
 
-        foreach ($commandName in $script:FeishuCodexCompletionCommands) {{
+        foreach ($commandName in $script:FocusCompletionCommands) {{
           Register-ArgumentCompleter -Native -CommandName $commandName -ScriptBlock {{
             param($wordToComplete, $commandAst, $cursorPosition)
-            __FeishuCodexGetCompletions $wordToComplete $commandAst $cursorPosition
+            __FocusGetCompletions $wordToComplete $commandAst $cursorPosition
           }}
         }}
         """
@@ -375,7 +413,7 @@ def _install_bash_completion_files(*, venv_python: pathlib.Path) -> pathlib.Path
 
 
 def _remove_bash_completion_files() -> None:
-    for path in bash_completion_file_paths():
+    for path in [*bash_completion_file_paths(), *_legacy_bash_completion_file_paths()]:
         try:
             path.unlink()
         except FileNotFoundError:
@@ -407,13 +445,16 @@ def _remove_zsh_completion_files() -> None:
             start_marker=_ZSH_PROFILE_BLOCK_START,
             end_marker=_ZSH_PROFILE_BLOCK_END,
         )
-    script_path = zsh_completion_path()
-    if script_path is None:
-        return
-    try:
-        script_path.unlink()
-    except FileNotFoundError:
-        return
+        _remove_managed_block(
+            rc_path,
+            start_marker=_LEGACY_ZSH_PROFILE_BLOCK_START,
+            end_marker=_LEGACY_ZSH_PROFILE_BLOCK_END,
+        )
+    for script_path in _dedupe_paths(zsh_completion_path(), _legacy_zsh_completion_path()):
+        try:
+            script_path.unlink()
+        except FileNotFoundError:
+            continue
 
 
 def _install_powershell_completion_files(
@@ -455,7 +496,12 @@ def _remove_powershell_completion_files() -> None:
             start_marker=_POWERSHELL_PROFILE_BLOCK_START,
             end_marker=_POWERSHELL_PROFILE_BLOCK_END,
         )
-    for script_path in _dedupe_paths(recorded_script_path, powershell_completion_path()):
+        _remove_managed_block(
+            profile_path,
+            start_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_START,
+            end_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_END,
+        )
+    for script_path in _dedupe_paths(recorded_script_path, powershell_completion_path(), _legacy_powershell_completion_path()):
         try:
             script_path.unlink()
         except FileNotFoundError:
@@ -519,72 +565,14 @@ def complete_words(command_name: str, words: list[str], cword: int) -> list[str]
     if normalized_command not in COMPLETION_COMMAND_NAMES:
         return []
     context = CompletionContext(words=tuple(words), cword=max(cword, 0))
-    if normalized_command == "feishu-codex":
-        return _complete_feishu_codex(context)
-    if normalized_command == "feishu-codexctl":
-        return _complete_feishu_codexctl(context)
-    if normalized_command == "feishu-codexd":
-        return _complete_feishu_codexd(context)
+    if normalized_command == "focusctl":
+        return _complete_focusctl(context)
+    if normalized_command == "focusd":
+        return _complete_focusd(context)
     return _complete_fcodex(context)
 
 
-def _complete_feishu_codex(context: CompletionContext) -> list[str]:
-    instance_matches = _complete_choice_option(context, "--instance", list_known_instance_names())
-    if instance_matches is not None:
-        return instance_matches
-
-    current = context.current
-    args_before = context.args_before_cursor
-    positionals = _positionals_before_cursor(args_before, _FEISHU_CODEX_OPTIONS_WITH_VALUE)
-    positional_index = len(positionals)
-
-    if positional_index == 0:
-        return _complete_candidates(
-            current,
-            [
-                "--instance",
-                "--version",
-                "--help",
-                "-h",
-                "start",
-                "stop",
-                "restart",
-                "status",
-                "autostart",
-                "run",
-                "log",
-                "config",
-                "instance",
-                "skill",
-                "uninstall",
-                "purge",
-            ],
-        )
-
-    command = positionals[0]
-    if command == "autostart" and positional_index == 1:
-        return _complete_candidates(current, ["enable", "disable", "status"])
-    if command == "config":
-        if current.startswith("-"):
-            return _complete_candidates(current, ["--open", "--help", "-h"])
-        if positional_index == 1:
-            return _complete_candidates(current, ["system", "codex", "env", "init-token"])
-        return []
-    if command == "instance":
-        if positional_index == 1:
-            return _complete_candidates(current, ["create", "list", "remove"])
-        if len(positionals) >= 2 and positionals[1] == "remove" and positional_index == 2:
-            named_instances = [name for name in list_known_instance_names() if name != DEFAULT_INSTANCE_NAME]
-            return _complete_candidates(current, named_instances)
-        return []
-    if command == "skill" and positional_index == 1:
-        return _complete_candidates(current, ["install", "uninstall"])
-    if command == "log" and current.startswith("-"):
-        return _complete_candidates(current, ["--lines", "--help", "-h"])
-    return []
-
-
-def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
+def _complete_focusctl(context: CompletionContext) -> list[str]:
     for option_name, choices in (
         ("--instance", list_known_instance_names()),
         ("--display-mode", ["silent", "announce"]),
@@ -597,7 +585,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
 
     current = context.current
     args_before = context.args_before_cursor
-    positionals = _positionals_before_cursor(args_before, _FEISHU_CODEXCTL_OPTIONS_WITH_VALUE)
+    positionals = _positionals_before_cursor(args_before, _FOCUSCTL_OPTIONS_WITH_VALUE)
     positional_index = len(positionals)
 
     if positional_index == 0:
@@ -610,22 +598,46 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
                 "-h",
                 "instance",
                 "service",
+                "config",
                 "binding",
                 "prompt",
                 "thread",
                 "image",
+                "skill",
+                "uninstall",
+                "purge",
             ],
         )
 
     resource = positionals[0]
-    if resource == "instance" and positional_index == 1:
-        return _complete_candidates(current, ["list"])
+    if resource == "config":
+        if current.startswith("-"):
+            return _complete_candidates(current, ["--open", "--help", "-h"])
+        if positional_index == 1:
+            return _complete_candidates(current, ["system", "codex", "env", "init-token"])
+        return []
+    if resource == "instance":
+        if positional_index == 1:
+            return _complete_candidates(current, ["create", "list", "remove"])
+        if len(positionals) >= 2 and positionals[1] == "remove" and positional_index == 2:
+            named_instances = [name for name in list_known_instance_names() if name != DEFAULT_INSTANCE_NAME]
+            return _complete_candidates(current, named_instances)
+        return []
     if resource == "service":
         if positional_index == 1:
-            return _complete_candidates(current, ["status", "reset-backend", "attach"])
+            return _complete_candidates(
+                current,
+                ["start", "stop", "restart", "status", "list", "autostart", "log", "reset-backend", "attach"],
+            )
         if len(positionals) >= 2 and positionals[1] == "reset-backend" and current.startswith("-"):
             return _complete_candidates(current, ["--force", "--help", "-h"])
+        if len(positionals) >= 2 and positionals[1] == "autostart" and positional_index == 2:
+            return _complete_candidates(current, ["enable", "disable", "status"])
+        if len(positionals) >= 2 and positionals[1] == "log" and current.startswith("-"):
+            return _complete_candidates(current, ["--lines", "--help", "-h"])
         return []
+    if resource == "skill" and positional_index == 1:
+        return _complete_candidates(current, ["install", "uninstall"])
     if resource == "binding":
         if positional_index == 1:
             return _complete_candidates(
@@ -698,7 +710,7 @@ def _complete_feishu_codexctl(context: CompletionContext) -> list[str]:
     return []
 
 
-def _complete_feishu_codexd(context: CompletionContext) -> list[str]:
+def _complete_focusd(context: CompletionContext) -> list[str]:
     matches = _complete_choice_option(context, "--instance", list_known_instance_names())
     if matches is not None:
         return matches
@@ -712,7 +724,7 @@ def _complete_fcodex(context: CompletionContext) -> list[str]:
 
     current = context.current
     args_before = context.args_before_cursor
-    positionals = _positionals_before_cursor(args_before, _FCODEX_OPTIONS_WITH_VALUE)
+    positionals = _positionals_before_cursor(args_before, _FOCUS_TUI_OPTIONS_WITH_VALUE)
     positional_index = len(positionals)
     if positional_index == 0:
         if not args_before:

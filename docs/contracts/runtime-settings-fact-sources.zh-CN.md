@@ -30,7 +30,7 @@
 
 - 历史上的项目自管 profile 命令
 - `/memory`
-- `feishu-codexctl thread memory`
+- `focusctl thread memory`
 - `new_thread_memory_mode_seed`
 - 任何项目自管的 thread-level memory/provider/profile restore state
 

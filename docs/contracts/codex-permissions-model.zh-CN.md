@@ -2,7 +2,7 @@
 
 英文原文：`docs/contracts/codex-permissions-model.md`
 
-本文记录 `feishu-codex` 当前暴露的 `approval_policy` 与 `permissions_profile_id`，以及 upstream 里 legacy `sandbox` / canonical `permissions` 的关系。
+本文记录 FOCUS 当前暴露的 `approval_policy` 与 `permissions_profile_id`，以及 upstream 里 legacy `sandbox` / canonical `permissions` 的关系。
 
 写这篇文档有两个目的：
 
@@ -19,7 +19,7 @@
 
 ## 1. 三层概念
 
-`feishu-codex` 当前暴露两个正式 runtime setting，并需要理解一个上游 legacy 概念：
+FOCUS 当前暴露两个正式 runtime setting，并需要理解一个上游 legacy 概念：
 
 1. `approval_policy`
 - 运行在什么时机需要停下来等待审批
@@ -204,7 +204,7 @@ upstream CLI 提供了明确的 sandbox 调试子命令：
 
 ## 8. 推荐产品文案
 
-对 `feishu-codex` 这类面向用户的文档，最稳妥的写法是：
+对 FOCUS 这类面向用户的文档，最稳妥的写法是：
 
 - `sandbox` 控制技术执行边界
 - `approval_policy` 控制什么时候必须先审批才能继续

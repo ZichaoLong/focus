@@ -14,7 +14,7 @@ from websockets.exceptions import InvalidStatus
 from websockets.sync.client import connect
 
 CLIENT_INFO = {
-    "clientInfo": {"name": "feishu-codex-local-ws-probe", "version": "1.0"},
+    "clientInfo": {"name": "focus-local-ws-probe", "version": "1.0"},
     "capabilities": {"experimentalApi": True},
 }
 

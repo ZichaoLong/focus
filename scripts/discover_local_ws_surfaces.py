@@ -242,7 +242,7 @@ def _probe_surface_without_auth(url: str, *, open_timeout: float) -> dict[str, A
                 method="initialize",
                 params={
                     "clientInfo": {
-                        "name": "feishu-codex-local-ws-discovery",
+                        "name": "focus-local-ws-discovery",
                         "version": "1.0",
                     },
                     "capabilities": {"experimentalApi": True},

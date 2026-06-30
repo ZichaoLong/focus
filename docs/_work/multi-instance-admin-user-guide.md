@@ -67,7 +67,7 @@ Each instance maintains its own:
 - `system.yaml`
 - `codex.yaml`
 - `init.token`
-- instance-local runtime state under `FC_DATA_DIR`
+- instance-local runtime state under `FOCUS_DATA_DIR`
 
 Shared:
 
@@ -96,19 +96,19 @@ The admin should understand:
 
 ### 3.3 Manage Per-Instance Runtime State
 
-The admin uses `feishu-codexctl` to manage a specific instance.
+The admin uses `focusctl` to manage a specific instance.
 
 Example target command surface:
 
 ```bash
-feishu-codexctl --instance corp-a service status
-feishu-codexctl --instance corp-a binding list
-feishu-codexctl --instance corp-a thread status --thread-id <id>
+focusctl --instance corp-a service status
+focusctl --instance corp-a binding list
+focusctl --instance corp-a thread status --thread-id <id>
 ```
 
 The admin should understand:
 
-- the object managed by `feishu-codexctl` is a specific running Feishu service
+- the object managed by `focusctl` is a specific running Feishu service
 - it is not a global, instance-free omniscient thread console
 
 ### 3.4 Make a Shared Thread Visible / Usable to an Instance
@@ -127,8 +127,8 @@ Recommended target workflow:
 Suggested local management commands:
 
 ```bash
-feishu-codexctl --instance corp-b thread import --thread-id <thread_id>
-feishu-codexctl --instance corp-b thread revoke --thread-id <thread_id>
+focusctl --instance corp-b thread import --thread-id <thread_id>
+focusctl --instance corp-b thread revoke --thread-id <thread_id>
 ```
 
 Semantics:
@@ -339,7 +339,7 @@ The recommended default habits are:
 1. create one instance per enterprise
 2. configure each instance with its own `system.yaml`
 3. use `feishu-codex --instance ...` for day-to-day service management
-4. use `feishu-codexctl --instance ...` for day-to-day local thread management
+4. use `focusctl --instance ...` for day-to-day local thread management
 5. use `fcodex` whenever a live thread must be continued together with Feishu
 6. do not treat concurrent writes through bare `codex` as a supported path
 7. if a thread must be reused across enterprises, let the admin decide it
@@ -363,7 +363,7 @@ Before implementation, these usage-side choices are worth confirming explicitly:
 
 1. whether `fcodex` may hide multi-instance details by default and expose
    `--instance` only on ambiguity
-2. whether `feishu-codexctl` should remain instance-scoped rather than turning
+2. whether `focusctl` should remain instance-scoped rather than turning
    into an instance-free global thread console
 3. whether reusing one thread across enterprises should remain an explicit
    admin decision rather than a default path for ordinary users

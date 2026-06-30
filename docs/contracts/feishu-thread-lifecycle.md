@@ -3,12 +3,12 @@
 Chinese version: `docs/contracts/feishu-thread-lifecycle.zh-CN.md`
 
 This document defines the current thread lifecycle contract for the Feishu side.
-It explains why Feishu must follow the same backend contract as `fcodex`, while
-still using a different runtime recovery model.
+It explains why Feishu must follow the same backend contract as `focus` /
+`fcodex`, while still using a different runtime recovery model.
 
 See also:
 
-- `docs/architecture/fcodex-shared-backend-runtime.md`
+- `docs/architecture/focus-shared-backend-runtime.md`
 - `docs/contracts/runtime-control-surface.md`
 - `docs/decisions/shared-backend-resume-safety.md`
 - `docs/contracts/thread-next-load-settings-semantics.md`
@@ -54,12 +54,12 @@ the requirement to keep it distinct from `binding` and `loaded runtime`.
 
 For operational control, keep `interaction owner` separate from the binding/runtime state axes.
 
-`interaction owner` is a current-instance temporary lease. It controls same-instance Feishu / `fcodex` turn admission and routes approvals, user-input requests, and interrupts. The exact contract is defined in `docs/contracts/runtime-control-surface.md`.
+`interaction owner` is a current-instance temporary lease. It controls same-instance Feishu / `focus` / `fcodex` turn admission and routes approvals, user-input requests, and interrupts. The exact contract is defined in `docs/contracts/runtime-control-surface.md`.
 
-## 3. Why Feishu Cannot Copy `fcodex` Literally
+## 3. Why Feishu Cannot Copy the Local TUI Wrapper Literally
 
-`fcodex` normally keeps one live remote session while the TUI process stays
-open. That means:
+`focus` / `fcodex` normally keep one live remote session while the TUI process
+stays open. That means:
 
 - the websocket stays connected
 - the current thread often stays subscribed
@@ -269,9 +269,9 @@ The repository deliberately does not add a freshness gate for delayed receive
 events in this contract. A late receive event is still admitted normally unless
 it is cancelled by a received recall event before it dequeues.
 
-## 6. Relationship With `fcodex`
+## 6. Relationship With `focus` / `fcodex`
 
-`fcodex` and Feishu still share the same backend contract:
+`focus` / `fcodex` and Feishu still share the same backend contract:
 
 - same shared app-server
 - same persisted thread ids
@@ -279,7 +279,7 @@ it is cancelled by a received recall event before it dequeues.
 
 What differs is only the client-side runtime model:
 
-- `fcodex` usually stays attached while the TUI is alive
+- `focus` / `fcodex` usually stay attached while the TUI is alive
 - Feishu must recover from a bound-but-unloaded state more often
 
 So the rule is:
@@ -307,8 +307,8 @@ elsewhere:
   `docs/contracts/runtime-control-surface.md`
 - thread-wise next-load setting semantics on unloaded-thread restore paths:
   `docs/contracts/thread-next-load-settings-semantics.md`
-- command semantics for `/threads`, `/resume`, `/archive`, and local `fcodex`
-  continuation:
+- command semantics for `/threads`, `/resume`, `/archive`, and local `focus` /
+  `fcodex` continuation:
   `docs/contracts/thread-profile-semantics.md`
 - group-chat binding-by-`chat_id` and group session-scope rules:
   `docs/contracts/group-chat-contract.md`
@@ -321,5 +321,5 @@ elsewhere:
 - `bot/stores/generated_image_delivery_store.py`
 - `bot/fcodex.py`
 - `bot/fcodex_proxy.py`
-- `docs/architecture/fcodex-shared-backend-runtime.md`
+- `docs/architecture/focus-shared-backend-runtime.md`
 - `docs/decisions/shared-backend-resume-safety.md`

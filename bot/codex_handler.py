@@ -672,7 +672,7 @@ class CodexHandler(BotHandler):
             self._register_instance_runtime()
             self._restore_service_thread_runtime_leases()
         except ServiceInstanceLeaseError:
-            logger.exception("启动 feishu-codex service 失败：当前 FC_DATA_DIR 已被其他实例占用")
+            logger.exception("启动 FOCUS service 失败：当前 FOCUS_DATA_DIR 已被其他实例占用")
             raise
         except Exception:
             logger.exception("启动 Codex app-server 失败")

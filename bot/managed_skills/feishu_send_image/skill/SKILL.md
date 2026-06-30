@@ -19,7 +19,7 @@ Workflow:
 2. Use the control-plane command for the current Codex thread:
 
    ```bash
-   feishu-codexctl image send --path "<local-image-path>"
+   focusctl image send --path "<local-image-path>"
    ```
 
 3. If `CODEX_THREAD_ID` is not available in the current environment, stop and say this skill only covers sending to the current Codex thread.

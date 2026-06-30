@@ -5,7 +5,7 @@
 - 最新提交：`5487579 Add scheduled prompt control-plane support`
 - 重点路径：
   - `binding/submit-prompt`
-  - `feishu-codexctl prompt send`
+  - `focusctl prompt send`
   - `feishu-scheduled-prompts` managed skill
 
 ## 1. 结论摘要
@@ -164,4 +164,4 @@ python -m pytest -q tests/test_prompt_turn_entry_controller.py
 
 1. `binding/submit-prompt` 命中不存在 binding 时，必须 fail-close，而不是 create thread
 2. `display_mode=announce` 在启动失败时，不得留下误导性的成功语气消息
-3. `feishu-codexctl prompt send` 命中错误 binding / 错误实例时，应给出稳定、可操作的拒绝原因
+3. `focusctl prompt send` 命中错误 binding / 错误实例时，应给出稳定、可操作的拒绝原因

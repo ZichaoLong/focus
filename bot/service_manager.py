@@ -54,8 +54,8 @@ class AutostartStatus:
 def service_identifier(instance_name: str) -> str:
     normalized = str(instance_name or "").strip().lower() or DEFAULT_INSTANCE_NAME
     if normalized == DEFAULT_INSTANCE_NAME:
-        return "feishu-codex"
-    return f"feishu-codex-{normalized}"
+        return "focus"
+    return f"focus-{normalized}"
 
 
 def build_service_definition(
@@ -84,7 +84,7 @@ def _missing_service_definition_message(path: pathlib.Path, instance_name: str) 
     return (
         f"service definition 缺失：{path}。"
         " 请重新运行仓库根目录下的 `install.sh` 或 `install.ps1`；"
-        f" 如果这是一个新实例，先执行 `feishu-codex instance create {instance_name}`。"
+        f" 如果这是一个新实例，先执行 `focusctl instance create {instance_name}`。"
     )
 
 
@@ -127,8 +127,8 @@ class ServiceManager:
 class SystemdUserServiceManager(ServiceManager):
     def _unit_name(self, definition: ServiceDefinition) -> str:
         if definition.instance_name == DEFAULT_INSTANCE_NAME:
-            return "feishu-codex"
-        return f"feishu-codex@{definition.instance_name}"
+            return "focus"
+        return f"focus@{definition.instance_name}"
 
     def display_name(self, definition: ServiceDefinition) -> str:
         return self._unit_name(definition)
@@ -140,11 +140,11 @@ class SystemdUserServiceManager(ServiceManager):
         return f"systemctl --user is-active {self._unit_name(definition)}"
 
     def _template_unit_path(self) -> pathlib.Path:
-        return default_systemd_user_dir() / "feishu-codex@.service"
+        return default_systemd_user_dir() / "focus@.service"
 
     def _unit_path(self, definition: ServiceDefinition) -> pathlib.Path:
         if definition.instance_name == DEFAULT_INSTANCE_NAME:
-            return default_systemd_user_dir() / "feishu-codex.service"
+            return default_systemd_user_dir() / "focus.service"
         return self._template_unit_path()
 
     def _legacy_named_unit_path(self, instance_name: str) -> pathlib.Path:
@@ -183,7 +183,7 @@ class SystemdUserServiceManager(ServiceManager):
         if definition.instance_name == DEFAULT_INSTANCE_NAME:
             working_directory = str(definition.paths.data_dir)
             exec_start = " ".join(self._quote_unit_arg(item) for item in definition.daemon_command)
-            description = "Feishu Codex (default)"
+            description = "FOCUS (default)"
         else:
             working_directory = f"{definition.paths.data_dir.parent}/%i"
             exec_start = " ".join(
@@ -192,10 +192,9 @@ class SystemdUserServiceManager(ServiceManager):
                     definition.daemon_command[0],
                     "--instance",
                     "%i",
-                    "run",
                 )
             )
-            description = "Feishu Codex (%i)"
+            description = "FOCUS (%i)"
         return "\n".join(
             [
                 "[Unit]",
@@ -319,7 +318,7 @@ class LaunchdUserServiceManager(ServiceManager):
         return f"gui/{os.getuid()}"
 
     def _label(self, definition: ServiceDefinition) -> str:
-        return f"io.feishu-codex.{definition.instance_name}"
+        return f"io.focus.{definition.instance_name}"
 
     def _autostart_status_source(self, definition: ServiceDefinition) -> str:
         return f"LaunchAgent {self._label(definition)}"
@@ -469,7 +468,7 @@ class WindowsTaskSchedulerServiceManager(ServiceManager):
             "Task Scheduler 拒绝改写现有任务；这通常表示该任务是由不同权限上下文创建的旧任务。\n"
             "请先在当前 PowerShell 中删除旧任务；如果仍然提示拒绝访问，再改用管理员 PowerShell：\n"
             f"  schtasks /Delete /TN {task_name} /F\n"
-            f"  feishu-codex --instance {definition.instance_name} autostart enable\n"
+            f"  focusctl --instance {definition.instance_name} service autostart enable\n"
             f"原始错误：{original_message}"
         )
 
@@ -517,7 +516,7 @@ class WindowsTaskSchedulerServiceManager(ServiceManager):
 
         task = ET.Element(tag("Task"), {"version": "1.3"})
         registration = ET.SubElement(task, tag("RegistrationInfo"))
-        ET.SubElement(registration, tag("Description")).text = f"Feishu Codex ({definition.instance_name})"
+        ET.SubElement(registration, tag("Description")).text = f"FOCUS ({definition.instance_name})"
         if autostart_enabled:
             triggers = ET.SubElement(task, tag("Triggers"))
             logon = ET.SubElement(triggers, tag("LogonTrigger"))

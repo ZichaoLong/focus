@@ -2,7 +2,7 @@
 Machine-level running instance registry.
 
 This registry is the discovery surface for local CLIs. Each record describes a
-running `feishu-codex` service instance and its control/backend endpoints.
+running FOCUS service instance and its control/backend endpoints.
 """
 
 from __future__ import annotations

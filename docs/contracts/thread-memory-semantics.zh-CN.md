@@ -11,7 +11,7 @@
 下列入口已不再属于正式合同：
 
 - `/memory`
-- `feishu-codexctl thread memory`
+- `focusctl thread memory`
 - `new_thread_memory_mode_seed`
 - 任何项目自管的 thread-memory persistence / restore 路径
 

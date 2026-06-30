@@ -4,16 +4,16 @@
 
 另见：
 
-- `docs/architecture/feishu-codex-design.zh-CN.md`：当前架构与模块边界
+- `docs/architecture/focus-design.zh-CN.md`：当前架构与模块边界
 - `docs/contracts/feishu-thread-lifecycle.zh-CN.md`：执行卡生命周期与终态收口
 - `docs/decisions/feishu-attachment-ingress.zh-CN.md`：附件入口与本地暂存边界
 - `docs/decisions/feishu-output-images.zh-CN.md`：出站图片结果投递边界
 
 ## 1. 问题陈述
 
-用户希望在飞书里接收和转发卡片消息时，`feishu-codex` 至少能稳定拿到真正有用的文本语义，尤其是：
+用户希望在飞书里接收和转发卡片消息时，FOCUS 至少能稳定拿到真正有用的文本语义，尤其是：
 
-- `feishu-codex` 自己发送的终态执行结果
+- FOCUS 自己发送的终态执行结果
 - 其他普通消息卡片里对人可见、对 Codex 有意义的文本
 
 但当前前提是：
@@ -36,7 +36,7 @@
 本仓库对飞书卡片文本处理的设计决策是：
 
 1. 本仓库只承诺**卡片文本投影**，不承诺卡片 UI / 动作 / 状态的完整对等解析。
-2. `feishu-codex` 自身运行中的 live execution card 仍以人类可读 UI 为主，不直接作为强合同的 round-trip 载体。
+2. FOCUS 自身运行中的 live execution card 仍以人类可读 UI 为主，不直接作为强合同的 round-trip 载体。
 3. 只有 turn 终态结果进入强合同，并且必须存在一份权威的 `final_reply_text` 表示。
 4. 发送侧可以继续保留：
    - `process_log`
@@ -328,7 +328,7 @@
 
 即使后续自家 `terminal result card` 增加了轻量机器摘要，这条 best-effort 回落路径仍必须保留：
 
-- 外部非 `feishu-codex` 机器人发来的卡片
+- 外部非 FOCUS 机器人发来的卡片
 - 历史旧卡
 - 没有机器摘要的新旧普通卡片
 
@@ -364,7 +364,7 @@
 
 ### 7.1 属于强合同 round-trip 的场景
 
-- `feishu-codex` 自己发送的终态结果，且存在权威 `final_reply_text`
+- FOCUS 自己发送的终态结果，且存在权威 `final_reply_text`
 - 权威结果由下列任一载体明确给出：
   - `terminal execution card` 中的专用结果区块
   - `terminal result card` 中的专用结果区块

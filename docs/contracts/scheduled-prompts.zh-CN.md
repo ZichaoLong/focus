@@ -7,7 +7,7 @@
 它覆盖三层：
 
 - service control plane：`binding/submit-prompt`
-- 本地 CLI：`feishu-codexctl prompt send`
+- 本地 CLI：`focusctl prompt send`
 - Linux `systemd --user` managed skill：`feishu-scheduled-prompts`
 
 ## 1. 目标
@@ -15,7 +15,7 @@
 当前正式支持的不是“内建 scheduler 子系统”，而是：
 
 - 在未来时点，安全地向某个既有 Feishu binding 合成发起一轮新的 prompt
-- 继续复用同一个 `feishu-codex` 实例 backend
+- 继续复用同一个 FOCUS 实例 backend
 - 保持现有 running-turn / attach / interaction / live-runtime 安全边界
 
 当前明确不支持：
@@ -57,11 +57,11 @@ control plane 新增：
   - 表示 fail-closed 拒绝或启动失败
   - 必须返回 `reason`；若有明确 reason code，也应返回 `reason_code`
 
-## 3. `feishu-codexctl prompt send`
+## 3. `focusctl prompt send`
 
 本地 CLI 新增：
 
-- `feishu-codexctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> | --text-file <file>)`
+- `focusctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> | --text-file <file>)`
 
 它的合同是：
 
@@ -97,7 +97,7 @@ control plane 新增：
 它的合同是：
 
 - 目标是管理 `systemd --user` timer/service
-- 到点后仍然通过 `feishu-codexctl prompt send` 回到当前实例 control plane
+- 到点后仍然通过 `focusctl prompt send` 回到当前实例 control plane
 - 不直接调用独立 Codex SDK helper
 - 不直接依赖飞书消息回环
 
@@ -113,15 +113,15 @@ skill helper 当前提供：
 
 本地工具解析也是 helper 合同的一部分：
 
-- 普通用户在登录 shell 中使用时，如果 `PATH` 里有 `feishu-codexctl`，可以继续依赖 `PATH`
+- 普通用户在登录 shell 中使用时，如果 `PATH` 里有 `focusctl`，可以继续依赖 `PATH`
 - `create --ctl-path <path>` 是显式 override，并会写入生成的 service unit
-- 省略 `--ctl-path` 时，helper 按以下顺序发现 `feishu-codexctl`：
+- 省略 `--ctl-path` 时，helper 按以下顺序发现 `focusctl`：
   1. `PATH`
-  2. `FC_BIN_DIR/feishu-codexctl`，或 `~/.local/bin/feishu-codexctl`
-  3. `FC_DATA_ROOT/.venv/bin/feishu-codexctl`，或
-     `~/.local/share/feishu-codex/.venv/bin/feishu-codexctl`
+  2. `FOCUS_BIN_DIR/focusctl`，或 `~/.local/bin/focusctl`
+  3. `FOCUS_DATA_ROOT/.venv/bin/focusctl`，或
+     `~/.local/share/focus/.venv/bin/focusctl`
 - managed skill 指南应使用受管 venv 的 Python 运行 helper，通常是
-  `FC_DATA_ROOT/.venv/bin/python`，而不是假设系统 `python3` 满足本项目运行时
+  `FOCUS_DATA_ROOT/.venv/bin/python`，而不是假设系统 `python3` 满足本项目运行时
 
 Recurring timer 必须有明确终止策略。`systemd --user` 只理解
 `OnCalendar`，不理解业务任务是否完成。可接受形态是：
@@ -142,7 +142,7 @@ Recurring timer 必须有明确终止策略。`systemd --user` 只理解
 
 ## 6.1 Binding FIFO
 
-Feishu 普通 prompt、`feishu-codexctl prompt send` / `binding/submit-prompt`、以及 `/compact` 共享同一个 binding admission 语义：
+Feishu 普通 prompt、`focusctl prompt send` / `binding/submit-prompt`、以及 `/compact` 共享同一个 binding admission 语义：
 
 - 当前 binding idle 时，立即执行
 - 当前 binding 有 active execution 时，只有同一个 binding 可入队；队列准入不再额外要求 `actor_open_id` 与当前 running turn 的 actor 相同

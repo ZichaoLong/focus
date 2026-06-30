@@ -1,5 +1,5 @@
 """
-feishu-codex 飞书卡片构建。
+FOCUS 飞书卡片构建。
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ _PLAN_CONTENT_MAX = 4000
 _GOAL_OBJECTIVE_MAX = 400
 _SHARED_RESUME_COMMAND = get_shared_command("resume")
 _SHARED_RESET_BACKEND_COMMAND = get_shared_command("reset-backend")
-_LOCAL_THREAD_LIST_CWD = "feishu-codexctl thread list --scope cwd"
+_LOCAL_THREAD_LIST_CWD = "focusctl thread list --scope cwd"
 _LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <thread_id|thread_name>")
 
 

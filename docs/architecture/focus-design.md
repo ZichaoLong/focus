@@ -1,16 +1,16 @@
-# feishu-codex Technical Design
+# FOCUS Technical Design
 
 See also:
 
 - `docs/contracts/thread-profile-semantics.md`
-- `docs/architecture/fcodex-shared-backend-runtime.md`
+- `docs/architecture/focus-shared-backend-runtime.md`
 - `docs/decisions/shared-backend-resume-safety.md`
 - `docs/decisions/feishu-output-images.md`
 - `docs/archive/codex-handler-decomposition-plan.md`
 
 ## 1. Background
 
-`feishu-codex` is an independent Codex-oriented project, not a thin rename of an
+FOCUS is an independent Codex-oriented project, not a thin rename of an
 older Claude integration.
 
 Historical context still matters:
@@ -19,7 +19,7 @@ Historical context still matters:
   interaction model
 - but that project depended on Claude-specific local file formats and hook
   behavior
-- `feishu-codex` keeps the Feishu-side transport and interaction lessons while
+- FOCUS keeps the Feishu-side transport and interaction lessons while
   switching the agent/runtime integration to Codex-native surfaces
 
 Upstream baseline:
@@ -59,7 +59,8 @@ bridge:
 - Depend on undocumented Codex disk layouts for thread discovery or metadata
 - Support every experimental Codex feature in the first iteration
 - Reuse `clfeishu` code as a hard architectural dependency
-- Treat bare `codex` and shared-backend `fcodex` as the same operational path
+- Treating bare `codex` and shared-backend `focus` / `fcodex` as the same
+  operational path
 
 ## 4. Current Design Principles
 
@@ -68,9 +69,8 @@ bridge:
 - Single source of truth: thread id, cwd, title, preview, source, and runtime
   config come from Codex
 - Feishu-specific state stays local: thread/UI binding state remains in
-  `feishu-codex`, while machine-global shared state is limited to coordination
+  FOCUS, while machine-global shared state is limited to coordination
   primitives such as runtime lease and instance registry
-  mode
 - Shared-backend behavior is explicit: continuing the same live thread with
   Feishu should go through the same instance backend
 - `CODEX_HOME` and Feishu runtime boundaries stay separate: the former is
@@ -82,7 +82,7 @@ bridge:
 
 ### 5.1 Layers
 
-`feishu-codex` is organized into four layers:
+FOCUS is organized into four layers:
 
 1. Feishu transport layer
    - receives user messages and card actions
@@ -106,8 +106,8 @@ Current runtime behavior:
 
 - all instances share one `CODEX_HOME`
 - each instance owns its own:
-  - `FC_CONFIG_DIR`
-  - `FC_DATA_DIR`
+  - `FOCUS_CONFIG_DIR`
+  - `FOCUS_DATA_DIR`
   - service owner
   - control plane
   - managed `codex app-server` backend
@@ -120,17 +120,18 @@ Current runtime behavior:
 - if that default port is unavailable, that instance service falls back to
   another free local port and publishes the active endpoint through its own
   local runtime state
-- `fcodex` first chooses the target instance, then discovers that instance's
-  active backend endpoint and attaches to that same instance backend
-- `fcodex` adds a thin local websocket proxy only when it needs shared-backend
-  cwd correction for upstream remote-mode behavior; that proxy also gets its
-  own per-launch bearer token injected into upstream Codex through wrapper env
+- `focus` / `fcodex` first choose the target instance, then discover that
+  instance's active backend endpoint and attach to that same instance backend
+- `focus` / `fcodex` add a thin local websocket proxy only when they need
+  shared-backend cwd correction for upstream remote-mode behavior; that proxy
+  also gets its own per-launch bearer token injected into upstream Codex
+  through wrapper env
 - the machine also maintains two global coordination facts:
   - the running-instance registry
   - the thread live-runtime lease
 
 The exact wrapper/runtime mechanics are documented in
-`docs/architecture/fcodex-shared-backend-runtime.md`.
+`docs/architecture/focus-shared-backend-runtime.md`.
 
 ### 5.3 Key Application Modules
 
@@ -145,8 +146,12 @@ Current module split:
 - `bot/codex_protocol/client.py`: websocket JSON-RPC client for `codex app-server`
 - `bot/fcodex.py` and `bot/fcodex_proxy.py`: local wrapper and
   owner-filtering proxy
-- `bot/feishu_codexctl.py` and `bot/service_control_plane.py`: local service-admin
-  CLI and the in-process control plane for the running service
+- `bot/focusctl.py`: public `focusctl` management dispatcher that routes
+  service lifecycle and runtime-management resources through one entry
+- `bot/manage_cli.py`: install, config, instance-directory, service lifecycle,
+  wrapper, and completion management
+- `bot/feishu_codexctl.py` and `bot/service_control_plane.py`: runtime-admin
+  subcommands and the in-process control plane for the running service
 - `bot/instance_layout.py` and `bot/instance_resolution.py`: multi-instance
   filesystem layout and current/target instance resolution
 - `bot/binding_identity.py`: stable admin-facing binding identifiers
@@ -324,7 +329,7 @@ Codex remains the authority for:
 
 ### 6.2 Feishu-Local Data
 
-`feishu-codex` keeps only data that is Feishu- or integration-specific:
+FOCUS keeps only data that is Feishu- or integration-specific:
 
 - machine-global coordination data such as runtime lease
 - per-instance runtime shared-backend discovery state
@@ -338,7 +343,7 @@ There are also two machine-global coordination states:
 - the running-instance registry
 - the thread live-runtime lease
 
-They live under shared `FC_GLOBAL_DATA_DIR`.
+They live under shared `FOCUS_GLOBAL_DATA_DIR`.
 They are neither Feishu-chat state nor Codex-owned thread metadata; they exist
 only for local CLI discovery and multi-instance runtime coordination.
 
@@ -347,8 +352,8 @@ This token boundary also needs to stay explicit:
 - the control-plane / service token is only for local service control and
   ownership coordination
 - the backend websocket token is only for connecting to an instance app-server
-- the proxy websocket token is only for one wrapper-launched local `fcodex`
-  proxy
+- the proxy websocket token is only for one wrapper-launched local `focus` /
+  `fcodex` proxy
 - these three tokens must not be reused, and they shouldn't be exposed on
   command lines again for convenience
 
@@ -362,7 +367,7 @@ So:
 
 - persistent `binding` is a formal product requirement
 - explicit clearing of one or all bindings is also a legitimate local admin need
-- those reset actions belong to the `feishu-codexctl` binding-management surface
+- those reset actions belong to the `focusctl` binding-management surface
 - they should no longer be treated as a separate architectural concept of
   directly deleting `chat_bindings.json`
 - the persisted binding schema should fail closed; the retired v4
@@ -424,7 +429,7 @@ At the design level, the important boundaries are:
   group thread, while still sharing one backend session
 - group activation answers whether the chat is open to non-admin members;
   whether a mention is still required is decided by the group mode
-- other bots do not directly trigger `feishu-codex`; their messages enter
+- other bots do not directly trigger FOCUS; their messages enter
   context only through history recovery
 
 The formal behavior contract is now:
@@ -467,9 +472,10 @@ full-tree dump.
     import those symbols rather than redefining partial local variants
   - shared UI / helper boundaries: `cards.py`, `card_text_projection.py`,
     `shared_command_surface.py`, `feishu_types.py`
-  - wrapper and service-admin path: `fcodex.py`, `fcodex_proxy.py`,
-    `feishu_codexctl.py`, `service_control_plane.py`, `instance_layout.py`,
-    `instance_resolution.py`, `thread_resolution.py`, `binding_identity.py`
+  - wrapper and local-management path: `fcodex.py`, `fcodex_proxy.py`,
+    `focusctl.py`, `manage_cli.py`, `feishu_codexctl.py`,
+    `service_control_plane.py`, `instance_layout.py`, `instance_resolution.py`,
+    `thread_resolution.py`, `binding_identity.py`
   - Codex adapter / protocol boundary:
     `adapters/base.py`, `adapters/codex_app_server.py`,
     `codex_protocol/client.py`

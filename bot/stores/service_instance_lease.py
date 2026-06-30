@@ -1,8 +1,8 @@
 """
-Single-service ownership lease for one FC_DATA_DIR.
+Single-service ownership lease for one FOCUS_DATA_DIR.
 
 This lease is the authoritative ownership guard for the running
-``feishu-codex`` service. The published control endpoint is only a service
+FOCUS service. The published control endpoint is only a service
 endpoint; it is not the ownership primitive.
 """
 
@@ -30,7 +30,7 @@ class ServiceInstanceMetadata:
 
 
 class ServiceInstanceLeaseError(RuntimeError):
-    """Raised when FC_DATA_DIR service ownership cannot be acquired."""
+    """Raised when FOCUS_DATA_DIR service ownership cannot be acquired."""
 
 
 class ServiceInstanceLease:
@@ -72,7 +72,7 @@ class ServiceInstanceLease:
                 owner_pid = metadata.owner_pid if metadata is not None else 0
                 owner_endpoint = metadata.control_endpoint if metadata is not None else normalized_control_endpoint
                 raise ServiceInstanceLeaseError(
-                    "当前 FC_DATA_DIR 已有运行中的 feishu-codex service 持有所有权。"
+                    "当前 FOCUS_DATA_DIR 已有运行中的 FOCUS service 持有所有权。"
                     f" owner_pid={owner_pid or 'unknown'} control={owner_endpoint or 'unknown'}"
                 ) from exc
 

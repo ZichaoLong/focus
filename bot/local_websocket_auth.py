@@ -2,8 +2,7 @@
 Local websocket auth helpers.
 
 This module owns the small set of secrets and helpers used to tighten the
-localhost websocket surfaces between `feishu-codex`, `feishu-codexctl`, and
-`fcodex`.
+localhost websocket surfaces between `focusctl`, `focusd`, and `focus`/`fcodex`.
 """
 
 from __future__ import annotations
@@ -15,8 +14,8 @@ import secrets
 from bot.file_permissions import ensure_private_file_permissions
 
 APP_SERVER_WEBSOCKET_TOKEN_FILENAME = "app_server_websocket.token"
-FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR = "FCODEX_REMOTE_AUTH_TOKEN"
-FCODEX_SERVICE_TOKEN_ENV_VAR = "FCODEX_SERVICE_TOKEN"
+FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR = "FOCUS_REMOTE_AUTH_TOKEN"
+FOCUS_SERVICE_TOKEN_ENV_VAR = "FOCUS_SERVICE_TOKEN"
 
 
 class MissingAppServerWebsocketAuthTokenError(RuntimeError):

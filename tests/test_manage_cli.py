@@ -69,19 +69,19 @@ class ManageCliTests(unittest.TestCase):
         parser = _build_parser()
         rendered = parser.format_help()
 
-        self.assertIn("跨平台本地管理 CLI", rendered)
+        self.assertIn("FOCUS 安装与 service lifecycle 管理内部入口", rendered)
         self.assertIn("首次安装与修复都请从仓库根目录执行 `bash install.sh`", rendered)
         self.assertIn("常见流程:", rendered)
         self.assertIn("首次安装 / 修复", rendered)
         self.assertIn("bash install.sh", rendered)
         self.assertIn("autostart", rendered)
         self.assertIn("`uninstall|purge` 只清理本机安装面", rendered)
-        self.assertIn("feishu-codex instance create corp-a", rendered)
-        self.assertIn("feishu-codex skill install", rendered)
-        self.assertIn("feishu-codex --instance default --instance corp-a status", rendered)
+        self.assertIn("focusctl instance create corp-a", rendered)
+        self.assertIn("focusctl skill install", rendered)
+        self.assertIn("focusctl --instance default service status", rendered)
         self.assertIn("创建、列出、删除命名实例", rendered)
         self.assertIn("查看或打开当前实例相关配置文件", rendered)
-        self.assertIn("安装或卸载 feishu-codex 提供的工作区 skill", rendered)
+        self.assertIn("安装或卸载 FOCUS 提供的工作区 skill", rendered)
         self.assertNotIn("    install            ", rendered)
         self.assertNotIn("bootstrap-install", rendered)
 
@@ -93,7 +93,7 @@ class ManageCliTests(unittest.TestCase):
                 parser.parse_args(["--version"])
 
         self.assertEqual(exc.exception.code, 0)
-        self.assertEqual(stdout.getvalue().strip(), f"feishu-codex {__version__}")
+        self.assertEqual(stdout.getvalue().strip(), f"focusctl {__version__}")
 
     def test_parser_collects_repeated_instance_flags(self) -> None:
         parser = _build_parser()
@@ -165,11 +165,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
             user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
             ensured_definitions: list[object] = []
@@ -181,16 +181,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -208,13 +208,13 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue((config_root / "instances" / "corp-a" / "codex.yaml").exists())
             self.assertTrue((config_root / "instances" / "corp-a" / "init.token").exists())
             self.assertTrue(env_file.exists())
-            self.assertTrue((bin_dir / "feishu-codex").exists())
-            self.assertTrue((bin_dir / "feishu-codexd").exists())
-            self.assertTrue((bin_dir / "feishu-codexctl").exists())
+            self.assertTrue((bin_dir / "focus").exists())
+            self.assertTrue((bin_dir / "focusd").exists())
+            self.assertTrue((bin_dir / "focusctl").exists())
             self.assertTrue((bin_dir / "fcodex").exists())
-            self.assertTrue((bash_completion_dir / "feishu-codex").exists())
-            self.assertTrue((bash_completion_dir / "feishu-codexd").exists())
-            self.assertTrue((bash_completion_dir / "feishu-codexctl").exists())
+            self.assertTrue((bash_completion_dir / "focus").exists())
+            self.assertTrue((bash_completion_dir / "focusd").exists())
+            self.assertTrue((bash_completion_dir / "focusctl").exists())
             self.assertTrue((bash_completion_dir / "fcodex").exists())
             self.assertTrue(zsh_completion_path.exists())
             self.assertTrue(zsh_rc_path.exists())
@@ -225,27 +225,27 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(env_file.stat().st_mode), 0o600)
             self.assertEqual(
                 {definition.identifier for definition in ensured_definitions},
-                {"feishu-codex", "feishu-codex-corp-a"},
+                {"focus", "focus-corp-a"},
             )
             commands_by_identifier = {
                 definition.identifier: definition.daemon_command for definition in ensured_definitions
             }
             self.assertEqual(
-                commands_by_identifier["feishu-codex"],
-                (str(bin_dir / "feishu-codex"), "--instance", "default", "run"),
+                commands_by_identifier["focus"],
+                (str(bin_dir / "focusd"), "--instance", "default"),
             )
             self.assertEqual(
-                commands_by_identifier["feishu-codex-corp-a"],
-                (str(bin_dir / "feishu-codex"), "--instance", "corp-a", "run"),
+                commands_by_identifier["focus-corp-a"],
+                (str(bin_dir / "focusd"), "--instance", "corp-a"),
             )
-            rendered = (bin_dir / "feishu-codex").read_text(encoding="utf-8")
+            rendered = (bin_dir / "focus").read_text(encoding="utf-8")
             self.assertIn(
-                f'exec "{data_root / ".venv" / "bin" / "python"}" -c \'from bot.manage_cli import main; main()\' "$@"',
+                f'exec "{data_root / ".venv" / "bin" / "python"}" -c \'from bot.fcodex import main; main()\' "$@"',
                 rendered,
             )
-            rendered_completion = (bash_completion_dir / "feishu-codex").read_text(encoding="utf-8")
+            rendered_completion = (bash_completion_dir / "focus").read_text(encoding="utf-8")
             self.assertIn("-m bot.shell_completion complete", rendered_completion)
-            self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codex feishu-codex", rendered_completion)
+            self.assertIn("complete -o bashdefault -o default -F _focus_complete_focus focus", rendered_completion)
             self.assertIn('source "', zsh_rc_path.read_text(encoding="utf-8"))
             self.assertIn("Register-ArgumentCompleter", powershell_completion_path.read_text(encoding="utf-8"))
             self.assertIn("Test-Path", powershell_profile_path.read_text(encoding="utf-8"))
@@ -254,15 +254,15 @@ class ManageCliTests(unittest.TestCase):
             self.assertIn(f"zsh completion: {zsh_completion_path}", summary)
             self.assertIn(f"PowerShell completion: {powershell_completion_path}", summary)
             self.assertIn("已重建实例: corp-a, default。不覆盖各实例现有用户配置", summary)
-            self.assertIn("  - 本地服务进程管理 feishu-codex --help", summary)
-            self.assertIn("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help", summary)
+            self.assertIn("  - Codex TUI 工作入口 focus --help 或 fcodex --help", summary)
+            self.assertIn("  - 本地管理 focusctl --help", summary)
             self.assertIn("  1. 配置飞书应用、provider 环境变量", summary)
-            self.assertIn("    - feishu-codex config --open system", summary)
-            self.assertIn("    - feishu-codex config --open env（按需）", summary)
-            self.assertIn("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）", summary)
-            self.assertIn("    - 先 cd 到目标目录，再执行 feishu-codex skill install", summary)
-            self.assertIn("    - 如需移除，回到同一目录执行 feishu-codex skill uninstall", summary)
-            self.assertIn("    - 注意：feishu-codex uninstall/purge 不会删除各工作区中的 .agents/skills", summary)
+            self.assertIn("    - focusctl config system --open", summary)
+            self.assertIn("    - focusctl config env --open（按需）", summary)
+            self.assertIn("  5. 如需在某个目录下启用 FOCUS 附带 skills（可选）", summary)
+            self.assertIn("    - 先 cd 到目标目录，再执行 focusctl skill install", summary)
+            self.assertIn("    - 如需移除，回到同一目录执行 focusctl skill uninstall", summary)
+            self.assertIn("    - 注意：focusctl uninstall/purge 不会删除各工作区中的 .agents/skills", summary)
             self.assertIn("  6. Shell completion", summary)
             self.assertIn("Bash：新开一个 Bash shell 通常会自动生效", summary)
             self.assertIn("zsh：已写入自动加载钩子", summary)
@@ -275,11 +275,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             metadata_path = config_root / "install-state" / "windows-user-path.json"
             user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
 
@@ -290,16 +290,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -342,11 +342,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             user_path_state = {"raw": r"C:\Windows\System32", "type": 2}
 
             class _DummyManager:
@@ -356,16 +356,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -375,9 +375,9 @@ class ManageCliTests(unittest.TestCase):
                 powershell_profile_path.write_text(
                     "\n".join(
                         [
-                            "# >>> feishu-codex PowerShell completion >>>",
+                            "# >>> focus PowerShell completion >>>",
                             f"if (Test-Path '{powershell_completion_path}') {{ . '{powershell_completion_path}' }}",
-                            "# <<< feishu-codex PowerShell completion <<<",
+                            "# <<< focus PowerShell completion <<<",
                             "",
                         ]
                     ),
@@ -411,11 +411,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             metadata_path = config_root / "install-state" / "windows-user-path.json"
             original_user_path = r"C:\Windows\System32"
             user_path_state = {"raw": original_user_path, "type": 2}
@@ -430,16 +430,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -470,11 +470,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             metadata_path = config_root / "install-state" / "windows-user-path.json"
             original_user_path = f"{bin_dir};C:\\Windows\\System32"
             user_path_state = {"raw": original_user_path, "type": 2}
@@ -489,16 +489,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -527,13 +527,13 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -556,11 +556,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -569,16 +569,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -604,7 +604,7 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(data_marker.read_text(encoding="utf-8"), "preserve me\n")
             self.assertEqual((paths.config_dir / "system.yaml.example").read_text(encoding="utf-8"), SYSTEM_YAML_TEMPLATE)
             self.assertEqual((paths.config_dir / "codex.yaml.example").read_text(encoding="utf-8"), CODEX_YAML_TEMPLATE)
-            self.assertTrue((bash_completion_dir / "feishu-codex").exists())
+            self.assertTrue((bash_completion_dir / "focus").exists())
             self.assertTrue(zsh_completion_path.exists())
             self.assertTrue(zsh_rc_path.exists())
             self.assertTrue(powershell_completion_path.exists())
@@ -617,11 +617,11 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -630,16 +630,16 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -658,9 +658,9 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             with patch("bot.manage_cli.is_windows", return_value=True):
                 with patch("bot.manage_cli._venv_python", return_value=pathlib.Path("C:/Python311/python.exe")):
-                    _write_wrapper(root / "feishu-codex", "bot.manage_cli")
+                    _write_wrapper(root / "focus", "bot.manage_cli")
 
-            wrapper_path = root / "feishu-codex.cmd"
+            wrapper_path = root / "focus.cmd"
             self.assertTrue(wrapper_path.exists())
             rendered = wrapper_path.read_text(encoding="utf-8")
             self.assertIn('"C:/Python311/python.exe" -c "from bot.manage_cli import main; main()" %*', rendered)
@@ -668,7 +668,7 @@ class ManageCliTests(unittest.TestCase):
     def test_write_wrapper_creates_unix_shell_launcher(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            wrapper_path = root / "feishu-codex"
+            wrapper_path = root / "focus"
             with patch("bot.manage_cli.is_windows", return_value=False):
                 with patch("bot.manage_cli._venv_python", return_value=pathlib.Path("/tmp/venv/bin/python")):
                     _write_wrapper(wrapper_path, "bot.manage_cli")
@@ -683,13 +683,13 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -708,7 +708,7 @@ class ManageCliTests(unittest.TestCase):
                     result = _handle_instance_remove("corp-a")
 
             self.assertEqual(result, 0)
-            self.assertEqual(manager.identifiers, ["feishu-codex-corp-a"])
+            self.assertEqual(manager.identifiers, ["focus-corp-a"])
             self.assertFalse(paths.config_dir.exists())
             self.assertFalse(paths.data_dir.exists())
             self.assertTrue(config_root.exists())
@@ -720,7 +720,7 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             bin_dir = root / "bin"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             ensured_definitions: list[object] = []
 
             class _DummyManager:
@@ -730,11 +730,11 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -749,10 +749,10 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue(paths.data_dir.exists())
             self.assertTrue((data_root / "_global").exists())
             self.assertTrue(env_file.exists())
-            self.assertEqual([definition.identifier for definition in ensured_definitions], ["feishu-codex-corp-a"])
+            self.assertEqual([definition.identifier for definition in ensured_definitions], ["focus-corp-a"])
             self.assertEqual(
                 ensured_definitions[0].daemon_command,
-                (str(bin_dir / "feishu-codex"), "--instance", "corp-a", "run"),
+                (str(bin_dir / "focusd"), "--instance", "corp-a"),
             )
 
     def test_handle_instance_create_default_uses_root_dirs(self) -> None:
@@ -761,7 +761,7 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             bin_dir = root / "bin"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             ensured_definitions: list[object] = []
 
             class _DummyManager:
@@ -771,10 +771,10 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -788,10 +788,10 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue(data_root.exists())
             self.assertFalse((config_root / "instances" / "default").exists())
             self.assertFalse((data_root / "instances" / "default").exists())
-            self.assertEqual([definition.identifier for definition in ensured_definitions], ["feishu-codex"])
+            self.assertEqual([definition.identifier for definition in ensured_definitions], ["focus"])
             self.assertEqual(
                 ensured_definitions[0].daemon_command,
-                (str(bin_dir / "feishu-codex"), "--instance", "default", "run"),
+                (str(bin_dir / "focusd"), "--instance", "default"),
             )
 
     def test_handle_skill_install_copies_packaged_skill_into_current_workspace_agents_dir(self) -> None:
@@ -808,11 +808,11 @@ class ManageCliTests(unittest.TestCase):
             schedule_target = workspace / ".agents" / "skills" / "feishu-scheduled-prompts"
             self.assertTrue((image_target / "SKILL.md").exists())
             self.assertTrue((image_target / "agents" / "openai.yaml").exists())
-            self.assertTrue((image_target / ".feishu-codex-managed").exists())
+            self.assertTrue((image_target / ".focus-managed").exists())
             self.assertTrue((schedule_target / "SKILL.md").exists())
             self.assertTrue((schedule_target / "agents" / "openai.yaml").exists())
             self.assertTrue((schedule_target / "scripts" / "manage_scheduled_prompt.py").exists())
-            self.assertTrue((schedule_target / ".feishu-codex-managed").exists())
+            self.assertTrue((schedule_target / ".focus-managed").exists())
             rendered = stdout.getvalue()
             self.assertIn("已安装 skill: feishu-send-image", rendered)
             self.assertIn("已安装 skill: feishu-scheduled-prompts", rendered)
@@ -827,7 +827,7 @@ class ManageCliTests(unittest.TestCase):
             (target / "SKILL.md").write_text("manual\n", encoding="utf-8")
 
             with patch.object(pathlib.Path, "cwd", return_value=workspace):
-                with self.assertRaisesRegex(ValueError, "不是 feishu-codex 受管安装"):
+                with self.assertRaisesRegex(ValueError, "不是 FOCUS 受管安装"):
                     _handle_skill_install()
 
     def test_handle_skill_install_is_noop_when_current_workspace_already_has_same_unmanaged_skill(self) -> None:
@@ -843,7 +843,7 @@ class ManageCliTests(unittest.TestCase):
                     result = _handle_skill_install()
 
             self.assertEqual(result, 0)
-            self.assertFalse((target / ".feishu-codex-managed").exists())
+            self.assertFalse((target / ".focus-managed").exists())
             self.assertIn("当前目录已可用 skill: feishu-send-image", stdout.getvalue())
 
     def test_packaged_skill_source_matches_repo_workspace_skill(self) -> None:
@@ -902,14 +902,14 @@ class ManageCliTests(unittest.TestCase):
                 main(["--instance", "corp-a", "skill", "install"])
 
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("`feishu-codex skill ...` 不接受顶层 `--instance`", stderr.getvalue())
+        self.assertIn("`focusctl skill ...` 不接受顶层 `--instance`", stderr.getvalue())
 
     def test_handle_autostart_action_uses_manager_display_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def __init__(self) -> None:
@@ -925,9 +925,9 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -939,29 +939,29 @@ class ManageCliTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(manager.enabled, ["corp-a"])
-            self.assertIn("autostart enabled: feishu-codex-corp-a", stdout.getvalue())
+            self.assertIn("autostart enabled: focus-corp-a", stdout.getvalue())
 
     def test_handle_autostart_status_uses_platform_specific_source_label(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def autostart_status(self, definition) -> AutostartStatus:
                     return AutostartStatus(
                         enabled=True,
-                        source="systemctl --user is-enabled feishu-codex@corp-a",
+                        source="systemctl --user is-enabled focus@corp-a",
                         detail="enabled",
                     )
 
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -974,21 +974,21 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(result, 0)
             rendered = stdout.getvalue()
             self.assertIn("autostart: enabled", rendered)
-            self.assertIn("systemctl --user is-enabled feishu-codex@corp-a: enabled", rendered)
+            self.assertIn("systemctl --user is-enabled focus@corp-a: enabled", rendered)
 
     def test_handle_service_action_uses_manager_display_name(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def __init__(self) -> None:
                     self.started: list[str] = []
 
                 def display_name(self, definition) -> str:
-                    return f"feishu-codex@{definition.instance_name}"
+                    return f"focus@{definition.instance_name}"
 
                 def start(self, definition) -> None:
                     self.started.append(definition.instance_name)
@@ -997,9 +997,9 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1011,14 +1011,14 @@ class ManageCliTests(unittest.TestCase):
 
             self.assertEqual(result, 0)
             self.assertEqual(manager.started, ["corp-a"])
-            self.assertIn("started service: feishu-codex@corp-a", stdout.getvalue())
+            self.assertIn("started service: focus@corp-a", stdout.getvalue())
 
     def test_handle_service_status_uses_platform_specific_source_label(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def status(self, definition):
@@ -1028,16 +1028,16 @@ class ManageCliTests(unittest.TestCase):
                     return ServiceStatus(
                         installed=True,
                         running=False,
-                        source="systemctl --user is-active feishu-codex@corp-a",
+                        source="systemctl --user is-active focus@corp-a",
                         detail="activating",
                     )
 
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1051,14 +1051,14 @@ class ManageCliTests(unittest.TestCase):
             rendered = stdout.getvalue()
             self.assertIn("service: installed", rendered)
             self.assertIn("running: no", rendered)
-            self.assertIn("systemctl --user is-active feishu-codex@corp-a: activating", rendered)
+            self.assertIn("systemctl --user is-active focus@corp-a: activating", rendered)
 
     def test_handle_service_actions_supports_multiple_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def __init__(self) -> None:
@@ -1072,13 +1072,13 @@ class ManageCliTests(unittest.TestCase):
                         return ServiceStatus(
                             installed=True,
                             running=True,
-                            source="systemctl --user is-active feishu-codex",
+                            source="systemctl --user is-active focus",
                             detail="active",
                         )
                     return ServiceStatus(
                         installed=True,
                         running=False,
-                        source="systemctl --user is-active feishu-codex@corp-a",
+                        source="systemctl --user is-active focus@corp-a",
                         detail="inactive",
                     )
 
@@ -1086,9 +1086,9 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1102,16 +1102,16 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(manager.status_calls, ["default", "corp-a"])
             rendered = stdout.getvalue()
             self.assertIn("instance: default", rendered)
-            self.assertIn("systemctl --user is-active feishu-codex: active", rendered)
+            self.assertIn("systemctl --user is-active focus: active", rendered)
             self.assertIn("instance: corp-a", rendered)
-            self.assertIn("systemctl --user is-active feishu-codex@corp-a: inactive", rendered)
+            self.assertIn("systemctl --user is-active focus@corp-a: inactive", rendered)
 
     def test_handle_autostart_actions_supports_multiple_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def __init__(self) -> None:
@@ -1127,9 +1127,9 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1143,9 +1143,9 @@ class ManageCliTests(unittest.TestCase):
             self.assertEqual(manager.enabled, ["default", "corp-a"])
             rendered = stdout.getvalue()
             self.assertIn("instance: default", rendered)
-            self.assertIn("autostart enabled: feishu-codex", rendered)
+            self.assertIn("autostart enabled: focus", rendered)
             self.assertIn("instance: corp-a", rendered)
-            self.assertIn("autostart enabled: feishu-codex-corp-a", rendered)
+            self.assertIn("autostart enabled: focus-corp-a", rendered)
 
     def test_main_rejects_multiple_instances_for_run(self) -> None:
         stderr = io.StringIO()
@@ -1163,20 +1163,20 @@ class ManageCliTests(unittest.TestCase):
                 main(["--instance", "default", "instance", "list"])
 
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("`feishu-codex instance ...` 不接受顶层 `--instance`", stderr.getvalue())
+        self.assertIn("`focusctl instance ...` 不接受顶层 `--instance`", stderr.getvalue())
 
     def test_named_instance_commands_do_not_implicitly_create_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1193,13 +1193,13 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1222,14 +1222,14 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1248,14 +1248,14 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1300,13 +1300,13 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
             data_root = root / "data"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
                 },
                 clear=False,
             ):
@@ -1331,11 +1331,14 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
+            legacy_zsh_completion_path = (
+                root / ".config" / "feishu-codex" / "shell-completion" / "feishu-codex.zsh"
+            )
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -1347,34 +1350,50 @@ class ManageCliTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
-                    "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                    "FC_BIN_DIR": str(bin_dir),
-                    "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                    "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                    "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                    "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                    "FC_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
-                    "FC_ENV_FILE": str(env_file),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_BIN_DIR": str(bin_dir),
+                    "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                    "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                    "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                    "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                    "FOCUS_POWERSHELL_PROFILE_PATH": str(powershell_profile_path),
+                    "FOCUS_ENV_FILE": str(env_file),
+                    "HOME": str(root),
                 },
                 clear=False,
             ):
                 _ensure_instance_scaffold("corp-a")
                 with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
                     self.assertEqual(_handle_bootstrap_install(), 0)
-                    self.assertTrue((bash_completion_dir / "feishu-codex").exists())
+                    self.assertTrue((bash_completion_dir / "focus").exists())
                     self.assertTrue(zsh_completion_path.exists())
                     self.assertTrue(zsh_rc_path.exists())
                     self.assertTrue(powershell_completion_path.exists())
                     self.assertTrue(powershell_profile_path.exists())
+                    for legacy_name in ("feishu-codex", "feishu-codexctl", "feishu-codexd"):
+                        (bash_completion_dir / legacy_name).write_text("old completion\n", encoding="utf-8")
+                    legacy_zsh_completion_path.parent.mkdir(parents=True, exist_ok=True)
+                    legacy_zsh_completion_path.write_text("old zsh completion\n", encoding="utf-8")
+                    with zsh_rc_path.open("a", encoding="utf-8") as handle:
+                        handle.write(
+                            "\n"
+                            "# >>> feishu-codex zsh completion >>>\n"
+                            f'[[ -f "{legacy_zsh_completion_path}" ]] && source "{legacy_zsh_completion_path}"\n'
+                            "# <<< feishu-codex zsh completion <<<\n"
+                        )
                     self.assertEqual(_handle_uninstall(purge=False), 0)
 
-            self.assertFalse((bash_completion_dir / "feishu-codex").exists())
-            self.assertFalse((bash_completion_dir / "feishu-codexd").exists())
-            self.assertFalse((bash_completion_dir / "feishu-codexctl").exists())
+            self.assertFalse((bash_completion_dir / "focus").exists())
+            self.assertFalse((bash_completion_dir / "focusd").exists())
+            self.assertFalse((bash_completion_dir / "focusctl").exists())
             self.assertFalse((bash_completion_dir / "fcodex").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codex").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codexctl").exists())
+            self.assertFalse((bash_completion_dir / "feishu-codexd").exists())
             self.assertFalse(zsh_completion_path.exists())
+            self.assertFalse(legacy_zsh_completion_path.exists())
             self.assertFalse(zsh_rc_path.exists())
             self.assertFalse(powershell_completion_path.exists())
             self.assertFalse(powershell_profile_path.exists())
@@ -1386,13 +1405,13 @@ class ManageCliTests(unittest.TestCase):
             data_root = root / "data"
             bin_dir = root / "bin"
             bash_completion_dir = root / "completion" / "bash"
-            zsh_completion_path = root / "completion" / "zsh" / "feishu-codex.zsh"
+            zsh_completion_path = root / "completion" / "zsh" / "focus.zsh"
             zsh_rc_path = root / "shells" / "zshrc"
-            powershell_completion_path = root / "completion" / "powershell" / "feishu-codex.ps1"
+            powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             install_profile_path = root / "shells" / "install-profile.ps1"
             uninstall_profile_path = root / "shells" / "uninstall-profile.ps1"
             metadata_path = config_root / "shell-completion" / "powershell-install-paths.json"
-            env_file = config_root / "feishu-codex.env"
+            env_file = config_root / "focus.env"
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -1402,28 +1421,28 @@ class ManageCliTests(unittest.TestCase):
                     del definition
 
             install_env = {
-                "FC_CONFIG_ROOT": str(config_root),
-                "FC_DATA_ROOT": str(data_root),
-                "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                "FC_BIN_DIR": str(bin_dir),
-                "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                "FC_POWERSHELL_PROFILE_PATH": str(install_profile_path),
-                "FC_ENV_FILE": str(env_file),
+                "FOCUS_CONFIG_ROOT": str(config_root),
+                "FOCUS_DATA_ROOT": str(data_root),
+                "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                "FOCUS_BIN_DIR": str(bin_dir),
+                "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                "FOCUS_POWERSHELL_PROFILE_PATH": str(install_profile_path),
+                "FOCUS_ENV_FILE": str(env_file),
             }
             uninstall_env = {
-                "FC_CONFIG_ROOT": str(config_root),
-                "FC_DATA_ROOT": str(data_root),
-                "FC_GLOBAL_DATA_DIR": str(data_root / "_global"),
-                "FC_BIN_DIR": str(bin_dir),
-                "FC_BASH_COMPLETION_DIR": str(bash_completion_dir),
-                "FC_ZSH_COMPLETION_PATH": str(zsh_completion_path),
-                "FC_ZSH_RC_PATH": str(zsh_rc_path),
-                "FC_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
-                "FC_POWERSHELL_PROFILE_PATH": str(uninstall_profile_path),
-                "FC_ENV_FILE": str(env_file),
+                "FOCUS_CONFIG_ROOT": str(config_root),
+                "FOCUS_DATA_ROOT": str(data_root),
+                "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                "FOCUS_BIN_DIR": str(bin_dir),
+                "FOCUS_BASH_COMPLETION_DIR": str(bash_completion_dir),
+                "FOCUS_ZSH_COMPLETION_PATH": str(zsh_completion_path),
+                "FOCUS_ZSH_RC_PATH": str(zsh_rc_path),
+                "FOCUS_POWERSHELL_COMPLETION_PATH": str(powershell_completion_path),
+                "FOCUS_POWERSHELL_PROFILE_PATH": str(uninstall_profile_path),
+                "FOCUS_ENV_FILE": str(env_file),
             }
 
             with patch.dict(os.environ, install_env, clear=False):
@@ -1436,7 +1455,7 @@ class ManageCliTests(unittest.TestCase):
             self.assertTrue(metadata_path.exists())
 
             with patch.dict(os.environ, uninstall_env, clear=False):
-                os.environ.pop("FC_POWERSHELL_PROFILE_PATH", None)
+                os.environ.pop("FOCUS_POWERSHELL_PROFILE_PATH", None)
                 with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
                     self.assertEqual(_handle_uninstall(purge=False), 0)
 

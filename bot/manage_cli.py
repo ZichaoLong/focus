@@ -1,6 +1,4 @@
-"""
-Cross-platform management CLI for local feishu-codex installation.
-"""
+"""Cross-platform install/service helpers for local FOCUS checkouts."""
 
 from __future__ import annotations
 
@@ -63,7 +61,7 @@ class _ArgumentParser(argparse.ArgumentParser):
         super().error(sanitized)
 
 
-_MANAGED_SKILL_MARKER = ".feishu-codex-managed"
+_MANAGED_SKILL_MARKER = ".focus-managed"
 _WINDOWS_USER_PATH_METADATA_FILE = "windows-user-path.json"
 
 
@@ -285,12 +283,12 @@ def _hide_subcommand_from_help(
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = _ArgumentParser(
-        prog="feishu-codex",
+        prog="focusctl",
         description=(
-            "跨平台本地管理 CLI：负责安装、service 生命周期、配置入口和实例管理。\n\n"
+            "FOCUS 安装与 service lifecycle 管理内部入口。\n\n"
             "说明：\n"
             "- 首次安装与修复都请从仓库根目录执行 `bash install.sh` 或 `./install.ps1`\n"
-            "- `feishu-codex` 是唯一公开管理面；底层会调用原生 service manager\n"
+            "- 公开管理面是 `focusctl`；底层会调用原生 service manager\n"
             "  管理后台进程与“登录后自动启动”：Linux=systemd、macOS=LaunchAgent、Windows=Task Scheduler\n"
             "- 安装脚本会重建 shared wrapper，并为所有已知实例重建 service 定义/注册材料；\n"
             "  只刷新 `*.example` 并补齐缺失 scaffold，不覆盖现有配置或数据\n"
@@ -306,25 +304,25 @@ def _build_parser() -> argparse.ArgumentParser:
             "    # Windows PowerShell: .\\install.ps1\n"
             "\n"
             "  默认实例启动:\n"
-            "    feishu-codex config system --open\n"
-            "    feishu-codex start\n"
+            "    focusctl config system --open\n"
+            "    focusctl service start\n"
             "\n"
             "  多实例:\n"
-            "    feishu-codex instance create corp-a\n"
-            "    feishu-codex --instance corp-a config system --open\n"
-            "    feishu-codex --instance corp-a autostart enable\n"
-            "    feishu-codex --instance corp-a start\n"
+            "    focusctl instance create corp-a\n"
+            "    focusctl --instance corp-a config system --open\n"
+            "    focusctl --instance corp-a service autostart enable\n"
+            "    focusctl --instance corp-a service start\n"
             "\n"
             "  在目标目录启用发图 skill（可选）:\n"
-            "    feishu-codex skill install\n"
+            "    focusctl skill install\n"
             "\n"
             "  批量查看 / 控制多个实例:\n"
-            "    feishu-codex --instance default --instance corp-a status\n"
-            "    feishu-codex --instance default --instance corp-a autostart status\n"
+            "    focusctl --instance default service status\n"
+            "    focusctl service list\n"
         ),
         formatter_class=_HelpFormatter,
     )
-    parser.add_argument("--version", action="version", version=f"feishu-codex {__version__}")
+    parser.add_argument("--version", action="version", version=f"focusctl {__version__}")
     parser.add_argument(
         "--instance",
         action="append",
@@ -448,7 +446,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="创建、列出、删除命名实例。",
         description=(
             "实例管理。\n"
-            "注意：`feishu-codex instance ...` 不接受顶层 `--instance`；目标实例名写在子命令参数里。"
+            "注意：`focusctl instance ...` 不接受顶层 `--instance`；目标实例名写在子命令参数里。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -481,12 +479,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     skill_parser = subparsers.add_parser(
         "skill",
-        help="安装或卸载 feishu-codex 提供的工作区 skill。",
+        help="安装或卸载 FOCUS 提供的工作区 skill。",
         description=(
             "Skill 管理。\n"
-            "在当前目录 `.agents/skills` 安装或卸载 feishu-codex 自带的工作区 skills。\n"
+            "在当前目录 `.agents/skills` 安装或卸载 FOCUS 自带的工作区 skills。\n"
             "在 `~` 下执行时，home 下线程可发现；在仓库目录下执行时，只对该仓库生效。\n"
-            "注意：`feishu-codex skill ...` 不接受顶层 `--instance`。"
+            "注意：`focusctl skill ...` 不接受顶层 `--instance`。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -498,18 +496,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     skill_subparsers.add_parser(
         "install",
-        help="安装 feishu-codex 自带的受管 skills 到当前目录。",
+        help="安装 FOCUS 自带的受管 skills 到当前目录。",
         description=(
-            "把 feishu-codex 自带的受管 skills 安装到当前目录 `.agents/skills`。\n"
+            "把 FOCUS 自带的受管 skills 安装到当前目录 `.agents/skills`。\n"
             "当前包括：`feishu-send-image`、`feishu-scheduled-prompts`。"
         ),
         formatter_class=_HelpFormatter,
     )
     skill_subparsers.add_parser(
         "uninstall",
-        help="卸载当前目录下 feishu-codex 受管安装的 skills。",
+        help="卸载当前目录下 FOCUS 受管安装的 skills。",
         description=(
-            "删除当前目录 `.agents/skills` 下 feishu-codex 受管安装的 skills；"
+            "删除当前目录 `.agents/skills` 下 FOCUS 受管安装的 skills；"
             "不会删除其他来源的 skills。"
         ),
         formatter_class=_HelpFormatter,
@@ -565,12 +563,12 @@ def _managed_skill_marker_path(skill_dir: pathlib.Path) -> pathlib.Path:
 def _write_managed_skill_marker(skill_dir: pathlib.Path) -> None:
     skill_name = pathlib.Path(skill_dir).name
     _managed_skill_marker_path(skill_dir).write_text(
-        f"managed_by=feishu-codex\nskill={skill_name}\n",
+        f"managed_by=focus\nskill={skill_name}\n",
         encoding="utf-8",
     )
 
 
-def _is_feishu_codex_managed_skill(skill_dir: pathlib.Path) -> bool:
+def _is_focus_managed_skill(skill_dir: pathlib.Path) -> bool:
     marker = _managed_skill_marker_path(skill_dir)
     if not marker.exists():
         return False
@@ -579,7 +577,7 @@ def _is_feishu_codex_managed_skill(skill_dir: pathlib.Path) -> bool:
     except OSError:
         return False
     skill_name = pathlib.Path(skill_dir).name
-    return "managed_by=feishu-codex" in contents and f"skill={skill_name}" in contents
+    return "managed_by=focus" in contents and f"skill={skill_name}" in contents
 
 
 def _skill_tree_matches_source(skill_dir: pathlib.Path, source_dir: pathlib.Path) -> bool:
@@ -653,10 +651,9 @@ def _wrapper_path(command_name: str) -> pathlib.Path:
 
 def _service_daemon_command(instance_name: str) -> tuple[str, ...]:
     return (
-        str(_wrapper_path("feishu-codex")),
+        str(_wrapper_path("focusd")),
         "--instance",
         validate_instance_name(instance_name),
-        "run",
     )
 
 
@@ -691,9 +688,9 @@ def _write_wrapper(path: pathlib.Path, module_name: str) -> None:
 
 def _install_wrappers() -> pathlib.Path:
     bin_dir = default_user_bin_dir()
-    _write_wrapper(bin_dir / "feishu-codex", "bot.manage_cli")
-    _write_wrapper(bin_dir / "feishu-codexd", "bot.__main__")
-    _write_wrapper(bin_dir / "feishu-codexctl", "bot.feishu_codexctl")
+    _write_wrapper(bin_dir / "focus", "bot.fcodex")
+    _write_wrapper(bin_dir / "focusd", "bot.__main__")
+    _write_wrapper(bin_dir / "focusctl", "bot.focusctl")
     _write_wrapper(bin_dir / "fcodex", "bot.fcodex")
     return bin_dir
 
@@ -790,8 +787,8 @@ def _print_install_summary(
         print(f"zsh completion: {completion_result.zsh_script_path}")
     if completion_result.powershell_script_path is not None:
         print(f"PowerShell completion: {completion_result.powershell_script_path}")
-    print("  - 本地服务进程管理 feishu-codex --help")
-    print("  - 本地查看、管理 binding / thread 状态  feishu-codexctl --help")
+    print("  - Codex TUI 工作入口 focus --help 或 fcodex --help")
+    print("  - 本地管理 focusctl --help")
     print(f"已重建实例: {', '.join(rebuilt_instances)}。不覆盖各实例现有用户配置")
     if not (shutil.which("codex") or detect_stable_codex_command()):
         print("警告: 未检测到 `codex` 命令，请先安装 Codex CLI。")
@@ -800,21 +797,21 @@ def _print_install_summary(
     print("")
     print("下一步:")
     print("  1. 配置飞书应用、provider 环境变量")
-    print(f"    - feishu-codex config --open system")
-    print(f"    - feishu-codex config --open env（按需）")
+    print(f"    - focusctl config system --open")
+    print(f"    - focusctl config env --open（按需）")
     print("  2. 启动服务并设置登陆后自动启动")
-    print("    - feishu-codex start")
-    print("    - feishu-codex autostart enable")
+    print("    - focusctl service start")
+    print("    - focusctl service autostart enable")
     print("  3. 飞书侧初始化")
-    print("    - 查看初始化口令 feishu-codex config init-token")
+    print("    - 查看初始化口令 focusctl config init-token")
     print("    - 在飞书侧发送 /init <token>")
     print("  4. 新建并配置命名实例")
-    print("    - feishu-codex instance create corp-a")
-    print("    - feishu-codex --instance corp-a start|autostart|config ...")
-    print("  5. 如需在某个目录下启用 feishu-codex 附带 skills（可选）")
-    print("    - 先 cd 到目标目录，再执行 feishu-codex skill install")
-    print("    - 如需移除，回到同一目录执行 feishu-codex skill uninstall")
-    print("    - 注意：feishu-codex uninstall/purge 不会删除各工作区中的 .agents/skills")
+    print("    - focusctl instance create corp-a")
+    print("    - focusctl --instance corp-a service start")
+    print("  5. 如需在某个目录下启用 FOCUS 附带 skills（可选）")
+    print("    - 先 cd 到目标目录，再执行 focusctl skill install")
+    print("    - 如需移除，回到同一目录执行 focusctl skill uninstall")
+    print("    - 注意：focusctl uninstall/purge 不会删除各工作区中的 .agents/skills")
     if (
         completion_result.bash_dir is not None
         or completion_result.zsh_script_path is not None
@@ -823,7 +820,7 @@ def _print_install_summary(
         print("  6. Shell completion")
         if completion_result.bash_dir is not None:
             print("    - Bash：新开一个 Bash shell 通常会自动生效")
-            print(f"    - 当前 shell 也可手动执行 source {completion_result.bash_dir / 'feishu-codex'}")
+            print(f"    - 当前 shell 也可手动执行 source {completion_result.bash_dir / 'focusctl'}")
         if completion_result.zsh_script_path is not None:
             if completion_result.zsh_rc_path is not None:
                 print(f"    - zsh：已写入自动加载钩子 {completion_result.zsh_rc_path}；新开 shell 即可生效")
@@ -981,7 +978,7 @@ def _handle_config(instance_name: str, target: str | None, *, open_editor: bool)
     candidates = {
         "system": paths.config_dir / "system.yaml",
         "codex": paths.config_dir / "codex.yaml",
-        "env": default_config_root() / "feishu-codex.env",
+        "env": default_config_root() / "focus.env",
         "init-token": paths.config_dir / "init.token",
     }
     if target is None:
@@ -999,14 +996,14 @@ def _handle_config(instance_name: str, target: str | None, *, open_editor: bool)
 def _remove_wrappers() -> None:
     bin_dir = default_user_bin_dir()
     if is_windows():
-        for name in ("feishu-codex", "feishu-codexd", "feishu-codexctl", "fcodex"):
+        for name in ("focus", "focusd", "focusctl", "fcodex", "feishu-codex", "feishu-codexd", "feishu-codexctl"):
             try:
                 (bin_dir / f"{name}.cmd").unlink()
             except FileNotFoundError:
                 pass
         _remove_windows_user_path()
     else:
-        for name in ("feishu-codex", "feishu-codexd", "feishu-codexctl", "fcodex"):
+        for name in ("focus", "focusd", "focusctl", "fcodex", "feishu-codex", "feishu-codexd", "feishu-codexctl"):
             try:
                 (bin_dir / name).unlink()
             except FileNotFoundError:
@@ -1050,7 +1047,7 @@ def _handle_instance_create(instance_name: str) -> int:
     print(f"已初始化实例: {normalized}")
     print(f"config dir: {paths.config_dir}")
     print(f"data dir: {paths.data_dir}")
-    print(f"shared env: {default_config_root() / 'feishu-codex.env'}")
+    print(f"shared env: {default_config_root() / 'focus.env'}")
     return 0
 
 
@@ -1086,7 +1083,7 @@ def _remove_empty_parent(path: pathlib.Path, *, stop_at: pathlib.Path) -> None:
 def _handle_instance_remove(instance_name: str) -> int:
     normalized = validate_instance_name(instance_name)
     if normalized == DEFAULT_INSTANCE_NAME:
-        raise ValueError("不能删除 `default` 实例；如需整体清理，请用 `feishu-codex uninstall` 或 `purge`。")
+        raise ValueError("不能删除 `default` 实例；如需整体清理，请用 `focusctl uninstall` 或 `purge`。")
 
     paths = resolve_instance_paths(normalized)
 
@@ -1131,12 +1128,12 @@ def _handle_skill_install() -> int:
         if target_dir.exists():
             if not target_dir.is_dir():
                 raise ValueError(f"skill 目标路径已存在且不是目录：{target_dir}")
-            if not _is_feishu_codex_managed_skill(target_dir):
+            if not _is_focus_managed_skill(target_dir):
                 if _skill_tree_matches_source(target_dir, source_dir):
                     action = "keep"
                 else:
                     raise ValueError(
-                        "目标 skill 已存在且不是 feishu-codex 受管安装；"
+                        "目标 skill 已存在且不是 FOCUS 受管安装；"
                         f"请先手动处理：{target_dir}"
                     )
         install_plan.append((spec, source_dir, target_dir, action))
@@ -1166,9 +1163,9 @@ def _handle_skill_uninstall() -> int:
             continue
         if not target_dir.is_dir():
             raise ValueError(f"skill 目标路径不是目录：{target_dir}")
-        if not _is_feishu_codex_managed_skill(target_dir):
+        if not _is_focus_managed_skill(target_dir):
             raise ValueError(
-                "目标 skill 不是 feishu-codex 受管安装；拒绝删除："
+                "目标 skill 不是 FOCUS 受管安装；拒绝删除："
                 f" {target_dir}"
             )
         shutil.rmtree(target_dir)
@@ -1176,7 +1173,7 @@ def _handle_skill_uninstall() -> int:
         print(f"已卸载 skill: {spec.name}")
         print(f"target: {target_dir}")
     if not removed_any:
-        print("当前目录没有 feishu-codex 受管安装的 skill。")
+        print("当前目录没有 FOCUS 受管安装的 skill。")
     return 0
 
 
@@ -1213,7 +1210,7 @@ def main(argv: list[str] | None = None) -> None:
             )
         if args.command == "instance":
             if requested_instances:
-                raise ValueError("`feishu-codex instance ...` 不接受顶层 `--instance`；请把目标实例写在子命令参数里。")
+                raise ValueError("`focusctl instance ...` 不接受顶层 `--instance`；请把目标实例写在子命令参数里。")
             if args.instance_command == "create":
                 raise SystemExit(_handle_instance_create(args.name))
             if args.instance_command == "list":
@@ -1222,7 +1219,7 @@ def main(argv: list[str] | None = None) -> None:
                 raise SystemExit(_handle_instance_remove(args.name))
         if args.command == "skill":
             if requested_instances:
-                raise ValueError("`feishu-codex skill ...` 不接受顶层 `--instance`。")
+                raise ValueError("`focusctl skill ...` 不接受顶层 `--instance`。")
             if args.skill_command == "install":
                 raise SystemExit(_handle_skill_install())
             if args.skill_command == "uninstall":

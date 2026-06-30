@@ -122,11 +122,11 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         self.assertIn("线程：`未绑定`", overview_markdown)
         self.assertIn("本轮：权限 `Workspace` | 模型 `Auto` | 推理 `Auto`", overview_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", start_markdown)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", start_markdown)
+        self.assertIn("`focusctl thread list --scope cwd`", start_markdown)
         self.assertIn("测试规则", start_markdown)
         self.assertNotIn("`/profile", thread_settings_markdown)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", threads_markdown)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", threads_markdown)
+        self.assertIn("`focusctl thread list --scope cwd`", threads_markdown)
         self.assertIn(f"`{resume_command.feishu_usage}`", threads_markdown)
         self.assertEqual(
             [item["text"]["content"] for item in start_help["elements"][2]["actions"]],

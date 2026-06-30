@@ -1,29 +1,28 @@
-# `feishu-codexctl` Command Matrix
+# `focusctl` Command Matrix
 
-Chinese original: `docs/contracts/feishu-codexctl-command-matrix.zh-CN.md`
+Chinese original: `docs/contracts/focusctl-command-matrix.zh-CN.md`
 
-This file defines the formal local `feishu-codexctl` management surface.
+This file defines the formal local `focusctl` management surface.
 
 It answers:
 
-- which resources `feishu-codexctl` owns
+- which resources `focusctl` owns
 - which commands are read-only vs mutating
 - how thread targets are selected
 - how it maps to the Feishu command surface
 
 ## 1. Core Positioning
 
-- `feishu-codexctl` is the local inspection / management surface. It is not a second Codex frontend.
-- Use `fcodex` when you want to continue a live thread locally.
-- Use `feishu-codex` when you want install, repair, service lifecycle, or instance management.
-- Use `feishu-codexctl` when you want local service / binding / thread status or local thread-scoped management.
+- `focusctl` is the local FOCUS management surface. It is not a second Codex frontend.
+- Use `focus` or `fcodex` when you want to continue a live thread locally.
+- Use `focusctl` for install, repair, service lifecycle, instance management, local service / binding / thread status, and local thread-scoped management.
 
 ## 2. Instance and Target Resolution
 
-- Every command except `instance list` accepts `--instance <name>`.
+- Instance-directory commands such as `instance ...` are global; other instance-scoped commands accept `--instance <name>`.
 - An explicit `--instance` always wins.
 - A named instance used here must already have been created via
-  `feishu-codex instance create <name>`; `feishu-codexctl` never creates it
+  `focusctl instance create <name>`; `focusctl` never creates it
   implicitly.
 - Otherwise resolution follows `preferred-running -> unique-running -> default-running -> current-instance-paths`.
 - `thread status`, `thread bindings`, `thread goal`, `thread attach`, and `thread detach` require exactly one of:
@@ -38,14 +37,18 @@ It answers:
 
 ## 3. Resource Layers
 
-`feishu-codexctl` is split into six resource groups:
+`focusctl` is split into these resource groups:
 
+- `config`
 - `instance`
 - `service`
 - `binding`
 - `prompt`
 - `thread`
 - `image`
+- `skill`
+- `uninstall`
+- `purge`
 
 Important mental model:
 
@@ -60,27 +63,35 @@ Do not conflate them.
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl instance list` | List running local instances, owner pid, control endpoint, and app-server URL | read-only | none |
+| `focusctl instance create <name>` | Create a named instance and prepare its config/data directories and service definition | mutating | none |
+| `focusctl instance list` | List known local instances and their directories; this is the known-instance view, not the running-instance view | read-only | none |
+| `focusctl instance remove <name>` | Remove a named instance and its instance-level service registration material; cannot remove `default` | mutating | none |
 
 ### 4.2 `service`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] service status` | Show the target instance's service / control-plane / app-server overview | read-only | no exact single command |
-| `feishu-codexctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend for recovery without restarting the `feishu-codex` service | mutating | Feishu `/reset-backend` |
-| `feishu-codexctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
+| `focusctl [--instance <name>] service start` | Start the target instance background service | mutating | none |
+| `focusctl [--instance <name>] service stop` | Stop the target instance background service | mutating | none |
+| `focusctl [--instance <name>] service restart` | Restart the target instance background service | mutating | none |
+| `focusctl [--instance <name>] service status` | Show the target instance's service / control-plane / app-server overview | read-only | no exact single command |
+| `focusctl service list` | List currently running local instances, owner pid, control endpoint, and app-server URL | read-only | none |
+| `focusctl [--instance <name>] service autostart enable\|disable\|status` | Manage login-time autostart for the target instance | mutating / read-only | none |
+| `focusctl [--instance <name>] service log [--lines <n>]` | Tail the target instance log | read-only | none |
+| `focusctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend for recovery without restarting the FOCUS service | mutating | Feishu `/reset-backend` |
+| `focusctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
 
 ### 4.3 `binding`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] binding list` | List bindings visible in the target instance | read-only | none |
-| `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, current-instance interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
-| `feishu-codexctl [--instance <name>] binding attach <binding_id>` | Restore Feishu push for one binding | mutating | Feishu `/attach binding` |
-| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping the binding record | mutating | binding-scoped counterpart of Feishu `/detach` |
-| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Delete one local binding record | mutating | none |
-| `feishu-codexctl [--instance <name>] binding clear-all` | Delete all local binding records in the target instance | mutating | none |
-| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Delete stale binding records that point at threads that can no longer be verified as recoverable; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
+| `focusctl [--instance <name>] binding list` | List bindings visible in the target instance | read-only | none |
+| `focusctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, current-instance interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
+| `focusctl [--instance <name>] binding attach <binding_id>` | Restore Feishu push for one binding | mutating | Feishu `/attach binding` |
+| `focusctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping the binding record | mutating | binding-scoped counterpart of Feishu `/detach` |
+| `focusctl [--instance <name>] binding clear <binding_id>` | Delete one local binding record | mutating | none |
+| `focusctl [--instance <name>] binding clear-all` | Delete all local binding records in the target instance | mutating | none |
+| `focusctl [--instance <name>] binding clear-stale [--dry-run]` | Delete stale binding records that point at threads that can no longer be verified as recoverable; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
 
 `binding clear` / `clear-all` / `clear-stale` are not `detach`:
 
@@ -101,7 +112,7 @@ Do not conflate them.
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> \| --text-file <file>) [--synthetic-source <label>] [--display-mode silent\|announce]` | Use the target instance control plane to synthetically start one new prompt turn on a binding | mutating | none; this is the local control-plane synthetic prompt entry |
+| `focusctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> \| --text-file <file>) [--synthetic-source <label>] [--display-mode silent\|announce]` | Use the target instance control plane to synthetically start one new prompt turn on a binding | mutating | none; this is the local control-plane synthetic prompt entry |
 
 Notes:
 
@@ -113,20 +124,20 @@ Notes:
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | Browse persisted threads; default is current-directory scope | read-only | target-discovery counterpart of Feishu `/threads` |
-| `feishu-codexctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show backend status, live runtime owner / holders, and bound / attached / detached bindings for one thread | read-only | no exact single command |
-| `feishu-codexctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show all bindings currently pointing at one thread | read-only | none |
-| `feishu-codexctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | Show the current goal for one thread; this is the default show form | read-only | Feishu `/goal` |
-| `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | Apply a raw persisted-thread goal mutation for debugging or ops; at least one of `--objective` or `--status` is required | mutating | Feishu `/goal set <objective>` for objective writes; no exact Feishu equivalent for raw `--status active\|paused` edits |
-| `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | Clear the current goal on one thread | mutating | Feishu `/goal clear` |
-| `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | Archive one or more target threads; after a successful archive, clear local bindings that still point to it in the target instance, other reachable running instances, and known stopped instances | mutating | local operational counterpart of Feishu `/archive`; batch and cross-instance local binding cleanup are local-CLI only |
-| `feishu-codexctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | Delete local binding records left behind for archived threads; does not call upstream archive; `--thread-id` deletes bindings pointing at one specified thread, while `--all` queries upstream archived threads before deleting matching bindings; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
-| `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
-| `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |
+| `focusctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>]` | Browse persisted threads; default is current-directory scope | read-only | target-discovery counterpart of Feishu `/threads` |
+| `focusctl [--instance <name>] thread status (--thread-id <id> \| --thread-name <name>)` | Show backend status, live runtime owner / holders, and bound / attached / detached bindings for one thread | read-only | no exact single command |
+| `focusctl [--instance <name>] thread bindings (--thread-id <id> \| --thread-name <name>)` | Show all bindings currently pointing at one thread | read-only | none |
+| `focusctl [--instance <name>] thread goal (--thread-id <id> \| --thread-name <name>)` | Show the current goal for one thread; this is the default show form | read-only | Feishu `/goal` |
+| `focusctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | Apply a raw persisted-thread goal mutation for debugging or ops; at least one of `--objective` or `--status` is required | mutating | Feishu `/goal set <objective>` for objective writes; no exact Feishu equivalent for raw `--status active\|paused` edits |
+| `focusctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | Clear the current goal on one thread | mutating | Feishu `/goal clear` |
+| `focusctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | Archive one or more target threads; after a successful archive, clear local bindings that still point to it in the target instance, other reachable running instances, and known stopped instances | mutating | local operational counterpart of Feishu `/archive`; batch and cross-instance local binding cleanup are local-CLI only |
+| `focusctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | Delete local binding records left behind for archived threads; does not call upstream archive; `--thread-id` deletes bindings pointing at one specified thread, while `--all` queries upstream archived threads before deleting matching bindings; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
+| `focusctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
+| `focusctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |
 
 Implementation note:
 
-- local `thread detach` goes through the running `feishu-codex` service control plane
+- local `thread detach` goes through the running FOCUS service control plane
 - the lower layer may still call upstream `thread/unsubscribe`, but that is an internal protocol detail, not the user-facing command name
 - local `thread archive` calls upstream Codex archive exactly once; after that succeeds, binding cleanup is split by instance state:
   - other running instances are cleaned through their service control plane, and that local cleanup does not call upstream archive again
@@ -140,7 +151,7 @@ Implementation note:
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
-| `feishu-codexctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image file to all currently attached Feishu bindings on the target thread | mutating | none; this is a local control-plane action |
+| `focusctl [--instance <name>] image send --path <file> [--thread-id <id> \| --thread-name <name>]` | Send one local image file to all currently attached Feishu bindings on the target thread | mutating | none; this is a local control-plane action |
 
 ## 5. Mapping to Feishu
 
@@ -163,9 +174,9 @@ Implementation note:
 
 The following expectations are explicitly wrong:
 
-- `feishu-codexctl` is not a local UI for Feishu `/threads`
-- `feishu-codexctl` does not enter the Codex TUI
+- `focusctl` is not a local UI for Feishu `/threads`
+- `focusctl` does not enter the Codex TUI
 - `binding clear` does not mean “stop push for the current thread”
 - `thread goal set --status active|paused` is not a runtime recovery / pause command; it does not promise load, settings sync, or immediate execution
 
-If any `feishu-codexctl` subcommand is added, removed, renamed, or changes its selector rules, instance resolution, or Feishu mapping, this document must change with the code.
+If any `focusctl` subcommand is added, removed, renamed, or changes its selector rules, instance resolution, or Feishu mapping, this document must change with the code.

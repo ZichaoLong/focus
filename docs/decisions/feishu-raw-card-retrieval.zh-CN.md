@@ -3,7 +3,7 @@
 另见：
 
 - `docs/decisions/feishu-card-text-projection.zh-CN.md`：当前 best-effort 文本投影边界
-- `docs/architecture/feishu-codex-design.zh-CN.md`：当前架构与模块边界
+- `docs/architecture/focus-design.zh-CN.md`：当前架构与模块边界
 - `docs/contracts/feishu-thread-lifecycle.zh-CN.md`：执行卡与终态收口生命周期
 - `docs/doc-index.zh-CN.md`：文档索引
 
@@ -12,7 +12,7 @@
 用户希望同时满足两个目标：
 
 - 终态卡在飞书里正确显示分级标题、列表、引用、代码、链接等结构
-- 终态卡被直接发送、直接转发、或合并转发后，`feishu-codex` 仍能尽可能高保真地读取其内容，而不是退化成纯文本猜测
+- 终态卡被直接发送、直接转发、或合并转发后，FOCUS 仍能尽可能高保真地读取其内容，而不是退化成纯文本猜测
 
 围绕这个目标，之前的讨论里出现过两个过度简化的判断：
 

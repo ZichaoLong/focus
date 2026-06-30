@@ -63,7 +63,7 @@ def ensure_env_template(path: pathlib.Path | str | None = None) -> pathlib.Path:
         "\n".join(
             [
                 "# Codex provider environment variables.",
-                "# Restart feishu-codex after edits when the background service is running.",
+                "# Restart FOCUS after edits when the background service is running.",
                 "#",
                 "# Example:",
                 "# OPENAI_API_KEY=your-api-key",

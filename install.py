@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bootstrap installer for local feishu-codex development checkouts.
+Bootstrap installer for local FOCUS development checkouts.
 """
 
 from __future__ import annotations

@@ -50,7 +50,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 当前仓库已正式支持：
 
 - `binding/submit-prompt`
-- `feishu-codexctl prompt send --binding-id ...`
+- `focusctl prompt send --binding-id ...`
 
 这条链路适合：
 
@@ -62,7 +62,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 相关参考：
 
 - [docs/contracts/scheduled-prompts.zh-CN.md](../../docs/contracts/scheduled-prompts.zh-CN.md)
-- [docs/contracts/feishu-codexctl-command-matrix.zh-CN.md](../../docs/contracts/feishu-codexctl-command-matrix.zh-CN.md)
+- [docs/contracts/focusctl-command-matrix.zh-CN.md](../../docs/contracts/focusctl-command-matrix.zh-CN.md)
 
 ### 3.2 上游已具备 thread 级执行原语
 
@@ -271,12 +271,12 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 ### 6.2 本地 CLI 草案
 
-建议主入口先放在 `feishu-codexctl` 下。
+建议主入口先放在 `focusctl` 下。
 
 可接受的方向例如：
 
-- `feishu-codexctl thread send-message ...`
-- `feishu-codexctl thread inbox ...`
+- `focusctl thread send-message ...`
+- `focusctl thread inbox ...`
 
 本文当前不锁死子命令拼写，但锁死三点：
 
@@ -461,7 +461,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 - `docs/decisions/`
   - 为什么只支持同实例
   - 为什么采用 mailbox 而不是 binding-first synthetic prompt
-- `docs/contracts/feishu-codexctl-command-matrix.zh-CN.md`
+- `docs/contracts/focusctl-command-matrix.zh-CN.md`
   - 新增 CLI 命令面
 
 在真正实现前，本文仍只是 `_work` 草案。

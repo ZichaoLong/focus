@@ -12,7 +12,7 @@
 - 飞书侧 thread 浏览怎么工作
 - `/resume` 现在承诺什么
 - `/archive` 会改什么
-- 本地 `fcodex resume` 在 shared-backend 模型里的含义
+- 本地 `focus resume` / `fcodex resume` 在 shared-backend 模型里的含义
 
 本文不定义：
 
@@ -75,9 +75,9 @@
 - 修改 runtime-setting family
 - 隐含任何 profile 或 memory 语义
 
-## 6. 本地 `fcodex` continuation
+## 6. 本地 `focus` / `fcodex` continuation
 
-`fcodex resume <thread_id|thread_name>` 是 live shared-backend thread 的本地继续入口。
+`focus resume <thread_id|thread_name>` 与 `fcodex resume <thread_id|thread_name>` 是 live shared-backend thread 的本地继续入口。
 
 它承诺：
 
@@ -85,7 +85,7 @@
 - 相同的跨实例 loaded/runtime 安全检查
 - 把本地 TUI continuation 接到正确的 backend 上
 
-`fcodex -p/--profile` 仍只保留为上游 Codex 的启动参数。
+`focus -p/--profile` 与 `fcodex -p/--profile` 仍只保留为上游 Codex 的启动参数。
 本项目不会持久化它、不会把它映射进飞书，也不会把它当成 thread truth。
 
 ## 7. 非目标
@@ -93,7 +93,7 @@
 本项目不再承诺：
 
 - “飞书 `/resume` 会回放旧 thread profile”
-- “飞书与 `fcodex` 共享一个项目自管的 profile 事实源”
+- “飞书与 `focus` / `fcodex` 共享一个项目自管的 profile 事实源”
 - “thread unloaded 后仍带着一个项目自管的 next-load profile 层”
 
 当前合同是刻意收窄的：

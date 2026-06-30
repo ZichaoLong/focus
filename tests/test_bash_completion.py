@@ -17,18 +17,18 @@ class ShellCompletionTests(unittest.TestCase):
         rendered = render_bash_completion_script(venv_python=pathlib.Path("/tmp/venv/bin/python"))
 
         self.assertIn("/tmp/venv/bin/python", rendered)
-        self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codex feishu-codex", rendered)
-        self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codexctl feishu-codexctl", rendered)
-        self.assertIn("complete -o bashdefault -o default -F _fc_complete_feishu_codexd feishu-codexd", rendered)
-        self.assertIn("complete -o bashdefault -o default -F _fc_complete_fcodex fcodex", rendered)
+        self.assertIn("complete -o bashdefault -o default -F _focus_complete_focus focus", rendered)
+        self.assertIn("complete -o bashdefault -o default -F _focus_complete_focusctl focusctl", rendered)
+        self.assertIn("complete -o bashdefault -o default -F _focus_complete_focusd focusd", rendered)
+        self.assertIn("complete -o bashdefault -o default -F _focus_complete_fcodex fcodex", rendered)
 
     def test_rendered_zsh_script_embeds_python_path_and_compdef(self) -> None:
         rendered = render_zsh_completion_script(venv_python=pathlib.Path("/tmp/venv/bin/python"))
 
         self.assertIn("/tmp/venv/bin/python", rendered)
         self.assertIn("autoload -Uz compinit", rendered)
-        self.assertIn("compdef _fc_complete_feishu_codex feishu-codex", rendered)
-        self.assertIn("compdef _fc_complete_fcodex fcodex", rendered)
+        self.assertIn("compdef _focus_complete_focus focus", rendered)
+        self.assertIn("compdef _focus_complete_fcodex fcodex", rendered)
 
     def test_rendered_powershell_script_embeds_python_path_and_registrations(self) -> None:
         rendered = render_powershell_completion_script(venv_python=pathlib.Path("/tmp/venv/Scripts/python.exe"))
@@ -36,9 +36,9 @@ class ShellCompletionTests(unittest.TestCase):
         self.assertIn("/tmp/venv/Scripts/python.exe", rendered)
         self.assertIn("Register-ArgumentCompleter -Native -CommandName $commandName", rendered)
         self.assertIn("bot.shell_completion complete", rendered)
-        self.assertIn("feishu-codexctl", rendered)
+        self.assertIn("focusctl", rendered)
 
-    def test_feishu_codex_completes_instance_option_and_remove_target(self) -> None:
+    def test_focusctl_completes_instance_option_and_remove_target(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             config_root = root / "config"
@@ -48,71 +48,71 @@ class ShellCompletionTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(config_root),
-                    "FC_DATA_ROOT": str(data_root),
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
                 },
                 clear=False,
             ):
-                instance_matches = complete_words("feishu-codex", ["feishu-codex", "--instance", ""], 2)
-                remove_matches = complete_words("feishu-codex", ["feishu-codex", "instance", "remove", ""], 3)
+                instance_matches = complete_words("focusctl", ["focusctl", "--instance", ""], 2)
+                remove_matches = complete_words("focusctl", ["focusctl", "instance", "remove", ""], 3)
 
         self.assertEqual(instance_matches, ["corp-a", "corp-b", "default"])
         self.assertEqual(remove_matches, ["corp-a", "corp-b"])
 
     def test_public_commands_complete_version_option(self) -> None:
-        self.assertIn("--version", complete_words("feishu-codex", ["feishu-codex", "--"], 1))
-        self.assertIn("--version", complete_words("feishu-codexctl", ["feishu-codexctl", "--"], 1))
-        self.assertIn("--version", complete_words("feishu-codexd", ["feishu-codexd", "--"], 1))
+        self.assertIn("--version", complete_words("focus", ["focus", "--"], 1))
+        self.assertIn("--version", complete_words("focusctl", ["focusctl", "--"], 1))
+        self.assertIn("--version", complete_words("focusd", ["focusd", "--"], 1))
         self.assertIn("--version", complete_words("fcodex", ["fcodex", "--"], 1))
 
-    def test_feishu_codexctl_completes_thread_goal_subcommands(self) -> None:
+    def test_focusctl_completes_thread_goal_subcommands(self) -> None:
         matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "goal", ""],
+            "focusctl",
+            ["focusctl", "thread", "goal", ""],
             3,
         )
 
         self.assertEqual(matches, ["show", "set", "clear"])
 
-    def test_feishu_codexctl_completes_clear_archived_bindings(self) -> None:
+    def test_focusctl_completes_clear_archived_bindings(self) -> None:
         action_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "clear"],
+            "focusctl",
+            ["focusctl", "thread", "clear"],
             2,
         )
         option_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "clear-archived-bindings", "--"],
+            "focusctl",
+            ["focusctl", "thread", "clear-archived-bindings", "--"],
             3,
         )
 
         self.assertEqual(action_matches, ["clear-archived-bindings"])
         self.assertEqual(option_matches, ["--thread-id", "--all", "--dry-run", "--help"])
 
-    def test_feishu_codexctl_completes_binding_clear_stale(self) -> None:
+    def test_focusctl_completes_binding_clear_stale(self) -> None:
         action_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "binding", "clear-"],
+            "focusctl",
+            ["focusctl", "binding", "clear-"],
             2,
         )
         option_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "binding", "clear-stale", "--"],
+            "focusctl",
+            ["focusctl", "binding", "clear-stale", "--"],
             3,
         )
 
         self.assertEqual(action_matches, ["clear-all", "clear-stale"])
         self.assertEqual(option_matches, ["--dry-run", "--help"])
 
-    def test_feishu_codexctl_completes_thread_goal_set_options_and_status(self) -> None:
+    def test_focusctl_completes_thread_goal_set_options_and_status(self) -> None:
         option_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "goal", "set", "--"],
+            "focusctl",
+            ["focusctl", "thread", "goal", "set", "--"],
             4,
         )
         status_matches = complete_words(
-            "feishu-codexctl",
-            ["feishu-codexctl", "thread", "goal", "set", "--status", "p"],
+            "focusctl",
+            ["focusctl", "thread", "goal", "set", "--status", "p"],
             5,
         )
 

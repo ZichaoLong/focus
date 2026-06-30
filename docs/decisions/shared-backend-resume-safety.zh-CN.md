@@ -4,10 +4,10 @@
 
 另见：
 
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`：当前 shared backend 与 wrapper 的运行时模型
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`：当前 shared backend 与 wrapper 的运行时模型
 - `docs/contracts/runtime-control-surface.zh-CN.md`：`/status`、`/detach` 与本地管理面的共享状态词汇
 - `docs/contracts/thread-profile-semantics.zh-CN.md`：精确的命令与 wrapper 语义
-- `docs/architecture/feishu-codex-design.zh-CN.md`：架构与仓库边界
+- `docs/architecture/focus-design.zh-CN.md`：架构与仓库边界
 
 ## 1. 上游基线
 
@@ -17,7 +17,7 @@
   `b630ce9a4e754d35a1f33e4366ba638d18626142`），核对日期为 2026-04-03
 - 如果本文后续需要引用具体上游源码位置，应优先使用绑定到该基线
   commit 的 `openai/codex` permalink，而不是开发者本机 checkout 路径
-- 本文只聚焦安全边界与 `/resume` 语义；wrapper 运行时细节不再在这里重复展开，而是以 `fcodex-shared-backend-runtime` 为准。
+- 本文只聚焦安全边界与 `/resume` 语义；wrapper 运行时细节不再在这里重复展开，而是以 `focus-shared-backend-runtime` 为准。
 
 ## 2. 问题陈述
 
@@ -63,7 +63,7 @@
 
 在当前仓库里，这条规则又拆成两层：
 
-- **实例内**：Feishu 与 `fcodex` 可以安全共享同一个实例 backend
+- **实例内**：Feishu 与 `focus` / `fcodex` 可以安全共享同一个实例 backend
 - **实例间**：通过机器级 `ThreadRuntimeLease` 保证同一 thread 不会被两个实例 backend 同时 live attach
 
 ## 5. Backend 安全边界
@@ -78,9 +78,9 @@
 - 已加载线程状态在这个 backend 内共享
 - 多个本地 TUI 窗口附着到同一个 backend，也不会引入跨进程分叉
 
-shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`。
+shared backend 与 `focus` / `fcodex` wrapper 具体如何实现，见 `docs/architecture/focus-shared-backend-runtime.zh-CN.md`。
 
-### 5.2 另一个 `feishu-codex` 实例 backend
+### 5.2 另一个 FOCUS 实例 backend
 
 这是多实例模式新增的一条边界。
 
@@ -104,9 +104,9 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 
 特性：
 
-- `feishu-codex` 无法知道这个本地 TUI 是空闲、关闭，还是即将写入
-- `feishu-codex` 不能安全地假设自己对该线程拥有独占所有权
-- 如果要在本地继续同一个 live thread，应改用 `fcodex` 走同一个实例的 shared backend
+- FOCUS 无法知道这个本地 TUI 是空闲、关闭，还是即将写入
+- FOCUS 不能安全地假设自己对该线程拥有独占所有权
+- 如果要在本地继续同一个 live thread，应改用 `focus` / `fcodex` 走同一个实例的 shared backend
 - 如果仍用裸 `codex` 在另一个 backend 写同一线程，就超出了当前支持的安全路径
 
 ## 6. `/resume` 安全模型
@@ -122,7 +122,7 @@ shared backend 与 `fcodex` wrapper 具体如何实现，见 `docs/architecture/
 
 ### 6.2 已加载于当前 backend
 
-如果目标线程已经加载在当前 `feishu-codex` backend 中：
+如果目标线程已经加载在当前 FOCUS backend 中：
 
 - 直接恢复
 - 将当前飞书会话绑定到该线程
@@ -141,7 +141,7 @@ profile/provider slice 重解释一次。
 
 - 直接恢复目标线程
 - 将当前飞书会话绑定到该线程
-- 如果用户随后通过 `fcodex` 接入同一个实例 shared backend，则飞书与 `fcodex` 可以继续安全地共同读写这个 live thread
+- 如果用户随后通过 `focus` / `fcodex` 接入同一个实例 shared backend，则飞书与 `focus` / `fcodex` 可以继续安全地共同读写这个 live thread
 - 若另一运行中实例仍把该 thread 保持为 loaded，则 loaded gate 按
   fail-close 直接拒绝
 - 若 loaded gate 已通过，但另一实例先一步赢得了原子 lease claim，则当前
@@ -151,12 +151,12 @@ profile/provider slice 重解释一次。
 
 这条路径的前提是：
 
-- 本地继续同一线程时，使用 `fcodex`
+- 本地继续同一线程时，使用 `focus` / `fcodex`
 - 不要再用裸 `codex` 通过另一个 backend 写这个线程
 
 这里需要刻意记住一件事：两端现在共享的是一套**更窄**的 resume 语义，而不是旧的 profile-restore 模型。
 
-- 飞书与 `fcodex` 都不会在 resume 时回放项目自管的 thread-level
+- 飞书与 `focus` / `fcodex` 都不会在 resume 时回放项目自管的 thread-level
   profile/memory slice
 - backend 启动基线来自当前实际运行的实例 backend
 - turn-time override 仍是 frontend-owned，而不是 thread-owned
@@ -185,7 +185,7 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
 多实例模式不再额外引入一层 thread admission 过滤：
 
 - 所有实例都从同一套共享 persisted thread 命名空间解析目标
-- 飞书 `/threads` 与 `feishu-codexctl thread list --scope cwd` 都是在这套命名空间上的当前目录视图
+- 飞书 `/threads` 与 `focusctl thread list --scope cwd` 都是在这套命名空间上的当前目录视图
 - 但一旦真的要 live attach，所有路径仍统一服从 `ThreadRuntimeLease`
 
 ### 6.4 当前命令状态矩阵
@@ -290,7 +290,7 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
 - 如果飞书把外部线程恢复进自己的 backend，可能产生分叉
 - 如果用户之后又用裸 `codex` 在另一个 backend 恢复飞书正在使用的线程，同样存在风险
 
-`feishu-codex` 不能消除这种风险。本仓库选择了更直接的 `/resume` 路径，因此安全边界依赖一条操作约束：需要多端继续同一 live thread 时，统一走 shared backend / `fcodex`，不要混用裸 `codex`。
+FOCUS 不能消除这种风险。本仓库选择了更直接的 `/resume` 路径，因此安全边界依赖一条操作约束：需要多端继续同一 live thread 时，统一走 shared backend / `focus` / `fcodex`，不要混用裸 `codex`。
 
 ## 8. 飞书多会话边界
 
@@ -314,7 +314,7 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
 
 具体来说：
 
-- 同实例 Feishu / `fcodex` 的写入准入与审批、补充输入、中断等交互准入，统一由当前实例内的 `interaction owner` 控制
+- 同实例 Feishu / `focus` / `fcodex` 的写入准入与审批、补充输入、中断等交互准入，统一由当前实例内的 `interaction owner` 控制
 - 当某线程当前没有显式 owner，但只有一个 Feishu subscriber 时，运行时可以按“唯一 subscriber”补位路由；一旦出现多个 subscriber，就必须依赖明确 owner，而不再靠“最后一个绑定”猜测
 
 这带来的用户侧结论是：
@@ -332,6 +332,6 @@ UI 不再把它当成普通 direct resume，而是展示确认卡，因为这里
 
 ## 9. 相关文档
 
-- `docs/contracts/thread-profile-semantics.zh-CN.md`：`/threads`、`/resume`、`fcodex` 与 profile 的精确命令语义
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`：shared backend、动态端口发现、cwd 代理与 wrapper 运行时行为
-- `docs/architecture/feishu-codex-design.zh-CN.md`：架构、设计约束与当前仓库结构
+- `docs/contracts/thread-profile-semantics.zh-CN.md`：`/threads`、`/resume`、`focus` / `fcodex` 与 profile 的精确命令语义
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`：shared backend、动态端口发现、cwd 代理与 wrapper 运行时行为
+- `docs/architecture/focus-design.zh-CN.md`：架构、设计约束与当前仓库结构

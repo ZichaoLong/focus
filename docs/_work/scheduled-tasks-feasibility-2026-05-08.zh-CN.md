@@ -303,7 +303,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 - 理解自然语言中的时间表达
 - 生成或更新对应的 `systemd --user` unit
-- 把业务 prompt 交给 helper 或 `feishu-codexctl prompt send`
+- 把业务 prompt 交给 helper 或 `focusctl prompt send`
 - 回显创建结果、下次触发时间、删除方式
 
 这个 skill 适合承接类似话术：
@@ -406,18 +406,18 @@ Status: working material under `docs/_work/`. Not a repository fact.
 }
 ```
 
-### 8.2 `feishu-codexctl`
+### 8.2 `focusctl`
 
 新增命令建议：
 
-- `feishu-codexctl prompt send --binding-id <id> --text <text>`
+- `focusctl prompt send --binding-id <id> --text <text>`
 
 短期方案下，不要求当前就扩展内建 `schedule` 命令面。
 
 更实际的做法是：
 
 - 先让 skill 调用一个 helper
-- helper 再使用 `feishu-codexctl prompt send ...`
+- helper 再使用 `focusctl prompt send ...`
 
 ### 8.3 skill / helper
 
@@ -432,14 +432,14 @@ skill 负责：
 
 helper 负责：
 
-- 在真正触发时调用 `feishu-codexctl prompt send --binding-id ... --text ...`
+- 在真正触发时调用 `focusctl prompt send --binding-id ... --text ...`
 
 如果后续要继续扩展，再考虑：
 
-- `feishu-codexctl schedule add ...`
-- `feishu-codexctl schedule list`
-- `feishu-codexctl schedule remove <job_id>`
-- `feishu-codexctl schedule run-now <job_id>`
+- `focusctl schedule add ...`
+- `focusctl schedule list`
+- `focusctl schedule remove <job_id>`
+- `focusctl schedule run-now <job_id>`
 
 ## 9. 需要显式保持的安全边界
 

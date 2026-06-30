@@ -18,7 +18,7 @@ _INIT_TOKEN_FILENAME = "init.token"
 
 
 def config_dir() -> Path:
-    raw = os.environ.get("FC_CONFIG_DIR", "").strip()
+    raw = os.environ.get("FOCUS_CONFIG_DIR", "").strip()
     if raw:
         return Path(raw).expanduser()
     return default_config_root()

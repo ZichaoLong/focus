@@ -17,8 +17,8 @@ import threading
 from bot.platform_paths import is_windows
 
 _WINDOWS_PERMISSION_WARNING = (
-    "警告: Windows 不承诺 POSIX 0600 语义；feishu-codex 的敏感配置/令牌文件将依赖当前用户目录"
-    "与 NTFS ACL 保护。请确保 FC_CONFIG_ROOT / FC_DATA_ROOT 位于当前用户私有路径下，而不是共享目录。"
+    "警告: Windows 不承诺 POSIX 0600 语义；FOCUS 的敏感配置/令牌文件将依赖当前用户目录"
+    "与 NTFS ACL 保护。请确保 FOCUS_CONFIG_ROOT / FOCUS_DATA_ROOT 位于当前用户私有路径下，而不是共享目录。"
 )
 _warn_lock = threading.Lock()
 _warned_windows_acl_fallback = False

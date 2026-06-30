@@ -116,7 +116,7 @@ class CodexRpcClient:
                 self.request(
                     "initialize",
                     {
-                        "clientInfo": {"name": "feishu-codex", "version": __version__},
+                        "clientInfo": {"name": "focus", "version": __version__},
                         "capabilities": {"experimentalApi": True},
                     },
                     timeout=self._connect_timeout_seconds,

@@ -1,6 +1,6 @@
 # Codex Permissions Model
 
-This document records how `feishu-codex` now exposes `approval_policy` and
+This document records how FOCUS now exposes `approval_policy` and
 `permissions_profile_id`, and how they relate to upstream legacy `sandbox` and
 canonical `permissions`.
 
@@ -20,7 +20,7 @@ Upstream baseline:
 
 ## 1. The Three Layers
 
-`feishu-codex` now exposes two formal runtime settings and still needs to
+FOCUS now exposes two formal runtime settings and still needs to
 explain one upstream legacy concept:
 
 1. `approval_policy`
@@ -230,7 +230,7 @@ Recommended troubleshooting flow:
 
 ## 8. Recommended Product Wording
 
-For user-facing docs in `feishu-codex`, the safest wording is:
+For user-facing docs in FOCUS, the safest wording is:
 
 - `sandbox` controls the technical execution boundary
 - `approval_policy` controls when approval is required before continuing

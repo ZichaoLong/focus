@@ -1,21 +1,21 @@
-# `fcodex` Shared-Backend Runtime
+# `focus` / `fcodex` Shared-Backend Runtime
 
 This document is the implementation note for the current shared-backend and
-wrapper runtime model in `feishu-codex`. If you want to understand why
-`fcodex`, the shared backend, dynamic port fallback, or the cwd proxy exist,
-start here.
+wrapper runtime model in FOCUS. If you want to understand why
+`focus` / `fcodex`, the shared backend, dynamic port fallback, or the cwd
+proxy exist, start here.
 
 This document explains the implementation model behind:
 
-- `fcodex --cd`
+- `focus --cd` / `fcodex --cd`
 - the local websocket proxy
-- the shared Codex remote app-server used by `feishu-codex`
+- the shared Codex remote app-server used by FOCUS
 
 See also:
 
 - `docs/contracts/thread-profile-semantics.md`
 - `docs/decisions/shared-backend-resume-safety.md`
-- `docs/architecture/feishu-codex-design.md`
+- `docs/architecture/focus-design.md`
 
 ## 1. Upstream Baseline
 
@@ -27,7 +27,7 @@ See also:
   commit-pinned `openai/codex` permalinks against that baseline instead of
   developer-local checkout paths
 - This document describes the runtime model verified by the current
-  `feishu-codex` integration against stock Codex CLI / `codex app-server` /
+  FOCUS integration against stock Codex CLI / `codex app-server` /
   `--remote` behavior. If upstream changes those behaviors later, this document
   should be updated accordingly.
 
@@ -37,17 +37,17 @@ At steady state, the local/shared path looks like this:
 
 ```text
 shared CODEX_HOME
-machine-global coordination (`FC_GLOBAL_DATA_DIR`)
+machine-global coordination (`FOCUS_GLOBAL_DATA_DIR`)
   - instance registry
   - thread runtime lease
 
 instance A / default
   Feishu client
-    -> feishu-codex service
+    -> FOCUS service
        -> instance-local shared codex app-server
           (prefers ws://127.0.0.1:8765; auto-falls back to a free local port)
 
-fcodex shell wrapper
+focus / fcodex shell wrapper
   -> select target instance backend
   -> local owner-filtering proxy
      -> selected instance-local shared codex app-server
@@ -63,23 +63,24 @@ The important points are:
   are started almost simultaneously from one command, each instance must end up
   with its own live backend URL instead of accidentally attaching to another
   instance's `8765`
-- if Feishu and `fcodex` should safely continue the same live thread, they are
-  expected to talk to the same instance backend
+- if Feishu and `focus` / `fcodex` should safely continue the same live
+  thread, they are expected to talk to the same instance backend
 - the instance-local shared app-server websocket surface now requires a
   capability token; that token lives in a private file under the instance's
-  `FC_DATA_DIR`, and service / `feishu-codexctl` / `fcodex` backend clients
-  send it via `Authorization: Bearer ...`
-- the local `fcodex` proxy websocket surface uses its own one-shot bearer
-  token; that token only travels through parent-child process environment
-  variables, not command-line arguments, and it isn't the service token
+  `FOCUS_DATA_DIR`, and service / `focusctl` / `focus` / `fcodex` backend
+  clients send it via `Authorization: Bearer ...`
+- the local `focus` / `fcodex` proxy websocket surface uses its own one-shot
+  bearer token; that token only travels through parent-child process
+  environment variables, not command-line arguments, and it isn't the service
+  token
 
-## 3. Why `fcodex` Exists
+## 3. Why `focus` / `fcodex` Exists
 
 Bare `codex` normally owns its own backend lifecycle. That is fine for normal
 local use, but it is the wrong default when you want Feishu and local TUI to
 operate on the same live thread.
 
-`fcodex` exists to provide:
+`focus` / `fcodex` exist to provide:
 
 - one shared backend with the selected Feishu instance
 - `resume <thread_name>` resolution on top of the shared backend
@@ -90,21 +91,21 @@ operate on the same live thread.
 In multi-instance mode, distinguish three local path layers:
 
 1. shared `CODEX_HOME`
-2. per-instance `FC_CONFIG_DIR` / `FC_DATA_DIR`
-3. machine-global coordination under `FC_GLOBAL_DATA_DIR`
+2. per-instance `FOCUS_CONFIG_DIR` / `FOCUS_DATA_DIR`
+3. machine-global coordination under `FOCUS_GLOBAL_DATA_DIR`
 
 Specifically:
 
 - the `default` instance remains path-compatible with the original
   single-instance layout
 - named instances live under `instances/<name>` subdirectories
-- `FC_GLOBAL_DATA_DIR` defaults to `_global/` under the data root
+- `FOCUS_GLOBAL_DATA_DIR` defaults to `_global/` under the data root
 
-The installed `fcodex` wrapper first prepares the base environment, then hands
-off to the Python wrapper for actual instance selection. That layer:
+The installed `focus` / `fcodex` wrapper first prepares the base environment,
+then hands off to the Python wrapper for actual instance selection. That layer:
 
-1. loads the shared `feishu-codex.env` from the machine config root when present
-2. prepares default-instance `FC_CONFIG_DIR` / `FC_DATA_DIR` root information
+1. loads the shared `focus.env` from the machine config root when present
+2. prepares default-instance `FOCUS_CONFIG_DIR` / `FOCUS_DATA_DIR` root information
 3. resolves `--instance`, the instance registry, and the runtime lease to pick
    the target instance for this launch
 
@@ -118,19 +119,19 @@ So "wrapper and service share local state" should now be read as:
 
 - the wrapper and service of the same instance share that instance's config
   and runtime backend-discovery state
-- the wrapper and daemon both load the same machine-level `feishu-codex.env`
+- the wrapper and daemon both load the same machine-level `focus.env`
   provider environment file
 - all instances share `CODEX_HOME`
 - all instances share the machine-level instance registry and thread runtime
   lease
 
 When the default `ws://127.0.0.1:8765` endpoint is unavailable and one instance
-service falls back to another free port, `fcodex` uses that instance's local
-runtime-discovery state to find the active backend.
+service falls back to another free port, `focus` / `fcodex` use that
+instance's local runtime-discovery state to find the active backend.
 
 ## 5. How `--cd` Actually Works
 
-`fcodex` resolves one effective working directory per launch:
+`focus` / `fcodex` resolve one effective working directory per launch:
 
 - if the user passes `--cd` or `-C`, use that
 - otherwise, use the current shell cwd
@@ -151,13 +152,13 @@ The original problem was:
 - in remote mode, upstream Codex TUI did not reliably send `cwd` on
   `thread/start`
 - the shared app-server then fell back to its own process working directory
-- for `feishu-codex`, that fallback directory is typically
-  `~/.local/share/feishu-codex`
+- for FOCUS, that fallback directory is typically
+  `~/.local/share/focus`
 
 Result:
 
-- plain `fcodex` fresh starts could end up in the service data directory instead
-  of the caller's shell directory
+- plain `focus` / `fcodex` fresh starts could end up in the service data
+  directory instead of the caller's shell directory
 
 The local proxy fixes that specific gap:
 
@@ -186,7 +187,7 @@ disconnects.
 
 Current model:
 
-- when launched by `fcodex`, the proxy receives the wrapper process PID
+- when launched by `focus` / `fcodex`, the proxy receives the wrapper process PID
 - the proxy stays alive until that parent process exits
 - when used in tests without a parent PID, it can still fall back to a short
   idle-timeout mode
@@ -198,20 +199,23 @@ This is why the current implementation is robust against resume-time reconnects.
 By default:
 
 - Feishu commands use the shared backend
-- plain `fcodex`
+- plain `focus` or `fcodex`
+- `focus <prompt>`
 - `fcodex <prompt>`
+- `focus resume <thread_id>`
 - `fcodex resume <thread_id>`
+- `focus resume <thread_name>` after wrapper-side resolution
 - `fcodex resume <thread_name>` after wrapper-side resolution
 
 Here "shared backend" always means the selected instance backend.
 The shell layer no longer exposes wrapper slash commands such as
-`fcodex /threads`; local thread discovery now belongs to
-`feishu-codexctl thread list`.
+`focus /threads` or `fcodex /threads`; local thread discovery now belongs to
+`focusctl thread list`.
 
 ## 9. Explicit `--remote` Is a Special Case
 
-If the user explicitly passes `--remote` to `fcodex`, the wrapper does not try
-to force the shared-backend path.
+If the user explicitly passes `--remote` to `focus` / `fcodex`, the wrapper
+does not try to force the shared-backend path.
 
 That means:
 
@@ -223,7 +227,7 @@ This is intentional. Explicit `--remote` means "use the target I asked for."
 
 ## 10. Differences from Bare `codex`
 
-Compared with bare Codex TUI, `fcodex` adds these semantics:
+Compared with bare Codex TUI, `focus` / `fcodex` add these semantics:
 
 - shared backend with the selected Feishu instance by default
 - thread-name resume resolution against the selected shared backend
@@ -241,9 +245,10 @@ Compared with bare Codex TUI, `fcodex` adds these semantics:
 The split is explicit:
 
 - wrapper: owns a narrow local CLI surface before passthrough. It consumes
-  `--instance`, intercepts wrapper help such as `fcodex --help` and
-  `fcodex resume --help`, rejects removed shell-only slash entries, and
-  otherwise passes upstream flags such as `-p/--profile` through untouched
+  `--instance`, intercepts wrapper help such as `focus --help` /
+  `fcodex --help` and `focus resume --help` / `fcodex resume --help`, rejects
+  removed shell-only slash entries, and otherwise passes upstream flags such
+  as `-p/--profile` through untouched
 - proxy: handles only cwd patching and owner filtering at the websocket
   boundary; it no longer inject thread-level settings
 
@@ -267,22 +272,22 @@ history, refer to [`openai/codex`](https://github.com/openai/codex.git).
 ### Bare `codex` is still outside the shared-thread contract
 
 If a user opens the same thread through bare `codex` using its own backend while
-Feishu or `fcodex` is also writing that thread, `feishu-codex` cannot make that
-safe.
+Feishu or `focus` / `fcodex` is also writing that thread, FOCUS cannot make
+that safe.
 
 ### TUI discovery remains upstream
 
 Inside the TUI, `/resume` picker behavior remains upstream and may differ from:
 
 - Feishu `/threads`
-- `feishu-codexctl thread list`
-- `fcodex resume <thread_name>`
+- `focusctl thread list`
+- `focus resume <thread_name>` / `fcodex resume <thread_name>`
 
 ### Shared backend availability matters
 
 If the selected instance's shared app-server is not running or not reachable,
-`fcodex` cannot do its job. In that case, startup fails fast rather than
-silently falling back to an isolated local backend.
+`focus` / `fcodex` cannot do their job. In that case, startup fails fast
+rather than silently falling back to an isolated local backend.
 
 ## 12. Developer Pointers
 

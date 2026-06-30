@@ -19,7 +19,7 @@ class MainEntrypointTests(unittest.TestCase):
                 main(["--version"])
 
         self.assertEqual(exc.exception.code, 0)
-        self.assertEqual(stdout.getvalue().strip(), f"feishu-codexd {__version__}")
+        self.assertEqual(stdout.getvalue().strip(), f"focusd {__version__}")
 
     def test_main_uses_five_second_default_feishu_request_timeout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

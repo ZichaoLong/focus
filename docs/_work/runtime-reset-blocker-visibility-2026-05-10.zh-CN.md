@@ -3,7 +3,7 @@
 范围：
 
 - 飞书侧 `/profile` / `/memory` / `/reset-backend`
-- 本地 `feishu-codexctl thread memory`
+- 本地 `focusctl thread memory`
 - 本地 `fcodex resume <thread> -p <profile>`
 - 目标：把“为什么现在要不要重置 backend”讲清楚，但不要把卡片和 CLI 输出做成线程列表洪水
 

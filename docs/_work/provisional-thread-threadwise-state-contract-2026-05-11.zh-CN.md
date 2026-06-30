@@ -33,7 +33,7 @@
 特别是：
 
 - 飞书侧 binding continuity
-- 本地 `feishu-codexctl` 对 explicit `thread_id` 的控制面语义
+- 本地 `focusctl` 对 explicit `thread_id` 的控制面语义
 
 仍属于更大范围的系统合同，不在本文这次落地范围内。
 
@@ -334,7 +334,7 @@ reservation 才会真正被消费，并把 seed 绑定成 pending threadwise see
 因此下列问题仍需单独讨论和收口：
 
 1. 飞书侧 binding continuity 与 provisional replacement 的全链路合同
-2. `feishu-codexctl` 对 explicit provisional `thread_id` 的 fail-close 语义
+2. `focusctl` 对 explicit provisional `thread_id` 的 fail-close 语义
 3. 飞书侧、本地控制面、本地 `fcodex` 三者之间的统一文案与用户提示
 
 ## 11. 一句话版本

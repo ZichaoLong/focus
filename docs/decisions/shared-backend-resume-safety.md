@@ -2,12 +2,12 @@
 
 See also:
 
-- `docs/architecture/fcodex-shared-backend-runtime.md` for the current shared-backend and
+- `docs/architecture/focus-shared-backend-runtime.md` for the current shared-backend and
   wrapper runtime model
 - `docs/contracts/runtime-control-surface.md` for the shared state vocabulary used by
   `/status`, `/detach`, and the local admin surface
 - `docs/contracts/thread-profile-semantics.md` for exact command and wrapper semantics
-- `docs/architecture/feishu-codex-design.md` for architecture and repository boundaries
+- `docs/architecture/focus-design.md` for architecture and repository boundaries
 
 ## 1. Upstream Baseline
 
@@ -20,7 +20,7 @@ See also:
   developer-local checkout paths
 - This document focuses on safety and `/resume` semantics. It intentionally does
   not restate most wrapper/runtime details; those belong in
-  `fcodex-shared-backend-runtime`.
+  `focus-shared-backend-runtime`.
 
 ## 2. Problem Statement
 
@@ -77,7 +77,7 @@ safely, both must connect to the same app-server backend.
 
 In this repository, that now splits into two layers:
 
-- **within one instance**: Feishu and `fcodex` may safely share that instance backend
+- **within one instance**: Feishu and `focus` / `fcodex` may safely share that instance backend
 - **across instances**: a machine-level `ThreadRuntimeLease` prevents one
   thread from being live-attached by two instance backends at the same time
 
@@ -94,10 +94,10 @@ Properties:
 - multiple local TUI windows can attach to that backend without creating
   cross-process divergence
 
-How the current runtime and `fcodex` wrapper make that work is documented in
-`docs/architecture/fcodex-shared-backend-runtime.md`.
+How the current runtime and `focus` / `fcodex` wrapper make that work is documented in
+`docs/architecture/focus-shared-backend-runtime.md`.
 
-### 5.2 Another `feishu-codex` instance backend
+### 5.2 Another FOCUS instance backend
 
 This is the new boundary introduced by multi-instance support.
 
@@ -123,10 +123,10 @@ This is what happens when the user runs stock TUI outside the shared backend.
 
 Properties:
 
-- `feishu-codex` cannot know whether that local TUI is idle, closed, or about
+- FOCUS cannot know whether that local TUI is idle, closed, or about
   to write
-- `feishu-codex` cannot safely assume exclusive ownership of such a thread
-- local continuation of the same live thread should use `fcodex` and the same
+- FOCUS cannot safely assume exclusive ownership of such a thread
+- local continuation of the same live thread should use `focus` / `fcodex` and the same
   instance shared backend instead
 - continuing to write the same thread through bare `codex` on another backend
   is outside the supported safe path
@@ -144,7 +144,7 @@ Do not add a third "probably safe" class based on cached ownership heuristics.
 
 ### 6.2 Loaded in current backend
 
-If the target thread is already loaded in the current `feishu-codex` backend:
+If the target thread is already loaded in the current FOCUS backend:
 
 - resume directly
 - bind the current Feishu chat to that thread
@@ -165,8 +165,9 @@ Behavior:
 
 - resume the target thread immediately
 - bind the current Feishu chat to that thread
-- if the user later attaches through `fcodex` on the same instance shared backend,
-  Feishu and `fcodex` can continue operating on the same live thread safely
+- if the user later attaches through `focus` / `fcodex` on the same instance
+  shared backend, Feishu and `focus` / `fcodex` can continue operating on the
+  same live thread safely
 - if another running instance still keeps that thread loaded, the loaded gate
   rejects fail-closed
 - if the loaded gate passes but another instance wins the atomic lease claim
@@ -177,13 +178,13 @@ Behavior:
 
 This path assumes:
 
-- local continuation of the same thread uses `fcodex`
+- local continuation of the same thread uses `focus` / `fcodex`
 - bare `codex` is not also writing that thread through another backend
 
 One detail should be recorded explicitly: the common semantics are now narrower
 than the older profile-restore model.
 
-- neither Feishu nor `fcodex` replays a project-owned thread-level
+- neither Feishu nor `focus` / `fcodex` replays a project-owned thread-level
   profile/memory slice on resume
 - the backend startup baseline comes from the instance backend that is actually
   running
@@ -217,7 +218,7 @@ a broad UI-enforced guard.
 Multi-instance mode no longer adds a separate thread-admission filter:
 
 - all instances resolve persisted threads from the same shared namespace
-- Feishu `/threads` and `feishu-codexctl thread list --scope cwd` are
+- Feishu `/threads` and `focusctl thread list --scope cwd` are
   current-directory views over that namespace
 - once a path actually wants live runtime residency, all of them still obey
   the same `ThreadRuntimeLease`
@@ -331,10 +332,10 @@ The risk is symmetric:
 - if a user later resumes a Feishu-active thread through bare `codex` on
   another backend, the same risk exists
 
-`feishu-codex` cannot eliminate that risk. This repository chooses a more direct
+FOCUS cannot eliminate that risk. This repository chooses a more direct
 `/resume` path, so the safety boundary relies on one operational rule: if
 multiple clients should continue the same live thread, keep them on the shared
-backend via `fcodex`, and do not mix in bare `codex`.
+backend via `focus` / `fcodex`, and do not mix in bare `codex`.
 
 ## 8. Feishu Multi-Chat Boundary
 
@@ -363,7 +364,7 @@ The more accurate description now is:
 
 Concretely:
 
-- Same-instance Feishu / `fcodex` write admission, approvals, user-input requests, and interrupts are controlled by the current-instance `interaction owner`
+- Same-instance Feishu / `focus` / `fcodex` write admission, approvals, user-input requests, and interrupts are controlled by the current-instance `interaction owner`
 - when a thread has no explicit owner but exactly one Feishu subscriber, the
   runtime may fall back to that sole subscriber for routing; once multiple
   subscribers exist, routing must depend on explicit owner state rather than
@@ -385,8 +386,8 @@ So the decision at this layer is:
 ## 9. Related Documents
 
 - `docs/contracts/thread-profile-semantics.md`: exact command semantics for `/threads`,
-  `/resume`, `fcodex`, and profile handling
-- `docs/architecture/fcodex-shared-backend-runtime.md`: shared backend, dynamic port
+  `/resume`, `focus` / `fcodex`, and profile handling
+- `docs/architecture/focus-shared-backend-runtime.md`: shared backend, dynamic port
   discovery, cwd proxy, and wrapper runtime behavior
-- `docs/architecture/feishu-codex-design.md`: architecture, design constraints, and current
+- `docs/architecture/focus-design.md`: architecture, design constraints, and current
   repository structure

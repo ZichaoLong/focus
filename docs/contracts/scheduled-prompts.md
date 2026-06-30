@@ -8,7 +8,7 @@ Feishu-bound thread at a future time".
 It covers three layers:
 
 - service control plane: `binding/submit-prompt`
-- local CLI: `feishu-codexctl prompt send`
+- local CLI: `focusctl prompt send`
 - Linux `systemd --user` managed skill: `feishu-scheduled-prompts`
 
 ## 1. Goal
@@ -17,7 +17,7 @@ The supported product shape is not a built-in scheduler subsystem. It is:
 
 - safely synthesize one new prompt turn for an existing Feishu binding at a
   future time
-- keep using the same `feishu-codex` instance backend
+- keep using the same FOCUS instance backend
 - preserve the existing running-turn / attach / interaction / live-runtime
   safety boundaries
 
@@ -67,11 +67,11 @@ Return contract:
   - the action fail-closed or startup failed
   - `reason` must be returned; `reason_code` should be returned when available
 
-## 3. `feishu-codexctl prompt send`
+## 3. `focusctl prompt send`
 
 The local CLI exposes:
 
-- `feishu-codexctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> | --text-file <file>)`
+- `focusctl [--instance <name>] prompt send --binding-id <binding_id> (--text <text> | --text-file <file>)`
 
 Its contract:
 
@@ -111,7 +111,7 @@ The repository now ships one Linux-only managed skill:
 Its contract:
 
 - it manages `systemd --user` timer/service units
-- when the timer fires, it still routes back through `feishu-codexctl prompt send`
+- when the timer fires, it still routes back through `focusctl prompt send`
 - it does not call a standalone Codex SDK helper directly
 - it does not depend on a Feishu message loopback trick
 
@@ -129,17 +129,17 @@ public product surface. They are the Linux short-term scheduling shell.
 Local tool resolution is part of the helper contract:
 
 - ordinary users in a login shell may rely on `PATH` when it contains
-  `feishu-codexctl`
+  `focusctl`
 - `create --ctl-path <path>` is the explicit override and is stored in the
   generated service unit
-- when `--ctl-path` is omitted, the helper discovers `feishu-codexctl` in this
+- when `--ctl-path` is omitted, the helper discovers `focusctl` in this
   order:
   1. `PATH`
-  2. `FC_BIN_DIR/feishu-codexctl`, or `~/.local/bin/feishu-codexctl`
-  3. `FC_DATA_ROOT/.venv/bin/feishu-codexctl`, or
-     `~/.local/share/feishu-codex/.venv/bin/feishu-codexctl`
+  2. `FOCUS_BIN_DIR/focusctl`, or `~/.local/bin/focusctl`
+  3. `FOCUS_DATA_ROOT/.venv/bin/focusctl`, or
+     `~/.local/share/focus/.venv/bin/focusctl`
 - managed skill instructions should invoke the helper with the managed venv
-  Python, normally `FC_DATA_ROOT/.venv/bin/python`, instead of assuming the
+  Python, normally `FOCUS_DATA_ROOT/.venv/bin/python`, instead of assuming the
   system `python3` satisfies the project runtime
 
 Recurring timers must have an explicit termination strategy. `systemd --user`
@@ -167,7 +167,7 @@ The following are normative:
 
 ## 6.1 Binding FIFO
 
-Normal Feishu prompts, `feishu-codexctl prompt send` / `binding/submit-prompt`,
+Normal Feishu prompts, `focusctl prompt send` / `binding/submit-prompt`,
 and `/compact` share the same binding admission semantics:
 
 - if the current binding is idle, execute immediately

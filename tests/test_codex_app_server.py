@@ -48,8 +48,8 @@ from bot.instance_resolution import (
 )
 from bot.local_websocket_auth import (
     AppServerWebsocketAuthTokenStore,
-    FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
-    FCODEX_SERVICE_TOKEN_ENV_VAR,
+    FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
+    FOCUS_SERVICE_TOKEN_ENV_VAR,
     MissingAppServerWebsocketAuthTokenError,
 )
 from bot.service_control_plane import ServiceControlError
@@ -199,7 +199,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalPolicy": "never",
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
-                    "serviceName": "feishu-codex",
+                    "serviceName": "focus",
                     "config": {
                         "memories": {
                             "use_memories": True,
@@ -231,7 +231,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalPolicy": "never",
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
-                    "serviceName": "feishu-codex",
+                    "serviceName": "focus",
                     "model": "gpt-5.4",
                     "modelProvider": "provider2_api",
                 },
@@ -275,7 +275,7 @@ class CodexAppServerAdapterTests(unittest.TestCase):
                     "approvalPolicy": "never",
                     "approvalsReviewer": "user",
                     "personality": "pragmatic",
-                    "serviceName": "feishu-codex",
+                    "serviceName": "focus",
                 },
             ),
         )
@@ -1009,7 +1009,7 @@ class CodexRpcClientTests(unittest.TestCase):
                 (
                     "initialize",
                     {
-                        "clientInfo": {"name": "feishu-codex", "version": __version__},
+                        "clientInfo": {"name": "focus", "version": __version__},
                         "capabilities": {"experimentalApi": True},
                     },
                     client._connect_timeout_seconds,
@@ -1271,9 +1271,9 @@ class FCodexTests(unittest.TestCase):
         env_patcher = patch.dict(
             os.environ,
             {
-                "FC_INSTANCE": "",
-                "FC_DATA_DIR": "",
-                "FC_GLOBAL_DATA_DIR": "",
+                "FOCUS_INSTANCE": "",
+                "FOCUS_DATA_DIR": "",
+                "FOCUS_GLOBAL_DATA_DIR": "",
             },
             clear=False,
         )
@@ -1297,10 +1297,10 @@ class FCodexTests(unittest.TestCase):
 
     def test_default_data_dir_falls_back_to_install_path_when_not_in_dev_layout(self) -> None:
         with patch.dict("bot.fcodex.os.environ", {}, clear=True):
-            with patch("bot.fcodex.default_data_root", return_value=Path("/home/tester/.local/share/feishu-codex")):
+            with patch("bot.fcodex.default_data_root", return_value=Path("/home/tester/.local/share/focus")):
                 self.assertEqual(
                     _default_data_dir(),
-                    Path("/home/tester/.local/share/feishu-codex"),
+                    Path("/home/tester/.local/share/focus"),
                 )
 
     def test_fcodex_injects_remote_url(self) -> None:
@@ -1323,7 +1323,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "resume",
@@ -1331,7 +1331,7 @@ class FCodexTests(unittest.TestCase):
             ],
         )
         self.assertEqual(
-            mock_exec.call_args.args[2][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            mock_exec.call_args.args[2][FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR],
             mock_proxy.call_args.kwargs["proxy_auth_token"],
         )
 
@@ -1380,7 +1380,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "session",
@@ -1409,7 +1409,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "resume",
@@ -1431,7 +1431,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
             ],
@@ -1457,7 +1457,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "-p",
@@ -1507,9 +1507,9 @@ class FCodexTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(root / "config"),
-                    "FC_DATA_ROOT": str(root / "data"),
-                    "FC_INSTANCE": "",
+                    "FOCUS_CONFIG_ROOT": str(root / "config"),
+                    "FOCUS_DATA_ROOT": str(root / "data"),
+                    "FOCUS_INSTANCE": "",
                 },
                 clear=False,
             ):
@@ -1589,7 +1589,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9200",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "resume",
@@ -1672,9 +1672,9 @@ class FCodexTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(root / "config"),
-                    "FC_DATA_ROOT": str(root / "data"),
-                    "FC_INSTANCE": "",
+                    "FOCUS_CONFIG_ROOT": str(root / "config"),
+                    "FOCUS_DATA_ROOT": str(root / "data"),
+                    "FOCUS_INSTANCE": "",
                 },
                 clear=False,
             ):
@@ -1752,7 +1752,7 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("fcodex 本地 wrapper", rendered)
         self.assertIn("--instance <name>", rendered)
         self.assertIn("codex --help", rendered)
-        self.assertIn("feishu-codexctl --help", rendered)
+        self.assertIn("focusctl --help", rendered)
 
     def test_fcodex_version_prints_project_version_without_loading_codex_config(self) -> None:
         stdout = StringIO()
@@ -1790,7 +1790,7 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("fcodex resume 本地 wrapper 语义", rendered)
         self.assertIn("loaded", rendered)
         self.assertIn("codex resume --help", rendered)
-        self.assertIn("feishu-codexctl thread status", rendered)
+        self.assertIn("focusctl thread status", rendered)
 
     def test_fcodex_resume_help_accepts_instance_after_help_flag(self) -> None:
         stdout = StringIO()
@@ -1830,7 +1830,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "session",
@@ -1846,7 +1846,7 @@ class FCodexTests(unittest.TestCase):
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("不再支持 slash 自命令", stderr.getvalue())
-        self.assertIn("feishu-codexctl thread list --scope cwd", stderr.getvalue())
+        self.assertIn("focusctl thread list --scope cwd", stderr.getvalue())
 
     def test_fcodex_rejects_slash_help_command(self) -> None:
         stderr = StringIO()
@@ -1856,7 +1856,7 @@ class FCodexTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as exc:
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("feishu-codexctl", stderr.getvalue())
+        self.assertIn("focusctl", stderr.getvalue())
         self.assertIn("进入 TUI 后再使用 upstream `/help`", stderr.getvalue())
 
     def test_fcodex_rejects_slash_profile_command(self) -> None:
@@ -1877,7 +1877,7 @@ class FCodexTests(unittest.TestCase):
                     with self.assertRaises(SystemExit) as exc:
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
-        self.assertIn("feishu-codexctl thread archive", stderr.getvalue())
+        self.assertIn("focusctl thread archive", stderr.getvalue())
 
     def test_fcodex_rejects_slash_resume_command(self) -> None:
         stderr = StringIO()
@@ -1898,7 +1898,7 @@ class FCodexTests(unittest.TestCase):
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("不再提供 `--dry-run` wrapper 入口", stderr.getvalue())
-        self.assertIn("feishu-codexctl thread list", stderr.getvalue())
+        self.assertIn("focusctl thread list", stderr.getvalue())
 
     def test_fcodex_non_slash_text_is_passthrough_prompt(self) -> None:
         with patch("bot.fcodex.load_config_file", return_value={"codex_command": "codex", "app_server_url": "ws://127.0.0.1:8765"}):
@@ -1914,7 +1914,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "session",
@@ -1930,7 +1930,7 @@ class FCodexTests(unittest.TestCase):
                         fcodex_main()
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("不再支持 slash 自命令", stderr.getvalue())
-        self.assertIn("feishu-codexctl thread list --scope cwd", stderr.getvalue())
+        self.assertIn("focusctl thread list --scope cwd", stderr.getvalue())
 
     def test_fcodex_rejects_unknown_slash_command_in_shell_wrapper(self) -> None:
         stderr = StringIO()
@@ -1980,7 +1980,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "resume",
@@ -2051,7 +2051,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9200",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "resume",
@@ -2244,7 +2244,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9100",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 os.getcwd(),
                 "session",
@@ -2271,7 +2271,7 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9101",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 "/home/tester/project",
             ],
@@ -2299,15 +2299,15 @@ class FCodexTests(unittest.TestCase):
                 "--remote",
                 "ws://127.0.0.1:9101",
                 "--remote-auth-token-env",
-                FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR,
+                FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
                 "--cd",
                 "/home/tester/project",
             ],
         )
-        self.assertEqual(mock_popen.call_args.kwargs["env"]["FC_INSTANCE"], "default")
-        self.assertEqual(mock_popen.call_args.kwargs["env"]["FC_DATA_DIR"], str(_default_data_dir()))
+        self.assertEqual(mock_popen.call_args.kwargs["env"]["FOCUS_INSTANCE"], "default")
+        self.assertEqual(mock_popen.call_args.kwargs["env"]["FOCUS_DATA_DIR"], str(_default_data_dir()))
         self.assertEqual(
-            mock_popen.call_args.kwargs["env"][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            mock_popen.call_args.kwargs["env"][FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR],
             mock_proxy.call_args.kwargs["proxy_auth_token"],
         )
         proxy_process.terminate.assert_called_once_with()
@@ -2355,11 +2355,11 @@ class FCodexTests(unittest.TestCase):
         self.assertIn("4321", cmd)
         self.assertNotIn("--service-token", cmd)
         self.assertEqual(
-            mock_popen.call_args.kwargs["env"][FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR],
+            mock_popen.call_args.kwargs["env"][FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR],
             "proxy-auth-token",
         )
         self.assertEqual(
-            mock_popen.call_args.kwargs["env"][FCODEX_SERVICE_TOKEN_ENV_VAR],
+            mock_popen.call_args.kwargs["env"][FOCUS_SERVICE_TOKEN_ENV_VAR],
             "svc-token",
         )
 
@@ -2491,7 +2491,7 @@ class FCodexTests(unittest.TestCase):
                 )
 
     def test_proxy_fails_closed_when_backend_auth_data_dir_is_missing(self) -> None:
-        with patch.dict(os.environ, {"FC_DATA_DIR": ""}, clear=False):
+        with patch.dict(os.environ, {"FOCUS_DATA_DIR": ""}, clear=False):
             with self.assertRaisesRegex(RuntimeError, "requires instance data dir"):
                 run_proxy(
                     backend_url="ws://127.0.0.1:8765",

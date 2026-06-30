@@ -1,4 +1,4 @@
-"""Local admin CLI for the running feishu-codex service."""
+"""Runtime admin CLI for the running FOCUS service."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ class _HelpFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHel
 
 
 def _data_dir() -> pathlib.Path:
-    raw = os.environ.get("FC_DATA_DIR", "").strip()
+    raw = os.environ.get("FOCUS_DATA_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     return default_data_root()
@@ -307,9 +307,9 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
     print(f"fail-closed requests: {int(result.get('fail_closed_request_count') or 0)}")
     print(f"purged runtime leases: {', '.join(result.get('purged_thread_ids') or []) or '（无）'}")
     print("next:")
-    print("  - attach this instance: feishu-codexctl service attach")
-    print("  - attach one thread: feishu-codexctl thread attach --thread-id <thread_id>")
-    print("  - attach one binding: feishu-codexctl binding attach <binding_id>")
+    print("  - attach this instance: focusctl service attach")
+    print("  - attach one thread: focusctl thread attach --thread-id <thread_id>")
+    print("  - attach one binding: focusctl binding attach <binding_id>")
     return 0
 
 
@@ -1434,12 +1434,12 @@ def _list_running_instances() -> int:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="feishu-codexctl",
+        prog="focusctl",
         description=(
-            "本地查看 / 管理面：查看运行中的 feishu-codex service、binding、thread 与实例。\n\n"
+            "本地查看 / 管理面：查看运行中的 FOCUS service、binding、thread 与实例。\n\n"
             "说明：\n"
-            "- `feishu-codexctl` 是本地查看 / 管理面，不是第二个 Codex 前端\n"
-            "- 命名实例必须先显式 `feishu-codex instance create <name>`；这里不会隐式创建\n"
+            "- `focusctl` 是本地查看 / 管理面，不是第二个 Codex 前端\n"
+            "- 命名实例必须先显式 `focusctl instance create <name>`；这里不会隐式创建\n"
             "- 除 `instance list` 外，其余命令都可加 `--instance <name>`；显式值优先\n"
             "- 若未显式指定，则按 preferred-running（若有）/ unique-running / default-running / current-instance-paths 规则解析；多实例仍有歧义时必须显式指定\n"
             "- `binding clear` / `clear-all` 删除的是 Feishu 本地 binding 记录，不删除 thread，也不等于 `detach`\n"
@@ -1447,38 +1447,38 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "常用命令:\n"
-            "  feishu-codexctl service status\n"
-            "  feishu-codexctl service reset-backend\n"
-            "  feishu-codexctl service attach\n"
-            "  feishu-codexctl instance list\n"
-            "  feishu-codexctl binding list\n"
-            "  feishu-codexctl binding status <binding_id>\n"
-            "  feishu-codexctl binding attach <binding_id>\n"
-            "  feishu-codexctl binding detach <binding_id>\n"
-            "  feishu-codexctl binding clear-stale --dry-run\n"
-            "  feishu-codexctl prompt send --binding-id <binding_id> --text '继续执行'\n"
-            "  feishu-codexctl thread list --scope cwd\n"
-            "  feishu-codexctl thread status --thread-id <id>\n"
-            "  feishu-codexctl thread goal --thread-id <id>\n"
-            "  feishu-codexctl thread archive --thread-name demo\n"
-            "  feishu-codexctl thread archive --thread-id <id-1> --thread-id <id-2>\n"
-            "  feishu-codexctl thread clear-archived-bindings --thread-id <id> --dry-run\n"
-            "  feishu-codexctl thread clear-archived-bindings --all --dry-run\n"
-            "  feishu-codexctl thread attach --thread-id <id>\n"
-            "  feishu-codexctl thread detach --thread-name <name>\n"
-            "  feishu-codexctl image send --thread-id <id> --path ./diagram.png\n"
+            "  focusctl service status\n"
+            "  focusctl service reset-backend\n"
+            "  focusctl service attach\n"
+            "  focusctl instance list\n"
+            "  focusctl binding list\n"
+            "  focusctl binding status <binding_id>\n"
+            "  focusctl binding attach <binding_id>\n"
+            "  focusctl binding detach <binding_id>\n"
+            "  focusctl binding clear-stale --dry-run\n"
+            "  focusctl prompt send --binding-id <binding_id> --text '继续执行'\n"
+            "  focusctl thread list --scope cwd\n"
+            "  focusctl thread status --thread-id <id>\n"
+            "  focusctl thread goal --thread-id <id>\n"
+            "  focusctl thread archive --thread-name demo\n"
+            "  focusctl thread archive --thread-id <id-1> --thread-id <id-2>\n"
+            "  focusctl thread clear-archived-bindings --thread-id <id> --dry-run\n"
+            "  focusctl thread clear-archived-bindings --all --dry-run\n"
+            "  focusctl thread attach --thread-id <id>\n"
+            "  focusctl thread detach --thread-name <name>\n"
+            "  focusctl image send --thread-id <id> --path ./diagram.png\n"
             "\n"
             "多实例:\n"
-            "  feishu-codexctl --instance corp-a service status\n"
-            "  feishu-codexctl --instance corp-a thread status --thread-name demo\n"
+            "  focusctl --instance corp-a service status\n"
+            "  focusctl --instance corp-a thread status --thread-name demo\n"
         ),
         formatter_class=_HelpFormatter,
     )
-    parser.add_argument("--version", action="version", version=f"feishu-codexctl {__version__}")
+    parser.add_argument("--version", action="version", version=f"focusctl {__version__}")
     parser.add_argument(
         "--instance",
         help=(
-            "目标实例；显式值优先。命名实例必须先 `feishu-codex instance create <name>`。"
+            "目标实例；显式值优先。命名实例必须先 `focusctl instance create <name>`。"
             "省略时按运行中实例解析，必要时必须显式指定。仅 `instance list` 不使用这个参数。"
         ),
     )
@@ -1513,9 +1513,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     service_reset = service_sub.add_parser(
         "reset-backend",
-        help="重置当前实例 backend，不重启 feishu-codex service。",
+        help="重置当前实例 backend，不重启 FOCUS service。",
         description=(
-            "重置当前实例 backend，不重启 feishu-codex service 进程。\n"
+            "重置当前实例 backend，不重启 FOCUS service 进程。\n"
             "普通 reset 只在确认当前实例没有待处理工作时允许；如需打断当前实例里的运行中 turn / 审批 / 输入请求，可加 `--force`。"
         ),
         formatter_class=_HelpFormatter,
@@ -1604,7 +1604,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="向某个 binding 合成提交一条新 prompt。",
         description=(
             "Prompt 注入管理面。\n"
-            "当前只提供 `send`：直接通过正在运行的 feishu-codex service，"
+            "当前只提供 `send`：直接通过正在运行的 FOCUS service，"
             "向目标 binding 对应的 thread 合成发起一轮新 prompt。"
         ),
         formatter_class=_HelpFormatter,
@@ -1824,10 +1824,10 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     load_env_file()
     parser = _build_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     try:
         if args.resource == "instance" and args.action == "list":
             raise SystemExit(_list_running_instances())

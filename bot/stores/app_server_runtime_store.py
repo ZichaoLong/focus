@@ -2,7 +2,7 @@
 共享 managed app-server 运行时状态。
 
 当默认 shared backend URL 需要从 8765 自动切到其他空闲端口时，
-feishu-codex 会把实际监听地址写到这份本地状态里。
+FOCUS 会把实际监听地址写到这份本地状态里。
 未显式传 `--remote` 的 fcodex 等默认入口可据此发现同一 shared backend。
 """
 

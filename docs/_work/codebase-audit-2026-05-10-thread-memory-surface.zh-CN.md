@@ -4,7 +4,7 @@
 
 - 最新 `HEAD`：`d224a5c Add thread-wise memory control surface`
 - 审视重点：
-  - `feishu-codexctl thread memory`
+  - `focusctl thread memory`
   - 飞书 `/memory` 与 `/profile`
   - `default_thread_memory_mode` 新线程 seed
   - 与上一轮 scheduled prompt 修复后的合同一致性
@@ -14,7 +14,7 @@
 本轮新增的 `thread/memory` 本地控制面总体方向是对的，但当前 `HEAD` 仍有三处值得优先处理的真实行为问题：
 
 1. thread-wise memory override 在带 `profile_name_hint` 时会生成 `profiles.<name>.memories`，这和 upstream `ConfigProfile` 的实际 schema 不一致，存在把 `thread/start` / `thread/resume` 配置直接做成无效 payload 的风险
-2. thread-wise next-load 设置缺少“同值写入”短路，导致 `/profile`、`/memory`、`feishu-codexctl thread memory` 都可能把 no-op 请求误判为需要 reset 的变更
+2. thread-wise next-load 设置缺少“同值写入”短路，导致 `/profile`、`/memory`、`focusctl thread memory` 都可能把 no-op 请求误判为需要 reset 的变更
 3. `thread/memory` 成功写入后，返回结果仍携带变更前的 mutation plan / reason code，CLI 会打印相互矛盾的状态
 
 另外还有一条较低优先级但应尽快收口的合同漂移：
@@ -95,7 +95,7 @@
    - 没有先判断 `target_profile == current_profile`
 2. 飞书 `/memory <mode>`
    - 同样没有先判断 `target_mode == current_mode`
-3. 本地 `feishu-codexctl thread memory --mode <mode>`
+3. 本地 `focusctl thread memory --mode <mode>`
    - `thread_memory_mode_control_result()` 也没有对“目标值是否已等于当前持久化值”做短路
    - 因此 loaded thread 上的同值请求会直接进入 reset 计划分支
 
@@ -175,7 +175,7 @@
 
 这不仅影响 CLI 文案，也会影响任何后续自动化：
 
-- `feishu-codexctl` 会直接打印 `mutation plan: ...`
+- `focusctl` 会直接打印 `mutation plan: ...`
 - 读这个控制面结果的脚本会看到一个“已成功写入，但仍声称还需要 reset”的状态
 
 建议收敛方向：

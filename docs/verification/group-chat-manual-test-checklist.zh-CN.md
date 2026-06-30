@@ -1,6 +1,6 @@
 # 群聊功能手测清单
 
-本文档用于后续手工验证 `feishu-codex` 当前已实现的群聊相关能力。
+本文档用于后续手工验证 FOCUS 当前已实现的群聊相关能力。
 
 ## 1. 测试目标
 
@@ -25,7 +25,7 @@
 ## 3. 测试前准备
 
 1. 确认服务已启动，且日志可跟踪：
-   `journalctl --user -u feishu-codex -f`
+   `journalctl --user -u FOCUS -f`
 2. 确认应用权限至少包含：
    `im:message.p2p_msg:readonly`、`im:message.group_at_msg:readonly`、`im:message.group_msg`、`im:message`、`im:message:readonly`、`im:message:send_as_bot`、`im:message:update`
    如需让 `/whoami`、群授权卡片、群上下文里显示可读名字，再补 `contact:contact.base:readonly`、`contact:user.base:readonly`
@@ -36,7 +36,7 @@
 4. 让 `Admin` 私聊机器人执行 `/whoami`，确认已把正确的 `open_id` 写入 `system.yaml.admin_open_ids`
 5. 让 `Admin` 私聊机器人执行 `/bot-status`，确认返回里包含 `configured bot_open_id`、`discovered open_id`，并把需要启用的值写入 `system.yaml.bot_open_id`
 6. 如需验证“别人 @我本人时由机器人代答”，再把对应成员的 `open_id` 写入 `system.yaml.trigger_open_ids`
-7. 准备一个新群，拉入 `Admin`、`MemberA`、`MemberB`、`feishu-codex` 机器人
+7. 准备一个新群，拉入 `Admin`、`MemberA`、`MemberB`、FOCUS 机器人
 8. 如需验证其他机器人历史消息路径，再把 `OtherBot` 拉入群
 9. 如需验证历史回捞，请确认飞书侧已开启“群消息历史可见”或等价配置
 
@@ -124,29 +124,29 @@
 
 ## 11. 其他机器人与事件边界
 
-1. 让 `OtherBot` 在群里单独发消息。预期：`feishu-codex` 不会即时回复。
-2. 让 `OtherBot` 在群里发 `@feishu-codex`。预期：仍不会即时触发。
+1. 让 `OtherBot` 在群里单独发消息。预期：FOCUS 不会即时回复。
+2. 让 `OtherBot` 在群里发 `@FOCUS`。预期：仍不会即时触发。
 3. 让人类随后 `@机器人` 请求总结。预期：若历史回捞开启，`OtherBot` 的消息可被带入上下文。
 4. 观察日志。预期：不会出现“其他机器人直接触发本轮回复”的实时事件链路。
 
 ## 12. 外部卡片消息
 
-1. 让人类成员或其他机器人发送一张普通 `interactive` 卡片，卡片中包含清晰文本，但不 `@feishu-codex`。
+1. 让人类成员或其他机器人发送一张普通 `interactive` 卡片，卡片中包含清晰文本，但不 `@FOCUS`。
    预期：如果当前模式允许接收，这条消息会被降级成文本进入处理链路；否则仅作为上下文或被忽略。
-2. 让人类成员发送一张包含文本且 `@feishu-codex` 的卡片消息。
+2. 让人类成员发送一张包含文本且 `@FOCUS` 的卡片消息。
    预期：若飞书事件里携带正确 `mentions` 元数据，则会按人类成员的群激活状态和当前工作态正常判断是否触发。
-3. 让 `OtherBot` 发送一张包含文本且 `@feishu-codex` 的卡片消息。
+3. 让 `OtherBot` 发送一张包含文本且 `@FOCUS` 的卡片消息。
    预期：不会直接触发；若历史回捞开启，可在后续人类有效 `@` 时进入上下文。
-4. 让人类成员发送一张只有 `@feishu-codex`、没有正文文本的卡片。
+4. 让人类成员发送一张只有 `@FOCUS`、没有正文文本的卡片。
    预期：不会变成正常 prompt；当前更接近“空文本”路径。
 5. 点击别人或别的机器人发来的卡片按钮。
-   预期：`feishu-codex` 不会代为点击或操控该卡片；当前只支持自己发出的卡片点击回调。
+   预期：FOCUS 不会代为点击或操控该卡片；当前只支持自己发出的卡片点击回调。
 
 ## 13. 持久化与重启
 
 1. 先在某群设置非默认工作态并激活该群。
 2. 重启服务：
-   `feishu-codex restart`
+   `FOCUS restart`
 3. 重新验证：
    `@机器人 /group-mode`
    `@机器人 /group`

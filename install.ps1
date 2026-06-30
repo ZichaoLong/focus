@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$env:FC_POWERSHELL_PROFILE_PATH = $PROFILE.CurrentUserAllHosts
+$env:FOCUS_POWERSHELL_PROFILE_PATH = $PROFILE.CurrentUserAllHosts
 
 function Test-SupportedPython {
   param(
@@ -59,13 +59,13 @@ try {
   }
 
   if (-not (Test-PowerShellProfileAutoloadAllowed)) {
-    $env:FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD = "1"
+    $env:FOCUS_POWERSHELL_SKIP_PROFILE_AUTOLOAD = "1"
   }
 
   & $pythonCommand @pythonArgs "$scriptDir\install.py"
   exit $LASTEXITCODE
 }
 finally {
-  Remove-Item Env:FC_POWERSHELL_SKIP_PROFILE_AUTOLOAD -ErrorAction SilentlyContinue
-  Remove-Item Env:FC_POWERSHELL_PROFILE_PATH -ErrorAction SilentlyContinue
+  Remove-Item Env:FOCUS_POWERSHELL_SKIP_PROFILE_AUTOLOAD -ErrorAction SilentlyContinue
+  Remove-Item Env:FOCUS_POWERSHELL_PROFILE_PATH -ErrorAction SilentlyContinue
 }

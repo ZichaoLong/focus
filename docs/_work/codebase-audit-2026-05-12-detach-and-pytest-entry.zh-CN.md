@@ -28,7 +28,7 @@
 - 普通用户安装、配置、启动 / 重启服务
 - 必要时创建实例
 - 日常主要使用 `fcodex`
-- 偶尔用 `feishu-codexctl` 查询 thread，尤其是按 `thread-name` 全局定位
+- 偶尔用 `focusctl` 查询 thread，尤其是按 `thread-name` 全局定位
 - 更偏运维 / 控制面的动作才会碰 `binding clear-all`、卸载、重新安装等路径
 
 本文仍属于 `docs/_work/` 下的审视记录，不升级为正式合同或架构事实源。
@@ -131,7 +131,7 @@ python -m pip install -r requirements-dev.txt
 - [bot/shell_completion.py](../../bot/shell_completion.py:410)
 - [bot/shell_completion.py](../../bot/shell_completion.py:433)
 
-这一小节同样记录的是修复前复核结果，用来解释为什么后续需要 `84c9ebe`。当时安装逻辑会在 [install.ps1](../../install.ps1:5) 里把 `FC_POWERSHELL_PROFILE_PATH` 设成**当前 host** 的 `$PROFILE.CurrentUserAllHosts`；但卸载时如果没有这个环境变量，则会回退到 [bot/platform_paths.py](../../bot/platform_paths.py:115) 的默认路径。
+这一小节同样记录的是修复前复核结果，用来解释为什么后续需要 `84c9ebe`。当时安装逻辑会在 [install.ps1](../../install.ps1:5) 里把 `FOCUS_POWERSHELL_PROFILE_PATH` 设成**当前 host** 的 `$PROFILE.CurrentUserAllHosts`；但卸载时如果没有这个环境变量，则会回退到 [bot/platform_paths.py](../../bot/platform_paths.py:115) 的默认路径。
 
 我复现的结果是：
 
@@ -258,7 +258,7 @@ python -m pip install -r requirements-dev.txt
 
 直接用户路径就是：
 
-1. 本地执行 `feishu-codexctl binding clear-all`
+1. 本地执行 `focusctl binding clear-all`
 
 这条路径对普通用户不常见，但对运维 / 控制面是实打实的恢复入口，因为它本来就承担“把当前实例 bookmark 清干净”的职责。
 
@@ -347,7 +347,7 @@ python -m pip install -r requirements-dev.txt
 但没有覆盖：
 
 - 安装阶段与卸载阶段使用不同 PowerShell profile 路径
-- `install.ps1` 注入过 `FC_POWERSHELL_PROFILE_PATH`，卸载阶段没有该环境变量时是否仍能清理干净
+- `install.ps1` 注入过 `FOCUS_POWERSHELL_PROFILE_PATH`，卸载阶段没有该环境变量时是否仍能清理干净
 
 #### 3.3.5 当时建议修法
 
@@ -472,11 +472,11 @@ pytest -q
 
 ### 5.2 PowerShell completion 安装 / 卸载已恢复路径对称
 
-当前工作树里，[bot/shell_completion.py](../../bot/shell_completion.py:137) 会把安装时实际写入的 PowerShell completion script / profile 路径持久化到配置根目录；卸载时优先按这份记录清除，而不是只依赖调用当下的 `FC_POWERSHELL_PROFILE_PATH`。
+当前工作树里，[bot/shell_completion.py](../../bot/shell_completion.py:137) 会把安装时实际写入的 PowerShell completion script / profile 路径持久化到配置根目录；卸载时优先按这份记录清除，而不是只依赖调用当下的 `FOCUS_POWERSHELL_PROFILE_PATH`。
 
 新增回归覆盖：
 
-- [tests/test_manage_cli.py](../../tests/test_manage_cli.py:1067) 补了“安装阶段有 `FC_POWERSHELL_PROFILE_PATH`，卸载阶段没有该环境变量提示”的路径
+- [tests/test_manage_cli.py](../../tests/test_manage_cli.py:1067) 补了“安装阶段有 `FOCUS_POWERSHELL_PROFILE_PATH`，卸载阶段没有该环境变量提示”的路径
 - 结果要求是 profile managed block、completion script、路径元数据都要被清干净
 
 这条发布面问题当前也不再成立。

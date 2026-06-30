@@ -61,7 +61,7 @@
 - `system.yaml`
 - `codex.yaml`
 - `init.token`
-- `FC_DATA_DIR` 下的本地运行态
+- `FOCUS_DATA_DIR` 下的本地运行态
 
 共享：
 
@@ -89,19 +89,19 @@ feishu-codex --instance corp-b log
 
 ### 3.3 管理实例内运行态
 
-管理员使用 `feishu-codexctl` 管理某个实例。
+管理员使用 `focusctl` 管理某个实例。
 
 目标命令面示例：
 
 ```bash
-feishu-codexctl --instance corp-a service status
-feishu-codexctl --instance corp-a binding list
-feishu-codexctl --instance corp-a thread status --thread-id <id>
+focusctl --instance corp-a service status
+focusctl --instance corp-a binding list
+focusctl --instance corp-a thread status --thread-id <id>
 ```
 
 管理员需要理解：
 
-- `feishu-codexctl` 的对象是“某个运行中的 Feishu service”
+- `focusctl` 的对象是“某个运行中的 Feishu service”
 - 它不是一个脱离实例的全局线程神控台
 
 ### 3.4 让某个实例“可见/可用”某个共享 thread
@@ -119,8 +119,8 @@ feishu-codexctl --instance corp-a thread status --thread-id <id>
 建议的本地管理命令形态：
 
 ```bash
-feishu-codexctl --instance corp-b thread import --thread-id <thread_id>
-feishu-codexctl --instance corp-b thread revoke --thread-id <thread_id>
+focusctl --instance corp-b thread import --thread-id <thread_id>
+focusctl --instance corp-b thread revoke --thread-id <thread_id>
 ```
 
 这里的语义是：
@@ -317,7 +317,7 @@ fcodex --instance corp-b resume <thread_id>
 1. 每个企业单独建一个实例
 2. 每个实例独立配置自己的 `system.yaml`
 3. 日常 service 管理一律走 `feishu-codex --instance ...`
-4. 日常本地线程管理一律走 `feishu-codexctl --instance ...`
+4. 日常本地线程管理一律走 `focusctl --instance ...`
 5. 需要与飞书继续同一个 live thread 时，一律走 `fcodex`
 6. 不把裸 `codex` concurrent write 当成受支持路径
 7. 如果一个 thread 有跨企业复用需求，由管理员显式决策，而不是让普通用户无感串线
@@ -336,7 +336,7 @@ fcodex --instance corp-b resume <thread_id>
 在实现前，建议重点确认下面这些使用侧取舍：
 
 1. 是否接受 `fcodex` 把“多实例”默认隐藏起来，只在歧义时暴露 `--instance`
-2. 是否接受 `feishu-codexctl` 继续保持实例级，不做无实例的全局线程管理面
+2. 是否接受 `focusctl` 继续保持实例级，不做无实例的全局线程管理面
 3. 是否接受跨企业复用同一 thread 只作为管理员显式决策，不作为普通用户默认路径
 4. 是否接受继续把“裸 `codex` isolated backend 并发写同一 thread”归为文档教育边界
 5. 是否接受普通用户在跨实例占用场景下看到明确拒绝/等待提示，而不是系统偷偷排队或自动猜测接管

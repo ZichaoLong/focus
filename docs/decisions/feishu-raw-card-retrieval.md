@@ -5,7 +5,7 @@ Chinese original: `docs/decisions/feishu-raw-card-retrieval.zh-CN.md`
 See also:
 
 - `docs/decisions/feishu-card-text-projection.md`: current best-effort text projection boundary
-- `docs/architecture/feishu-codex-design.md`: current architecture and module boundaries
+- `docs/architecture/focus-design.md`: current architecture and module boundaries
 - `docs/contracts/feishu-thread-lifecycle.md`: execution-card and terminal-finalization lifecycle
 - `docs/doc-index.md`: document index
 
@@ -14,7 +14,7 @@ See also:
 Users want both of these outcomes at the same time:
 
 - terminal cards should display headings, lists, quotes, code, and links correctly in Feishu
-- after direct send, direct forward, or merge-forward, `feishu-codex` should still read the card as faithfully as possible instead of falling back to text guessing
+- after direct send, direct forward, or merge-forward, FOCUS should still read the card as faithfully as possible instead of falling back to text guessing
 
 Two oversimplified claims appeared in earlier discussion:
 

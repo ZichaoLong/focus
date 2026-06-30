@@ -7,7 +7,7 @@
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`
 - `docs/contracts/runtime-control-surface.zh-CN.md`
 - `docs/contracts/local-command-and-thread-profile-contract.zh-CN.md`
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`
 
 ## 1. 状态
 
@@ -104,6 +104,6 @@ thread，而实例 B 已经基于持久化历史继续推进了对话。
 
 - Feishu attach 相关路径
 - detached binding 的自动 attach / re-attach 路径
-- 本地 `fcodex resume` 中与跨实例 loaded 冲突有关的准入逻辑
+- 本地 `focus resume` / `fcodex resume` 中与跨实例 loaded 冲突有关的准入逻辑
 - 状态展示与拒绝文案，让用户看到的是“loaded elsewhere”，而不是只看到
   lease 术语

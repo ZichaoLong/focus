@@ -180,7 +180,7 @@
 
 当前实现与 help 合同都已经把 attach / detach toggle 放到“当前会话”页；`feishu-command-matrix` 仍有旧描述写成“当前线程”页。这是直接合同漂移，应机械化修正。
 
-#### 3.2 `feishu-codexctl` `_live_runtime_summary` legacy fallback
+#### 3.2 `focusctl` `_live_runtime_summary` legacy fallback
 
 基本采纳，倾向删除。
 
@@ -197,11 +197,11 @@
 
 建议把 `docs/contracts/thread-profile-semantics.zh-CN.md` 作为这一规则的单一事实源；其他文档保留摘要与链接，不再各自重复完整定义。
 
-#### 3.4 `runtime-control-surface` 重列 `feishu-codexctl` 命令名
+#### 3.4 `runtime-control-surface` 重列 `focusctl` 命令名
 
 采纳，但优先级最低。
 
-若 `feishu-codexctl-command-matrix` 已是正式命令矩阵，则 `runtime-control-surface` 应只保留指针，不再维护第二份命令清单。
+若 `focusctl-command-matrix` 已是正式命令矩阵，则 `runtime-control-surface` 应只保留指针，不再维护第二份命令清单。
 
 ## 4. 推荐执行顺序
 

@@ -2,7 +2,7 @@
 
 See also:
 
-- `docs/architecture/feishu-codex-design.md` for the current architecture and
+- `docs/architecture/focus-design.md` for the current architecture and
   repository boundaries
 - `docs/contracts/feishu-thread-lifecycle.md` for execution-card and terminal
   result-carrier lifecycle rules
@@ -13,7 +13,7 @@ See also:
 
 ## 1. Problem Statement
 
-Users want `feishu-codex` to deliver replies that may contain both text and
+Users want FOCUS to deliver replies that may contain both text and
 images on the Feishu side.
 
 There are two distinct output scenarios:
@@ -149,7 +149,7 @@ projection contract.
 
 The primary capability is now explicit `send-image`:
 
-- formal entrypoint: `feishu-codexctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
+- formal entrypoint: `focusctl image send --path <file> [--thread-id <id> | --thread-name <name>]`
 - if the thread selector is omitted, it may fall back to the `CODEX_THREAD_ID` environment variable
 - target scope: all currently `attached` Feishu bindings for the target thread
 - transport shape: upload once, then fan out as standalone Feishu `image` messages
@@ -158,7 +158,7 @@ This means:
 
 - supported:
   - Codex explicitly deciding that one local image file should be sent to Feishu
-  - sending that image from `fcodex`, bare `codex`, or another local entrypoint through one shared control-plane action
+  - sending that image from `focus` / `fcodex`, bare `codex`, or another local entrypoint through one shared control-plane action
 - not supported:
   - scanning the workspace and guessing which images should be sent
   - forcing images into the execution-card patch loop
@@ -313,7 +313,7 @@ The repository now also includes one thin skill example:
 
 - `.agents/skills/feishu-send-image/`
 
-`feishu-codex skill install` installs the current managed skill set into the
+`focusctl skill install` installs the current managed skill set into the
 current directory's `.agents/skills/`, including:
 
 - `feishu-send-image`
@@ -326,7 +326,7 @@ That makes it directory-scoped:
 
 It only tells Codex to call:
 
-- `feishu-codexctl image send --path ...`
+- `focusctl image send --path ...`
 
 rather than moving core image-delivery logic into the skill layer.
 

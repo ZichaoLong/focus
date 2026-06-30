@@ -13,7 +13,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
 _TASK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
-_UNIT_PREFIX = "feishu-codex-scheduled"
+_UNIT_PREFIX = "focus-scheduled"
 _UNIT_SCALAR_FORBIDDEN = {"\x00", "\r", "\n"}
 
 
@@ -50,7 +50,7 @@ def _xdg_config_home() -> pathlib.Path:
 
 
 def scheduled_task_root() -> pathlib.Path:
-    return _xdg_data_home() / "feishu-codex" / "scheduled-tasks"
+    return _xdg_data_home() / "focus" / "scheduled-tasks"
 
 
 def systemd_user_dir() -> pathlib.Path:
@@ -85,14 +85,14 @@ def normalize_task_id(task_id: str) -> str:
 
 
 def _default_data_root() -> pathlib.Path:
-    raw = os.environ.get("FC_DATA_ROOT", "").strip()
+    raw = os.environ.get("FOCUS_DATA_ROOT", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
-    return pathlib.Path.home() / ".local" / "share" / "feishu-codex"
+    return pathlib.Path.home() / ".local" / "share" / "focus"
 
 
 def _default_bin_dir() -> pathlib.Path:
-    raw = os.environ.get("FC_BIN_DIR", "").strip()
+    raw = os.environ.get("FOCUS_BIN_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     return pathlib.Path.home() / ".local" / "bin"
@@ -126,18 +126,18 @@ def detect_ctl_path(explicit_path: str = "") -> str:
     normalized = str(explicit_path or "").strip()
     if normalized:
         return _normalize_executable_path(normalized, "--ctl-path")
-    detected = shutil.which("feishu-codexctl")
+    detected = shutil.which("focusctl")
     if detected:
-        return _normalize_executable_path(detected, "feishu-codexctl")
+        return _normalize_executable_path(detected, "focusctl")
     for candidate in (
-        _default_bin_dir() / "feishu-codexctl",
-        _default_data_root() / ".venv" / "bin" / "feishu-codexctl",
+        _default_bin_dir() / "focusctl",
+        _default_data_root() / ".venv" / "bin" / "focusctl",
     ):
         if _is_executable_file(candidate):
             return str(candidate.resolve())
     raise ValueError(
-        "未找到 `feishu-codexctl`；已检查 PATH、FC_BIN_DIR/default ~/.local/bin "
-        "以及 FC_DATA_ROOT/default managed .venv。也可以通过 --ctl-path 显式指定。"
+        "未找到 `focusctl`；已检查 PATH、FOCUS_BIN_DIR/default ~/.local/bin "
+        "以及 FOCUS_DATA_ROOT/default managed .venv。也可以通过 --ctl-path 显式指定。"
     )
 
 
@@ -176,7 +176,7 @@ def _shell_execstart(spec: ScheduledTaskSpec) -> str:
 
 def render_service_unit(spec: ScheduledTaskSpec) -> str:
     description = _unit_scalar(
-        spec.description or f"Feishu Codex scheduled prompt: {spec.task_id}",
+        spec.description or f"FOCUS scheduled prompt: {spec.task_id}",
         "description",
         allow_empty=False,
     )
@@ -195,7 +195,7 @@ def render_service_unit(spec: ScheduledTaskSpec) -> str:
 
 def render_timer_unit(spec: ScheduledTaskSpec) -> str:
     description = _unit_scalar(
-        spec.description or f"Feishu Codex scheduled timer: {spec.task_id}",
+        spec.description or f"FOCUS scheduled timer: {spec.task_id}",
         "description",
         allow_empty=False,
     )

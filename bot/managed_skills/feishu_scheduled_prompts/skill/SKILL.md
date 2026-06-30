@@ -1,6 +1,6 @@
 ---
 name: feishu-scheduled-prompts
-description: Use when the user wants a future one-shot or recurring task to continue the current Feishu-bound Codex thread later. This skill manages Linux systemd --user timers that eventually call feishu-codexctl prompt send back into the bound Feishu session.
+description: Use when the user wants a future one-shot or recurring task to continue the current Feishu-bound Codex thread later. This skill manages Linux systemd --user timers that eventually call focusctl prompt send back into the bound Feishu session.
 ---
 
 # Feishu Scheduled Prompts
@@ -14,7 +14,7 @@ Use this skill when the user wants:
 This skill is intentionally narrow:
 
 - it manages `systemd --user` timers on Linux
-- it always routes execution back through `feishu-codexctl prompt send`
+- it always routes execution back through `focusctl prompt send`
 - it does not create a second Codex backend
 
 Do not use it for:
@@ -28,22 +28,22 @@ Resolve local tools before running any command. Prefer the user's normal
 may not inherit the user's login shell:
 
 ```bash
-FC_DATA_ROOT="${FC_DATA_ROOT:-$HOME/.local/share/feishu-codex}"
-FC_BIN_DIR="${FC_BIN_DIR:-$HOME/.local/bin}"
+FOCUS_DATA_ROOT="${FOCUS_DATA_ROOT:-$HOME/.local/share/focus}"
+FOCUS_BIN_DIR="${FOCUS_BIN_DIR:-$HOME/.local/bin}"
 
-CTL="$(command -v feishu-codexctl || true)"
-if [ -z "$CTL" ] && [ -x "$FC_BIN_DIR/feishu-codexctl" ]; then
-  CTL="$FC_BIN_DIR/feishu-codexctl"
+CTL="$(command -v focusctl || true)"
+if [ -z "$CTL" ] && [ -x "$FOCUS_BIN_DIR/focusctl" ]; then
+  CTL="$FOCUS_BIN_DIR/focusctl"
 fi
-if [ -z "$CTL" ] && [ -x "$FC_DATA_ROOT/.venv/bin/feishu-codexctl" ]; then
-  CTL="$FC_DATA_ROOT/.venv/bin/feishu-codexctl"
+if [ -z "$CTL" ] && [ -x "$FOCUS_DATA_ROOT/.venv/bin/focusctl" ]; then
+  CTL="$FOCUS_DATA_ROOT/.venv/bin/focusctl"
 fi
 if [ -z "$CTL" ]; then
-  echo "feishu-codexctl not found; run bash install.sh or pass --ctl-path explicitly" >&2
+  echo "focusctl not found; run bash install.sh or pass --ctl-path explicitly" >&2
   exit 1
 fi
 
-PY="$FC_DATA_ROOT/.venv/bin/python"
+PY="$FOCUS_DATA_ROOT/.venv/bin/python"
 if [ ! -x "$PY" ]; then
   echo "managed Python not found: $PY; run bash install.sh first" >&2
   exit 1

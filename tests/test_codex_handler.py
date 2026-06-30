@@ -35,7 +35,7 @@ _DISPLAY_LOCAL_RESUME_COMMAND = feishu_visible_command_syntax("fcodex resume <th
 _DISPLAY_CD_COMMAND = feishu_visible_command_syntax("/cd <path>")
 _DISPLAY_RENAME_COMMAND = feishu_visible_command_syntax("/rename <title>")
 _DISPLAY_LOCAL_THREAD_UNSUBSCRIBE = feishu_visible_command_syntax(
-    "feishu-codexctl thread detach --thread-id <thread_id>"
+    "focusctl thread detach --thread-id <thread_id>"
 )
 
 
@@ -706,8 +706,8 @@ class CodexHandlerTests(unittest.TestCase):
         env_patch = patch.dict(
             os.environ,
             {
-                "FC_GLOBAL_DATA_DIR": str(data_dir / "_global"),
-                "FC_INSTANCE": instance_name,
+                "FOCUS_GLOBAL_DATA_DIR": str(data_dir / "_global"),
+                "FOCUS_INSTANCE": instance_name,
             },
             clear=False,
         )
@@ -5999,7 +5999,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("跨 provider 汇总", content)
         self.assertIn(f"`{_DISPLAY_RESUME_COMMAND}`", content)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", content)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", content)
+        self.assertIn("`focusctl thread list --scope cwd`", content)
 
     def test_threads_card_uses_trisection_layout_for_row_actions(self) -> None:
         handler, bot = self._make_handler()
@@ -6947,7 +6947,7 @@ class CodexHandlerTests(unittest.TestCase):
         self.assertIn("同一线程允许多端订阅观察", content)
         self.assertIn("同一 live turn 只有一个交互 owner", content)
         self.assertIn(f"`{_DISPLAY_LOCAL_RESUME_COMMAND}`", content)
-        self.assertIn("`feishu-codexctl thread list --scope cwd`", content)
+        self.assertIn("`focusctl thread list --scope cwd`", content)
         action_elements = self._action_elements(card)
         self.assertEqual(
             [item["text"]["content"] for item in action_elements[0]["actions"]],

@@ -11,7 +11,7 @@ The project has removed its thread-wise memory control surface.
 The following entry points are no longer part of the formal contract:
 
 - `/memory`
-- `feishu-codexctl thread memory`
+- `focusctl thread memory`
 - `new_thread_memory_mode_seed`
 - any project-owned thread-memory persistence and restore path
 

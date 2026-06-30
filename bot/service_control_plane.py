@@ -1,4 +1,4 @@
-"""Local control plane for managing the running feishu-codex service."""
+"""Local control plane for managing the running FOCUS service."""
 
 from __future__ import annotations
 

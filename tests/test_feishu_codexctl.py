@@ -68,7 +68,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("除 `instance list` 外", rendered)
         self.assertIn("binding clear", rendered)
         self.assertIn("常用命令:", rendered)
-        self.assertIn("feishu-codexctl --instance corp-a service status", rendered)
+        self.assertIn("focusctl --instance corp-a service status", rendered)
         self.assertIn("thread archive --thread-name demo", rendered)
         self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
@@ -83,7 +83,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 parser.parse_args(["--version"])
 
         self.assertEqual(exc.exception.code, 0)
-        self.assertEqual(stdout.getvalue().strip(), f"feishu-codexctl {__version__}")
+        self.assertEqual(stdout.getvalue().strip(), f"focusctl {__version__}")
 
     def test_thread_help_includes_scope_and_selector_guidance(self) -> None:
         parser = _build_parser()
@@ -328,7 +328,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 with patch("bot.feishu_codexctl._print_thread_list", return_value=0) as mock_print:
                     with patch(
                         "bot.feishu_codexctl.sys.argv",
-                        ["feishu-codexctl", "--instance", "aft", "thread", "list"],
+                        ["focusctl", "--instance", "aft", "thread", "list"],
                     ):
                         with self.assertRaises(SystemExit) as exc:
                             feishu_codexctl_main()
@@ -347,7 +347,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 with patch("bot.feishu_codexctl._print_thread_goal", return_value=0) as mock_print:
                     with patch(
                         "bot.feishu_codexctl.sys.argv",
-                        ["feishu-codexctl", "--instance", "aft", "thread", "goal", "--thread-id", "thread-1"],
+                        ["focusctl", "--instance", "aft", "thread", "goal", "--thread-id", "thread-1"],
                     ):
                         with self.assertRaises(SystemExit) as exc:
                             feishu_codexctl_main()
@@ -561,15 +561,15 @@ class FeishuCodexCtlTests(unittest.TestCase):
             with patch.dict(
                 os.environ,
                 {
-                    "FC_CONFIG_ROOT": str(root / "config"),
-                    "FC_DATA_ROOT": str(root / "data"),
-                    "FC_INSTANCE": "",
+                    "FOCUS_CONFIG_ROOT": str(root / "config"),
+                    "FOCUS_DATA_ROOT": str(root / "data"),
+                    "FOCUS_INSTANCE": "",
                 },
                 clear=False,
             ):
                 with patch(
                     "bot.feishu_codexctl.sys.argv",
-                    ["feishu-codexctl", "--instance", "ghost", "service", "status"],
+                    ["focusctl", "--instance", "ghost", "service", "status"],
                 ):
                     with patch("bot.feishu_codexctl.sys.stderr", stderr):
                         with self.assertRaises(SystemExit) as exc:
@@ -1613,7 +1613,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             with patch(
                 "bot.feishu_codexctl.sys.argv",
                 [
-                    "feishu-codexctl",
+                    "focusctl",
                     "thread",
                     "archive",
                     "--thread-id",
@@ -1634,7 +1634,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             with patch(
                 "bot.feishu_codexctl.sys.argv",
                 [
-                    "feishu-codexctl",
+                    "focusctl",
                     "thread",
                     "archive",
                     "--thread-id",
@@ -1657,7 +1657,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 with patch(
                     "bot.feishu_codexctl.sys.argv",
                     [
-                        "feishu-codexctl",
+                        "focusctl",
                         "thread",
                         "clear-archived-bindings",
                         "--thread-id",
@@ -1681,7 +1681,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 with patch(
                     "bot.feishu_codexctl.sys.argv",
                     [
-                        "feishu-codexctl",
+                        "focusctl",
                         "thread",
                         "clear-archived-bindings",
                         "--all",
@@ -1704,7 +1704,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 with patch(
                     "bot.feishu_codexctl.sys.argv",
                     [
-                        "feishu-codexctl",
+                        "focusctl",
                         "binding",
                         "clear-stale",
                         "--dry-run",

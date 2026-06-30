@@ -45,7 +45,7 @@ def default_running_instance() -> InstanceRegistryEntry | None:
 
 
 def current_cli_instance_name() -> str:
-    explicit = str(os.environ.get("FC_INSTANCE", "") or "").strip()
+    explicit = str(os.environ.get("FOCUS_INSTANCE", "") or "").strip()
     if explicit:
         return validate_instance_name(explicit)
     return current_instance_name()

@@ -13,7 +13,7 @@ This document defines:
 - how Feishu-side thread browsing works
 - what `/resume` promises
 - what `/archive` changes
-- what local `fcodex resume` means in the shared-backend model
+- what local `focus resume` / `fcodex resume` means in the shared-backend model
 
 It does not define:
 
@@ -78,27 +78,28 @@ It does not:
 - change runtime-setting families
 - imply any profile or memory behavior
 
-## 6. Local `fcodex` continuation
+## 6. Local `focus` / `fcodex` continuation
 
-`fcodex resume <thread_id|thread_name>` is the local continuation entry point
-for a live shared-backend thread.
+`focus resume <thread_id|thread_name>` and
+`fcodex resume <thread_id|thread_name>` are the local continuation entry
+points for a live shared-backend thread.
 
-It promises:
+They promise:
 
 - the same thread identity resolution model
 - the same cross-instance loaded/runtime safety checks
 - attaching local TUI continuation to the correct backend
 
-`fcodex -p/--profile` still exists only as an upstream Codex launch parameter.
-This project does not persist it, reflect it into Feishu, or treat it as
-thread truth.
+`focus -p/--profile` and `fcodex -p/--profile` still exist only as upstream
+Codex launch parameters. This project does not persist them, reflect them into
+Feishu, or treat them as thread truth.
 
 ## 7. Non-goals
 
 The project no longer promises:
 
 - "Feishu `/resume` replays an old thread profile"
-- "Feishu and `fcodex` share a project-owned profile fact source"
+- "Feishu and `focus` / `fcodex` share a project-owned profile fact source"
 - "unloaded threads still carry a project-owned next-load profile layer"
 
 The current contract is intentionally narrower:

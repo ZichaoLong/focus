@@ -45,10 +45,10 @@ class ServiceManagerTests(unittest.TestCase):
                 ):
                     manager.ensure_service(definition)
 
-            unit_path = root / "systemd" / "feishu-codex@.service"
+            unit_path = root / "systemd" / "focus@.service"
             self.assertTrue(unit_path.exists())
             rendered = unit_path.read_text(encoding="utf-8")
-            self.assertIn("Description=Feishu Codex (%i)", rendered)
+            self.assertIn("Description=FOCUS (%i)", rendered)
             self.assertIn("WorkingDirectory=", rendered)
             self.assertIn("%i", rendered)
             self.assertEqual(run_calls, [("systemctl", "--user", "daemon-reload")])
@@ -64,7 +64,7 @@ class ServiceManagerTests(unittest.TestCase):
             plist_path = definition.paths.data_dir / "service.plist"
             self.assertTrue(plist_path.exists())
             payload = plistlib.loads(plist_path.read_bytes())
-            self.assertEqual(payload["Label"], "io.feishu-codex.corp-a")
+            self.assertEqual(payload["Label"], "io.focus.corp-a")
             self.assertEqual(payload["ProgramArguments"][-2:], ["--instance", "corp-a"])
 
     def test_windows_manager_writes_launcher_and_registers_task(self) -> None:
@@ -86,8 +86,8 @@ class ServiceManagerTests(unittest.TestCase):
             self.assertTrue(xml_path.exists())
             rendered = launcher_path.read_text(encoding="utf-8")
             self.assertIn("bot.__main__", rendered)
-            self.assertEqual(run_calls[0][0:4], ("schtasks", "/Query", "/TN", "feishu-codex-corp-a"))
-            self.assertEqual(run_calls[1][0:4], ("schtasks", "/Create", "/TN", "feishu-codex-corp-a"))
+            self.assertEqual(run_calls[0][0:4], ("schtasks", "/Query", "/TN", "focus-corp-a"))
+            self.assertEqual(run_calls[1][0:4], ("schtasks", "/Create", "/TN", "focus-corp-a"))
 
     def test_systemd_manager_lifecycle_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -112,16 +112,16 @@ class ServiceManagerTests(unittest.TestCase):
 
             self.assertTrue(status.installed)
             self.assertTrue(status.running)
-            self.assertEqual(status.source, "systemctl --user is-active feishu-codex@corp-a")
+            self.assertEqual(status.source, "systemctl --user is-active focus@corp-a")
             self.assertEqual(status.detail, "active")
             self.assertEqual(calls[0][0], ("systemctl", "--user", "daemon-reload"))
-            self.assertEqual(calls[1][0], ("systemctl", "--user", "start", "feishu-codex@corp-a"))
-            self.assertEqual(calls[2][0], ("systemctl", "--user", "is-active", "feishu-codex@corp-a"))
-            self.assertEqual(calls[3][0], ("systemctl", "--user", "disable", "feishu-codex@corp-a"))
-            self.assertEqual(calls[4][0], ("systemctl", "--user", "stop", "feishu-codex@corp-a"))
+            self.assertEqual(calls[1][0], ("systemctl", "--user", "start", "focus@corp-a"))
+            self.assertEqual(calls[2][0], ("systemctl", "--user", "is-active", "focus@corp-a"))
+            self.assertEqual(calls[3][0], ("systemctl", "--user", "disable", "focus@corp-a"))
+            self.assertEqual(calls[4][0], ("systemctl", "--user", "stop", "focus@corp-a"))
             self.assertEqual(calls[5][0], ("systemctl", "--user", "daemon-reload"))
             self.assertEqual(calls[6][0], ("systemctl", "--user", "daemon-reload"))
-            self.assertFalse((root / "systemd" / "feishu-codex@.service").exists())
+            self.assertFalse((root / "systemd" / "focus@.service").exists())
 
     def test_systemd_autostart_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -144,11 +144,11 @@ class ServiceManagerTests(unittest.TestCase):
                     manager.autostart_disable(definition)
 
             self.assertTrue(status.enabled)
-            self.assertEqual(status.source, "systemctl --user is-enabled feishu-codex@corp-a")
+            self.assertEqual(status.source, "systemctl --user is-enabled focus@corp-a")
             self.assertEqual(status.detail, "enabled")
-            self.assertEqual(calls[1][0], ("systemctl", "--user", "enable", "feishu-codex@corp-a"))
-            self.assertEqual(calls[2][0], ("systemctl", "--user", "is-enabled", "feishu-codex@corp-a"))
-            self.assertEqual(calls[3][0], ("systemctl", "--user", "disable", "feishu-codex@corp-a"))
+            self.assertEqual(calls[1][0], ("systemctl", "--user", "enable", "focus@corp-a"))
+            self.assertEqual(calls[2][0], ("systemctl", "--user", "is-enabled", "focus@corp-a"))
+            self.assertEqual(calls[3][0], ("systemctl", "--user", "disable", "focus@corp-a"))
 
     def test_launchd_manager_lifecycle_actions(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -173,12 +173,12 @@ class ServiceManagerTests(unittest.TestCase):
 
             self.assertTrue(status.installed)
             self.assertTrue(status.running)
-            self.assertEqual(status.source, "launchctl print gui/501/io.feishu-codex.corp-a")
-            self.assertEqual(calls[0][0], ("launchctl", "bootout", "gui/501", "io.feishu-codex.corp-a"))
+            self.assertEqual(status.source, "launchctl print gui/501/io.focus.corp-a")
+            self.assertEqual(calls[0][0], ("launchctl", "bootout", "gui/501", "io.focus.corp-a"))
             self.assertEqual(calls[1][0], ("launchctl", "bootstrap", "gui/501", str(root / "data" / "service.plist")))
-            self.assertEqual(calls[2][0], ("launchctl", "kickstart", "-k", "gui/501/io.feishu-codex.corp-a"))
-            self.assertEqual(calls[3][0], ("launchctl", "print", "gui/501/io.feishu-codex.corp-a"))
-            self.assertEqual(calls[4][0], ("launchctl", "bootout", "gui/501", "io.feishu-codex.corp-a"))
+            self.assertEqual(calls[2][0], ("launchctl", "kickstart", "-k", "gui/501/io.focus.corp-a"))
+            self.assertEqual(calls[3][0], ("launchctl", "print", "gui/501/io.focus.corp-a"))
+            self.assertEqual(calls[4][0], ("launchctl", "bootout", "gui/501", "io.focus.corp-a"))
             self.assertFalse((root / "data" / "service.plist").exists())
 
     def test_launchd_autostart_actions(self) -> None:
@@ -193,9 +193,9 @@ class ServiceManagerTests(unittest.TestCase):
                 manager.autostart_disable(definition)
 
             self.assertTrue(status.enabled)
-            self.assertEqual(status.source, "LaunchAgent io.feishu-codex.corp-a")
-            self.assertEqual(status.detail, str(root / "LaunchAgents" / "io.feishu-codex.corp-a.plist"))
-            self.assertFalse((root / "LaunchAgents" / "io.feishu-codex.corp-a.plist").exists())
+            self.assertEqual(status.source, "LaunchAgent io.focus.corp-a")
+            self.assertEqual(status.detail, str(root / "LaunchAgents" / "io.focus.corp-a.plist"))
+            self.assertFalse((root / "LaunchAgents" / "io.focus.corp-a.plist").exists())
 
     def test_launchd_autostart_status_detects_dangling_symlink(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -209,7 +209,7 @@ class ServiceManagerTests(unittest.TestCase):
                 status = manager.autostart_status(definition)
 
             self.assertFalse(status.enabled)
-            self.assertEqual(status.source, "LaunchAgent io.feishu-codex.corp-a")
+            self.assertEqual(status.source, "LaunchAgent io.focus.corp-a")
             self.assertEqual(status.detail, "launch agent symlink is dangling")
 
     def test_windows_manager_lifecycle_actions(self) -> None:
@@ -235,13 +235,13 @@ class ServiceManagerTests(unittest.TestCase):
 
             self.assertTrue(status.installed)
             self.assertTrue(status.running)
-            self.assertEqual(status.source, "schtasks /Query /TN feishu-codex-corp-a /FO LIST /V")
-            self.assertEqual(calls[0][0][:4], ("schtasks", "/Query", "/TN", "feishu-codex-corp-a"))
-            self.assertEqual(calls[1][0][:4], ("schtasks", "/Create", "/TN", "feishu-codex-corp-a"))
-            self.assertEqual(calls[2][0], ("schtasks", "/Run", "/TN", "feishu-codex-corp-a"))
-            self.assertEqual(calls[3][0], ("schtasks", "/Query", "/TN", "feishu-codex-corp-a", "/FO", "LIST", "/V"))
-            self.assertEqual(calls[4][0], ("schtasks", "/End", "/TN", "feishu-codex-corp-a"))
-            self.assertEqual(calls[5][0], ("schtasks", "/Delete", "/TN", "feishu-codex-corp-a", "/F"))
+            self.assertEqual(status.source, "schtasks /Query /TN focus-corp-a /FO LIST /V")
+            self.assertEqual(calls[0][0][:4], ("schtasks", "/Query", "/TN", "focus-corp-a"))
+            self.assertEqual(calls[1][0][:4], ("schtasks", "/Create", "/TN", "focus-corp-a"))
+            self.assertEqual(calls[2][0], ("schtasks", "/Run", "/TN", "focus-corp-a"))
+            self.assertEqual(calls[3][0], ("schtasks", "/Query", "/TN", "focus-corp-a", "/FO", "LIST", "/V"))
+            self.assertEqual(calls[4][0], ("schtasks", "/End", "/TN", "focus-corp-a"))
+            self.assertEqual(calls[5][0], ("schtasks", "/Delete", "/TN", "focus-corp-a", "/F"))
             self.assertFalse((definition.paths.data_dir / "service-launch.cmd").exists())
             self.assertFalse((definition.paths.data_dir / "service-task.xml").exists())
 
@@ -271,7 +271,7 @@ class ServiceManagerTests(unittest.TestCase):
                 manager.autostart_disable(definition)
 
             self.assertTrue(status.enabled)
-            self.assertEqual(status.source, "schtasks /Query /TN feishu-codex-corp-a /XML")
+            self.assertEqual(status.source, "schtasks /Query /TN focus-corp-a /XML")
             self.assertEqual(status.detail, "logon trigger enabled")
             create_calls = [call for call, _ in calls if call[:2] == ("schtasks", "/Create")]
             self.assertGreaterEqual(len(create_calls), 3)
@@ -310,8 +310,8 @@ class ServiceManagerTests(unittest.TestCase):
         rendered = str(raised.exception)
         self.assertIn("当前 PowerShell 中删除旧任务", rendered)
         self.assertIn("管理员 PowerShell", rendered)
-        self.assertIn("schtasks /Delete /TN feishu-codex-corp-a /F", rendered)
-        self.assertIn("feishu-codex --instance corp-a autostart enable", rendered)
+        self.assertIn("schtasks /Delete /TN focus-corp-a /F", rendered)
+        self.assertIn("focusctl --instance corp-a service autostart enable", rendered)
 
     def test_systemd_start_requires_installed_unit(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

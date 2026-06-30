@@ -42,7 +42,7 @@ class CodexAppServerConfig:
     app_server_url: str = DEFAULT_APP_SERVER_URL
     connect_timeout_seconds: float = 15.0
     request_timeout_seconds: float = 30.0
-    service_name: str = "feishu-codex"
+    service_name: str = "focus"
     permissions_profile_id: str = BUILTIN_PERMISSION_PROFILE_DANGER_FULL_ACCESS
     approval_policy: str = "never"
     approvals_reviewer: str = "user"
@@ -82,7 +82,7 @@ class CodexAppServerConfig:
             app_server_url=str(config.get("app_server_url", DEFAULT_APP_SERVER_URL)).strip() or DEFAULT_APP_SERVER_URL,
             connect_timeout_seconds=float(config.get("connect_timeout_seconds", 15)),
             request_timeout_seconds=float(config.get("request_timeout_seconds", 30)),
-            service_name=str(config.get("service_name", "feishu-codex")),
+            service_name=str(config.get("service_name", "focus")),
             permissions_profile_id=normalize_permissions_profile_id(
                 str(
                     config.get(

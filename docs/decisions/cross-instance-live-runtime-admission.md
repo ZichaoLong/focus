@@ -7,7 +7,7 @@ See also:
 - `docs/decisions/shared-backend-resume-safety.md`
 - `docs/contracts/runtime-control-surface.md`
 - `docs/contracts/local-command-and-thread-profile-contract.md`
-- `docs/architecture/fcodex-shared-backend-runtime.md`
+- `docs/architecture/focus-shared-backend-runtime.md`
 
 ## 1. Status
 
@@ -112,6 +112,6 @@ The next rollout should apply this decision to:
 
 - Feishu attach paths
 - detached binding auto-attach / re-attach paths
-- local `fcodex resume` routing where cross-instance loaded conflicts matter
+- local `focus resume` / `fcodex resume` routing where cross-instance loaded conflicts matter
 - status / rejection text so users see "loaded elsewhere" rather than lease-only
   language

@@ -1,7 +1,7 @@
 """
 Multi-instance filesystem layout helpers.
 
-`feishu-codex` keeps one shared machine-level coordination area, while each
+FOCUS keeps one shared machine-level coordination area, while each
 Feishu instance keeps its own config/data subtree. The default instance stays
 path-compatible with the original single-instance layout.
 """
@@ -31,7 +31,7 @@ def default_data_root() -> pathlib.Path:
 
 
 def global_data_dir() -> pathlib.Path:
-    raw = os.environ.get("FC_GLOBAL_DATA_DIR", "").strip()
+    raw = os.environ.get("FOCUS_GLOBAL_DATA_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     return default_data_root() / _GLOBAL_SEGMENT
@@ -98,7 +98,7 @@ def current_instance_name(
     config_dir: pathlib.Path | str | None = None,
     data_dir: pathlib.Path | str | None = None,
 ) -> str:
-    explicit = str(os.environ.get("FC_INSTANCE", "") or "").strip().lower()
+    explicit = str(os.environ.get("FOCUS_INSTANCE", "") or "").strip().lower()
     if explicit:
         return validate_instance_name(explicit)
     inferred = infer_instance_name_from_data_dir(data_dir)
@@ -138,7 +138,7 @@ def require_instance_exists(instance_name: str) -> str:
     if normalized == DEFAULT_INSTANCE_NAME or instance_exists(normalized):
         return normalized
     raise ValueError(
-        f"命名实例 `{normalized}` 尚未创建；请先执行 `feishu-codex instance create {normalized}`。"
+        f"命名实例 `{normalized}` 尚未创建；请先执行 `focusctl instance create {normalized}`。"
     )
 
 
@@ -159,10 +159,10 @@ def list_known_instance_names() -> list[str]:
 
 def apply_instance_environment(instance_name: str) -> InstancePaths:
     paths = resolve_instance_paths(instance_name)
-    os.environ["FC_INSTANCE"] = paths.instance_name
-    os.environ["FC_CONFIG_ROOT"] = str(default_config_root())
-    os.environ["FC_DATA_ROOT"] = str(default_data_root())
-    os.environ["FC_GLOBAL_DATA_DIR"] = str(paths.global_data_dir)
-    os.environ["FC_CONFIG_DIR"] = str(paths.config_dir)
-    os.environ["FC_DATA_DIR"] = str(paths.data_dir)
+    os.environ["FOCUS_INSTANCE"] = paths.instance_name
+    os.environ["FOCUS_CONFIG_ROOT"] = str(default_config_root())
+    os.environ["FOCUS_DATA_ROOT"] = str(default_data_root())
+    os.environ["FOCUS_GLOBAL_DATA_DIR"] = str(paths.global_data_dir)
+    os.environ["FOCUS_CONFIG_DIR"] = str(paths.config_dir)
+    os.environ["FOCUS_DATA_DIR"] = str(paths.data_dir)
     return paths

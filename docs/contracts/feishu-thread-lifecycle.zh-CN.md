@@ -2,12 +2,12 @@
 
 英文原文：`docs/contracts/feishu-thread-lifecycle.md`
 
-本文定义飞书侧当前的线程生命周期合同。它解释了：为什么 Feishu 侧必须遵守和 `fcodex`
-相同的 backend 协议合同，但运行时恢复策略不能照搬 `fcodex`。
+本文定义飞书侧当前的线程生命周期合同。它解释了：为什么 Feishu 侧必须遵守和 `focus` / `fcodex`
+相同的 backend 协议合同，但运行时恢复策略不能照搬本地 TUI wrapper。
 
 另见：
 
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`
 - `docs/contracts/runtime-control-surface.zh-CN.md`
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`
 - `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
@@ -50,11 +50,11 @@
 
 在运行控制层面，还必须把 `交互 owner` 与 binding/runtime 这两条状态轴区分开。
 
-`交互 owner` 是当前实例内的临时租约；它负责同实例 Feishu / `fcodex` 前端的 turn 发起权与审批、补充输入、中断等交互路由。精确定义见 `docs/contracts/runtime-control-surface.zh-CN.md`。
+`交互 owner` 是当前实例内的临时租约；它负责同实例 Feishu / `focus` / `fcodex` 前端的 turn 发起权与审批、补充输入、中断等交互路由。精确定义见 `docs/contracts/runtime-control-surface.zh-CN.md`。
 
-## 3. 为什么飞书侧不能照搬 `fcodex`
+## 3. 为什么飞书侧不能照搬本地 TUI wrapper
 
-`fcodex` 在正常使用时，通常会维持一个持续存在的 remote TUI 会话。因此：
+`focus` / `fcodex` 在正常使用时，通常会维持一个持续存在的 remote TUI 会话。因此：
 
 - websocket 连接通常持续存在
 - 当前 thread 往往持续处于订阅状态
@@ -196,9 +196,9 @@ FIFO 准入细节由
 
 本合同暂不引入迟到 receive event 的 freshness gate。迟到送达的消息仍会正常准入，除非它在出队前又被收到的撤回事件取消。
 
-## 6. 与 `fcodex` 的关系
+## 6. 与 `focus` / `fcodex` 的关系
 
-`fcodex` 与飞书侧仍共享同一套 backend 合同：
+`focus` / `fcodex` 与飞书侧仍共享同一套 backend 合同：
 
 - 同一个 shared app-server
 - 同一套持久化 thread id
@@ -206,7 +206,7 @@ FIFO 准入细节由
 
 不同的只是前端运行时模型：
 
-- `fcodex` 在 TUI 存活期间，通常一直附着在 live backend 上
+- `focus` / `fcodex` 在 TUI 存活期间，通常一直附着在 live backend 上
 - 飞书侧更容易进入“绑定还在，但 runtime 已被 unload”的状态
 
 因此最准确的说法是：
@@ -229,7 +229,7 @@ FIFO 准入细节由
 
 - `bound + detached` 下 prompt 的 pure reject / attach 规则：见 `docs/contracts/runtime-control-surface.zh-CN.md`
 - unloaded thread 恢复路径上的 thread-wise next-load 设置合同：见 `docs/contracts/thread-next-load-settings-semantics.zh-CN.md`
-- `/threads`、`/resume`、`/archive` 与本地 `fcodex` continuation 的命令语义：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
+- `/threads`、`/resume`、`/archive` 与本地 `focus` / `fcodex` continuation 的命令语义：见 `docs/contracts/thread-profile-semantics.zh-CN.md`
 - 群聊按 `chat_id` 共享 binding 以及群会话范围规则：见 `docs/contracts/group-chat-contract.zh-CN.md`
 
 ## 8. 相关实现文件
@@ -240,5 +240,5 @@ FIFO 准入细节由
 - `bot/stores/generated_image_delivery_store.py`
 - `bot/fcodex.py`
 - `bot/fcodex_proxy.py`
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`

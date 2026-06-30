@@ -1,6 +1,4 @@
-"""
-fcodex 本地 wrapper。
-"""
+"""FOCUS/fcodex local Codex TUI wrapper."""
 
 from __future__ import annotations
 
@@ -27,7 +25,7 @@ from bot.instance_resolution import (
     resolve_cli_runtime_target,
     resolve_running_instance_app_server_url,
 )
-from bot.local_websocket_auth import FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR, FCODEX_SERVICE_TOKEN_ENV_VAR
+from bot.local_websocket_auth import FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR, FOCUS_SERVICE_TOKEN_ENV_VAR
 from bot.platform_paths import default_data_root, is_windows
 from bot.thread_resolution import looks_like_thread_id, resolve_resume_name_via_remote_backend
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
@@ -58,11 +56,11 @@ _OPTIONS_WITH_VALUE = {
 }
 
 _REMOVED_WRAPPER_COMMAND_HINTS = {
-    "/help": "本地查看/管理请改用 `feishu-codexctl`；进入 TUI 后再使用 upstream `/help`。",
-    "/threads": "本地看线程请改用 `feishu-codexctl thread list --scope cwd` 或 `feishu-codexctl thread list --scope global`。",
-    "/resume": "请改用 `fcodex resume <thread_id|thread_name>`。",
-    "/profile": "本项目不再提供 `/profile`；如需使用上游 profile，请在启动时显式传 `fcodex -p <profile>`。",
-    "/archive": "请改用 `feishu-codexctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
+    "/help": "本地查看/管理请改用 `focusctl`；进入 TUI 后再使用 upstream `/help`。",
+    "/threads": "本地看线程请改用 `focusctl thread list --scope cwd` 或 `focusctl thread list --scope global`。",
+    "/resume": "请改用 `focus resume <thread_id|thread_name>` 或 `fcodex resume <thread_id|thread_name>`。",
+    "/profile": "本项目不再提供 `/profile`；如需使用上游 profile，请在启动时显式传 `focus -p <profile>` 或 `fcodex -p <profile>`。",
+    "/archive": "请改用 `focusctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
 _HELP_FLAGS = ("-h", "--help")
 _VERSION_FLAGS = ("--version",)
@@ -92,43 +90,49 @@ def _is_wrapper_version_request(user_args: list[str]) -> bool:
     return len(user_args) == 1 and user_args[0] in _VERSION_FLAGS
 
 
+def _program_name() -> str:
+    raw = pathlib.Path(sys.argv[0]).name.strip()
+    return raw or "focus"
+
+
 def _print_wrapper_help() -> None:
+    command_name = _program_name()
     print(
-        "fcodex 本地 wrapper。\n\n"
+        f"{command_name} 本地 wrapper（Codex TUI thin wrapper）。\n\n"
         "用法:\n"
-        "  fcodex [--instance <name>] [upstream codex args ...]\n"
-        "  fcodex [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
+        f"  {command_name} [--instance <name>] [upstream codex args ...]\n"
+        f"  {command_name} [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
         "说明:\n"
-        "- `fcodex` 不是独立第二套 TUI；普通参数会继续透传给上游 `codex`\n"
+        "- `focus` 和 `fcodex` 是同一个 Codex TUI thin wrapper；普通参数会继续透传给上游 `codex`\n"
         "- wrapper 会为当前 shell cwd 建立本地 proxy，并把上游 TUI 接到目标实例的 shared backend\n"
         "- `--instance <name>` 只接受已创建的命名实例；不能与显式 `--remote` 同时使用\n"
         "- `resume <thread>` 会先做实例路由、thread 名解析，以及跨实例 loaded gate 检查\n"
         "- shell 层不再支持 `/threads`、`/resume`、`/profile` 这类 slash 自命令\n\n"
         "常用入口:\n"
-        "  fcodex\n"
-        "  fcodex resume <thread_id|thread_name>\n"
-        "  fcodex --instance corp-a\n"
-        "  fcodex -p <profile>\n\n"
+        f"  {command_name}\n"
+        f"  {command_name} resume <thread_id|thread_name>\n"
+        f"  {command_name} --instance corp-a\n"
+        f"  {command_name} -p <profile>\n\n"
         "更多帮助:\n"
         "  - 上游 Codex 通用参数: `codex --help`\n"
-        "  - 本地诊断 / 管理: `feishu-codexctl --help`\n"
-        "  - 实例创建与安装修复: `feishu-codex --help`\n"
+        "  - 本地诊断 / 管理: `focusctl --help`\n"
     )
 
 
 def _print_wrapper_resume_help() -> None:
+    command_name = _program_name()
     print(
-        "fcodex resume 本地 wrapper 语义。\n\n"
+        f"{command_name} resume 本地 wrapper 语义。\n\n"
         "用法:\n"
-        "  fcodex [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
+        f"  {command_name} [--instance <name>] resume <thread_id|thread_name> [upstream resume args ...]\n\n"
         "说明:\n"
         "- `thread_name` 会先在选中的 shared backend 上解析成唯一 thread id；歧义时直接拒绝\n"
         "- 若已有 live runtime owner，wrapper 会优先路由到 owner 实例\n"
         "- 若其他运行中实例仍报告该 thread 处于 loaded，wrapper 会 fail-close 拒绝，而不是偷偷 cold resume\n"
         "- 通过这些检查后，剩余参数仍透传给上游 `codex resume`\n\n"
         "相关入口:\n"
-        "  - 本地线程查看: `feishu-codexctl thread list --scope cwd`\n"
-        "  - 本地 thread 诊断: `feishu-codexctl thread status --thread-id <id>`\n"
+        "  - 本地线程查看: `focusctl thread list --scope cwd`\n"
+        "  - 本地 thread 诊断: `focusctl thread status --thread-id <id>`\n"
         "  - 上游 resume 子命令帮助: `codex resume --help`\n"
     )
 
@@ -168,7 +172,7 @@ def _has_explicit_cwd(user_args: list[str]) -> bool:
 
 
 def _default_data_dir() -> pathlib.Path:
-    raw = os.environ.get("FC_DATA_DIR", "").strip()
+    raw = os.environ.get("FOCUS_DATA_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     return default_data_root()
@@ -246,7 +250,7 @@ def _removed_wrapper_command_error(user_args: list[str]) -> int | None:
     first_positional = str(user_args[first_positional_index] or "").strip()
     if not first_positional.startswith("/"):
         return None
-    print(f"fcodex shell 层不再支持 slash 自命令：`{first_positional}`", file=sys.stderr)
+    print(f"{_program_name()} shell 层不再支持 slash 自命令：`{first_positional}`", file=sys.stderr)
     hint = _REMOVED_WRAPPER_COMMAND_HINTS.get(first_positional)
     if hint:
         print(hint, file=sys.stderr)
@@ -348,11 +352,11 @@ def _resolve_runtime_target_for_wrapper(
         ):
             running_names = ", ".join(entry.instance_name for entry in list_running_instances()) or "（无）"
             error_text = (
-                "当前是 `fcodex resume <thread>` 路径，但该 thread 现在没有唯一可用的实例路由。"
+                f"当前是 `{_program_name()} resume <thread>` 路径，但该 thread 现在没有唯一可用的实例路由。"
                 f"当前运行中的实例：{running_names}。"
                 "请显式传 `--instance <name>`。"
                 "如果你原本期望沿用某个实例，请先确认该实例是否仍持有该 thread，"
-                "必要时在该实例侧执行 `feishu-codexctl --instance <name> service reset-backend` 后再试。"
+                "必要时在该实例侧执行 `focusctl --instance <name> service reset-backend` 后再试。"
             )
         print(error_text, file=sys.stderr)
         raise SystemExit(2)
@@ -595,9 +599,9 @@ def _launch_local_cwd_proxy(
         str(os.getpid()),
     ]
     env = os.environ.copy()
-    env[FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
+    env[FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
     if service_token:
-        env[FCODEX_SERVICE_TOKEN_ENV_VAR] = service_token
+        env[FOCUS_SERVICE_TOKEN_ENV_VAR] = service_token
     process = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -663,7 +667,7 @@ def main() -> None:
     load_env_file()
     explicit_instance, user_args = _consume_instance_arg(sys.argv[1:])
     if _is_wrapper_version_request(user_args):
-        print(f"fcodex {__version__}")
+        print(f"{_program_name()} {__version__}")
         raise SystemExit(0)
     help_request = _wrapper_help_request_kind(user_args)
     if help_request == "top":
@@ -676,8 +680,8 @@ def main() -> None:
     configured_codex_command = str(cfg.get("codex_command", "codex")).strip() or "codex"
     codex_command = resolve_managed_codex_command(configured_codex_command)
     if "--dry-run" in user_args:
-        print("fcodex 不再提供 `--dry-run` wrapper 入口。", file=sys.stderr)
-        print("本地查看线程请改用 `feishu-codexctl thread list`、`thread status`、`thread bindings`。", file=sys.stderr)
+        print(f"{_program_name()} 不再提供 `--dry-run` wrapper 入口。", file=sys.stderr)
+        print("本地查看线程请改用 `focusctl thread list`、`thread status`、`thread bindings`。", file=sys.stderr)
         raise SystemExit(2)
     if explicit_instance and _has_explicit_remote(user_args):
         print("`--instance` 不能与显式 `--remote` 同时使用。", file=sys.stderr)
@@ -736,7 +740,7 @@ def main() -> None:
         try:
             # Upstream Codex TUI omits `cwd` on `thread/start` in `--remote` mode.
             # Without this local proxy, the shared app-server falls back to its own
-            # WorkingDirectory (`~/.local/share/feishu-codex`) and fresh `fcodex`
+            # WorkingDirectory (`~/.local/share/focus`) and fresh wrapper
             # sessions don't inherit the caller's shell cwd.
             proxy_kwargs: dict[str, str] = {}
             if resolved_target.instance_name != DEFAULT_INSTANCE_NAME or resolved_target.service_token:
@@ -753,15 +757,15 @@ def main() -> None:
                 **proxy_kwargs,
             )
         except Exception as exc:
-            print(f"启动 fcodex 本地 cwd proxy 失败：{exc}", file=sys.stderr)
+            print(f"启动 {_program_name()} 本地 cwd proxy 失败：{exc}", file=sys.stderr)
             raise SystemExit(2)
-        argv.extend(["--remote", proxy_url, "--remote-auth-token-env", FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR])
+        argv.extend(["--remote", proxy_url, "--remote-auth-token-env", FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR])
     argv.extend(user_args)
     env = os.environ.copy()
-    env["FC_DATA_DIR"] = str(data_dir)
-    env["FC_INSTANCE"] = resolved_target.instance_name
+    env["FOCUS_DATA_DIR"] = str(data_dir)
+    env["FOCUS_INSTANCE"] = resolved_target.instance_name
     if proxy_auth_token:
-        env[FCODEX_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
+        env[FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
         _prepend_no_proxy_hosts(env)
     exit_code = _run_upstream_codex(argv, env, proxy_process=proxy_process)
     if exit_code is not None:

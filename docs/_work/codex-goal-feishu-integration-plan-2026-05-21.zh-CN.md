@@ -304,15 +304,15 @@ goal 可能跨多个 turn。
 
 第一阶段也可以接受先只支持 slash 命令，不立即进入 `/help` 首页。
 
-### 5.7 本地 `feishu-codexctl`
+### 5.7 本地 `focusctl`
 
 这是可选第二阶段，不是本次最小实现前提。
 
 可选能力：
 
-- `feishu-codexctl thread goal --thread-id <id>`
-- `feishu-codexctl thread goal set --thread-id <id> --objective ...`
-- `feishu-codexctl thread goal clear --thread-id <id>`
+- `focusctl thread goal --thread-id <id>`
+- `focusctl thread goal set --thread-id <id> --objective ...`
+- `focusctl thread goal clear --thread-id <id>`
 
 建议原因：
 

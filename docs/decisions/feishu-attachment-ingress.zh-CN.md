@@ -4,20 +4,20 @@
 
 另见：
 
-- `docs/architecture/feishu-codex-design.zh-CN.md`：当前架构与仓库边界
+- `docs/architecture/focus-design.zh-CN.md`：当前架构与仓库边界
 - `docs/contracts/codex-permissions-model.zh-CN.md`：`sandbox`、`approval`、writable roots 的语义
 - `docs/contracts/group-chat-contract.zh-CN.md`：群激活、群聊工作态与触发边界
 - `docs/decisions/feishu-output-images.zh-CN.md`：反方向能力，即 Codex 图片结果回到飞书的边界
 
 ## 1. 问题陈述
 
-用户希望在飞书里直接发送附件，然后继续通过 `feishu-codex` 与本地 Codex 协作。
+用户希望在飞书里直接发送附件，然后继续通过 FOCUS 与本地 Codex 协作。
 
 本仓库当前的现状是：
 
 - 文件消息仍被显式拒绝
 - app-server turn 输入仍以纯文本为主
-- 复杂文件解析能力并不应该由 `feishu-codex` 自己长期维护
+- 复杂文件解析能力并不应该由 FOCUS 自己长期维护
 
 如果把 PDF、Office、OCR、音视频转写、压缩包处理都内建进本仓库，会引入：
 
@@ -31,7 +31,7 @@
 
 本仓库对飞书附件能力的第一阶段设计决策是：
 
-1. `feishu-codex` 只负责**接收可下载的飞书附件消息、下载资源、暂存到当前工作目录、并把本地路径交给 Codex**。
+1. FOCUS 只负责**接收可下载的飞书附件消息、下载资源、暂存到当前工作目录、并把本地路径交给 Codex**。
 2. 复杂文件解析不是本项目职责；应交给：
    - Codex 原生能力
    - 用户配置的 MCP / Apps
@@ -39,7 +39,7 @@
 3. 图片是唯一需要额外“升级”的附件类型：
    - 除保存到本地外，还应在 turn 输入中提升为 `localImage`
 4. 非图片附件统一按“本地文件路径”处理：
-   - `feishu-codex` 不承诺模型一定能直接理解该文件
+   - FOCUS 不承诺模型一定能直接理解该文件
    - 只承诺文件已被保存到本地，且路径会被明确交给 Codex
 5. 本仓库**不自动**做以下行为：
    - OCR
@@ -53,7 +53,7 @@
 
 这条边界的核心优点是把责任收紧到清晰的两层：
 
-- `feishu-codex`
+- FOCUS
   - 负责消息入口、权限/群激活校验、下载、暂存、turn 绑定
 - Codex / MCP / 本地环境
   - 负责“这个文件怎么理解、怎么转换、怎么分析”
@@ -240,8 +240,8 @@ pending 附件必须有 TTL。
 
 这里的关键点是：
 
-- `feishu-codex` 不负责判断“这个 PDF / DOCX / MP4 到底该怎么读”
-- `feishu-codex` 只负责把文件可靠地带到本地工作区，并把路径明确交给 Codex
+- FOCUS 不负责判断“这个 PDF / DOCX / MP4 到底该怎么读”
+- FOCUS 只负责把文件可靠地带到本地工作区，并把路径明确交给 Codex
 
 ## 8. 显式不做的事
 

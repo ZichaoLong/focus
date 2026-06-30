@@ -47,7 +47,9 @@ Its body should remind the user that:
 
 - the same thread may be observed from multiple endpoints, but within one
   instance a live turn has only one interaction owner
-- local continuation of the same live thread uses `fcodex resume <thread_id|thread_name>`
+- local continuation of the same live thread uses
+  `focus resume <thread_id|thread_name>` or
+  `fcodex resume <thread_id|thread_name>`
 
 ### 3.2 Thread Settings
 

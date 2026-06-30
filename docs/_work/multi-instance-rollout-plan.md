@@ -66,8 +66,8 @@ Why these are shared:
 
 The following are isolated per Feishu instance:
 
-- `FC_CONFIG_DIR`
-- `FC_DATA_DIR`
+- `FOCUS_CONFIG_DIR`
+- `FOCUS_DATA_DIR`
 - `system.yaml`
 - `init.token`
 - `codex.yaml`
@@ -132,7 +132,7 @@ The reason for this split:
 Recommendation:
 
 - add a per-instance store for admitted threads
-- it should live under that instance's `FC_DATA_DIR`, not under shared `CODEX_HOME`
+- it should live under that instance's `FOCUS_DATA_DIR`, not under shared `CODEX_HOME`
 
 ### 2.4 Backend Conclusion
 
@@ -173,14 +173,14 @@ This is a direct extension of the current shared-backend safety model:
 Target model:
 
 - `instance A`
-  - `FC_CONFIG_DIR_A`
-  - `FC_DATA_DIR_A`
+  - `FOCUS_CONFIG_DIR_A`
+  - `FOCUS_DATA_DIR_A`
   - `service owner A`
   - `control plane A`
   - `app-server backend A`
 - `instance B`
-  - `FC_CONFIG_DIR_B`
-  - `FC_DATA_DIR_B`
+  - `FOCUS_CONFIG_DIR_B`
+  - `FOCUS_DATA_DIR_B`
   - `service owner B`
   - `control plane B`
   - `app-server backend B`
@@ -214,12 +214,12 @@ Recommended responsibilities:
 - record which instances are currently running
 - record, for each instance:
   - `instance_name`
-  - `FC_CONFIG_DIR`
-  - `FC_DATA_DIR`
+  - `FOCUS_CONFIG_DIR`
+  - `FOCUS_DATA_DIR`
   - control endpoint
   - backend URL
   - owner pid / started_at
-- provide one discovery surface for `feishu-codexctl` and `fcodex`:
+- provide one discovery surface for `focusctl` and `fcodex`:
   "find instances first, then decide who to connect to"
 
 Boundary:
@@ -289,9 +289,9 @@ Recommendation:
 - outer command auto-resolution may remain, but the service-management surface
   is fundamentally still instance-scoped
 
-## 5.2 `feishu-codexctl`
+## 5.2 `focusctl`
 
-`feishu-codexctl` should remain an instance-scoped management surface, not
+`focusctl` should remain an instance-scoped management surface, not
 degrade into a global "god console".
 
 Why:
@@ -303,9 +303,9 @@ Why:
 
 Target shape:
 
-- `feishu-codexctl --instance <name> service status`
-- `feishu-codexctl --instance <name> binding list`
-- `feishu-codexctl --instance <name> thread status --thread-id ...`
+- `focusctl --instance <name> service status`
+- `focusctl --instance <name> binding list`
+- `focusctl --instance <name> thread status --thread-id ...`
 
 ## 5.3 `fcodex`
 
@@ -344,7 +344,7 @@ Work items:
 
 - define instance directory layout
 - add instance-name validation and layout resolver
-- route `FC_CONFIG_DIR` / `FC_DATA_DIR` / systemd service name through one resolver
+- route `FOCUS_CONFIG_DIR` / `FOCUS_DATA_DIR` / systemd service name through one resolver
 - switch install scripts to install template services
 - reserve a per-instance thread-admission store
 - keep `CODEX_HOME` shared; do not split the home in this phase
@@ -367,13 +367,13 @@ Work items:
 - add local admin entrypoints for import / revoke of per-instance admission
 - add the registry store
 - register / unregister on service start / stop
-- let `feishu-codexctl` enumerate instances or connect to the right control plane
+- let `focusctl` enumerate instances or connect to the right control plane
 - let `fcodex` discover candidate instances through the registry
 
 Phase goal:
 
 - shared `CODEX_HOME` no longer means "all threads visible to all instances by default"
-- local commands no longer depend only on one `FC_DATA_DIR`
+- local commands no longer depend only on one `FOCUS_DATA_DIR`
 - the system can clearly tell which `feishu-codex` instances are running
 
 ### Phase 3: Global Thread Runtime Lease
@@ -449,7 +449,7 @@ Before implementation starts, these questions are worth confirming:
 1. whether "shared `CODEX_HOME`, isolated backend per instance" is acceptable
    as the formal direction
 2. whether `fcodex` may keep `--instance`, while still auto-routing by default
-3. whether `feishu-codexctl` should remain fundamentally instance-scoped
+3. whether `focusctl` should remain fundamentally instance-scoped
 4. whether a global `instance registry` and `thread runtime lease` must be added
 5. whether "bare `codex` isolated backend concurrently writes the same thread"
    should remain a documentation / user-education boundary instead of a fully

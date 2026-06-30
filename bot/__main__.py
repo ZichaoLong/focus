@@ -1,5 +1,5 @@
 """
-feishu-codex daemon entrypoint.
+FOCUS daemon entrypoint.
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ from bot.version import __version__
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="feishu-codexd")
-    parser.add_argument("--version", action="version", version=f"feishu-codexd {__version__}")
+    parser = argparse.ArgumentParser(prog="focusd")
+    parser.add_argument("--version", action="version", version=f"focusd {__version__}")
     parser.add_argument("--instance", default=DEFAULT_INSTANCE_NAME)
     return parser
 

@@ -1,21 +1,21 @@
-# feishu-codex
+# FOCUS
 
-> 说明：本项目最开始来源于 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot)。更准确地说，它是从 `feishu_bot` 中用于“飞书 + Claude Code”的那部分子集能力演进而来，并在此基础上改造成面向 Codex 的实现，因此形成了当前的 `feishu-codex`。
+> 说明：本项目最开始来源于 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot)。更准确地说，它是从 `feishu_bot` 中用于“飞书 + Claude Code”的那部分子集能力演进而来，并在此基础上改造成面向 Codex 的实现，最终形成当前的 FOCUS。
 
-`feishu-codex` 把飞书机器人、本地 `fcodex` 和同一个 `codex app-server`
+**FOCUS - Feishu, Online Codex for Users and Sharing** 把飞书机器人、本地 `focus` / `fcodex` 和同一个 `codex app-server`
 接到一起。
 
 本项目提供：
 
 - 飞书里的 codex thread 使用入口
-- 本地继续同一 codex live thread 的 `fcodex`
-- 本地查看 / 管理面 `feishu-codexctl`
+- 本地继续同一 codex live thread 的 `focus` / `fcodex`
+- 本地查看 / 管理面 `focusctl`
 
 你可以把它理解成一层桥接：
 
 - 飞书会话先绑定到某个 `thread`
-- 这个 `thread` 跑在某个 `feishu-codex` 实例自己的 shared backend 即 `codex app-server` 上
-- 多订阅观察+单交互轮转租约：飞书和 `fcodex` 可连到同一个实例 backend，此时可安全继续操作同一个 live thread，并同时收到回复消息推送
+- 这个 `thread` 跑在某个 FOCUS 实例自己的 shared backend 即 `codex app-server` 上
+- 多订阅观察+单交互轮转租约：飞书和 `focus` / `fcodex` 可连到同一个实例 backend，此时可安全继续操作同一个 live thread，并同时收到回复消息推送
 - 裸 `codex` 仍然可单独使用，裸 `codex` 将使用自己的独立 backend，不在共享线程合同内
 
 ## 使用入口
@@ -23,9 +23,10 @@
 | 入口 | 作用 | 什么时候用 |
 | --- | --- | --- |
 | 飞书聊天命令 | 当前 chat binding 的使用入口 | 在飞书里提问、切线程、改当前会话设置 |
-| `feishu-codex` | 配置、启停、卸载、登录后自动启动、实例管理 | 管理本地服务 |
-| `fcodex` | 接到同一实例 shared backend 的本地 Codex 入口 | 想在本地继续飞书正在操作的同一 live thread |
-| `feishu-codexctl` | 本地查看 / 管理面 | 看 binding / thread / service 状态，做 thread-scoped 管理 |
+| `focus` | 主品牌工作入口，接到同一实例 shared backend 的本地 Codex TUI | 想在本地继续飞书正在操作的同一 live thread |
+| `fcodex` | `focus` 的等价别名，强调 Codex TUI thin wrapper 语义 | 习惯 Codex 专用入口或排障时 |
+| `focusctl` | 本地管理面 | 配置、启停、实例、binding、thread、prompt、image、清理 |
+| `focusd` | daemon 入口 | 由 service manager 调用，通常不手敲 |
 
 ## 快速开始
 
@@ -40,26 +41,26 @@
 macOS / Linux：
 
 ```bash
-cd /path/to/feishu-codex
+cd /path/to/focus
 bash install.sh
 ```
 
 Windows PowerShell：
 
 ```powershell
-cd \path\to\feishu-codex
+cd \path\to\focus
 .\install.ps1
 ```
 
-Windows 安装会把 `%LOCALAPPDATA%\feishu-codex\bin` 写入当前用户的 `PATH`；
-通常新开一个 PowerShell / cmd 后即可直接发现 `feishu-codex`、`feishu-codexd`、
-`feishu-codexctl`、`fcodex`。`feishu-codex uninstall` / `purge` 会对称移除
+Windows 安装会把 `%LOCALAPPDATA%\focus\bin` 写入当前用户的 `PATH`；
+通常新开一个 PowerShell / cmd 后即可直接发现 `focus`、`focusd`、
+`focusctl`、`fcodex`。`focusctl uninstall` / `purge` 会对称移除
 安装器自己加入的这一路径项。
 若检测到稳定的 Codex 启动命令（如 `fnm` / `nvm`，或 Windows 上 `npm -g install @openai/codex`），
 安装器也会把对应的 `codex_command` 自动写入真实 `codex.yaml`。
 Windows 当前不安装 shell completion。
 
-不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `feishu-codex uninstall/purge` 覆盖的残留命令入口。
+不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `focusctl uninstall/purge` 覆盖的残留命令入口。
 
 ### 2. 配置飞书应用
 
@@ -131,36 +132,36 @@ Windows 当前不安装 shell completion。
 打开系统配置：
 
 ```bash
-feishu-codex config system --open
+focusctl config system --open
 ```
 
 按需写入 provider 环境变量：
 
 ```bash
-feishu-codex config env --open
+focusctl config env --open
 ```
 
 最小需要填的通常是：
 
 - `system.yaml` 里的 `app_id`、`app_secret`
-- `feishu-codex.env` 里的 provider key 或其他环境变量
+- `focus.env` 里的 provider key 或其他环境变量
 
 启动服务：
 
 ```bash
-feishu-codex start
+focusctl service start
 ```
 
 如需登录后自动启动：
 
 ```bash
-feishu-codex autostart enable
+focusctl service autostart enable
 ```
 
 查看初始化口令：
 
 ```bash
-feishu-codex config init-token
+focusctl config init-token
 ```
 
 然后在飞书里私聊机器人：
@@ -186,43 +187,47 @@ feishu-codex config init-token
 在本地继续同一个 live thread：
 
 ```bash
+focus
+focus resume <thread_id|thread_name>
+focus --instance corp-a
 fcodex
 fcodex resume <thread_id|thread_name>
 fcodex --instance corp-a
 ```
 
-说明：`fcodex --instance <name>` 只接受已创建的命名实例；如未创建，先执行 `feishu-codex instance create <name>`。
+说明：`focus` 和 `fcodex` 是同一套 thin wrapper。`--instance <name>` 只接受已创建的命名实例；如未创建，先执行 `focusctl instance create <name>`。
 
 本地查看 / 管理：
 
 ```bash
-feishu-codexctl service status
-feishu-codexctl binding list
-feishu-codexctl thread list
-feishu-codexctl thread status --thread-name <name>
-feishu-codexctl thread goal --thread-name <name>
-feishu-codexctl image send --thread-id <thread_id> --path ./diagram.png
+focusctl service status
+focusctl binding list
+focusctl thread list
+focusctl thread status --thread-name <name>
+focusctl thread goal --thread-name <name>
+focusctl image send --thread-id <thread_id> --path ./diagram.png
 ```
 
-说明：`feishu-codexctl --instance <name> ...` 同样不会隐式创建命名实例。
+说明：`focusctl --instance <name> ...` 同样不会隐式创建命名实例。
 
 #### 可选进阶
 
 如果你已经完成基本安装与初始化，再看这部分：
 
-- `feishu-codexctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
-- `/goal` 用于查看或管理当前 thread 的 goal；常用形态包括 `/goal`、`/goal text`、`/goal set <objective>`、`/goal pause`、`/goal resume`、`/goal clear`。本地查看或排障时，可配合 `feishu-codexctl thread goal --thread-name <name>` 一起用。如需让机器人帮助生成 goal 主句，可先用 `/last text` 获取当前会话最近的权威终态文本，方便在手机侧复制后再整理成主句。
-- `feishu-codexctl image send` 是 thread-scoped 动作：在 Codex turn 内可依赖自动注入的 `CODEX_THREAD_ID` 把图片发回当前 thread；若目标不是当前 thread，则必须显式提供 `--thread-id` 或 `--thread-name`。
-- 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `feishu-codexctl image send`，把图片发回当前 thread 当前 attached 的飞书会话；这个 skill 不负责跨 thread / 手动选目标。
+- `focusctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
+- `/goal` 用于查看或管理当前 thread 的 goal；常用形态包括 `/goal`、`/goal text`、`/goal set <objective>`、`/goal pause`、`/goal resume`、`/goal clear`。本地查看或排障时，可配合 `focusctl thread goal --thread-name <name>` 一起用。如需让机器人帮助生成 goal 主句，可先用 `/last text` 获取当前会话最近的权威终态文本，方便在手机侧复制后再整理成主句。
+- `focusctl image send` 是 thread-scoped 动作：在 Codex turn 内可依赖自动注入的 `CODEX_THREAD_ID` 把图片发回当前 thread；若目标不是当前 thread，则必须显式提供 `--thread-id` 或 `--thread-name`。
+- 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `focusctl image send`，把图片发回当前 thread 当前 attached 的飞书会话；这个 skill 不负责跨 thread / 手动选目标。
 
 ### 5. 多机器人多实例
 
-如果你希望配置多个飞书应用及机器人，每个机器人对应不同的 `feishu-codex` 实例，可按下面方式创建命名实例：
+如果你希望配置多个飞书应用及机器人，每个机器人对应不同的 FOCUS 实例，可按下面方式创建命名实例：
 
 ```bash
-feishu-codex instance create corp-a
-feishu-codex --instance corp-a config system --open
-feishu-codex --instance corp-a start
+focusctl instance create corp-a
+focusctl --instance corp-a config system --open
+focusctl --instance corp-a service start
+focus --instance corp-a
 fcodex --instance corp-a
 ```
 
@@ -249,8 +254,8 @@ fcodex --instance corp-a
 ## 更多帮助
 
 - 飞书里发送 `/help` 或 `/h`
-- 本地查看 `feishu-codex --help`
-- 本地查看 `feishu-codexctl --help`
+- 本地查看 `focus --help`
+- 本地查看 `focusctl --help`
 - 本地查看 `fcodex --help`
 - 深入文档看 `docs/doc-index.zh-CN.md`
 
@@ -263,15 +268,14 @@ flowchart LR
     ChatB["单聊 / 群聊 B"]
   end
 
-  CLI["feishu-codex<br/>安装 / 配置 / 启停 / 实例管理"]
-  CTL["feishu-codexctl<br/>本地查看 / 管理"]
-  TUI["fcodex<br/>本地继续同一 live thread<br/>local permissions"]
+  Work["focus / fcodex<br/>本地继续同一 live thread<br/>local permissions"]
+  CTL["focusctl<br/>本地管理"]
   Raw["裸 codex<br/>独立本地会话"]
 
   subgraph Instance["实例 explorer"]
     BindA["binding A<br/>binding-wise permissions"]
     BindB["binding B<br/>binding-wise permissions"]
-    Service["feishu-codex service"]
+    Service["FOCUS service"]
     Backend["shared codex app-server"]
     Thread["thread"]
   end
@@ -281,9 +285,9 @@ flowchart LR
   ChatA --> BindA --> Service
   ChatB --> BindB --> Service
   Service --> Backend --> Thread
-  TUI --> Backend
+  Work --> Backend
   CTL -.查看/管理.-> Service
-  CLI -.安装/配置/启停.-> Service
+  CTL -.安装/配置/启停.-> Service
   Global -.协调.-> Backend
   Raw -.不在共享线程合同内.-> Thread
 ```
@@ -291,7 +295,7 @@ flowchart LR
 这张图只表达 3 件事：
 
 - 飞书会话先绑定 `thread`
-- `fcodex` 连的是同一个实例 backend
+- `focus` / `fcodex` 连的是同一个实例 backend
 - 裸 `codex` 不在共享线程合同内
 
 ## 一图看懂共享与冲突控制
@@ -301,7 +305,7 @@ flowchart LR
   subgraph A["实例 A：同一 live thread"]
     F1["Feishu binding 1<br/>(attached, own permissions)"]
     F2["Feishu binding 2<br/>(attached, own permissions)"]
-    TUI["fcodex subscriber<br/>(local permissions)"]
+    TUI["focus / fcodex subscriber<br/>(local permissions)"]
     Thread["thread"]
     Owner["current-instance<br/>interaction owner"]
   end
@@ -333,4 +337,4 @@ flowchart LR
 - 只有 `loaded gate` 通过后，才会继续争抢机器级 `ThreadRuntimeLease`
 
 **补充说明**
-- `permissions`、`model`、`effort` 都属于 frontend-owned runtime settings：主要由发起该轮 `thread/start` / `turn/start` 的前端注入；仅在恢复未 loaded thread 时，cold `thread/resume` 会携带其中一小段 one-shot override 来保护恢复后的第一轮 autonomous turn。这不会把它们变成 thread-wise next-load 设置，也不会在飞书与本地 `fcodex` 间自动同步
+- `permissions`、`model`、`effort` 都属于 frontend-owned runtime settings：主要由发起该轮 `thread/start` / `turn/start` 的前端注入；仅在恢复未 loaded thread 时，cold `thread/resume` 会携带其中一小段 one-shot override 来保护恢复后的第一轮 autonomous turn。这不会把它们变成 thread-wise next-load 设置，也不会在飞书与本地 `focus` / `fcodex` 间自动同步

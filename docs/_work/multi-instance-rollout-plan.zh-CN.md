@@ -54,8 +54,8 @@
 
 下列层面按 Feishu 实例隔离：
 
-- `FC_CONFIG_DIR`
-- `FC_DATA_DIR`
+- `FOCUS_CONFIG_DIR`
+- `FOCUS_DATA_DIR`
 - `system.yaml`
 - `init.token`
 - `codex.yaml`
@@ -112,7 +112,7 @@
 - 二者不是同一个边界
 
 建议新增每实例本地 store，用于记录 admitted thread 集合。
-它应落在实例自己的 `FC_DATA_DIR` 下，而不是落在共享 `CODEX_HOME` 下。
+它应落在实例自己的 `FOCUS_DATA_DIR` 下，而不是落在共享 `CODEX_HOME` 下。
 
 ### 2.4 backend 结论
 
@@ -150,14 +150,14 @@
 目标模型：
 
 - `instance A`
-  - `FC_CONFIG_DIR_A`
-  - `FC_DATA_DIR_A`
+  - `FOCUS_CONFIG_DIR_A`
+  - `FOCUS_DATA_DIR_A`
   - `service owner A`
   - `control plane A`
   - `app-server backend A`
 - `instance B`
-  - `FC_CONFIG_DIR_B`
-  - `FC_DATA_DIR_B`
+  - `FOCUS_CONFIG_DIR_B`
+  - `FOCUS_DATA_DIR_B`
   - `service owner B`
   - `control plane B`
   - `app-server backend B`
@@ -190,12 +190,12 @@
 - 记录当前有哪些实例正在运行
 - 记录每个实例的：
   - `instance_name`
-  - `FC_CONFIG_DIR`
-  - `FC_DATA_DIR`
+  - `FOCUS_CONFIG_DIR`
+  - `FOCUS_DATA_DIR`
   - control endpoint
   - backend URL
   - owner pid / started_at
-- 为 `feishu-codexctl` 和 `fcodex` 提供“先找实例，再决定连谁”的统一发现面
+- 为 `focusctl` 和 `fcodex` 提供“先找实例，再决定连谁”的统一发现面
 
 建议边界：
 
@@ -259,9 +259,9 @@
 - `systemd --user` 改为 template service，例如 `feishu-codex@<instance>.service`
 - 外层命令可以保留自动实例解析，但 service 管理面本质上仍是实例级
 
-## 5.2 `feishu-codexctl`
+## 5.2 `focusctl`
 
-`feishu-codexctl` 仍应是实例级管理面，不应退化成“全局神控台”。
+`focusctl` 仍应是实例级管理面，不应退化成“全局神控台”。
 
 原因：
 
@@ -271,9 +271,9 @@
 
 目标形状：
 
-- `feishu-codexctl --instance <name> service status`
-- `feishu-codexctl --instance <name> binding list`
-- `feishu-codexctl --instance <name> thread status --thread-id ...`
+- `focusctl --instance <name> service status`
+- `focusctl --instance <name> binding list`
+- `focusctl --instance <name> thread status --thread-id ...`
 
 ## 5.3 `fcodex`
 
@@ -310,7 +310,7 @@
 
 - 定义实例目录布局
 - 引入实例名校验与 layout resolver
-- 把 `FC_CONFIG_DIR` / `FC_DATA_DIR` / systemd service name 统一走同一个 resolver
+- 把 `FOCUS_CONFIG_DIR` / `FOCUS_DATA_DIR` / systemd service name 统一走同一个 resolver
 - 安装脚本改为安装 template service
 - 为每实例预留 thread admission store
 - 保留 `CODEX_HOME` 共享，不在这一阶段拆 home
@@ -332,13 +332,13 @@
 - 新增本地管理入口，用于导入 / 撤销某实例对某 thread 的 admission
 - 新增 registry store
 - service 启动/停止时注册与注销
-- `feishu-codexctl` 支持枚举实例或按实例连接 control plane
+- `focusctl` 支持枚举实例或按实例连接 control plane
 - `fcodex` 支持根据 registry 自动发现候选实例
 
 阶段目标：
 
 - 共享 `CODEX_HOME` 不再等于“所有实例对所有 thread 默认可见”
-- 本地命令不再只能依赖单个 `FC_DATA_DIR`
+- 本地命令不再只能依赖单个 `FOCUS_DATA_DIR`
 - 能明确知道当前系统里有哪些 feishu-codex 实例处于运行状态
 
 ### Phase 3：Global Thread Runtime Lease
@@ -407,6 +407,6 @@
 
 1. 是否接受“共享 `CODEX_HOME`，但 backend 按实例隔离”作为正式方向
 2. 是否接受 `fcodex` 保留 `--instance`，但默认尽量自动路由
-3. 是否接受 `feishu-codexctl` 本质上仍是实例级管理面
+3. 是否接受 `focusctl` 本质上仍是实例级管理面
 4. 是否接受必须新增全局 `instance registry` 与 `thread runtime lease`
 5. 是否接受把“裸 `codex` isolated backend 并发写同一 thread”继续定义为文档教育边界，而不是试图技术封死

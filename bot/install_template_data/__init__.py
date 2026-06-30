@@ -1,1 +1,1 @@
-"""Packaged config template fallbacks for installed feishu-codex wheels."""
+"""Packaged config template fallbacks for installed FOCUS wheels."""

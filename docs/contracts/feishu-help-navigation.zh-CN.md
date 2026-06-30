@@ -46,7 +46,7 @@
 正文应提醒用户：
 
 - 同一 thread 可以被多个端观察，但在同一实例内，同一 live turn 只有一个 interaction owner
-- 本地继续同一个 live thread 使用 `fcodex resume <thread_id|thread_name>`
+- 本地继续同一个 live thread 使用 `focus resume <thread_id|thread_name>` 或 `fcodex resume <thread_id|thread_name>`
 
 ### 3.2 Thread Settings
 

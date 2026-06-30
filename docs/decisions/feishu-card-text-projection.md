@@ -4,17 +4,17 @@ Chinese version: `docs/decisions/feishu-card-text-projection.zh-CN.md`
 
 See also:
 
-- `docs/architecture/feishu-codex-design.md`: current architecture and module boundaries
+- `docs/architecture/focus-design.md`: current architecture and module boundaries
 - `docs/contracts/feishu-thread-lifecycle.md`: execution-card lifecycle and terminal finalization
 - `docs/decisions/feishu-attachment-ingress.md`: attachment ingress and local staging boundary
 - `docs/decisions/feishu-output-images.md`: outbound image delivery boundary
 
 ## 1. Problem
 
-Users want `feishu-codex` to recover useful text semantics from Feishu cards,
+Users want FOCUS to recover useful text semantics from Feishu cards,
 especially:
 
-- terminal execution results emitted by `feishu-codex` itself
+- terminal execution results emitted by FOCUS itself
 - visible text from ordinary external message cards
 
 The current constraints are:
@@ -43,7 +43,7 @@ handling:
 
 1. The repository only promises **card text projection**, not full UI / action /
    state equivalence.
-2. Live execution cards emitted by `feishu-codex` remain primarily human-facing
+2. Live execution cards emitted by FOCUS remain primarily human-facing
    UI and are not the strong-contract round-trip carrier.
 3. Only terminal turn results enter the strong contract, and they must expose an
    authoritative `final_reply_text`.
@@ -370,7 +370,7 @@ support, or recovery of true business semantics.
 
 ### 7.1 Strong-contract round-trip
 
-- terminal results emitted by `feishu-codex` itself, when they expose
+- terminal results emitted by FOCUS itself, when they expose
   authoritative `final_reply_text`
 - authoritative results carried by any of:
   - a dedicated block on a `terminal execution card`

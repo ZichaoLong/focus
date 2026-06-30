@@ -1,24 +1,24 @@
-# feishu-codex 技术设计
+# FOCUS 技术设计
 
-英文原文：`docs/architecture/feishu-codex-design.md`
+英文原文：`docs/architecture/focus-design.md`
 
 另见：
 
 - `docs/contracts/thread-profile-semantics.zh-CN.md`
-- `docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`
+- `docs/architecture/focus-shared-backend-runtime.zh-CN.md`
 - `docs/decisions/shared-backend-resume-safety.zh-CN.md`
 - `docs/decisions/feishu-output-images.zh-CN.md`
 - `docs/archive/codex-handler-decomposition-plan.zh-CN.md`
 
 ## 1. 背景
 
-`feishu-codex` 是一个独立的、面向 Codex 的项目，不是旧 Claude 集成的简单改名版本。
+FOCUS 是一个独立的、面向 Codex 的项目，不是旧 Claude 集成的简单改名版本。
 
 历史背景仍然重要：
 
 - [`clfeishu`](https://github.com/ZichaoLong/clfeishu) 验证了“飞书消息 + 卡片 + 审批 + 会话管理”这条交互路径是有价值的
 - 但它依赖 Claude 特有的本地文件格式和 hook 行为
-- `feishu-codex` 保留飞书侧交互经验，同时把 agent/runtime 集成层切换到 Codex 原生能力
+- FOCUS 保留飞书侧交互经验，同时把 agent/runtime 集成层切换到 Codex 原生能力
 
 上游基线：
 
@@ -50,13 +50,13 @@
 - 不依赖未公开的 Codex 磁盘布局来做线程发现或元数据同步
 - 第一版不追求覆盖 Codex 的所有实验特性
 - 不把 `clfeishu` 代码复用当作当前架构前提
-- 不把裸 `codex` 与 shared-backend `fcodex` 视为同一条运行路径
+- 不把裸 `codex` 与 shared-backend `focus` / `fcodex` 视为同一条运行路径
 
 ## 4. 当前设计原则
 
 - 原生协议优先：优先使用 `codex app-server` 行为和 API，而不是本地抓取或重建状态
 - 单一事实来源：thread id、cwd、title、preview、source、runtime config 来自 Codex
-- 飞书本地状态留在本地：线程/UI 绑定状态由 `feishu-codex` 管理；机器级共享状态只保留 runtime lease、实例注册表这类协调信息
+- 飞书本地状态留在本地：线程/UI 绑定状态由 FOCUS 管理；机器级共享状态只保留 runtime lease、实例注册表这类协调信息
 - shared-backend 路径显式存在：如果要和飞书继续同一个 live thread，应明确走同一个**实例 backend**
 - `CODEX_HOME` 与 Feishu 运行时边界分离：前者共享，后者按实例隔离
 - 运行时假设要文档化：wrapper 与 shared-backend 行为不能只隐含在代码里
@@ -65,7 +65,7 @@
 
 ### 5.1 分层
 
-`feishu-codex` 当前可分成四层：
+FOCUS 当前可分成四层：
 
 1. 飞书传输层
    - 接收用户消息与卡片动作
@@ -89,8 +89,8 @@
 
 - 所有实例共享同一个 `CODEX_HOME`
 - 每个实例各自持有：
-  - `FC_CONFIG_DIR`
-  - `FC_DATA_DIR`
+  - `FOCUS_CONFIG_DIR`
+  - `FOCUS_DATA_DIR`
   - service owner
   - control plane
   - managed `codex app-server` backend
@@ -98,14 +98,14 @@
 - `shared backend` 在当前仓库里表示“实例内共享 backend”，不是“全系统只存在一个 backend”
 - 某实例的 backend 默认优先 `ws://127.0.0.1:8765`
 - 如果默认端口不可用，该实例 service 会自动切到空闲本地端口，并把当前实际地址写入该实例自己的运行时状态
-- `fcodex` 会先选择目标实例，再发现该实例的实际 backend 地址，并附着到同一个实例 backend
-- 当 upstream remote 模式需要 cwd 修正时，`fcodex` 会额外加一个很薄的本地 websocket 代理；该代理也有独立的 per-launch bearer token，并通过 wrapper 环境变量注入给 upstream Codex
+- `focus` / `fcodex` 会先选择目标实例，再发现该实例的实际 backend 地址，并附着到同一个实例 backend
+- 当 upstream remote 模式需要 cwd 修正时，`focus` / `fcodex` 会额外加一个很薄的本地 websocket 代理；该代理也有独立的 per-launch bearer token，并通过 wrapper 环境变量注入给 upstream Codex
 - 机器级还维护两份全局协调状态：
   - 运行中实例注册表
   - thread live runtime lease
 
 shared backend 与 wrapper 的具体机制，见
-`docs/architecture/fcodex-shared-backend-runtime.zh-CN.md`。
+`docs/architecture/focus-shared-backend-runtime.zh-CN.md`。
 
 ### 5.3 核心模块
 
@@ -117,7 +117,9 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/adapters/codex_app_server.py`：Codex adapter 边界
 - `bot/codex_protocol/client.py`：`codex app-server` 的 websocket JSON-RPC client
 - `bot/fcodex.py` 与 `bot/fcodex_proxy.py`：本地 wrapper 与带 owner 过滤的代理
-- `bot/feishu_codexctl.py` 与 `bot/service_control_plane.py`：本地服务管理 CLI 与运行中服务控制面
+- `bot/focusctl.py`：公开 `focusctl` 管理入口调度器，统一路由 service lifecycle 与 runtime 管理资源
+- `bot/manage_cli.py`：安装、配置、实例目录、service lifecycle、wrapper 与 completion 管理
+- `bot/feishu_codexctl.py` 与 `bot/service_control_plane.py`：runtime 管理子命令与运行中服务控制面
 - `bot/instance_layout.py` 与 `bot/instance_resolution.py`：多实例目录布局、当前/目标实例解析
 - `bot/binding_identity.py`：admin-facing binding 标识规范
 - `bot/binding_runtime_manager.py`：binding / subscribe / attach / detach 与本地 runtime snapshot 的 owner
@@ -224,7 +226,7 @@ shared backend 与 wrapper 的具体机制，见
 
 ### 6.2 Feishu 本地数据
 
-`feishu-codex` 只保存飞书或集成侧专属的数据：
+FOCUS 只保存飞书或集成侧专属的数据：
 
 - 机器级共享的 runtime lease 等协调状态
 - 每实例 shared backend 的运行时地址发现状态
@@ -238,7 +240,7 @@ shared backend 与 wrapper 的具体机制，见
 - 运行中实例注册表
 - thread live runtime lease
 
-它们都位于共享的 `FC_GLOBAL_DATA_DIR` 下。
+它们都位于共享的 `FOCUS_GLOBAL_DATA_DIR` 下。
 这两份状态不属于任何单个 Feishu chat，也不属于 Codex 线程元数据；
 它们只用于本地 CLI 和多实例运行时协调。
 
@@ -246,7 +248,7 @@ shared backend 与 wrapper 的具体机制，见
 
 - control-plane / service token 只用于本地服务控制与 ownership 协调
 - backend websocket token 只用于连接实例 app-server
-- proxy websocket token 只用于单次 `fcodex` wrapper 启动出的本地代理
+- proxy websocket token 只用于单次 `focus` / `fcodex` wrapper 启动出的本地代理
 - 这三类 token 不应复用，也不应为了图省事而重新暴露在命令行参数上
 
 其中，`binding` 默认是跨重启保留的本地 bookmark：
@@ -259,7 +261,7 @@ shared backend 与 wrapper 的具体机制，见
 
 - `binding` 持久化是正式产品需求
 - 显式清空一个或全部 binding 也是合理的本地管理需求
-- 这类清理动作应归入 `feishu-codexctl` 的 binding 管理面
+- 这类清理动作应归入 `focusctl` 的 binding 管理面
 - 它不应继续以“单独删除 `chat_bindings.json` 文件”的方式被定义为一个独立架构概念
 - 持久化 binding schema 也应 fail-closed；已废弃的 v4 `current_thread_write_owner_thread_id` 字段只作为显式迁移输入被忽略，不再写回
 - 只要 `current_thread_id` 非空，就必须显式写出 `feishu_runtime_state`
@@ -342,8 +344,9 @@ shared backend 与 wrapper 的具体机制，见
     其他模块应直接 import，而不是再各自定义局部 TypedDict 或半套字面量
   - 共享 UI / helper 边界：`cards.py`、`card_text_projection.py`、
     `shared_command_surface.py`、`feishu_types.py`
-  - wrapper 与服务管理路径：`fcodex.py`、`fcodex_proxy.py`、
-    `feishu_codexctl.py`、`service_control_plane.py`、`instance_layout.py`、
+  - wrapper 与本地管理路径：`fcodex.py`、`fcodex_proxy.py`、
+    `focusctl.py`、`manage_cli.py`、`feishu_codexctl.py`、
+    `service_control_plane.py`、`instance_layout.py`、
     `instance_resolution.py`、`thread_resolution.py`、`binding_identity.py`
   - Codex adapter / protocol 边界：
     `adapters/base.py`、`adapters/codex_app_server.py`、

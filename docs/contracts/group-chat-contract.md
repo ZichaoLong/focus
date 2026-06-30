@@ -3,7 +3,7 @@
 Chinese version: `docs/contracts/group-chat-contract.zh-CN.md`
 
 This document defines the formal behavior contract for group-chat features in
-`feishu-codex`.
+FOCUS.
 
 It answers:
 
@@ -15,7 +15,7 @@ It answers:
 
 See also:
 
-- `docs/architecture/feishu-codex-design.md`
+- `docs/architecture/focus-design.md`
 - `docs/contracts/feishu-thread-lifecycle.md`
 - `docs/contracts/feishu-help-navigation.md`
 - `docs/verification/group-chat-manual-test-checklist.zh-CN.md`
@@ -29,7 +29,7 @@ It does not redefine:
 - p2p thread lifecycle
 - the shared state vocabulary for `/status`, `/detach`, and the local
   admin surface
-- `fcodex` wrapper semantics
+- `focus` / `fcodex` wrapper semantics
 
 Those remain owned by their dedicated documents.
 
@@ -265,7 +265,7 @@ Those remain owned by their dedicated documents.
 
 ## 10. Other Bots and History
 
-- other bots cannot directly trigger `feishu-codex`
+- other bots cannot directly trigger FOCUS
 - if group history is visible to the bot, messages from other bots can still
   enter the `assistant` context through per-trigger history recovery
 - if history recovery is disabled, other bots' messages do not automatically

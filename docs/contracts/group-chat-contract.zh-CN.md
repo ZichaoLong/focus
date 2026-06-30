@@ -2,7 +2,7 @@
 
 英文原文：`docs/contracts/group-chat-contract.md`
 
-本文定义 `feishu-codex` 当前群聊能力的正式行为合同。
+本文定义 FOCUS 当前群聊能力的正式行为合同。
 
 它回答的问题是：
 
@@ -14,7 +14,7 @@
 
 另见：
 
-- `docs/architecture/feishu-codex-design.zh-CN.md`
+- `docs/architecture/focus-design.zh-CN.md`
 - `docs/contracts/feishu-thread-lifecycle.zh-CN.md`
 - `docs/contracts/feishu-help-navigation.zh-CN.md`
 - `docs/verification/group-chat-manual-test-checklist.zh-CN.md`
@@ -27,7 +27,7 @@
 
 - 单聊线程生命周期
 - `/status`、`/detach` 与本地管理面词汇
-- `fcodex` wrapper 语义
+- `focus` / `fcodex` wrapper 语义
 
 这些分别以各自专题文档为准。
 
@@ -171,7 +171,7 @@
 
 ## 10. 其他机器人与历史消息
 
-- 其他机器人不会直接触发 `feishu-codex`
+- 其他机器人不会直接触发 FOCUS
 - 如果群消息历史对机器人可见，其他机器人消息可以通过每次有效触发时的历史回捞进入上下文
 - 如果关闭历史回捞，其他机器人消息不会自动进入 `assistant` 上下文
 

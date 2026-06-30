@@ -53,7 +53,7 @@
 
 - 代码侧：`bot/stores/thread_admission_store.py` 删除；`bot/codex_handler.py`、`bot/runtime_admin_controller.py`、`bot/feishu_codexctl.py` 全部移除相关字段、构造器参数、控制面端点；无 dead import
 - 测试侧：`tests/test_thread_admission_store.py` 删除；`tests/test_codex_handler.py`、`tests/test_feishu_codexctl.py`、`tests/test_runtime_admin_controller.py` 同步移除 admission 相关 case
-- 控制面：`feishu-codexctl thread admissions/import/revoke` 在 parser 与 dispatcher 中同步删除；`thread/admissions`、`thread/import`、`thread/revoke` 三个 HTTP endpoint 同步移除
+- 控制面：`focusctl thread admissions/import/revoke` 在 parser 与 dispatcher 中同步删除；`thread/admissions`、`thread/import`、`thread/revoke` 三个 HTTP endpoint 同步移除
 - 文档侧：
   - `docs/contracts/runtime-control-surface{,.zh-CN}.md` §6.3 命令清单与 §6.8 章节标题语义同步重写
   - `docs/contracts/session-profile-semantics{,.zh-CN}.md` §2.1、§3、§5 同步重写

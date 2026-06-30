@@ -14,9 +14,9 @@ import os
 import pathlib
 import sys
 
-APP_NAME = "feishu-codex"
-ENV_FILE_NAME = "feishu-codex.env"
-LOG_FILE_NAME = "feishu-codex.log"
+APP_NAME = "focus"
+ENV_FILE_NAME = "focus.env"
+LOG_FILE_NAME = "focus.log"
 
 
 def current_platform() -> str:
@@ -42,7 +42,7 @@ def is_linux() -> bool:
 
 
 def default_config_root() -> pathlib.Path:
-    raw = os.environ.get("FC_CONFIG_ROOT", "").strip()
+    raw = os.environ.get("FOCUS_CONFIG_ROOT", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
@@ -55,7 +55,7 @@ def default_config_root() -> pathlib.Path:
 
 
 def default_data_root() -> pathlib.Path:
-    raw = os.environ.get("FC_DATA_ROOT", "").strip()
+    raw = os.environ.get("FOCUS_DATA_ROOT", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
@@ -72,7 +72,7 @@ def default_working_dir() -> pathlib.Path:
 
 
 def default_user_bin_dir() -> pathlib.Path:
-    raw = os.environ.get("FC_BIN_DIR", "").strip()
+    raw = os.environ.get("FOCUS_BIN_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
@@ -83,7 +83,7 @@ def default_user_bin_dir() -> pathlib.Path:
 
 
 def default_user_bash_completion_dir() -> pathlib.Path | None:
-    raw = os.environ.get("FC_BASH_COMPLETION_DIR", "").strip()
+    raw = os.environ.get("FOCUS_BASH_COMPLETION_DIR", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     if is_windows():
@@ -95,16 +95,16 @@ def default_user_bash_completion_dir() -> pathlib.Path | None:
 
 
 def default_user_zsh_completion_path() -> pathlib.Path | None:
-    raw = os.environ.get("FC_ZSH_COMPLETION_PATH", "").strip()
+    raw = os.environ.get("FOCUS_ZSH_COMPLETION_PATH", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     if is_windows():
         return None
-    return default_config_root() / "shell-completion" / "feishu-codex.zsh"
+    return default_config_root() / "shell-completion" / "focus.zsh"
 
 
 def default_user_zsh_rc_path() -> pathlib.Path | None:
-    raw = os.environ.get("FC_ZSH_RC_PATH", "").strip()
+    raw = os.environ.get("FOCUS_ZSH_RC_PATH", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     if is_windows():
@@ -113,7 +113,7 @@ def default_user_zsh_rc_path() -> pathlib.Path | None:
 
 
 def default_user_powershell_profile_path() -> pathlib.Path | None:
-    raw = os.environ.get("FC_POWERSHELL_PROFILE_PATH", "").strip()
+    raw = os.environ.get("FOCUS_POWERSHELL_PROFILE_PATH", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     if not is_windows():
@@ -122,16 +122,16 @@ def default_user_powershell_profile_path() -> pathlib.Path | None:
 
 
 def default_user_powershell_completion_path() -> pathlib.Path | None:
-    raw = os.environ.get("FC_POWERSHELL_COMPLETION_PATH", "").strip()
+    raw = os.environ.get("FOCUS_POWERSHELL_COMPLETION_PATH", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     if default_user_powershell_profile_path() is None:
         return None
-    return default_config_root() / "shell-completion" / "feishu-codex.ps1"
+    return default_config_root() / "shell-completion" / "focus.ps1"
 
 
 def default_env_file() -> pathlib.Path:
-    raw = os.environ.get("FC_ENV_FILE", "").strip()
+    raw = os.environ.get("FOCUS_ENV_FILE", "").strip()
     if raw:
         return pathlib.Path(raw).expanduser()
     return default_config_root() / ENV_FILE_NAME

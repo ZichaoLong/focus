@@ -31,7 +31,7 @@ The following surfaces are removed from the project contract:
 
 - legacy project-owned profile commands
 - `/memory`
-- `feishu-codexctl thread memory`
+- `focusctl thread memory`
 - `new_thread_memory_mode_seed`
 - any project-owned thread-level memory/provider/profile restore state
 

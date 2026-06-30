@@ -2,7 +2,7 @@
 
 See also:
 
-- `docs/architecture/feishu-codex-design.md` for the current architecture and
+- `docs/architecture/focus-design.md` for the current architecture and
   repository boundaries
 - `docs/contracts/codex-permissions-model.md` for `sandbox`, `approval`, and
   writable-root semantics
@@ -14,14 +14,14 @@ See also:
 ## 1. Problem Statement
 
 Users want to send attachments in Feishu and continue working with local Codex
-through `feishu-codex`.
+through FOCUS.
 
 The current repository baseline is:
 
 - file messages are still rejected explicitly
 - app-server turn input is still mostly text-centric
 - complex file parsing should not become a long-term maintenance obligation of
-  `feishu-codex` itself
+  FOCUS itself
 
 If this repository tries to embed PDF extraction, Office parsing, OCR,
 audio/video transcription, and archive handling directly, it creates:
@@ -37,7 +37,7 @@ This document defines a narrower and more stable boundary.
 
 The first-phase repository decision for Feishu attachment support is:
 
-1. `feishu-codex` is only responsible for **accepting downloadable Feishu
+1. FOCUS is only responsible for **accepting downloadable Feishu
    attachment messages, downloading the resource, staging it under the current
    working directory, and handing the local path to Codex**.
 2. Complex file interpretation is not a repository responsibility. It should be
@@ -49,7 +49,7 @@ The first-phase repository decision for Feishu attachment support is:
    upgrade:
    - besides being saved locally, they should also be passed as `localImage`
 4. Non-image attachments are treated uniformly as local file paths:
-   - `feishu-codex` does not guarantee that the model will understand them
+   - FOCUS does not guarantee that the model will understand them
      directly
    - it only guarantees that the file is staged locally and that the path is
      made explicit to Codex
@@ -66,7 +66,7 @@ The first-phase repository decision for Feishu attachment support is:
 
 This boundary keeps responsibility split across two clear layers:
 
-- `feishu-codex`
+- FOCUS
   - owns message ingress, permission / group-activation checks, download,
     staging, and turn
     binding
@@ -285,8 +285,8 @@ When a turn starts:
 
 The key point is:
 
-- `feishu-codex` does not decide how a PDF / DOCX / MP4 should be interpreted
-- `feishu-codex` only brings the file into the local workspace reliably and
+- FOCUS does not decide how a PDF / DOCX / MP4 should be interpreted
+- FOCUS only brings the file into the local workspace reliably and
   makes the path explicit to Codex
 
 ## 8. Explicit Non-Goals

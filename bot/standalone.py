@@ -23,8 +23,8 @@ class CodexBot(FeishuBot):
         *,
         system_config: dict | None = None,
     ):
-        config_dir = Path(os.environ["FC_CONFIG_DIR"]) if "FC_CONFIG_DIR" in os.environ else None
-        data_dir = Path(os.environ["FC_DATA_DIR"]) if "FC_DATA_DIR" in os.environ else None
+        config_dir = Path(os.environ["FOCUS_CONFIG_DIR"]) if "FOCUS_CONFIG_DIR" in os.environ else None
+        data_dir = Path(os.environ["FOCUS_DATA_DIR"]) if "FOCUS_DATA_DIR" in os.environ else None
         super().__init__(
             app_id,
             app_secret,

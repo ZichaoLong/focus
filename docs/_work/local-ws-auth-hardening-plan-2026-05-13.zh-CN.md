@@ -41,7 +41,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 `feishu-codex` 还会启动一个本地 control-plane endpoint，供：
 
-- `feishu-codexctl`
+- `focusctl`
 - 多实例管理
 - service admin 动作
 
@@ -62,7 +62,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 并且当前实现里：
 
 - service 连接 app-server 时不带 `Authorization`
-- `feishu-codexctl` 远程连 app-server 时不带 `Authorization`
+- `focusctl` 远程连 app-server 时不带 `Authorization`
 - `fcodex` 本地 proxy 连接 backend 时不带 `Authorization`
 
 而 upstream 当前对 loopback websocket 的默认行为是：
@@ -147,7 +147,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 
 正式目标必须同时覆盖两条 websocket 链路：
 
-1. `feishu-codex` / `feishu-codexctl` / `fcodex proxy` -> managed `codex app-server`
+1. `feishu-codex` / `focusctl` / `fcodex proxy` -> managed `codex app-server`
 2. upstream `codex` TUI -> `fcodex` local proxy
 
 否则：
@@ -247,7 +247,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
    - 生命周期：实例级、可持久化
    - 使用方：
      - `feishu-codex` service
-     - `feishu-codexctl`
+     - `focusctl`
      - `fcodex proxy`
 
 2. `local proxy auth token`
@@ -309,7 +309,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
    - `--ws-token-file <path>`
 3. `CodexRpcClient` 连接 backend 时，在 websocket 握手中带：
    - `Authorization: Bearer <token>`
-4. `feishu-codexctl` 远程 adapter 也走同一 token 读取与握手逻辑
+4. `focusctl` 远程 adapter 也走同一 token 读取与握手逻辑
 5. `fcodex proxy -> backend` 这条链路也改为带 backend bearer token
 
 完成标准：
@@ -346,7 +346,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 1. `CodexRpcClient`
    - 启动参数包含 `--ws-auth capability-token --ws-token-file ...`
    - websocket client 握手包含 `Authorization`
-2. `feishu-codexctl`
+2. `focusctl`
    - remote adapter 能读取并携带 token
 3. `fcodex proxy`
    - 未授权连接被拒
@@ -395,8 +395,8 @@ Status: working material under `docs/_work/`. Not a repository fact.
 2. `fcodex` wrapper 已不再把 proxy auth token 和 service token 通过 argv 传给
    `bot.fcodex_proxy`。
    - 当前做法是：
-     - proxy auth token 通过 `FCODEX_REMOTE_AUTH_TOKEN`
-     - service token 通过 `FCODEX_SERVICE_TOKEN`
+     - proxy auth token 通过 `FOCUS_REMOTE_AUTH_TOKEN`
+     - service token 通过 `FOCUS_SERVICE_TOKEN`
    - 这比早期实现把 `--service-token` 暴露在进程参数里更稳。
 3. `CodexRpcClient` 现在接收的是 `app_server_data_dir`，再由
    `AppServerWebsocketAuthTokenStore` 负责 `ensure()/require()`。
@@ -418,13 +418,13 @@ Status: working material under `docs/_work/`. Not a repository fact.
 2. 去掉 auth secret 查找里的 `"."` 回退。
    - 当前 proxy 侧 backend auth 读取仍允许：
      - `data_dir`
-     - `FC_DATA_DIR`
+     - `FOCUS_DATA_DIR`
      - 最后回退到 `"."`
    - 对普通路径这也许只是“宽松”，但对安全敏感的 token 查找，这会把“配置错误”
      变成“在错误目录里静默找不到 token，再进入降级路径”。
    - 建议改成：
      - backend websocket auth 路径必须能确定实例 data dir；
-     - 若 `data_dir` 和 `FC_DATA_DIR` 都缺失，则直接报错，不允许 `"."` fallback。
+     - 若 `data_dir` 和 `FOCUS_DATA_DIR` 都缺失，则直接报错，不允许 `"."` fallback。
 
 3. 为上述 fail-close 语义补专门回归测试。
    - 目前测试已覆盖“合法 bearer token 工作”和“未授权 proxy client 被拒绝”，
@@ -432,7 +432,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
      - backend token 文件缺失时，proxy 应拒绝启动，而不是继续尝试无鉴权连接。
    - 建议补最少两条：
      - token 文件缺失 -> `run_proxy(...)` 启动失败
-     - `data_dir` 缺失且 `FC_DATA_DIR` 为空 -> 直接报错
+     - `data_dir` 缺失且 `FOCUS_DATA_DIR` 为空 -> 直接报错
 
 ### 9.3 我认为当前 `dev` 里最像真实 bug 的点
 
@@ -542,7 +542,7 @@ Status: working material under `docs/_work/`. Not a repository fact.
 这条问题已收口：
 
 - `fcodex_proxy` 不再接受 `--service-token`
-- 统一只读取 `FCODEX_SERVICE_TOKEN`
+- 统一只读取 `FOCUS_SERVICE_TOKEN`
 
 为什么当时值得修：
 
@@ -554,4 +554,4 @@ Status: working material under `docs/_work/`. Not a repository fact.
 最终做法：
 
 - 删除 `--service-token` parser 参数；
-- 统一只接受 `FCODEX_SERVICE_TOKEN` 环境变量。
+- 统一只接受 `FOCUS_SERVICE_TOKEN` 环境变量。

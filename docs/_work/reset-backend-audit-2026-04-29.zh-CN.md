@@ -6,7 +6,7 @@
 
 > 后续状态（当前工作树）：
 > - 1.1 的 `reason_code` 命名错位已修复为 `*_FORCE_ONLY_BY_RUNTIME_UNVERIFIED`
-> - 1.2 的 README 命令清单已补上 `feishu-codexctl service reset-backend`
+> - 1.2 的 README 命令清单已补上 `focusctl service reset-backend`
 > - 1.3 提到的“自动 fail-close 会先 patch 卡片再 auto-reject”已写入 `docs/contracts/runtime-control-surface.{md,zh-CN.md} §2.6`
 > - 下文保留原始审视记录，作为当时基线上的 review 快照
 
@@ -38,9 +38,9 @@
 ### 1.2 `README.md` 常用命令清单未同步 `service reset-backend`（**P3 / 文档卫生**）
 
 - 位置：`README.md:427-444` 那一段 `常用命令` 代码块。
-- 契约 `runtime-control-surface.md §6.3` / `.zh-CN.md §6.3` 已把 `feishu-codexctl service reset-backend [--force]` 列入 formal command set，CLI 的 `epilog` 也加了这一行，但 README 主体的 "常用命令" 列表漏了。
+- 契约 `runtime-control-surface.md §6.3` / `.zh-CN.md §6.3` 已把 `focusctl service reset-backend [--force]` 列入 formal command set，CLI 的 `epilog` 也加了这一行，但 README 主体的 "常用命令" 列表漏了。
 - 影响：README 是新读者读到的第一份 command list；漏写会让人觉得它属于隐藏 / 未稳定动作。
-- 建议：在 `feishu-codexctl service status` 后面加一行 `feishu-codexctl service reset-backend`，与契约对齐。
+- 建议：在 `focusctl service status` 后面加一行 `focusctl service reset-backend`，与契约对齐。
 
 ### 1.3 `fail_close_chat_requests` 隐含新增了 card patch 行为（**P4 / 行为变更需要在 changelog 里写一句**）
 
@@ -92,5 +92,5 @@
 按 ROI：
 
 1. 重命名两个 `*_BLOCKED_BY_RUNTIME_UNVERIFIED` 常量为 `*_FORCE_ONLY_BY_RUNTIME_UNVERIFIED`，并同步两处使用点（`bot/runtime_admin_controller.py`）。改动量极小，避免之后有人按 reason_code 名字误判分支。
-2. 给 `README.md:427-444` 的 `常用命令` 代码块加一行 `feishu-codexctl service reset-backend`。
+2. 给 `README.md:427-444` 的 `常用命令` 代码块加一行 `focusctl service reset-backend`。
 3. 在本轮 PR description / changelog 提一句 "`fail_close_chat_requests` 现在会同步 patch pending 卡片"。

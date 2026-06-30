@@ -33,18 +33,18 @@ It does not redefine:
 | `/commands` | Show a plain-text list of common commands | yes; `More` page | admin only | admin only | none |
 | `/h` | Alias for `/help` | no | admin only | admin only | none |
 | `/pwd` | Show current working directory | no | admin only | admin only | none |
-| `/status` | Show current chat directory, current thread, and current-session settings summary | yes; `Connection Status` page | admin only | admin only | `feishu-codexctl binding status <binding_id>` for deeper diagnostics |
-| `/preflight` | Dry-run the next plain message and current-chat detach availability | yes; `Connection Status` page | admin only | admin only | partly overlaps `feishu-codexctl binding status <binding_id>` |
+| `/status` | Show current chat directory, current thread, and current-session settings summary | yes; `Connection Status` page | admin only | admin only | `focusctl binding status <binding_id>` for deeper diagnostics |
+| `/preflight` | Dry-run the next plain message and current-chat detach availability | yes; `Connection Status` page | admin only | admin only | partly overlaps `focusctl binding status <binding_id>` |
 | `/cd [path]` | Show or switch current directory; switching clears the current thread binding | yes; `Start` form | admin only | admin only | none |
 | `/new` | Create a new current thread | yes; `Start` page | admin only | admin only | none |
-| `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `feishu-codexctl thread list --scope cwd` |
-| `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
+| `/threads` | Browse threads in the current directory | yes; `Start` page | admin only | admin only | `focusctl thread list --scope cwd` |
+| `/resume <thread_id\|thread_name>` | Resume a target thread into the current chat | yes; `Start` form | admin only | admin only | use `focus resume <thread_id\|thread_name>` or `fcodex resume <thread_id\|thread_name>` for local live-thread continuation |
 | `/goal [show\|text\|set <objective>\|pause\|resume\|clear]` | Show or manage the current thread's goal; `text` exports plain text | yes; `Thread Settings` page | admin only | admin only | none |
 | `/compact` | Compact the current bound thread's context history | yes; `Thread Settings` page | admin only | admin only | no direct local equivalent |
 | `/rename <title>` | Rename the current thread | yes; `Thread Settings` form | admin only | admin only | none |
-| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `feishu-codexctl thread archive --thread-id/--thread-name`; local CLI additionally supports repeated `--thread-id` for batch archive |
-| `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding record | yes; dynamic button on `Connection Status` | admin only | admin only | `feishu-codexctl binding detach <binding_id>`; thread scope is `feishu-codexctl thread detach ...` |
-| `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | yes; `Connection Status` and its lower-level page, and also contextual result cards | admin only | admin only | `feishu-codexctl binding/thread/service attach ...` |
+| `/archive [thread_id\|thread_name]` | Archive the current thread, or archive an explicit target | yes; `Thread Settings` button or form | admin only | admin only | `focusctl thread archive --thread-id/--thread-name`; local CLI additionally supports repeated `--thread-id` for batch archive |
+| `/detach` | Stop the current chat from receiving Feishu push for the current thread while keeping the binding record | yes; dynamic button on `Connection Status` | admin only | admin only | `focusctl binding detach <binding_id>`; thread scope is `focusctl thread detach ...` |
+| `/attach [binding\|thread\|service]` | Restore Feishu push for the current chat, current thread, or current instance | yes; `Connection Status` and its lower-level page, and also contextual result cards | admin only | admin only | `focusctl binding/thread/service attach ...` |
 | `/cancel` | Cancel the current execution | no; primary entry is the execution-card button | admin only | admin only | none |
 
 ### 2.2 Turn Settings and More
@@ -56,10 +56,10 @@ It does not redefine:
 | `/effort [auto\|none\|minimal\|low\|medium\|high\|xhigh]` | Set the current Feishu session's turn-time effort override; no-arg opens the shared model/effort card | yes; `Turn Settings` page | admin only | admin only | none |
 | `/approval [untrusted\|on-request\|never]` | Set approval policy | yes; `Turn Settings` page | admin only | admin only | none |
 | `/last text` | Export the latest authoritative terminal text from the current session; prefers terminal result, falls back to the latest execution card | yes; `Turn Settings` page | admin only | admin only | none |
-| `/reset-backend` | Preview and reset the current instance backend for recovery | yes; `More -> Advanced Actions` | admin only | admin only | `feishu-codexctl service reset-backend` |
+| `/reset-backend` | Preview and reset the current instance backend for recovery | yes; `More -> Advanced Actions` | admin only | admin only | `focusctl service reset-backend` |
 | `/whoami` | Show the caller's identity | yes; `More` page | anyone | unsupported | none |
 | `/bot-status` | Show bot identity and config probe results | yes; `More` page | anyone | admin only | none |
-| `/init <token>` | Initialize admins and `bot_open_id` | yes; `More` form | anyone | unsupported | `feishu-codex config init-token` only shows the token |
+| `/init <token>` | Initialize admins and `bot_open_id` | yes; `More` form | anyone | unsupported | `focusctl config init-token` only shows the token |
 | `/debug-contact <open_id>` | Debug contact-name resolution | yes; `More -> Advanced Actions` form | admin only | unsupported | none |
 
 ### 2.3 Group Settings
@@ -101,8 +101,8 @@ These are part of the formal Feishu user surface and must be maintained together
 
 ## 5. Boundary
 
-- `feishu-codex` owns install, instance, and service lifecycle. It is not the Feishu chat command surface.
-- `feishu-codexctl` owns local inspection and management of bindings, threads, and services. It is not a second frontend.
-- `fcodex` is the local live-thread continuation entry point.
+- FOCUS owns install, instance, and service lifecycle. It is not the Feishu chat command surface.
+- `focusctl` owns local inspection and management of bindings, threads, and services. It is not a second frontend.
+- `focus` / `fcodex` are the local live-thread continuation entry points.
 
 If any Feishu command is added, removed, renamed, or moved in `/help`, or if button entry points or permission boundaries change, this file must be updated with the code.

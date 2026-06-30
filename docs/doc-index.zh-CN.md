@@ -37,7 +37,7 @@
 
 ### 功能合同
 
-- [`feishu-codexctl-command-matrix.zh-CN.md`](./contracts/feishu-codexctl-command-matrix.zh-CN.md)
+- [`focusctl-command-matrix.zh-CN.md`](./contracts/focusctl-command-matrix.zh-CN.md)
 - [`feishu-command-matrix.zh-CN.md`](./contracts/feishu-command-matrix.zh-CN.md)
 - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
 - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
@@ -53,8 +53,8 @@
 
 ### 架构设计
 
-- [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md)
-- [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)
+- [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md)
+- [`focus-shared-backend-runtime.zh-CN.md`](./architecture/focus-shared-backend-runtime.zh-CN.md)
 
 ### 决策记录
 
@@ -77,22 +77,22 @@
 
 | 你想确认什么 | 应阅读的文档 |
 | --- | --- |
-| `feishu-codexctl` 到底有哪些子命令、分别作用于哪个状态层、哪些会改状态、参数约束是什么、以及与飞书命令面如何对应？ | [`feishu-codexctl-command-matrix.zh-CN.md`](./contracts/feishu-codexctl-command-matrix.zh-CN.md) |
+| `focusctl` 到底有哪些子命令、分别作用于哪个状态层、哪些会改状态、参数约束是什么、以及与飞书命令面如何对应？ | [`focusctl-command-matrix.zh-CN.md`](./contracts/focusctl-command-matrix.zh-CN.md) |
 | 飞书侧到底有哪些 slash 命令、哪些能从 `/help` 到达、谁可执行、有哪些按钮、以及它们与本地 CLI 的对应关系是什么？ | [`feishu-command-matrix.zh-CN.md`](./contracts/feishu-command-matrix.zh-CN.md) |
-| 当前总体架构、分层、模块划分、仓库结构是什么？ | [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md) |
+| 当前总体架构、分层、模块划分、仓库结构是什么？ | [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md) |
 | 飞书侧线程生命周期是什么？哪些状态绝不能混淆？ | [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md) |
-| `/status`、`/detach`、`feishu-codexctl` 共享的状态词汇与管理面合同是什么？ | [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
+| `/status`、`/detach`、`focusctl` 共享的状态词汇与管理面合同是什么？ | [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | 某个运行时设置“刚写了什么”“持久化在哪”“什么时候才算生效”“provisional 阶段是否已有正式事实源”这些问题该怎么区分？ | [`runtime-settings-fact-sources.zh-CN.md`](./contracts/runtime-settings-fact-sources.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md) |
 | 历史上的 thread-wise next-load 设置为何被收缩掉、收缩后还剩什么？ | [`thread-next-load-settings-semantics.zh-CN.md`](./contracts/thread-next-load-settings-semantics.zh-CN.md)、[`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
-| `/threads`、`/resume`、`/archive` 在飞书、`fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
+| `/threads`、`/resume`、`/archive` 在飞书、`focus` / `fcodex`、TUI 三层里分别是什么意思？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md) |
 | 历史上的 thread memory 控制面为何被移除、现在应改看哪两层设置？ | [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)、[`runtime-settings-fact-sources.zh-CN.md`](./contracts/runtime-settings-fact-sources.zh-CN.md) |
-| 如何在未来时点继续当前 Feishu 绑定 thread？`binding/submit-prompt`、`feishu-codexctl prompt send`、Linux `systemd --user` skill 的正式边界是什么？ | [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md) |
-| 本地命令面应如何重划？`/detach`、`fcodex` thin wrapper、`feishu-codexctl` 分工的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
-| 多实例下 `default` / 命名实例、共享 thread 可见面、`fcodex --instance`、全局 runtime lease 怎么工作？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)、[`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md) |
+| 如何在未来时点继续当前 Feishu 绑定 thread？`binding/submit-prompt`、`focusctl prompt send`、Linux `systemd --user` skill 的正式边界是什么？ | [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md) |
+| 本地命令面应如何重划？`/detach`、`focus` / `fcodex` thin wrapper、`focusctl` 分工的当前正式合同是什么？ | [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md) |
+| 多实例下 `default` / 命名实例、共享 thread 可见面、`focus --instance` / `fcodex --instance`、全局 runtime lease 怎么工作？ | [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)、[`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)、[`focus-shared-backend-runtime.zh-CN.md`](./architecture/focus-shared-backend-runtime.zh-CN.md) |
 | 飞书 `/help` 的信息架构、按钮导航与 slash 语义一致性合同是什么？ | [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md) |
 | 群激活、群聊模式、历史回捞、群命令触发的正式合同是什么？ | [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md) |
 | approval、sandbox、writable roots、受保护路径的语义是什么？ | [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md) |
-| `fcodex` shared-backend 的运行时模型是什么？wrapper、本地代理、`--cd` 语义如何工作？ | [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md) |
+| `focus` / `fcodex` shared-backend 的运行时模型是什么？wrapper、本地代理、`--cd` 语义如何工作？ | [`focus-shared-backend-runtime.zh-CN.md`](./architecture/focus-shared-backend-runtime.zh-CN.md) |
 | shared backend 复用与 `/resume` 有哪些安全规则？ | [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md) |
 | 飞书附件 / 文件消息应如何进入本地工作区？哪些类型支持下载、哪些行为不由本仓库负责？ | [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md) |
 | 飞书卡片消息的文本投影、终态 `final_reply_text`、以及普通卡片的 best-effort 文本提取边界是什么？ | [`feishu-card-text-projection.zh-CN.md`](./decisions/feishu-card-text-projection.zh-CN.md) |
@@ -105,7 +105,7 @@
 ## 常见阅读路径
 
 - 做架构调整或较大重构时：
-  - [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md)
+  - [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md)
   - 再按需补读相关 `contracts/` 与 `decisions/`
 - 排查 session、线程恢复、运行时切换问题时：
   - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
@@ -119,22 +119,22 @@
   - [`group-chat-contract.zh-CN.md`](./contracts/group-chat-contract.zh-CN.md)
   - [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md)
   - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
-- 改本地 `feishu-codexctl` 查看 / 管理面时：
-  - [`feishu-codexctl-command-matrix.zh-CN.md`](./contracts/feishu-codexctl-command-matrix.zh-CN.md)
+- 改本地 `focusctl` 查看 / 管理面时：
+  - [`focusctl-command-matrix.zh-CN.md`](./contracts/focusctl-command-matrix.zh-CN.md)
   - [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md)
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
   - [`runtime-settings-fact-sources.zh-CN.md`](./contracts/runtime-settings-fact-sources.zh-CN.md)
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
-- 改 `fcodex` wrapper、shared backend、本地代理相关逻辑时：
+- 改 `focus` / `fcodex` wrapper、shared backend、本地代理相关逻辑时：
   - [`local-command-and-thread-profile-contract.zh-CN.md`](./contracts/local-command-and-thread-profile-contract.zh-CN.md)
-  - [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)
+  - [`focus-shared-backend-runtime.zh-CN.md`](./architecture/focus-shared-backend-runtime.zh-CN.md)
   - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
-- 改多实例、共享 thread 可见面、`feishu-codexctl --instance` 或跨实例 runtime lease 相关逻辑时：
+- 改多实例、共享 thread 可见面、`focusctl --instance` 或跨实例 runtime lease 相关逻辑时：
   - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
   - [`runtime-control-surface.zh-CN.md`](./contracts/runtime-control-surface.zh-CN.md)
   - [`cross-instance-live-runtime-admission.zh-CN.md`](./decisions/cross-instance-live-runtime-admission.zh-CN.md)
-  - [`fcodex-shared-backend-runtime.zh-CN.md`](./architecture/fcodex-shared-backend-runtime.zh-CN.md)
+  - [`focus-shared-backend-runtime.zh-CN.md`](./architecture/focus-shared-backend-runtime.zh-CN.md)
   - [`shared-backend-resume-safety.zh-CN.md`](./decisions/shared-backend-resume-safety.zh-CN.md)
 - 改飞书附件、文件消息、本地暂存、图片输入升级相关逻辑时：
   - [`feishu-attachment-ingress.zh-CN.md`](./decisions/feishu-attachment-ingress.zh-CN.md)
@@ -146,7 +146,7 @@
   - [`feishu-raw-card-retrieval.zh-CN.md`](./decisions/feishu-raw-card-retrieval.zh-CN.md)
   - [`feishu-output-images.zh-CN.md`](./decisions/feishu-output-images.zh-CN.md)
   - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)
-  - [`feishu-codex-design.zh-CN.md`](./architecture/feishu-codex-design.zh-CN.md)
+  - [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md)
 - 处理权限、执行审批、沙箱报错或产品文案时：
   - [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md)
 

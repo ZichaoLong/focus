@@ -12,8 +12,8 @@ class PlatformPathsTests(unittest.TestCase):
             with patch("bot.platform_paths.pathlib.Path.home", return_value=Path("/home/tester")):
                 with patch("bot.platform_paths.is_windows", return_value=False):
                     with patch("bot.platform_paths.is_macos", return_value=False):
-                        self.assertEqual(default_config_root(), Path("/home/tester/.config/feishu-codex"))
-                        self.assertEqual(default_data_root(), Path("/home/tester/.local/share/feishu-codex"))
+                        self.assertEqual(default_config_root(), Path("/home/tester/.config/focus"))
+                        self.assertEqual(default_data_root(), Path("/home/tester/.local/share/focus"))
 
     def test_default_roots_use_macos_machine_paths(self) -> None:
         with patch.dict(os.environ, {}, clear=True):
@@ -22,11 +22,11 @@ class PlatformPathsTests(unittest.TestCase):
                     with patch("bot.platform_paths.is_macos", return_value=True):
                         self.assertEqual(
                             default_config_root(),
-                            Path("/Users/tester/Library/Application Support/feishu-codex/config"),
+                            Path("/Users/tester/Library/Application Support/focus/config"),
                         )
                         self.assertEqual(
                             default_data_root(),
-                            Path("/Users/tester/Library/Application Support/feishu-codex/data"),
+                            Path("/Users/tester/Library/Application Support/focus/data"),
                         )
 
     def test_default_roots_use_windows_machine_paths(self) -> None:
@@ -43,19 +43,19 @@ class PlatformPathsTests(unittest.TestCase):
                     with patch("bot.platform_paths.is_macos", return_value=False):
                         self.assertEqual(
                             default_config_root(),
-                            Path(r"C:\Users\tester\AppData\Roaming/feishu-codex/config"),
+                            Path(r"C:\Users\tester\AppData\Roaming/focus/config"),
                         )
                         self.assertEqual(
                             default_data_root(),
-                            Path(r"C:\Users\tester\AppData\Local/feishu-codex/data"),
+                            Path(r"C:\Users\tester\AppData\Local/focus/data"),
                         )
 
     def test_default_roots_honor_explicit_env_overrides(self) -> None:
         with patch.dict(
             os.environ,
             {
-                "FC_CONFIG_ROOT": "/tmp/custom-config-root",
-                "FC_DATA_ROOT": "/tmp/custom-data-root",
+                "FOCUS_CONFIG_ROOT": "/tmp/custom-config-root",
+                "FOCUS_DATA_ROOT": "/tmp/custom-data-root",
             },
             clear=True,
         ):
