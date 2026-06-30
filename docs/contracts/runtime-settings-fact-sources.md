@@ -81,6 +81,13 @@ Within that family:
 - adapters must not materialize `auto` into a complete upstream settings object
   carrying stale snapshot values; ordinary auto turns should let the upstream
   thread state continue on its own.
+- `model` / `reasoning_effort` and `approval_policy` /
+  `permissions_profile_id` have different empty-value semantics:
+  - `model` / `reasoning_effort` may remain empty, meaning `auto`
+  - `approval_policy` / `permissions_profile_id` are the binding-local safety
+    baseline; a new binding is seeded from `codex.yaml`, and once the binding
+    is persisted the resolved safety baseline is frozen and does not drift with
+    later instance-default changes
 - `model` and `reasoning_effort` in `codex.yaml` only seed a new binding's
   initial runtime state; once a binding exists, ordinary `thread/start` and
   `turn/start` calls read binding runtime settings only and do not fall back to
@@ -96,8 +103,8 @@ Within that family:
 ## 6. Empty Values In The Binding Store
 
 `chat_bindings.json` is a persisted projection, not the runtime semantic fact
-source. Runtime-setting values and runtime-setting intent are separate facts.
-The store layer is responsible only for:
+source. Runtime-setting values, safety baselines, and explicit configuration
+intent are separate facts. The store layer is responsible only for:
 
 - saving and reading string fields plus the `configured_settings` list
 - validating structure and non-empty enum values
@@ -108,28 +115,39 @@ The store layer must not apply instance-default fallbacks. Empty strings must be
 preserved until `BindingRuntimeManager` hydrates the record and interprets them
 with the current instance config:
 
-- empty `approval_policy` -> current instance default approval policy
-- empty `permissions_profile_id` -> current instance default permissions
-  baseline
+- empty `approval_policy` / `permissions_profile_id` only means an old record
+  or a not-yet-materialized store shape; hydrate resolves it to the current
+  instance default, and the next persistence of that binding writes the resolved
+  safety baseline
 - legacy `collaboration_mode` fields are ignored on read and are not written by
   new saves
 - empty `model` / `reasoning_effort` -> `auto`, meaning no explicit override
 
 `configured_settings` is the binding-local source of truth for explicit user
-intent. It is set only by explicit `/model`, `/effort`, `/approval`, or
-`/permissions` interactions, not by `codex.yaml` seeds. A value that equals the
-instance default still remains configured when its setting name appears in this
-list. For old records without `configured_settings`, the store conservatively
-infers intent from non-empty normalized setting values; historical empty
-`auto` intent cannot be recovered.
+actions, but it is not the source of truth for whether `approval_policy` /
+`permissions_profile_id` have a safety baseline. It is set only by explicit
+`/model`, `/effort`, `/approval`, or `/permissions` interactions, not by
+`codex.yaml` seeds. A value that equals the instance default still remains
+configured when its setting name appears in this list.
+
+Consequently:
+
+- for `model` / `reasoning_effort`, `configured_settings` distinguishes "the
+  user explicitly selected auto" from "never configured"
+- for `approval_policy` / `permissions_profile_id`, the persisted binding value
+  itself is the current binding's safety baseline; `configured_settings` only
+  records whether the user explicitly changed it
+- for old records without `configured_settings`, the store conservatively
+  infers intent from non-empty normalized setting values; historical empty
+  `auto` intent cannot be recovered
 
 An unbound binding with persisted settings is a valid state: it has no
-`thread_id`, but it carries the user's next-turn configuration decision.
-Concretely, `configured/unbound` means there is no thread bookmark and the
-persisted binding still has `configured_settings` or another binding-local fact
-that must be retained. Admin surfaces may display it as `configured/unbound`;
-it is not a stale thread binding and must not be removed by `binding
-clear-stale`.
+`thread_id`, but it carries the user's next-turn configuration decision or a
+binding-local safety baseline. Concretely, `configured/unbound` means there is
+no thread bookmark and the persisted binding still has `configured_settings`, a
+safety baseline, or another binding-local fact that must be retained. Admin
+surfaces may display it as `configured/unbound`; it is not a stale thread
+binding and must not be removed by `binding clear-stale`.
 
 ## 7. One maintenance rule
 

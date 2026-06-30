@@ -55,14 +55,17 @@ Those axes are parallel to settings and must not be conflated with them.
 `/model`, `/effort`, `/approval`, `/permissions`:
 
 - belong to the current binding's next-turn settings
-- read back persisted binding intent by default
+- read back the current binding's persisted configuration facts by default
 - are not the instance baseline
 - are not thread-level persisted truth
 
 Within that family:
 
-- `auto` means "do not explicitly override"
+- for `/model` and `/effort`, `auto` means "do not explicitly override"
 - it no longer maps to any project-owned thread-level fallback state
+- for `/approval` and `/permissions`, the persisted binding value is the
+  safety baseline; a new binding is seeded from instance config, and once it is
+  persisted it does not drift with later instance-default changes
 
 ## 5. Side-effect boundary of reset-backend
 
@@ -77,7 +80,7 @@ Typical uses are:
 When an instance resets its backend:
 
 - the backend process restarts
-- binding bookmarks stay
+- binding records stay
 - related Feishu push paths detach first
 - binding-wise next-turn settings stay
 

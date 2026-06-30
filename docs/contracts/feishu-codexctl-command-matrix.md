@@ -29,9 +29,9 @@ It answers:
 - `thread status`, `thread bindings`, `thread goal`, `thread attach`, and `thread detach` require exactly one of:
   - `--thread-id <id>`
   - `--thread-name <name>`
-- `thread clear-archived-bindings` requires exactly one of `--thread-id <id>` or `--all`; it does not accept `--thread-name`, so local bookmark cleanup does not depend on another upstream thread-name resolution step.
-  - `--thread-id` clears local binding bookmarks for the given thread id without validating upstream archived state.
-  - `--all` first queries upstream archived threads through a running instance, then clears local binding bookmarks that point to those archived thread ids; without an available running instance it fails closed and does not mutate local data.
+- `thread clear-archived-bindings` requires exactly one of `--thread-id <id>` or `--all`; it does not accept `--thread-name`, so local binding deletion does not depend on another upstream thread-name resolution step.
+  - `--thread-id` deletes local bindings that point at the given thread id without validating upstream archived state.
+  - `--all` first queries upstream archived threads through a running instance, then deletes matching local bindings; without an available running instance it fails closed and does not mutate local data.
 - `thread archive` supports two target forms:
   - single-thread: `--thread-name <name>` or `--thread-id <id>`
   - batch: repeat `--thread-id <id>`; each target thread is routed, archived, and locally cleaned up independently using the existing single-thread archive semantics
@@ -77,21 +77,22 @@ Do not conflate them.
 | `feishu-codexctl [--instance <name>] binding list` | List bindings visible in the target instance | read-only | none |
 | `feishu-codexctl [--instance <name>] binding status <binding_id>` | Show one binding's chat, thread, push state, next-prompt status, current-instance interaction owner, and session settings | read-only | lower-level diagnostics behind Feishu `/status` and `/preflight` |
 | `feishu-codexctl [--instance <name>] binding attach <binding_id>` | Restore Feishu push for one binding | mutating | Feishu `/attach binding` |
-| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping its bookmark | mutating | binding-scoped counterpart of Feishu `/detach` |
-| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Clear one binding bookmark | mutating | none |
-| `feishu-codexctl [--instance <name>] binding clear-all` | Clear all binding bookmarks in the target instance | mutating | none |
-| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Clear stale binding bookmarks that point at threads that can no longer be verified as recoverable; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local bookmark repair / ops entry |
+| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | Pause Feishu push for one binding while keeping the binding record | mutating | binding-scoped counterpart of Feishu `/detach` |
+| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | Delete one local binding record | mutating | none |
+| `feishu-codexctl [--instance <name>] binding clear-all` | Delete all local binding records in the target instance | mutating | none |
+| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | Delete stale binding records that point at threads that can no longer be verified as recoverable; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
 
 `binding clear` / `clear-all` / `clear-stale` are not `detach`:
 
-- `clear` removes the local bookmark
+- `clear` deletes the local binding record, including its thread pointer and
+  binding-local settings
 - `detach` removes the current Feishu push attachment
 
 `binding clear-stale` is retain-oriented. Its source of truth is a cleanup-specific thread operability check, not the generic status display path:
 
 - it first verifies each bound `current_thread_id` through a running app-server with a metadata-only `thread/read` presence check; it does not load full turns/history
 - threads with successful metadata-only reads are retained; a readable thread whose generic status is `notLoaded` is not stale
-- explicitly unreadable threads, threads that are not loaded and have no persisted metadata, and metadata-only threads that can no longer be recovered are stale, and their local bookmarks are cleared
+- explicitly unreadable threads, threads that are not loaded and have no persisted metadata, and metadata-only threads that can no longer be recovered are stale, and their local binding records are deleted
 - query failures, timeouts, protocol errors, and ambiguous states fail closed: the binding is retained and reported as unknown
 - running instances are cleaned through their service control plane; known stopped instances are cleaned through this project's binding store API
 - precise archived-thread cleanup is handled by `thread clear-archived-bindings`; `binding clear-stale` does not treat unstable path strings as an archived-state source of truth
@@ -119,7 +120,7 @@ Notes:
 | `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | Apply a raw persisted-thread goal mutation for debugging or ops; at least one of `--objective` or `--status` is required | mutating | Feishu `/goal set <objective>` for objective writes; no exact Feishu equivalent for raw `--status active\|paused` edits |
 | `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | Clear the current goal on one thread | mutating | Feishu `/goal clear` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | Archive one or more target threads; after a successful archive, clear local bindings that still point to it in the target instance, other reachable running instances, and known stopped instances | mutating | local operational counterpart of Feishu `/archive`; batch and cross-instance local binding cleanup are local-CLI only |
-| `feishu-codexctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | Clear local binding bookmarks left behind for archived threads; does not call upstream archive; `--thread-id` clears one specified thread, while `--all` queries upstream archived threads before clearing matching bookmarks; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local bookmark repair / ops entry |
+| `feishu-codexctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | Delete local binding records left behind for archived threads; does not call upstream archive; `--thread-id` deletes bindings pointing at one specified thread, while `--all` queries upstream archived threads before deleting matching bindings; by default scans all running instances and known stopped instances, while explicit `--instance` limits the action to that instance | mutating | none; this is a local binding-record repair / ops entry |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | Restore Feishu push for all detached bindings on one target thread | mutating | Feishu `/attach thread`, and the post-reset `Attach Current Thread` button |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | Pause Feishu push for one target thread while keeping thread / binding relationships intact | mutating | no exact single Feishu command |
 
@@ -129,7 +130,7 @@ Implementation note:
 - the lower layer may still call upstream `thread/unsubscribe`, but that is an internal protocol detail, not the user-facing command name
 - local `thread archive` calls upstream Codex archive exactly once; after that succeeds, binding cleanup is split by instance state:
   - other running instances are cleaned through their service control plane, and that local cleanup does not call upstream archive again
-  - known stopped instances are cleaned through this project's binding store API for matching `thread_id` bookmarks; the command does not hand-edit `chat_bindings.json`
+  - known stopped instances are cleaned through this project's binding store API by deleting binding records with the matching `thread_id`; the command does not hand-edit `chat_bindings.json`
 - if cleanup in a running instance fails because of a running turn, pending request, or unreachable control plane, the upstream archive remains done, but the command exits non-zero and prints a cleanup warning
 - `thread clear-archived-bindings` reuses the same local binding cleanup logic but does not archive. It is for repairing leftovers from older versions, externally archived threads, or no-live-owner archive routing after a service restart.
   - `--thread-id` is the explicit repair path; the command does not query upstream just to validate archived state.

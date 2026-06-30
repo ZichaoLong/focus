@@ -115,7 +115,8 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(exc.exception.code, 0)
         rendered = stdout.getvalue()
         self.assertIn("Binding 管理面", rendered)
-        self.assertIn("Feishu 本地 bookmark", rendered)
+        self.assertIn("Feishu 本地 binding 记录", rendered)
+        self.assertIn("binding-local 设置", rendered)
         self.assertIn("不等于 `detach`", rendered)
 
     def test_binding_clear_accepts_binding_id(self) -> None:

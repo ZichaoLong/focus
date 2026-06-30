@@ -27,9 +27,9 @@
 - `thread status`、`thread bindings`、`thread goal`、`thread attach`、`thread detach` 必须二选一：
   - `--thread-id <id>`
   - `--thread-name <name>`
-- `thread clear-archived-bindings` 必须且只能提供 `--thread-id <id>` 或 `--all`；它不接受 `--thread-name`，避免为了清理本地 bookmark 再依赖上游 thread name 解析。
-  - `--thread-id` 只按给定 thread id 清理本地 binding bookmark，不验证上游 archived 状态。
-  - `--all` 会先通过一个运行中的实例查询上游 archived thread 列表，再清理命中的本地 binding bookmark；没有可用运行实例时 fail-closed，不修改本地数据。
+- `thread clear-archived-bindings` 必须且只能提供 `--thread-id <id>` 或 `--all`；它不接受 `--thread-name`，避免为了删除本地 binding 再依赖上游 thread name 解析。
+  - `--thread-id` 只按给定 thread id 删除指向它的本地 binding，不验证上游 archived 状态。
+  - `--all` 会先通过一个运行中的实例查询上游 archived thread 列表，再删除命中的本地 binding；没有可用运行实例时 fail-closed，不修改本地数据。
 - `thread archive` 支持两种目标形式：
   - 单线程：`--thread-name <name>` 或 `--thread-id <id>`
   - 批量：重复提供 `--thread-id <id>`；每个目标 thread 都独立按现有单线程 archive 语义路由、归档并清理本地 bindings
@@ -75,21 +75,21 @@
 | `feishu-codexctl [--instance <name>] binding list` | 列出当前实例可见 binding | 只读 | 无 |
 | `feishu-codexctl [--instance <name>] binding status <binding_id>` | 查看单个 binding 的 chat、thread、推送状态、next prompt、当前实例 interaction owner、会话设置 | 只读 | 飞书 `/status`、`/preflight` 的底层诊断面 |
 | `feishu-codexctl [--instance <name>] binding attach <binding_id>` | 恢复单个 binding 的飞书推送 | 变更 | 飞书 `/attach binding` |
-| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | 暂停单个 binding 的飞书推送，但保留 bookmark | 变更 | 飞书 `/detach` 的 binding 级对应 |
-| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | 清除单个 binding bookmark | 变更 | 无 |
-| `feishu-codexctl [--instance <name>] binding clear-all` | 清除当前实例下全部 binding bookmark | 变更 | 无 |
-| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | 清理指向已不可验证为可恢复 thread 的 stale binding bookmark；默认扫描所有运行中实例和已知非运行实例，显式 `--instance` 时只作用于该实例 | 变更 | 无；这是本地 bookmark 修复 / 运维入口 |
+| `feishu-codexctl [--instance <name>] binding detach <binding_id>` | 暂停单个 binding 的飞书推送，但保留 binding 记录 | 变更 | 飞书 `/detach` 的 binding 级对应 |
+| `feishu-codexctl [--instance <name>] binding clear <binding_id>` | 删除单个本地 binding 记录 | 变更 | 无 |
+| `feishu-codexctl [--instance <name>] binding clear-all` | 删除当前实例下全部本地 binding 记录 | 变更 | 无 |
+| `feishu-codexctl [--instance <name>] binding clear-stale [--dry-run]` | 删除指向已不可验证为可恢复 thread 的 stale binding 记录；默认扫描所有运行中实例和已知非运行实例，显式 `--instance` 时只作用于该实例 | 变更 | 无；这是本地 binding 记录修复 / 运维入口 |
 
 `binding clear` / `clear-all` / `clear-stale` 不是 `detach`：
 
-- `clear` 清的是本地 bookmark
+- `clear` 删除的是本地 binding 记录，包括其中保存的 thread 指向和 binding-local 设置
 - `detach` 清的是当前飞书推送附着状态
 
 `binding clear-stale` 是保留逻辑，事实源是 cleanup 专用的 thread 可操作性检查，而不是普通状态展示：
 
 - 它先通过运行中的 app-server 对 binding 指向的 `current_thread_id` 做 metadata-only `thread/read` presence check，不加载完整 turns/history。
 - metadata-only `thread/read` 成功的 thread 视为保留对象；即使普通状态是 `notLoaded`，只要可读出 thread metadata，也不是 stale。
-- 明确不可读、未加载且无持久 metadata、或只剩不可恢复 metadata 的 thread 视为 stale，清理对应本地 bookmark。
+- 明确不可读、未加载且无持久 metadata、或只剩不可恢复 metadata 的 thread 视为 stale，删除对应本地 binding 记录。
 - 查询失败、超时、协议错误或无法判断时 fail-closed：保留 binding 并在输出中列为 unknown。
 - 运行中实例通过各自 service control plane 清理；已知但未运行的实例直接通过本项目的 binding store API 清理。
 - archived thread 的精准清理由 `thread clear-archived-bindings` 负责；`binding clear-stale` 不把 unstable 路径字符串当作 archived 事实源。
@@ -117,7 +117,7 @@
 | `feishu-codexctl [--instance <name>] thread goal set (--thread-id <id> \| --thread-name <name>) [--objective <text>] [--status active\|paused]` | 对某个 thread goal 执行原始 persisted 状态改写，供调试或运维使用；至少提供 `--objective` 或 `--status` 之一 | 变更 | 写 objective 时最接近飞书 `/goal set <objective>`；原始 `--status active\|paused` 改写没有精确飞书等价物 |
 | `feishu-codexctl [--instance <name>] thread goal clear (--thread-id <id> \| --thread-name <name>)` | 清除某个 thread 当前 goal | 变更 | 飞书 `/goal clear` |
 | `feishu-codexctl [--instance <name>] thread archive (--thread-id <id> [--thread-id <id> ...] \| --thread-name <name>)` | 归档一个或多个目标 thread；归档成功后清理当前目标实例、其他可达运行实例，以及已知非运行实例里仍指向它的本地 bindings | 变更 | 飞书 `/archive` 的本地运维对应；批量和跨实例本地 binding 清理能力仅本地 CLI 提供 |
-| `feishu-codexctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | 清理已归档 thread 残留的本地 binding bookmark；不调用上游 archive；`--thread-id` 清理指定 thread，`--all` 先查询上游 archived 列表再清理命中 bookmark；默认扫描所有运行中实例和已知非运行实例，显式 `--instance` 时只作用于该实例 | 变更 | 无；这是本地 bookmark 修复 / 运维入口 |
+| `feishu-codexctl [--instance <name>] thread clear-archived-bindings (--thread-id <id> \| --all) [--dry-run]` | 删除已归档 thread 残留的本地 binding 记录；不调用上游 archive；`--thread-id` 删除指向指定 thread 的 binding，`--all` 先查询上游 archived 列表再删除命中的 binding；默认扫描所有运行中实例和已知非运行实例，显式 `--instance` 时只作用于该实例 | 变更 | 无；这是本地 binding 记录修复 / 运维入口 |
 | `feishu-codexctl [--instance <name>] thread attach (--thread-id <id> \| --thread-name <name>)` | 恢复某个 thread 当前所有 detached bindings 的飞书推送 | 变更 | 飞书 `/attach thread`，以及 reset 结果卡里的“附着当前线程” |
 | `feishu-codexctl [--instance <name>] thread detach (--thread-id <id> \| --thread-name <name>)` | 暂停某个 thread 的飞书推送，同时保留 thread 与 binding 关系 | 变更 | 飞书 thread-scoped 的 detach 管理动作 |
 
@@ -127,7 +127,7 @@
 - 底层实现仍可能调用上游 `thread/unsubscribe`，但这属于内部协议，不再作为用户命令名。
 - 本地 `thread archive` 的上游 Codex archive 只执行一次；archive 成功后，binding 清理分两层：
   - 运行中的其他实例走各自 service control plane，只清理本地 binding，不再次调用上游 archive。
-  - 已知但未运行的实例直接通过本项目的 binding store API 清理同 `thread_id` bookmark；不直接手写 `chat_bindings.json`。
+  - 已知但未运行的实例直接通过本项目的 binding store API 删除同 `thread_id` 的 binding 记录；不直接手写 `chat_bindings.json`。
 - 如果某个运行实例的本地清理因 running turn、pending request 或 control plane 不可达而失败，archive 已完成但命令返回非零，并在输出里列出 cleanup warning。
 - `thread clear-archived-bindings` 复用同一套本地 binding 清理逻辑，但不执行 archive。它用于补救旧版本残留、外部归档后的残留，或服务重启后无 live owner 时归档路由到其它实例造成的残留。
   - `--thread-id` 是显式修复入口；命令不会为了确认 archived 状态再查询上游。

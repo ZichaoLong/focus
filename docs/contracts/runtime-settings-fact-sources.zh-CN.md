@@ -78,6 +78,12 @@
 - 它不再映射到任何项目自管 thread-level persisted state
 - adapter 不得把 `auto` materialize 成完整的上游 settings 对象并发送旧
   snapshot 值；普通 auto turn 应让上游当前 thread state 自己延续。
+- `model` / `reasoning_effort` 与 `approval_policy` / `permissions_profile_id`
+  的空值语义不同：
+  - `model` / `reasoning_effort` 可以保持空值，表示 `auto`
+  - `approval_policy` / `permissions_profile_id` 是 binding-local 安全
+    baseline；新 binding 用 `codex.yaml` seed 解析出初始值，一旦 binding
+    落盘，就冻结这份 resolved 安全基线，后续不随实例默认漂移
 - `codex.yaml` 中的 `model` 与 `reasoning_effort` 只 seed 新 binding 的
   初始 runtime state；进入 binding 后，`thread/start` 与普通
   `turn/start` 都只看 binding runtime settings，不再从 adapter config
@@ -93,7 +99,7 @@
 ## 6. binding store 的空值规则
 
 `chat_bindings.json` 是持久化投影，不是运行语义事实源。runtime-setting
-的值和 runtime-setting 的显式配置意图是两类不同事实。store 层只负责：
+的值、安全基线和显式配置意图是几类不同事实。store 层只负责：
 
 - 保存和读取字符串字段，以及 `configured_settings` 列表
 - 校验结构和非空枚举值
@@ -102,21 +108,31 @@
 store 层不得引入实例默认 fallback。空字符串必须原样保留，直到
 `BindingRuntimeManager` hydrate 时，才按当前实例配置解释：
 
-- `approval_policy` 空值 -> 当前实例默认审批策略
-- `permissions_profile_id` 空值 -> 当前实例默认权限基线
+- `approval_policy` / `permissions_profile_id` 空值只表示旧记录或尚未
+  materialize 的 store 形态；hydrate 时解析为当前实例默认，之后一旦
+  binding 再次落盘，就写出 resolved 安全基线
 - 旧 `collaboration_mode` 字段读取时忽略，新保存不再写出
 - `model` / `reasoning_effort` 空值 -> `auto`，不显式 override
 
-`configured_settings` 是 binding-local 的显式用户意图事实源。它只由
-`/model`、`/effort`、`/approval`、`/permissions` 或对应卡片交互写入；
+`configured_settings` 是 binding-local 的显式用户操作事实源，但不是
+`approval_policy` / `permissions_profile_id` 是否存在安全基线的事实源。
+它只由 `/model`、`/effort`、`/approval`、`/permissions` 或对应卡片交互写入；
 `codex.yaml` seed 不产生 intent。即使某个 value 等于实例默认值，只要对应
-setting 名字出现在这个列表里，它仍表示用户显式配置过。旧记录没有
-`configured_settings` 时，store 会按规范化后的非空 setting value 保守推断
-intent；历史上的空值 `auto` intent 无法恢复，这个歧义可以接受。
+setting 名字出现在这个列表里，它仍表示用户显式操作过。
+
+因此：
+
+- 对 `model` / `reasoning_effort`，`configured_settings` 区分“用户显式选择
+  auto”与“从未配置”
+- 对 `approval_policy` / `permissions_profile_id`，binding 持久化值本身就是
+  当前 binding 的安全基线；`configured_settings` 只说明用户是否显式改过它
+- 旧记录没有 `configured_settings` 时，store 会按规范化后的非空 setting value
+  保守推断 intent；历史上的空值 `auto` intent 无法恢复，这个歧义可以接受
 
 未绑定但已保存过 setting 的 binding 是合法状态：没有 `thread_id`，但承载了
-用户的下一轮配置决策。具体来说，`configured/unbound` 表示没有 thread
-bookmark，但持久化 binding 仍有 `configured_settings` 或其他必须保留的
+用户的下一轮配置决策或 binding-local 安全基线。具体来说，
+`configured/unbound` 表示没有 thread bookmark，但持久化 binding 仍有
+`configured_settings`、安全基线或其他必须保留的
 binding-local fact。管理面可显示为 `configured/unbound`；它不是 stale thread
 binding，不应被 `binding clear-stale` 清理。
 

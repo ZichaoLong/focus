@@ -1442,7 +1442,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "- 命名实例必须先显式 `feishu-codex instance create <name>`；这里不会隐式创建\n"
             "- 除 `instance list` 外，其余命令都可加 `--instance <name>`；显式值优先\n"
             "- 若未显式指定，则按 preferred-running（若有）/ unique-running / default-running / current-instance-paths 规则解析；多实例仍有歧义时必须显式指定\n"
-            "- `binding clear` / `clear-all` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`\n"
+            "- `binding clear` / `clear-all` 删除的是 Feishu 本地 binding 记录，不删除 thread，也不等于 `detach`\n"
             "- `thread list` 默认列当前目录线程，也支持 `--scope global`\n"
         ),
         epilog=(
@@ -1537,7 +1537,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="查看或清理目标实例里的 Feishu binding。",
         description=(
             "Binding 管理面。\n"
-            "`clear` / `clear-all` / `clear-stale` 清的是 Feishu 本地 bookmark，不删除 thread，也不等于 `detach`。"
+            "`clear` / `clear-all` / `clear-stale` 删除的是 Feishu 本地 binding 记录，"
+            "包括其中保存的 thread 指向和 binding-local 设置；不删除 thread，也不等于 `detach`。"
         ),
         formatter_class=_HelpFormatter,
     )
@@ -1557,8 +1558,8 @@ def _build_parser() -> argparse.ArgumentParser:
     binding_status.add_argument("binding_id", help="目标 binding id。")
     binding_clear = binding_sub.add_parser(
         "clear",
-        help="清除单个 binding bookmark。",
-        description="清除单个 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
+        help="删除单个本地 binding 记录。",
+        description="删除单个 Feishu 本地 binding 记录；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
     )
     binding_clear.add_argument("binding_id", help="要清除的 binding id。")
@@ -1572,22 +1573,22 @@ def _build_parser() -> argparse.ArgumentParser:
     binding_detach = binding_sub.add_parser(
         "detach",
         help="暂停单个 binding 的飞书推送。",
-        description="让目标 binding 从 attached 变为 detached；保留 bookmark，不删除 thread。",
+        description="让目标 binding 从 attached 变为 detached；保留本地 binding 记录，不删除 thread。",
         formatter_class=_HelpFormatter,
     )
     binding_detach.add_argument("binding_id", help="要暂停的 binding id。")
     binding_sub.add_parser(
         "clear-all",
-        help="清除当前实例下全部 binding bookmark。",
-        description="清除当前实例下全部 Feishu binding bookmark；不会删除 thread，也不会执行 detach。",
+        help="删除当前实例下全部本地 binding 记录。",
+        description="删除当前实例下全部 Feishu 本地 binding 记录；不会删除 thread，也不会执行 detach。",
         formatter_class=_HelpFormatter,
     )
     binding_clear_stale = binding_sub.add_parser(
         "clear-stale",
-        help="清理指向已不可读取 thread 的 stale binding bookmark。",
+        help="删除指向已不可读取 thread 的 stale binding 记录。",
         description=(
             "扫描本项目本地 binding，并通过运行中的 app-server 验证其 thread 是否仍可读取。\n"
-            "明确不可读取的 thread 视为 stale 并清理对应 bookmark；查询失败或无法判断时 fail-closed 保留。\n"
+            "明确不可读取的 thread 视为 stale 并删除对应本地 binding 记录；查询失败或无法判断时 fail-closed 保留。\n"
             "默认扫描所有运行中实例和已知非运行实例；传全局 `--instance <name>` 时只作用于该实例。"
         ),
         formatter_class=_HelpFormatter,
@@ -1754,9 +1755,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     thread_clear_archived = thread_sub.add_parser(
         "clear-archived-bindings",
-        help="清理已归档 thread 残留的本地 bindings。",
+        help="删除已归档 thread 残留的本地 bindings。",
         description=(
-            "只清理本项目本地 binding bookmark，不调用上游 Codex archive。\n"
+            "只删除本项目本地 binding 记录，不调用上游 Codex archive。\n"
+            "匹配的 binding 会整条删除，包括其中保存的 thread 指向和 binding-local 设置。\n"
             "必须显式选择 `--thread-id <id>` 或 `--all`；`--all` 会先通过运行中的实例查询上游 archived thread 列表。\n"
             "默认扫描所有运行中实例和已知非运行实例；传全局 `--instance <name>` 时只作用于该实例。\n"
             "适合补救旧版本 archive、外部归档，或服务重启后无 live owner 导致的跨实例残留。"
@@ -1764,12 +1766,12 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_HelpFormatter,
     )
     thread_clear_archived_target = thread_clear_archived.add_mutually_exclusive_group(required=True)
-    thread_clear_archived_target.add_argument("--thread-id", help="要清理本地 binding 的 archived thread id。")
+    thread_clear_archived_target.add_argument("--thread-id", help="要删除本地 binding 的 archived thread id。")
     thread_clear_archived_target.add_argument(
         "--all",
         dest="all_archived",
         action="store_true",
-        help="查询上游 archived thread 列表，并清理命中的本地 binding bookmark。",
+        help="查询上游 archived thread 列表，并删除命中的本地 binding 记录。",
     )
     thread_clear_archived.add_argument(
         "--dry-run",

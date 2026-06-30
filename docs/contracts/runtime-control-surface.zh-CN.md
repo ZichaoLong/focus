@@ -52,14 +52,16 @@ memory 行为，应直接通过上游 Codex 处理，而不是走项目自管的
 `/model`、`/effort`、`/approval`、`/permissions`：
 
 - 都属于当前 binding 的 next-turn settings
-- 默认回读 persisted binding intent
+- 默认回读当前 binding 的持久化配置事实
 - 不是 instance baseline
 - 不是 thread-level persisted truth
 
 在这个设置族内：
 
-- `auto` 表示“不显式 override”
+- 对 `/model`、`/effort`，`auto` 表示“不显式 override”
 - 它不再映射到任何项目自管 thread-level fallback state
+- 对 `/approval`、`/permissions`，binding 持久化值是安全基线；新 binding
+  从实例配置 seed 出初始值，一旦落盘就不随实例默认漂移
 
 ## 5. reset-backend 的副作用边界
 
@@ -73,7 +75,7 @@ memory 行为，应直接通过上游 Codex 处理，而不是走项目自管的
 当实例执行 backend reset 时：
 
 - backend 进程会重启
-- binding bookmark 保留
+- binding 记录保留
 - 相关 Feishu push 路径会先 detach
 - binding-wise next-turn settings 保留
 
