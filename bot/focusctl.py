@@ -6,7 +6,7 @@ import sys
 
 from bot.version import __version__
 
-_MANAGE_RESOURCES = {"config", "instance", "skill", "uninstall", "purge", "bootstrap-install"}
+_MANAGE_RESOURCES = {"config", "instance", "skill", "migrate", "uninstall", "purge", "bootstrap-install"}
 _RUNTIME_RESOURCES = {"binding", "prompt", "thread", "image"}
 _SERVICE_LIFECYCLE_ACTIONS = {"start", "stop", "restart", "autostart", "log"}
 _SERVICE_RUNTIME_ACTIONS = {"status", "reset-backend", "attach"}
@@ -25,7 +25,8 @@ def _print_help() -> None:
         "  thread      查看或管理 Codex thread\n"
         "  prompt      向 binding 合成提交 prompt\n"
         "  image       向 thread attached bindings 发送本地图片\n"
-        "  skill       安装或卸载 FOCUS 提供的 workspace skills\n\n"
+        "  skill       安装或卸载 FOCUS 提供的 workspace skills\n"
+        "  migrate     一次性迁移旧 feishu-codex 本地安装\n\n"
         "常用命令:\n"
         "  focusctl config system --open\n"
         "  focusctl config env --open\n"
@@ -40,6 +41,7 @@ def _print_help() -> None:
         "  focusctl thread list --scope cwd\n"
         "  focusctl thread archive --thread-id <id>\n"
         "  focusctl image send --thread-id <id> --path ./diagram.png\n\n"
+        "  focusctl migrate from-feishu-codex\n\n"
         "工作入口:\n"
         "  focus / fcodex 是 Codex TUI thin wrapper；focusctl 不进入 TUI。\n"
     )

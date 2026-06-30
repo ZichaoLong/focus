@@ -42,6 +42,12 @@ class FocusctlEntrypointTests(unittest.TestCase):
 
         mock_manage.assert_called_once_with(["config", "system", "--open"])
 
+    def test_migrate_routes_to_manage_cli(self) -> None:
+        with patch("bot.focusctl._run_manage") as mock_manage:
+            focusctl.main(["migrate", "from-feishu-codex"])
+
+        mock_manage.assert_called_once_with(["migrate", "from-feishu-codex"])
+
     def test_runtime_resource_routes_to_runtime_cli(self) -> None:
         with patch("bot.focusctl._run_runtime") as mock_runtime:
             focusctl.main(["thread", "list", "--scope", "cwd"])

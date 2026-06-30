@@ -62,6 +62,14 @@ Windows 当前不安装 shell completion。
 
 不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `focusctl uninstall/purge` 覆盖的残留命令入口。
 
+从旧 `feishu-codex` 本地安装迁移时，只执行一条命令：
+
+```bash
+bash install.sh --migrate-from-feishu-codex
+```
+
+已安装 FOCUS 后也可执行 `focusctl migrate from-feishu-codex`。迁移是一次性 transfer；成功后主路径只使用 `focus` 目录、命令和 service。
+
 ### 2. 配置飞书应用
 
 推荐先一次性配好权限、事件与回调。

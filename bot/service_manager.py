@@ -147,12 +147,6 @@ class SystemdUserServiceManager(ServiceManager):
             return default_systemd_user_dir() / "focus.service"
         return self._template_unit_path()
 
-    def _legacy_named_unit_path(self, instance_name: str) -> pathlib.Path:
-        return default_systemd_user_dir() / f"feishu-codex-{instance_name}.service"
-
-    def _legacy_exact_instance_unit_path(self, instance_name: str) -> pathlib.Path:
-        return default_systemd_user_dir() / f"feishu-codex@{instance_name}.service"
-
     def _require_installed(self, definition: ServiceDefinition) -> pathlib.Path:
         unit_path = self._unit_path(definition)
         if not unit_path.exists():
@@ -215,39 +209,13 @@ class SystemdUserServiceManager(ServiceManager):
             ]
         )
 
-    def _legacy_named_unit_name(self, instance_name: str) -> str:
-        return f"feishu-codex-{instance_name}"
-
-    def _cleanup_legacy_named_units(self, instance_name: str) -> bool:
-        """Remove pre-template Linux unit names and preserve prior autostart when possible."""
-        preserved_autostart = False
-        legacy_named_unit = self._legacy_named_unit_name(instance_name)
-        legacy_named_path = self._legacy_named_unit_path(instance_name)
-        if legacy_named_path.exists():
-            enabled = self._run("systemctl", "--user", "is-enabled", legacy_named_unit, check=False)
-            preserved_autostart = enabled.returncode == 0
-            self._run("systemctl", "--user", "disable", legacy_named_unit, check=False)
-            self._run("systemctl", "--user", "stop", legacy_named_unit, check=False)
-            legacy_named_path.unlink()
-        legacy_exact_path = self._legacy_exact_instance_unit_path(instance_name)
-        if legacy_exact_path.exists():
-            enabled = self._run("systemctl", "--user", "is-enabled", f"feishu-codex@{instance_name}", check=False)
-            preserved_autostart = preserved_autostart or enabled.returncode == 0
-            legacy_exact_path.unlink()
-        return preserved_autostart
-
     def ensure_service(self, definition: ServiceDefinition) -> None:
         unit_path = self._unit_path(definition)
         unit_path.parent.mkdir(parents=True, exist_ok=True)
         definition.paths.data_dir.mkdir(parents=True, exist_ok=True)
         definition.paths.config_dir.mkdir(parents=True, exist_ok=True)
-        preserve_autostart = False
-        if definition.instance_name != DEFAULT_INSTANCE_NAME:
-            preserve_autostart = self._cleanup_legacy_named_units(definition.instance_name)
         unit_path.write_text(self._render_unit(definition), encoding="utf-8")
         self._run("systemctl", "--user", "daemon-reload")
-        if preserve_autostart:
-            self._run("systemctl", "--user", "enable", self._unit_name(definition), check=False)
 
     def autostart_enable(self, definition: ServiceDefinition) -> None:
         self._require_installed(definition)
@@ -299,8 +267,6 @@ class SystemdUserServiceManager(ServiceManager):
                 self._unit_path(definition).unlink()
             except FileNotFoundError:
                 pass
-        else:
-            self._cleanup_legacy_named_units(definition.instance_name)
         self._run("systemctl", "--user", "daemon-reload", check=False)
 
     def uninstall_shared(self) -> None:

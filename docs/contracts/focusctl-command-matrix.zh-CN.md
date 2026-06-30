@@ -45,6 +45,7 @@
 - `thread`
 - `image`
 - `skill`
+- `migrate`
 - `uninstall`
 - `purge`
 
@@ -57,7 +58,38 @@
 
 ## 4. 命令表
 
-### 4.1 `instance`
+### 4.1 `migrate`
+
+| 命令 | 作用 | 类型 | 飞书对应 |
+| --- | --- | --- | --- |
+| `focusctl migrate from-feishu-codex` | 一次性把旧 `feishu-codex` 本地安装转移到 FOCUS | 变更 | 无 |
+
+合同：
+
+- 这是唯一支持的旧命名迁移入口。FOCUS 主路径不会读取旧 `feishu-codex` 路径、env 文件、wrapper、completion、service 或数据根。
+- 迁移是 transfer，不是兼容 fallback。成功后，活跃安装面和本地持久状态只归 FOCUS 所有。
+- 它先停止并禁用旧 `feishu-codex` service，再复制本地状态，随后刷新新的 FOCUS wrapper、completion 与 service definition。
+- 它迁移配置和非运行态本地持久状态：
+  - `system.yaml`、`codex.yaml`、`init.token`
+  - `feishu-codex.env` 改名为 `focus.env`，包括命名实例 env 文件
+  - bindings、configured settings、terminal result raw store、群状态/日志，以及其他非运行态本地 store
+  - Linux scheduled prompt timers，将 `feishu-codex-scheduled-*` 转移为 `focus-scheduled-*`
+- 它不迁移运行态：
+  - PID / 进程状态
+  - service lease 文件
+  - instance registry
+  - thread runtime lease
+  - interaction lease
+  - backend URL discovery
+  - websocket / capability token
+  - 正在执行的 turn 或内存队列
+  - 受管 virtualenv 和日志
+- 它会在 `~/.local/share/focus/migration-backups/feishu-codex-.../` 或平台等价 FOCUS 数据根下创建备份。该备份不是运行时 fallback 路径。
+- 它 fail-closed。如果目标 FOCUS config/data 根已经包含非安装生成状态，迁移会停止，而不是合并两套活跃事实。关键阶段失败时，不删除旧安装面。
+
+`bash install.sh --migrate-from-feishu-codex` 会安装新 FOCUS 包，然后调用同一个迁移实现。
+
+### 4.2 `instance`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -65,7 +97,7 @@
 | `focusctl instance list` | 列出本机已知实例及其目录；这是已知实例视图，不是运行中实例视图 | 只读 | 无 |
 | `focusctl instance remove <name>` | 删除命名实例及其实例级 service 注册材料；不能删除 `default` | 变更 | 无 |
 
-### 4.2 `service`
+### 4.3 `service`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -79,7 +111,7 @@
 | `focusctl [--instance <name>] service reset-backend [--force]` | 为恢复而重置当前实例 backend，但不重启 FOCUS service | 变更 | 飞书 `/reset-backend` |
 | `focusctl [--instance <name>] service attach` | 恢复当前实例内所有可恢复的 detached Feishu 推送 | 变更 | 飞书 `/attach service`，以及 reset 结果卡里的“附着当前实例” |
 
-### 4.3 `binding`
+### 4.4 `binding`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -105,7 +137,7 @@
 - 运行中实例通过各自 service control plane 清理；已知但未运行的实例直接通过本项目的 binding store API 清理。
 - archived thread 的精准清理由 `thread clear-archived-bindings` 负责；`binding clear-stale` 不把 unstable 路径字符串当作 archived 事实源。
 
-### 4.4 `prompt`
+### 4.5 `prompt`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -117,7 +149,7 @@
 - 真正执行仍会经过当前服务内的 running-turn / attach / interaction 等保护。
 - 目标 binding 当前不可写时，命令必须 fail-closed 返回拒绝原因，而不是静默排队。
 
-### 4.5 `thread`
+### 4.6 `thread`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -144,7 +176,7 @@
   - `--thread-id` 是显式修复入口；命令不会为了确认 archived 状态再查询上游。
   - `--all` 是 archived-aware sweep：先通过运行中的 app-server 调用上游 `thread/list archived=true` 收集 archived thread id，然后逐个复用本地清理逻辑。省略 `--instance` 时优先用运行中的 `default` 实例查询，若没有则按实例名选一个运行实例查询，并清理所有可见实例；显式 `--instance` 时该实例必须正在运行，且只清理该实例。
 
-### 4.6 `image`
+### 4.7 `image`
 
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
@@ -166,6 +198,7 @@
 | `thread goal set/clear` | `/goal set`、`/goal clear` | 飞书命令面只覆盖当前 chat 当前 thread；本地 CLI 可以直接定位任意显式目标 thread。`thread goal set --status active\|paused` 只是 thread-scoped persisted goal 改写，不等价于飞书 `/goal pause` / `/goal resume` |
 | `thread list --scope cwd` | `/threads` | 飞书是聊天入口；本地只是线程发现面 |
 | `thread status` | `/status`、`/preflight`、`/attach`/`/detach` 的底层诊断 | 本地是 thread-scoped 调试面 |
+| `migrate from-feishu-codex` | 无 | 只做一次性本地安装 / 数据转移，不是运行时命令 |
 
 ## 6. 边界
 
@@ -173,6 +206,7 @@
 
 - 不能把 `focusctl` 理解成飞书 `/threads` 的本地 UI
 - 不能期待 `focusctl` 进入 Codex TUI
+- 不能把 `focusctl migrate from-feishu-codex` 理解成持续兼容层
 - 不能把 `binding clear` 理解成 “停掉当前线程推送”
 - 不能把 `thread goal set --status active|paused` 理解成 runtime 恢复 / 暂停命令；它不承诺 load、settings sync 或立即执行
 

@@ -182,3 +182,31 @@ class InstallTests(unittest.TestCase):
             checked_calls,
             [[str(recreated_python), "-m", "bot.manage_cli", "bootstrap-install"]],
         )
+
+    def test_main_migrate_flag_invokes_migration_command_after_install(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            data_root = root / "data"
+            venv_dir = data_root / ".venv"
+            venv_python = install._venv_python_path(venv_dir)
+            venv_python.parent.mkdir(parents=True)
+            (venv_dir / "pyvenv.cfg").write_text("home = /tmp/python\n", encoding="utf-8")
+            venv_python.write_text("", encoding="utf-8")
+            install_dir = root / "repo"
+            install_dir.mkdir()
+            install_script = install_dir / "install.py"
+            install_script.write_text("# stub\n", encoding="utf-8")
+            checked_calls: list[list[str]] = []
+
+            with patch("bot.platform_paths.default_data_root", return_value=data_root):
+                with patch("install._ensure_supported_python"):
+                    with patch("install.pathlib.Path.resolve", return_value=install_script):
+                        with patch("install._ensure_venv_pip"):
+                            with patch("install._run_pip_install"):
+                                with patch("install._run_checked", side_effect=lambda command: checked_calls.append(list(command))):
+                                    install.main(["--migrate-from-feishu-codex"])
+
+        self.assertEqual(
+            checked_calls[-1],
+            [str(venv_python), "-m", "bot.manage_cli", "migrate", "from-feishu-codex"],
+        )

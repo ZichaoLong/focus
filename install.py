@@ -5,6 +5,7 @@ Bootstrap installer for local FOCUS development checkouts.
 
 from __future__ import annotations
 
+import argparse
 import os
 import pathlib
 import shutil
@@ -13,6 +14,16 @@ import sys
 import venv
 
 _DEFAULT_PIP_EXTRA_INDEX_URL = "https://pypi.org/simple"
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Install or repair local FOCUS wrappers and service definitions.")
+    parser.add_argument(
+        "--migrate-from-feishu-codex",
+        action="store_true",
+        help="安装新 FOCUS 后执行一次性旧 feishu-codex 迁移。",
+    )
+    return parser.parse_args(argv)
 
 
 def _ensure_supported_python() -> None:
@@ -96,7 +107,8 @@ def _ensure_venv_pip(venv_python: pathlib.Path) -> None:
         raise SystemExit("已尝试使用 ensurepip 修复受管 .venv，但其中仍然缺少 pip。")
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = _parse_args([] if argv is None else argv)
     _ensure_supported_python()
     install_dir = pathlib.Path(__file__).resolve().parent
     from bot.platform_paths import default_data_root
@@ -110,8 +122,12 @@ def main() -> None:
     _ensure_venv_pip(venv_python)
     _run_pip_install(venv_python, "setuptools<81", "wheel")
     _run_pip_install(venv_python, "--no-build-isolation", str(install_dir))
-    _run_checked([str(venv_python), "-m", "bot.manage_cli", "bootstrap-install"])
+    command = [str(venv_python), "-m", "bot.manage_cli"]
+    if args.migrate_from_feishu_codex:
+        _run_checked([*command, "migrate", "from-feishu-codex"])
+        return
+    _run_checked([*command, "bootstrap-install"])
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

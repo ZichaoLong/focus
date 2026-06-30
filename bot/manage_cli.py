@@ -348,6 +348,30 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=_HelpFormatter,
     )
     _hide_subcommand_from_help(subparsers, "bootstrap-install")
+    migrate_parser = subparsers.add_parser(
+        "migrate",
+        help="一次性迁移旧 feishu-codex 本地安装到 FOCUS。",
+        description=(
+            "一次性迁移旧 feishu-codex 本地安装到 FOCUS。\n"
+            "迁移是 transfer，不是兼容 fallback；成功后主路径只认 focus。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
+    migrate_subparsers = migrate_parser.add_subparsers(
+        dest="migrate_command",
+        required=True,
+        title="migrate commands",
+        metavar="migrate-command",
+    )
+    migrate_subparsers.add_parser(
+        "from-feishu-codex",
+        help="停止旧服务、迁移配置/持久数据/timer，并移除旧安装面。",
+        description=(
+            "停止旧服务、迁移配置/持久数据/timer，并移除旧安装面。\n"
+            "不会迁移 PID、lease、registry、backend URL/token、正在执行的 turn 或内存队列。"
+        ),
+        formatter_class=_HelpFormatter,
+    )
     subparsers.add_parser(
         "start",
         help="启动目标实例后台 service。",
@@ -657,30 +681,42 @@ def _service_daemon_command(instance_name: str) -> tuple[str, ...]:
     )
 
 
-def _write_wrapper(path: pathlib.Path, module_name: str) -> None:
+def _write_wrapper(path: pathlib.Path, module_name: str, *, wrapper_command: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     entrypoint = f"from {module_name} import main; main()"
+    normalized_wrapper_command = str(wrapper_command or "").strip()
     if is_windows():
         wrapper_path = path.with_suffix(".cmd")
+        lines = ["@echo off"]
+        if normalized_wrapper_command:
+            lines.append(f'set "FOCUS_WRAPPER_COMMAND={normalized_wrapper_command}"')
+        lines.extend(
+            [
+                f'"{_venv_python()}" -c "{entrypoint}" %*',
+                "",
+            ]
+        )
         wrapper_path.write_text(
-            "\r\n".join(
-                [
-                    "@echo off",
-                    f'"{_venv_python()}" -c "{entrypoint}" %*',
-                    "",
-                ]
-            ),
+            "\r\n".join(lines),
             encoding="utf-8",
         )
         return
-    path.write_text(
-        "\n".join(
+    lines = ["#!/usr/bin/env sh"]
+    if normalized_wrapper_command:
+        lines.extend(
             [
-                "#!/usr/bin/env sh",
-                f'exec "{_venv_python()}" -c \'{entrypoint}\' "$@"',
-                "",
+                f"FOCUS_WRAPPER_COMMAND='{normalized_wrapper_command}'",
+                "export FOCUS_WRAPPER_COMMAND",
             ]
-        ),
+        )
+    lines.extend(
+        [
+            f'exec "{_venv_python()}" -c \'{entrypoint}\' "$@"',
+            "",
+        ]
+    )
+    path.write_text(
+        "\n".join(lines),
         encoding="utf-8",
     )
     path.chmod(0o755)
@@ -688,10 +724,10 @@ def _write_wrapper(path: pathlib.Path, module_name: str) -> None:
 
 def _install_wrappers() -> pathlib.Path:
     bin_dir = default_user_bin_dir()
-    _write_wrapper(bin_dir / "focus", "bot.fcodex")
+    _write_wrapper(bin_dir / "focus", "bot.fcodex", wrapper_command="focus")
     _write_wrapper(bin_dir / "focusd", "bot.__main__")
     _write_wrapper(bin_dir / "focusctl", "bot.focusctl")
-    _write_wrapper(bin_dir / "fcodex", "bot.fcodex")
+    _write_wrapper(bin_dir / "fcodex", "bot.fcodex", wrapper_command="fcodex")
     return bin_dir
 
 
@@ -859,6 +895,25 @@ def _handle_bootstrap_install() -> int:
     return 0
 
 
+def _handle_migrate_from_feishu_codex() -> int:
+    from bot.legacy_migration import LegacyMigrationError, migrate_from_feishu_codex
+
+    try:
+        summary = migrate_from_feishu_codex(install_new_surface=_handle_bootstrap_install)
+    except LegacyMigrationError as exc:
+        print(f"迁移失败（stage: {exc.stage}）：{exc}", file=sys.stderr)
+        return 2
+    print("迁移完成。")
+    print(f"迁移实例: {', '.join(summary.instances) if summary.instances else '-'}")
+    print(f"配置文件: {summary.config_files}")
+    print(f"数据文件: {summary.data_files}")
+    print(f"scheduled timers: {summary.scheduled_tasks}")
+    print(f"移除旧 wrapper: {summary.removed_wrappers}")
+    if summary.backup_dir is not None:
+        print(f"备份目录: {summary.backup_dir}")
+    return 0
+
+
 def _handle_service_action(instance_name: str, action: str) -> int:
     normalized = _prepare_cli_instance(instance_name)
     definition = _service_definition(normalized)
@@ -996,14 +1051,14 @@ def _handle_config(instance_name: str, target: str | None, *, open_editor: bool)
 def _remove_wrappers() -> None:
     bin_dir = default_user_bin_dir()
     if is_windows():
-        for name in ("focus", "focusd", "focusctl", "fcodex", "feishu-codex", "feishu-codexd", "feishu-codexctl"):
+        for name in ("focus", "focusd", "focusctl", "fcodex"):
             try:
                 (bin_dir / f"{name}.cmd").unlink()
             except FileNotFoundError:
                 pass
         _remove_windows_user_path()
     else:
-        for name in ("focus", "focusd", "focusctl", "fcodex", "feishu-codex", "feishu-codexd", "feishu-codexctl"):
+        for name in ("focus", "focusd", "focusctl", "fcodex"):
             try:
                 (bin_dir / name).unlink()
             except FileNotFoundError:
@@ -1183,6 +1238,11 @@ def main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "bootstrap-install":
             raise SystemExit(_handle_bootstrap_install())
+        if args.command == "migrate":
+            if requested_instances:
+                raise ValueError("`focusctl migrate ...` 不接受顶层 `--instance`。")
+            if args.migrate_command == "from-feishu-codex":
+                raise SystemExit(_handle_migrate_from_feishu_codex())
         if args.command in {"start", "stop", "restart", "status"}:
             raise SystemExit(_handle_service_actions(requested_instances, args.command))
         if args.command == "autostart":

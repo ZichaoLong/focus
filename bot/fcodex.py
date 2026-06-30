@@ -91,6 +91,9 @@ def _is_wrapper_version_request(user_args: list[str]) -> bool:
 
 
 def _program_name() -> str:
+    injected = str(os.environ.get("FOCUS_WRAPPER_COMMAND", "") or "").strip()
+    if injected in {"focus", "fcodex"}:
+        return injected
     raw = pathlib.Path(sys.argv[0]).name.strip()
     return raw or "focus"
 

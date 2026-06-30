@@ -658,11 +658,12 @@ class ManageCliTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             with patch("bot.manage_cli.is_windows", return_value=True):
                 with patch("bot.manage_cli._venv_python", return_value=pathlib.Path("C:/Python311/python.exe")):
-                    _write_wrapper(root / "focus", "bot.manage_cli")
+                    _write_wrapper(root / "focus", "bot.manage_cli", wrapper_command="focus")
 
             wrapper_path = root / "focus.cmd"
             self.assertTrue(wrapper_path.exists())
             rendered = wrapper_path.read_text(encoding="utf-8")
+            self.assertIn('set "FOCUS_WRAPPER_COMMAND=focus"', rendered)
             self.assertIn('"C:/Python311/python.exe" -c "from bot.manage_cli import main; main()" %*', rendered)
 
     def test_write_wrapper_creates_unix_shell_launcher(self) -> None:
@@ -671,10 +672,12 @@ class ManageCliTests(unittest.TestCase):
             wrapper_path = root / "focus"
             with patch("bot.manage_cli.is_windows", return_value=False):
                 with patch("bot.manage_cli._venv_python", return_value=pathlib.Path("/tmp/venv/bin/python")):
-                    _write_wrapper(wrapper_path, "bot.manage_cli")
+                    _write_wrapper(wrapper_path, "bot.manage_cli", wrapper_command="focus")
 
             self.assertTrue(wrapper_path.exists())
             rendered = wrapper_path.read_text(encoding="utf-8")
+            self.assertIn("FOCUS_WRAPPER_COMMAND='focus'", rendered)
+            self.assertIn("export FOCUS_WRAPPER_COMMAND", rendered)
             self.assertIn('exec "/tmp/venv/bin/python" -c \'from bot.manage_cli import main; main()\' "$@"', rendered)
             self.assertEqual(stat.S_IMODE(wrapper_path.stat().st_mode), 0o755)
 
@@ -1336,9 +1339,6 @@ class ManageCliTests(unittest.TestCase):
             powershell_completion_path = root / "completion" / "powershell" / "focus.ps1"
             powershell_profile_path = root / "shells" / "profile.ps1"
             env_file = config_root / "focus.env"
-            legacy_zsh_completion_path = (
-                root / ".config" / "feishu-codex" / "shell-completion" / "feishu-codex.zsh"
-            )
 
             class _DummyManager:
                 def ensure_service(self, definition) -> None:
@@ -1372,28 +1372,13 @@ class ManageCliTests(unittest.TestCase):
                     self.assertTrue(zsh_rc_path.exists())
                     self.assertTrue(powershell_completion_path.exists())
                     self.assertTrue(powershell_profile_path.exists())
-                    for legacy_name in ("feishu-codex", "feishu-codexctl", "feishu-codexd"):
-                        (bash_completion_dir / legacy_name).write_text("old completion\n", encoding="utf-8")
-                    legacy_zsh_completion_path.parent.mkdir(parents=True, exist_ok=True)
-                    legacy_zsh_completion_path.write_text("old zsh completion\n", encoding="utf-8")
-                    with zsh_rc_path.open("a", encoding="utf-8") as handle:
-                        handle.write(
-                            "\n"
-                            "# >>> feishu-codex zsh completion >>>\n"
-                            f'[[ -f "{legacy_zsh_completion_path}" ]] && source "{legacy_zsh_completion_path}"\n'
-                            "# <<< feishu-codex zsh completion <<<\n"
-                        )
                     self.assertEqual(_handle_uninstall(purge=False), 0)
 
             self.assertFalse((bash_completion_dir / "focus").exists())
             self.assertFalse((bash_completion_dir / "focusd").exists())
             self.assertFalse((bash_completion_dir / "focusctl").exists())
             self.assertFalse((bash_completion_dir / "fcodex").exists())
-            self.assertFalse((bash_completion_dir / "feishu-codex").exists())
-            self.assertFalse((bash_completion_dir / "feishu-codexctl").exists())
-            self.assertFalse((bash_completion_dir / "feishu-codexd").exists())
             self.assertFalse(zsh_completion_path.exists())
-            self.assertFalse(legacy_zsh_completion_path.exists())
             self.assertFalse(zsh_rc_path.exists())
             self.assertFalse(powershell_completion_path.exists())
             self.assertFalse(powershell_profile_path.exists())

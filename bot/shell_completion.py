@@ -26,11 +26,6 @@ COMPLETION_COMMAND_NAMES = (
     "focusd",
     "fcodex",
 )
-_LEGACY_COMPLETION_COMMAND_NAMES = (
-    "feishu-codex",
-    "feishu-codexctl",
-    "feishu-codexd",
-)
 
 _FOCUSCTL_OPTIONS_WITH_VALUE = {
     "--instance",
@@ -74,12 +69,8 @@ _FOCUS_TUI_OPTIONS_WITH_VALUE = {
 
 _ZSH_PROFILE_BLOCK_START = "# >>> focus zsh completion >>>"
 _ZSH_PROFILE_BLOCK_END = "# <<< focus zsh completion <<<"
-_LEGACY_ZSH_PROFILE_BLOCK_START = "# >>> feishu-codex zsh completion >>>"
-_LEGACY_ZSH_PROFILE_BLOCK_END = "# <<< feishu-codex zsh completion <<<"
 _POWERSHELL_PROFILE_BLOCK_START = "# >>> focus PowerShell completion >>>"
 _POWERSHELL_PROFILE_BLOCK_END = "# <<< focus PowerShell completion <<<"
-_LEGACY_POWERSHELL_PROFILE_BLOCK_START = "# >>> feishu-codex PowerShell completion >>>"
-_LEGACY_POWERSHELL_PROFILE_BLOCK_END = "# <<< feishu-codex PowerShell completion <<<"
 _POWERSHELL_COMPLETION_METADATA_FILE = "powershell-install-paths.json"
 
 
@@ -127,13 +118,6 @@ def bash_completion_file_paths() -> list[pathlib.Path]:
     return [directory / command_name for command_name in COMPLETION_COMMAND_NAMES]
 
 
-def _legacy_bash_completion_file_paths() -> list[pathlib.Path]:
-    directory = bash_completion_dir()
-    if directory is None:
-        return []
-    return [directory / command_name for command_name in _LEGACY_COMPLETION_COMMAND_NAMES]
-
-
 def zsh_completion_path() -> pathlib.Path | None:
     return default_user_zsh_completion_path()
 
@@ -148,28 +132,6 @@ def powershell_completion_path() -> pathlib.Path | None:
 
 def powershell_profile_path() -> pathlib.Path | None:
     return default_user_powershell_profile_path()
-
-
-def _legacy_config_root() -> pathlib.Path:
-    home = pathlib.Path.home()
-    if os.name == "nt":
-        appdata = pathlib.Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
-        return appdata / "feishu-codex" / "config"
-    if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "feishu-codex" / "config"
-    return home / ".config" / "feishu-codex"
-
-
-def _legacy_zsh_completion_path() -> pathlib.Path | None:
-    if os.name == "nt":
-        return None
-    return _legacy_config_root() / "shell-completion" / "feishu-codex.zsh"
-
-
-def _legacy_powershell_completion_path() -> pathlib.Path | None:
-    if os.name != "nt":
-        return None
-    return _legacy_config_root() / "shell-completion" / "feishu-codex.ps1"
 
 
 def _powershell_completion_metadata_path() -> pathlib.Path:
@@ -413,7 +375,7 @@ def _install_bash_completion_files(*, venv_python: pathlib.Path) -> pathlib.Path
 
 
 def _remove_bash_completion_files() -> None:
-    for path in [*bash_completion_file_paths(), *_legacy_bash_completion_file_paths()]:
+    for path in bash_completion_file_paths():
         try:
             path.unlink()
         except FileNotFoundError:
@@ -445,12 +407,7 @@ def _remove_zsh_completion_files() -> None:
             start_marker=_ZSH_PROFILE_BLOCK_START,
             end_marker=_ZSH_PROFILE_BLOCK_END,
         )
-        _remove_managed_block(
-            rc_path,
-            start_marker=_LEGACY_ZSH_PROFILE_BLOCK_START,
-            end_marker=_LEGACY_ZSH_PROFILE_BLOCK_END,
-        )
-    for script_path in _dedupe_paths(zsh_completion_path(), _legacy_zsh_completion_path()):
+    for script_path in _dedupe_paths(zsh_completion_path()):
         try:
             script_path.unlink()
         except FileNotFoundError:
@@ -496,12 +453,7 @@ def _remove_powershell_completion_files() -> None:
             start_marker=_POWERSHELL_PROFILE_BLOCK_START,
             end_marker=_POWERSHELL_PROFILE_BLOCK_END,
         )
-        _remove_managed_block(
-            profile_path,
-            start_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_START,
-            end_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_END,
-        )
-    for script_path in _dedupe_paths(recorded_script_path, powershell_completion_path(), _legacy_powershell_completion_path()):
+    for script_path in _dedupe_paths(recorded_script_path, powershell_completion_path()):
         try:
             script_path.unlink()
         except FileNotFoundError:
@@ -604,6 +556,7 @@ def _complete_focusctl(context: CompletionContext) -> list[str]:
                 "thread",
                 "image",
                 "skill",
+                "migrate",
                 "uninstall",
                 "purge",
             ],
@@ -638,6 +591,10 @@ def _complete_focusctl(context: CompletionContext) -> list[str]:
         return []
     if resource == "skill" and positional_index == 1:
         return _complete_candidates(current, ["install", "uninstall"])
+    if resource == "migrate":
+        if positional_index == 1:
+            return _complete_candidates(current, ["from-feishu-codex"])
+        return []
     if resource == "binding":
         if positional_index == 1:
             return _complete_candidates(

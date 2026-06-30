@@ -62,7 +62,7 @@ try {
     $env:FOCUS_POWERSHELL_SKIP_PROFILE_AUTOLOAD = "1"
   }
 
-  & $pythonCommand @pythonArgs "$scriptDir\install.py"
+  & $pythonCommand @pythonArgs "$scriptDir\install.py" @args
   exit $LASTEXITCODE
 }
 finally {

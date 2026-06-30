@@ -47,6 +47,7 @@ It answers:
 - `thread`
 - `image`
 - `skill`
+- `migrate`
 - `uninstall`
 - `purge`
 
@@ -59,7 +60,38 @@ Do not conflate them.
 
 ## 4. Commands
 
-### 4.1 `instance`
+### 4.1 `migrate`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `focusctl migrate from-feishu-codex` | One-shot transfer from the old `feishu-codex` local install to FOCUS | mutating | none |
+
+Contract:
+
+- This is the only supported old-name migration entry. The normal FOCUS path does not read old `feishu-codex` paths, env files, wrappers, completions, services, or data roots.
+- The migration is a transfer, not a compatibility fallback. After success, FOCUS owns the active install surface and local persistent state.
+- It stops and disables old `feishu-codex` services before copying local state, then refreshes the new FOCUS wrappers, completions, and service definitions.
+- It migrates configuration and non-runtime persistent local state:
+  - `system.yaml`, `codex.yaml`, `init.token`
+  - `feishu-codex.env` renamed to `focus.env`, including named-instance env files
+  - bindings, configured settings, terminal result raw store, group state/logs, and other non-runtime local stores
+  - Linux scheduled prompt timers, transferring `feishu-codex-scheduled-*` to `focus-scheduled-*`
+- It does not migrate runtime state:
+  - PID / process state
+  - service lease files
+  - instance registry
+  - thread runtime leases
+  - interaction leases
+  - backend URL discovery
+  - websocket / capability tokens
+  - running turns or in-memory queues
+  - managed virtualenvs and logs
+- It creates a backup under `~/.local/share/focus/migration-backups/feishu-codex-.../` or the platform-equivalent FOCUS data root. This backup is not a runtime fallback path.
+- It is fail-closed. If the target FOCUS data/config roots already contain non-install generated state, migration stops rather than merging two active facts. If a critical stage fails, old install files are not deleted.
+
+`bash install.sh --migrate-from-feishu-codex` installs the new FOCUS package and then invokes this same migration implementation.
+
+### 4.2 `instance`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -67,7 +99,7 @@ Do not conflate them.
 | `focusctl instance list` | List known local instances and their directories; this is the known-instance view, not the running-instance view | read-only | none |
 | `focusctl instance remove <name>` | Remove a named instance and its instance-level service registration material; cannot remove `default` | mutating | none |
 
-### 4.2 `service`
+### 4.3 `service`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -81,7 +113,7 @@ Do not conflate them.
 | `focusctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend for recovery without restarting the FOCUS service | mutating | Feishu `/reset-backend` |
 | `focusctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
 
-### 4.3 `binding`
+### 4.4 `binding`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -108,7 +140,7 @@ Do not conflate them.
 - running instances are cleaned through their service control plane; known stopped instances are cleaned through this project's binding store API
 - precise archived-thread cleanup is handled by `thread clear-archived-bindings`; `binding clear-stale` does not treat unstable path strings as an archived-state source of truth
 
-### 4.4 `prompt`
+### 4.5 `prompt`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -120,7 +152,7 @@ Notes:
 - Actual execution still goes through the normal running-turn / attach / interaction protections inside the service.
 - When the target binding is not writable, the command must fail closed with a refusal reason instead of silently queueing work.
 
-### 4.5 `thread`
+### 4.6 `thread`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -147,7 +179,7 @@ Implementation note:
   - `--thread-id` is the explicit repair path; the command does not query upstream just to validate archived state.
   - `--all` is an archived-aware sweep: it first calls upstream `thread/list archived=true` through a running app-server to collect archived thread ids, then reuses the local cleanup path for each id. Without `--instance`, it prefers a running `default` instance for the query, otherwise picks one running instance by name, and cleans all visible instances; with explicit `--instance`, that instance must be running and only that instance is cleaned.
 
-### 4.6 `image`
+### 4.7 `image`
 
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
@@ -169,6 +201,7 @@ Implementation note:
 | `thread goal set/clear` | `/goal set`, `/goal clear` | Feishu commands only affect the current chat's current thread; local CLI can target any explicit thread directly. `thread goal set --status active\|paused` is only a thread-scoped persisted-goal mutation, not a `/goal pause` or `/goal resume` equivalent |
 | `thread list --scope cwd` | `/threads` | Feishu is a chat workflow entry point; local CLI is just thread discovery |
 | `thread status` | lower-level diagnostics behind `/status`, `/preflight`, `/attach`, `/detach` | local CLI is a thread-scoped debugging surface |
+| `migrate from-feishu-codex` | none | local one-shot install/data transfer only; not a runtime command |
 
 ## 6. Boundary
 
@@ -176,6 +209,7 @@ The following expectations are explicitly wrong:
 
 - `focusctl` is not a local UI for Feishu `/threads`
 - `focusctl` does not enter the Codex TUI
+- `focusctl migrate from-feishu-codex` is not an ongoing compatibility layer
 - `binding clear` does not mean “stop push for the current thread”
 - `thread goal set --status active|paused` is not a runtime recovery / pause command; it does not promise load, settings sync, or immediate execution
 
