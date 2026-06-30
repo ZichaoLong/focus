@@ -17,12 +17,10 @@ from bot.instance_layout import DEFAULT_INSTANCE_NAME, validate_instance_name
 from bot.platform_paths import (
     default_config_root,
     default_data_root,
+    default_env_file,
     default_launch_agent_dir,
     default_systemd_user_dir,
-    default_user_bash_completion_dir,
     default_user_bin_dir,
-    default_user_powershell_profile_path,
-    default_user_zsh_rc_path,
     is_linux,
     is_macos,
     is_windows,
@@ -94,6 +92,7 @@ class LegacyMigrationSummary:
     data_files: int = 0
     scheduled_tasks: int = 0
     removed_wrappers: int = 0
+    warnings: list[str] = field(default_factory=list)
     backup_dir: pathlib.Path | None = None
 
 
@@ -110,8 +109,11 @@ class _LegacyFeishuCodexMigrator:
         self._install_new_surface = install_new_surface
         self._legacy_config_root = _legacy_config_root()
         self._legacy_data_root = _legacy_data_root()
+        self._legacy_env_file = _legacy_env_file(self._legacy_config_root)
+        self._legacy_scheduled_task_root = _legacy_scheduled_task_root()
         self._target_config_root = default_config_root()
         self._target_data_root = default_data_root()
+        self._target_env_file = default_env_file()
         self._backup_dir: pathlib.Path | None = None
         self._summary = LegacyMigrationSummary()
 
@@ -141,9 +143,28 @@ class _LegacyFeishuCodexMigrator:
             raise LegacyMigrationError("preflight", "旧 config root 与目标 config root 不能互相嵌套。")
         if _paths_overlap(self._legacy_data_root, self._target_data_root):
             raise LegacyMigrationError("preflight", "旧 data root 与目标 data root 不能互相嵌套。")
+        if _same_path(self._legacy_env_file, self._target_env_file):
+            raise LegacyMigrationError("preflight", "旧 env 文件与目标 FOCUS env 文件不能是同一个路径。")
+        if not self._has_legacy_source():
+            raise LegacyMigrationError(
+                "preflight",
+                "未找到旧 feishu-codex 配置、数据、scheduled tasks、wrapper 或 env 文件；迁移已停止。",
+            )
         self._ensure_target_surface_is_safe()
         self._backup_dir = _unique_backup_dir(self._target_data_root)
         self._backup_dir.mkdir(parents=True, exist_ok=False)
+
+    def _has_legacy_source(self) -> bool:
+        if self._legacy_config_root.exists() or self._legacy_data_root.exists():
+            return True
+        if self._legacy_env_file.exists() or self._legacy_scheduled_task_root.exists():
+            return True
+        for bin_dir in _dedupe_paths(default_user_bin_dir(), _legacy_user_bin_dir()):
+            for name in _LEGACY_WRAPPER_NAMES:
+                path = bin_dir / (f"{name}.cmd" if is_windows() else name)
+                if path.exists():
+                    return True
+        return False
 
     def _ensure_target_surface_is_safe(self) -> None:
         conflicts: list[pathlib.Path] = []
@@ -204,12 +225,29 @@ class _LegacyFeishuCodexMigrator:
             backup_existing_root=backup_dir / "preexisting-focus-config",
             kind="config",
         )
+        self._summary.config_files += self._transfer_explicit_legacy_env_file()
         self._summary.data_files = self._transfer_tree(
             source_root=self._legacy_data_root,
             target_root=self._target_data_root,
             backup_existing_root=backup_dir / "preexisting-focus-data",
             kind="data",
         )
+
+    def _transfer_explicit_legacy_env_file(self) -> int:
+        source_path = self._legacy_env_file
+        if not source_path.exists():
+            return 0
+        default_legacy_env = self._legacy_config_root / _LEGACY_ENV_FILE_NAME
+        default_target_env = self._target_config_root / _FOCUS_ENV_FILE_NAME
+        if source_path == default_legacy_env and self._target_env_file == default_target_env:
+            return 0
+        self._copy_transfer_file(
+            source_path,
+            self._target_env_file,
+            backup_existing_path=self._require_backup_dir() / "preexisting-focus-config" / _FOCUS_ENV_FILE_NAME,
+            allow_replace_existing=True,
+        )
+        return 1
 
     def _transfer_tree(
         self,
@@ -223,6 +261,12 @@ class _LegacyFeishuCodexMigrator:
             return 0
         transferred = 0
         for source_path, relative_path in _iter_transfer_files(source_root, kind=kind):
+            if (
+                kind == "config"
+                and relative_path.name != _LEGACY_ENV_FILE_NAME
+                and _same_path(source_path, self._legacy_env_file)
+            ):
+                continue
             target_relative_path = _target_relative_path(relative_path, kind=kind)
             if target_relative_path is None:
                 continue
@@ -267,7 +311,7 @@ class _LegacyFeishuCodexMigrator:
     def _transfer_scheduled_timers(self) -> None:
         if not is_linux():
             return
-        old_root = self._legacy_data_root / "scheduled-tasks"
+        old_root = self._legacy_scheduled_task_root
         if not old_root.exists():
             return
         try:
@@ -286,6 +330,8 @@ class _LegacyFeishuCodexMigrator:
             if not prompt_file.exists():
                 prompt_file = task_dir / "prompt.txt"
             prompt_text = prompt_file.read_text(encoding="utf-8") if prompt_file.exists() else ""
+            prompt_text, prompt_warnings = _migrate_scheduled_prompt_text(prompt_text, task_id=task_id)
+            self._summary.warnings.extend(prompt_warnings)
             spec = scheduled.ScheduledTaskSpec(
                 task_id=task_id,
                 instance=str(raw.get("instance") or DEFAULT_INSTANCE_NAME).strip() or DEFAULT_INSTANCE_NAME,
@@ -329,6 +375,22 @@ class _LegacyFeishuCodexMigrator:
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(root), str(destination))
             _remove_empty_parent(root.parent, stop_at=_legacy_cleanup_stop(root))
+        if self._legacy_env_file.exists() and not _is_relative_to(self._legacy_env_file, self._legacy_config_root):
+            destination = legacy_backup_dir / "env" / self._legacy_env_file.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(self._legacy_env_file), str(destination))
+            _remove_empty_parent(self._legacy_env_file.parent, stop_at=self._legacy_env_file.parent.parent)
+        if self._legacy_scheduled_task_root.exists() and not _is_relative_to(
+            self._legacy_scheduled_task_root,
+            self._legacy_data_root,
+        ):
+            destination = legacy_backup_dir / "scheduled-tasks"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(self._legacy_scheduled_task_root), str(destination))
+            _remove_empty_parent(
+                self._legacy_scheduled_task_root.parent,
+                stop_at=self._legacy_scheduled_task_root.parent.parent,
+            )
 
     def _require_backup_dir(self) -> pathlib.Path:
         if self._backup_dir is None:
@@ -337,6 +399,9 @@ class _LegacyFeishuCodexMigrator:
 
 
 def _legacy_config_root() -> pathlib.Path:
+    raw = os.environ.get("FC_CONFIG_ROOT", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
     if is_windows():
         appdata = pathlib.Path(os.environ.get("APPDATA") or home / "AppData" / "Roaming")
@@ -347,6 +412,9 @@ def _legacy_config_root() -> pathlib.Path:
 
 
 def _legacy_data_root() -> pathlib.Path:
+    raw = os.environ.get("FC_DATA_ROOT", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
     if is_windows():
         local_appdata = pathlib.Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
@@ -357,11 +425,78 @@ def _legacy_data_root() -> pathlib.Path:
 
 
 def _legacy_user_bin_dir() -> pathlib.Path:
+    raw = os.environ.get("FC_BIN_DIR", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
     home = pathlib.Path.home()
     if is_windows():
         local_appdata = pathlib.Path(os.environ.get("LOCALAPPDATA") or home / "AppData" / "Local")
         return local_appdata / _LEGACY_APP_NAME / "bin"
     return home / ".local" / "bin"
+
+
+def _legacy_env_file(config_root: pathlib.Path | None = None) -> pathlib.Path:
+    raw = os.environ.get("FC_ENV_FILE", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    return (config_root or _legacy_config_root()) / _LEGACY_ENV_FILE_NAME
+
+
+def _legacy_user_bash_completion_dir() -> pathlib.Path | None:
+    raw = os.environ.get("FC_BASH_COMPLETION_DIR", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    raw_user_dir = os.environ.get("BASH_COMPLETION_USER_DIR", "").strip()
+    if raw_user_dir:
+        return pathlib.Path(raw_user_dir).expanduser() / "completions"
+    return pathlib.Path.home() / ".local" / "share" / "bash-completion" / "completions"
+
+
+def _legacy_user_zsh_completion_path(config_root: pathlib.Path | None = None) -> pathlib.Path | None:
+    raw = os.environ.get("FC_ZSH_COMPLETION_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    return (config_root or _legacy_config_root()) / "shell-completion" / "feishu-codex.zsh"
+
+
+def _legacy_user_zsh_rc_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_ZSH_RC_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if is_windows():
+        return None
+    return pathlib.Path.home() / ".zshrc"
+
+
+def _legacy_user_powershell_profile_path() -> pathlib.Path | None:
+    raw = os.environ.get("FC_POWERSHELL_PROFILE_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if not is_windows():
+        return None
+    return pathlib.Path.home() / "Documents" / "PowerShell" / "profile.ps1"
+
+
+def _legacy_user_powershell_completion_path(config_root: pathlib.Path | None = None) -> pathlib.Path | None:
+    raw = os.environ.get("FC_POWERSHELL_COMPLETION_PATH", "").strip()
+    if raw:
+        return pathlib.Path(raw).expanduser()
+    if _legacy_user_powershell_profile_path() is None:
+        return None
+    return (config_root or _legacy_config_root()) / "shell-completion" / "feishu-codex.ps1"
+
+
+def _legacy_scheduled_task_root() -> pathlib.Path:
+    raw_xdg_data_home = os.environ.get("XDG_DATA_HOME", "").strip()
+    if raw_xdg_data_home:
+        xdg_data_home = pathlib.Path(raw_xdg_data_home).expanduser()
+    else:
+        xdg_data_home = pathlib.Path.home() / ".local" / "share"
+    return xdg_data_home / _LEGACY_APP_NAME / "scheduled-tasks"
 
 
 def _legacy_windows_user_path_metadata_path() -> pathlib.Path:
@@ -387,6 +522,18 @@ def _paths_overlap(left: pathlib.Path, right: pathlib.Path) -> bool:
         or normalized_left in normalized_right.parents
         or normalized_right in normalized_left.parents
     )
+
+
+def _same_path(left: pathlib.Path, right: pathlib.Path) -> bool:
+    return pathlib.Path(left).resolve() == pathlib.Path(right).resolve()
+
+
+def _is_relative_to(path: pathlib.Path, root: pathlib.Path) -> bool:
+    try:
+        pathlib.Path(path).relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _legacy_cleanup_stop(root: pathlib.Path) -> pathlib.Path:
@@ -443,6 +590,39 @@ def _read_json_file(path: pathlib.Path) -> dict:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+def _migrate_scheduled_prompt_text(prompt_text: str, *, task_id: str) -> tuple[str, list[str]]:
+    migrated = str(prompt_text or "")
+    replacements = (
+        ("feishu-codexctl", "focusctl"),
+        ("feishu-codex-scheduled-", "focus-scheduled-"),
+        ("~/.local/share/feishu-codex", "~/.local/share/focus"),
+        ("~/.config/feishu-codex", "~/.config/focus"),
+        ("feishu-codex.env", "focus.env"),
+    )
+    for old, new in replacements:
+        migrated = migrated.replace(old, new)
+
+    warnings: list[str] = []
+    if "manage_scheduled_prompt.py" in migrated:
+        warnings.append(
+            f"scheduled task {task_id}: prompt contains a concrete manage_scheduled_prompt.py helper path; "
+            "please verify the self-removal command after migration."
+        )
+    old_markers = (
+        "/feishu-codex/",
+        "\\feishu-codex\\",
+        "FC_CONFIG_ROOT",
+        "FC_DATA_ROOT",
+        "FC_BIN_DIR",
+        "FC_ENV_FILE",
+    )
+    if any(marker in migrated for marker in old_markers):
+        warnings.append(
+            f"scheduled task {task_id}: prompt still contains old feishu-codex path/env markers after safe rewrites."
+        )
+    return migrated, warnings
 
 
 def _scheduled_prompt_module():
@@ -630,27 +810,31 @@ def _write_windows_user_path_value(raw_path: str, *, value_type: int | None) -> 
 
 
 def _remove_legacy_completion_files() -> None:
-    bash_dir = default_user_bash_completion_dir()
+    legacy_config = _legacy_config_root()
+    bash_dir = _legacy_user_bash_completion_dir()
     if bash_dir is not None:
         for command_name in _LEGACY_COMPLETION_COMMAND_NAMES:
             _unlink_if_exists(bash_dir / command_name)
-    zsh_rc = default_user_zsh_rc_path()
+    zsh_rc = _legacy_user_zsh_rc_path()
     if zsh_rc is not None:
         _remove_managed_block(
             zsh_rc,
             start_marker=_LEGACY_ZSH_PROFILE_BLOCK_START,
             end_marker=_LEGACY_ZSH_PROFILE_BLOCK_END,
         )
-    powershell_profile = default_user_powershell_profile_path()
+    powershell_profile = _legacy_user_powershell_profile_path()
     if powershell_profile is not None:
         _remove_managed_block(
             powershell_profile,
             start_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_START,
             end_marker=_LEGACY_POWERSHELL_PROFILE_BLOCK_END,
         )
-    legacy_config = _legacy_config_root()
-    _unlink_if_exists(legacy_config / "shell-completion" / "feishu-codex.zsh")
-    _unlink_if_exists(legacy_config / "shell-completion" / "feishu-codex.ps1")
+    zsh_completion = _legacy_user_zsh_completion_path(legacy_config)
+    if zsh_completion is not None:
+        _unlink_if_exists(zsh_completion)
+    powershell_completion = _legacy_user_powershell_completion_path(legacy_config)
+    if powershell_completion is not None:
+        _unlink_if_exists(powershell_completion)
 
 
 def _remove_managed_block(path: pathlib.Path, *, start_marker: str, end_marker: str) -> None:

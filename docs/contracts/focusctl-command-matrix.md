@@ -69,6 +69,7 @@ Do not conflate them.
 Contract:
 
 - This is the only supported old-name migration entry. The normal FOCUS path does not read old `feishu-codex` paths, env files, wrappers, completions, services, or data roots.
+- This migration entry resolves the old install through the legacy `FC_*` path environment variables when they are set, including `FC_CONFIG_ROOT`, `FC_DATA_ROOT`, `FC_ENV_FILE`, `FC_BIN_DIR`, and shell completion path overrides. These variables are not runtime FOCUS fallbacks.
 - The migration is a transfer, not a compatibility fallback. After success, FOCUS owns the active install surface and local persistent state.
 - It stops and disables old `feishu-codex` services before copying local state, then refreshes the new FOCUS wrappers, completions, and service definitions.
 - It migrates configuration and non-runtime persistent local state:
@@ -76,6 +77,7 @@ Contract:
   - `feishu-codex.env` renamed to `focus.env`, including named-instance env files
   - bindings, configured settings, terminal result raw store, group state/logs, and other non-runtime local stores
   - Linux scheduled prompt timers, transferring `feishu-codex-scheduled-*` to `focus-scheduled-*`
+- Scheduled prompt text gets only safe textual rewrites such as `feishu-codexctl` to `focusctl`; prompts that still contain concrete old helper paths or old roots are reported as migration warnings for manual inspection.
 - It does not migrate runtime state:
   - PID / process state
   - service lease files

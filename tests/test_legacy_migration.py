@@ -53,7 +53,7 @@ class LegacyMigrationTests(unittest.TestCase):
 
             task_dir = old_data / "scheduled-tasks" / "morning"
             task_dir.mkdir(parents=True)
-            (task_dir / "prompt.txt").write_text("follow up\n", encoding="utf-8")
+            (task_dir / "prompt.txt").write_text("follow up with feishu-codexctl\n", encoding="utf-8")
             (task_dir / "task.json").write_text(
                 json.dumps(
                     {
@@ -93,6 +93,10 @@ class LegacyMigrationTests(unittest.TestCase):
 
             env = {
                 "HOME": str(home),
+                "FC_CONFIG_ROOT": str(old_config),
+                "FC_DATA_ROOT": str(old_data),
+                "FC_BIN_DIR": str(home / ".local" / "bin"),
+                "FC_ENV_FILE": str(old_config / "feishu-codex.env"),
                 "FOCUS_CONFIG_ROOT": str(target_config),
                 "FOCUS_DATA_ROOT": str(target_data),
                 "FOCUS_BIN_DIR": str(target_bin),
@@ -120,6 +124,8 @@ class LegacyMigrationTests(unittest.TestCase):
             self.assertFalse((target_data / "_global" / "instance_registry.json").exists())
             self.assertFalse((systemd_dir / "feishu-codex-scheduled-morning.timer").exists())
             self.assertTrue((systemd_dir / "focus-scheduled-morning.timer").exists())
+            migrated_prompt = home / ".local" / "share" / "focus" / "scheduled-tasks" / "morning" / "prompt.txt"
+            self.assertEqual(migrated_prompt.read_text(encoding="utf-8"), "follow up with focusctl\n")
             self.assertIn(("enable", "focus-scheduled-morning.timer"), systemctl_calls)
             self.assertIn(("start", "focus-scheduled-morning.timer"), systemctl_calls)
             self.assertIn(("disable", "--now", "feishu-codex-scheduled-morning.timer"), systemctl_calls)
@@ -129,6 +135,77 @@ class LegacyMigrationTests(unittest.TestCase):
             self.assertIsNotNone(summary.backup_dir)
             assert summary.backup_dir is not None
             self.assertTrue((summary.backup_dir / "legacy" / "config" / "system.yaml").exists())
+
+    def test_migrate_from_feishu_codex_uses_legacy_fc_path_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            home = root / "home"
+            old_config = root / "legacy-config"
+            old_data = root / "legacy-data"
+            old_bin = root / "legacy-bin"
+            old_completion = root / "legacy-completions"
+            old_env = root / "legacy-env" / "custom.env"
+            target_config = root / "focus-config"
+            target_data = root / "focus-data"
+            target_bin = root / "focus-bin"
+            old_config.mkdir(parents=True)
+            old_data.mkdir(parents=True)
+            old_bin.mkdir(parents=True)
+            old_completion.mkdir(parents=True)
+            old_env.parent.mkdir(parents=True)
+            target_config.mkdir(parents=True)
+            (target_data / ".venv").mkdir(parents=True)
+            target_bin.mkdir(parents=True)
+
+            (old_config / "system.yaml").write_text("custom-system\n", encoding="utf-8")
+            (old_data / "chat_bindings.json").write_text('{"custom": true}\n', encoding="utf-8")
+            old_env.write_text("CUSTOM_ENV=1\n", encoding="utf-8")
+            (old_bin / "feishu-codexctl").write_text("#!/bin/sh\n", encoding="utf-8")
+            (old_completion / "feishu-codexctl").write_text("complete\n", encoding="utf-8")
+
+            def fake_install() -> int:
+                (target_bin / "focusctl").write_text("#!/bin/sh\n", encoding="utf-8")
+                return 0
+
+            env = {
+                "HOME": str(home),
+                "FC_CONFIG_ROOT": str(old_config),
+                "FC_DATA_ROOT": str(old_data),
+                "FC_BIN_DIR": str(old_bin),
+                "FC_ENV_FILE": str(old_env),
+                "FC_BASH_COMPLETION_DIR": str(old_completion),
+                "FOCUS_CONFIG_ROOT": str(target_config),
+                "FOCUS_DATA_ROOT": str(target_data),
+                "FOCUS_BIN_DIR": str(target_bin),
+            }
+            with patch.dict(os.environ, env, clear=False):
+                with patch("bot.legacy_migration.is_linux", return_value=False):
+                    with patch("bot.legacy_migration.is_macos", return_value=False):
+                        with patch("bot.legacy_migration.is_windows", return_value=False):
+                            summary = migrate_from_feishu_codex(install_new_surface=fake_install)
+
+            self.assertEqual((target_config / "system.yaml").read_text(encoding="utf-8"), "custom-system\n")
+            self.assertEqual((target_config / "focus.env").read_text(encoding="utf-8"), "CUSTOM_ENV=1\n")
+            self.assertEqual((target_data / "chat_bindings.json").read_text(encoding="utf-8"), '{"custom": true}\n')
+            self.assertFalse(old_config.exists())
+            self.assertFalse(old_data.exists())
+            self.assertFalse(old_env.exists())
+            self.assertFalse((old_bin / "feishu-codexctl").exists())
+            self.assertFalse((old_completion / "feishu-codexctl").exists())
+            self.assertEqual(summary.config_files, 2)
+            self.assertEqual(summary.data_files, 1)
+
+    def test_migrate_scheduled_prompt_warns_for_concrete_helper_path(self) -> None:
+        migrated, warnings = legacy_migration._migrate_scheduled_prompt_text(
+            "run /old/feishu-codex/.agents/skills/feishu-scheduled-prompts/scripts/"
+            "manage_scheduled_prompt.py remove --task-id x with feishu-codexctl\n",
+            task_id="x",
+        )
+
+        self.assertIn("focusctl", migrated)
+        self.assertNotIn("feishu-codexctl", migrated)
+        self.assertTrue(any("manage_scheduled_prompt.py" in warning for warning in warnings))
+        self.assertTrue(any("old feishu-codex path/env markers" in warning for warning in warnings))
 
     def test_remove_legacy_windows_user_path_uses_legacy_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -143,7 +220,14 @@ class LegacyMigrationTests(unittest.TestCase):
             )
             writes: list[tuple[str, int | None]] = []
 
-            with patch.dict(os.environ, {"APPDATA": str(appdata)}, clear=False):
+            with patch.dict(
+                os.environ,
+                {
+                    "APPDATA": str(appdata),
+                    "FC_CONFIG_ROOT": str(appdata / "feishu-codex" / "config"),
+                },
+                clear=False,
+            ):
                 with patch("bot.legacy_migration.is_windows", return_value=True):
                     with patch(
                         "bot.legacy_migration._read_windows_user_path_value",

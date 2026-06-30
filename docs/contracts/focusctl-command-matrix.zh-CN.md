@@ -67,6 +67,7 @@
 合同：
 
 - 这是唯一支持的旧命名迁移入口。FOCUS 主路径不会读取旧 `feishu-codex` 路径、env 文件、wrapper、completion、service 或数据根。
+- 这个迁移入口会按旧实现读取 `FC_*` 路径环境变量作为旧安装事实源，包括 `FC_CONFIG_ROOT`、`FC_DATA_ROOT`、`FC_ENV_FILE`、`FC_BIN_DIR` 以及 shell completion 路径覆盖。这些变量不是 FOCUS 运行时 fallback。
 - 迁移是 transfer，不是兼容 fallback。成功后，活跃安装面和本地持久状态只归 FOCUS 所有。
 - 它先停止并禁用旧 `feishu-codex` service，再复制本地状态，随后刷新新的 FOCUS wrapper、completion 与 service definition。
 - 它迁移配置和非运行态本地持久状态：
@@ -74,6 +75,7 @@
   - `feishu-codex.env` 改名为 `focus.env`，包括命名实例 env 文件
   - bindings、configured settings、terminal result raw store、群状态/日志，以及其他非运行态本地 store
   - Linux scheduled prompt timers，将 `feishu-codex-scheduled-*` 转移为 `focus-scheduled-*`
+- scheduled prompt 正文只做安全文本替换，例如把 `feishu-codexctl` 改成 `focusctl`；如果正文里仍含具体旧 helper 路径或旧根目录，迁移会输出 warning，供人工检查。
 - 它不迁移运行态：
   - PID / 进程状态
   - service lease 文件

@@ -909,6 +909,10 @@ def _handle_migrate_from_feishu_codex() -> int:
     print(f"数据文件: {summary.data_files}")
     print(f"scheduled timers: {summary.scheduled_tasks}")
     print(f"移除旧 wrapper: {summary.removed_wrappers}")
+    if summary.warnings:
+        print("迁移警告:")
+        for warning in summary.warnings:
+            print(f"- {warning}")
     if summary.backup_dir is not None:
         print(f"备份目录: {summary.backup_dir}")
     return 0
