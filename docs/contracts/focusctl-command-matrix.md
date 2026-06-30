@@ -72,6 +72,7 @@ Contract:
 - This migration entry resolves the old install through the legacy `FC_*` path environment variables when they are set, including `FC_CONFIG_ROOT`, `FC_DATA_ROOT`, `FC_ENV_FILE`, `FC_BIN_DIR`, and shell completion path overrides. These variables are not runtime FOCUS fallbacks.
 - The migration is a transfer, not a compatibility fallback. After success, FOCUS owns the active install surface and local persistent state.
 - It stops and disables old `feishu-codex` services before copying local state, then refreshes the new FOCUS wrappers, completions, and service definitions.
+- The target FOCUS install surface paths, including env file, wrapper directory, completion files, and shell profile hooks, must not overlap old `feishu-codex` config/data/scheduled roots. Migration fails during preflight if they do, because old roots are archived after the new surface is refreshed.
 - It migrates configuration and non-runtime persistent local state:
   - `system.yaml`, `codex.yaml`, `init.token`
   - `feishu-codex.env` renamed to `focus.env`, including named-instance env files

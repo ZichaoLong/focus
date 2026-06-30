@@ -70,6 +70,7 @@
 - 这个迁移入口会按旧实现读取 `FC_*` 路径环境变量作为旧安装事实源，包括 `FC_CONFIG_ROOT`、`FC_DATA_ROOT`、`FC_ENV_FILE`、`FC_BIN_DIR` 以及 shell completion 路径覆盖。这些变量不是 FOCUS 运行时 fallback。
 - 迁移是 transfer，不是兼容 fallback。成功后，活跃安装面和本地持久状态只归 FOCUS 所有。
 - 它先停止并禁用旧 `feishu-codex` service，再复制本地状态，随后刷新新的 FOCUS wrapper、completion 与 service definition。
+- 目标 FOCUS 安装输出路径，包括 env 文件、wrapper 目录、completion 文件和 shell profile hook，不能与旧 `feishu-codex` config/data/scheduled 根目录重叠。若重叠，迁移会在 preflight 阶段失败，因为刷新新安装面之后会归档旧根目录。
 - 它迁移配置和非运行态本地持久状态：
   - `system.yaml`、`codex.yaml`、`init.token`
   - `feishu-codex.env` 改名为 `focus.env`，包括命名实例 env 文件

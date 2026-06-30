@@ -20,7 +20,12 @@ from bot.platform_paths import (
     default_env_file,
     default_launch_agent_dir,
     default_systemd_user_dir,
+    default_user_bash_completion_dir,
     default_user_bin_dir,
+    default_user_powershell_completion_path,
+    default_user_powershell_profile_path,
+    default_user_zsh_completion_path,
+    default_user_zsh_rc_path,
     is_linux,
     is_macos,
     is_windows,
@@ -145,6 +150,7 @@ class _LegacyFeishuCodexMigrator:
             raise LegacyMigrationError("preflight", "旧 data root 与目标 data root 不能互相嵌套。")
         if _same_path(self._legacy_env_file, self._target_env_file):
             raise LegacyMigrationError("preflight", "旧 env 文件与目标 FOCUS env 文件不能是同一个路径。")
+        self._ensure_target_install_surface_outside_legacy_roots()
         if not self._has_legacy_source():
             raise LegacyMigrationError(
                 "preflight",
@@ -192,6 +198,32 @@ class _LegacyFeishuCodexMigrator:
                 "目标 focus 目录已包含非安装生成的数据；为避免覆盖真实新数据，迁移已停止：\n"
                 f"{rendered}",
             )
+
+    def _ensure_target_install_surface_outside_legacy_roots(self) -> None:
+        legacy_roots = (
+            ("旧 config root", self._legacy_config_root),
+            ("旧 data root", self._legacy_data_root),
+            ("旧 scheduled task root", self._legacy_scheduled_task_root),
+        )
+        conflicts: list[tuple[str, pathlib.Path, str, pathlib.Path]] = []
+        for target_label, target_path in _target_install_surface_paths(
+            target_env_file=self._target_env_file,
+        ):
+            for root_label, legacy_root in legacy_roots:
+                if _paths_overlap(target_path, legacy_root):
+                    conflicts.append((target_label, target_path, root_label, legacy_root))
+                    break
+        if not conflicts:
+            return
+        rendered = "\n".join(
+            f"- {target_label}: {target_path} overlaps {root_label}: {legacy_root}"
+            for target_label, target_path, root_label, legacy_root in conflicts[:10]
+        )
+        raise LegacyMigrationError(
+            "preflight",
+            "FOCUS 安装输出路径不能位于旧 feishu-codex root 内；迁移已停止：\n"
+            f"{rendered}",
+        )
 
     def _discover_legacy_instances(self) -> list[str]:
         names = {DEFAULT_INSTANCE_NAME}
@@ -497,6 +529,22 @@ def _legacy_scheduled_task_root() -> pathlib.Path:
     else:
         xdg_data_home = pathlib.Path.home() / ".local" / "share"
     return xdg_data_home / _LEGACY_APP_NAME / "scheduled-tasks"
+
+
+def _target_install_surface_paths(*, target_env_file: pathlib.Path) -> tuple[tuple[str, pathlib.Path], ...]:
+    return tuple(
+        (label, path)
+        for label, path in (
+            ("FOCUS env file", target_env_file),
+            ("FOCUS bin dir", default_user_bin_dir()),
+            ("FOCUS bash completion dir", default_user_bash_completion_dir()),
+            ("FOCUS zsh completion path", default_user_zsh_completion_path()),
+            ("FOCUS zsh rc path", default_user_zsh_rc_path()),
+            ("FOCUS PowerShell completion path", default_user_powershell_completion_path()),
+            ("FOCUS PowerShell profile path", default_user_powershell_profile_path()),
+        )
+        if path is not None
+    )
 
 
 def _legacy_windows_user_path_metadata_path() -> pathlib.Path:
