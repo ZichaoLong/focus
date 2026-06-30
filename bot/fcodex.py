@@ -62,6 +62,19 @@ _REMOVED_WRAPPER_COMMAND_HINTS = {
     "/profile": "本项目不再提供 `/profile`；如需使用上游 profile，请在启动时显式传 `focus -p <profile>` 或 `fcodex -p <profile>`。",
     "/archive": "请改用 `focusctl thread archive --thread-id <id>` 或 `--thread-name <name>`；飞书侧仍可用 `/archive`。",
 }
+_MANAGEMENT_COMMAND_HINTS = {
+    "binding": "请改用 `focusctl binding ...`。",
+    "config": "请改用 `focusctl config ...`。",
+    "image": "请改用 `focusctl image ...`。",
+    "instance": "请改用 `focusctl instance ...`。",
+    "migrate": "请改用 `focusctl migrate from-feishu-codex`。",
+    "prompt": "请改用 `focusctl prompt ...`。",
+    "purge": "请改用 `focusctl purge`。",
+    "service": "请改用 `focusctl service ...`。",
+    "skill": "请改用 `focusctl skill ...`。",
+    "thread": "请改用 `focusctl thread ...`。",
+    "uninstall": "请改用 `focusctl uninstall`。",
+}
 _HELP_FLAGS = ("-h", "--help")
 _VERSION_FLAGS = ("--version",)
 _LOCAL_WEBSOCKET_NO_PROXY_HOSTS = ("127.0.0.1", "localhost", "::1")
@@ -259,6 +272,22 @@ def _removed_wrapper_command_error(user_args: list[str]) -> int | None:
         print(hint, file=sys.stderr)
     else:
         print("其他 `/...` 命令请先进入 Codex TUI 再执行。", file=sys.stderr)
+    return 2
+
+
+def _management_command_error(user_args: list[str]) -> int | None:
+    first_positional_index = _first_positional_index(user_args)
+    if first_positional_index is None:
+        return None
+    first_positional = str(user_args[first_positional_index] or "").strip()
+    hint = _MANAGEMENT_COMMAND_HINTS.get(first_positional)
+    if not hint:
+        return None
+    print(
+        f"{_program_name()} 是 Codex TUI thin wrapper，不处理本地管理命令：`{first_positional}`",
+        file=sys.stderr,
+    )
+    print(hint, file=sys.stderr)
     return 2
 
 
@@ -679,6 +708,9 @@ def main() -> None:
     if help_request == "resume":
         _print_wrapper_resume_help()
         raise SystemExit(0)
+    management_command_error = _management_command_error(user_args)
+    if management_command_error is not None:
+        raise SystemExit(management_command_error)
     cfg = load_config_file("codex")
     configured_codex_command = str(cfg.get("codex_command", "codex")).strip() or "codex"
     codex_command = resolve_managed_codex_command(configured_codex_command)
