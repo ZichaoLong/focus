@@ -2,13 +2,14 @@
 
 > 说明：本项目最开始来源于 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot)。更准确地说，它是从 `feishu_bot` 中用于“飞书 + Claude Code”的那部分子集能力演进而来，并在此基础上改造成面向 Codex 的实现，最终形成当前的 FOCUS。
 
-**FOCUS - Feishu, Online Codex for Users and Sharing** 把飞书机器人、本地 `focus` / `fcodex` 和同一个 `codex app-server`
+**FOCUS - Feishu, Online Codex for Users and Sharing** 把飞书机器人、本地 Codex TUI 和同一个 `codex app-server`
 接到一起。
 
 本项目提供：
 
 - 飞书里的 codex thread 使用入口
-- 本地继续同一 codex live thread 的 `focus` / `fcodex`
+- 本地继续同一 codex live thread 的 `focus`
+    - `fcodex` 是 `focus` 的等价别名，强调 Codex TUI thin wrapper 语义
 - 本地查看 / 管理面 `focusctl`
 
 你可以把它理解成一层桥接：
@@ -23,8 +24,7 @@
 | 入口 | 作用 | 什么时候用 |
 | --- | --- | --- |
 | 飞书聊天命令 | 当前 chat binding 的使用入口 | 在飞书里提问、切线程、改当前会话设置 |
-| `focus` | 主品牌工作入口，接到同一实例 shared backend 的本地 Codex TUI | 想在本地继续飞书正在操作的同一 live thread |
-| `fcodex` | `focus` 的等价别名，强调 Codex TUI thin wrapper 语义 | 习惯 Codex 专用入口或排障时 |
+| `focus` | 本地工作入口，接到同一实例 shared backend 的本地 Codex TUI | 想在本地继续飞书正在操作的同一 live thread |
 | `focusctl` | 本地管理面 | 配置、启停、实例、binding、thread、prompt、image、清理 |
 | `focusd` | daemon 入口 | 由 service manager 调用，通常不手敲 |
 
@@ -198,12 +198,17 @@ focusctl config init-token
 focus
 focus resume <thread_id|thread_name>
 focus --instance corp-a
+```
+
+或等价的
+
+```bash
 fcodex
 fcodex resume <thread_id|thread_name>
 fcodex --instance corp-a
 ```
 
-说明：`focus` 和 `fcodex` 是同一套 thin wrapper。`--instance <name>` 只接受已创建的命名实例；如未创建，先执行 `focusctl instance create <name>`。
+说明：`--instance <name>` 只接受已创建的命名实例；如未创建，先执行 `focusctl instance create <name>`。
 
 本地查看 / 管理：
 
@@ -262,9 +267,8 @@ fcodex --instance corp-a
 ## 更多帮助
 
 - 飞书里发送 `/help` 或 `/h`
-- 本地查看 `focus --help`
+- 本地查看 `focus --help` 或 `fcodex --help`
 - 本地查看 `focusctl --help`
-- 本地查看 `fcodex --help`
 - 深入文档看 `docs/doc-index.zh-CN.md`
 
 ## 一图看懂架构

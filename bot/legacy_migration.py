@@ -144,13 +144,9 @@ class _LegacyFeishuCodexMigrator:
             raise LegacyMigrationError(stage, message) from exc
 
     def _preflight(self) -> None:
-        if _paths_overlap(self._legacy_config_root, self._target_config_root):
-            raise LegacyMigrationError("preflight", "旧 config root 与目标 config root 不能互相嵌套。")
-        if _paths_overlap(self._legacy_data_root, self._target_data_root):
-            raise LegacyMigrationError("preflight", "旧 data root 与目标 data root 不能互相嵌套。")
         if _same_path(self._legacy_env_file, self._target_env_file):
             raise LegacyMigrationError("preflight", "旧 env 文件与目标 FOCUS env 文件不能是同一个路径。")
-        self._ensure_target_install_surface_outside_legacy_roots()
+        self._ensure_target_output_paths_outside_legacy_roots()
         if not self._has_legacy_source():
             raise LegacyMigrationError(
                 "preflight",
@@ -199,14 +195,16 @@ class _LegacyFeishuCodexMigrator:
                 f"{rendered}",
             )
 
-    def _ensure_target_install_surface_outside_legacy_roots(self) -> None:
+    def _ensure_target_output_paths_outside_legacy_roots(self) -> None:
         legacy_roots = (
             ("旧 config root", self._legacy_config_root),
             ("旧 data root", self._legacy_data_root),
             ("旧 scheduled task root", self._legacy_scheduled_task_root),
         )
         conflicts: list[tuple[str, pathlib.Path, str, pathlib.Path]] = []
-        for target_label, target_path in _target_install_surface_paths(
+        for target_label, target_path in _target_output_paths(
+            target_config_root=self._target_config_root,
+            target_data_root=self._target_data_root,
             target_env_file=self._target_env_file,
         ):
             for root_label, legacy_root in legacy_roots:
@@ -221,7 +219,7 @@ class _LegacyFeishuCodexMigrator:
         )
         raise LegacyMigrationError(
             "preflight",
-            "FOCUS 安装输出路径不能位于旧 feishu-codex root 内；迁移已停止：\n"
+            "FOCUS 目标输出路径不能与旧 feishu-codex root 重叠；迁移已停止：\n"
             f"{rendered}",
         )
 
@@ -531,10 +529,17 @@ def _legacy_scheduled_task_root() -> pathlib.Path:
     return xdg_data_home / _LEGACY_APP_NAME / "scheduled-tasks"
 
 
-def _target_install_surface_paths(*, target_env_file: pathlib.Path) -> tuple[tuple[str, pathlib.Path], ...]:
+def _target_output_paths(
+    *,
+    target_config_root: pathlib.Path,
+    target_data_root: pathlib.Path,
+    target_env_file: pathlib.Path,
+) -> tuple[tuple[str, pathlib.Path], ...]:
     return tuple(
         (label, path)
         for label, path in (
+            ("FOCUS config root", target_config_root),
+            ("FOCUS data root", target_data_root),
             ("FOCUS env file", target_env_file),
             ("FOCUS bin dir", default_user_bin_dir()),
             ("FOCUS bash completion dir", default_user_bash_completion_dir()),
@@ -542,6 +547,8 @@ def _target_install_surface_paths(*, target_env_file: pathlib.Path) -> tuple[tup
             ("FOCUS zsh rc path", default_user_zsh_rc_path()),
             ("FOCUS PowerShell completion path", default_user_powershell_completion_path()),
             ("FOCUS PowerShell profile path", default_user_powershell_profile_path()),
+            ("FOCUS systemd user dir", default_systemd_user_dir() if is_linux() else None),
+            ("FOCUS LaunchAgent dir", default_launch_agent_dir() if is_macos() else None),
         )
         if path is not None
     )

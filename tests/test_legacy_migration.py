@@ -279,6 +279,137 @@ class LegacyMigrationTests(unittest.TestCase):
             self.assertEqual(install_calls, 0)
             self.assertFalse((old_data / "bin").exists())
 
+    def test_migrate_from_feishu_codex_rejects_target_config_root_inside_legacy_data_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            home = root / "home"
+            old_config = root / "legacy-config"
+            old_data = root / "legacy-data"
+            target_config = old_data / "focus-config"
+            target_data = root / "focus-data"
+            old_config.mkdir(parents=True)
+            (old_config / "system.yaml").write_text("old-system\n", encoding="utf-8")
+            install_calls = 0
+
+            def fake_install() -> int:
+                nonlocal install_calls
+                install_calls += 1
+                target_config.mkdir(parents=True, exist_ok=True)
+                return 0
+
+            env = {
+                "HOME": str(home),
+                "FC_CONFIG_ROOT": str(old_config),
+                "FC_DATA_ROOT": str(old_data),
+                "FOCUS_CONFIG_ROOT": str(target_config),
+                "FOCUS_DATA_ROOT": str(target_data),
+                "FOCUS_ENV_FILE": str(root / "focus.env"),
+                "FOCUS_BIN_DIR": str(root / "focus-bin"),
+                "XDG_DATA_HOME": str(root / "xdg-data"),
+            }
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("bot.legacy_migration.is_linux", return_value=False),
+                patch("bot.legacy_migration.is_macos", return_value=False),
+                patch("bot.legacy_migration.is_windows", return_value=False),
+                self.assertRaises(legacy_migration.LegacyMigrationError) as raised,
+            ):
+                migrate_from_feishu_codex(install_new_surface=fake_install)
+
+            self.assertEqual(raised.exception.stage, "preflight")
+            self.assertIn("FOCUS config root", str(raised.exception))
+            self.assertEqual(install_calls, 0)
+            self.assertFalse(target_config.exists())
+
+    def test_migrate_from_feishu_codex_rejects_target_data_root_inside_legacy_scheduled_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            home = root / "home"
+            old_config = root / "legacy-config"
+            old_data = root / "legacy-data"
+            old_xdg_data = root / "xdg-data"
+            old_scheduled = old_xdg_data / "feishu-codex" / "scheduled-tasks"
+            target_config = root / "focus-config"
+            target_data = old_scheduled / "focus-data"
+            old_config.mkdir(parents=True)
+            target_config.mkdir(parents=True)
+            (old_config / "system.yaml").write_text("old-system\n", encoding="utf-8")
+            install_calls = 0
+
+            def fake_install() -> int:
+                nonlocal install_calls
+                install_calls += 1
+                target_data.mkdir(parents=True, exist_ok=True)
+                return 0
+
+            env = {
+                "HOME": str(home),
+                "FC_CONFIG_ROOT": str(old_config),
+                "FC_DATA_ROOT": str(old_data),
+                "FOCUS_CONFIG_ROOT": str(target_config),
+                "FOCUS_DATA_ROOT": str(target_data),
+                "FOCUS_BIN_DIR": str(root / "focus-bin"),
+                "XDG_DATA_HOME": str(old_xdg_data),
+            }
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("bot.legacy_migration.is_linux", return_value=False),
+                patch("bot.legacy_migration.is_macos", return_value=False),
+                patch("bot.legacy_migration.is_windows", return_value=False),
+                self.assertRaises(legacy_migration.LegacyMigrationError) as raised,
+            ):
+                migrate_from_feishu_codex(install_new_surface=fake_install)
+
+            self.assertEqual(raised.exception.stage, "preflight")
+            self.assertIn("FOCUS data root", str(raised.exception))
+            self.assertEqual(install_calls, 0)
+            self.assertFalse(target_data.exists())
+
+    def test_migrate_from_feishu_codex_rejects_systemd_dir_inside_legacy_config_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            home = root / "home"
+            old_config = home / ".config"
+            old_data = root / "legacy-data"
+            target_config = root / "focus-config"
+            target_data = root / "focus-data"
+            old_config.mkdir(parents=True)
+            target_config.mkdir(parents=True)
+            (old_config / "system.yaml").write_text("old-system\n", encoding="utf-8")
+            install_calls = 0
+
+            def fake_install() -> int:
+                nonlocal install_calls
+                install_calls += 1
+                systemd_dir = home / ".config" / "systemd" / "user"
+                systemd_dir.mkdir(parents=True, exist_ok=True)
+                (systemd_dir / "focus.service").write_text("new service\n", encoding="utf-8")
+                return 0
+
+            env = {
+                "HOME": str(home),
+                "FC_CONFIG_ROOT": str(old_config),
+                "FC_DATA_ROOT": str(old_data),
+                "FOCUS_CONFIG_ROOT": str(target_config),
+                "FOCUS_DATA_ROOT": str(target_data),
+                "FOCUS_ENV_FILE": str(root / "focus.env"),
+                "FOCUS_BIN_DIR": str(root / "focus-bin"),
+                "XDG_DATA_HOME": str(root / "xdg-data"),
+            }
+            with (
+                patch.dict(os.environ, env, clear=True),
+                patch("bot.legacy_migration.is_linux", return_value=True),
+                patch("bot.legacy_migration.is_macos", return_value=False),
+                patch("bot.legacy_migration.is_windows", return_value=False),
+                self.assertRaises(legacy_migration.LegacyMigrationError) as raised,
+            ):
+                migrate_from_feishu_codex(install_new_surface=fake_install)
+
+            self.assertEqual(raised.exception.stage, "preflight")
+            self.assertIn("FOCUS systemd user dir", str(raised.exception))
+            self.assertEqual(install_calls, 0)
+            self.assertFalse((home / ".config" / "systemd" / "user" / "focus.service").exists())
+
     def test_migrate_scheduled_prompt_warns_for_concrete_helper_path(self) -> None:
         migrated, warnings = legacy_migration._migrate_scheduled_prompt_text(
             "run /old/feishu-codex/.agents/skills/feishu-scheduled-prompts/scripts/"
