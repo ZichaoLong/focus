@@ -17,6 +17,10 @@ class ServiceControlError(RuntimeError):
     """Raised when a control-plane request fails."""
 
 
+class ServiceControlResponseTimeoutError(ServiceControlError):
+    """Raised when a request was sent but the response did not arrive in time."""
+
+
 def format_control_endpoint(host: str, port: int) -> str:
     return f"tcp://{host}:{int(port)}"
 
@@ -166,10 +170,22 @@ def control_request(
     try:
         with socket.create_connection((host, port), timeout=timeout_seconds) as sock:
             sock.settimeout(timeout_seconds)
-            sock.sendall(payload)
-            response = _recv_line(sock)
+            try:
+                sock.sendall(payload)
+            except TimeoutError as exc:
+                raise ServiceControlError(f"控制面请求发送超时：{metadata.control_endpoint}") from exc
+            try:
+                response = _recv_line(sock)
+            except TimeoutError as exc:
+                raise ServiceControlResponseTimeoutError(
+                    f"控制面请求已发送，但等待响应超时：{metadata.control_endpoint}"
+                ) from exc
+    except ServiceControlResponseTimeoutError:
+        raise
     except ConnectionRefusedError as exc:
         raise ServiceControlError(f"控制面连接失败：{metadata.control_endpoint}") from exc
+    except TimeoutError as exc:
+        raise ServiceControlError(f"控制面连接超时：{metadata.control_endpoint}") from exc
     except OSError as exc:
         raise ServiceControlError(f"控制面请求失败：{exc}") from exc
     if not isinstance(response, dict):

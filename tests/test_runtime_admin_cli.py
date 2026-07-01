@@ -7,9 +7,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from bot.adapters.base import ThreadSummary
-from bot.feishu_codexctl import (
+from bot.runtime_admin_cli import (
     _archive_thread,
     _archive_threads,
+    _attach_service,
     _build_thread_presence_checker,
     _build_parser,
     _cleanup_archived_thread_bindings_in_scope,
@@ -21,7 +22,6 @@ from bot.feishu_codexctl import (
     _list_archived_thread_ids_from_running_instance,
     _clear_thread_goal,
     _image_send_target_params,
-    _list_running_instances,
     _print_binding_list,
     _print_thread_goal,
     _print_thread_list,
@@ -37,18 +37,17 @@ from bot.feishu_codexctl import (
     _terminal_display_width,
     _print_thread_status,
     _thread_target_params,
-    main as feishu_codexctl_main,
+    main as runtime_admin_cli_main,
 )
 from bot.codex_protocol.client import CodexRpcError
 from bot.instance_resolution import CliInstanceTarget
-from bot.service_control_plane import ServiceControlError
+from bot.service_control_plane import ServiceControlError, ServiceControlResponseTimeoutError
 from bot.stores.chat_binding_store import ChatBindingStore
-from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.version import __version__
 
 
-class FeishuCodexCtlTests(unittest.TestCase):
+class RuntimeAdminCliTests(unittest.TestCase):
     def _visual_cell_starts(self, line: str, cells: list[str]) -> list[int]:
         starts: list[int] = []
         offset = 0
@@ -65,10 +64,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
 
         self.assertIn("本地查看 / 管理面", rendered)
         self.assertIn("不是第二个 Codex 前端", rendered)
-        self.assertIn("除 `instance list` 外", rendered)
+        self.assertIn("命令都可加 `--instance <name>`", rendered)
         self.assertIn("binding clear", rendered)
         self.assertIn("常用命令:", rendered)
-        self.assertIn("focusctl --instance corp-a service status", rendered)
         self.assertIn("thread archive --thread-name demo", rendered)
         self.assertIn("thread goal --thread-id <id>", rendered)
         self.assertIn("prompt send --binding-id <binding_id>", rendered)
@@ -294,9 +292,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
             started_at=1.0,
             updated_at=1.0,
         )
-        with patch("bot.feishu_codexctl.load_config_file", return_value={"app_server_url": "ws://127.0.0.1:8765"}):
+        with patch("bot.runtime_admin_cli.load_config_file", return_value={"app_server_url": "ws://127.0.0.1:8765"}):
             with patch(
-                "bot.feishu_codexctl.resolve_running_instance_app_server_url",
+                "bot.runtime_admin_cli.resolve_running_instance_app_server_url",
                 return_value="ws://127.0.0.1:43210",
             ) as mock_resolve:
                 adapter, _, app_server_url = _remote_adapter(Path("/tmp/data-aft"), running_entry=entry)
@@ -324,14 +322,14 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 data_dir=Path(tmpdir),
                 running_entry=entry,
             )
-            with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
-                with patch("bot.feishu_codexctl._print_thread_list", return_value=0) as mock_print:
+            with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
+                with patch("bot.runtime_admin_cli._print_thread_list", return_value=0) as mock_print:
                     with patch(
-                        "bot.feishu_codexctl.sys.argv",
+                        "bot.runtime_admin_cli.sys.argv",
                         ["focusctl", "--instance", "aft", "thread", "list"],
                     ):
                         with self.assertRaises(SystemExit) as exc:
-                            feishu_codexctl_main()
+                            runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_print.call_args.kwargs["scope"], "cwd")
@@ -343,14 +341,14 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 instance_name="aft",
                 data_dir=Path(tmpdir),
             )
-            with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
-                with patch("bot.feishu_codexctl._print_thread_goal", return_value=0) as mock_print:
+            with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
+                with patch("bot.runtime_admin_cli._print_thread_goal", return_value=0) as mock_print:
                     with patch(
-                        "bot.feishu_codexctl.sys.argv",
+                        "bot.runtime_admin_cli.sys.argv",
                         ["focusctl", "--instance", "aft", "thread", "goal", "--thread-id", "thread-1"],
                     ):
                         with self.assertRaises(SystemExit) as exc:
-                            feishu_codexctl_main()
+                            runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_print.call_args.args[0], Path(tmpdir))
@@ -498,7 +496,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "display_mode": "silent",
             "synthetic_source": "schedule",
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _send_binding_prompt(
                     Path("/tmp/instance-data"),
@@ -528,7 +526,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "display_mode": "silent",
             "synthetic_source": "schedule",
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _send_binding_prompt(
                     Path("/tmp/instance-data"),
@@ -548,11 +546,11 @@ class FeishuCodexCtlTests(unittest.TestCase):
     def test_parser_accepts_global_instance_selector(self) -> None:
         parser = _build_parser()
 
-        args = parser.parse_args(["--instance", "corp-b", "service", "status"])
+        args = parser.parse_args(["--instance", "corp-b", "service", "reset-backend"])
 
         self.assertEqual(args.instance, "corp-b")
         self.assertEqual(args.resource, "service")
-        self.assertEqual(args.action, "status")
+        self.assertEqual(args.action, "reset-backend")
 
     def test_main_rejects_explicit_uncreated_named_instance(self) -> None:
         stderr = io.StringIO()
@@ -568,12 +566,12 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 clear=False,
             ):
                 with patch(
-                    "bot.feishu_codexctl.sys.argv",
-                    ["focusctl", "--instance", "ghost", "service", "status"],
+                    "bot.runtime_admin_cli.sys.argv",
+                    ["focusctl", "--instance", "ghost", "service", "reset-backend"],
                 ):
-                    with patch("bot.feishu_codexctl.sys.stderr", stderr):
+                    with patch("bot.runtime_admin_cli.sys.stderr", stderr):
                         with self.assertRaises(SystemExit) as exc:
-                            feishu_codexctl_main()
+                            runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 2)
         self.assertIn("instance create ghost", stderr.getvalue())
@@ -595,35 +593,6 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertEqual(args.resource, "service")
         self.assertEqual(args.action, "reset-backend")
         self.assertTrue(args.force)
-
-    def test_instance_list_prefers_runtime_store_url_over_stale_registry_url(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            data_dir = Path(tmpdir)
-            AppServerRuntimeStore(data_dir).save_managed_runtime(
-                configured_url="ws://127.0.0.1:8765",
-                active_url="ws://127.0.0.1:43210",
-                owner_pid=os.getpid(),
-                app_server_pid=os.getpid(),
-            )
-            entry = InstanceRegistryEntry(
-                instance_name="explorer",
-                owner_pid=os.getpid(),
-                service_token="token-explorer",
-                control_endpoint="tcp://127.0.0.1:9393",
-                app_server_url="ws://127.0.0.1:8765",
-                config_dir="/tmp/config-explorer",
-                data_dir=str(data_dir),
-                started_at=1.0,
-                updated_at=1.0,
-            )
-            stdout = io.StringIO()
-            with patch("bot.feishu_codexctl.list_running_instances", return_value=[entry]):
-                with redirect_stdout(stdout):
-                    result = _list_running_instances()
-
-        self.assertEqual(result, 0)
-        rendered = stdout.getvalue()
-        self.assertIn("ws://127.0.0.1:43210", rendered)
 
     def test_render_table_aligns_wide_characters(self) -> None:
         headers = ["THREAD_ID", "PROVIDER", "CWD", "TITLE"]
@@ -672,8 +641,8 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 return None
 
         stdout = io.StringIO()
-        with patch("bot.feishu_codexctl._remote_adapter", return_value=(_FakeAdapter(), {"thread_list_query_limit": 100}, "ws://127.0.0.1:8765")):
-            with patch("bot.feishu_codexctl.list_global_threads", return_value=threads):
+        with patch("bot.runtime_admin_cli._remote_adapter", return_value=(_FakeAdapter(), {"thread_list_query_limit": 100}, "ws://127.0.0.1:8765")):
+            with patch("bot.runtime_admin_cli.list_global_threads", return_value=threads):
                 with redirect_stdout(stdout):
                     result = _print_thread_list(Path("/tmp/instance-data"), scope="global", cwd="")
 
@@ -709,7 +678,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             ]
         }
         stdout = io.StringIO()
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _print_binding_list(Path("/tmp/instance-data"))
 
@@ -747,7 +716,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "approval_policy": "on-request",
             "permissions_profile_id": ":workspace",
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _print_binding_status(Path("/tmp/instance-data"), "p2p:ou_user:chat-1", instance_name="explorer")
 
@@ -775,7 +744,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "detach_reason_code": "unsubscribe_not_applicable_no_binding",
             "detach_reason": "当前没有 Feishu 绑定指向该线程。",
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _print_thread_status(
                     Path("/tmp/instance-data"),
@@ -806,7 +775,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 "updated_at": 1712476801,
             },
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _print_thread_goal(
                     Path("/tmp/instance-data"),
@@ -840,7 +809,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 "updated_at": 1712476801,
             },
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot) as mock_request:
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot) as mock_request:
             with redirect_stdout(stdout):
                 result = _set_thread_goal(
                     Path("/tmp/instance-data"),
@@ -887,7 +856,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "goal": None,
             "cleared": True,
         }
-        with patch("bot.feishu_codexctl._request", side_effect=[paused, cleared]):
+        with patch("bot.runtime_admin_cli._request", side_effect=[paused, cleared]):
             with redirect_stdout(stdout):
                 self.assertEqual(
                     _set_thread_goal(
@@ -918,7 +887,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "delivered_binding_ids": ["p2p:ou_user:chat-1"],
             "failed_binding_ids": ["p2p:ou_other:chat-2"],
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with redirect_stdout(stdout):
                 result = _send_thread_image(
                     Path("/tmp/instance-data"),
@@ -962,9 +931,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(params, {"thread_id": "thread-1", "dry_run": False})
             return {"thread_id": "thread-1", "cleared_binding_ids": ["p2p:ou_other:chat-2"]}
 
-        with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
-            with patch("bot.feishu_codexctl.list_running_instances", return_value=[explorer_entry]):
-                with patch("bot.feishu_codexctl.list_known_instance_names", return_value=["default", "explorer"]):
+        with patch("bot.runtime_admin_cli._request", side_effect=_fake_request):
+            with patch("bot.runtime_admin_cli.list_running_instances", return_value=[explorer_entry]):
+                with patch("bot.runtime_admin_cli.list_known_instance_names", return_value=["default", "explorer"]):
                     with redirect_stdout(stdout):
                         result = _archive_thread(
                             Path("/tmp/default-data"),
@@ -994,9 +963,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
             "working_dir": "/tmp/project",
             "cleared_binding_ids": [],
         }
-        with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._request", return_value=snapshot):
             with patch(
-                "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                "bot.runtime_admin_cli._cleanup_archived_thread_bindings_in_other_instances",
                 return_value=(
                     [],
                     [{"instance_name": "explorer", "mode": "control-plane", "reason": "down"}],
@@ -1033,10 +1002,10 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     "reasoning_effort": "",
                 },
             )
-            with patch("bot.feishu_codexctl.list_running_instances", return_value=[]):
-                with patch("bot.feishu_codexctl.list_known_instance_names", return_value=["default", "explorer"]):
+            with patch("bot.runtime_admin_cli.list_running_instances", return_value=[]):
+                with patch("bot.runtime_admin_cli.list_known_instance_names", return_value=["default", "explorer"]):
                     with patch(
-                        "bot.feishu_codexctl.resolve_instance_paths",
+                        "bot.runtime_admin_cli.resolve_instance_paths",
                         return_value=CliInstanceTarget(instance_name="explorer", data_dir=data_dir),
                     ):
                         cleanup_results, cleanup_failures = (
@@ -1108,9 +1077,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
             self.assertEqual(params, {"thread_id": "thread-1", "dry_run": True})
             return {"thread_id": "thread-1", "would_clear_binding_ids": ["p2p:ou_user:chat-1"]}
 
-        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
-            with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
-                with patch("bot.feishu_codexctl.list_running_instances") as mock_list_running:
+        with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
+            with patch("bot.runtime_admin_cli._request", side_effect=_fake_request):
+                with patch("bot.runtime_admin_cli.list_running_instances") as mock_list_running:
                     cleanup_results, cleanup_failures = _cleanup_archived_thread_bindings_in_scope(
                         "thread-1",
                         explicit_instance="explorer",
@@ -1133,7 +1102,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
     def test_clear_archived_thread_bindings_public_command_prints_dry_run(self) -> None:
         stdout = io.StringIO()
         with patch(
-            "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_scope",
+            "bot.runtime_admin_cli._cleanup_archived_thread_bindings_in_scope",
             return_value=(
                 [
                     {
@@ -1159,14 +1128,14 @@ class FeishuCodexCtlTests(unittest.TestCase):
         self.assertIn("explorer (local-store): p2p:ou_user:chat-1", rendered)
 
     def test_clear_archived_thread_bindings_all_requires_running_instance_to_query(self) -> None:
-        with patch("bot.feishu_codexctl.list_running_instances", return_value=[]):
+        with patch("bot.runtime_admin_cli.list_running_instances", return_value=[]):
             with self.assertRaisesRegex(ValueError, "至少一个运行中的实例"):
                 _clear_archived_thread_bindings(all_archived=True)
 
     def test_clear_archived_thread_bindings_all_rejects_stopped_explicit_instance(self) -> None:
         target = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
 
-        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+        with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
             with self.assertRaisesRegex(ValueError, "目标实例正在运行"):
                 _clear_archived_thread_bindings(all_archived=True, explicit_instance="explorer")
 
@@ -1198,15 +1167,15 @@ class FeishuCodexCtlTests(unittest.TestCase):
             ], []
 
         with patch(
-            "bot.feishu_codexctl._resolve_archived_thread_listing_target",
+            "bot.runtime_admin_cli._resolve_archived_thread_listing_target",
             return_value=("explorer", Path("/tmp/explorer-data"), explorer_entry),
         ) as mock_resolve:
             with patch(
-                "bot.feishu_codexctl._list_archived_thread_ids_from_running_instance",
+                "bot.runtime_admin_cli._list_archived_thread_ids_from_running_instance",
                 return_value=["thread-2", "thread-1"],
             ) as mock_list_archived:
                 with patch(
-                    "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_scope",
+                    "bot.runtime_admin_cli._cleanup_archived_thread_bindings_in_scope",
                     side_effect=_fake_cleanup,
                 ) as mock_cleanup:
                     with redirect_stdout(stdout):
@@ -1277,7 +1246,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             updated_at=1.0,
         )
 
-        with patch("bot.feishu_codexctl._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
+        with patch("bot.runtime_admin_cli._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
             archived_thread_ids = _list_archived_thread_ids_from_running_instance(
                 Path("/tmp/explorer-data"),
                 running_entry=explorer_entry,
@@ -1413,7 +1382,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
             updated_at=1.0,
         )
 
-        with patch("bot.feishu_codexctl._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
+        with patch("bot.runtime_admin_cli._remote_adapter", return_value=(adapter, {}, "ws://127.0.0.1:9002")):
             _adapter, check = _build_thread_presence_checker(
                 Path("/tmp/explorer-data"),
                 running_entry=explorer_entry,
@@ -1454,8 +1423,8 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 "dry_run": True,
             }
 
-        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
-            with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+        with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
+            with patch("bot.runtime_admin_cli._request", side_effect=_fake_request):
                 with redirect_stdout(stdout):
                     result = _clear_stale_bindings(explicit_instance="explorer", dry_run=True)
 
@@ -1484,9 +1453,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
             running_entry=explorer_entry,
         )
 
-        with patch("bot.feishu_codexctl._resolve_target_instance", return_value=target):
+        with patch("bot.runtime_admin_cli._resolve_target_instance", return_value=target):
             with patch(
-                "bot.feishu_codexctl._request",
+                "bot.runtime_admin_cli._request",
                 return_value={
                     "cleared_binding_ids": [],
                     "stale_thread_ids": [],
@@ -1497,6 +1466,23 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     result = _clear_stale_bindings(explicit_instance="explorer")
 
         self.assertEqual(result, 1)
+
+    def test_attach_service_treats_response_timeout_as_accepted(self) -> None:
+        stdout = io.StringIO()
+        with patch(
+            "bot.runtime_admin_cli._request",
+            side_effect=ServiceControlResponseTimeoutError("控制面请求已发送，但等待响应超时：tcp://127.0.0.1:32001"),
+        ) as mock_request:
+            with redirect_stdout(stdout):
+                result = _attach_service(Path("/tmp/focus-data"))
+
+        self.assertEqual(result, 0)
+        mock_request.assert_called_once_with(Path("/tmp/focus-data"), "service/attach", timeout_seconds=30.0)
+        rendered = stdout.getvalue()
+        self.assertIn("runtime attach: accepted", rendered)
+        self.assertIn("waiting for result timed out", rendered)
+        self.assertIn("后台可能仍在继续恢复推送", rendered)
+        self.assertIn("focusctl binding list", rendered)
 
     def test_archive_threads_batches_partial_failures(self) -> None:
         stdout = io.StringIO()
@@ -1514,11 +1500,11 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 "cleared_binding_ids": ["p2p:ou_user:chat-1"],
             }
 
-        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "default"]):
-            with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[target_a, target_b]):
-                with patch("bot.feishu_codexctl._request", side_effect=_fake_request):
+        with patch("bot.runtime_admin_cli._lease_owner_instance", side_effect=["explorer", "default"]):
+            with patch("bot.runtime_admin_cli._resolve_target_instance", side_effect=[target_a, target_b]):
+                with patch("bot.runtime_admin_cli._request", side_effect=_fake_request):
                     with patch(
-                        "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                        "bot.runtime_admin_cli._cleanup_archived_thread_bindings_in_other_instances",
                         return_value=([], []),
                     ):
                         with redirect_stdout(stdout):
@@ -1539,13 +1525,13 @@ class FeishuCodexCtlTests(unittest.TestCase):
         stdout = io.StringIO()
         target_b = CliInstanceTarget(instance_name="default", data_dir=Path("/tmp/default-data"))
 
-        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "default"]):
+        with patch("bot.runtime_admin_cli._lease_owner_instance", side_effect=["explorer", "default"]):
             with patch(
-                "bot.feishu_codexctl._resolve_target_instance",
+                "bot.runtime_admin_cli._resolve_target_instance",
                 side_effect=[ValueError("ambiguous instance"), target_b],
             ):
                 with patch(
-                    "bot.feishu_codexctl._request",
+                    "bot.runtime_admin_cli._request",
                     return_value={
                         "thread_id": "thread-2",
                         "thread_title": "demo",
@@ -1554,7 +1540,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     },
                 ):
                     with patch(
-                        "bot.feishu_codexctl._cleanup_archived_thread_bindings_in_other_instances",
+                        "bot.runtime_admin_cli._cleanup_archived_thread_bindings_in_other_instances",
                         return_value=([], []),
                     ):
                         with redirect_stdout(stdout):
@@ -1580,8 +1566,8 @@ class FeishuCodexCtlTests(unittest.TestCase):
             },
         }
 
-        with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[bootstrap, owner_target]):
-            with patch("bot.feishu_codexctl._request", return_value=snapshot):
+        with patch("bot.runtime_admin_cli._resolve_target_instance", side_effect=[bootstrap, owner_target]):
+            with patch("bot.runtime_admin_cli._request", return_value=snapshot):
                 target, target_params = _resolve_thread_archive_target(args)
 
         self.assertEqual(target.instance_name, "explorer")
@@ -1596,8 +1582,8 @@ class FeishuCodexCtlTests(unittest.TestCase):
         target_a = CliInstanceTarget(instance_name="explorer", data_dir=Path("/tmp/explorer-data"))
         target_b = CliInstanceTarget(instance_name="aft", data_dir=Path("/tmp/aft-data"))
 
-        with patch("bot.feishu_codexctl._lease_owner_instance", side_effect=["explorer", "aft"]):
-            with patch("bot.feishu_codexctl._resolve_target_instance", side_effect=[target_a, target_b]):
+        with patch("bot.runtime_admin_cli._lease_owner_instance", side_effect=["explorer", "aft"]):
+            with patch("bot.runtime_admin_cli._resolve_target_instance", side_effect=[target_a, target_b]):
                 targets = _resolve_thread_archive_targets(args)
 
         self.assertEqual(
@@ -1609,9 +1595,9 @@ class FeishuCodexCtlTests(unittest.TestCase):
         )
 
     def test_main_thread_archive_batch_dispatches_all_targets(self) -> None:
-        with patch("bot.feishu_codexctl._archive_threads", return_value=1) as mock_archive:
+        with patch("bot.runtime_admin_cli._archive_threads", return_value=1) as mock_archive:
             with patch(
-                "bot.feishu_codexctl.sys.argv",
+                "bot.runtime_admin_cli.sys.argv",
                 [
                     "focusctl",
                     "thread",
@@ -1623,16 +1609,16 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 ],
             ):
                 with self.assertRaises(SystemExit) as exc:
-                    feishu_codexctl_main()
+                    runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 1)
         self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])
         self.assertEqual(mock_archive.call_args.kwargs["explicit_instance"], "")
 
     def test_main_thread_archive_batch_deduplicates_thread_ids(self) -> None:
-        with patch("bot.feishu_codexctl._archive_threads", return_value=0) as mock_archive:
+        with patch("bot.runtime_admin_cli._archive_threads", return_value=0) as mock_archive:
             with patch(
-                "bot.feishu_codexctl.sys.argv",
+                "bot.runtime_admin_cli.sys.argv",
                 [
                     "focusctl",
                     "thread",
@@ -1646,16 +1632,16 @@ class FeishuCodexCtlTests(unittest.TestCase):
                 ],
             ):
                 with self.assertRaises(SystemExit) as exc:
-                    feishu_codexctl_main()
+                    runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_archive.call_args.args[0], ["thread-1", "thread-2"])
 
     def test_main_thread_clear_archived_bindings_dispatches_before_default_target_resolution(self) -> None:
-        with patch("bot.feishu_codexctl._clear_archived_thread_bindings", return_value=0) as mock_clear:
-            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+        with patch("bot.runtime_admin_cli._clear_archived_thread_bindings", return_value=0) as mock_clear:
+            with patch("bot.runtime_admin_cli._resolve_target_instance") as mock_resolve:
                 with patch(
-                    "bot.feishu_codexctl.sys.argv",
+                    "bot.runtime_admin_cli.sys.argv",
                     [
                         "focusctl",
                         "thread",
@@ -1666,7 +1652,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     ],
                 ):
                     with self.assertRaises(SystemExit) as exc:
-                        feishu_codexctl_main()
+                        runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_clear.call_args.args[0], "thread-1")
@@ -1676,10 +1662,10 @@ class FeishuCodexCtlTests(unittest.TestCase):
         mock_resolve.assert_not_called()
 
     def test_main_thread_clear_archived_bindings_all_dispatches_before_default_target_resolution(self) -> None:
-        with patch("bot.feishu_codexctl._clear_archived_thread_bindings", return_value=0) as mock_clear:
-            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+        with patch("bot.runtime_admin_cli._clear_archived_thread_bindings", return_value=0) as mock_clear:
+            with patch("bot.runtime_admin_cli._resolve_target_instance") as mock_resolve:
                 with patch(
-                    "bot.feishu_codexctl.sys.argv",
+                    "bot.runtime_admin_cli.sys.argv",
                     [
                         "focusctl",
                         "thread",
@@ -1689,7 +1675,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     ],
                 ):
                     with self.assertRaises(SystemExit) as exc:
-                        feishu_codexctl_main()
+                        runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_clear.call_args.args[0], "")
@@ -1699,10 +1685,10 @@ class FeishuCodexCtlTests(unittest.TestCase):
         mock_resolve.assert_not_called()
 
     def test_main_binding_clear_stale_dispatches_before_default_target_resolution(self) -> None:
-        with patch("bot.feishu_codexctl._clear_stale_bindings", return_value=0) as mock_clear:
-            with patch("bot.feishu_codexctl._resolve_target_instance") as mock_resolve:
+        with patch("bot.runtime_admin_cli._clear_stale_bindings", return_value=0) as mock_clear:
+            with patch("bot.runtime_admin_cli._resolve_target_instance") as mock_resolve:
                 with patch(
-                    "bot.feishu_codexctl.sys.argv",
+                    "bot.runtime_admin_cli.sys.argv",
                     [
                         "focusctl",
                         "binding",
@@ -1711,7 +1697,7 @@ class FeishuCodexCtlTests(unittest.TestCase):
                     ],
                 ):
                     with self.assertRaises(SystemExit) as exc:
-                        feishu_codexctl_main()
+                        runtime_admin_cli_main()
 
         self.assertEqual(exc.exception.code, 0)
         self.assertEqual(mock_clear.call_args.kwargs["explicit_instance"], "")

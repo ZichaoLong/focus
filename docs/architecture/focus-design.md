@@ -150,7 +150,7 @@ Current module split:
   service lifecycle and runtime-management resources through one entry
 - `bot/manage_cli.py`: install, config, instance-directory, service lifecycle,
   wrapper, and completion management
-- `bot/feishu_codexctl.py` and `bot/service_control_plane.py`: runtime-admin
+- `bot/runtime_admin_cli.py` and `bot/service_control_plane.py`: runtime-admin
   subcommands and the in-process control plane for the running service
 - `bot/instance_layout.py` and `bot/instance_resolution.py`: multi-instance
   filesystem layout and current/target instance resolution
@@ -473,7 +473,7 @@ full-tree dump.
   - shared UI / helper boundaries: `cards.py`, `card_text_projection.py`,
     `shared_command_surface.py`, `feishu_types.py`
   - wrapper and local-management path: `fcodex.py`, `fcodex_proxy.py`,
-    `focusctl.py`, `manage_cli.py`, `feishu_codexctl.py`,
+    `focusctl.py`, `manage_cli.py`, `runtime_admin_cli.py`,
     `service_control_plane.py`, `instance_layout.py`, `instance_resolution.py`,
     `thread_resolution.py`, `binding_identity.py`
   - Codex adapter / protocol boundary:

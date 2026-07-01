@@ -99,7 +99,7 @@ Contract:
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
 | `focusctl instance create <name>` | Create a named instance and prepare its config/data directories and service definition | mutating | none |
-| `focusctl instance list` | List known local instances and their directories; this is the known-instance view, not the running-instance view | read-only | none |
+| `focusctl instance list` | List known local instances, service state, runtime availability, app-server summary, and local directories | read-only | none |
 | `focusctl instance remove <name>` | Remove a named instance and its instance-level service registration material; cannot remove `default` | mutating | none |
 
 ### 4.3 `service`
@@ -109,12 +109,23 @@ Contract:
 | `focusctl [--instance <name>] service start` | Start the target instance background service | mutating | none |
 | `focusctl [--instance <name>] service stop` | Stop the target instance background service | mutating | none |
 | `focusctl [--instance <name>] service restart` | Restart the target instance background service | mutating | none |
-| `focusctl [--instance <name>] service status` | Show the target instance's service / control-plane / app-server overview | read-only | no exact single command |
-| `focusctl service list` | List currently running local instances, owner pid, control endpoint, and app-server URL | read-only | none |
+| `focusctl [--instance <name>] service status` | Show the target instance service-manager state and, when the service is running, a best-effort runtime summary | read-only | no exact single command |
 | `focusctl [--instance <name>] service autostart enable\|disable\|status` | Manage login-time autostart for the target instance | mutating / read-only | none |
 | `focusctl [--instance <name>] service log [--lines <n>]` | Tail the target instance log | read-only | none |
 | `focusctl [--instance <name>] service reset-backend [--force]` | Reset the current instance backend for recovery without restarting the FOCUS service | mutating | Feishu `/reset-backend` |
 | `focusctl [--instance <name>] service attach` | Restore all recoverable detached Feishu push in the current instance | mutating | Feishu `/attach service`, and the post-reset `Attach Current Instance` button |
+
+`service status` is the service-manager view. It may be repeated with
+multiple `--instance` values. When the platform service is running, the command
+also attempts a best-effort FOCUS runtime query and prints either
+`runtime: available` with control-plane / app-server / binding / thread
+diagnostics or `runtime: unavailable` with the reason. A running service with
+unavailable runtime means the platform service manager sees a live process, but
+the FOCUS control plane is not reachable; the command does not rewrite that as
+`service: stopped`.
+
+`service list` is intentionally not a command. Use `focusctl instance list` for
+the machine-wide instance overview.
 
 ### 4.4 `binding`
 

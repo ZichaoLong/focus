@@ -580,7 +580,7 @@ def _complete_focusctl(context: CompletionContext) -> list[str]:
         if positional_index == 1:
             return _complete_candidates(
                 current,
-                ["start", "stop", "restart", "status", "list", "autostart", "log", "reset-backend", "attach"],
+                ["start", "stop", "restart", "status", "autostart", "log", "reset-backend", "attach"],
             )
         if len(positionals) >= 2 and positionals[1] == "reset-backend" and current.startswith("-"):
             return _complete_candidates(current, ["--force", "--help", "-h"])

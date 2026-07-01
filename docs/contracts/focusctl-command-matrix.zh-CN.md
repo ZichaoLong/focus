@@ -97,7 +97,7 @@
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
 | `focusctl instance create <name>` | 创建命名实例并准备配置、数据目录与 service 定义 | 变更 | 无 |
-| `focusctl instance list` | 列出本机已知实例及其目录；这是已知实例视图，不是运行中实例视图 | 只读 | 无 |
+| `focusctl instance list` | 列出本机已知实例、service 状态、runtime 可用性、app-server 摘要与本地目录 | 只读 | 无 |
 | `focusctl instance remove <name>` | 删除命名实例及其实例级 service 注册材料；不能删除 `default` | 变更 | 无 |
 
 ### 4.3 `service`
@@ -107,12 +107,20 @@
 | `focusctl [--instance <name>] service start` | 启动目标实例后台 service | 变更 | 无 |
 | `focusctl [--instance <name>] service stop` | 停止目标实例后台 service | 变更 | 无 |
 | `focusctl [--instance <name>] service restart` | 重启目标实例后台 service | 变更 | 无 |
-| `focusctl [--instance <name>] service status` | 查看目标实例 service / control plane / app-server 概况 | 只读 | 无一条完全等价命令 |
-| `focusctl service list` | 列出本机当前运行中的实例、owner pid、control endpoint、app-server 地址 | 只读 | 无 |
+| `focusctl [--instance <name>] service status` | 查看目标实例 service manager 状态；若 service 正在运行，则附带 best-effort runtime 摘要 | 只读 | 无一条完全等价命令 |
 | `focusctl [--instance <name>] service autostart enable\|disable\|status` | 管理目标实例登录后自动启动 | 变更 / 只读 | 无 |
 | `focusctl [--instance <name>] service log [--lines <n>]` | 查看目标实例日志并持续跟随 | 只读 | 无 |
 | `focusctl [--instance <name>] service reset-backend [--force]` | 为恢复而重置当前实例 backend，但不重启 FOCUS service | 变更 | 飞书 `/reset-backend` |
 | `focusctl [--instance <name>] service attach` | 恢复当前实例内所有可恢复的 detached Feishu 推送 | 变更 | 飞书 `/attach service`，以及 reset 结果卡里的“附着当前实例” |
+
+`service status` 是 service manager 视图，可重复传入多个 `--instance`。
+当平台 service 正在运行时，该命令还会 best-effort 查询 FOCUS runtime，
+并输出 `runtime: available` 及 control-plane / app-server / binding / thread
+诊断，或输出 `runtime: unavailable` 与原因。若 service running 但 runtime
+unavailable，含义是平台 service manager 看到进程还活着，但 FOCUS
+control plane 不可达；命令不会把它改写成 `service: stopped`。
+
+`service list` 有意不是命令；本机实例总览统一使用 `focusctl instance list`。
 
 ### 4.4 `binding`
 

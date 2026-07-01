@@ -30,10 +30,12 @@ from bot.manage_cli import (
     _handle_service_action,
     _handle_service_actions,
     _managed_skill_source_dir,
+    _terminal_display_width,
     _skill_tree_matches_source,
     _write_wrapper,
     main,
 )
+from bot.service_control_plane import ServiceControlError
 from bot.service_manager import AutostartStatus
 from bot.stores.instance_registry_store import InstanceRegistryStore, build_instance_registry_entry
 from bot.stores.service_instance_lease import ServiceInstanceLease
@@ -41,6 +43,16 @@ from bot.version import __version__
 
 
 class ManageCliTests(unittest.TestCase):
+    @staticmethod
+    def _visual_cell_starts(line: str, cells: list[str]) -> list[int]:
+        starts: list[int] = []
+        search_from = 0
+        for cell in cells:
+            index = line.index(cell, search_from)
+            starts.append(_terminal_display_width(line[:index]))
+            search_from = index + len(cell)
+        return starts
+
     def test_import_manage_cli_does_not_emit_lark_pkg_resources_warning(self) -> None:
         result = subprocess.run(
             [sys.executable, "-c", "import bot.manage_cli"],
@@ -78,7 +90,7 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("`uninstall|purge` 只清理本机安装面", rendered)
         self.assertIn("focusctl instance create corp-a", rendered)
         self.assertIn("focusctl skill install", rendered)
-        self.assertIn("focusctl --instance default service status", rendered)
+        self.assertIn("focusctl --instance default --instance corp-a service status", rendered)
         self.assertIn("创建、列出、删除命名实例", rendered)
         self.assertIn("查看或打开当前实例相关配置文件", rendered)
         self.assertIn("安装或卸载 FOCUS 提供的工作区 skill", rendered)
@@ -116,6 +128,19 @@ class ManageCliTests(unittest.TestCase):
         self.assertIn("create", rendered)
         self.assertIn("remove", rendered)
         self.assertIn("不接受顶层 `--instance`", rendered)
+
+    def test_instance_list_help_describes_machine_overview(self) -> None:
+        parser = _build_parser()
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as exc:
+                parser.parse_args(["instance", "list", "--help"])
+
+        self.assertEqual(exc.exception.code, 0)
+        rendered = stdout.getvalue()
+        self.assertIn("service 状态", rendered)
+        self.assertIn("runtime 可用性", rendered)
+        self.assertIn("app-server 摘要", rendered)
 
     def test_autostart_help_includes_subcommand_guidance(self) -> None:
         parser = _build_parser()
@@ -1052,9 +1077,116 @@ class ManageCliTests(unittest.TestCase):
 
             self.assertEqual(result, 3)
             rendered = stdout.getvalue()
-            self.assertIn("service: installed", rendered)
-            self.assertIn("running: no", rendered)
-            self.assertIn("systemctl --user is-active focus@corp-a: activating", rendered)
+            self.assertIn("service: stopped", rendered)
+            self.assertIn("service source: systemctl --user is-active focus@corp-a: activating", rendered)
+
+    def test_handle_service_status_prints_runtime_summary_when_service_running(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    del definition
+                    from bot.service_manager import ServiceStatus
+
+                    return ServiceStatus(
+                        installed=True,
+                        running=True,
+                        source="systemctl --user is-active focus@corp-a",
+                        detail="active",
+                    )
+
+            runtime_status = {
+                "pid": 1234,
+                "control_endpoint": "tcp://127.0.0.1:32001",
+                "app_server_url": "ws://127.0.0.1:8765",
+                "app_server_mode": "managed",
+                "binding_count": 3,
+                "bound_binding_count": 2,
+                "attached_binding_count": 1,
+                "thread_count": 2,
+                "attached_thread_count": 1,
+                "loaded_thread_count": 1,
+                "running_binding_ids": ["p2p:ou:chat"],
+                "backend_reset_status": "idle",
+            }
+            with patch.dict(
+                os.environ,
+                {
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                _ensure_instance_scaffold("corp-a")
+                stdout = io.StringIO()
+                with redirect_stdout(stdout):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch("bot.manage_cli.control_request", return_value=runtime_status):
+                            result = _handle_service_action("corp-a", "status")
+
+            self.assertEqual(result, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("service: running", rendered)
+            self.assertIn("runtime: available", rendered)
+            self.assertIn("control endpoint: tcp://127.0.0.1:32001", rendered)
+            self.assertIn("app server: ws://127.0.0.1:8765", rendered)
+            self.assertIn("bindings: total=3 bound=2 attached=1", rendered)
+            self.assertIn("threads: bound=2 feishu-attached=1 loaded=1", rendered)
+
+    def test_handle_service_status_keeps_success_when_running_runtime_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    del definition
+                    from bot.service_manager import ServiceStatus
+
+                    return ServiceStatus(
+                        installed=True,
+                        running=True,
+                        source="systemctl --user is-active focus@corp-a",
+                        detail="active",
+                    )
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                _ensure_instance_scaffold("corp-a")
+                lease = ServiceInstanceLease(resolve_instance_paths("corp-a").data_dir)
+                lease.acquire(control_endpoint="tcp://127.0.0.1:32001")
+                try:
+                    stdout = io.StringIO()
+                    with redirect_stdout(stdout):
+                        with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                            with patch(
+                                "bot.manage_cli.control_request",
+                                side_effect=ServiceControlError("控制面连接失败"),
+                            ):
+                                result = _handle_service_action("corp-a", "status")
+                finally:
+                    lease.release()
+
+            self.assertEqual(result, 0)
+            rendered = stdout.getvalue()
+            self.assertIn("service: running", rendered)
+            self.assertIn("runtime: unavailable", rendered)
+            self.assertIn("control endpoint: tcp://127.0.0.1:32001", rendered)
+            self.assertIn("reason: 控制面连接失败", rendered)
 
     def test_handle_service_actions_supports_multiple_instances(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1226,6 +1358,14 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    del definition
+                    from bot.service_manager import ServiceStatus
+
+                    return ServiceStatus(installed=True, running=False, source="systemctl", detail="inactive")
+
             with patch.dict(
                 os.environ,
                 {
@@ -1238,13 +1378,19 @@ class ManageCliTests(unittest.TestCase):
             ):
                 stdout = io.StringIO()
                 with patch("bot.manage_cli.list_running_instances", return_value=[]):
-                    with redirect_stdout(stdout):
-                        result = _handle_instance_list()
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with redirect_stdout(stdout):
+                            result = _handle_instance_list()
 
             self.assertEqual(result, 0)
             output_lines = stdout.getvalue().strip().splitlines()
-            self.assertEqual(output_lines[0], "instance\tstate\tconfig_dir\tdata_dir")
-            self.assertEqual(output_lines[1], f"default\tstopped\t{config_root}\t{data_root}")
+            self.assertNotIn("\t", stdout.getvalue())
+            header = ["INSTANCE", "SERVICE", "RUNTIME", "PID", "APP_SERVER", "CONFIG_DIR", "DATA_DIR"]
+            row = ["default", "stopped", "-", "-", "-", str(config_root), str(data_root)]
+            self.assertEqual(
+                self._visual_cell_starts(output_lines[1], row),
+                self._visual_cell_starts(output_lines[0], header),
+            )
 
     def test_handle_instance_list_marks_running_named_instance(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1252,6 +1398,15 @@ class ManageCliTests(unittest.TestCase):
             config_root = root / "config"
             data_root = root / "data"
             env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    from bot.service_manager import ServiceStatus
+
+                    if definition.instance_name == "corp-a":
+                        return ServiceStatus(installed=True, running=True, source="systemctl", detail="active")
+                    return ServiceStatus(installed=True, running=False, source="systemctl", detail="inactive")
+
             with patch.dict(
                 os.environ,
                 {
@@ -1289,14 +1444,143 @@ class ManageCliTests(unittest.TestCase):
                         owner_pid=os.getpid(),
                     )],
                 ):
-                    with redirect_stdout(stdout):
-                        result = _handle_instance_list()
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli.control_request",
+                            return_value={
+                                "pid": 4321,
+                                "control_endpoint": "http://127.0.0.1:1",
+                                "app_server_url": "http://127.0.0.1:2",
+                            },
+                        ):
+                            with redirect_stdout(stdout):
+                                result = _handle_instance_list()
 
             self.assertEqual(result, 0)
             output_lines = stdout.getvalue().strip().splitlines()
-            self.assertEqual(output_lines[0], "instance\tstate\tconfig_dir\tdata_dir")
-            self.assertEqual(output_lines[1], f"corp-a\trunning\t{paths.config_dir}\t{paths.data_dir}")
-            self.assertEqual(output_lines[2], f"default\tstopped\t{config_root}\t{data_root}")
+            self.assertNotIn("\t", stdout.getvalue())
+            header = ["INSTANCE", "SERVICE", "RUNTIME", "PID", "APP_SERVER", "CONFIG_DIR", "DATA_DIR"]
+            row1 = ["corp-a", "running", "available", "4321", "http://127.0.0.1:2", str(paths.config_dir), str(paths.data_dir)]
+            row2 = ["default", "stopped", "-", "-", "-", str(config_root), str(data_root)]
+            header_starts = self._visual_cell_starts(output_lines[0], header)
+            self.assertEqual(self._visual_cell_starts(output_lines[1], row1), header_starts)
+            self.assertEqual(self._visual_cell_starts(output_lines[2], row2), header_starts)
+
+    def test_handle_instance_list_shows_runtime_when_service_is_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    del definition
+                    from bot.service_manager import ServiceStatus
+
+                    return ServiceStatus(installed=True, running=False, source="systemctl", detail="inactive")
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                _ensure_instance_scaffold("corp-a")
+                paths = resolve_instance_paths("corp-a")
+                entry = build_instance_registry_entry(
+                    instance_name="corp-a",
+                    service_token="svc-token",
+                    control_endpoint="http://127.0.0.1:1",
+                    app_server_url="http://127.0.0.1:2",
+                    config_dir=paths.config_dir,
+                    data_dir=paths.data_dir,
+                    owner_pid=os.getpid(),
+                )
+                stdout = io.StringIO()
+                with patch("bot.manage_cli.list_running_instances", return_value=[entry]):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli.control_request",
+                            return_value={
+                                "pid": 4321,
+                                "control_endpoint": "http://127.0.0.1:1",
+                                "app_server_url": "http://127.0.0.1:2",
+                            },
+                        ):
+                            with redirect_stdout(stdout):
+                                result = _handle_instance_list()
+
+            self.assertEqual(result, 0)
+            output_lines = stdout.getvalue().strip().splitlines()
+            header = ["INSTANCE", "SERVICE", "RUNTIME", "PID", "APP_SERVER", "CONFIG_DIR", "DATA_DIR"]
+            row = ["corp-a", "stopped", "available", "4321", "http://127.0.0.1:2", str(paths.config_dir), str(paths.data_dir)]
+            self.assertEqual(
+                self._visual_cell_starts(output_lines[1], row),
+                self._visual_cell_starts(output_lines[0], header),
+            )
+
+    def test_handle_instance_list_shows_runtime_when_service_state_is_unknown(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = pathlib.Path(tmpdir)
+            config_root = root / "config"
+            data_root = root / "data"
+            env_file = config_root / "focus.env"
+
+            class _DummyManager:
+                def status(self, definition):
+                    del definition
+                    from bot.service_manager import ServiceManagerError
+
+                    raise ServiceManagerError("systemd unavailable")
+
+            with patch.dict(
+                os.environ,
+                {
+                    "FOCUS_CONFIG_ROOT": str(config_root),
+                    "FOCUS_DATA_ROOT": str(data_root),
+                    "FOCUS_GLOBAL_DATA_DIR": str(data_root / "_global"),
+                    "FOCUS_ENV_FILE": str(env_file),
+                },
+                clear=False,
+            ):
+                _ensure_instance_scaffold("corp-a")
+                paths = resolve_instance_paths("corp-a")
+                entry = build_instance_registry_entry(
+                    instance_name="corp-a",
+                    service_token="svc-token",
+                    control_endpoint="http://127.0.0.1:1",
+                    app_server_url="http://127.0.0.1:2",
+                    config_dir=paths.config_dir,
+                    data_dir=paths.data_dir,
+                    owner_pid=os.getpid(),
+                )
+                stdout = io.StringIO()
+                with patch("bot.manage_cli.list_running_instances", return_value=[entry]):
+                    with patch("bot.manage_cli.current_service_manager", return_value=_DummyManager()):
+                        with patch(
+                            "bot.manage_cli.control_request",
+                            return_value={
+                                "pid": 4321,
+                                "control_endpoint": "http://127.0.0.1:1",
+                                "app_server_url": "http://127.0.0.1:2",
+                            },
+                        ):
+                            with redirect_stdout(stdout):
+                                result = _handle_instance_list()
+
+            self.assertEqual(result, 0)
+            output_lines = stdout.getvalue().strip().splitlines()
+            header = ["INSTANCE", "SERVICE", "RUNTIME", "PID", "APP_SERVER", "CONFIG_DIR", "DATA_DIR"]
+            row = ["corp-a", "unknown", "available", "4321", "http://127.0.0.1:2", str(paths.config_dir), str(paths.data_dir)]
+            self.assertEqual(
+                self._visual_cell_starts(output_lines[1], row),
+                self._visual_cell_starts(output_lines[0], header),
+            )
 
     def test_handle_instance_remove_rejects_live_service_owner(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

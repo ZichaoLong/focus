@@ -119,7 +119,7 @@ shared backend 与 wrapper 的具体机制，见
 - `bot/fcodex.py` 与 `bot/fcodex_proxy.py`：本地 wrapper 与带 owner 过滤的代理
 - `bot/focusctl.py`：公开 `focusctl` 管理入口调度器，统一路由 service lifecycle 与 runtime 管理资源
 - `bot/manage_cli.py`：安装、配置、实例目录、service lifecycle、wrapper 与 completion 管理
-- `bot/feishu_codexctl.py` 与 `bot/service_control_plane.py`：runtime 管理子命令与运行中服务控制面
+- `bot/runtime_admin_cli.py` 与 `bot/service_control_plane.py`：runtime 管理子命令与运行中服务控制面
 - `bot/instance_layout.py` 与 `bot/instance_resolution.py`：多实例目录布局、当前/目标实例解析
 - `bot/binding_identity.py`：admin-facing binding 标识规范
 - `bot/binding_runtime_manager.py`：binding / subscribe / attach / detach 与本地 runtime snapshot 的 owner
@@ -345,7 +345,7 @@ FOCUS 只保存飞书或集成侧专属的数据：
   - 共享 UI / helper 边界：`cards.py`、`card_text_projection.py`、
     `shared_command_surface.py`、`feishu_types.py`
   - wrapper 与本地管理路径：`fcodex.py`、`fcodex_proxy.py`、
-    `focusctl.py`、`manage_cli.py`、`feishu_codexctl.py`、
+    `focusctl.py`、`manage_cli.py`、`runtime_admin_cli.py`、
     `service_control_plane.py`、`instance_layout.py`、
     `instance_resolution.py`、`thread_resolution.py`、`binding_identity.py`
   - Codex adapter / protocol 边界：

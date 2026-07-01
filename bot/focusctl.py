@@ -8,8 +8,8 @@ from bot.version import __version__
 
 _MANAGE_RESOURCES = {"config", "instance", "skill", "migrate", "uninstall", "purge", "bootstrap-install"}
 _RUNTIME_RESOURCES = {"binding", "prompt", "thread", "image"}
-_SERVICE_LIFECYCLE_ACTIONS = {"start", "stop", "restart", "autostart", "log"}
-_SERVICE_RUNTIME_ACTIONS = {"status", "reset-backend", "attach"}
+_SERVICE_MANAGER_ACTIONS = {"start", "stop", "restart", "status", "autostart", "log"}
+_SERVICE_RUNTIME_ACTIONS = {"reset-backend", "attach"}
 
 
 def _print_help() -> None:
@@ -19,8 +19,8 @@ def _print_help() -> None:
         "  focusctl [--instance <name>] <resource> <command> [args ...]\n\n"
         "资源:\n"
         "  config      查看或打开 system/codex/env/init-token 配置\n"
-        "  instance    管理本机已知实例；`instance list` 是已知实例视图\n"
-        "  service     管理后台服务、运行态 control plane 与 app-server\n"
+        "  instance    管理本机实例；`instance list` 是实例 / service / runtime 总览\n"
+        "  service     管理后台服务、日志、自启动与 backend 恢复动作\n"
         "  binding     查看、恢复、暂停或清理 Feishu binding\n"
         "  thread      查看或管理 Codex thread\n"
         "  prompt      向 binding 合成提交 prompt\n"
@@ -34,7 +34,6 @@ def _print_help() -> None:
         "  focusctl instance list\n"
         "  focusctl service start\n"
         "  focusctl service status\n"
-        "  focusctl service list\n"
         "  focusctl service autostart enable\n"
         "  focusctl binding list\n"
         "  focusctl binding clear-stale --dry-run\n"
@@ -45,6 +44,46 @@ def _print_help() -> None:
         "工作入口:\n"
         "  focus / fcodex 是 Codex TUI thin wrapper；focusctl 不进入 TUI。\n"
     )
+
+
+def _print_service_action_help(action: str) -> bool:
+    if action in {"start", "stop", "restart"}:
+        descriptions = {
+            "start": "启动目标实例后台 service，不改变登录后自动启动设置。",
+            "stop": "停止目标实例后台 service，不改变登录后自动启动设置。",
+            "restart": "重启目标实例后台 service，不改变登录后自动启动设置。",
+        }
+        print(f"usage: focusctl [--instance <name>] service {action} [-h]\n")
+        print(descriptions[action])
+        print("\noptions:\n  -h, --help  show this help message and exit")
+        return True
+    if action == "status":
+        print("usage: focusctl [--instance <name>] service status [-h]\n")
+        print(
+            "查看目标实例 service manager 状态。\n"
+            "service 正在运行时会附带 best-effort runtime 诊断；"
+            "登录后自动启动状态请使用 `focusctl service autostart status`。"
+        )
+        print("\noptions:\n  -h, --help  show this help message and exit")
+        return True
+    if action == "log":
+        print("usage: focusctl [--instance <name>] service log [-h] [--lines LINES]\n")
+        print("查看目标实例日志文件并持续跟随。")
+        print("\noptions:\n  -h, --help     show this help message and exit\n  --lines LINES  启动时先输出的历史日志行数。")
+        return True
+    if action == "autostart":
+        print("usage: focusctl [--instance <name>] service autostart [-h] {enable,disable,status}\n")
+        print("管理目标实例“登录后自动启动”设置，不直接改动当前运行态。")
+        print(
+            "\nautostart commands:\n"
+            "  enable   开启登录后自动启动。\n"
+            "  disable  关闭登录后自动启动。\n"
+            "  status   查看登录后自动启动是否开启。\n"
+            "\noptions:\n"
+            "  -h, --help  show this help message and exit"
+        )
+        return True
+    return False
 
 
 def _consume_global_options(argv: list[str]) -> tuple[list[str], list[str]]:
@@ -90,7 +129,7 @@ def _single_instance_args(global_args: list[str]) -> list[str]:
             continue
         index += 1
     if len(instance_values) > 1:
-        raise ValueError("当前命令只接受一个 `--instance`；批量 service lifecycle 请分别执行。")
+        raise ValueError("当前命令只接受一个 `--instance`；批量操作请使用支持批量的命令或分别执行。")
     return list(global_args)
 
 
@@ -101,7 +140,7 @@ def _run_manage(args: list[str]) -> None:
 
 
 def _run_runtime(args: list[str]) -> None:
-    from bot.feishu_codexctl import main as runtime_main
+    from bot.runtime_admin_cli import main as runtime_main
 
     runtime_main(args)
 
@@ -142,17 +181,19 @@ def main(argv: list[str] | None = None) -> None:
                 print(
                     "focusctl service commands:\n"
                     "  start | stop | restart | autostart <enable|disable|status> | log\n"
-                    "  status | reset-backend | attach | list"
+                    "  status | reset-backend | attach"
                 )
                 raise SystemExit(0)
             action = rest[1]
             action_args = rest[2:]
-            if action in _SERVICE_LIFECYCLE_ACTIONS:
+            if action in _SERVICE_MANAGER_ACTIONS and any(item in {"-h", "--help"} for item in action_args):
+                if _print_service_action_help(action):
+                    raise SystemExit(0)
+            if action in _SERVICE_MANAGER_ACTIONS:
                 _run_manage([*global_args, action, *action_args])
                 return
             if action == "list":
-                _run_runtime([*_single_instance_args(global_args), "instance", "list", *action_args])
-                return
+                raise ValueError("`focusctl service list` 已删除；请使用 `focusctl instance list`。")
             if action in _SERVICE_RUNTIME_ACTIONS:
                 _run_runtime([*_single_instance_args(global_args), "service", action, *action_args])
                 return

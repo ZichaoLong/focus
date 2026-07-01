@@ -6,12 +6,13 @@ import argparse
 import os
 import pathlib
 import sys
-import unicodedata
 from dataclasses import replace
 from typing import Any
 
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
 from bot.binding_identity import format_binding_id
+from bot.cli_table import render_table as _render_table
+from bot.cli_table import terminal_display_width as _terminal_display_width
 from bot.config import load_config_file
 from bot.constants import display_path, format_timestamp
 from bot.codex_protocol.client import CodexRpcError
@@ -23,11 +24,10 @@ from bot.instance_resolution import (
     resolve_running_instance_app_server_url,
 )
 from bot.platform_paths import default_data_root
-from bot.service_control_plane import ServiceControlError, control_request
-from bot.stores.app_server_runtime_store import AppServerRuntimeStore, resolve_effective_app_server_url
+from bot.service_control_plane import ServiceControlError, ServiceControlResponseTimeoutError, control_request
+from bot.stores.app_server_runtime_store import resolve_effective_app_server_url
 from bot.stores.chat_binding_store import ChatBindingStore
 from bot.stores.interaction_lease_store import InteractionLeaseStore, make_feishu_interaction_holder
-from bot.stores.service_instance_lease import ServiceInstanceLease
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
 from bot.thread_resolution import list_current_dir_threads, list_global_threads
@@ -58,8 +58,14 @@ def _resolve_target_instance(
     )
 
 
-def _request(data_dir: pathlib.Path, method: str, params: dict[str, Any] | None = None) -> Any:
-    return control_request(data_dir, method, params)
+def _request(
+    data_dir: pathlib.Path,
+    method: str,
+    params: dict[str, Any] | None = None,
+    *,
+    timeout_seconds: float = 3.0,
+) -> Any:
+    return control_request(data_dir, method, params, timeout_seconds=timeout_seconds)
 
 
 def _remote_adapter(
@@ -200,46 +206,6 @@ def _live_runtime_summary(snapshot: dict[str, Any]) -> tuple[str, list[str]]:
     return "none", []
 
 
-def _terminal_display_width(text: str) -> int:
-    total = 0
-    for ch in str(text):
-        if ch in "\r\n":
-            continue
-        if unicodedata.combining(ch):
-            continue
-        if unicodedata.category(ch) == "Cf":
-            continue
-        total += 2 if unicodedata.east_asian_width(ch) in {"W", "F"} else 1
-    return total
-
-
-def _render_table(headers: list[str], rows: list[list[str]], *, gap: int = 2) -> list[str]:
-    if not headers:
-        return []
-    normalized_rows = [[str(cell) for cell in row] for row in rows]
-    widths = [_terminal_display_width(str(cell)) for cell in headers]
-    for row in normalized_rows:
-        if len(row) != len(headers):
-            raise ValueError("表格列数不一致。")
-        for index, cell in enumerate(row):
-            widths[index] = max(widths[index], _terminal_display_width(cell))
-
-    def _pad(cell: str, width: int) -> str:
-        padding = max(width - _terminal_display_width(cell), 0)
-        return cell + (" " * padding)
-
-    rendered: list[str] = []
-    for row in [headers, *normalized_rows]:
-        parts: list[str] = []
-        for index, cell in enumerate(row):
-            if index == len(headers) - 1:
-                parts.append(cell)
-                continue
-            parts.append(_pad(cell, widths[index]) + (" " * gap))
-        rendered.append("".join(parts).rstrip())
-    return rendered
-
-
 def _format_goal_ts_seconds(value: Any) -> str:
     try:
         timestamp = float(value)
@@ -259,37 +225,6 @@ def _goal_status_label(status: str) -> str:
         "budgetLimited": "触发预算限制",
         "complete": "已完成",
     }.get(str(status or "").strip(), "未知")
-
-
-def _print_service_status(data_dir: pathlib.Path) -> int:
-    metadata = ServiceInstanceLease(data_dir).load_metadata()
-    published_endpoint = metadata.control_endpoint if metadata is not None else ""
-    try:
-        result = _request(data_dir, "service/status")
-    except ServiceControlError as exc:
-        print("service: stopped")
-        print(f"control endpoint: {published_endpoint or 'unavailable'}")
-        runtime = AppServerRuntimeStore(data_dir).load_managed_runtime()
-        if runtime is not None:
-            print(f"last known app server: {runtime.active_url}")
-        print(f"reason: {exc}")
-        return 3
-    if result.get("instance_name"):
-        print(f"instance: {result['instance_name']}")
-    print("service: running")
-    print(f"pid: {result['pid']}")
-    print(f"control endpoint: {result['control_endpoint']}")
-    print(f"app server: {result['app_server_url']}")
-    print(f"app server mode: {result.get('app_server_mode', '-')}")
-    print(f"bindings: total={result['binding_count']} bound={result['bound_binding_count']} attached={result['attached_binding_count']}")
-    print(f"threads: bound={result['thread_count']} feishu-attached={result['attached_thread_count']} loaded={result['loaded_thread_count']}")
-    print(f"running bindings: {', '.join(result['running_binding_ids']) or '（无）'}")
-    print(f"backend reset: {result.get('backend_reset_status', '-')}")
-    if result.get("backend_reset_reason_code"):
-        print(f"backend reset reason code: {result['backend_reset_reason_code']}")
-    if result.get("backend_reset_reason"):
-        print(f"backend reset reason: {result['backend_reset_reason']}")
-    return 0
 
 
 def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
@@ -314,7 +249,17 @@ def _reset_service_backend(data_dir: pathlib.Path, *, force: bool) -> int:
 
 
 def _attach_service(data_dir: pathlib.Path) -> int:
-    result = _request(data_dir, "service/attach")
+    try:
+        result = _request(data_dir, "service/attach", timeout_seconds=30.0)
+    except ServiceControlResponseTimeoutError as exc:
+        print("runtime attach: accepted")
+        print("status: waiting for result timed out")
+        print("note: attach 请求已送达运行中的 FOCUS service，后台可能仍在继续恢复推送。")
+        print("next:")
+        print("  - wait a moment, then run: focusctl binding list")
+        print("  - or check runtime overview: focusctl instance list")
+        print(f"detail: {exc}")
+        return 0
     print("runtime attach: ok")
     print(f"instance: {result.get('instance_name', '-')}")
     print(f"attached threads: {', '.join(result.get('attached_thread_ids') or []) or '（无）'}")
@@ -400,7 +345,7 @@ def _clear_binding(data_dir: pathlib.Path, binding_id: str) -> int:
 
 
 def _attach_binding(data_dir: pathlib.Path, binding_id: str) -> int:
-    result = _request(data_dir, "binding/attach", {"binding_id": binding_id})
+    result = _request(data_dir, "binding/attach", {"binding_id": binding_id}, timeout_seconds=30.0)
     print(f"binding: {result['binding_id']}")
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
@@ -928,7 +873,7 @@ def _detach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int
 
 
 def _attach_thread(data_dir: pathlib.Path, target_params: dict[str, str]) -> int:
-    result = _request(data_dir, "thread/attach", target_params)
+    result = _request(data_dir, "thread/attach", target_params, timeout_seconds=30.0)
     print(f"thread: {result['thread_id']} {result['thread_title'] or ''}".rstrip())
     print(f"working_dir: {display_path(result['working_dir'])}")
     print(f"attached bindings: {', '.join(result.get('attached_binding_ids') or []) or '（无）'}")
@@ -1417,21 +1362,6 @@ def _send_thread_image(
     return 0
 
 
-def _list_running_instances() -> int:
-    instances = list_running_instances()
-    if not instances:
-        print("当前没有运行中的实例。")
-        return 0
-    rows: list[list[str]] = []
-    for item in instances:
-        control = item.control_endpoint
-        app_server = resolve_running_instance_app_server_url(item) or "-"
-        rows.append([item.instance_name, str(item.owner_pid), control, app_server])
-    for line in _render_table(["INSTANCE", "PID", "CONTROL", "APP_SERVER"], rows):
-        print(line)
-    return 0
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="focusctl",
@@ -1440,17 +1370,15 @@ def _build_parser() -> argparse.ArgumentParser:
             "说明：\n"
             "- `focusctl` 是本地查看 / 管理面，不是第二个 Codex 前端\n"
             "- 命名实例必须先显式 `focusctl instance create <name>`；这里不会隐式创建\n"
-            "- 除 `instance list` 外，其余命令都可加 `--instance <name>`；显式值优先\n"
+            "- 命令都可加 `--instance <name>`；显式值优先\n"
             "- 若未显式指定，则按 preferred-running（若有）/ unique-running / default-running / current-instance-paths 规则解析；多实例仍有歧义时必须显式指定\n"
             "- `binding clear` / `clear-all` 删除的是 Feishu 本地 binding 记录，不删除 thread，也不等于 `detach`\n"
             "- `thread list` 默认列当前目录线程，也支持 `--scope global`\n"
         ),
         epilog=(
             "常用命令:\n"
-            "  focusctl service status\n"
             "  focusctl service reset-backend\n"
             "  focusctl service attach\n"
-            "  focusctl instance list\n"
             "  focusctl binding list\n"
             "  focusctl binding status <binding_id>\n"
             "  focusctl binding attach <binding_id>\n"
@@ -1469,7 +1397,6 @@ def _build_parser() -> argparse.ArgumentParser:
             "  focusctl image send --thread-id <id> --path ./diagram.png\n"
             "\n"
             "多实例:\n"
-            "  focusctl --instance corp-a service status\n"
             "  focusctl --instance corp-a thread status --thread-name demo\n"
         ),
         formatter_class=_HelpFormatter,
@@ -1479,38 +1406,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--instance",
         help=(
             "目标实例；显式值优先。命名实例必须先 `focusctl instance create <name>`。"
-            "省略时按运行中实例解析，必要时必须显式指定。仅 `instance list` 不使用这个参数。"
+            "省略时按运行中实例解析，必要时必须显式指定。"
         ),
     )
     subparsers = parser.add_subparsers(dest="resource", required=True, title="resources", metavar="resource")
 
-    instance = subparsers.add_parser(
-        "instance",
-        help="查看运行中的实例注册表。",
-        description="实例发现面。当前只提供 `list`，用于查看本机运行中的实例及其控制面地址。",
-        formatter_class=_HelpFormatter,
-    )
-    instance_sub = instance.add_subparsers(dest="action", required=True, title="instance commands", metavar="instance-command")
-    instance_sub.add_parser(
-        "list",
-        help="列出运行中的实例。",
-        description="列出本机运行中的实例、owner pid、control endpoint 与 app-server 地址。",
-        formatter_class=_HelpFormatter,
-    )
-
     service = subparsers.add_parser(
         "service",
-        help="查看目标实例的服务状态。",
-        description="服务查看面。用于确认目标实例是否在运行，以及当前 control plane / app-server 发现状态。",
+        help="修复目标实例的运行中服务。",
+        description="运行中服务修复面。service 状态查看由 `focusctl service status` 的本机 service manager 路径负责。",
         formatter_class=_HelpFormatter,
     )
     service_sub = service.add_subparsers(dest="action", required=True, title="service commands", metavar="service-command")
-    service_sub.add_parser(
-        "status",
-        help="查看服务运行态。",
-        description="查看目标实例当前服务运行态、control endpoint、app-server 地址以及 binding / thread 统计。",
-        formatter_class=_HelpFormatter,
-    )
     service_reset = service_sub.add_parser(
         "reset-backend",
         help="重置当前实例 backend，不重启 FOCUS service。",
@@ -1829,8 +1736,6 @@ def main(argv: list[str] | None = None) -> None:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.resource == "instance" and args.action == "list":
-            raise SystemExit(_list_running_instances())
         if args.resource == "image" and args.action == "send":
             target_params, preferred_thread_id = _image_send_target_params(args)
             target = _resolve_target_instance(
@@ -1875,8 +1780,6 @@ def main(argv: list[str] | None = None) -> None:
             )
         target = _resolve_target_instance(args.instance)
         data_dir = target.data_dir
-        if args.resource == "service" and args.action == "status":
-            raise SystemExit(_print_service_status(data_dir))
         if args.resource == "service" and args.action == "reset-backend":
             raise SystemExit(_reset_service_backend(data_dir, force=bool(args.force)))
         if args.resource == "service" and args.action == "attach":
