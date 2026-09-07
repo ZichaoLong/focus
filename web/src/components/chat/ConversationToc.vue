@@ -21,6 +21,9 @@ const props = defineProps<{
   /** Query currently owning the viewport middle. */
   activeTurnId: string | null;
   mobile?: boolean;
+  /** Show the component-owned rail or compact trigger. The shared dialog stays
+      available to an external trigger while these inline controls are hidden. */
+  inlineVisible?: boolean;
   sessionLoading?: boolean;
   /** The external outline stopped at its explicit prompt limit. */
   truncated?: boolean;
@@ -75,15 +78,24 @@ function measure(): void {
 // this computed so the nav stays mounted (and measurable) even when hidden;
 // clipping is applied via the `toc-clipped` class instead.
 const railVisible = computed(
-  () => !props.mobile
+  () => props.inlineVisible !== false
+    && !props.mobile
     && !props.sessionLoading
     && (props.items.length > 1 || props.searchVisible === true),
 );
-const compactVisible = computed(
+const dialogAvailable = computed(
   () => !props.sessionLoading
-    && (props.items.length > 0 || props.searchVisible === true)
+    && (props.items.length > 0 || props.searchVisible === true),
+);
+const compactVisible = computed(
+  () => props.inlineVisible !== false
+    && dialogAvailable.value
     && (props.mobile || !fits.value),
 );
+
+function openCompactDialog(): void {
+  if (dialogAvailable.value) compactOpen.value = true;
+}
 
 async function selectItem(turnId: string): Promise<void> {
   const generation = ++selectionGeneration;
@@ -132,6 +144,20 @@ watch(
   { immediate: true },
 );
 
+watch(
+  dialogAvailable,
+  (isAvailable) => {
+    if (!isAvailable) compactOpen.value = false;
+  },
+  { immediate: true },
+);
+
+// A presentation-mode transition replaces which trigger owns this surface.
+// Do not leave the dialog open under a trigger from the previous mode.
+watch(() => props.inlineVisible !== false, () => {
+  compactOpen.value = false;
+});
+
 // A historical resolver may outlive an Esc/overlay/close-button dismissal.
 // Invalidate its UI receipt synchronously so reopening the dialog cannot be
 // closed later by that older success.
@@ -142,6 +168,8 @@ watch(
   },
   { flush: 'sync' },
 );
+
+defineExpose({ openCompactDialog });
 
 onBeforeUnmount(() => {
   observer?.disconnect();
@@ -207,7 +235,7 @@ onBeforeUnmount(() => {
     size="sm"
     aria-haspopup="dialog"
     :aria-expanded="compactOpen"
-    @click="compactOpen = true"
+    @click="openCompactDialog"
   >
     {{ t('conversation.promptHistory') }}
   </Button>

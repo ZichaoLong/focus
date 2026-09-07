@@ -8,14 +8,17 @@ withDefaults(defineProps<{
   mobile?: boolean;
   sessionTitle: string;
   switcherOpen?: boolean;
+  promptHistoryDisabled?: boolean;
 }>(), {
   mobile: false,
   switcherOpen: false,
+  promptHistoryDisabled: false,
 });
 
 const emit = defineEmits<{
   exit: [];
   switchSession: [];
+  promptHistory: [];
 }>();
 
 const { t } = useI18n();
@@ -45,6 +48,17 @@ const { t } = useI18n();
       <span class="reading-session-title">{{ sessionTitle }}</span>
       <Icon name="chevron-down" size="sm" />
     </Button>
+    <IconButton
+      class="reading-prompt-history"
+      size="sm"
+      :disabled="promptHistoryDisabled"
+      :label="t('conversation.promptHistory')"
+      :title="t('conversation.promptHistory')"
+      aria-haspopup="dialog"
+      @click="emit('promptHistory')"
+    >
+      <Icon name="list" size="sm" />
+    </IconButton>
   </div>
 </template>
 
@@ -64,13 +78,15 @@ const { t } = useI18n();
   flex-direction: row;
   padding: var(--safe-top) max(12px, var(--safe-right)) 0 max(12px, var(--safe-left));
 }
-.reading-mode-exit {
+.reading-mode-exit,
+.reading-prompt-history {
   width: 30px;
   height: 30px;
   background: var(--color-surface-raised);
   border-color: var(--color-line-strong);
   box-shadow: var(--shadow-xs);
 }
+.reading-mode-controls.is-mobile .reading-prompt-history { margin-left: auto; }
 .reading-session-switch {
   max-width: min(52vw, 240px);
 }

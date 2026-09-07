@@ -949,10 +949,11 @@ onUnmounted(() => {
           :mobile="isMobile"
           :session-title="activeSessionTitle"
           :switcher-open="showMobileSwitcher"
+          :prompt-history-disabled="client.conversationLoading.value"
           @exit="exitReadingMode"
           @switch-session="showMobileSwitcher = true"
+          @prompt-history="conversationPaneRef?.openPromptHistory()"
         />
-
         <FocusPrimaryNotices
           v-if="!readingMode"
           :document-reload-required="client.documentReloadRequired.value"
@@ -980,7 +981,6 @@ onUnmounted(() => {
         <div v-if="unsupportedNotice && !readingMode" class="transient-notice" role="status">
           {{ unsupportedNotice }}
         </div>
-
         <ConversationPane
           ref="conversationPaneRef"
           :mobile="isMobile"

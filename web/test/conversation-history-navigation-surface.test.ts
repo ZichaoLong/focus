@@ -64,7 +64,9 @@ describe('ConversationPane bounded history navigation surface', () => {
     const zh = source('../src/i18n/locales/zh/conversation.ts');
 
     expect(toc).toContain('const railVisible = computed(');
+    expect(toc).toContain('const dialogAvailable = computed(');
     expect(toc).toContain('const compactVisible = computed(');
+    expect(toc).toContain('props.inlineVisible !== false');
     expect(toc).toContain('(props.mobile || !fits.value)');
     expect(toc).toContain('v-if="railVisible"');
     expect(toc).toContain('v-if="compactVisible"');
@@ -83,6 +85,26 @@ describe('ConversationPane bounded history navigation surface', () => {
       'async function selectItem',
     );
     expect(compactVisibility).not.toContain('occluded');
+  });
+
+  it('shares the compact dialog with an external reading-mode trigger', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const toc = source('../src/components/chat/ConversationToc.vue');
+
+    expect(toc).toContain('inlineVisible?: boolean;');
+    expect(toc).toContain('function openCompactDialog(): void {');
+    expect(toc).toContain('if (dialogAvailable.value) compactOpen.value = true;');
+    expect(toc).toContain('defineExpose({ openCompactDialog });');
+    expect(toc).toContain('compactVisible,');
+    expect(toc).toContain('if (!isVisible) compactOpen.value = false;');
+    expect(toc).toContain('dialogAvailable,');
+    expect(toc).toContain('if (!isAvailable) compactOpen.value = false;');
+    expect(toc).toContain('watch(() => props.inlineVisible !== false');
+    expect(toc).toContain('@click="openCompactDialog"');
+    expect(pane).toContain('ref="conversationTocRef"');
+    expect(pane).toContain(':inline-visible="!readingMode"');
+    expect(pane).toContain('conversationTocRef.value?.openCompactDialog();');
+    expect(pane).toContain('openPromptHistory,');
   });
 
   it('closes the compact dialog only after the latest target is installed', () => {

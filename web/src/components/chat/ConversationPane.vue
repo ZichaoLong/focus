@@ -323,6 +323,7 @@ function pickWorkspace(id: string): void {
 safeRemove(STORAGE_KEYS.contentAlign);
 
 const chatPaneRef = ref<InstanceType<typeof ChatPane> | null>(null);
+const conversationTocRef = ref<InstanceType<typeof ConversationToc> | null>(null);
 const emptyComposerRef = ref<ComposerHandle | null>(null);
 const dockedComposerRef = ref<ComposerHandle | null>(null);
 const copyConversationCopied = ref(false);
@@ -835,6 +836,10 @@ function scrollToRenderedTurn(turnId: string): boolean {
   showPill.value = distanceFromBottom() > BOTTOM_THRESHOLD;
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   return true;
+}
+
+function openPromptHistory(): void {
+  conversationTocRef.value?.openCompactDialog();
 }
 
 function currentLayoutKey(): string {
@@ -1371,6 +1376,7 @@ defineExpose({
   clearComposerAttachmentsForSession,
   rebindComposerAttachmentsForSession,
   focusComposer,
+  openPromptHistory,
   scrollToRenderedTurn,
 });
 </script>
@@ -1413,10 +1419,12 @@ defineExpose({
     <!-- Conversation outline: right edge rail of vertical bars (one per user
          query); hover to expand a labeled panel. -->
     <ConversationToc
-      v-if="conversationToc && !readingMode"
+      v-if="conversationToc"
+      ref="conversationTocRef"
       :items="displayedConversationTocItems"
       :active-turn-id="activeTurnId"
       :mobile="mobile"
+      :inline-visible="!readingMode"
       :session-loading="sessionLoading"
       :occluded="tocOccludedByTable"
       :truncated="conversationTocTruncated"

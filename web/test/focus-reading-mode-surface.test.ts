@@ -61,7 +61,8 @@ describe('Focus page-level reading mode surface', () => {
 
     expect(pane).toContain("<section class=\"con\" :class=\"{ mobile, 'reading-mode': readingMode }\">");
     expect(pane).toMatch(/<ChatHeader[\s\S]*?v-show="!readingMode"/u);
-    expect(pane).toMatch(/<ConversationToc\s+v-if="conversationToc && !readingMode"/u);
+    expect(pane).toMatch(/<ConversationToc\s+v-if="conversationToc"/u);
+    expect(pane).toContain(':inline-visible="!readingMode"');
     expect(pane).toMatch(/<ChatDock\s+v-if="!showTargetlessComposer"\s+v-show="!readingMode"/u);
     expect(pane).toContain(':surface-mode="readingMode ? \'hidden\' : composerSurfaceMode"');
     expect(pane).not.toContain('.con.reading-mode :deep(.chat)');
@@ -80,13 +81,14 @@ describe('Focus page-level reading mode surface', () => {
     expect(app).not.toContain('v-if="detailOpen && !readingMode"');
   });
 
-  it('offers separate exit and conversation-switch actions at the reading edge', () => {
+  it('offers exit, conversation-switch, and Prompt history actions at the reading edge', () => {
     const app = source('../src/focus/FocusApp.vue');
     const controls = source('../src/components/chat/ReadingModeControls.vue');
 
     expect(app).toMatch(/<ReadingModeControls\s+v-if="readingMode"/u);
     expect(app).toContain('@exit="exitReadingMode"');
     expect(app).toContain('@switch-session="showMobileSwitcher = true"');
+    expect(app).toContain('@prompt-history="conversationPaneRef?.openPromptHistory()"');
     expect(controls).toContain('class="reading-mode-exit"');
     expect(controls).toContain("@click=\"emit('exit')\"");
     expect(controls).toContain("t('focus.exitReadingMode')");
@@ -97,12 +99,23 @@ describe('Focus page-level reading mode surface', () => {
     expect(controls).toContain('aria-haspopup="dialog"');
     expect(controls).toContain(':aria-expanded="switcherOpen"');
     expect(controls).toContain('{{ sessionTitle }}');
+    expect(controls).toContain('class="reading-prompt-history"');
+    expect(controls).toContain(':disabled="promptHistoryDisabled"');
+    expect(controls).toContain("t('conversation.promptHistory')");
+    expect(controls).toContain('aria-haspopup="dialog"');
+    expect(controls).toContain("@click=\"emit('promptHistory')\"");
+    expect(controls).toContain('<Icon name="list" size="sm" />');
+    expect(controls).not.toContain('<Dialog');
+    expect(app).toContain(':prompt-history-disabled="client.conversationLoading.value"');
     expect(controls).toContain('height: 48px;');
     expect(controls).toContain('flex: none;');
     expect(controls).toContain('.reading-mode-controls.is-mobile {');
     expect(controls).toContain('height: calc(50px + var(--safe-top));');
     expect(controls).toContain(
       'padding: var(--safe-top) max(12px, var(--safe-right)) 0 max(12px, var(--safe-left));',
+    );
+    expect(controls).toContain(
+      '.reading-mode-controls.is-mobile .reading-prompt-history { margin-left: auto; }',
     );
 
     const switcher = between(app, '<MobileSwitcherSheet', '</MobileSwitcherSheet>');
