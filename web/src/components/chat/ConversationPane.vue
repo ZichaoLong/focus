@@ -19,6 +19,11 @@ import Tooltip from '../ui/Tooltip.vue';
 import { getVisibleWorkspaces } from '../../lib/workspacePicker';
 import { safeRemove, STORAGE_KEYS } from '../../lib/storage';
 import { createConversationFollowFrame, type ConversationFollowMode } from '../../focus/conversationFollowFrame';
+import {
+  centeredPromptScrollTop,
+  createPromptNavigationIntent,
+  type PromptNavigationActivity,
+} from '../../focus/promptNavigationIntent';
 
 const { t } = useI18n();
 
@@ -133,6 +138,10 @@ const props = withDefaults(defineProps<{
    *  The resolver owns loading/replacing data; this pane only retries its DOM
    *  anchor after the resulting Vue render. */
   resolveConversationTocTarget?: (turnId: string) => Promise<boolean>;
+  /** Cancel an in-flight outline target read so its late page cannot install. */
+  cancelConversationTocTarget?: () => void;
+  /** True while the bounded full-detail history page replaces the live tail. */
+  viewingHistory?: boolean;
   /** Keep the search entry visible for any selected thread in this document. */
   conversationSearchVisible?: boolean;
   composerCapabilities?: Partial<ComposerCapabilities>;
@@ -677,6 +686,12 @@ void bindChatDock;
 
 const following = ref(true);
 const showPill = ref(false);
+// Automatic replacement-page loads require a distinct user-intent bit.
+// `following=false` also describes Prompt/search navigation and therefore
+// cannot safely authorize the top sentinel by itself.
+const historyAutoLoadArmed = ref(false);
+const promptNavigationActive = ref(false);
+const promptNavigationResolving = ref(false);
 
 /** Within this many pixels from the bottom counts as "at the bottom" —
     scrolling DOWN into this zone re-enables the follow. */
@@ -692,6 +707,11 @@ function distanceFromBottom(): number {
 let lastScrollTop = 0;
 let userActionFollowUntil = 0;
 let lastSmoothScroll = 0;
+let scrollbarDrag: {
+  pointerId: number;
+  startTop: number;
+  lastTop: number;
+} | null = null;
 // While a smooth scroll is in flight, instant `scrollToBottom(false)` calls
 // (e.g. from the streaming follow) are skipped so they don't cancel the
 // animation — see scrollToBottom().
@@ -699,6 +719,14 @@ let smoothScrollUntil = 0;
 const SMOOTH_SCROLL_GUARD_MS = 420;
 let stableFollowRaf = 0;
 let stableFollowToken = 0;
+let scrollWriteGeneration = 0;
+
+type ScrollWriteFence = {
+  generation: number;
+  sessionId: string | undefined;
+  reloadKey: string | number | undefined;
+  pane: HTMLElement | null;
+};
 
 function hasUserActionFollowLock(): boolean {
   return Date.now() < userActionFollowUntil;
@@ -709,6 +737,26 @@ function onPanesScroll(): void {
   const el = panesRef.value;
   if (!el) return;
   const top = el.scrollTop;
+
+  if (scrollbarDrag) {
+    if (top < scrollbarDrag.lastTop - 1) {
+      historyAutoLoadArmed.value = true;
+      following.value = false;
+      showPill.value = distanceFromBottom() > 1;
+    } else if (top > scrollbarDrag.lastTop + 1) {
+      historyAutoLoadArmed.value = false;
+    }
+    scrollbarDrag.lastTop = top;
+  }
+
+  // Native smooth scrolling emits ordinary scroll events. While a Prompt
+  // transaction owns the viewport, those events may update the TOC highlight
+  // but may never re-enable live-tail following, even near the bottom.
+  if (promptNavigation.ownsScroll()) {
+    lastScrollTop = top;
+    updateActiveTocQuery();
+    return;
+  }
 
   if (isPinned()) {
     lastScrollTop = top;
@@ -722,6 +770,7 @@ function onPanesScroll(): void {
 
   const dist = distanceFromBottom();
   if (hasUserActionFollowLock()) {
+    historyAutoLoadArmed.value = false;
     following.value = true;
     showPill.value = false;
     lastScrollTop = top;
@@ -731,6 +780,7 @@ function onPanesScroll(): void {
     following.value = false;
     showPill.value = true;
   } else if (dist <= BOTTOM_THRESHOLD && top > lastScrollTop + 1) {
+    historyAutoLoadArmed.value = false;
     following.value = true;
     showPill.value = false;
   }
@@ -738,8 +788,21 @@ function onPanesScroll(): void {
   updateActiveTocQuery();
 }
 
+function onPanesScrollEnd(): void {
+  // Browsers may run a long-distance native smooth scroll beyond the fallback
+  // delay. A final event-driven pass prevents its old destination from winning.
+  if (promptNavigation.notifyLayoutChange()) return;
+  if (
+    !historyLoadInProgress.value
+    && (following.value || hasUserActionFollowLock())
+  ) scheduleStableFollow(8);
+}
+
 function scrollToBottom(smooth = false): void {
+  if (promptNavigation.ownsScroll()) return;
   const el = panesRef.value;
+  abandonScrollbarDrag();
+  historyAutoLoadArmed.value = false;
   following.value = true;
   showPill.value = false;
   if (!el) return;
@@ -758,16 +821,31 @@ function scrollToBottom(smooth = false): void {
 }
 
 async function handleReturnToLiveTail(): Promise<void> {
+  const fence = claimOrdinaryScrollAuthority();
+  abandonScrollbarDrag();
+  historyAutoLoadArmed.value = false;
+  // Keep bottom-follow disabled while the history window is replaced. The
+  // matching continuation below becomes its sole landing-position writer.
+  following.value = false;
   props.returnToLiveTail?.();
   await nextTick();
+  if (!scrollWriteFenceIsCurrent(fence)) return;
   scrollToBottom(true);
   scheduleStableFollow(16);
 }
 
-async function handleLoadOlderMessages(): Promise<void> {
+async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {
+  // ChatPane receives props on Vue's next render. Re-check a sentinel event at
+  // the effect owner so a callback queued with the previous `true` prop cannot
+  // replace a page after Prompt navigation has already disarmed it. The button
+  // remains an explicit, independent request.
+  const authorized = source === 'button' || historyAutoLoadArmed.value;
+  historyAutoLoadArmed.value = false;
+  if (!authorized) return;
+  const loadOlderMessages = props.loadOlderMessages;
   if (
     !props.sessionId ||
-    !props.loadOlderMessages ||
+    !loadOlderMessages ||
     props.loadingMore ||
     historyLoadInProgress.value ||
     !props.hasMoreMessages
@@ -776,18 +854,22 @@ async function handleLoadOlderMessages(): Promise<void> {
   }
   const requestedSessionId = props.sessionId;
 
+  // One explicit upward gesture authorizes at most one replacement page. The
+  // user can gesture again (or use the visible button) after it settles.
+  const fence = claimOrdinaryScrollAuthority();
+  abandonScrollbarDrag();
   setHistoryLoadInProgress(requestedSessionId, true);
-  cancelScheduledFollow();
   try {
     // Flush the class that disables native scroll anchoring before the detail
     // window is replaced. This handler explicitly owns the landing position.
     await nextTick();
-    const installed = await props.loadOlderMessages(requestedSessionId);
+    if (!scrollWriteFenceIsCurrent(fence)) return;
+    const installed = await loadOlderMessages(requestedSessionId);
     await nextTick();
 
-    // If the user switched sessions while the request was in flight, do not
-    // write into the newly selected pane.
-    if (props.sessionId !== requestedSessionId) return;
+    // A newer Prompt, latest-message action, manual scroll, or session switch
+    // owns any subsequent landing write.
+    if (!scrollWriteFenceIsCurrent(fence)) return;
     if (!installed) return;
 
     const el2 = panesRef.value;
@@ -796,6 +878,9 @@ async function handleLoadOlderMessages(): Promise<void> {
     // Older-page loads replace the bounded history detail window. Land at the
     // new page's bottom to preserve reading direction; no prepended anchor from
     // the replaced DOM remains authoritative.
+    historyAutoLoadArmed.value = false;
+    following.value = false;
+    showPill.value = true;
     el2.scrollTop = el2.scrollHeight;
     lastScrollTop = el2.scrollTop;
     updateActiveTocQuery();
@@ -813,29 +898,6 @@ function findTurnTarget(container: HTMLElement, turnId: string): HTMLElement | n
   return container.querySelector<HTMLElement>(
     `.turn-anchor[data-turn-id="${attrEscape(turnId)}"]`,
   );
-}
-
-async function scrollToTurn(turnId: string): Promise<boolean> {
-  const resolver = props.resolveConversationTocTarget;
-  if (resolver) {
-    const installed = await resolver(turnId);
-    if (!installed) return false;
-    await nextTick();
-  }
-  return scrollToRenderedTurn(turnId);
-}
-
-/** Scroll an already-installed history result without invoking Prompt lookup. */
-function scrollToRenderedTurn(turnId: string): boolean {
-  const renderedPane = panesRef.value;
-  if (!renderedPane) return false;
-  const target = findTurnTarget(renderedPane, turnId);
-  if (!target) return false;
-  cancelActiveScrollWrites();
-  following.value = false;
-  showPill.value = distanceFromBottom() > BOTTOM_THRESHOLD;
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  return true;
 }
 
 function openPromptHistory(): void {
@@ -862,6 +924,152 @@ function cancelRaf(id: number): void {
   else clearTimeout(id);
 }
 
+// Prompt navigation is one transaction: it owns page resolution, the render
+// fence, the native smooth scroll, and bounded correction for late Markdown,
+// image, tool-row, and streaming layout writes. A generation plus pane identity
+// prevents every late resolver/timer/frame from reviving an older selection.
+const PROMPT_ANCHOR_STABILIZE_MS = 8_000;
+type PromptNavigationIdentity = {
+  sessionId: string | undefined;
+  reloadKey: string | number | undefined;
+  pane: HTMLElement | null;
+};
+
+type PromptNavigationRestoreState = {
+  following: boolean;
+  showPill: boolean;
+};
+
+function currentPromptNavigationIdentity(): PromptNavigationIdentity {
+  return {
+    sessionId: props.sessionId,
+    reloadKey: props.fileReloadKey,
+    pane: panesRef.value,
+  };
+}
+
+function samePromptNavigationIdentity(
+  left: PromptNavigationIdentity,
+  right: PromptNavigationIdentity,
+): boolean {
+  return left.sessionId === right.sessionId
+    && left.reloadKey === right.reloadKey
+    && left.pane === right.pane;
+}
+
+function correctPromptAnchorPosition(turnId: string, target: HTMLElement): boolean {
+  const pane = panesRef.value;
+  if (!pane) return false;
+  if (
+    !target.isConnected
+    || findTurnTarget(pane, turnId) !== target
+  ) {
+    return false;
+  }
+
+  const paneRect = pane.getBoundingClientRect();
+  const targetRect = target.getBoundingClientRect();
+  const nextTop = centeredPromptScrollTop({
+    scrollTop: pane.scrollTop,
+    scrollHeight: pane.scrollHeight,
+    clientHeight: pane.clientHeight,
+    paneTop: paneRect.top,
+    targetTop: targetRect.top,
+    targetHeight: targetRect.height,
+  });
+  if (Math.abs(nextTop - pane.scrollTop) > 1) pane.scrollTop = nextTop;
+  lastScrollTop = pane.scrollTop;
+  showPill.value = distanceFromBottom() > BOTTOM_THRESHOLD;
+  updateActiveTocQuery();
+  return true;
+}
+
+function onPromptNavigationActivity(activity: PromptNavigationActivity): void {
+  promptNavigationActive.value = activity.active;
+  promptNavigationResolving.value = activity.resolving;
+  if (!activity.active) return;
+  abandonScrollbarDrag();
+  historyAutoLoadArmed.value = false;
+  following.value = false;
+  showPill.value = distanceFromBottom() > BOTTOM_THRESHOLD;
+}
+
+function restorePromptNavigationFailure(state: PromptNavigationRestoreState): void {
+  following.value = state.following;
+  showPill.value = state.following
+    ? false
+    : state.showPill || distanceFromBottom() > BOTTOM_THRESHOLD;
+  if (state.following) scheduleStableFollow();
+}
+
+const promptNavigation = createPromptNavigationIntent<
+  string,
+  HTMLElement,
+  PromptNavigationIdentity,
+  PromptNavigationRestoreState
+>({
+  getIdentity: currentPromptNavigationIdentity,
+  sameIdentity: samePromptNavigationIdentity,
+  captureRestoreState: () => ({
+    following: following.value,
+    showPill: showPill.value,
+  }),
+  restoreAfterFailure: restorePromptNavigationFailure,
+  resolveTarget: async (turnId) => (
+    props.resolveConversationTocTarget
+      ? props.resolveConversationTocTarget(turnId)
+      : true
+  ),
+  cancelTargetResolution: () => props.cancelConversationTocTarget?.(),
+  flushRender: async () => { await nextTick(); },
+  locateTarget: (turnId) => {
+    const pane = panesRef.value;
+    return pane ? findTurnTarget(pane, turnId) : null;
+  },
+  startSmoothScroll: (target) => {
+    const pane = panesRef.value;
+    if (!pane) return;
+    lastSmoothScroll = performance.now();
+    const paneRect = pane.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    pane.scrollTo({
+      top: centeredPromptScrollTop({
+        scrollTop: pane.scrollTop,
+        scrollHeight: pane.scrollHeight,
+        clientHeight: pane.clientHeight,
+        paneTop: paneRect.top,
+        targetTop: targetRect.top,
+        targetHeight: targetRect.height,
+      }),
+      behavior: 'smooth',
+    });
+  },
+  stopScrollWrites: stopPromptCompetingScrollWrites,
+  correctAnchor: correctPromptAnchorPosition,
+  onActivityChange: onPromptNavigationActivity,
+  initialDelayMs: SMOOTH_SCROLL_GUARD_MS,
+  lifetimeMs: PROMPT_ANCHOR_STABILIZE_MS,
+  requestFrame: raf,
+  cancelFrame: cancelRaf,
+});
+
+async function scrollToTurn(turnId: string): Promise<boolean> {
+  historyAutoLoadArmed.value = false;
+  return promptNavigation.navigate(turnId);
+}
+
+/** Scroll an already-installed history result without invoking Prompt lookup. */
+async function scrollToRenderedTurn(turnId: string): Promise<boolean> {
+  historyAutoLoadArmed.value = false;
+  return promptNavigation.navigateRendered(turnId);
+}
+
+function handleConversationSearch(): void {
+  claimOrdinaryScrollAuthority();
+  historyAutoLoadArmed.value = false;
+  emit('searchConversation');
+}
+
 // --- Scroll anchoring for expand/collapse interactions ----------------------
 // Toggling a tool row/group grows or shrinks its body, which would otherwise move
 // the viewport: a collapse near the bottom shrinks scrollHeight and lets the
@@ -879,6 +1087,10 @@ function isPinned(): boolean {
 }
 
 function pinScrollFor(el: HTMLElement, ms = 260): void {
+  if (promptNavigation.ownsScroll()) {
+    claimOrdinaryScrollAuthority();
+    historyAutoLoadArmed.value = false;
+  }
   const panes = panesRef.value;
   if (!panes) return;
   pinEl = el;
@@ -899,6 +1111,7 @@ function pinScrollFor(el: HTMLElement, ms = 260): void {
 }
 
 function scheduleStableFollow(maxFrames = 36): void {
+  if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;
   if (!following.value && !hasUserActionFollowLock()) return;
   const token = ++stableFollowToken;
   let lastKey = '';
@@ -912,13 +1125,20 @@ function scheduleStableFollow(maxFrames = 36): void {
   const tick = () => {
     stableFollowRaf = 0;
     if (token !== stableFollowToken) return;
+    if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;
     if (!following.value && !hasUserActionFollowLock()) return;
     scrollToBottom(false);
     const key = currentLayoutKey();
     stableFrames = key === lastKey ? stableFrames + 1 : 0;
     lastKey = key;
     frames++;
-    if (stableFrames < 3 && frames < maxFrames) {
+    // A latest/submission smooth scroll owns a numeric destination captured at
+    // its start. Keep the loop alive through its guard so the first later frame
+    // can snap to a tail that grew while the animation was running.
+    if (
+      performance.now() < smoothScrollUntil
+      || (stableFrames < 3 && frames < maxFrames)
+    ) {
       stableFollowRaf = raf(tick);
     }
   };
@@ -956,9 +1176,14 @@ const scrollKey = computed<ScrollKey>(() => {
 });
 
 watch(scrollKey, async (next, prev) => {
-  // The history-load handler owns the replacement window's landing position.
-  if (historyLoadInProgress.value) return;
+  // Replacement history and Prompt navigation each own their landing writes.
+  if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;
+  const fence = captureScrollWriteFence();
   await nextTick();
+  if (
+    !scrollWriteFenceIsCurrent(fence)
+    || historyLoadInProgress.value
+  ) return;
   if (following.value || hasUserActionFollowLock()) {
     // Compaction can shorten the transcript — glide to the new bottom
     // smoothly; growth (new turns / streaming) snaps instantly so the follow
@@ -994,11 +1219,15 @@ watch(
     if (oldKey && el) {
       scrollStateBySession.set(String(oldKey), { top: el.scrollTop, following: following.value });
     }
-    cancelActiveScrollWrites();
+    abandonScrollbarDrag();
+    const fence = claimOrdinaryScrollAuthority();
+    historyAutoLoadArmed.value = false;
     await nextTick();
+    if (!scrollWriteFenceIsCurrent(fence) || props.fileReloadKey !== newKey) return;
     const el2 = panesRef.value;
     const saved = newKey ? scrollStateBySession.get(String(newKey)) : undefined;
     if (saved && el2) {
+      historyAutoLoadArmed.value = false;
       following.value = saved.following;
       el2.scrollTop = saved.top;
       lastScrollTop = el2.scrollTop;
@@ -1007,6 +1236,7 @@ watch(
         scheduleStableFollow();
       }
     } else {
+      historyAutoLoadArmed.value = false;
       following.value = true;
       lastScrollTop = 0;
       scrollToBottom(false);
@@ -1019,9 +1249,19 @@ watch(
 watch(
   () => props.sessionLoading,
   async (loading, was) => {
-    if (loading || !was) return;
-    following.value = true;
+    if (loading) {
+      abandonScrollbarDrag();
+      historyAutoLoadArmed.value = false;
+      claimOrdinaryScrollAuthority();
+      return;
+    }
+    if (!was) return;
+    const fence = claimOrdinaryScrollAuthority();
+    historyAutoLoadArmed.value = false;
+    following.value = false;
     await nextTick();
+    if (!scrollWriteFenceIsCurrent(fence)) return;
+    following.value = true;
     scheduleStableFollow();
     updateActiveTocQuery();
   },
@@ -1033,18 +1273,29 @@ watch(
   () => props.turnActive,
   async (now, was) => {
     if (now || !was) return;
+    if (promptNavigation.ownsScroll() || historyLoadInProgress.value) return;
     if (!following.value && !hasUserActionFollowLock()) return;
+    const fence = captureScrollWriteFence();
     await nextTick();
+    if (
+      !scrollWriteFenceIsCurrent(fence)
+      || historyLoadInProgress.value
+    ) return;
     scheduleStableFollow(48);
     updateActiveTocQuery();
   },
 );
 
 function followAfterUserAction(): void {
+  const fence = claimOrdinaryScrollAuthority();
+  abandonScrollbarDrag();
+  historyAutoLoadArmed.value = false;
+  props.returnToLiveTail?.();
   following.value = true;
   showPill.value = false;
   userActionFollowUntil = Date.now() + USER_ACTION_FOLLOW_LOCK_MS;
   void nextTick(() => {
+    if (!scrollWriteFenceIsCurrent(fence)) return;
     scrollToBottom(true);
     scheduleStableFollow(16);
   });
@@ -1062,6 +1313,8 @@ function handleCopyMessageToComposer(payload: {
   text: string;
   attachments?: TurnAttachment[];
 }): void {
+  claimOrdinaryScrollAuthority();
+  historyAutoLoadArmed.value = false;
   following.value = true;
   showPill.value = false;
   userActionFollowUntil = Date.now() + USER_ACTION_FOLLOW_LOCK_MS;
@@ -1089,12 +1342,28 @@ function handleQuestionAnswer(qid: string, resp: QuestionResponse): void {
   emit('answer', qid, resp);
 }
 
+function handleQuestionDismiss(qid: string): void {
+  followAfterUserAction();
+  emit('dismiss', qid);
+}
+
 function handleApproval(
   id: string | undefined,
   response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string } | undefined,
 ): void {
   if (!id || !response) return;
+  followAfterUserAction();
   emit('approval', id, response);
+}
+
+function handleCompact(): void {
+  followAfterUserAction();
+  emit('compact');
+}
+
+function handleControlGoal(action: 'pause' | 'resume' | 'cancel'): void {
+  if (action === 'resume') followAfterUserAction();
+  emit('controlGoal', action);
 }
 
 let contentObserver: MutationObserver | null = null;
@@ -1103,6 +1372,7 @@ let observedContent: Element | null = null;
 let observedDock: HTMLElement | null = null;
 let lastObservedScrollHeight = 0;
 let lastObservedClientHeight = 0;
+let componentDisposed = false;
 const historyLoadingSessions = ref<ReadonlySet<string>>(new Set());
 const historyLoadInProgress = computed(
   () => !!props.sessionId && historyLoadingSessions.value.has(props.sessionId),
@@ -1116,7 +1386,7 @@ function setHistoryLoadInProgress(sessionId: string, inProgress: boolean): void 
 }
 
 const ordinaryFollowFrame = createConversationFollowFrame((mode) => {
-  if (historyLoadInProgress.value) return;
+  if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;
   if (isPinned()) return;
   if (following.value || hasUserActionFollowLock()) scrollToBottom(mode === 'smooth');
 }, {
@@ -1125,7 +1395,7 @@ const ordinaryFollowFrame = createConversationFollowFrame((mode) => {
 });
 
 function scheduleFollow(mode: ConversationFollowMode = 'instant'): void {
-  if (historyLoadInProgress.value) return;
+  if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;
   ordinaryFollowFrame.request(mode);
 }
 
@@ -1138,13 +1408,35 @@ function cancelScheduledFollow(): void {
   ordinaryFollowFrame.cancel();
 }
 
-function cancelActiveScrollWrites(): void {
+function captureScrollWriteFence(): ScrollWriteFence {
+  return {
+    generation: scrollWriteGeneration,
+    sessionId: props.sessionId,
+    reloadKey: props.fileReloadKey,
+    pane: panesRef.value,
+  };
+}
+
+function scrollWriteFenceIsCurrent(fence: ScrollWriteFence): boolean {
+  return fence.generation === scrollWriteGeneration
+    && fence.sessionId === props.sessionId
+    && fence.reloadKey === props.fileReloadKey
+    && fence.pane === panesRef.value
+    && !promptNavigation.ownsScroll();
+}
+
+/** Stop every non-Prompt viewport writer, including an in-flight native smooth. */
+function cancelOrdinaryScrollWrites(): void {
   const el = panesRef.value;
 
   userActionFollowUntil = 0;
   cancelScheduledFollow();
   pinUntil = 0;
   pinEl = null;
+  if (pinRaf) {
+    cancelRaf(pinRaf);
+    pinRaf = 0;
+  }
 
   if (el) {
     const top = el.scrollTop;
@@ -1156,18 +1448,44 @@ function cancelActiveScrollWrites(): void {
   if (el) lastScrollTop = el.scrollTop;
 }
 
+/** Called by the Prompt owner before it publishes a new exclusive intent. */
+function stopPromptCompetingScrollWrites(): void {
+  scrollWriteGeneration += 1;
+  cancelOrdinaryScrollWrites();
+}
+
+/** Supersede Prompt navigation and fence all older async scroll continuations. */
+function claimOrdinaryScrollAuthority(): ScrollWriteFence {
+  promptNavigation.cancel();
+  scrollWriteGeneration += 1;
+  cancelOrdinaryScrollWrites();
+  return captureScrollWriteFence();
+}
+
+function claimUserScrollAuthority(): void {
+  // An already-authorized older-page read still owns its post-install landing.
+  // A gesture may stop competing follow writes, but it must not strand the
+  // replacement page at an arbitrary browser-selected position.
+  if (historyLoadInProgress.value && !promptNavigation.ownsScroll()) {
+    cancelOrdinaryScrollWrites();
+    return;
+  }
+  claimOrdinaryScrollAuthority();
+}
+
 // Wheel, touch, and scrollbar input arrive before the browser dispatches
 // `scroll`. Stop queued writers before they can overwrite the user's movement.
 function stopFollowingForUserIntent(): void {
   const el = panesRef.value;
+  claimUserScrollAuthority();
   if (!el || (el.scrollHeight - el.clientHeight <= 1 && !props.hasMoreMessages)) return;
 
+  historyAutoLoadArmed.value = true;
   following.value = false;
-  cancelActiveScrollWrites();
   if (el.scrollHeight - el.clientHeight > 1) showPill.value = true;
 }
 
-function nestedScrollerCanMoveUp(event: Event): boolean {
+function nestedScrollerCanMove(event: Event, direction: 'up' | 'down'): boolean {
   const pane = panesRef.value;
   if (!pane) return false;
   for (const target of event.composedPath()) {
@@ -1175,7 +1493,9 @@ function nestedScrollerCanMoveUp(event: Event): boolean {
     if (
       target instanceof HTMLElement &&
       target.scrollHeight > target.clientHeight + 1 &&
-      target.scrollTop > 1
+      (direction === 'up'
+        ? target.scrollTop > 1
+        : target.scrollTop + target.clientHeight < target.scrollHeight - 1)
     ) {
       return true;
     }
@@ -1187,44 +1507,112 @@ function onPanesWheel(event: WheelEvent): void {
   if (
     event.defaultPrevented ||
     event.ctrlKey ||
-    event.shiftKey ||
-    event.deltaY >= 0 ||
-    nestedScrollerCanMoveUp(event)
+    event.shiftKey
   ) {
+    return;
+  }
+  if (event.deltaY === 0) return;
+  const direction = event.deltaY < 0 ? 'up' : 'down';
+  if (nestedScrollerCanMove(event, direction)) return;
+  if (direction === 'down') {
+    claimUserScrollAuthority();
+    historyAutoLoadArmed.value = false;
     return;
   }
   stopFollowingForUserIntent();
 }
 
+function abandonScrollbarDrag(): void {
+  scrollbarDrag = null;
+}
+
+function finishScrollbarDrag(event: PointerEvent): void {
+  const drag = scrollbarDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+  const finalTop = panesRef.value?.scrollTop ?? drag.lastTop;
+  scrollbarDrag = null;
+  if (finalTop < drag.startTop - 1) stopFollowingForUserIntent();
+  else if (finalTop > drag.startTop + 1) historyAutoLoadArmed.value = false;
+}
+
+function onWindowBlur(): void {
+  if (promptNavigation.ownsScroll()) claimOrdinaryScrollAuthority();
+  abandonScrollbarDrag();
+  historyAutoLoadArmed.value = false;
+}
+
 function onPanesPointerDown(event: PointerEvent): void {
   const el = panesRef.value;
   if (!el || event.defaultPrevented || event.button !== 0 || event.pointerType === 'touch') return;
+  // A release outside the browser may not deliver pointerup. Any later press
+  // retires that stale drag before it can classify unrelated scroll events.
+  abandonScrollbarDrag();
+  if (promptNavigation.ownsScroll()) claimOrdinaryScrollAuthority();
   const rect = el.getBoundingClientRect();
   const gutterWidth = el.offsetWidth - el.clientWidth;
   const hitWidth = gutterWidth > 0 ? gutterWidth : 12;
   if (event.target === el && event.clientX >= rect.right - hitWidth) {
-    stopFollowingForUserIntent();
+    historyAutoLoadArmed.value = false;
+    following.value = false;
+    claimUserScrollAuthority();
+    scrollbarDrag = {
+      pointerId: event.pointerId,
+      startTop: el.scrollTop,
+      lastTop: el.scrollTop,
+    };
+    if (el.scrollHeight - el.clientHeight > 1) showPill.value = true;
   }
 }
 
 let lastTouchY: number | null = null;
 
 function onPanesTouchStart(event: TouchEvent): void {
+  abandonScrollbarDrag();
+  claimUserScrollAuthority();
   lastTouchY = event.touches.length === 1 ? event.touches[0]!.clientY : null;
 }
 
 function onPanesTouchMove(event: TouchEvent): void {
   const y = event.touches.length === 1 ? event.touches[0]!.clientY : null;
+  const delta = y !== null && lastTouchY !== null ? y - lastTouchY : 0;
   // The finger moving down means the scroll container is moving up.
-  if (
-    y !== null &&
-    lastTouchY !== null &&
-    y > lastTouchY + 2 &&
-    !nestedScrollerCanMoveUp(event)
-  ) {
-    stopFollowingForUserIntent();
+  if (Math.abs(delta) > 2) {
+    const direction = delta > 0 ? 'up' : 'down';
+    if (!nestedScrollerCanMove(event, direction)) {
+      if (direction === 'up') {
+        historyAutoLoadArmed.value = true;
+        following.value = false;
+        if ((panesRef.value?.scrollHeight ?? 0) - (panesRef.value?.clientHeight ?? 0) > 1) {
+          showPill.value = true;
+        }
+      } else historyAutoLoadArmed.value = false;
+    }
   }
   lastTouchY = y;
+}
+
+function onWindowKeydown(event: KeyboardEvent): void {
+  if (event.defaultPrevented) return;
+  const target = event.target;
+  if (
+    target instanceof HTMLElement
+    && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+  ) return;
+  const upward = event.key === 'ArrowUp'
+    || event.key === 'PageUp'
+    || event.key === 'Home'
+    || (event.key === ' ' && event.shiftKey);
+  const verticalNavigation = upward
+    || event.key === 'ArrowDown'
+    || event.key === 'PageDown'
+    || event.key === 'End'
+    || event.key === ' ';
+  if (!verticalNavigation) return;
+  if (upward) stopFollowingForUserIntent();
+  else {
+    claimUserScrollAuthority();
+    historyAutoLoadArmed.value = false;
+  }
 }
 
 function ensureContentObserved(): void {
@@ -1266,7 +1654,9 @@ function rebindScrollObservers(): void {
 }
 
 function onContentMutated(): void {
+  if (componentDisposed) return;
   ensureContentObserved();
+  promptNavigation.notifyLayoutChange();
   scheduleFollow();
   scheduleTocTableHitTest();
 }
@@ -1292,12 +1682,16 @@ function onVisualViewportResize(): void {
 }
 
 onMounted(() => {
-  nextTick(() => {
+  componentDisposed = false;
+  void nextTick(() => {
+    if (componentDisposed) return;
     if (typeof MutationObserver === 'function') {
       contentObserver = new MutationObserver(onContentMutated);
     }
     if (typeof ResizeObserver === 'function') {
       resizeObserver = new ResizeObserver(() => {
+        if (componentDisposed) return;
+        promptNavigation.notifyLayoutChange();
         scheduleTocTableHitTest();
         updatePanesScrollbarWidth();
         const el = panesRef.value;
@@ -1322,13 +1716,20 @@ onMounted(() => {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
     window.visualViewport?.addEventListener('resize', onVisualViewportResize);
+    window.addEventListener('pointerup', finishScrollbarDrag);
+    window.addEventListener('pointercancel', finishScrollbarDrag);
+    window.addEventListener('blur', onWindowBlur);
+    window.addEventListener('keydown', onWindowKeydown, true);
   });
 });
 
 onUnmounted(() => {
+  componentDisposed = true;
   if (contentObserver) contentObserver.disconnect();
   if (resizeObserver) resizeObserver.disconnect();
   cancelScheduledFollow();
+  promptNavigation.cancel();
+  abandonScrollbarDrag();
   if (pinRaf) cancelRaf(pinRaf);
   if (tocHitTestRaf) cancelRaf(tocHitTestRaf);
   if (copyConversationCopiedTimer !== null) {
@@ -1339,6 +1740,10 @@ onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange);
   }
   window.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+  window.removeEventListener('pointerup', finishScrollbarDrag);
+  window.removeEventListener('pointercancel', finishScrollbarDrag);
+  window.removeEventListener('blur', onWindowBlur);
+  window.removeEventListener('keydown', onWindowKeydown, true);
 });
 
 function focusComposer(): void {
@@ -1377,6 +1782,7 @@ defineExpose({
   rebindComposerAttachmentsForSession,
   focusComposer,
   openPromptHistory,
+  prepareTimelineMutation: followAfterUserAction,
   scrollToRenderedTurn,
 });
 </script>
@@ -1434,7 +1840,7 @@ defineExpose({
       :select-target="scrollToTurn"
       @select="scrollToTurn"
       @load-more="loadMoreConversationToc?.()"
-      @search="emit('searchConversation')"
+      @search="handleConversationSearch"
     />
 
     <div
@@ -1473,8 +1879,11 @@ defineExpose({
         :class="{
           'is-following': following,
           'history-loading': historyLoadInProgress,
+          'prompt-navigation-active': promptNavigationActive,
+          'prompt-navigation-resolving': promptNavigationResolving,
         }"
         @scroll.passive="onPanesScroll"
+        @scrollend.passive="onPanesScrollEnd"
         @wheel.passive="onPanesWheel"
         @pointerdown.passive="onPanesPointerDown"
         @touchstart.passive="onPanesTouchStart"
@@ -1586,9 +1995,9 @@ defineExpose({
               @toggle-goal="emit('toggleGoal')"
               @open-btw="emit('command', '/btw')"
               @create-goal="emit('createGoal', $event)"
-              @control-goal="emit('controlGoal', $event)"
+              @control-goal="handleControlGoal"
               @focus-goal="focusGoal"
-              @compact="emit('compact')"
+              @compact="handleCompact"
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
               @surface-mode-change="setComposerSurfaceMode"
@@ -1611,7 +2020,7 @@ defineExpose({
               :has-more-messages="hasMoreMessages"
               :loading-more="loadingMore"
               :loading-more-error="loadingMoreError"
-              :is-following="following"
+              :history-auto-load-armed="historyAutoLoadArmed"
               :tool-diff-panel="toolDiffPanel !== false"
               :tool-detail-available="toolDetailAvailable"
               :download-file="downloadFile"
@@ -1681,10 +2090,10 @@ defineExpose({
         @close-dock-panel="closeDockPanel()"
         @open-agent="emit('openAgent', $event)"
         @answer="handleQuestionAnswer"
-        @dismiss="emit('dismiss', $event)"
+        @dismiss="handleQuestionDismiss"
         @approval="handleApproval"
         @cancel-task="emit('cancelTask', $event)"
-        @control-goal="emit('controlGoal', $event)"
+        @control-goal="handleControlGoal"
         @submit="handleComposerSubmit"
         @command="emit('command', $event)"
         @interrupt="handleInterrupt"
@@ -1696,7 +2105,7 @@ defineExpose({
         @open-btw="emit('command', '/btw')"
         @create-goal="emit('createGoal', $event)"
         @focus-goal="focusGoal"
-        @compact="emit('compact')"
+        @compact="handleCompact"
         @pick-model="emit('pickModel')"
         @select-model="emit('selectModel', $event)"
         @surface-mode-change="setComposerSurfaceMode"
@@ -1708,7 +2117,7 @@ defineExpose({
     <!-- "New messages" pill — only visible when scrolled up and new content arrives. -->
     <Transition name="pill">
       <button
-        v-if="showPill"
+        v-if="showPill || viewingHistory || promptNavigationActive"
         class="newmsg-pill"
         :style="{ bottom: `${readingMode ? 12 : dockHeight + 12}px` }"
         :aria-label="t('conversation.jumpToLatestAria')"
@@ -1785,7 +2194,8 @@ defineExpose({
 }
 
 .panes.is-following,
-.panes.history-loading {
+.panes.history-loading,
+.panes.prompt-navigation-active {
   overflow-anchor: none;
 }
 

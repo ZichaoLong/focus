@@ -855,6 +855,43 @@ describe('Focus history navigation owner', () => {
     ]);
   });
 
+  it('cancels a pending Prompt target and rejects its late page without replacing the installed window', async () => {
+    const slowPage = deferred<FocusTurnPage>();
+    const h = harness([user('recent')], async (_thread, cursor, view) => {
+      if (view === 'summary') return summaryPage(['older'], 'outline-page');
+      if (cursor === 'installed-page') return fullPage(['installed'], cursor);
+      if (cursor === 'slow-page') return slowPage.promise;
+      throw new Error(`unexpected ${view}:${cursor}`);
+    });
+    await settleOwner();
+    h.owner.outline.value.push(
+      {
+        id: 'installed:user', role: 'user', no: 2, title: 'installed',
+        titleTruncated: false, pageCursor: 'installed-page', recent: false,
+      },
+      {
+        id: 'slow:user', role: 'user', no: 3, title: 'slow',
+        titleTruncated: false, pageCursor: 'slow-page', recent: false,
+      },
+    );
+    await expect(h.owner.resolvePromptTarget('installed:user')).resolves.toBe(true);
+
+    const late = h.owner.resolvePromptTarget('slow:user');
+    await vi.waitFor(() => expect(h.listOlderTurns).toHaveBeenCalledWith(
+      'thread-1', 'slow-page', 'full',
+    ));
+    h.owner.cancelDetailIntent();
+
+    await expect(late).resolves.toBe(false);
+    expect(h.owner.historyWindow.value?.pageCursor).toBe('installed-page');
+    expect(h.owner.visibleTurns.value.map((turn) => turn.id)).toEqual(['installed:user']);
+
+    slowPage.resolve(fullPage(['slow'], 'slow-page'));
+    await settleOwner();
+    expect(h.owner.historyWindow.value?.pageCursor).toBe('installed-page');
+    expect(h.owner.visibleTurns.value.map((turn) => turn.id)).toEqual(['installed:user']);
+  });
+
   it('cancels a late search cursor intent without deleting the installed window', async () => {
     const slowPage = deferred<FocusTurnPage>();
     const h = harness([user('recent')], async (_thread, cursor, view) => {

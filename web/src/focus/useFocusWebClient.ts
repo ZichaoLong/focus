@@ -410,6 +410,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // one bounded historical detail page.
   void snapshotTurns;
   const turns = historyNavigation.visibleTurns;
+  const viewingHistory = computed(() => historyNavigation.historyWindow.value !== null);
   const composerScopeId = navigation.composerScopeId;
   mutationActions = createFocusMutationActions({
     api,
@@ -695,6 +696,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     loadingMore: historyNavigation.loading,
     loadingMoreError: historyNavigation.error,
     historyHasMore: historyNavigation.hasMore,
+    viewingHistory,
     historyOutline: historyNavigation.outline,
     historyOutlineTruncated: historyNavigation.outlineTruncated,
     historyOutlineLoading: historyNavigation.outlineLoading,
@@ -796,6 +798,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     loadOlderMessages,
     returnToLiveTail,
     resolveHistoryPromptTarget: historyNavigation.resolvePromptTarget,
+    cancelHistoryPromptTarget: historyNavigation.cancelDetailIntent,
     loadMoreHistoryOutline: historyNavigation.loadMoreOutline,
     readToolDetail: threadInspection.readToolDetail,
     readFullToolDetail: threadInspection.readFullToolDetail,

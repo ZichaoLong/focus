@@ -75,7 +75,7 @@ describe('Focus page-level reading mode surface', () => {
 
     expect(pane).toContain('<ChatPane');
     expect(pane).toContain('@open-tool-diff="emit(\'openToolDiff\', $event)"');
-    expect(pane).toContain('v-if="showPill"');
+    expect(pane).toContain('v-if="showPill || viewingHistory || promptNavigationActive"');
     expect(pane).toContain(':style="{ bottom: `${readingMode ? 12 : dockHeight + 12}px` }"');
     expect(app).toContain('<aside\n        v-if="detailOpen"');
     expect(app).not.toContain('v-if="detailOpen && !readingMode"');

@@ -864,6 +864,10 @@
           "symbol": "createFocusHistoryNavigation"
         },
         {
+          "path": "web/src/focus/promptNavigationIntent.ts",
+          "symbol": "createPromptNavigationIntent"
+        },
+        {
           "path": "web/src/focus/client-state/browser-turn-window.ts",
           "symbol": "createBrowserTurnWindow"
         }
@@ -892,6 +896,7 @@
           "runner": "vitest",
           "targets": [
             "web/test/conversation-history-navigation-surface.test.ts",
+            "web/test/prompt-navigation-intent.test.ts",
             "web/test/focus-turn-window-settings-surface.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",
             "web/test/focus_client/owners/focus-history-navigation.test.ts",

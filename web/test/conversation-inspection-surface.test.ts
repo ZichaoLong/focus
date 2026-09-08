@@ -228,7 +228,7 @@ describe('bounded conversation inspection surface', () => {
     expect(toc).toContain("t('conversation.searchConversation')");
     expect(toc).toContain("emit('search')");
     expect(pane).toContain(':search-visible="conversationSearchVisible"');
-    expect(pane).toContain("@search=\"emit('searchConversation')\"");
+    expect(pane).toContain('@search="handleConversationSearch"');
     expect(app).toContain('Boolean(client.activeThreadId.value)');
     expect(app).not.toContain('conversationSearchSupported');
     expect(app).toContain('!client.documentReloadRequired.value');
@@ -241,10 +241,12 @@ describe('bounded conversation inspection surface', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const app = source('../src/focus/FocusApp.vue');
 
-    expect(pane).toContain('function scrollToRenderedTurn(turnId: string): boolean {');
+    expect(pane).toContain(
+      'async function scrollToRenderedTurn(turnId: string): Promise<boolean> {',
+    );
     expect(pane).toContain('scrollToRenderedTurn,');
     expect(app).toContain('await client.resolveConversationSearchOccurrence(occurrence)');
-    expect(app).toContain('conversationPaneRef.value?.scrollToRenderedTurn(anchorId);');
+    expect(app).toContain('await conversationPaneRef.value?.scrollToRenderedTurn(anchorId);');
     expect(app).toContain('client.clearConversationSearch();');
   });
 

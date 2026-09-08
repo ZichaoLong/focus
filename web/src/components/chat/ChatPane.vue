@@ -84,10 +84,11 @@ const props = withDefaults(
      */
     loadingMoreError?: boolean;
     /**
-     * True when the conversation pane is currently following the bottom (auto-scroll).
-     * Used to prevent the top sentinel from eagerly loading older messages on open.
+     * True only after explicit user input starts browsing upward. Programmatic
+     * Prompt navigation must keep this false even though it also leaves the
+     * live tail, otherwise crossing the sentinel replaces the target page.
      */
-    isFollowing?: boolean;
+    historyAutoLoadArmed?: boolean;
     /**
      * When true, clicking an Edit/Write tool card opens the right-side diff
      * panel. Off in contexts that don't wire the panel (e.g. the side chat), so
@@ -116,7 +117,7 @@ const props = withDefaults(
     hasMoreMessages: false,
     loadingMore: false,
     loadingMoreError: false,
-    isFollowing: false,
+    historyAutoLoadArmed: false,
     toolDiffPanel: false,
     queued: () => [],
   },
@@ -134,17 +135,17 @@ function observeTopSentinel(): void {
   topSentinelObserver = new IntersectionObserver(
     (entries) => {
       const entry = entries[0];
-      // Only trigger when the user has intentionally scrolled away from the
-      // bottom (isFollowing=false) and the initial snapshot is no longer loading.
+      // Leaving the live tail is not sufficient: Prompt navigation also does
+      // that. Only explicit upward user input may arm replacement-page loads.
       if (
         entry?.isIntersecting &&
         props.hasMoreMessages &&
         !props.loadingMore &&
         !props.loadingMoreError &&
         !props.sessionLoading &&
-        !props.isFollowing
+        props.historyAutoLoadArmed
       ) {
-        emit('loadOlderMessages');
+        emit('loadOlderMessages', 'sentinel');
       }
     },
     { root: null, rootMargin: '200px 0px 0px 0px', threshold: 0 },
@@ -158,7 +159,12 @@ onUnmounted(() => {
   topSentinelObserver = null;
 });
 watch(
-  () => [props.hasMoreMessages, props.loadingMore, props.loadingMoreError],
+  () => [
+    props.hasMoreMessages,
+    props.loadingMore,
+    props.loadingMoreError,
+    props.historyAutoLoadArmed,
+  ],
   () => {
     // Re-attach the observer after a load so that a still-visible sentinel
     // (e.g. the page was not tall enough to scroll) triggers another page.
@@ -200,7 +206,7 @@ const emit = defineEmits<{
   /** Copy a message into the composer as a new, unsent follow-up draft. */
   copyMessageToComposer: [payload: { text: string; attachments?: TurnAttachment[] }];
   /** Fetch the next older page of messages (triggered by top sentinel visibility or click). */
-  loadOlderMessages: [];
+  loadOlderMessages: [source: 'sentinel' | 'button'];
   /** Remove a queued message by index. */
   unqueue: [index: number];
   /** Load a queued message back into the composer for editing (and dequeue it). */
@@ -470,7 +476,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
         v-if="!loadingMore"
         type="button"
         class="top-sentinel-btn"
-        @click="emit('loadOlderMessages')"
+        @click="emit('loadOlderMessages', 'button')"
       >
         {{ t('conversation.loadOlder') }}
       </button>

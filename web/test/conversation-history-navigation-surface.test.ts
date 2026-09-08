@@ -14,6 +14,13 @@ function between(value: string, start: string, end: string): string {
   return value.slice(startIndex, endIndex);
 }
 
+function expectBefore(value: string, first: string, second: string): void {
+  const firstIndex = value.indexOf(first);
+  const secondIndex = value.indexOf(second, firstIndex);
+  expect(firstIndex).toBeGreaterThanOrEqual(0);
+  expect(secondIndex).toBeGreaterThan(firstIndex);
+}
+
 describe('ConversationPane bounded history navigation surface', () => {
   it('accepts an external outline while retaining the local-turn fallback', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
@@ -22,6 +29,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(pane).toContain(
       'resolveConversationTocTarget?: (turnId: string) => Promise<boolean>;',
     );
+    expect(pane).toContain('cancelConversationTocTarget?: () => void;');
     expect(pane).toContain(
       '() => props.conversationTocItems ?? localConversationTocItems.value',
     );
@@ -155,32 +163,285 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(toc).toContain('.toc-compact-trigger.is-mobile { top: var(--space-3); }');
   });
 
-  it('sends every target intent to the owner before locating and scrolling its render', () => {
+  it('routes Prompt targets through one resolver-and-scroll intent owner', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
-    const handler = between(
+    const app = source('../src/focus/FocusApp.vue');
+    const client = source('../src/focus/useFocusWebClient.ts');
+    const owner = between(
+      pane,
+      'const promptNavigation = createPromptNavigationIntent<',
+      'async function scrollToTurn(turnId: string): Promise<boolean> {',
+    );
+    const handlers = between(
       pane,
       'async function scrollToTurn(turnId: string): Promise<boolean> {',
-      'function currentLayoutKey()',
+      '// --- Scroll anchoring for expand/collapse interactions',
     );
 
-    const resolveTarget = handler.indexOf('const installed = await resolver(turnId);');
-    const receiptGuard = handler.indexOf('if (!installed) return false;', resolveTarget);
-    const renderTick = handler.indexOf('await nextTick();', resolveTarget);
-    const resolvedLookup = handler.indexOf(
-      'const target = findTurnTarget(renderedPane, turnId);',
-      renderTick,
+    expect(owner).toContain('resolveTarget: async (turnId) => (');
+    expect(owner).toContain('props.resolveConversationTocTarget(turnId)');
+    expect(owner).toContain('cancelTargetResolution: () => props.cancelConversationTocTarget?.()');
+    expect(owner).toContain('flushRender: async () => { await nextTick(); }');
+    expect(owner).toContain('locateTarget: (turnId) => {');
+    expect(owner).toContain('const paneRect = pane.getBoundingClientRect();');
+    expect(owner).toContain('const targetRect = target.getBoundingClientRect();');
+    expect(owner).toContain('pane.scrollTo({');
+    expect(owner).toContain('top: centeredPromptScrollTop({');
+    expect(owner).toContain('scrollTop: pane.scrollTop');
+    expect(owner).toContain('paneTop: paneRect.top');
+    expect(owner).toContain('targetTop: targetRect.top');
+    expect(owner).toContain("behavior: 'smooth',");
+    expect(owner).not.toContain('scrollIntoView');
+    expect(owner).toContain('stopScrollWrites: stopPromptCompetingScrollWrites');
+    expect(owner).toContain('onActivityChange: onPromptNavigationActivity');
+    expect(handlers).toContain('return promptNavigation.navigate(turnId);');
+    expect(handlers).toContain('return promptNavigation.navigateRendered(turnId);');
+    expect(app).toContain(':cancel-conversation-toc-target="client.cancelHistoryPromptTarget"');
+    expect(client).toContain('cancelHistoryPromptTarget: historyNavigation.cancelDetailIntent');
+  });
+
+  it('does not treat programmatic Prompt navigation as permission to replace the page', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const chat = source('../src/components/chat/ChatPane.vue');
+    const navigation = between(
+      pane,
+      'async function scrollToTurn(turnId: string): Promise<boolean> {',
+      '// --- Scroll anchoring for expand/collapse interactions',
     );
-    const scroll = handler.indexOf(
-      "target.scrollIntoView({ behavior: 'smooth', block: 'center' });",
-      resolvedLookup,
+    const userIntent = between(
+      pane,
+      'function stopFollowingForUserIntent(): void {',
+      "function nestedScrollerCanMove(event: Event, direction: 'up' | 'down'): boolean",
+    );
+    const sentinel = between(
+      chat,
+      'function observeTopSentinel(): void {',
+      'onMounted(observeTopSentinel);',
     );
 
-    expect(resolveTarget).toBeGreaterThanOrEqual(0);
-    expect(receiptGuard).toBeGreaterThan(resolveTarget);
-    expect(renderTick).toBeGreaterThan(receiptGuard);
-    expect(resolvedLookup).toBeGreaterThan(renderTick);
-    expect(scroll).toBeGreaterThan(resolvedLookup);
-    expect(handler).toContain('return true;');
+    expect(pane).toContain('const historyAutoLoadArmed = ref(false);');
+    expect(pane).toContain(':history-auto-load-armed="historyAutoLoadArmed"');
+    expect(navigation).toContain('historyAutoLoadArmed.value = false;');
+    expect(userIntent).toContain('historyAutoLoadArmed.value = true;');
+    expect(chat).toContain('historyAutoLoadArmed?: boolean;');
+    expect(sentinel).toContain('props.historyAutoLoadArmed');
+    expect(sentinel).toContain("emit('loadOlderMessages', 'sentinel');");
+    expect(sentinel).not.toContain('!props.isFollowing');
+
+    const loader = between(
+      pane,
+      "async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {",
+      'function attrEscape(value: string)',
+    );
+    const authorization = loader.indexOf("source === 'button' || historyAutoLoadArmed.value");
+    const consume = loader.indexOf('historyAutoLoadArmed.value = false;', authorization);
+    const guard = loader.indexOf('if (!authorized) return;', consume);
+    const captureLoader = loader.indexOf('const loadOlderMessages = props.loadOlderMessages;', guard);
+    const fence = loader.indexOf('const fence = claimOrdinaryScrollAuthority();', captureLoader);
+    const firstFlush = loader.indexOf('await nextTick();', fence);
+    const preRequestFence = loader.indexOf(
+      'if (!scrollWriteFenceIsCurrent(fence)) return;',
+      firstFlush,
+    );
+    const request = loader.indexOf(
+      'const installed = await loadOlderMessages(requestedSessionId);',
+      preRequestFence,
+    );
+    const secondFlush = loader.indexOf('await nextTick();', request);
+    const continuationFence = loader.indexOf(
+      'if (!scrollWriteFenceIsCurrent(fence)) return;',
+      secondFlush,
+    );
+    expect(authorization).toBeGreaterThanOrEqual(0);
+    expect(consume).toBeGreaterThan(authorization);
+    expect(guard).toBeGreaterThan(consume);
+    expect(captureLoader).toBeGreaterThan(guard);
+    expect(fence).toBeGreaterThan(captureLoader);
+    expect(preRequestFence).toBeGreaterThan(firstFlush);
+    expect(request).toBeGreaterThan(preRequestFence);
+    expect(continuationFence).toBeGreaterThan(secondFlush);
+  });
+
+  it('gives active Prompt navigation exclusive ownership of following and anchoring', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const activity = between(
+      pane,
+      'function onPromptNavigationActivity(activity: PromptNavigationActivity): void {',
+      'function restorePromptNavigationFailure',
+    );
+    const scroll = between(
+      pane,
+      'function onPanesScroll(): void {',
+      'function onPanesScrollEnd(): void {',
+    );
+    const bottom = between(
+      pane,
+      'function scrollToBottom(smooth = false): void {',
+      'async function handleReturnToLiveTail',
+    );
+    const stableFollow = between(
+      pane,
+      'function scheduleStableFollow(maxFrames = 36): void {',
+      'type ScrollKey = {',
+    );
+    const mutation = between(
+      pane,
+      'function onContentMutated(): void {',
+      'function onVisibilityChange(): void {',
+    );
+
+    expect(activity).toContain('following.value = false;');
+    expect(activity).toContain('historyAutoLoadArmed.value = false;');
+    expect(scroll).toContain('if (promptNavigation.ownsScroll()) {');
+    expect(scroll.indexOf('if (promptNavigation.ownsScroll()) {')).toBeLessThan(
+      scroll.indexOf('if (isPinned()) {'),
+    );
+    expect(bottom).toContain('if (promptNavigation.ownsScroll()) return;');
+    expect(stableFollow).toContain(
+      'if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;',
+    );
+    expect(pane).toContain(
+      'const ordinaryFollowFrame = createConversationFollowFrame((mode) => {\n  if (historyLoadInProgress.value || promptNavigation.ownsScroll()) return;',
+    );
+    expect(mutation).toContain('promptNavigation.notifyLayoutChange();');
+    expect(pane).toContain(
+      'resizeObserver = new ResizeObserver(() => {\n        if (componentDisposed) return;\n        promptNavigation.notifyLayoutChange();',
+    );
+    expect(pane).toContain('@scrollend.passive="onPanesScrollEnd"');
+    expect(pane).toContain("'prompt-navigation-active': promptNavigationActive");
+    expect(pane).toContain('.panes.prompt-navigation-active {\n  overflow-anchor: none;');
+  });
+
+  it('fences deferred observer setup and callbacks after component disposal', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const lifecycle = between(
+      pane,
+      'onMounted(() => {',
+      'function focusComposer(): void {',
+    );
+
+    expect(pane).toContain('let componentDisposed = false;');
+    expect(lifecycle).toContain(
+      'componentDisposed = false;\n  void nextTick(() => {\n    if (componentDisposed) return;',
+    );
+    expect(lifecycle).toContain(
+      'resizeObserver = new ResizeObserver(() => {\n        if (componentDisposed) return;',
+    );
+    expect(lifecycle).toContain(
+      'onUnmounted(() => {\n  componentDisposed = true;\n  if (contentObserver) contentObserver.disconnect();',
+    );
+  });
+
+  it('fences ordinary async scroll writers and cancels Prompt ownership on global input', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const fences = between(
+      pane,
+      'let scrollWriteGeneration = 0;',
+      '// Wheel, touch, and scrollbar input arrive before',
+    );
+    const keyboard = between(
+      pane,
+      'function onWindowKeydown(event: KeyboardEvent): void {',
+      'function ensureContentObserved(): void {',
+    );
+    const userScrollAuthority = between(
+      pane,
+      'function claimUserScrollAuthority(): void {',
+      '// Wheel, touch, and scrollbar input arrive before',
+    );
+    const touch = between(
+      pane,
+      'function onPanesTouchStart(event: TouchEvent): void {',
+      'function onWindowKeydown(event: KeyboardEvent): void {',
+    );
+    const touchMove = between(
+      pane,
+      'function onPanesTouchMove(event: TouchEvent): void {',
+      'function onWindowKeydown(event: KeyboardEvent): void {',
+    );
+
+    expect(fences).toContain('generation: scrollWriteGeneration');
+    expect(fences).toContain('fence.generation === scrollWriteGeneration');
+    expect(fences).toContain('fence.sessionId === props.sessionId');
+    expect(fences).toContain('fence.reloadKey === props.fileReloadKey');
+    expect(fences).toContain('fence.pane === panesRef.value');
+    expect(fences).toContain('&& !promptNavigation.ownsScroll();');
+    expect(fences).toContain('function claimOrdinaryScrollAuthority(): ScrollWriteFence {');
+    expect(fences).toContain('promptNavigation.cancel();\n  scrollWriteGeneration += 1;');
+    expect(userScrollAuthority).toContain(
+      'if (historyLoadInProgress.value && !promptNavigation.ownsScroll()) {',
+    );
+    expect(userScrollAuthority).toContain('cancelOrdinaryScrollWrites();\n    return;');
+    expect(userScrollAuthority).toContain('claimOrdinaryScrollAuthority();');
+    expect(keyboard).toContain("['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)");
+    expect(keyboard).toContain("event.key === 'PageUp'");
+    expect(keyboard).toContain("event.key === 'End'");
+    expect(keyboard).toContain('if (upward) stopFollowingForUserIntent();');
+    expect(keyboard).toContain('claimUserScrollAuthority();');
+    expect(touch).toContain('claimUserScrollAuthority();');
+    expect(touchMove).not.toContain('claimUserScrollAuthority();');
+    expect(pane).toContain("window.addEventListener('keydown', onWindowKeydown, true);");
+    expect(pane).toContain("window.removeEventListener('keydown', onWindowKeydown, true);");
+    expect(pane).toContain(
+      'onUnmounted(() => {\n  componentDisposed = true;\n  if (contentObserver) contentObserver.disconnect();',
+    );
+    expect(pane).toContain('cancelScheduledFollow();\n  promptNavigation.cancel();');
+  });
+
+  it('keeps ordinary smooth following bounded by its cancellation guard', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const bottom = between(
+      pane,
+      'function scrollToBottom(smooth = false): void {',
+      'async function handleReturnToLiveTail',
+    );
+    const stableFollow = between(
+      pane,
+      'function scheduleStableFollow(maxFrames = 36): void {',
+      'type ScrollKey = {',
+    );
+    const scrollEnd = between(
+      pane,
+      'function onPanesScrollEnd(): void {',
+      'function scrollToBottom(smooth = false): void {',
+    );
+
+    const instantGuard = bottom.indexOf(
+      'if (!smooth && performance.now() < smoothScrollUntil) return;',
+    );
+    const armGuard = bottom.indexOf(
+      'smoothScrollUntil = performance.now() + SMOOTH_SCROLL_GUARD_MS;',
+      instantGuard,
+    );
+    const smoothWrite = bottom.indexOf(
+      "el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });",
+      armGuard,
+    );
+    expect(instantGuard).toBeGreaterThanOrEqual(0);
+    expect(armGuard).toBeGreaterThan(instantGuard);
+    expect(smoothWrite).toBeGreaterThan(armGuard);
+    expect(stableFollow).toContain(
+      'performance.now() < smoothScrollUntil\n      || (stableFrames < 3 && frames < maxFrames)',
+    );
+    expect(scrollEnd).toContain('if (promptNavigation.notifyLayoutChange()) return;');
+    expect(scrollEnd).toContain('scheduleStableFollow(8);');
+  });
+
+  it('bounds scrollbar intent by pointer identity, final direction, and lost release', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const drag = between(
+      pane,
+      'function abandonScrollbarDrag(): void {',
+      'let lastTouchY: number | null = null;',
+    );
+
+    expect(drag).toContain('event.pointerId !== drag.pointerId');
+    expect(drag).toContain('finalTop < drag.startTop - 1');
+    expect(drag).toContain('finalTop > drag.startTop + 1');
+    expect(drag).toContain('abandonScrollbarDrag();');
+    expect(drag).toContain('startTop: el.scrollTop');
+    expect(pane).toContain("window.addEventListener('blur', onWindowBlur);");
+    expect(pane).toContain("window.removeEventListener('blur', onWindowBlur);");
   });
 
   it('leaves a replacement history window before following the rendered live tail', () => {
@@ -211,7 +472,110 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(renderTick).toBeGreaterThan(clearWindow);
     expect(scroll).toBeGreaterThan(renderTick);
     expect(settle).toBeGreaterThan(scroll);
+    expect(pane).toContain('viewingHistory?: boolean;');
+    expect(app).toContain(':viewing-history="client.viewingHistory.value"');
+    expect(pane).toContain('v-if="showPill || viewingHistory || promptNavigationActive"');
     expect(pane).toContain('@click="handleReturnToLiveTail"');
+  });
+
+  it('cancels Prompt ownership before opening conversation search', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const handler = between(
+      pane,
+      'function handleConversationSearch(): void {',
+      '// --- Scroll anchoring for expand/collapse interactions',
+    );
+
+    const claim = handler.indexOf('claimOrdinaryScrollAuthority();');
+    const disarm = handler.indexOf('historyAutoLoadArmed.value = false;', claim);
+    const open = handler.indexOf("emit('searchConversation');", disarm);
+    expect(claim).toBeGreaterThanOrEqual(0);
+    expect(disarm).toBeGreaterThan(claim);
+    expect(open).toBeGreaterThan(disarm);
+    expect(pane).toContain('@search="handleConversationSearch"');
+  });
+
+  it('prepares every timeline-producing dock mutation before emitting it', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const handlers = between(
+      pane,
+      'function handleQuestionAnswer(qid: string, resp: QuestionResponse): void {',
+      'let contentObserver: MutationObserver | null = null;',
+    );
+    const questionAnswer = between(
+      handlers,
+      'function handleQuestionAnswer',
+      'function handleQuestionDismiss',
+    );
+    const questionDismiss = between(
+      handlers,
+      'function handleQuestionDismiss',
+      'function handleApproval',
+    );
+    const approval = between(handlers, 'function handleApproval', 'function handleCompact');
+    const compact = between(handlers, 'function handleCompact', 'function handleControlGoal');
+    const goal = between(
+      pane,
+      'function handleControlGoal',
+      'let contentObserver: MutationObserver | null = null;',
+    );
+
+    expectBefore(
+      questionAnswer,
+      'followAfterUserAction();',
+      "emit('answer', qid, resp);",
+    );
+    expectBefore(
+      questionDismiss,
+      'followAfterUserAction();',
+      "emit('dismiss', qid);",
+    );
+    expectBefore(
+      approval,
+      'followAfterUserAction();',
+      "emit('approval', id, response);",
+    );
+    expectBefore(
+      compact,
+      'followAfterUserAction();',
+      "emit('compact');",
+    );
+    expect(goal).toContain("if (action === 'resume') followAfterUserAction();");
+    expect(goal).not.toContain("action === 'pause'");
+    expect(goal).not.toContain("action === 'cancel'");
+    expect(pane).toContain('@dismiss="handleQuestionDismiss"');
+    expect(pane).toContain('@approval="handleApproval"');
+    expect(pane).toContain('@control-goal="handleControlGoal"');
+    expect(pane).toContain('@compact="handleCompact"');
+  });
+
+  it('prepares confirmed goal and review effects without moving on dialog open', () => {
+    const pane = source('../src/components/chat/ConversationPane.vue');
+    const app = source('../src/focus/FocusApp.vue');
+    const goal = between(
+      app,
+      'async function submitGoal(objective: string): Promise<void> {',
+      'async function submitReview',
+    );
+    const review = between(
+      app,
+      'async function submitReview(target: Record<string, unknown>): Promise<void> {',
+      'let appHeightRaf',
+    );
+
+    expect(pane).toContain('prepareTimelineMutation: followAfterUserAction,');
+    expectBefore(
+      goal,
+      'conversationPaneRef.value?.prepareTimelineMutation();',
+      'await client.createGoal(objective);',
+    );
+    expectBefore(
+      review,
+      'conversationPaneRef.value?.prepareTimelineMutation();',
+      'await client.review(target);',
+    );
+    expect(app).toContain('@goal-session="showGoalDialog = true"');
+    expect(app).toContain('@review-session="showReviewDialog = true"');
   });
 
   it('keeps an invisible DOM anchor for a Prompt with no visible user content', () => {
@@ -228,26 +592,30 @@ describe('ConversationPane bounded history navigation surface', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const handler = between(
       pane,
-      'async function handleLoadOlderMessages(): Promise<void> {',
+      "async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {",
       'function attrEscape(value: string)',
     );
 
-    const load = handler.indexOf('const installed = await props.loadOlderMessages(requestedSessionId);');
+    const load = handler.indexOf('const installed = await loadOlderMessages(requestedSessionId);');
     const renderTick = handler.indexOf('await nextTick();', load);
-    const sessionGuard = handler.indexOf(
-      'if (props.sessionId !== requestedSessionId) return;',
+    const continuationGuard = handler.indexOf(
+      'if (!scrollWriteFenceIsCurrent(fence)) return;',
       renderTick,
     );
-    const receiptGuard = handler.indexOf('if (!installed) return;', sessionGuard);
-    const bottom = handler.indexOf('el2.scrollTop = el2.scrollHeight;', receiptGuard);
+    const receiptGuard = handler.indexOf('if (!installed) return;', continuationGuard);
+    const stopFollowing = handler.indexOf('following.value = false;', receiptGuard);
+    const revealLatest = handler.indexOf('showPill.value = true;', stopFollowing);
+    const bottom = handler.indexOf('el2.scrollTop = el2.scrollHeight;', revealLatest);
 
     expect(load).toBeGreaterThanOrEqual(0);
     expect(renderTick).toBeGreaterThan(load);
-    expect(sessionGuard).toBeGreaterThan(renderTick);
-    expect(receiptGuard).toBeGreaterThan(sessionGuard);
-    expect(bottom).toBeGreaterThan(receiptGuard);
+    expect(continuationGuard).toBeGreaterThan(renderTick);
+    expect(receiptGuard).toBeGreaterThan(continuationGuard);
+    expect(stopFollowing).toBeGreaterThan(receiptGuard);
+    expect(revealLatest).toBeGreaterThan(stopFollowing);
+    expect(bottom).toBeGreaterThan(revealLatest);
     expect(pane).toContain("'history-loading': historyLoadInProgress");
-    expect(pane).toContain('if (historyLoadInProgress.value) return;');
+    expect(pane).toContain('historyLoadInProgress.value || promptNavigation.ownsScroll()');
     expect(pane).not.toContain('HistoryScrollSnapshot');
     expect(pane).not.toContain('pendingHistoryRestoreBySession');
     expect(pane).not.toContain('historyScrollDelta');

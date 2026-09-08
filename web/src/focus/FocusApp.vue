@@ -628,7 +628,7 @@ async function selectConversationSearchOccurrence(
     client.activeThreadId.value !== threadId
     || client.snapshot.value?.runtime_epoch !== runtimeEpoch
   ) return;
-  conversationPaneRef.value?.scrollToRenderedTurn(anchorId);
+  await conversationPaneRef.value?.scrollToRenderedTurn(anchorId);
 }
 
 function openMedia(media: ToolMedia): void {
@@ -729,20 +729,18 @@ async function confirmBackendReset(preview: FocusBackendResetPreview): Promise<v
 
 async function submitGoal(objective: string): Promise<void> {
   try {
+    conversationPaneRef.value?.prepareTimelineMutation();
     await client.createGoal(objective);
     showGoalDialog.value = false;
-  } catch {
-    // The shared error banner already carries the operation failure.
-  }
+  } catch { /* The shared error banner already carries the operation failure. */ }
 }
 
 async function submitReview(target: Record<string, unknown>): Promise<void> {
   try {
+    conversationPaneRef.value?.prepareTimelineMutation();
     await client.review(target);
     showReviewDialog.value = false;
-  } catch {
-    // Keep the dialog open so the target can be corrected and retried.
-  }
+  } catch { /* Keep the dialog open so the target can be corrected and retried. */ }
 }
 
 let appHeightRaf = 0;
@@ -1011,6 +1009,7 @@ onUnmounted(() => {
           :has-more-messages="client.historyHasMore.value"
           :loading-more="client.loadingMore.value"
           :loading-more-error="client.loadingMoreError.value"
+          :viewing-history="client.viewingHistory.value"
           :load-older-messages="client.loadOlderMessages"
           :return-to-live-tail="client.returnToLiveTail"
           :workspace-name="client.visibleWorkspace.value?.name"
@@ -1025,6 +1024,7 @@ onUnmounted(() => {
           :conversation-toc-loading-more="client.historyOutlineLoading.value"
           :load-more-conversation-toc="client.loadMoreHistoryOutline"
           :resolve-conversation-toc-target="resolveConversationTocTarget"
+          :cancel-conversation-toc-target="client.cancelHistoryPromptTarget"
           :conversation-search-visible="conversationSearchVisible"
           :composer-capabilities="composerCapabilities"
           :defer-submit-clear="true"
