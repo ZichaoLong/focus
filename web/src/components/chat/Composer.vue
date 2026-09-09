@@ -720,9 +720,6 @@ const ctxTooltip = computed(() => {
   });
 });
 
-// Keep manual compact reachable when context usage is unavailable.
-const showCompact = computed(() => !hasContextUsage.value || pct.value >= 80);
-
 // Thinking toggle
 // Identity is the model id — display/model names can collide across providers.
 const currentModel = computed(() =>
@@ -1234,8 +1231,8 @@ function selectModel(modelId: string): void {
 
         <!-- Right: ctx + model -->
         <div class="toolbar-right">
-          <!-- Compact chip when context is high -->
-          <button v-if="capabilities.compact && showCompact" class="compact-chip" @click.stop="emit('compact')">/compact</button>
+          <!-- Manual compact follows the server-projected action capability. -->
+          <button v-if="capabilities.compact" class="compact-chip" @click.stop="emit('compact')">/compact</button>
 
           <!-- Context meter — circular ring only; the full usage (used/max/pct)
                lives in the tooltip. The ring is aria-hidden, so the trigger
@@ -2368,8 +2365,8 @@ function selectModel(modelId: string): void {
      send stay visible. Focus exposes permission policy in its settings surface.
      The context ring stays at every width by design — it is the live
      context-pressure signal in the narrow layout (the exact numbers live in the ring's
-     tooltip). The /compact chip also stays so compaction is one tap away at
-     ≥80% usage. */
+     tooltip). The /compact chip also stays whenever the current thread permits
+     manual compaction. */
   .perm-pill,
   .modes {
     display: none;

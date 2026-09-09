@@ -8,14 +8,13 @@ const composer = readFileSync(
 );
 
 describe('Composer context usage surface', () => {
-  it('hides an unavailable ring while keeping manual compact reachable', () => {
+  it('hides an unavailable ring without gating permitted manual compact on usage', () => {
     expect(composer).toContain('v-if="status && !hideContext && hasContextUsage"');
     expect(composer).toContain(
-      'const showCompact = computed(() => !hasContextUsage.value || pct.value >= 80);',
+      '<button v-if="capabilities.compact" class="compact-chip"',
     );
-    expect(composer).toContain(
-      '<button v-if="capabilities.compact && showCompact" class="compact-chip"',
-    );
+    expect(composer).not.toContain('showCompact');
+    expect(composer).not.toContain('pct.value >= 80');
   });
 
   it('draws used percent from the projected remaining percent', () => {
