@@ -75,7 +75,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(toc).toContain('const dialogAvailable = computed(');
     expect(toc).toContain('const compactVisible = computed(');
     expect(toc).toContain('props.inlineVisible !== false');
-    expect(toc).toContain('(props.mobile || !fits.value)');
+    expect(toc).toContain('(props.narrowViewport || !fits.value)');
     expect(toc).toContain('v-if="railVisible"');
     expect(toc).toContain('v-if="compactVisible"');
     expect(toc).toContain('class="toc-compact-trigger"');
@@ -145,22 +145,22 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(dismissalFence).toContain("{ flush: 'sync' }");
   });
 
-  it('keeps the mobile Prompt trigger below the separate mobile top bar', () => {
+  it('keeps the narrow Prompt trigger below the separate narrow top bar', () => {
     const app = source('../src/focus/FocusApp.vue');
     const pane = source('../src/components/chat/ConversationPane.vue');
     const toc = source('../src/components/chat/ConversationToc.vue');
-    const topBar = source('../src/components/mobile/MobileTopBar.vue');
+    const topBar = source('../src/components/narrow/NarrowTopBar.vue');
 
-    const mobileTopBar = app.indexOf('<MobileTopBar');
-    const main = app.indexOf('<main class="focus-main">', mobileTopBar);
+    const narrowTopBar = app.indexOf('<NarrowTopBar');
+    const main = app.indexOf('<main class="focus-main">', narrowTopBar);
     const conversationPane = app.indexOf('<ConversationPane', main);
-    expect(mobileTopBar).toBeGreaterThanOrEqual(0);
-    expect(main).toBeGreaterThan(mobileTopBar);
+    expect(narrowTopBar).toBeGreaterThanOrEqual(0);
+    expect(main).toBeGreaterThan(narrowTopBar);
     expect(conversationPane).toBeGreaterThan(main);
-    expect(app).toContain('.focus-app.mobile {\n  display: flex;\n  flex-direction: column;');
+    expect(app).toContain('.focus-app.narrow-viewport {\n  display: flex;\n  flex-direction: column;');
     expect(topBar).toContain('height: calc(50px + var(--safe-top));');
     expect(pane).toContain('position: relative;\n  container-type: inline-size;');
-    expect(toc).toContain('.toc-compact-trigger.is-mobile { top: var(--space-3); }');
+    expect(toc).toContain('.toc-compact-trigger.is-narrow { top: var(--space-3); }');
   });
 
   it('routes Prompt targets through one resolver-and-scroll intent owner', () => {

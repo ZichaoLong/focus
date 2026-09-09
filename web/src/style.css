@@ -178,7 +178,7 @@ summary {
   --soft: #e8f3ff;
   --bd: #cfe6ff;
   --logo: #1783ff;
-  /* Soft-blue bubble fill + border (mobile user message bubble). */
+  /* Soft-blue fill + border for the compact user-message bubble. */
   --bluebg: #e8f3ff;
   --blueln: #cfe6ff;
   --ok: #0e7a38;
@@ -212,11 +212,11 @@ summary {
 }
 
 /* Safe-area insets -----------------------------------------------------------
-   Centralised so mobile layout reads one consistent source instead of each
+   Centralised so the narrow layout reads one consistent source instead of each
    component calling env(safe-area-inset-*) with its own fallback. Falls back to
    0px where the UA doesn't expose insets (most desktops, older Android);
    pair with max(min, var(--safe-bottom)) so gestures / home indicators keep a
-   minimum gutter even when the inset reports 0. The mobile footer (composer),
+   minimum gutter even when the inset reports 0. The narrow footer (composer),
    bottom sheets and the toast layer all consume these. */
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
@@ -716,7 +716,7 @@ body {
    canvas). Bubbles/tool cards still read fine via their own borders + shadows. */
 /* Session rows → rounded, inset pills with a soft active state (cards, not a
    full-bleed tint bar). Keeps the mono timestamp/badges. Scoped under
-   .sessions because .se is also a (different) class in MobileTopBar. */
+   .sessions because .se is also a (different) class in NarrowTopBar. */
 /* Tab bar → clean white strip with a single hairline.
    Sidebar header (.ch) keeps the sidebar body color so the right border
    extends seamlessly from top to bottom. */

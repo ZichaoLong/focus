@@ -7,11 +7,23 @@ function source(relativePath: string): string {
 }
 
 describe('Focus targetless workspace draft surface', () => {
-  it('uses one responsive ConversationPane for the desktop and mobile empty composer', () => {
+  it('defines the responsive shell as viewport width rather than device type', () => {
+    const viewport = source('../src/composables/useNarrowViewport.ts');
+    const app = source('../src/focus/FocusApp.vue');
+
+    expect(viewport).toContain('export const NARROW_VIEWPORT_MAX_WIDTH = 640;');
+    expect(viewport).toContain('window.matchMedia(NARROW_VIEWPORT_QUERY)');
+    expect(viewport).toContain('export function useNarrowViewport(): Ref<boolean>');
+    expect(viewport).not.toMatch(/navigator|userAgent|touchPoints/u);
+    expect(app).toContain('const isNarrowViewport = useNarrowViewport();');
+    expect(app).not.toMatch(/\b(?:isMobile|useIsMobile|MobileTopBar|MobileSwitcherSheet)\b/u);
+  });
+
+  it('uses one responsive ConversationPane for wide and narrow empty composers', () => {
     const app = source('../src/focus/FocusApp.vue');
 
     expect(app.match(/<ConversationPane\b/gu)).toHaveLength(1);
-    expect(app).toContain(':mobile="isMobile"');
+    expect(app).toContain(':narrow-viewport="isNarrowViewport"');
     expect(app).toContain(':session-id="client.activeThreadId.value"');
     expect(app).toContain(':composer-ready="client.scopeReady.value"');
     expect(app).toContain(':status="client.status.value"');

@@ -5,12 +5,12 @@ import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
 
 withDefaults(defineProps<{
-  mobile?: boolean;
+  narrowViewport?: boolean;
   sessionTitle: string;
   switcherOpen?: boolean;
   promptHistoryDisabled?: boolean;
 }>(), {
-  mobile: false,
+  narrowViewport: false,
   switcherOpen: false,
   promptHistoryDisabled: false,
 });
@@ -25,7 +25,7 @@ const { t } = useI18n();
 </script>
 
 <template>
-  <div class="reading-mode-controls" :class="{ 'is-mobile': mobile }">
+  <div class="reading-mode-controls" :class="{ 'is-narrow': narrowViewport }">
     <IconButton
       class="reading-mode-exit"
       size="sm"
@@ -40,7 +40,7 @@ const { t } = useI18n();
       class="reading-session-switch"
       size="sm"
       variant="secondary"
-      :aria-label="t('mobile.openSwitcher')"
+      :aria-label="t('narrow.openSwitcher')"
       aria-haspopup="dialog"
       :aria-expanded="switcherOpen"
       @click="emit('switchSession')"
@@ -73,7 +73,7 @@ const { t } = useI18n();
   gap: var(--space-2);
   padding: 0 var(--space-4);
 }
-.reading-mode-controls.is-mobile {
+.reading-mode-controls.is-narrow {
   height: calc(50px + var(--safe-top));
   flex-direction: row;
   padding: var(--safe-top) max(12px, var(--safe-right)) 0 max(12px, var(--safe-left));
@@ -86,7 +86,7 @@ const { t } = useI18n();
   border-color: var(--color-line-strong);
   box-shadow: var(--shadow-xs);
 }
-.reading-mode-controls.is-mobile .reading-prompt-history { margin-left: auto; }
+.reading-mode-controls.is-narrow .reading-prompt-history { margin-left: auto; }
 .reading-session-switch {
   max-width: min(52vw, 240px);
 }

@@ -7,12 +7,11 @@ import { resolveToolRenderer } from './tool-calls/toolRegistry';
 const props = withDefaults(
   defineProps<{
     tool: ToolCall;
-    mobile?: boolean;
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { stackPosition: 'single', toolDiffPanel: false },
 );
 
 const emit = defineEmits<{
@@ -35,7 +34,6 @@ const rendererToolDetailAvailable = computed(() => (
   <component
     :is="Renderer"
     :tool="tool"
-    :mobile="mobile"
     :stack-position="stackPosition"
     :tool-diff-panel="toolDiffPanel"
     :tool-detail-available="rendererToolDetailAvailable"

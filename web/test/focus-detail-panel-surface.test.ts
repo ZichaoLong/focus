@@ -117,19 +117,19 @@ describe('Focus detail panel presentation state', () => {
     expect(resolveFocusThinkingText(selection, [turn])).toBe('index plan');
   });
 
-  it('keeps a usable conversation reserve when clamping desktop width', () => {
+  it('keeps a usable conversation reserve when clamping wide-layout width', () => {
     expect(focusDetailPanelMaxWidth(1_200, 270)).toBe(610);
     expect(focusDetailPanelMaxWidth(500, 270)).toBe(FOCUS_DETAIL_PANEL_MIN);
     expect(focusDetailPanelMaxWidth(1_200, -10)).toBe(880);
   });
 
-  it('uses full-screen detail when a narrow desktop cannot keep all three columns usable', () => {
+  it('uses full-screen detail when the viewport cannot keep all three columns usable', () => {
     expect(shouldUseFocusDetailFullscreen(809, 170)).toBe(true);
     expect(shouldUseFocusDetailFullscreen(810, 170)).toBe(false);
     expect(shouldUseFocusDetailFullscreen(640, 0)).toBe(false);
   });
 
-  it('wires one desktop-only reverse handle and fail-closed live targets', () => {
+  it('wires one wide-layout reverse handle and fail-closed live targets', () => {
     const app = source('../src/focus/FocusApp.vue');
 
     expect(STORAGE_KEYS.detailPanelWidth).toBe('focus-web.detail-panel-width');

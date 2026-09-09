@@ -6,7 +6,7 @@ withDefaults(defineProps<{
   danger?: boolean;
   disabled?: boolean;
   separator?: boolean;
-  /** md (desktop) · lg (touch / mobile, ≥44px row). */
+  /** md (standard) · lg (touch-friendly, ≥44px row). */
   size?: 'md' | 'lg';
 }>(), { size: 'md' });
 
@@ -52,7 +52,7 @@ defineEmits<{ click: [event: MouseEvent] }>();
 .ui-menu-item.is-danger { color: var(--color-danger); }
 .ui-menu-item.is-danger:hover:not(:disabled) { background: var(--color-danger-soft); }
 .ui-menu-item :deep(svg) { width: 14px; height: 14px; flex: none; }
-/* lg · touch / mobile: taller row, bigger tap target */
+/* lg · touch-friendly: taller row, bigger tap target */
 .ui-menu-item--lg { min-height: 44px; padding: 12px 14px; font-size: var(--text-base); }
 .ui-menu-sep { height: 1px; margin: 4px 0; background: var(--color-line); }
 </style>

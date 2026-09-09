@@ -1397,8 +1397,16 @@
       ],
       "owner": [
         {
+          "path": "web/src/components/chat/composerSendShortcut.ts",
+          "symbol": "composerKeyRequestsSubmit"
+        },
+        {
           "path": "web/src/components/chat/composerSubmission.ts",
           "symbol": "createComposerSubmission"
+        },
+        {
+          "path": "web/src/focus/focusComposerSendShortcut.ts",
+          "symbol": "createFocusComposerSendShortcutPreference"
         },
         {
           "path": "web/src/focus/mutations/actions.ts",
@@ -1485,6 +1493,7 @@
           "runner": "vitest",
           "targets": [
             "web/test/focus-composer-input-surface.test.ts",
+            "web/test/focus-composer-send-shortcut.test.ts",
             "web/test/focus-backend-reset-ui.test.ts",
             "web/test/focus-prompt-dispatch-api.test.ts",
             "web/test/focus_client/owners/focus-composer-submission.test.ts",

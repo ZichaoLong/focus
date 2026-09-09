@@ -38,6 +38,12 @@ import {
   type ComposerSubmission,
   useComposerSubmissionRevision,
 } from './composerSubmission';
+import {
+  composerEnterKeyHint,
+  composerKeyRequestsSubmit,
+  DEFAULT_COMPOSER_SEND_SHORTCUT,
+  type ComposerSendShortcut,
+} from './composerSendShortcut';
 
 // ---------------------------------------------------------------------------
 // Props & emits
@@ -83,11 +89,13 @@ const props = withDefaults(defineProps<{
   capabilities?: Partial<ComposerCapabilities>;
   /** Defer clearing until the consumer confirms a local request boundary accepted the payload. */
   deferSubmitClear?: boolean;
-  /** Mobile shell; keeps the surface controls reachable before the input grows. */
-  mobile?: boolean;
+  /** Narrow-viewport shell; keeps surface controls reachable before the input grows. */
+  narrowViewport?: boolean;
+  /** Exact keyboard chord that may enter the existing submit boundary. */
+  sendShortcut?: ComposerSendShortcut;
   /** Parent-owned presentation state. Hidden keeps this component mounted. */
   surfaceMode?: ComposerSurfaceMode;
-  /** Existing-thread mobile dock may hide; the targetless composer may not. */
+  /** Existing-thread narrow dock may hide; the targetless composer may not. */
   allowHide?: boolean;
   /** A question/approval has visual priority while this exact owner stays mounted. */
   interactionPending?: boolean;
@@ -105,7 +113,8 @@ const props = withDefaults(defineProps<{
   starredIds: () => [],
   skills: () => [],
   deferSubmitClear: false,
-  mobile: false,
+  narrowViewport: false,
+  sendShortcut: DEFAULT_COMPOSER_SEND_SHORTCUT,
   surfaceMode: 'compact',
   allowHide: false,
   interactionPending: false,
@@ -168,9 +177,9 @@ const submissionPending = ref(false);
 let submissionOwnerMounted = true;
 
 // ---------------------------------------------------------------------------
-// Expanded editor — a taller composing mode. Enter keeps the same submit
-// gesture in both layouts; Shift+Enter inserts a newline. It auto-collapses
-// after a successful send. See handleKeydown / handleSubmit.
+// Expanded editor — a taller composing mode. The browser-local send shortcut
+// keeps the same meaning in both layouts; other Enter chords remain native
+// textarea newlines. It auto-collapses after a successful send.
 // ---------------------------------------------------------------------------
 const expanded = computed(() => props.surfaceMode === 'expanded');
 
@@ -202,7 +211,7 @@ function toggleExpand(): void {
 // textarea once the expanded min-height is gone. On image-only sends the text
 // is already empty, so the draft watcher never re-runs autosize — without this,
 // the textarea keeps the inline height measured in expanded mode and the
-// collapsed cap (1/4 viewport on desktop) leaves an oversized empty box until
+// collapsed cap (1/4 of a wide viewport) leaves an oversized empty box until
 // the next keystroke.
 function collapseAndRefit(): void {
   if (!expanded.value) return;
@@ -210,8 +219,8 @@ function collapseAndRefit(): void {
   void nextTick(autosize);
 }
 
-// Desktop keeps the expand toggle hidden at the resting height until content
-// grows. Mobile always exposes it so a short draft can deliberately enter the
+// Wide layout keeps the expand toggle hidden at the resting height until content
+// grows. Narrow layout always exposes it so a short draft can deliberately enter the
 // long-form editor; while expanded it remains available to collapse back.
 //
 // The resting height equals the textarea's computed `min-height` (set in
@@ -584,8 +593,7 @@ function handleKeydown(e: KeyboardEvent): void {
     }
   }
 
-  // Normal Enter / Shift+Enter
-  if (e.key === 'Enter' && !e.shiftKey) {
+  if (composerKeyRequestsSubmit(e, props.sendShortcut)) {
     e.preventDefault();
     handleSubmit();
   }
@@ -598,6 +606,7 @@ function handleKeydown(e: KeyboardEvent): void {
 // The parent freezes one ordinary prompt at this submit boundary; the server
 // chooses start or steer. Interrupt remains a separate Stop action.
 const sendLabel = computed(() => t('composer.send'));
+const enterKeyHint = computed(() => composerEnterKeyHint(props.sendShortcut));
 const hasUpload = computed(() => !!props.uploadImage);
 const sendDisabled = computed(() => (
   !props.composerReady
@@ -789,17 +798,17 @@ function hideComposer(): void {
 }
 
 watch(
-  [() => props.surfaceMode, () => props.mobile, () => props.interactionPending],
+  [() => props.surfaceMode, () => props.narrowViewport, () => props.interactionPending],
   ([mode, , interactionPending]) => {
     if (mode === 'hidden' || interactionPending) {
       textareaRef.value?.blur();
       closeSurfaceOverlays();
       return;
     }
-    // Parent-driven resets and desktop/mobile transitions can change the CSS
+    // Parent-driven resets and wide/narrow transitions can change the CSS
     // bounds without passing through toggleExpand. Re-measure so an inline
     // height captured in a larger mode cannot reappear after a viewport round
-    // trip (for example desktop expanded -> mobile compact -> desktop compact).
+    // trip (for example wide expanded -> narrow compact -> wide compact).
     void nextTick(() => {
       autosize();
       recomputeGrown();
@@ -1008,6 +1017,7 @@ function selectModel(modelId: string): void {
             class="ph"
             :placeholder="placeholder"
             :aria-label="t('composer.inputLabel')"
+            :enterkeyhint="enterKeyHint"
             :disabled="starting || !composerReady"
             rows="1"
             @keydown="handleKeydown"
@@ -1017,7 +1027,7 @@ function selectModel(modelId: string): void {
           />
           <div class="composer-surface-actions">
             <button
-              v-if="mobile || expanded || isGrown"
+              v-if="narrowViewport || expanded || isGrown"
               class="expand-btn"
               type="button"
               aria-controls="composer-input"
@@ -1487,7 +1497,7 @@ function selectModel(modelId: string): void {
   gap: var(--space-2);
 }
 
-/* Presentation controls — a compact desktop toggle and a 44px mobile rail. */
+/* Presentation controls — a compact wide-layout toggle and a 44px narrow rail. */
 .composer-surface-actions {
   display: flex;
   flex: none;
@@ -1556,9 +1566,9 @@ function selectModel(modelId: string): void {
   color: var(--color-text);
 }
 
-/* Expanded editor: a tall composing area at ~70% of a desktop viewport —
+/* Expanded editor: a tall composing area at ~70% of a wide viewport —
    clearly larger than the auto-grow cap, while leaving room for the chat
-   header, bottom toolbar row, and padding. Mobile uses a shorter responsive
+   header, bottom toolbar row, and padding. The narrow layout uses a shorter responsive
    bound below so the conversation remains readable. Content beyond it scrolls
    internally. */
 .composer.expanded .ph {
@@ -2234,14 +2244,14 @@ function selectModel(modelId: string): void {
 }
 
 /* ---- Narrow composer toolbar ----------------------------------------------
-   Below a wide desktop the chat column can be narrower than the full toolbar
-   needs — with the sidebar open on a small window, and on phones. The desktop
+   Below a wide viewport the chat column can be narrower than the full toolbar
+   needs — with the sidebar open or in a narrow window. The wide-layout
    toolbar shows every control on one row and toolbar-left / toolbar-right are
    overflow:hidden, so without shedding ink the row clips its own content. The
    context ring stays visible at every width (it is the live context-pressure
    signal; the exact numbers live in its tooltip), the model name truncates
    earlier, and the permission label is capped so the ring and the send button
-   are never squeezed out. Mobile (≤640px) additionally hides secondary
+   are never squeezed out. The narrow viewport (≤640px) additionally hides secondary
    permission/mode controls via the rules below. */
 @media (max-width: 980px) {
   /* Model name was budgeted for a wide card (280px); trim it so the ring and
@@ -2259,7 +2269,7 @@ function selectModel(modelId: string): void {
   }
 }
 
-/* ---- Mobile composer (prototype): round attach + rounded panel input +
+/* ---- Narrow-layout composer: round attach + rounded panel input +
        round blue send with a soft shadow. The .cin container loses its border
        and acts as a flex row; the textarea itself becomes the pill input. ---- */
 @media (max-width: 640px) {
@@ -2304,7 +2314,7 @@ function selectModel(modelId: string): void {
     line-height: 1;
     color: var(--bg);
   }
-  /* Stop → 36px round "■" glyph to match the mobile Send sizing. */
+  /* Stop → 36px round "■" glyph to match the narrow-layout Send sizing. */
   .stop {
     width: var(--composer-send-size);
     height: var(--composer-send-size);
@@ -2325,10 +2335,10 @@ function selectModel(modelId: string): void {
     line-height: 1;
   }
 
-  /* Mobile toolbar: hide secondary controls; attach / context ring / model /
+  /* Narrow toolbar: hide secondary controls; attach / context ring / model /
      send stay visible. Focus exposes permission policy in its settings surface.
      The context ring stays at every width by design — it is the live
-     context-pressure signal on a phone (the exact numbers live in the ring's
+     context-pressure signal in the narrow layout (the exact numbers live in the ring's
      tooltip). The /compact chip also stays so compaction is one tap away at
      ≥80% usage. */
   .perm-pill,
@@ -2336,7 +2346,7 @@ function selectModel(modelId: string): void {
     display: none;
   }
 
-  /* Model dropdown on mobile → anchored right with padding */
+  /* Model dropdown in the narrow layout → anchored right with padding */
   .model-dropdown {
     right: 10px;
     left: auto;
@@ -2355,7 +2365,7 @@ function selectModel(modelId: string): void {
     max-height: min(96px, 16dvh);
     overscroll-behavior-y: contain;
   }
-  /* Even deliberate expansion leaves a substantial reading area on phones.
+  /* Even deliberate expansion leaves a substantial reading area in narrow viewports.
      `dvh` also follows browser chrome and the on-screen keyboard in browsers
      that resize the dynamic viewport. */
   .composer.expanded .ph {

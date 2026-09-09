@@ -1,3 +1,4 @@
+// Labels for the width-driven narrow shell; this is not device detection.
 export default {
   openSwitcher: 'Switch session / workspace',
   openSettings: 'Session settings',

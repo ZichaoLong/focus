@@ -20,7 +20,7 @@ describe('Focus page-level reading mode surface', () => {
   it('keeps the ordinary session switch surfaces while adding one page-owned mode', () => {
     const app = source('../src/focus/FocusApp.vue');
     const header = source('../src/components/chat/ChatHeader.vue');
-    const mobileTopBar = source('../src/components/mobile/MobileTopBar.vue');
+    const narrowTopBar = source('../src/components/narrow/NarrowTopBar.vue');
 
     expect(app).toContain("type FocusPresentationMode = 'normal' | 'reading';");
     expect(app).toContain("const presentationMode = ref<FocusPresentationMode>('normal');");
@@ -29,17 +29,17 @@ describe('Focus page-level reading mode surface', () => {
     );
     expect(app).not.toMatch(/readingMode[\s\S]{0,80}(localStorage|STORAGE_KEYS)/u);
 
-    const mobileTopBarIndex = app.indexOf('<MobileTopBar');
-    const mainIndex = app.indexOf('<main class="focus-main">', mobileTopBarIndex);
+    const narrowTopBarIndex = app.indexOf('<NarrowTopBar');
+    const mainIndex = app.indexOf('<main class="focus-main">', narrowTopBarIndex);
     const conversationPaneIndex = app.indexOf('<ConversationPane', mainIndex);
-    expect(mobileTopBarIndex).toBeGreaterThanOrEqual(0);
-    expect(mainIndex).toBeGreaterThan(mobileTopBarIndex);
+    expect(narrowTopBarIndex).toBeGreaterThanOrEqual(0);
+    expect(mainIndex).toBeGreaterThan(narrowTopBarIndex);
     expect(conversationPaneIndex).toBeGreaterThan(mainIndex);
 
-    expect(mobileTopBar).toContain('class="tb-mid"');
-    expect(mobileTopBar).toContain("@click=\"emit('openSwitcher')\"");
-    expect(mobileTopBar).toContain('readingModeEnabled?: boolean;');
-    expect(mobileTopBar).toContain("@click=\"emit('enterReadingMode')\"");
+    expect(narrowTopBar).toContain('class="tb-mid"');
+    expect(narrowTopBar).toContain("@click=\"emit('openSwitcher')\"");
+    expect(narrowTopBar).toContain('readingModeEnabled?: boolean;');
+    expect(narrowTopBar).toContain("@click=\"emit('enterReadingMode')\"");
     expect(header).toContain('readingModeEnabled?: boolean;');
     expect(header).toContain("@click=\"emit('enterReadingMode')\"");
     expect(app).toContain(':reading-mode-enabled="canEnterReadingMode"');
@@ -54,12 +54,12 @@ describe('Focus page-level reading mode surface', () => {
     expect(app).toContain("'reading-mode': readingMode");
     expect(app).toMatch(/<Sidebar\s+v-show="!readingMode"/u);
     expect(app).toContain('v-show="!sidebarCollapsed && !readingMode"');
-    expect(app).toMatch(/<MobileTopBar\s+v-else\s+v-show="!readingMode"/u);
-    expect(app).toContain('v-if="isMobile && !readingMode"');
+    expect(app).toMatch(/<NarrowTopBar\s+v-else\s+v-show="!readingMode"/u);
+    expect(app).toContain('v-if="isNarrowViewport && !readingMode"');
     expect(app).toMatch(/<FocusPrimaryNotices\s+v-if="!readingMode"/u);
     expect(app).toContain('v-if="unsupportedNotice && !readingMode"');
 
-    expect(pane).toContain("<section class=\"con\" :class=\"{ mobile, 'reading-mode': readingMode }\">");
+    expect(pane).toContain("<section class=\"con\" :class=\"{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }\">");
     expect(pane).toMatch(/<ChatHeader[\s\S]*?v-show="!readingMode"/u);
     expect(pane).toMatch(/<ConversationToc\s+v-if="conversationToc"/u);
     expect(pane).toContain(':inline-visible="!readingMode"');
@@ -87,7 +87,7 @@ describe('Focus page-level reading mode surface', () => {
 
     expect(app).toMatch(/<ReadingModeControls\s+v-if="readingMode"/u);
     expect(app).toContain('@exit="exitReadingMode"');
-    expect(app).toContain('@switch-session="showMobileSwitcher = true"');
+    expect(app).toContain('@switch-session="showNarrowSwitcher = true"');
     expect(app).toContain('@prompt-history="conversationPaneRef?.openPromptHistory()"');
     expect(controls).toContain('class="reading-mode-exit"');
     expect(controls).toContain("@click=\"emit('exit')\"");
@@ -95,7 +95,7 @@ describe('Focus page-level reading mode surface', () => {
     expect(controls).toContain('data-reading-mode-toggle');
     expect(controls).toContain('class="reading-session-switch"');
     expect(controls).toContain("@click=\"emit('switchSession')\"");
-    expect(controls).toContain("t('mobile.openSwitcher')");
+    expect(controls).toContain("t('narrow.openSwitcher')");
     expect(controls).toContain('aria-haspopup="dialog"');
     expect(controls).toContain(':aria-expanded="switcherOpen"');
     expect(controls).toContain('{{ sessionTitle }}');
@@ -109,17 +109,17 @@ describe('Focus page-level reading mode surface', () => {
     expect(app).toContain(':prompt-history-disabled="client.conversationLoading.value"');
     expect(controls).toContain('height: 48px;');
     expect(controls).toContain('flex: none;');
-    expect(controls).toContain('.reading-mode-controls.is-mobile {');
+    expect(controls).toContain('.reading-mode-controls.is-narrow {');
     expect(controls).toContain('height: calc(50px + var(--safe-top));');
     expect(controls).toContain(
       'padding: var(--safe-top) max(12px, var(--safe-right)) 0 max(12px, var(--safe-left));',
     );
     expect(controls).toContain(
-      '.reading-mode-controls.is-mobile .reading-prompt-history { margin-left: auto; }',
+      '.reading-mode-controls.is-narrow .reading-prompt-history { margin-left: auto; }',
     );
 
-    const switcher = between(app, '<MobileSwitcherSheet', '</MobileSwitcherSheet>');
-    expect(switcher).toContain('v-if="isMobile || readingMode"');
+    const switcher = between(app, '<NarrowSwitcherSheet', '</NarrowSwitcherSheet>');
+    expect(switcher).toContain('v-if="isNarrowViewport || readingMode"');
     expect(switcher).toContain('@select="client.selectThread($event)"');
     expect(switcher).toContain(':allow-create="!readingMode"');
     expect(switcher).toContain(':allow-session-actions="!readingMode"');
@@ -129,7 +129,7 @@ describe('Focus page-level reading mode surface', () => {
       'function exitReadingMode(): void {',
       '\n}\nconst conversationSearchVisible',
     );
-    expect(exit.indexOf('showMobileSwitcher.value = false;')).toBeLessThan(
+    expect(exit.indexOf('showNarrowSwitcher.value = false;')).toBeLessThan(
       exit.indexOf("presentationMode.value = 'normal';"),
     );
 

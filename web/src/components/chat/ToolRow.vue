@@ -207,8 +207,4 @@ function onHeadClick(): void {
   word-break: break-word;
 }
 
-/* Mobile bubble layout: no left gutter indent, softer corners. */
-.box.mob {
-  margin: 0;
-}
 </style>

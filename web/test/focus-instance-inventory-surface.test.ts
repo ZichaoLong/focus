@@ -7,16 +7,16 @@ function source(relativePath: string): string {
 }
 
 describe('Focus managed-instance inventory surface', () => {
-  it('shows an explicit unknown loaded state on desktop and mobile', () => {
-    const desktop = source('../src/components/SessionRow.vue');
-    const mobile = source('../src/components/mobile/MobileSwitcherSheet.vue');
+  it('shows an explicit unknown loaded state in wide and narrow layouts', () => {
+    const wideRow = source('../src/components/SessionRow.vue');
+    const narrowSwitcher = source('../src/components/narrow/NarrowSwitcherSheet.vue');
     const en = source('../src/i18n/locales/en/focus.ts');
     const zh = source('../src/i18n/locales/zh/focus.ts');
 
-    expect(desktop).toContain("runtimeState === 'unknown'");
-    expect(desktop).toContain("t('focus.loadedStateUnknown')");
-    expect(mobile).toContain("runtimeState === 'unknown'");
-    expect(mobile).toContain("t('focus.loadedStateUnknown')");
+    expect(wideRow).toContain("runtimeState === 'unknown'");
+    expect(wideRow).toContain("t('focus.loadedStateUnknown')");
+    expect(narrowSwitcher).toContain("runtimeState === 'unknown'");
+    expect(narrowSwitcher).toContain("t('focus.loadedStateUnknown')");
     expect(en).toContain("loadedStateUnknown: 'Loaded state unknown'");
     expect(zh).toContain("loadedStateUnknown: '加载状态未知'");
   });

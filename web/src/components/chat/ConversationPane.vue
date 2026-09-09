@@ -9,6 +9,7 @@ import ChatPane from './ChatPane.vue';
 import ChatHeader from './ChatHeader.vue';
 import Composer from './Composer.vue';
 import type { ComposerSubmission } from './composerSubmission';
+import type { ComposerSendShortcut } from './composerSendShortcut';
 import ChatDock from './ChatDock.vue';
 import ConversationToc, { type ConversationTocItem } from './ConversationToc.vue';
 import Button from '../ui/Button.vue';
@@ -82,8 +83,10 @@ const props = withDefaults(defineProps<{
   /** A new-thread create was dispatched, but its external effect is unknown. */
   draftCreateOutcomeUnknown?: boolean;
   fastMoon?: boolean;
-  /** Mobile shell: compact chrome. */
-  mobile?: boolean;
+  /** Width-driven narrow shell; this is not a device-type signal. */
+  narrowViewport?: boolean;
+  /** Browser-local keyboard chord that submits the Composer. */
+  composerSendShortcut?: ComposerSendShortcut;
   /** Page-level reading mode hides shell chrome while keeping transcript owners mounted. */
   readingMode?: boolean;
   /** Whether this loaded conversation can enter page-level reading mode. */
@@ -248,17 +251,17 @@ const showTargetlessComposer = computed(() => (
 // restore action that must remain reachable while the Composer is hidden.
 const composerSurfaceMode = ref<ComposerSurfaceMode>('compact');
 const composerHasDraft = ref(false);
-const mobileComposerActionsRef = ref<HTMLElement | null>(null);
+const narrowComposerActionsRef = ref<HTMLElement | null>(null);
 const allowComposerHide = computed(() => (
-  props.mobile === true
+  props.narrowViewport === true
   && !showTargetlessComposer.value
   && !props.sessionLoading
   && props.turns.length > 0
 ));
 
-function focusMobileComposerRestore(): void {
-  mobileComposerActionsRef.value
-    ?.querySelector<HTMLButtonElement>('.mobile-composer-restore')
+function focusNarrowComposerRestore(): void {
+  narrowComposerActionsRef.value
+    ?.querySelector<HTMLButtonElement>('.narrow-composer-restore')
     ?.focus({ preventScroll: true });
 }
 
@@ -266,14 +269,14 @@ function setComposerSurfaceMode(mode: ComposerSurfaceMode): void {
   if (mode === 'hidden' && !allowComposerHide.value) return;
   if (composerSurfaceMode.value === mode) return;
   composerSurfaceMode.value = mode;
-  if (mode === 'hidden') void nextTick(focusMobileComposerRestore);
+  if (mode === 'hidden') void nextTick(focusNarrowComposerRestore);
 }
 
 watch(() => props.composerSessionId ?? props.sessionId ?? '', () => {
   setComposerSurfaceMode('compact');
 }, { flush: 'sync' });
 
-watch(() => props.mobile, () => {
+watch(() => props.narrowViewport, () => {
   setComposerSurfaceMode('compact');
 }, { flush: 'sync' });
 
@@ -537,7 +540,7 @@ function scheduleTocTableHitTest(): void {
 function updateTocTableOcclusion(): void {
   const pane = panesRef.value;
   const toc =
-    !props.mobile && props.conversationToc && pane
+    !props.narrowViewport && props.conversationToc && pane
       ? pane.closest('.con')?.querySelector<HTMLElement>('.conversation-toc')
       : null;
   // The hit x is the centre of the fixed rail bar: `.toc-bar` keeps a stable x
@@ -1198,7 +1201,7 @@ watch(dockRef, () => {
 });
 
 watch(
-  () => props.mobile,
+  () => props.narrowViewport,
   async () => {
     await nextTick();
     updatePanesScrollbarWidth();
@@ -1788,11 +1791,11 @@ defineExpose({
 </script>
 
 <template>
-  <section class="con" :class="{ mobile, 'reading-mode': readingMode }">
+  <section class="con" :class="{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }">
     <!-- Chat context header: workspace/session, git status, open-in-editor,
          copy-all, PR. Hidden for the empty-composer (no session context yet). -->
     <ChatHeader
-      v-if="!mobile && !showTargetlessComposer"
+      v-if="!narrowViewport && !showTargetlessComposer"
       v-show="!readingMode"
       :session-id="sessionId"
       :workspace-name="workspaceName"
@@ -1829,7 +1832,7 @@ defineExpose({
       ref="conversationTocRef"
       :items="displayedConversationTocItems"
       :active-turn-id="activeTurnId"
-      :mobile="mobile"
+      :narrow-viewport="narrowViewport"
       :inline-visible="!readingMode"
       :session-loading="sessionLoading"
       :occluded="tocOccludedByTable"
@@ -1845,11 +1848,11 @@ defineExpose({
 
     <div
       v-if="showComposerRestore"
-      ref="mobileComposerActionsRef"
-      class="mobile-composer-actions"
+      ref="narrowComposerActionsRef"
+      class="narrow-composer-actions"
     >
       <Button
-        class="mobile-composer-restore"
+        class="narrow-composer-restore"
         :class="{ 'has-draft': composerHasDraft }"
         variant="secondary"
         size="sm"
@@ -1862,7 +1865,7 @@ defineExpose({
       </Button>
       <Tooltip v-if="showHiddenComposerInterrupt" :text="t('composer.interruptTitle')">
         <IconButton
-          class="mobile-composer-stop"
+          class="narrow-composer-stop"
           size="sm"
           :label="t('composer.interrupt')"
           @click="handleInterrupt"
@@ -1889,7 +1892,7 @@ defineExpose({
         @touchstart.passive="onPanesTouchStart"
         @touchmove.passive="onPanesTouchMove"
       >
-        <div class="content-wrap" :class="[mobile ? 'align-mobile' : 'align-center']">
+        <div class="content-wrap" :class="[narrowViewport ? 'align-narrow' : 'align-center']">
           <template v-if="showTargetlessComposer">
             <!-- Empty session: Composer rendered in the centre of the pane -->
             <div class="empty-spacer" />
@@ -1981,7 +1984,8 @@ defineExpose({
               hide-context
               :capabilities="composerCapabilities"
               :defer-submit-clear="deferSubmitClear"
-              :mobile="mobile"
+              :narrow-viewport="narrowViewport"
+              :send-shortcut="composerSendShortcut"
               :surface-mode="composerSurfaceMode"
               @submit="handleComposerSubmit"
               @command="emit('command', $event)"
@@ -2081,7 +2085,8 @@ defineExpose({
         :pending-approval="pendingApproval"
         :approval-busy="approvalBusy"
         :interaction-enabled="interactionEnabled"
-        :mobile="mobile"
+        :narrow-viewport="narrowViewport"
+        :send-shortcut="composerSendShortcut"
         :composer-capabilities="composerCapabilities"
         :defer-submit-clear="deferSubmitClear"
         :surface-mode="readingMode ? 'hidden' : composerSurfaceMode"
@@ -2142,7 +2147,7 @@ defineExpose({
   container-type: inline-size;
 }
 
-.mobile-composer-actions {
+.narrow-composer-actions {
   position: absolute;
   z-index: var(--z-sticky);
   top: var(--space-3);
@@ -2160,7 +2165,7 @@ defineExpose({
   background: var(--color-accent);
 }
 
-.mobile-composer-stop {
+.narrow-composer-stop {
   width: 30px;
   height: 30px;
   background: var(--color-danger-soft);
@@ -2169,14 +2174,14 @@ defineExpose({
   box-shadow: var(--shadow-xs);
 }
 
-.mobile-composer-stop:hover:not(:disabled) {
+.narrow-composer-stop:hover:not(:disabled) {
   background: var(--color-danger);
   color: var(--color-text-on-accent);
   border-color: var(--color-danger);
 }
 
 @media (max-width: 360px) {
-  .mobile-composer-actions {
+  .narrow-composer-actions {
     align-items: flex-start;
     flex-direction: column;
     gap: var(--space-1);
@@ -2225,18 +2230,18 @@ defineExpose({
 }
 .content-wrap.align-center { margin-left: auto; margin-right: auto; }
 .content-wrap.align-left { margin-left: 0; margin-right: auto; }
-/* Mobile: bubbles span the full pane width; no reading-column constraint. */
-.content-wrap.align-mobile { max-width: none; }
+/* Narrow layout: bubbles span the full pane width; no reading-column constraint. */
+.content-wrap.align-narrow { max-width: none; }
 @media (max-width: 640px) {
-  .con.mobile {
+  .con.narrow-viewport {
     min-width: 0;
     overflow: hidden;
   }
-  .con.mobile .panes {
+  .con.narrow-viewport .panes {
     scrollbar-gutter: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .content-wrap.align-mobile {
+  .content-wrap.align-narrow {
     width: 100%;
     min-width: 0;
   }
@@ -2442,9 +2447,9 @@ defineExpose({
   flex-direction: column;
 }
 
-/* Mobile shell: the outer .panes is just a flex host; the actual chat scroll is
+/* Narrow shell: the outer .panes is just a flex host; the actual chat scroll is
    .chat-scroll inside it. Avoid a double scrollbar gutter on the chat tab. */
-.mobile .panes:has(> .chat-layout) {
+.narrow-viewport .panes:has(> .chat-layout) {
   overflow: hidden;
   scrollbar-gutter: auto;
 }

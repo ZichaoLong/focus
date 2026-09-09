@@ -1,5 +1,5 @@
 <!-- apps/kimi-web/src/components/dialogs/BottomSheet.vue -->
-<!-- Reusable mobile bottom sheet: a fading scrim + a panel that slides up from -->
+<!-- Reusable narrow-layout bottom sheet: a fading scrim + a panel that slides up from -->
 <!-- the bottom (rounded top, grab handle). v-model controls open state; tapping -->
 <!-- the scrim or the grab handle closes it. Restyled to the unified v2 dialog -->
 <!-- look (tokened scrim, surface-raised panel, UI font). -->
@@ -29,7 +29,7 @@ function close(): void {
   emit('close');
 }
 
-// Close on Escape while open (desktop keyboard / test convenience).
+// Close on Escape while open (hardware-keyboard and test convenience).
 function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'Escape') close();
 }
@@ -53,11 +53,11 @@ onUnmounted(() => {
   <Transition name="sheet">
     <div v-if="modelValue" class="sheet-root">
       <div class="sheet-scrim" @click="close" />
-      <div class="sheet-panel" role="dialog" :aria-label="title || t('mobile.sheetLabel')">
+      <div class="sheet-panel" role="dialog" :aria-label="title || t('narrow.sheetLabel')">
         <button
           type="button"
           class="sheet-grab"
-          :aria-label="t('mobile.closeSheet')"
+          :aria-label="t('narrow.closeSheet')"
           @click="close"
         />
         <div v-if="title" class="sheet-head">

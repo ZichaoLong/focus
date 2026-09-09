@@ -70,7 +70,7 @@ function glyphStatus(status: TodoView['status']): StatusGlyphStatus {
 }
 .tc-empty-ico { width: 28px; height: 28px; color: var(--color-line-strong); }
 
-/* Mobile (~/todo tab): match the chat font bump; row spacing opens up. */
+/* Narrow viewport (~/todo tab): match the chat font bump; row spacing opens up. */
 @media (max-width: 640px) {
   .todo-card { font-size: var(--text-lg); }
   .tc-row { padding: var(--space-2) var(--space-3); }

@@ -293,7 +293,7 @@ async function copyTaskOutput(task: TaskItem): Promise<void> {
   font-size: var(--ui-font-size-sm);
 }
 
-/* Mobile */
+/* Narrow viewport */
 @media (max-width: 640px) {
   .taskspane { padding: 14px 14px 16px; }
   .tp-main { flex-wrap: wrap; row-gap: 4px; }

@@ -584,7 +584,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
         <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
-          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" mobile :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
+          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
           <div
             v-else-if="blk.kind === 'reply-separator'"
             class="assistant-reply-separator"
@@ -594,7 +594,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
-            mobile
             :tool-diff-panel="toolDiffPanel"
             :tool-detail-available="toolDetailAvailable"
             @open-media="emit('openMedia', $event)"
@@ -602,7 +601,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             @open-tool-diff="emit('openToolDiff', $event)"
             @open-agent="emit('openAgent', $event)"
           />
-          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" mobile :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
+          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
         </template>
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.durationMs !== undefined)" class="a-msg-ft">
           <Tooltip :text="`${turn.durationMs} ms`">
@@ -859,7 +858,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 }
 .u-copy svg { display: block; flex: none; }
 .u-copy:hover { opacity: 1; color: var(--color-accent); background: var(--hover); }
-/* Mobile bubble layout: right-align the message action below the bubble. */
+/* Compact bubble presentation: right-align the message action below the bubble. */
 .u-edit-wrap { display: flex; justify-content: flex-end; }
 .chat > .u-edit-wrap { margin-top: 4px; }
 .chat > .u-edit-wrap + .a-msg { margin-top: 8px; }
@@ -1016,7 +1015,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   color: var(--color-accent-hover);
 }
 
-/* ===================== Wide tables (desktop) ===================== */
+/* ===================== Wide tables ===================== */
 /* 760px corresponds to --p-content-max. Container-query conditions cannot
    reference CSS custom properties directly. */
 @container (min-width: 760px) {
@@ -1087,7 +1086,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   overflow-wrap: anywhere;
 }
 
-/* Mobile font bump (+2px) */
+/* Narrow-viewport font bump (+2px) */
 @media (max-width: 640px) {
   .chat {
     box-sizing: border-box;
@@ -1117,7 +1116,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
-  .a-msg :deep(.media-tool.mob) {
+  .a-msg :deep(.media-tool) {
     width: min(44vw, 160px);
   }
   .cd-label {

@@ -1,21 +1,15 @@
 <script setup lang="ts">
 import {
-  computed,
-  nextTick,
-  onMounted,
-  onUnmounted,
-  provide,
-  ref,
-  shallowRef,
-  watch,
+  computed, nextTick, onMounted, onUnmounted,
+  provide, ref, shallowRef, watch,
 } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sidebar from '../components/Sidebar.vue';
 import ResizeHandle from '../components/ResizeHandle.vue';
 import ConversationPane from '../components/chat/ConversationPane.vue';
 import ReadingModeControls from '../components/chat/ReadingModeControls.vue';
-import MobileTopBar from '../components/mobile/MobileTopBar.vue';
-import MobileSwitcherSheet from '../components/mobile/MobileSwitcherSheet.vue';
+import NarrowTopBar from '../components/narrow/NarrowTopBar.vue';
+import NarrowSwitcherSheet from '../components/narrow/NarrowSwitcherSheet.vue';
 import ModelPicker from '../components/settings/ModelPicker.vue';
 import GlobalLoading from '../components/GlobalLoading.vue';
 import Button from '../components/ui/Button.vue';
@@ -26,7 +20,7 @@ import ConfirmDialogHost from '../components/dialogs/ConfirmDialogHost.vue';
 import type { AgentMember, ComposerCapabilities, PromptAttachment, ToolCall, ToolMedia, TurnAttachment } from '../types';
 import type { ComposerSubmission } from '../components/chat/composerSubmission';
 import { useAppearance } from '../composables/client/useAppearance';
-import { useIsMobile } from '../composables/useIsMobile';
+import { useNarrowViewport } from '../composables/useNarrowViewport';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { clampPanelWidth, useViewportWidth } from '../composables/useViewportWidth';
@@ -54,9 +48,8 @@ import {
   isLocalPossiblySentDraft,
   type UnknownSubmissionDraft,
 } from './mutations/actions';
-import {
-  dispatchFocusComposerPayload,
-} from './focusComposerSubmission';
+import { dispatchFocusComposerPayload } from './focusComposerSubmission';
+import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 import { useFocusWebClient } from './useFocusWebClient';
@@ -71,8 +64,9 @@ import type {
 const { t } = useI18n();
 const client = useFocusWebClient();
 const activityFaviconPreference = createFocusDocumentActivityFaviconPreference();
-const isMobile = useIsMobile();
-const showMobileSwitcher = ref(false);
+const composerSendShortcutPreference = createFocusComposerSendShortcutPreference();
+const isNarrowViewport = useNarrowViewport();
+const showNarrowSwitcher = ref(false);
 const showSettings = ref(false);
 const showModelPicker = ref(false);
 const showGoalDialog = ref(false);
@@ -111,7 +105,7 @@ const detailPanelMax = computed(() => focusDetailPanelMaxWidth(
   viewportWidth.value,
   sidebarCollapsed.value ? 0 : sideWidth.value,
 ));
-const detailPanelFullscreen = computed(() => isMobile.value || shouldUseFocusDetailFullscreen(
+const detailPanelFullscreen = computed(() => isNarrowViewport.value || shouldUseFocusDetailFullscreen(
   viewportWidth.value,
   sidebarCollapsed.value ? 0 : sideWidth.value,
 ));
@@ -139,7 +133,7 @@ async function ensureDetailPanelLoaded(): Promise<void> {
     .catch(() => {
       // Keep failure local to this optional surface. The parent-side close
       // and reload controls remain in the eagerly loaded shell, so a
-      // missing/stale hashed chunk can never trap a mobile document. Browsers
+      // missing/stale hashed chunk can never trap a browser document. Browsers
       // retain a failed module-map entry for this document, so an in-document
       // import retry would not be a reliable recovery contract.
       detailPanelLoadState.value = 'error';
@@ -244,7 +238,7 @@ function focusReadingModeToggle(): void {
 
 function enterReadingMode(): void {
   if (!canEnterReadingMode.value || readingMode.value) return;
-  showMobileSwitcher.value = false;
+  showNarrowSwitcher.value = false;
   showSettings.value = false;
   showModelPicker.value = false;
   showGoalDialog.value = false;
@@ -256,7 +250,7 @@ function enterReadingMode(): void {
 
 function exitReadingMode(): void {
   if (!readingMode.value) return;
-  showMobileSwitcher.value = false;
+  showNarrowSwitcher.value = false;
   presentationMode.value = 'normal';
   focusReadingModeToggle();
 }
@@ -838,12 +832,12 @@ onUnmounted(() => {
       v-else
       class="focus-app"
       :class="{
-        mobile: isMobile,
-        'sidebar-collapsed': sidebarCollapsed && !isMobile,
+        'narrow-viewport': isNarrowViewport,
+        'sidebar-collapsed': sidebarCollapsed && !isNarrowViewport,
         'reading-mode': readingMode,
       }"
     >
-      <template v-if="!isMobile">
+      <template v-if="!isNarrowViewport">
         <Sidebar
           v-show="!readingMode"
           :collapsed="sidebarCollapsed"
@@ -914,7 +908,7 @@ onUnmounted(() => {
         />
       </template>
 
-      <MobileTopBar
+      <NarrowTopBar
         v-else
         v-show="!readingMode"
         :workspace="client.visibleWorkspace.value"
@@ -922,13 +916,13 @@ onUnmounted(() => {
         :running="client.running.value"
         :session-count="workspaceSessionCount"
         :reading-mode-enabled="canEnterReadingMode"
-        @open-switcher="showMobileSwitcher = true"
+        @open-switcher="showNarrowSwitcher = true"
         @open-settings="showSettings = true"
         @enter-reading-mode="enterReadingMode"
       />
       <IconButton
-        v-if="isMobile && !readingMode"
-        class="runtime-details-mobile-trigger"
+        v-if="isNarrowViewport && !readingMode"
+        class="runtime-details-narrow-trigger"
         size="sm"
         :label="t('focus.runtimeDetailsOpen')"
         @click="openRuntimeDetails"
@@ -944,12 +938,12 @@ onUnmounted(() => {
       <main class="focus-main">
         <ReadingModeControls
           v-if="readingMode"
-          :mobile="isMobile"
+          :narrow-viewport="isNarrowViewport"
           :session-title="activeSessionTitle"
-          :switcher-open="showMobileSwitcher"
+          :switcher-open="showNarrowSwitcher"
           :prompt-history-disabled="client.conversationLoading.value"
           @exit="exitReadingMode"
-          @switch-session="showMobileSwitcher = true"
+          @switch-session="showNarrowSwitcher = true"
           @prompt-history="conversationPaneRef?.openPromptHistory()"
         />
         <FocusPrimaryNotices
@@ -981,7 +975,8 @@ onUnmounted(() => {
         </div>
         <ConversationPane
           ref="conversationPaneRef"
-          :mobile="isMobile"
+          :narrow-viewport="isNarrowViewport"
+          :composer-send-shortcut="composerSendShortcutPreference.shortcut.value"
           :reading-mode="readingMode"
           :reading-mode-enabled="canEnterReadingMode"
           :turns="client.turns.value"
@@ -1064,7 +1059,7 @@ onUnmounted(() => {
       </main>
 
       <IconButton
-        v-if="!isMobile && sidebarCollapsed && !readingMode"
+        v-if="!isNarrowViewport && sidebarCollapsed && !readingMode"
         class="sidebar-toggle-btn"
         size="sm"
         :label="t('sidebar.expandSidebar')"
@@ -1074,7 +1069,7 @@ onUnmounted(() => {
       </IconButton>
 
       <IconButton
-        v-if="!isMobile && sidebarCollapsed && !readingMode"
+        v-if="!isNarrowViewport && sidebarCollapsed && !readingMode"
         class="runtime-details-collapsed-trigger"
         size="sm"
         :label="t('focus.runtimeDetailsOpen')"
@@ -1182,6 +1177,7 @@ onUnmounted(() => {
         :color-scheme="colorScheme"
         :turn-window-limit="client.turnWindowLimit.value"
         :activity-favicon-enabled="activityFaviconPreference.enabled.value"
+        :composer-send-shortcut="composerSendShortcutPreference.shortcut.value"
         :connection="client.connection.value"
         :approval-policy="client.approvalPolicy.value"
         :approval-policies="client.meta.value?.approval_policies ?? []"
@@ -1202,6 +1198,7 @@ onUnmounted(() => {
         @set-color-scheme="setColorScheme"
         @set-turn-window-limit="client.setTurnWindowLimit($event)"
         @set-activity-favicon-enabled="activityFaviconPreference.setEnabled($event)"
+        @set-composer-send-shortcut="composerSendShortcutPreference.setShortcut($event)"
         @set-approval-policy="client.setApprovalPolicy($event)"
         @set-reasoning-effort="client.setReasoningEffort($event)"
         @set-permissions-profile="client.setPermissionsProfile($event)"
@@ -1227,9 +1224,9 @@ onUnmounted(() => {
         @submit="submitReview"
       />
 
-      <MobileSwitcherSheet
-        v-if="isMobile || readingMode"
-        v-model="showMobileSwitcher"
+      <NarrowSwitcherSheet
+        v-if="isNarrowViewport || readingMode"
+        v-model="showNarrowSwitcher"
         :groups="client.workspaceGroups.value"
         :active-workspace-id="client.activeWorkspaceId.value"
         :active-id="client.activeThreadId.value"
@@ -1246,7 +1243,7 @@ onUnmounted(() => {
       >
         <template #controls>
           <SegmentedControl
-            class="directory-scope mobile-scope"
+            class="directory-scope narrow-scope"
             :model-value="client.threadScope.value"
             :options="[
               { value: 'current', label: t('focus.currentInstance') },
@@ -1256,7 +1253,7 @@ onUnmounted(() => {
             @update:model-value="client.setThreadScope($event as FocusThreadScope)"
           />
         </template>
-      </MobileSwitcherSheet>
+      </NarrowSwitcherSheet>
     </div>
 
     <ConfirmDialogHost />
@@ -1377,7 +1374,7 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   text-align: center;
 }
-.runtime-details-mobile-trigger,
+.runtime-details-narrow-trigger,
 .runtime-details-collapsed-trigger {
   position: absolute;
   z-index: var(--z-sticky);
@@ -1385,7 +1382,7 @@ onUnmounted(() => {
   border-color: var(--color-line);
   box-shadow: var(--shadow-xs);
 }
-.runtime-details-mobile-trigger {
+.runtime-details-narrow-trigger {
   top: calc(var(--safe-top) + 12px);
   right: calc(max(12px, var(--safe-right)) + 46px);
 }
@@ -1393,7 +1390,7 @@ onUnmounted(() => {
   top: calc(var(--space-3) + 36px);
   left: var(--space-3);
 }
-.runtime-details-mobile-trigger .runtime-details-dot,
+.runtime-details-narrow-trigger .runtime-details-dot,
 .runtime-details-collapsed-trigger .runtime-details-dot {
   position: absolute;
   top: 3px;
@@ -1418,7 +1415,7 @@ onUnmounted(() => {
   width: 100%;
   margin: 0 0 var(--space-2);
 }
-.mobile-scope { padding-inline: var(--space-2); }
+.narrow-scope { padding-inline: var(--space-2); }
 .auth-page {
   flex: 1;
   display: flex;
@@ -1475,11 +1472,11 @@ onUnmounted(() => {
 }
 .gload-fade-leave-active { transition: opacity var(--duration-slow) var(--ease-out); }
 .gload-fade-leave-to { opacity: 0; }
-.focus-app.mobile {
+.focus-app.narrow-viewport {
   display: flex;
   flex-direction: column;
 }
-.focus-app.mobile .focus-main {
+.focus-app.narrow-viewport .focus-main {
   flex: 1;
   min-height: 0;
 }

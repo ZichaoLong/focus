@@ -102,14 +102,14 @@ describe('Focus runtime-details presentation', () => {
     });
   });
 
-  it('wires one shared detail owner, compact mobile trigger, and a narrowed primary stream', () => {
+  it('wires one shared detail owner, narrow-layout trigger, and a narrowed primary stream', () => {
     const app = source('../src/focus/FocusApp.vue');
     const detailPanel = source('../src/focus/FocusDetailPanel.vue');
     const runtimePanel = source('../src/focus/FocusRuntimeDetailsPanel.vue');
     const primary = source('../src/focus/FocusPrimaryNotices.vue');
 
     expect(app).toContain("selectDetail({ kind: 'runtimeDetails' })");
-    expect(app).toContain('class="runtime-details-mobile-trigger"');
+    expect(app).toContain('class="runtime-details-narrow-trigger"');
     expect(app).toContain('class="runtime-details-collapsed-trigger"');
     expect(app).toContain('class="runtime-details-entry"');
     expect(detailPanel).toContain("target === 'runtimeDetails'");

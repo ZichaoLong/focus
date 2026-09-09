@@ -7,7 +7,7 @@ function source(relativePath: string): string {
 }
 
 describe('Focus Composer input surface', () => {
-  it('keeps Enter and the send button on one server-routed prompt chain', () => {
+  it('keeps the configured keyboard shortcut and send button on one server-routed prompt chain', () => {
     const app = source('../src/focus/FocusApp.vue');
     const pane = source('../src/components/chat/ConversationPane.vue');
     const dock = source('../src/components/chat/ChatDock.vue');
@@ -15,7 +15,7 @@ describe('Focus Composer input surface', () => {
     const submission = source('../src/focus/focusComposerSubmission.ts');
     const submissionOwner = source('../src/components/chat/composerSubmission.ts');
 
-    expect(composer).toContain("if (e.key === 'Enter' && !e.shiftKey) {");
+    expect(composer).toContain('if (composerKeyRequestsSubmit(e, props.sendShortcut)) {');
     expect(composer).toContain('@click="handleSubmit()"');
     expect(composer).toContain("emit('submit', submission)");
     expect(composer).toContain('submissionPending.value = true');
@@ -72,14 +72,14 @@ describe('Focus Composer input surface', () => {
     expect(composer).toContain('@click="emit(\'interrupt\')"');
   });
 
-  it('leaves Shift+Enter as newline and removes Composer queue/shortcut vocabulary', () => {
+  it('leaves unmatched Enter chords as native newlines and removes queue vocabulary', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const composer = source('../src/components/chat/Composer.vue');
     const types = source('../src/types.ts');
     const en = source('../src/i18n/locales/en/composer.ts');
     const zh = source('../src/i18n/locales/zh/composer.ts');
 
-    expect(composer).toContain("if (e.key === 'Enter' && !e.shiftKey) {");
+    expect(composer).toContain('if (composerKeyRequestsSubmit(e, props.sendShortcut)) {');
     expect(composer).not.toContain('queued?: QueuedPromptView[]');
     expect(types).not.toContain('steer: boolean;');
     expect(pane.match(/:queued="queued"/gu)).toHaveLength(1);
@@ -89,24 +89,24 @@ describe('Focus Composer input surface', () => {
     expect(zh).not.toContain('Ctrl+S');
   });
 
-  it('keeps the mobile compact editor at four lines until it is explicitly expanded', () => {
+  it('keeps the narrow-viewport compact editor at four lines until explicitly expanded', () => {
     const composer = source('../src/components/chat/Composer.vue');
-    const mobileStart = composer.lastIndexOf('@media (max-width: 640px)');
-    expect(mobileStart).toBeGreaterThanOrEqual(0);
-    const mobileStyles = composer.slice(mobileStart);
+    const narrowStylesStart = composer.lastIndexOf('@media (max-width: 640px)');
+    expect(narrowStylesStart).toBeGreaterThanOrEqual(0);
+    const narrowStyles = composer.slice(narrowStylesStart);
 
-    expect(mobileStyles).toContain('min-height: min(96px, 16dvh);');
-    expect(mobileStyles).toContain('max-height: min(96px, 16dvh);');
-    expect(mobileStyles).toContain(`.composer.expanded .ph {
+    expect(narrowStyles).toContain('min-height: min(96px, 16dvh);');
+    expect(narrowStyles).toContain('max-height: min(96px, 16dvh);');
+    expect(narrowStyles).toContain(`.composer.expanded .ph {
     min-height: min(280px, 34dvh);
     max-height: min(280px, 34dvh);
   }`);
-    expect(composer).toContain('v-if="mobile || expanded || isGrown"');
+    expect(composer).toContain('v-if="narrowViewport || expanded || isGrown"');
     expect(composer).toContain('max-height: calc(100vh / 4);');
     expect(composer).toContain('overflow-y: auto;');
   });
 
-  it('keeps one parent-owned mobile surface state while hiding only presentation', () => {
+  it('keeps one parent-owned responsive surface state while hiding only presentation', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const dock = source('../src/components/chat/ChatDock.vue');
     const composer = source('../src/components/chat/Composer.vue');
@@ -156,7 +156,7 @@ describe('Focus Composer input surface', () => {
     expect(pane).toContain('watch(attachmentUpload.isDragOver');
     expect(pane).toContain('watch(() => attachmentUpload.attachments.value.length');
     expect(pane).toContain("watch(() => props.composerSessionId ?? props.sessionId ?? '',");
-    expect(pane).toContain('watch(() => props.mobile,');
+    expect(pane).toContain('watch(() => props.narrowViewport,');
     expect(pane).not.toMatch(
       /watch\(\(\) => props\.composerSessionId[\s\S]*?composerHasDraft\.value = false;/u,
     );
@@ -169,7 +169,7 @@ describe('Focus Composer input surface', () => {
     expect(composer).toContain('loadForEdit(value);\n  return true;');
   });
 
-  it('offers a safe mobile hide/restore surface with a separate hidden Stop action', () => {
+  it('offers a safe narrow-layout hide/restore surface with a separate hidden Stop action', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const dock = source('../src/components/chat/ChatDock.vue');
     const composer = source('../src/components/chat/Composer.vue');
@@ -184,19 +184,19 @@ describe('Focus Composer input surface', () => {
     expect(dock).toContain(':allow-hide="allowHide"');
     expect(pane).toContain(':allow-hide="allowComposerHide && !readingMode"');
     expect(pane).toContain(`const allowComposerHide = computed(() => (
-  props.mobile === true
+  props.narrowViewport === true
   && !showTargetlessComposer.value
   && !props.sessionLoading
   && props.turns.length > 0
 ));`);
     expect(pane).toContain('const showComposerRestore = computed(() => (');
     expect(pane).toContain("if (mode === 'hidden' && !allowComposerHide.value) return;");
-    expect(pane).toContain("?.querySelector<HTMLButtonElement>('.mobile-composer-restore')");
-    expect(pane).toContain('mobile-composer-restore');
+    expect(pane).toContain("?.querySelector<HTMLButtonElement>('.narrow-composer-restore')");
+    expect(pane).toContain('narrow-composer-restore');
     expect(pane).toContain(':class="{ \'has-draft\': composerHasDraft }"');
     expect(pane).toContain("t(composerHasDraft ? 'composer.continueInput' : 'composer.showInput')");
-    expect(pane).toContain('class="mobile-composer-stop"');
-    expect(pane).toContain('class="mobile-composer-stop"\n          size="sm"');
+    expect(pane).toContain('class="narrow-composer-stop"');
+    expect(pane).toContain('class="narrow-composer-stop"\n          size="sm"');
     expect(pane).toContain('@click="handleInterrupt"');
     expect(pane).toContain(`const showHiddenComposerInterrupt = computed(() => (
   showComposerRestore.value
@@ -205,11 +205,11 @@ describe('Focus Composer input surface', () => {
 ));`);
     expect(pane).toContain('<Tooltip v-if="showHiddenComposerInterrupt"');
     expect(pane).toContain('left: max(var(--space-4), var(--safe-left));');
-    expect(toc).toContain('.toc-compact-trigger.is-mobile { top: var(--space-3); }');
+    expect(toc).toContain('.toc-compact-trigger.is-narrow { top: var(--space-3); }');
     expect(toc).toContain('right: var(--space-4);');
     expect(button).toContain('.ui-button--sm { height: 30px;');
-    expect(pane).not.toContain('.mobile-composer-restore {\n  min-height: 44px;\n}');
-    expect(pane).toContain(`.mobile-composer-stop {
+    expect(pane).not.toContain('.narrow-composer-restore {\n  min-height: 44px;\n}');
+    expect(pane).toContain(`.narrow-composer-stop {
   width: 30px;
   height: 30px;`);
     expect(pane).toContain('@media (max-width: 360px)');
@@ -227,9 +227,9 @@ describe('Focus Composer input surface', () => {
   }`);
     expect(composer).toContain("closeSurfaceOverlays();\n  requestSurfaceMode('hidden');");
     expect(composer).toContain(
-      '[() => props.surfaceMode, () => props.mobile, () => props.interactionPending]',
+      '[() => props.surfaceMode, () => props.narrowViewport, () => props.interactionPending]',
     );
-    expect(composer).toContain('Parent-driven resets and desktop/mobile transitions');
+    expect(composer).toContain('Parent-driven resets and wide/narrow transitions');
     expect(composer).toMatch(
       /function collapseAndRefit\(\): void \{[\s\S]*?requestSurfaceMode\('compact'\);/u,
     );

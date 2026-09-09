@@ -1,32 +1,32 @@
-// apps/kimi-web/src/composables/useIsMobile.ts
-// Reactive "is the viewport narrow (phone-sized)?" flag.
+// apps/kimi-web/src/composables/useNarrowViewport.ts
+// Reactive viewport-width flag for the Focus shell's responsive branch.
 //
-// Drives the Focus shell's desktop/mobile branch. When window.matchMedia is
-// unavailable, it defaults to FALSE (desktop).
+// This deliberately describes layout space, not a phone, tablet, or desktop
+// device. When window.matchMedia is unavailable, the wide layout is used.
 
 import { onUnmounted, ref, type Ref } from 'vue';
 
-/** Phones / very narrow viewports use the single-column mobile shell. */
-export const MOBILE_MAX_WIDTH = 640;
-const MOBILE_QUERY = `(max-width: ${MOBILE_MAX_WIDTH}px)`;
+/** Viewports at or below this width use the single-column narrow shell. */
+export const NARROW_VIEWPORT_MAX_WIDTH = 640;
+const NARROW_VIEWPORT_QUERY = `(max-width: ${NARROW_VIEWPORT_MAX_WIDTH}px)`;
 
 /**
  * Returns a reactive ref that is `true` on narrow (≤640px) viewports and
  * `false` otherwise. Guarded for environments without matchMedia.
  */
-export function useIsMobile(): Ref<boolean> {
-  const isMobile = ref(false);
+export function useNarrowViewport(): Ref<boolean> {
+  const narrowViewport = ref(false);
 
-  // SSR / no-matchMedia guard: stay desktop (false).
+  // SSR / no-matchMedia guard: stay on the wide layout (false).
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return isMobile;
+    return narrowViewport;
   }
 
-  const mql = window.matchMedia(MOBILE_QUERY);
-  isMobile.value = mql.matches;
+  const mql = window.matchMedia(NARROW_VIEWPORT_QUERY);
+  narrowViewport.value = mql.matches;
 
   const onChange = (e: MediaQueryListEvent | MediaQueryList): void => {
-    isMobile.value = e.matches;
+    narrowViewport.value = e.matches;
   };
 
   // addEventListener is the modern API; addListener is the deprecated fallback
@@ -41,5 +41,5 @@ export function useIsMobile(): Ref<boolean> {
     onUnmounted(() => mql.removeListener(onChange));
   }
 
-  return isMobile;
+  return narrowViewport;
 }

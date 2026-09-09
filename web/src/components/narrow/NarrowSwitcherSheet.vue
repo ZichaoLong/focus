@@ -1,9 +1,9 @@
-<!-- apps/kimi-web/src/components/mobile/MobileSwitcherSheet.vue -->
-<!-- Mobile switcher bottom sheet, mirroring the desktop sidebar: a "+ New
+<!-- apps/kimi-web/src/components/narrow/NarrowSwitcherSheet.vue -->
+<!-- Narrow-layout switcher bottom sheet, mirroring the wide-layout sidebar: a "+ New
      chat" row, then collapsible workspace groups (folder icon + name +
      path sub-line + per-group "+") with their session rows beneath.
      Tapping a session selects it AND closes the sheet; tapping a group header
-     folds it, same as the desktop sidebar. -->
+     folds it, same as the wide-layout sidebar. -->
 <script setup lang="ts">
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -21,7 +21,7 @@ const { t } = useI18n();
 const props = withDefaults(
   defineProps<{
     modelValue: boolean;
-    /** Workspace groups (same list the desktop sidebar renders). */
+    /** Workspace groups (same list the wide-layout sidebar renders). */
     groups: WorkspaceGroup[];
     activeWorkspaceId: string | null;
     activeId: string;
@@ -81,7 +81,7 @@ function onAddWorkspace(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Collapse groups — same interaction as the desktop sidebar header.
+// Collapse groups — same interaction as the wide-layout sidebar header.
 // ---------------------------------------------------------------------------
 const collapsedIds = ref<Set<string>>(new Set());
 
@@ -100,7 +100,7 @@ function toggleCollapse(id: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// In-group expand / collapse (show-more pagination) — mirrors the desktop
+// In-group expand / collapse (show-more pagination) — mirrors the wide-layout
 // sidebar. Local to the sheet; a refresh reloads only the first page.
 // ---------------------------------------------------------------------------
 const expandedIds = ref<Set<string>>(new Set());
@@ -120,7 +120,7 @@ function visibleSessions(g: WorkspaceGroup): Session[] {
   if (isExpanded(g.workspace.id)) return g.sessions;
   const head = g.sessions.slice(0, g.initialCount);
   // Keep the active session visible when it's beyond the first page (e.g.
-  // selected via search or a deep link), mirroring the desktop sidebar.
+  // selected via search or a deep link), mirroring the wide-layout sidebar.
   if (props.activeId && !head.some((s) => s.id === props.activeId)) {
     const active = g.sessions.find((s) => s.id === props.activeId);
     if (active) return [...head, active];
@@ -185,7 +185,7 @@ function hasSessionActions(session: Session): boolean {
 
 // ---------------------------------------------------------------------------
 // Per-workspace "…" menu: copy path + delete workspace. Copy path is handled
-// locally, like the desktop sidebar; delete is emitted to the parent, which
+// locally, like the wide-layout sidebar; delete is emitted to the parent, which
 // owns the modal confirmation and async mutation.
 // ---------------------------------------------------------------------------
 const wsMenuFor = ref<string | null>(null);
@@ -232,7 +232,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
           :class="{ on: g.workspace.id === activeWorkspaceId }"
           @click="toggleCollapse(g.workspace.id)"
         >
-          <!-- Folder icon: open/closed mirrors the desktop sidebar -->
+          <!-- Folder icon: open/closed mirrors the wide-layout sidebar -->
           <Icon v-if="isCollapsed(g.workspace.id)" class="mgh-folder" name="folder-closed" size="sm" />
           <Icon v-else class="mgh-folder" name="folder" size="sm" />
 
@@ -371,7 +371,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 .newrow.secondary:hover { background: var(--color-surface-sunken); }
 .newrow.secondary:active { background: var(--color-surface-sunken); color: var(--color-text); }
 
-/* ---- List + alignment contract (mirrors the desktop sidebar):
+/* ---- List + alignment contract (mirrors the wide-layout sidebar):
         session titles start at --m-pad + --m-gutter + --m-gap, exactly under
         the workspace name next to the folder icon. ---- */
 .mlist {
@@ -463,7 +463,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 .srow.cur .m .t { color: var(--color-accent-hover); }
 
 /* Running indicator — pulse dot in the indent gutter left of the title,
-   mirroring the desktop SessionRow (.t.run::before). */
+   mirroring the wide-layout SessionRow (.t.run::before). */
 .srow .m .t.run { position: relative; }
 .srow .m .t.run::before {
   content: '';

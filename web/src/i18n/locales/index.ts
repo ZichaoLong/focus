@@ -16,7 +16,7 @@ import en_mention from './en/mention';
 import en_commands from './en/commands';
 import en_tools from './en/tools';
 import en_layout from './en/layout';
-import en_mobile from './en/mobile';
+import en_narrow from './en/narrow';
 
 import zh_common from './zh/common';
 import zh_app from './zh/app';
@@ -36,7 +36,7 @@ import zh_mention from './zh/mention';
 import zh_commands from './zh/commands';
 import zh_tools from './zh/tools';
 import zh_layout from './zh/layout';
-import zh_mobile from './zh/mobile';
+import zh_narrow from './zh/narrow';
 import en_settings from './en/settings';
 import zh_settings from './zh/settings';
 import en_header from './en/header';
@@ -64,7 +64,7 @@ export const messages = {
     commands: en_commands,
     tools: en_tools,
     layout: en_layout,
-    mobile: en_mobile,
+    narrow: en_narrow,
     settings: en_settings,
     header: en_header,
     focus: en_focus,
@@ -88,7 +88,7 @@ export const messages = {
     commands: zh_commands,
     tools: zh_tools,
     layout: zh_layout,
-    mobile: zh_mobile,
+    narrow: zh_narrow,
     settings: zh_settings,
     header: zh_header,
     focus: zh_focus,

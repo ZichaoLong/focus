@@ -217,7 +217,7 @@ describe('bounded conversation inspection surface', () => {
     expect(zhTools.detail.viewFullSourceText).toBe('原始文本');
   });
 
-  it('exposes one responsive search entry through Prompt history on desktop and mobile', () => {
+  it('exposes one responsive search entry through Prompt history in wide and narrow layouts', () => {
     const toc = source('../src/components/chat/ConversationToc.vue');
     const pane = source('../src/components/chat/ConversationPane.vue');
     const app = source('../src/focus/FocusApp.vue');

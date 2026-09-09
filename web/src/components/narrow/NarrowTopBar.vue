@@ -1,5 +1,5 @@
-<!-- apps/kimi-web/src/components/mobile/MobileTopBar.vue -->
-<!-- Mobile title bar (50px): a 28px dark workspace square, a tappable middle -->
+<!-- apps/kimi-web/src/components/narrow/NarrowTopBar.vue -->
+<!-- Narrow-layout title bar (50px): a 28px dark workspace square, a tappable middle -->
 <!-- zone showing the mono `workspace / session ⌄` path with a status sub-line -->
 <!-- (● running · branch · N sessions), and a trailing sliders button. Tapping -->
 <!-- the middle opens the switcher sheet; the sliders open the settings sheet. -->
@@ -55,7 +55,7 @@ const chip = computed<string>(() => {
 const wsName = computed<string>(() => props.workspace?.name ?? t('workspace.noWorkspace'));
 
 const statusText = computed<string>(() =>
-  props.running ? t('mobile.running') : t('mobile.idle'),
+  props.running ? t('narrow.running') : t('narrow.idle'),
 );
 </script>
 
@@ -77,7 +77,7 @@ const statusText = computed<string>(() =>
     <button
       type="button"
       class="tb-mid"
-      :aria-label="t('mobile.openSwitcher')"
+      :aria-label="t('narrow.openSwitcher')"
       @click="emit('openSwitcher')"
     >
       <span class="tb-path">
@@ -92,13 +92,13 @@ const statusText = computed<string>(() =>
         <span class="rd" :class="{ on: running }" />
         <span>{{ statusText }}</span>
         <template v-if="branch"> · {{ branch }}</template>
-        <template v-if="sessionCount > 0"> · {{ t('mobile.sessionCount', { n: sessionCount }) }}</template>
+        <template v-if="sessionCount > 0"> · {{ t('narrow.sessionCount', { n: sessionCount }) }}</template>
       </span>
     </button>
 
     <IconButton
       size="lg"
-      :label="t('mobile.openSettings')"
+      :label="t('narrow.openSettings')"
       @click="emit('openSettings')"
     >
       <Icon name="sliders" size="lg" />

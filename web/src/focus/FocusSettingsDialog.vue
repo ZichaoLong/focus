@@ -7,6 +7,10 @@ import Select from '../components/ui/Select.vue';
 import Button from '../components/ui/Button.vue';
 import Banner from '../components/ui/Banner.vue';
 import Icon from '../components/ui/Icon.vue';
+import {
+  isComposerSendShortcut,
+  type ComposerSendShortcut,
+} from '../components/chat/composerSendShortcut';
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -20,6 +24,7 @@ const props = defineProps<{
   colorScheme: ColorScheme;
   turnWindowLimit: number;
   activityFaviconEnabled: boolean;
+  composerSendShortcut: ComposerSendShortcut;
   connection: string;
   approvalPolicy: string;
   approvalPolicies: string[];
@@ -44,6 +49,7 @@ const emit = defineEmits<{
   setColorScheme: [value: ColorScheme];
   setTurnWindowLimit: [value: number];
   setActivityFaviconEnabled: [value: boolean];
+  setComposerSendShortcut: [value: ComposerSendShortcut];
   setApprovalPolicy: [value: string];
   setReasoningEffort: [value: string];
   setPermissionsProfile: [value: string];
@@ -145,6 +151,10 @@ function setActivityFaviconEnabled(value: string): void {
   if (value === 'enabled') emit('setActivityFaviconEnabled', true);
   else if (value === 'disabled') emit('setActivityFaviconEnabled', false);
 }
+
+function setComposerSendShortcut(value: string): void {
+  if (isComposerSendShortcut(value)) emit('setComposerSendShortcut', value);
+}
 </script>
 
 <template>
@@ -185,6 +195,22 @@ function setActivityFaviconEnabled(value: string): void {
             <div class="settings-description">{{ t('focus.languageDescription') }}</div>
           </div>
           <LanguageSwitcher />
+        </section>
+        <section class="settings-row">
+          <div>
+            <div class="settings-label">{{ t('focus.composerSendShortcut') }}</div>
+            <div class="settings-description">{{ t('focus.composerSendShortcutDescription') }}</div>
+          </div>
+          <Select
+            class="settings-select composer-shortcut-select"
+            size="sm"
+            :model-value="composerSendShortcut"
+            @update:model-value="setComposerSendShortcut"
+          >
+            <option value="enter">{{ t('focus.composerSendShortcutEnter') }}</option>
+            <option value="modifier-enter">{{ t('focus.composerSendShortcutModifierEnter') }}</option>
+            <option value="button-only">{{ t('focus.composerSendShortcutButtonOnly') }}</option>
+          </Select>
         </section>
         <section class="settings-row">
           <div>
@@ -500,6 +526,7 @@ function setActivityFaviconEnabled(value: string): void {
   width: min(210px, 100%);
   flex: none;
 }
+.composer-shortcut-select { width: min(300px, 100%); }
 .next-turn-note {
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--color-accent-bd);

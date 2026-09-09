@@ -12,11 +12,10 @@ import StatusDot from '../ui/StatusDot.vue';
 const props = withDefaults(
   defineProps<{
     tools: ToolStackItem[];
-    mobile?: boolean;
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
   }>(),
-  { mobile: false, toolDiffPanel: false },
+  { toolDiffPanel: false },
 );
 
 const emit = defineEmits<{
@@ -76,7 +75,6 @@ function onHeadClick(): void {
           v-for="(item, si) in tools"
           :key="toolStackKey(item)"
           :tool="item.tool"
-          :mobile="mobile"
           :stack-position="toolStackPosition(si, tools.length)"
           :tool-diff-panel="toolDiffPanel"
           :tool-detail-available="toolDetailAvailable"

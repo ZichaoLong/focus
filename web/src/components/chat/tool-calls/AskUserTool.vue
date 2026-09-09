@@ -28,11 +28,10 @@ import ToolOutputBlock, { hasPresentedToolOutput } from './ToolOutputBlock.vue';
 const props = withDefaults(
   defineProps<{
     tool: ToolCall;
-    mobile?: boolean;
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
   }>(),
-  { mobile: false, stackPosition: 'single', toolDiffPanel: false },
+  { stackPosition: 'single', toolDiffPanel: false },
 );
 
 defineEmits<{

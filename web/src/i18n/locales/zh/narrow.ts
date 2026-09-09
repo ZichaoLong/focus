@@ -1,3 +1,4 @@
+// 由视口宽度驱动的窄布局文案；不代表设备类型识别。
 export default {
   openSwitcher: '切换会话 / 工作区',
   openSettings: '会话设置',

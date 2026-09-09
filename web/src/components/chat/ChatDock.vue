@@ -10,6 +10,7 @@ import type { FileItem } from './MentionMenu.vue';
 import type { AttachmentUploadController } from '../../composables/useAttachmentUpload';
 import Composer from './Composer.vue';
 import type { ComposerSubmission } from './composerSubmission';
+import type { ComposerSendShortcut } from './composerSendShortcut';
 import GoalStrip from './GoalStrip.vue';
 import QuestionCard from './QuestionCard.vue';
 import ApprovalCard from './ApprovalCard.vue';
@@ -67,7 +68,8 @@ const props = withDefaults(defineProps<{
   approvalBusy?: boolean;
   /** Whether this frontend may answer the currently visible interaction. */
   interactionEnabled?: boolean;
-  mobile?: boolean;
+  narrowViewport?: boolean;
+  sendShortcut?: ComposerSendShortcut;
   surfaceMode?: ComposerSurfaceMode;
   allowHide?: boolean;
   composerCapabilities?: Partial<ComposerCapabilities>;
@@ -182,7 +184,7 @@ defineExpose({
   <div
     class="chat-dock"
     :class="[
-      mobile ? 'align-mobile' : 'align-center',
+      narrowViewport ? 'align-narrow' : 'align-center',
       { 'composer-hidden': surfaceMode === 'hidden' && !pendingQuestion && !pendingApproval },
     ]"
     @click.stop
@@ -317,7 +319,8 @@ defineExpose({
       :starting="starting"
       :capabilities="composerCapabilities"
       :defer-submit-clear="deferSubmitClear"
-      :mobile="mobile"
+      :narrow-viewport="narrowViewport"
+      :send-shortcut="sendShortcut"
       :surface-mode="surfaceMode"
       :allow-hide="allowHide"
       :interaction-pending="!!pendingQuestion || !!pendingApproval"
@@ -359,7 +362,7 @@ defineExpose({
 }
 .chat-dock.align-center { margin-left: auto; margin-right: auto; }
 .chat-dock.align-left { margin-left: 0; margin-right: auto; }
-.chat-dock.align-mobile { max-width: none; }
+.chat-dock.align-narrow { max-width: none; }
 
 .dock-work-panel {
   position: absolute;
@@ -430,7 +433,7 @@ defineExpose({
     --dock-inline-left: max(12px, var(--safe-left));
     --dock-inline-right: max(12px, var(--safe-right));
   }
-  .chat-dock.align-mobile.composer-hidden {
+  .chat-dock.align-narrow.composer-hidden {
     padding-bottom: max(var(--space-3), var(--safe-bottom));
   }
   .dock-work-panel {
@@ -439,7 +442,7 @@ defineExpose({
   }
 }
 
-.chat-dock:not(.align-mobile) :deep(.composer) {
+.chat-dock:not(.align-narrow) :deep(.composer) {
   padding-bottom: 14px;
 }
 

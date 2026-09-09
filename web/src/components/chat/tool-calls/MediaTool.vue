@@ -4,7 +4,7 @@ import { computed } from 'vue';
 import type { ToolCall, ToolMedia } from '../../../types';
 import Tooltip from '../../ui/Tooltip.vue';
 
-const props = withDefaults(defineProps<{ tool: ToolCall; mobile?: boolean }>(), { mobile: false });
+const props = defineProps<{ tool: ToolCall }>();
 const emit = defineEmits<{ openMedia: [media: ToolMedia] }>();
 
 const media = computed(() => (props.tool.status === 'ok' ? props.tool.media : undefined));
@@ -34,7 +34,7 @@ function openMediaPreview(): void {
 </script>
 
 <template>
-  <div v-if="media" class="media-tool" :class="{ mob: mobile }">
+  <div v-if="media" class="media-tool">
     <Tooltip :text="media.path || mediaTitle">
       <div class="media-title">{{ mediaTitle }}</div>
     </Tooltip>

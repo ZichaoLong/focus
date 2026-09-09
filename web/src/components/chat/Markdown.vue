@@ -657,7 +657,7 @@ function copyDiff(code: string, idx: number): void {
 /* KaTeX math. Colour already inherits (--color-text) since KaTeX draws with
    currentColor, so the only skinning needed is layout: let a wide display
    formula scroll inside its own box instead of overflowing the chat column and
-   breaking the mobile layout. Inline math stays in the text flow. */
+   breaking a narrow layout. Inline math stays in the text flow. */
 .md :deep(.katex-display) {
   overflow-x: auto;
   overflow-y: hidden;

@@ -20,7 +20,7 @@ const props = defineProps<{
   items: ConversationTocItem[];
   /** Query currently owning the viewport middle. */
   activeTurnId: string | null;
-  mobile?: boolean;
+  narrowViewport?: boolean;
   /** Show the component-owned rail or compact trigger. The shared dialog stays
       available to an external trigger while these inline controls are hidden. */
   inlineVisible?: boolean;
@@ -74,12 +74,12 @@ function measure(): void {
 }
 
 // The outline is only useful once there is something to navigate, and it never
-// shows on mobile or while the session is still loading. `fits` is kept out of
+// shows in a narrow viewport or while the session is still loading. `fits` is kept out of
 // this computed so the nav stays mounted (and measurable) even when hidden;
 // clipping is applied via the `toc-clipped` class instead.
 const railVisible = computed(
   () => props.inlineVisible !== false
-    && !props.mobile
+    && !props.narrowViewport
     && !props.sessionLoading
     && (props.items.length > 1 || props.searchVisible === true),
 );
@@ -90,7 +90,7 @@ const dialogAvailable = computed(
 const compactVisible = computed(
   () => props.inlineVisible !== false
     && dialogAvailable.value
-    && (props.mobile || !fits.value),
+    && (props.narrowViewport || !fits.value),
 );
 
 function openCompactDialog(): void {
@@ -112,7 +112,7 @@ function openSearch(): void {
 }
 
 // The nav is rendered only while `railVisible` (v-if), so a mount while navRef is
-// still null (during sessionLoading, on mobile, or before a second user turn)
+// still null (during sessionLoading, in a narrow viewport, or before a second user turn)
 // would skip the ResizeObserver setup and leave `fits` at its default `true`.
 // Re-initialize whenever the nav is actually rendered so `fits` is measured
 // against the real layout instead.
@@ -230,7 +230,7 @@ onBeforeUnmount(() => {
   <Button
     v-if="compactVisible"
     class="toc-compact-trigger"
-    :class="{ 'is-mobile': mobile }"
+    :class="{ 'is-narrow': narrowViewport }"
     variant="secondary"
     size="sm"
     aria-haspopup="dialog"
@@ -249,7 +249,7 @@ onBeforeUnmount(() => {
     <Menu class="toc-compact-list" :aria-label="t('conversation.toc')">
       <MenuItem
         v-if="searchVisible"
-        :size="mobile ? 'lg' : 'md'"
+        :size="narrowViewport ? 'lg' : 'md'"
         @click="openSearch"
       >
         <Icon name="search" size="sm" />
@@ -259,7 +259,7 @@ onBeforeUnmount(() => {
         v-for="item in items"
         :key="item.id"
         :active="activeTurnId === item.id"
-        :size="mobile ? 'lg' : 'md'"
+        :size="narrowViewport ? 'lg' : 'md'"
         @click="selectItem(item.id)"
       >
         <span class="toc-compact-number">{{ item.no }}</span>
@@ -452,7 +452,7 @@ onBeforeUnmount(() => {
   right: var(--space-4);
   max-width: calc(100% - var(--space-8));
 }
-.toc-compact-trigger.is-mobile { top: var(--space-3); }
+.toc-compact-trigger.is-narrow { top: var(--space-3); }
 
 .toc-compact-list {
   width: 100%;

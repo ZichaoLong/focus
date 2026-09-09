@@ -23,6 +23,12 @@ upstream-derived file. `focus_owned_files` names the source files that have no
 Kimi counterpart, so a new source file cannot silently acquire ambiguous
 provenance.
 
+When a reviewed Focus refactor renames or moves a derived file away from its
+same-path Kimi counterpart, the obsolete derived path is removed and the new
+Focus path is classified explicitly in `focus_owned_files`. Git history retains
+the transformation while the manifest remains verifiable against same-path
+objects at the recorded import commit.
+
 Focus initially retained the imported Vue design system, responsive shell, rich
 Markdown renderer, diff, and diagnostic components. The kap-server transport,
 Kimi session semantics, product branding, provider management, and equal-writer

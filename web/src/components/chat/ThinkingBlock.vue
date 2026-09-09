@@ -10,11 +10,10 @@ import { computed, onMounted, ref, watch, nextTick } from 'vue';
 const props = withDefaults(
   defineProps<{
     text: string;
-    mobile?: boolean;
     streaming?: boolean;
     foldable?: boolean;
   }>(),
-  { mobile: false, streaming: false, foldable: true },
+  { streaming: false, foldable: true },
 );
 
 const emit = defineEmits<{
@@ -65,7 +64,7 @@ watch(
 </script>
 
 <template>
-  <div class="think" :class="{ mob: mobile }">
+  <div class="think">
     <!-- Foldable: live window above, last-paragraph teaser below; click opens
          the full text in the right-side panel -->
     <template v-if="isFoldable">
@@ -118,7 +117,7 @@ watch(
 
 .prev {
   color: var(--color-text-faint);
-  font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
+  font: var(--text-base)/var(--leading-normal) var(--font-ui);
   font-weight: 425;
   white-space: pre-wrap;
   word-break: break-word;
@@ -126,27 +125,14 @@ watch(
 }
 
 .tc {
-  font: var(--text-base)/var(--leading-relaxed) var(--font-ui);
+  font: var(--text-base)/var(--leading-normal) var(--font-ui);
   font-weight: 425;
-  color: var(--color-text-muted);
+  color: var(--color-text-faint);
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-  max-height: calc(var(--leading-relaxed) * 1em * 5);
+  max-height: calc(var(--leading-normal) * 1em * 5);
   overflow-y: auto;
 }
 
-/* ---- Mobile tweaks ---- */
-.mob {
-  margin: 0;
-}
-.mob .tc {
-  color: var(--color-text-faint);
-  line-height: var(--leading-normal);
-  max-height: calc(var(--leading-normal) * 1em * 5);
-}
-.mob .prev {
-  color: var(--color-text-faint);
-  line-height: var(--leading-normal);
-}
 </style>

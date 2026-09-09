@@ -106,7 +106,7 @@ export function shouldUseFocusDetailFullscreen(
     + FOCUS_DETAIL_CONVERSATION_RESERVE;
 }
 
-/** Cap a desktop panel after the caller proves the three columns can coexist. */
+/** Cap a wide-layout panel after the caller proves the three columns can coexist. */
 export function focusDetailPanelMaxWidth(
   viewportWidth: number,
   sidebarWidth: number,

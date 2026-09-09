@@ -38,9 +38,14 @@ explicitly. Only an attempt whose prepare found no exact active id selects
 `mode=start` and calls official `turn/start` once. One browser attempt therefore
 sends one turn-producing RPC and produces at most one upstream input effect.
 
-Web has one submit gesture. Enter and the send button enter the same synchronous
-boundary, while Shift+Enter inserts a newline. Ordinary prompts have no browser
-FIFO. One gesture produces one canonical mutation identity and one POST. Focus never
+Web has one submit-gesture entry. The send button always enters that synchronous
+boundary. A strictly validated browser-local preference may additionally choose
+unmodified Enter (the default), Ctrl/Command+Enter, or no keyboard chord as the
+keyboard gesture. Only an exact match submits; Shift+Enter, Alt+Enter, and every
+other unmatched Enter chord retain the textarea's native newline behavior. IME
+composition and an open slash/mention candidate selection take precedence over
+the send shortcut. Ordinary prompts have no browser FIFO. One gesture produces
+one canonical mutation identity and one POST. Focus never
 automatically resends an outcome-unknown prompt, never infers no effect from a
 missing transcript input, and never lets one unknown prompt block a new mutation on
 the same thread, another thread, or another surface.
