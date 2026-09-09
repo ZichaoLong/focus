@@ -37,6 +37,7 @@ export function useMentionMenu(deps: MentionMenuDeps) {
 
   // Debounce timer for the search.
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let searchGeneration = 0;
 
   /** Find the @token under the cursor in the current text value. Returns null if none. */
   function getMentionToken(): MentionToken | null {
@@ -55,24 +56,36 @@ export function useMentionMenu(deps: MentionMenuDeps) {
   }
 
   function update(): void {
+    const generation = ++searchGeneration;
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
     const mt = getMentionToken();
     const search = searchFiles();
     if (!mt || !search) {
       open.value = false;
+      items.value = [];
+      loading.value = false;
       return;
     }
     const query = mt.token;
-    if (timer !== null) clearTimeout(timer);
+    // Do not leave results for an older token selectable during the debounce.
+    // Opening the loading state now also keeps Enter/Tab in the mention owner
+    // instead of allowing a quick @query to cross into prompt submission.
+    open.value = true;
+    items.value = [];
+    active.value = 0;
+    loading.value = true;
     timer = setTimeout(async () => {
-      loading.value = true;
-      open.value = true;
-      active.value = 0;
+      timer = null;
       try {
-        items.value = await search(query);
+        const result = await search(query);
+        if (generation === searchGeneration) items.value = result;
       } catch {
-        items.value = [];
+        if (generation === searchGeneration) items.value = [];
       } finally {
-        loading.value = false;
+        if (generation === searchGeneration) loading.value = false;
       }
     }, 200);
   }

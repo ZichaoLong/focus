@@ -106,6 +106,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "createFocusHistoryNavigation",
                 ),
                 focus_capabilities.SourceReference(
+                    "web/src/focus/promptNavigationIntent.ts",
+                    "createPromptNavigationIntent",
+                ),
+                focus_capabilities.SourceReference(
                     "web/src/focus/client-state/browser-turn-window.ts",
                     "createBrowserTurnWindow",
                 ),

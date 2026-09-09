@@ -72,7 +72,7 @@ describe('Focus Composer input surface', () => {
     expect(composer).toContain('@click="emit(\'interrupt\')"');
   });
 
-  it('leaves unmatched Enter chords as native newlines and removes queue vocabulary', () => {
+  it('explicitly inserts modified unmatched Enter chords and removes queue vocabulary', () => {
     const pane = source('../src/components/chat/ConversationPane.vue');
     const composer = source('../src/components/chat/Composer.vue');
     const types = source('../src/types.ts');
@@ -80,6 +80,14 @@ describe('Focus Composer input surface', () => {
     const zh = source('../src/i18n/locales/zh/composer.ts');
 
     expect(composer).toContain('if (composerKeyRequestsSubmit(e, props.sendShortcut)) {');
+    expect(composer).toContain("if (e.key !== 'Enter') return;");
+    expect(composer).toContain('if (!e.altKey && !e.ctrlKey && !e.metaKey) return;');
+    expect(composer).toContain('text.value = insertComposerNewline(target);');
+    expect(composer).toContain('if (mentionOpen.value) {');
+    expect(composer).not.toContain('mentionOpen.value && !mentionLoading.value');
+    expect(composer).toContain(
+      'const item = mentionLoading.value ? undefined : mentionItems.value[mentionActive.value];',
+    );
     expect(composer).not.toContain('queued?: QueuedPromptView[]');
     expect(types).not.toContain('steer: boolean;');
     expect(pane.match(/:queued="queued"/gu)).toHaveLength(1);

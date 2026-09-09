@@ -10,6 +10,8 @@ describe('Focus targetless workspace draft surface', () => {
   it('defines the responsive shell as viewport width rather than device type', () => {
     const viewport = source('../src/composables/useNarrowViewport.ts');
     const app = source('../src/focus/FocusApp.vue');
+    const question = source('../src/components/chat/QuestionCard.vue');
+    const approval = source('../src/components/chat/ApprovalCard.vue');
 
     expect(viewport).toContain('export const NARROW_VIEWPORT_MAX_WIDTH = 640;');
     expect(viewport).toContain('window.matchMedia(NARROW_VIEWPORT_QUERY)');
@@ -17,6 +19,33 @@ describe('Focus targetless workspace draft surface', () => {
     expect(viewport).not.toMatch(/navigator|userAgent|touchPoints/u);
     expect(app).toContain('const isNarrowViewport = useNarrowViewport();');
     expect(app).not.toMatch(/\b(?:isMobile|useIsMobile|MobileTopBar|MobileSwitcherSheet)\b/u);
+    expect(question).toContain('NARROW VIEWPORT (≤640px)');
+    expect(approval).toContain('NARROW VIEWPORT (≤640px)');
+    expect(question).not.toContain('MOBILE (≤640px)');
+    expect(approval).not.toContain('MOBILE (≤640px)');
+  });
+
+  it('retains Kimi provenance across responsive-path renames', () => {
+    const manifest = JSON.parse(source('../provenance/kimi-web-files.json')) as {
+      format_version: number;
+      files: Record<string, string | null>;
+      upstream_path_overrides: Record<string, string>;
+      focus_owned_files: string[];
+    };
+    const expected = {
+      'src/components/narrow/NarrowSwitcherSheet.vue': 'src/components/mobile/MobileSwitcherSheet.vue',
+      'src/components/narrow/NarrowTopBar.vue': 'src/components/mobile/MobileTopBar.vue',
+      'src/composables/useNarrowViewport.ts': 'src/composables/useIsMobile.ts',
+      'src/i18n/locales/en/narrow.ts': 'src/i18n/locales/en/mobile.ts',
+      'src/i18n/locales/zh/narrow.ts': 'src/i18n/locales/zh/mobile.ts',
+    };
+
+    expect(manifest.format_version).toBe(2);
+    expect(manifest.upstream_path_overrides).toEqual(expected);
+    for (const localPath of Object.keys(expected)) {
+      expect(manifest.files[localPath]).toMatch(/^[0-9a-f]{64}$/u);
+      expect(manifest.focus_owned_files).not.toContain(localPath);
+    }
   });
 
   it('uses one responsive ConversationPane for wide and narrow empty composers', () => {

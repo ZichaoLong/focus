@@ -605,7 +605,7 @@ onUnmounted(() => document.removeEventListener('keydown', handleKeydown));
 .k { opacity: .75; }
 
 /* =========================================================================
-   MOBILE (≤640px): the card spans the full chat column, inner previews scroll
+   NARROW VIEWPORT (≤640px): the card spans the full chat column, inner previews scroll
    horizontally instead of overflowing the page, and the action buttons become a
    stack of ≥44px tall, easily-tappable targets.
    ========================================================================= */

@@ -81,6 +81,9 @@ The source facts are fixed as follows:
 
 Changing a registered Kimi-derived file requires updating and reviewing its local
 modification digest through the procedure in `web/UPSTREAM.md`.
+The inventory is keyed by the current local Focus path. When a derived file is
+moved or renamed, its original Kimi source path mapping remains explicit in the
+inventory; a local path change does not erase its source identity.
 `focus_owned_files` identifies source with no Kimi counterpart; adding or
 reclassifying a file requires explicit review and cannot be guessed by a script.
 Builds and releases continue to ship the applicable MIT, font, icon, and

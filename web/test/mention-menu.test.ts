@@ -10,6 +10,16 @@ interface MockTextarea {
   focus: () => void;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function setup(initialText = '', searchFiles?: (q: string) => Promise<FileItem[]>) {
   const textarea: MockTextarea = {
     value: initialText,
@@ -60,7 +70,9 @@ describe('useMentionMenu — update', () => {
     const searchFiles = vi.fn().mockResolvedValue([{ path: 'src/a.ts', name: 'a.ts' }]);
     const { mention } = setup('@a', searchFiles);
     mention.update();
-    expect(mention.open.value).toBe(false); // debounced, not yet
+    expect(mention.open.value).toBe(true);
+    expect(mention.loading.value).toBe(true);
+    expect(mention.items.value).toEqual([]);
     await vi.advanceTimersByTimeAsync(200);
     expect(searchFiles).toHaveBeenCalledWith('a');
     expect(mention.open.value).toBe(true);
@@ -76,6 +88,59 @@ describe('useMentionMenu — update', () => {
     await vi.advanceTimersByTimeAsync(200);
     expect(mention.items.value).toEqual([]);
     expect(mention.loading.value).toBe(false);
+  });
+
+  it('never publishes an older search while the latest token is pending', async () => {
+    const older = deferred<FileItem[]>();
+    const latest = deferred<FileItem[]>();
+    const searchFiles = vi.fn((query: string) => (
+      query === 'a' ? older.promise : latest.promise
+    ));
+    const { text, textarea, mention } = setup('@a', searchFiles);
+
+    mention.update();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(searchFiles).toHaveBeenCalledWith('a');
+
+    text.value = '@ab';
+    textarea.value = '@ab';
+    textarea.selectionStart = 3;
+    mention.update();
+    expect(mention.open.value).toBe(true);
+    expect(mention.loading.value).toBe(true);
+    expect(mention.items.value).toEqual([]);
+    await vi.advanceTimersByTimeAsync(200);
+    expect(searchFiles).toHaveBeenCalledWith('ab');
+
+    older.resolve([{ path: 'src/old.ts', name: 'old.ts' }]);
+    await Promise.resolve();
+    expect(mention.loading.value).toBe(true);
+    expect(mention.items.value).toEqual([]);
+
+    latest.resolve([{ path: 'src/latest.ts', name: 'latest.ts' }]);
+    await Promise.resolve();
+    expect(mention.loading.value).toBe(false);
+    expect(mention.items.value).toEqual([{ path: 'src/latest.ts', name: 'latest.ts' }]);
+  });
+
+  it('invalidates an in-flight search when the mention token disappears', async () => {
+    const pending = deferred<FileItem[]>();
+    const { text, textarea, mention } = setup('@a', () => pending.promise);
+
+    mention.update();
+    await vi.advanceTimersByTimeAsync(200);
+    text.value = 'plain';
+    textarea.value = 'plain';
+    textarea.selectionStart = 5;
+    mention.update();
+    expect(mention.open.value).toBe(false);
+    expect(mention.loading.value).toBe(false);
+
+    pending.resolve([{ path: 'src/stale.ts', name: 'stale.ts' }]);
+    await Promise.resolve();
+    expect(mention.open.value).toBe(false);
+    expect(mention.loading.value).toBe(false);
+    expect(mention.items.value).toEqual([]);
   });
 });
 

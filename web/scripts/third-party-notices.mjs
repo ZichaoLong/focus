@@ -120,7 +120,7 @@ function readJson(filePath) {
 function loadKimiUpstream() {
   const provenance = readJson(KIMI_PROVENANCE_PATH);
   const upstream = provenance?.upstream;
-  if (provenance?.format !== 'focus-kimi-web-provenance' || provenance?.format_version !== 1 || !upstream) {
+  if (provenance?.format !== 'focus-kimi-web-provenance' || provenance?.format_version !== 2 || !upstream) {
     throw new Error('web/provenance/kimi-web-files.json has an unsupported provenance format.');
   }
   for (const field of [

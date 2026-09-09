@@ -42,10 +42,15 @@ Web has one submit-gesture entry. The send button always enters that synchronous
 boundary. A strictly validated browser-local preference may additionally choose
 unmodified Enter (the default), Ctrl/Command+Enter, or no keyboard chord as the
 keyboard gesture. Only an exact match submits; Shift+Enter, Alt+Enter, and every
-other unmatched Enter chord retain the textarea's native newline behavior. IME
-composition and an open slash/mention candidate selection take precedence over
-the send shortcut. Ordinary prompts have no browser FIFO. One gesture produces
-one canonical mutation identity and one POST. Focus never
+other unmatched Enter chord retain textarea newline semantics. Plain Enter and
+Shift+Enter keep the textarea's native edit and undo path. The Composer explicitly
+inserts other unmatched modified chords rather than relying on whether the browser
+gives them a default edit, and retains them in native undo history when the browser
+supports that path.
+IME composition and open or loading slash/mention candidate selection take
+precedence over the send shortcut and explicit newline.
+Ordinary prompts have no browser FIFO. One gesture produces one canonical mutation
+identity and one POST. Focus never
 automatically resends an outcome-unknown prompt, never infers no effect from a
 missing transcript input, and never lets one unknown prompt block a new mutation on
 the same thread, another thread, or another surface.

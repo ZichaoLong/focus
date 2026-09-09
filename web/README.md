@@ -95,7 +95,8 @@ trusted HTTPS reverse-proxy contract. See
 
 See `UPSTREAM.md` for the imported kimi-web commit and the provenance, license,
 and notice rules. `provenance/kimi-web-files.json` records every Kimi-derived
-source file and reviewed local modification; run the explicit provenance check
+source file, reviewed local modification, and any explicit mapping from a moved
+local file to its original Kimi source path; run the explicit provenance check
 after changing declared derived code. It compares against the recorded import
 only and does not require Focus to track new Kimi commits, minimize the diff, or
 merge later Kimi features. The check is intentionally separate from the release

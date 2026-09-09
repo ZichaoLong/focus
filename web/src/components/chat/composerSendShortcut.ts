@@ -16,6 +16,21 @@ interface ComposerKeyEvent {
   readonly shiftKey: boolean;
 }
 
+interface ComposerTextareaEditTarget {
+  value: string;
+  selectionStart: number | null;
+  selectionEnd: number | null;
+  readonly ownerDocument?: {
+    execCommand?: (commandId: string, showUi: boolean, value: string) => boolean;
+  };
+  setRangeText(
+    replacement: string,
+    start: number,
+    end: number,
+    selectionMode?: SelectionMode,
+  ): void;
+}
+
 export function isComposerSendShortcut(value: unknown): value is ComposerSendShortcut {
   return typeof value === 'string'
     && COMPOSER_SEND_SHORTCUTS.some((shortcut) => shortcut === value);
@@ -30,6 +45,34 @@ export function composerKeyRequestsSubmit(
   if (shortcut === 'button-only') return false;
   if (shortcut === 'enter') return !event.ctrlKey && !event.metaKey;
   return event.ctrlKey !== event.metaKey;
+}
+
+/**
+ * Insert the newline promised for every unmatched Enter chord.
+ *
+ * Browsers do not consistently give modified Enter chords a native textarea
+ * edit (notably Alt+Enter and Ctrl/Command+Enter), so the Composer cannot
+ * delegate those chords to the user agent. The long-supported `insertText`
+ * command keeps the edit in browser undo history where available. The
+ * selection-safe `setRangeText` fallback still guarantees the newline on a
+ * browser that omits or rejects that legacy command.
+ */
+export function insertComposerNewline(target: ComposerTextareaEditTarget): string {
+  const execCommand = target.ownerDocument?.execCommand;
+  if (typeof execCommand === 'function') {
+    const before = target.value;
+    try {
+      const handled = execCommand.call(target.ownerDocument, 'insertText', false, '\n');
+      if (handled || target.value !== before) return target.value;
+    } catch {
+      // Fall through to the deterministic selection edit below.
+    }
+  }
+
+  const start = target.selectionStart ?? target.value.length;
+  const end = target.selectionEnd ?? start;
+  target.setRangeText('\n', Math.min(start, end), Math.max(start, end), 'end');
+  return target.value;
 }
 
 export function composerEnterKeyHint(shortcut: ComposerSendShortcut): 'enter' | 'send' {

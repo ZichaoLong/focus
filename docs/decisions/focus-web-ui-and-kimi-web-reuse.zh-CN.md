@@ -64,6 +64,8 @@ Focus-owned 演进不要求：
 - 发布 notices：[`web/THIRD_PARTY_NOTICES.md`](../../web/THIRD_PARTY_NOTICES.md)。
 
 修改已登记的 Kimi-derived 文件时，必须按 `web/UPSTREAM.md` 更新并审阅其本地修改摘要。
+清单以当前 Focus 本地路径为键；派生文件发生移动或重命名时，必须在清单中显式保留其原 Kimi
+源码路径映射，不能因本地路径变化而丢失来源身份。
 `focus_owned_files` 明确没有 Kimi 对应物的源码；新增或重新分类文件必须显式审阅，不能由脚本
 猜测。构建与发布必须继续携带适用的 MIT、字体、图标和依赖 notices。
 

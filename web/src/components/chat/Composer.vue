@@ -42,6 +42,7 @@ import {
   composerEnterKeyHint,
   composerKeyRequestsSubmit,
   DEFAULT_COMPOSER_SEND_SHORTCUT,
+  insertComposerNewline,
   type ComposerSendShortcut,
 } from './composerSendShortcut';
 
@@ -178,8 +179,8 @@ let submissionOwnerMounted = true;
 
 // ---------------------------------------------------------------------------
 // Expanded editor — a taller composing mode. The browser-local send shortcut
-// keeps the same meaning in both layouts; other Enter chords remain native
-// textarea newlines. It auto-collapses after a successful send.
+// keeps the same meaning in both layouts; unmatched Enter chords retain
+// textarea newline semantics. It auto-collapses after a successful send.
 // ---------------------------------------------------------------------------
 const expanded = computed(() => props.surfaceMode === 'expanded');
 
@@ -538,21 +539,27 @@ function handleKeydown(e: KeyboardEvent): void {
     }
   }
 
-  // Mention menu navigation
-  if (mentionOpen.value && !mentionLoading.value) {
+  // Mention menu navigation. While an async search is still loading, consume
+  // its navigation keys without selecting stale results or leaking Enter into
+  // prompt submission.
+  if (mentionOpen.value) {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      mentionActive.value = (mentionActive.value + 1) % Math.max(1, mentionItems.value.length);
+      if (!mentionLoading.value) {
+        mentionActive.value = (mentionActive.value + 1) % Math.max(1, mentionItems.value.length);
+      }
       return;
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      mentionActive.value = (mentionActive.value - 1 + Math.max(1, mentionItems.value.length)) % Math.max(1, mentionItems.value.length);
+      if (!mentionLoading.value) {
+        mentionActive.value = (mentionActive.value - 1 + Math.max(1, mentionItems.value.length)) % Math.max(1, mentionItems.value.length);
+      }
       return;
     }
     if (e.key === 'Enter' || e.key === 'Tab') {
       e.preventDefault();
-      const item = mentionItems.value[mentionActive.value];
+      const item = mentionLoading.value ? undefined : mentionItems.value[mentionActive.value];
       if (item) selectMentionItem(item);
       return;
     }
@@ -596,7 +603,29 @@ function handleKeydown(e: KeyboardEvent): void {
   if (composerKeyRequestsSubmit(e, props.sendShortcut)) {
     e.preventDefault();
     handleSubmit();
+    return;
   }
+
+  if (e.key !== 'Enter') return;
+
+  // Keep ordinary Enter and Shift+Enter on the native textarea editing path so
+  // the browser owns its input and undo history. Modified Enter chords are not
+  // consistently edits across browsers, so guarantee their promised newline.
+  if (!e.altKey && !e.ctrlKey && !e.metaKey) return;
+  e.preventDefault();
+  const target = e.currentTarget as HTMLTextAreaElement;
+  // `execCommand('insertText')` emits a synchronous input event in browsers
+  // that support it, while the setRangeText fallback does not. Observe that
+  // event so the fallback runs the Composer input bookkeeping exactly once.
+  let inputEventHandled = false;
+  const markInputEventHandled = () => { inputEventHandled = true; };
+  target.addEventListener('input', markInputEventHandled);
+  try {
+    text.value = insertComposerNewline(target);
+  } finally {
+    target.removeEventListener('input', markInputEventHandled);
+  }
+  if (!inputEventHandled) handleInput();
 }
 
 // ---------------------------------------------------------------------------

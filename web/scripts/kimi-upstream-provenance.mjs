@@ -37,9 +37,17 @@ function readJson(filePath) {
   }
 }
 
-function assertRelativePath(value, label) {
+export function assertRelativePath(value, label) {
   if (typeof value !== 'string' || !value) fail(`${label} must be a non-empty POSIX-relative path.`);
-  if (value.includes('\\') || path.posix.normalize(value) !== value || value === '.' || value.startsWith('../') || path.posix.isAbsolute(value)) {
+  if (
+    value.includes('\\')
+    || /[\u0000-\u001f\u007f]/u.test(value)
+    || path.posix.normalize(value) !== value
+    || value === '.'
+    || value === '..'
+    || value.startsWith('../')
+    || path.posix.isAbsolute(value)
+  ) {
     fail(`${label} is not a safe POSIX-relative path: ${JSON.stringify(value)}.`);
   }
   return value;
@@ -98,8 +106,16 @@ function assertOnlyKeys(value, allowed, label) {
 
 function loadManifest() {
   const manifest = readJson(MANIFEST_PATH);
-  assertOnlyKeys(manifest, new Set(['format', 'format_version', 'upstream', 'scope', 'files', 'focus_owned_files']), 'Provenance manifest');
-  if (manifest.format !== 'focus-kimi-web-provenance' || manifest.format_version !== 1) {
+  assertOnlyKeys(manifest, new Set([
+    'format',
+    'format_version',
+    'upstream',
+    'scope',
+    'files',
+    'upstream_path_overrides',
+    'focus_owned_files',
+  ]), 'Provenance manifest');
+  if (manifest.format !== 'focus-kimi-web-provenance' || manifest.format_version !== 2) {
     fail('Unsupported Kimi provenance manifest format. Update the guard together with the manifest format.');
   }
 
@@ -126,15 +142,49 @@ function loadManifest() {
   if (!manifest.files || typeof manifest.files !== 'object' || Array.isArray(manifest.files)) {
     fail('Manifest files must be a non-empty object mapping a local path to null or a Focus SHA-256 digest.');
   }
-  const files = Object.entries(manifest.files).map(([recordPath, focusSha256]) => {
+  const fileRecords = Object.entries(manifest.files).map(([recordPath, focusSha256]) => {
     const safePath = assertRelativePath(recordPath, 'Manifest files path');
     if (focusSha256 !== null && (typeof focusSha256 !== 'string' || !HEX_SHA256.test(focusSha256))) {
       fail(`Manifest files[${JSON.stringify(recordPath)}] must be null or a SHA-256 digest.`);
     }
     return { path: safePath, focus_sha256: focusSha256 || undefined };
   });
-  if (files.length === 0) fail('Manifest files must not be empty.');
-  assertSortedUnique(files.map((record) => record.path), 'Manifest files paths');
+  if (fileRecords.length === 0) fail('Manifest files must not be empty.');
+  assertSortedUnique(fileRecords.map((record) => record.path), 'Manifest files paths');
+
+  if (!manifest.upstream_path_overrides
+      || typeof manifest.upstream_path_overrides !== 'object'
+      || Array.isArray(manifest.upstream_path_overrides)) {
+    fail('Manifest upstream_path_overrides must be an object mapping moved local paths to their Kimi source paths.');
+  }
+  const upstreamPathOverrides = Object.entries(manifest.upstream_path_overrides).map(
+    ([localPath, upstreamPath]) => ({
+      local_path: assertRelativePath(localPath, 'Manifest upstream_path_overrides path'),
+      upstream_path: assertRelativePath(upstreamPath, `Manifest upstream_path_overrides[${JSON.stringify(localPath)}]`),
+    }),
+  );
+  assertSortedUnique(
+    upstreamPathOverrides.map((record) => record.local_path),
+    'Manifest upstream_path_overrides paths',
+  );
+  const filePaths = new Set(fileRecords.map((record) => record.path));
+  for (const override of upstreamPathOverrides) {
+    if (!filePaths.has(override.local_path)) {
+      fail(`Manifest upstream_path_overrides contains a non-derived local path: ${override.local_path}.`);
+    }
+    if (override.local_path === override.upstream_path) {
+      fail(`Manifest upstream_path_overrides must omit same-path entry: ${override.local_path}.`);
+    }
+  }
+  const upstreamPathByLocal = new Map(
+    upstreamPathOverrides.map((record) => [record.local_path, record.upstream_path]),
+  );
+  const files = fileRecords.map((record) => ({
+    ...record,
+    upstream_path: upstreamPathByLocal.get(record.path) ?? record.path,
+  }));
+  const upstreamPaths = files.map((record) => record.upstream_path).sort();
+  assertSortedUnique(upstreamPaths, 'Manifest resolved Kimi source paths');
 
   if (!Array.isArray(manifest.focus_owned_files)) fail('Manifest focus_owned_files must be an array.');
   const focusOwnedFiles = manifest.focus_owned_files.map((entry, index) => assertRelativePath(entry, `Manifest focus_owned_files[${index}]`));
@@ -159,7 +209,7 @@ function loadManifest() {
     fail(`Kimi provenance inventory does not exactly cover its source scope (${details}).`);
   }
 
-  return { manifest, upstream, files, focusOwnedFiles };
+  return { manifest, upstream, files, upstreamPathOverrides, focusOwnedFiles };
 }
 
 function git(repository, args, label) {
@@ -183,8 +233,32 @@ function gitText(repository, args, label) {
   return git(repository, args, label).toString('utf8').trim();
 }
 
-function sourceFileSpec(upstream, relativePath) {
-  return `${upstream.imported_commit}:${upstream.source_root}/${relativePath}`;
+export function readUpstreamRegularFile(upstream, repository, relativePath, label) {
+  const safeRelativePath = assertRelativePath(relativePath, `${label} path`);
+  const sourcePath = path.posix.join(upstream.source_root, safeRelativePath);
+  const listing = git(
+    repository,
+    ['ls-tree', '-z', upstream.imported_commit, '--', sourcePath],
+    `Cannot inspect ${label}`,
+  ).toString('utf8');
+  const entries = listing.split('\0').filter(Boolean);
+  if (entries.length !== 1) {
+    fail(`${label} is missing or ambiguous at ${upstream.imported_commit}:${sourcePath}.`);
+  }
+  const entry = entries[0];
+  const separator = entry.indexOf('\t');
+  const metadata = separator >= 0 ? entry.slice(0, separator).split(' ') : [];
+  const listedPath = separator >= 0 ? entry.slice(separator + 1) : '';
+  const [mode, objectType, objectId] = metadata;
+  if (
+    listedPath !== sourcePath
+    || objectType !== 'blob'
+    || (mode !== '100644' && mode !== '100755')
+    || !objectId
+  ) {
+    fail(`${label} is not a regular Git file at ${upstream.imported_commit}:${sourcePath}.`);
+  }
+  return git(repository, ['cat-file', 'blob', objectId], `Cannot read ${label}`);
 }
 
 function assertUpstreamCheckout(upstream, repository) {
@@ -197,7 +271,12 @@ function assertUpstreamCheckout(upstream, repository) {
     fail(`Kimi checkout resolved ${upstream.imported_commit} to unexpected object ${resolved}.`);
   }
 
-  const packageBytes = git(repository, ['show', sourceFileSpec(upstream, 'package.json')], 'Cannot read Kimi kimi-web package.json');
+  const packageBytes = readUpstreamRegularFile(
+    upstream,
+    repository,
+    'package.json',
+    'Kimi kimi-web package.json',
+  );
   let upstreamPackage;
   try {
     upstreamPackage = JSON.parse(packageBytes.toString('utf8'));
@@ -221,7 +300,12 @@ function verify(manifestData, repository) {
   let modifiedCount = 0;
   for (const record of files) {
     const local = readRegularFile(WEB_ROOT, record.path, 'Kimi-derived Focus file');
-    const source = git(repository, ['show', sourceFileSpec(upstream, record.path)], `Cannot read recorded Kimi source for ${record.path}`);
+    const source = readUpstreamRegularFile(
+      upstream,
+      repository,
+      record.upstream_path,
+      `Recorded Kimi source ${record.upstream_path} for ${record.path}`,
+    );
     if (record.focus_sha256) {
       modifiedCount += 1;
       if (sha256(local) !== record.focus_sha256) {
@@ -244,11 +328,16 @@ function verify(manifestData, repository) {
 }
 
 function canonicalManifest(manifestData, repository) {
-  const { manifest, upstream, files, focusOwnedFiles } = manifestData;
+  const { manifest, upstream, files, upstreamPathOverrides, focusOwnedFiles } = manifestData;
   assertUpstreamCheckout(upstream, repository);
   const refreshedFiles = files.map((record) => {
     const local = readRegularFile(WEB_ROOT, record.path, 'Kimi-derived Focus file');
-    const source = git(repository, ['show', sourceFileSpec(upstream, record.path)], `Cannot read recorded Kimi source for ${record.path}`);
+    const source = readUpstreamRegularFile(
+      upstream,
+      repository,
+      record.upstream_path,
+      `Recorded Kimi source ${record.upstream_path} for ${record.path}`,
+    );
     return [record.path, local.equals(source) ? null : sha256(local)];
   });
   return {
@@ -257,6 +346,9 @@ function canonicalManifest(manifestData, repository) {
     upstream: manifest.upstream,
     scope: manifest.scope,
     files: Object.fromEntries(refreshedFiles),
+    upstream_path_overrides: Object.fromEntries(
+      upstreamPathOverrides.map((record) => [record.local_path, record.upstream_path]),
+    ),
     focus_owned_files: focusOwnedFiles,
   };
 }
@@ -268,7 +360,7 @@ function usage() {
     '  node scripts/kimi-upstream-provenance.mjs --refresh --upstream /path/to/kimi-code',
     '',
     '--verify requires the recorded Git commit and compares every listed source file.',
-    '--refresh updates only recorded Focus-modification digests; it never adds paths or changes the import commit.',
+    '--refresh updates only recorded Focus-modification digests; it never adds paths, path overrides, or changes the import commit.',
   ].join('\n');
 }
 

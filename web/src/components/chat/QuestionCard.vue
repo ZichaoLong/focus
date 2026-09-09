@@ -649,7 +649,7 @@ onUnmounted(() => {
 }
 
 /* =========================================================================
-   MOBILE (≤640px): bigger option taps, comfortable nav, and full-width footer
+   NARROW VIEWPORT (≤640px): bigger option taps, comfortable nav, and full-width footer
    buttons that are ≥44px tall so Submit/Dismiss are easy to hit. The card is
    already full-width inside ConversationPane; we only resize controls.
    ========================================================================= */

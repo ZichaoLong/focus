@@ -33,7 +33,10 @@ Composer 的原输入，且不自动改投 B 或 fallback `turn/start`。B 可�
 Web 只有一个 submit gesture 入口。发送按钮始终进入该同步入口；严格校验的 browser-local
 preference 只可把无修饰 Enter（默认）、Ctrl/⌘+Enter，或任何键盘组合均不发送三者之一设为键盘
 gesture。只有精确匹配的组合才发送；Shift+Enter、Alt+Enter 与其他不匹配的 Enter 组合保留
-textarea 原生换行行为。输入法合成以及已打开的 slash / mention 候选选择先于发送快捷键处理。
+textarea 换行语义。普通 Enter 与 Shift+Enter 使用 textarea 原生编辑/撤销路径；其他未匹配的
+修饰键组合由 Composer 显式插入，不能依赖浏览器是否提供默认编辑行为，并在浏览器支持时保留在
+原生撤销历史中。
+输入法合成以及已打开或正在加载的 slash / mention 候选选择先于发送快捷键和显式换行处理。
 普通 prompt 不建立 browser FIFO。每次 gesture 只产生一个 canonical mutation identity 和一个 POST。
 Focus 不自动重发 outcome unknown，不从 transcript 中缺少 input 推断 no-effect，也不让一个 unknown
 prompt 阻塞同 thread 的新 mutation、其他 thread 或其他 surface。

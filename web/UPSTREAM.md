@@ -16,18 +16,15 @@ kimi-web source only; it does not replace notices for browser dependencies
 that the Focus bundle distributes.
 
 `provenance/kimi-web-files.json` is the canonical, machine-readable inventory
-of every copied Kimi file in Focus Web's declared source scope. Each file is
-relative to `apps/kimi-web` at the commit above: a `null` value is a byte-for-
-byte copy; a SHA-256 value records the reviewed Focus modification of that
-upstream-derived file. `focus_owned_files` names the source files that have no
-Kimi counterpart, so a new source file cannot silently acquire ambiguous
-provenance.
-
-When a reviewed Focus refactor renames or moves a derived file away from its
-same-path Kimi counterpart, the obsolete derived path is removed and the new
-Focus path is classified explicitly in `focus_owned_files`. Git history retains
-the transformation while the manifest remains verifiable against same-path
-objects at the recorded import commit.
+of every copied Kimi file in Focus Web's declared source scope. `files` is keyed
+by the current local Focus path: a `null` value is a byte-for-byte copy, while a
+SHA-256 value records the reviewed Focus modification of that upstream-derived
+file. The upstream source defaults to the same relative path under
+`apps/kimi-web` at the commit above. When a reviewed Focus refactor moves or
+renames a derived file, `upstream_path_overrides` maps its current local path to
+the original Kimi source path. `focus_owned_files` is reserved for source files
+that have no Kimi counterpart, so neither a new file nor a local path migration
+can silently acquire ambiguous provenance.
 
 Focus initially retained the imported Vue design system, responsive shell, rich
 Markdown renderer, diff, and diagnostic components. The kap-server transport,
@@ -53,9 +50,10 @@ npm run check:kimi-provenance -- --upstream /path/to/kimi-code
 
 After intentionally editing an upstream-derived file, run the explicit manifest
 update command with the same checkout. It updates only the digest for already-listed
-Kimi-derived files. It never adds a source path, reclassifies a Focus-owned
-file, or changes the imported commit; make those changes deliberately in the
-manifest and this document, then review the resulting diff:
+Kimi-derived files. It never adds a local path, creates or changes an upstream
+path override, reclassifies a Focus-owned file, or changes the imported commit;
+make those changes deliberately in the manifest and this document, then review
+the resulting diff:
 
 ```bash
 npm run sync:kimi-provenance -- --upstream /path/to/kimi-code
