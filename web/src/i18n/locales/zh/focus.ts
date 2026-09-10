@@ -118,7 +118,6 @@ export default {
   language: '语言',
   languageDescription: '控制导入的对话界面语言。',
   composerSendShortcut: '消息发送方式',
-  composerSendShortcutDescription: '只有选中的快捷键会发送；其他 Enter 组合用于换行，Alt+Enter 永不发送。此设置仅保存在当前浏览器。',
   composerSendShortcutEnter: 'Enter 发送，Shift+Enter 换行',
   composerSendShortcutModifierEnter: 'Ctrl/⌘+Enter 发送，Enter 换行',
   composerSendShortcutButtonOnly: '仅点击发送按钮，Enter 换行',

@@ -176,5 +176,6 @@ describe('Focus Composer send shortcut', () => {
     expect(composer).toContain(':enterkeyhint="enterKeyHint"');
     expect(composer).toContain('@click="handleSubmit()"');
     expect(dialog.match(/<option value="(?:enter|modifier-enter|button-only)">/gu)).toHaveLength(3);
+    expect(dialog).not.toContain('composerSendShortcutDescription');
   });
 });

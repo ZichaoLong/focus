@@ -199,7 +199,6 @@ function setComposerSendShortcut(value: string): void {
         <section class="settings-row">
           <div>
             <div class="settings-label">{{ t('focus.composerSendShortcut') }}</div>
-            <div class="settings-description">{{ t('focus.composerSendShortcutDescription') }}</div>
           </div>
           <Select
             class="settings-select composer-shortcut-select"

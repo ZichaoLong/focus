@@ -118,7 +118,6 @@ export default {
   language: 'Language',
   languageDescription: 'Controls the imported conversation interface.',
   composerSendShortcut: 'Message sending',
-  composerSendShortcutDescription: 'Only the selected shortcut sends. Other Enter combinations add a line; Alt+Enter never sends. This setting is stored only in this browser.',
   composerSendShortcutEnter: 'Enter sends, Shift+Enter adds a line',
   composerSendShortcutModifierEnter: 'Ctrl/⌘+Enter sends, Enter adds a line',
   composerSendShortcutButtonOnly: 'Send button only, Enter adds a line',
