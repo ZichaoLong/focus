@@ -209,6 +209,23 @@ guards and may not retain parallel key or enum inventories.
   `ThreadSpawn` child may likewise clean the current selection only under an
   exact-current document/backend settlement. A late rejection cannot clean the
   replacement target.
+- An app-server `thread/tokenUsage/updated` replay sent after a successful cold
+  resume response may be handled before Focus runs the corresponding RuntimeLoop
+  settlement. Only a process-local slot prepared for the exact Web cold-resume
+  attempt, thread, and connection generation may retain a valid replay in this
+  window. There is one bounded slot per thread, one attempt retains only its
+  latest snapshot, a replacement attempt atomically replaces its predecessor,
+  and an old receipt can neither promote nor discard its successor. Staging does
+  not confirm runtime interest or admit any other notification. A known resume
+  first commits runtime interest through `PendingThreadResume` and only then
+  best-effort promotes the replay into `WebThreadReadModel`. Failure of slot
+  begin, staging, promotion, or discard makes context usage temporarily
+  unavailable only. It never waits for a replay, sends an additional RPC,
+  delays or rejects resume, triggers compensation, or reclassifies an
+  acknowledged resume. Known failure, outcome unknown, attempt replacement,
+  connection replacement/disconnect, and backend reset discard the applicable
+  temporary slot. The slot is not persisted or automatically retried and gains
+  no subscription, lifecycle, or replay authority.
 - The prepared service-ingress receipt remains a shutdown barrier across
   RuntimeLoop prepare, document-lock release, the external worker, and final
   settlement. Handler cancellation, executor-admission failure, or another

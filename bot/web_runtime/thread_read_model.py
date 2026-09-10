@@ -62,6 +62,22 @@ class WebThreadReadObservationReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class WebTokenUsageReplayReceipt:
+    """Exact authority to promote one cold-resume token-usage replay."""
+
+    thread_id: str
+    connection_generation: int
+    _authority_token: object = field(repr=False, compare=False)
+    _attempt_token: object = field(repr=False, compare=False)
+
+
+@dataclass(slots=True)
+class _PendingWebTokenUsageReplay:
+    receipt: WebTokenUsageReplayReceipt
+    token_usage: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedWebThreadTurns:
     """Detached bounded turns whose cache ownership can move into RuntimeLoop.
 
@@ -92,9 +108,14 @@ class WebThreadReadModel:
         self._turns_by_thread: dict[str, dict[str, dict[str, Any]]] = {}
         self._cwd_by_thread: dict[str, str] = {}
         self._token_usage_by_thread: dict[str, dict[str, Any]] = {}
+        self._pending_token_usage_replay_by_thread: dict[
+            str,
+            _PendingWebTokenUsageReplay,
+        ] = {}
         self._observation_revision_by_thread: dict[str, int] = {}
         self._next_observation_revision = 0
         self._prepared_turns_token = object()
+        self._token_usage_replay_authority_token = object()
 
     def capture_observation(
         self,
@@ -204,6 +225,72 @@ class WebThreadReadModel:
         usage = self._token_usage_by_thread.get(normalized_thread_id)
         return copy.deepcopy(usage) if usage is not None else None, available
 
+    def begin_token_usage_replay(
+        self,
+        thread_id: str,
+        *,
+        connection_generation: int,
+    ) -> WebTokenUsageReplayReceipt:
+        """Open one exact, bounded slot before a Web cold-resume is sent.
+
+        A successor atomically replaces any abandoned predecessor.  Receipt
+        identity prevents the predecessor's later promotion or cleanup from
+        touching the successor slot.
+        """
+
+        normalized_thread_id = self._thread_id(thread_id)
+        if type(connection_generation) is not int or connection_generation <= 0:
+            raise ValueError("connection_generation must be a positive integer")
+        receipt = WebTokenUsageReplayReceipt(
+            thread_id=normalized_thread_id,
+            connection_generation=connection_generation,
+            _authority_token=self._token_usage_replay_authority_token,
+            _attempt_token=object(),
+        )
+        self._pending_token_usage_replay_by_thread[normalized_thread_id] = (
+            _PendingWebTokenUsageReplay(receipt=receipt)
+        )
+        return receipt
+
+    def stage_token_usage_replay(
+        self,
+        method: str,
+        params: dict[str, Any],
+    ) -> bool:
+        """Retain only the latest valid usage replay for an in-flight resume."""
+
+        if str(method or "").strip() != "thread/tokenUsage/updated":
+            return False
+        thread_id = str(params.get("threadId", "") or "").strip()
+        token_usage = params.get("tokenUsage")
+        if not thread_id or not isinstance(token_usage, dict):
+            return False
+        pending = self._pending_token_usage_replay_by_thread.get(thread_id)
+        if pending is None:
+            return False
+        pending.token_usage = copy.deepcopy(token_usage)
+        return True
+
+    def promote_token_usage_replay(
+        self,
+        receipt: WebTokenUsageReplayReceipt,
+    ) -> bool:
+        """Consume and admit one exact replay after resume interest commits."""
+
+        pending = self._take_exact_token_usage_replay(receipt)
+        if pending is None or pending.token_usage is None:
+            return False
+        self._token_usage_by_thread[receipt.thread_id] = pending.token_usage
+        return True
+
+    def discard_token_usage_replay(
+        self,
+        receipt: WebTokenUsageReplayReceipt,
+    ) -> bool:
+        """Discard only the exact attempt named by ``receipt``."""
+
+        return self._take_exact_token_usage_replay(receipt) is not None
+
     def cwd(self, thread_id: str) -> str:
         return self._cwd_by_thread.get(self._thread_id(thread_id), "")
 
@@ -296,6 +383,7 @@ class WebThreadReadModel:
         normalized_thread_id = self._thread_id(thread_id)
         self._advance_observation(normalized_thread_id)
         self._turns_by_thread.pop(normalized_thread_id, None)
+        self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
 
     def forget_closed_thread(self, thread_id: str) -> None:
         """Apply the existing thread/closed cache contract.
@@ -308,6 +396,7 @@ class WebThreadReadModel:
         self._advance_observation(normalized_thread_id)
         self._turns_by_thread.pop(normalized_thread_id, None)
         self._cwd_by_thread.pop(normalized_thread_id, None)
+        self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
 
     def forget_thread(self, thread_id: str) -> None:
         normalized_thread_id = self._thread_id(thread_id)
@@ -315,6 +404,7 @@ class WebThreadReadModel:
         self._turns_by_thread.pop(normalized_thread_id, None)
         self._cwd_by_thread.pop(normalized_thread_id, None)
         self._token_usage_by_thread.pop(normalized_thread_id, None)
+        self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
 
     def backend_disconnected(self) -> None:
         """Drop connection-epoch facts while retaining authoritative cwd hints."""
@@ -322,11 +412,13 @@ class WebThreadReadModel:
         for thread_id in tuple(
             set(self._turns_by_thread)
             | set(self._token_usage_by_thread)
+            | set(self._pending_token_usage_replay_by_thread)
             | set(self._observation_revision_by_thread)
         ):
             self._advance_observation(thread_id)
         self._turns_by_thread.clear()
         self._token_usage_by_thread.clear()
+        self._pending_token_usage_replay_by_thread.clear()
 
     def apply_notification(
         self,
@@ -1129,6 +1221,23 @@ class WebThreadReadModel:
         if not normalized:
             raise ValueError("Web thread read model requires a thread id.")
         return normalized
+
+    def _take_exact_token_usage_replay(
+        self,
+        receipt: WebTokenUsageReplayReceipt,
+    ) -> _PendingWebTokenUsageReplay | None:
+        if not isinstance(receipt, WebTokenUsageReplayReceipt):
+            raise TypeError("Web token-usage replay receipt is required")
+        if receipt._authority_token is not self._token_usage_replay_authority_token:
+            raise ValueError("Web token-usage replay receipt belongs to another owner")
+        pending = self._pending_token_usage_replay_by_thread.get(receipt.thread_id)
+        if (
+            pending is None
+            or pending.receipt._attempt_token is not receipt._attempt_token
+        ):
+            return None
+        self._pending_token_usage_replay_by_thread.pop(receipt.thread_id, None)
+        return pending
 
     def _advance_observation(self, thread_id: str) -> int:
         self._next_observation_revision += 1

@@ -807,6 +807,56 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
             ["thread/compacted", "thread/archived", "error", "thread/started"],
         )
 
+    def test_unmanaged_token_usage_notification_stages_cold_resume_replay(
+        self,
+    ) -> None:
+        coordinator, owners, _callbacks = self._build()
+        owners.runtime_interest.has_managed_interest.return_value = False
+        params = {
+            "threadId": "root-1",
+            "tokenUsage": {"last": {"totalTokens": 12}},
+        }
+
+        coordinator.handle_notification("thread/tokenUsage/updated", params)
+
+        owners.read_model.observe_notification.assert_called_once_with("root-1")
+        owners.read_model.apply_notification.assert_not_called()
+        owners.read_model.stage_token_usage_replay.assert_called_once_with(
+            "thread/tokenUsage/updated",
+            params,
+        )
+
+    def test_token_usage_replay_stage_failure_keeps_later_notification_stages(
+        self,
+    ) -> None:
+        coordinator, owners, _callbacks = self._build()
+        owners.runtime_interest.has_managed_interest.return_value = False
+        owners.read_model.stage_token_usage_replay.side_effect = RuntimeError(
+            "staging unavailable"
+        )
+        owners.operations.has_unknown_mutation.return_value = True
+        turns = ({"id": "turn-1", "status": "completed", "items": []},)
+        owners.read_model.turns.return_value = turns
+        params = {
+            "threadId": "root-1",
+            "tokenUsage": {"last": {"totalTokens": 12}},
+        }
+
+        with self.assertLogs(
+            "bot.web_runtime.event_coordinator",
+            level="ERROR",
+        ):
+            coordinator.handle_notification("thread/tokenUsage/updated", params)
+
+        owners.operations.reconcile_unknown_from_turns.assert_called_once_with(
+            "root-1",
+            list(turns),
+        )
+        reconcile_prompts = (
+            owners.prompt_results.reconcile_prompt_results_from_turns
+        )
+        reconcile_prompts.assert_called_once_with("root-1", list(turns))
+
     def test_error_notice_follows_existing_thread_invalidation(self) -> None:
         coordinator, owners, callbacks = self._build()
         owners.runtime_interest.has_managed_interest.return_value = False

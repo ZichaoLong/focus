@@ -75,6 +75,7 @@ from bot.web_runtime.selection_coordinator import (
 )
 from bot.web_runtime.thread_read_model import (
     PreparedWebThreadTurns,
+    WebTokenUsageReplayReceipt,
     WebThreadReadModel,
     WebThreadReadObservationReceipt,
 )
@@ -175,6 +176,12 @@ class WebThreadOpenEffectPreparation:
 
 
 @dataclass(frozen=True, slots=True)
+class _PreparedWebThreadResume:
+    resume: PreparedThreadResumePage
+    token_usage_replay: WebTokenUsageReplayReceipt | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class WebThreadOpenEffect:
     page: ThreadTurnsPage | ThreadResumePage | None = None
     error: Exception | None = None
@@ -186,6 +193,7 @@ class WebThreadOpenEffect:
     interaction_lease_error: Exception | None = None
     normalized_cwd: str = ""
     resume: PreparedThreadResumePage | None = None
+    token_usage_replay: WebTokenUsageReplayReceipt | None = None
     profile: WebWorkspaceProfileSnapshot | None = None
     autonomous_admission: WebAutonomousTurnReceipt | None = None
     fatal_error: BaseException | None = None
@@ -761,7 +769,7 @@ class WebThreadOpenCoordinator:
                     client_id=initial.client_id,
                     root_thread_id=initial.thread_id,
                 )
-            resume = self._runtime_call(
+            prepared_resume = self._runtime_call(
                 self._complete_read_thread_resume,
                 prepared,
                 lease_receipt,
@@ -783,6 +791,8 @@ class WebThreadOpenCoordinator:
                 error=exc,
                 autonomous_admission=autonomous_admission,
             )
+        resume = prepared_resume.resume
+        token_usage_replay = prepared_resume.token_usage_replay
         try:
             page = self._ports.execute_prepared_resume_thread_page(resume)
         except BaseException as exc:
@@ -790,6 +800,7 @@ class WebThreadOpenCoordinator:
             return WebThreadOpenEffect(
                 error=error,
                 resume=resume,
+                token_usage_replay=token_usage_replay,
                 autonomous_admission=autonomous_admission,
                 fatal_error=fatal_error,
             )
@@ -813,6 +824,7 @@ class WebThreadOpenCoordinator:
                 prepared,
                 page=page,
                 resume=resume,
+                token_usage_replay=token_usage_replay,
                 autonomous_admission=autonomous_admission,
                 post_resume_goal=goal,
                 post_resume_goal_known=goal_known,
@@ -824,6 +836,7 @@ class WebThreadOpenCoordinator:
                 page=page,
                 error=projection_error,
                 resume=resume,
+                token_usage_replay=token_usage_replay,
                 autonomous_admission=autonomous_admission,
                 fatal_error=fatal_error or projection_fatal,
             )
@@ -834,6 +847,7 @@ class WebThreadOpenCoordinator:
         *,
         page: ThreadTurnsPage | ThreadResumePage,
         resume: PreparedThreadResumePage | None = None,
+        token_usage_replay: WebTokenUsageReplayReceipt | None = None,
         post_resume_goal: ThreadGoalSummary | None = None,
         post_resume_goal_known: bool = False,
         post_resume_goal_error: Exception | None = None,
@@ -868,6 +882,7 @@ class WebThreadOpenCoordinator:
             interaction_lease_error=interaction_lease_error,
             normalized_cwd=self._workspace.working_dir_key(summary.cwd),
             resume=resume,
+            token_usage_replay=token_usage_replay,
             profile=prepared.observed.profile,
             autonomous_admission=autonomous_admission,
         )
@@ -878,7 +893,7 @@ class WebThreadOpenCoordinator:
         lease_receipt: ThreadResumeLeaseReceipt,
         settings: WebNextTurnSettings | None,
         autonomous_admission: WebAutonomousTurnReceipt | None,
-    ) -> PreparedThreadResumePage:
+    ) -> _PreparedWebThreadResume:
         self._runtime_context_guard()
         initial = prepared.initial
         if autonomous_admission is not None:
@@ -894,7 +909,7 @@ class WebThreadOpenCoordinator:
                 self._require_observation(initial.observation),
             ),
         )
-        return self._ports.complete_claimed_resume_thread_page(
+        resume = self._ports.complete_claimed_resume_thread_page(
             lease_receipt,
             limit=initial.turn_limit,
             model=(settings.model or None) if settings else None,
@@ -908,6 +923,27 @@ class WebThreadOpenCoordinator:
                 settings.permissions_profile_id if settings else None
             ),
             expected_connection_generation=initial.connection_generation,
+        )
+        token_usage_replay: WebTokenUsageReplayReceipt | None = None
+        try:
+            token_usage_replay = self._ports.run_if_connection_generation(
+                initial.connection_generation,
+                lambda: self._read_model.begin_token_usage_replay(
+                    initial.thread_id,
+                    connection_generation=initial.connection_generation,
+                ),
+            )
+        except Exception:
+            # Context usage is optional presentation data.  Failure to open
+            # its replay slot must never prevent the prepared resume send.
+            logger.exception(
+                "Unable to stage optional Web token usage before resume: "
+                "thread=%s",
+                initial.thread_id[:12],
+            )
+        return _PreparedWebThreadResume(
+            resume=resume,
+            token_usage_replay=token_usage_replay,
         )
 
     def settle_read_thread_observation_failure(
@@ -958,7 +994,14 @@ class WebThreadOpenCoordinator:
         effect: WebThreadOpenEffect,
     ) -> WebThreadOpenSettlement | WebThreadOpenFailureSettlement:
         self._runtime_context_guard()
-        return self._settle_read_thread_effect(prepared, effect)
+        try:
+            return self._settle_read_thread_effect(prepared, effect)
+        finally:
+            # Every claimed effect retires its optional replay capability,
+            # including future early returns and exceptional settlement paths.
+            self._discard_token_usage_replay_best_effort(
+                effect.token_usage_replay
+            )
 
     def _settle_read_thread_effect(
         self,
@@ -999,6 +1042,7 @@ class WebThreadOpenCoordinator:
                 self._commit_known_resume_interest(prepared, effect, pending_resume)
             except ThreadResumeLocalCommitFailed as exc:
                 return self._settle_resume_failure(prepared, effect, exc)
+            self._promote_token_usage_replay_best_effort(prepared, effect)
         if effect.error is not None:
             return self._read_failure_settlement(initial, effect.error)
 
@@ -1054,6 +1098,42 @@ class WebThreadOpenCoordinator:
                 "known resume skipped its Web interest without a generation failure"
             )
         raise generation_failure
+
+    def _promote_token_usage_replay_best_effort(
+        self,
+        prepared: WebThreadOpenEffectPreparation,
+        effect: WebThreadOpenEffect,
+    ) -> None:
+        """Admit optional usage only after the authoritative resume commit."""
+
+        receipt = effect.token_usage_replay
+        if receipt is None:
+            return
+        try:
+            self._ports.run_if_connection_generation(
+                prepared.initial.connection_generation,
+                lambda: self._read_model.promote_token_usage_replay(receipt),
+            )
+        except Exception:
+            logger.exception(
+                "Unable to admit optional Web token usage after resume: "
+                "thread=%s",
+                prepared.initial.thread_id[:12],
+            )
+
+    def _discard_token_usage_replay_best_effort(
+        self,
+        receipt: WebTokenUsageReplayReceipt | None,
+    ) -> None:
+        if receipt is None:
+            return
+        try:
+            self._read_model.discard_token_usage_replay(receipt)
+        except Exception:
+            logger.exception(
+                "Unable to discard optional Web token-usage replay: thread=%s",
+                receipt.thread_id[:12],
+            )
 
     def _read_failure_settlement(
         self,

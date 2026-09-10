@@ -11,7 +11,10 @@ from bot.adapter_ingress_gate import (
     AdapterOutboundRequestEpochLost,
 )
 from bot.adapters.base import ThreadGoalSummary, ThreadSummary
-from bot.codex_protocol.client import CodexRpcTransportError
+from bot.codex_protocol.client import (
+    CodexRpcPreSendError,
+    CodexRpcTransportError,
+)
 from bot.runtime_loop import RuntimeLoop
 from bot.stores.interaction_lease_store import (
     make_feishu_interaction_holder,
@@ -728,6 +731,244 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         assert interest is not None
         self.assertTrue(interest.ever_confirmed)
         self.assertEqual(self.fake.resumed, ["thread-1"])
+
+    def test_token_usage_replay_before_resume_settlement_survives_stale_retry(
+        self,
+    ) -> None:
+        token_usage = {
+            "total": {"totalTokens": 300},
+            "last": {"totalTokens": 200},
+            "modelContextWindow": 1000,
+        }
+        original_resume = self.resume_authority.execute_prepared_resume_thread_page
+
+        def resume_then_replay(prepared):
+            page = original_resume(prepared)
+            self.controller.handle_notification(
+                "thread/tokenUsage/updated",
+                {
+                    "threadId": "thread-1",
+                    "tokenUsage": token_usage,
+                },
+            )
+            return page
+
+        open_owner = self._make_open(
+            execute_prepared_resume_thread_page=resume_then_replay,
+        )
+
+        with self.assertRaises(WebRuntimeError) as caught:
+            open_owner.read_thread("tab-1", "thread-1")
+
+        self.assertEqual(caught.exception.code, "stale_thread_read")
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        remembered_usage, available = (
+            self.controller._thread_read_model.token_usage("thread-1")
+        )
+        self.assertTrue(available)
+        self.assertEqual(remembered_usage, token_usage)
+
+        retried = open_owner.read_thread("tab-1", "thread-1")
+
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        self.assertTrue(retried["token_usage_available"])
+        self.assertEqual(retried["token_usage"], token_usage)
+
+    def test_token_usage_after_resume_settlement_uses_managed_live_path(
+        self,
+    ) -> None:
+        first = self.open.read_thread("tab-1", "thread-1")
+        self.assertFalse(first["token_usage_available"])
+        token_usage = {
+            "last": {"totalTokens": 200},
+            "modelContextWindow": 1000,
+        }
+        read_model = self.controller._thread_read_model
+        with (
+            patch.object(
+                read_model,
+                "apply_notification",
+                wraps=read_model.apply_notification,
+            ) as apply_notification,
+            patch.object(
+                read_model,
+                "stage_token_usage_replay",
+                wraps=read_model.stage_token_usage_replay,
+            ) as stage_replay,
+        ):
+            self.controller.handle_notification(
+                "thread/tokenUsage/updated",
+                {
+                    "threadId": "thread-1",
+                    "tokenUsage": token_usage,
+                },
+            )
+
+        apply_notification.assert_called_once()
+        stage_replay.assert_not_called()
+        reopened = self.open.read_thread("tab-1", "thread-1")
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        self.assertTrue(reopened["token_usage_available"])
+        self.assertEqual(reopened["token_usage"], token_usage)
+
+    def test_token_usage_replay_begin_failure_does_not_block_resume(self) -> None:
+        read_model = self.controller._thread_read_model
+        with patch.object(
+            read_model,
+            "begin_token_usage_replay",
+            side_effect=RuntimeError("replay staging unavailable"),
+        ) as begin_replay:
+            opened = self.open.read_thread("tab-1", "thread-1")
+
+        begin_replay.assert_called_once_with(
+            "thread-1",
+            connection_generation=1,
+        )
+        self.assertEqual(opened["thread"]["id"], "thread-1")
+        self.assertFalse(opened["token_usage_available"])
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        interest = self.controller._runtime_interest.snapshot("thread-1")
+        self.assertIsNotNone(interest)
+        assert interest is not None
+        self.assertTrue(interest.ever_confirmed)
+
+    def test_token_usage_replay_promotion_failure_does_not_block_settled_resume(
+        self,
+    ) -> None:
+        read_model = self.controller._thread_read_model
+        promoted = []
+
+        def fail_promotion(receipt):
+            promoted.append(receipt)
+            raise RuntimeError("replay promotion unavailable")
+
+        with patch.object(
+            read_model,
+            "promote_token_usage_replay",
+            side_effect=fail_promotion,
+        ) as promote_replay:
+            opened = self.open.read_thread("tab-1", "thread-1")
+
+        promote_replay.assert_called_once()
+        self.assertEqual(len(promoted), 1)
+        self.assertFalse(read_model.discard_token_usage_replay(promoted[0]))
+        self.assertEqual(opened["thread"]["id"], "thread-1")
+        self.assertFalse(opened["token_usage_available"])
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        interest = self.controller._runtime_interest.snapshot("thread-1")
+        self.assertIsNotNone(interest)
+        assert interest is not None
+        self.assertTrue(interest.ever_confirmed)
+
+    def test_token_usage_replay_known_resume_failure_discards_exact_attempt(
+        self,
+    ) -> None:
+        self.fake.resume_error = CodexRpcPreSendError(
+            "thread/resume",
+            RuntimeError("generation changed before send"),
+        )
+        read_model = self.controller._thread_read_model
+        discarded = []
+        original_discard = read_model.discard_token_usage_replay
+
+        def discard(receipt):
+            discarded.append(receipt)
+            return original_discard(receipt)
+
+        with patch.object(
+            read_model,
+            "discard_token_usage_replay",
+            side_effect=discard,
+        ):
+            with self.assertRaises(CodexRpcPreSendError):
+                self.open.read_thread("tab-1", "thread-1")
+
+        self.assertEqual(len(discarded), 1)
+        self.assertEqual(discarded[0].thread_id, "thread-1")
+        self.assertEqual(discarded[0].connection_generation, 1)
+        self.assertFalse(original_discard(discarded[0]))
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        self.assertIsNone(self.controller._runtime_interest.snapshot("thread-1"))
+
+    def test_token_usage_replay_unknown_resume_outcome_discards_exact_attempt(
+        self,
+    ) -> None:
+        self.fake.resume_error = CodexRpcTransportError(
+            "thread/resume",
+            {"code": -32000, "message": "connection lost"},
+        )
+        read_model = self.controller._thread_read_model
+        discarded = []
+        original_discard = read_model.discard_token_usage_replay
+
+        def discard(receipt):
+            discarded.append(receipt)
+            return original_discard(receipt)
+
+        original_execute = self.resume_authority.execute_prepared_resume_thread_page
+
+        def resume_replays_before_unknown_settlement(prepared):
+            try:
+                return original_execute(prepared)
+            except CodexRpcTransportError:
+                self.controller.handle_notification(
+                    "thread/tokenUsage/updated",
+                    {
+                        "threadId": "thread-1",
+                        "tokenUsage": {"last": {"totalTokens": 99}},
+                    },
+                )
+                raise
+
+        open_owner = self._make_open(
+            execute_prepared_resume_thread_page=(
+                resume_replays_before_unknown_settlement
+            ),
+        )
+        with patch.object(
+            read_model,
+            "discard_token_usage_replay",
+            side_effect=discard,
+        ):
+            with self.assertRaises(WebRuntimeError) as caught:
+                open_owner.read_thread("tab-1", "thread-1")
+
+        self.assertEqual(caught.exception.code, "runtime_resume_unknown")
+        self.assertEqual(len(discarded), 1)
+        self.assertEqual(discarded[0].thread_id, "thread-1")
+        self.assertEqual(discarded[0].connection_generation, 1)
+        self.assertFalse(original_discard(discarded[0]))
+        self.assertEqual(self.fake.resumed, ["thread-1"])
+        interest = self.controller._runtime_interest.snapshot("thread-1")
+        self.assertIsNotNone(interest)
+        assert interest is not None
+        self.assertEqual(interest.outcome, "unknown")
+        self.assertEqual(read_model.token_usage("thread-1"), (None, False))
+
+    def test_token_usage_replay_discard_failure_preserves_resume_error(self) -> None:
+        expected = CodexRpcPreSendError(
+            "thread/resume",
+            RuntimeError("generation changed before send"),
+        )
+        self.fake.resume_error = expected
+        read_model = self.controller._thread_read_model
+
+        with (
+            patch.object(
+                read_model,
+                "discard_token_usage_replay",
+                side_effect=RuntimeError("discard unavailable"),
+            ),
+            self.assertLogs(
+                "bot.web_runtime.thread_open_coordinator",
+                level="ERROR",
+            ),
+            self.assertRaises(CodexRpcPreSendError) as caught,
+        ):
+            self.open.read_thread("tab-1", "thread-1")
+
+        self.assertIs(caught.exception, expected)
+        self.assertIsNone(self.controller._runtime_interest.snapshot("thread-1"))
 
     def test_open_projection_rejects_reissued_document_after_known_resume(
         self,
@@ -1613,10 +1854,26 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         )
 
     def test_safe_observer_interest_commit_failure_compensates_resume(self) -> None:
-        with patch.object(
-            self.controller._runtime_interest,
-            "mark_confirmed",
-            side_effect=TimeoutError("runtime interest store timed out"),
+        read_model = self.controller._thread_read_model
+        replay_receipts = []
+        original_begin = read_model.begin_token_usage_replay
+
+        def capture_replay_receipt(*args, **kwargs):
+            receipt = original_begin(*args, **kwargs)
+            replay_receipts.append(receipt)
+            return receipt
+
+        with (
+            patch.object(
+                read_model,
+                "begin_token_usage_replay",
+                side_effect=capture_replay_receipt,
+            ),
+            patch.object(
+                self.controller._runtime_interest,
+                "mark_confirmed",
+                side_effect=TimeoutError("runtime interest store timed out"),
+            ),
         ):
             with self.assertRaises(ThreadResumeLocalCommitFailed) as caught:
                 self.open.read_thread("tab-1", "thread-1")
@@ -1630,6 +1887,10 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         self.assertEqual(self.fake.released, ["thread-1"])
         self.assertFalse(self.controller.retains_runtime("thread-1"))
         self.assertFalse(self.operations.has_unknown_mutation("thread-1"))
+        self.assertEqual(len(replay_receipts), 1)
+        self.assertFalse(
+            read_model.discard_token_usage_replay(replay_receipts[0])
+        )
 
     def test_resume_compensation_runs_after_real_generation_gate_is_released(
         self,

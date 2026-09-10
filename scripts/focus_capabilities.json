@@ -779,6 +779,34 @@
           "symbol": "WebThreadReadModel.apply_notification"
         },
         {
+          "path": "bot/web_runtime/thread_read_model.py",
+          "symbol": "WebThreadReadModel.begin_token_usage_replay"
+        },
+        {
+          "path": "bot/web_runtime/thread_read_model.py",
+          "symbol": "WebThreadReadModel.stage_token_usage_replay"
+        },
+        {
+          "path": "bot/web_runtime/thread_read_model.py",
+          "symbol": "WebThreadReadModel.promote_token_usage_replay"
+        },
+        {
+          "path": "bot/web_runtime/thread_read_model.py",
+          "symbol": "WebThreadReadModel.discard_token_usage_replay"
+        },
+        {
+          "path": "bot/web_runtime/event_coordinator.py",
+          "symbol": "WebRuntimeEventCoordinator.handle_notification"
+        },
+        {
+          "path": "bot/web_runtime/thread_open_coordinator.py",
+          "symbol": "WebThreadOpenCoordinator._complete_read_thread_resume"
+        },
+        {
+          "path": "bot/web_runtime/thread_open_coordinator.py",
+          "symbol": "WebThreadOpenCoordinator._promote_token_usage_replay_best_effort"
+        },
+        {
           "path": "web/src/types.ts",
           "symbol": "ConversationStatus"
         }
@@ -792,6 +820,10 @@
       "contract": [
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "4. Endpoint 与 event admission"
+        },
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
         }
       ],
@@ -799,7 +831,9 @@
         {
           "runner": "pytest",
           "targets": [
-            "tests/test_web_thread_read_model.py"
+            "tests/test_web_thread_read_model.py",
+            "tests/test_web_runtime_event_coordinator.py",
+            "tests/test_web_thread_open_coordinator.py"
           ]
         },
         {

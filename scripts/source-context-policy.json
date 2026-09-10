@@ -9,6 +9,9 @@
     "bot/web_runtime/gateway.py": {
       "category": "focus_owned"
     },
+    "bot/web_runtime/thread_open_coordinator.py": {
+      "category": "focus_owned"
+    },
     "tests/test_feishu_bot.py": {
       "category": "focus_owned"
     },

@@ -96,6 +96,11 @@ class WebEventReadModelPort(Protocol):
         method: str,
         params: dict[str, Any],
     ) -> WebThreadNotificationUpdate | None: ...
+    def stage_token_usage_replay(
+        self,
+        method: str,
+        params: dict[str, Any],
+    ) -> bool: ...
     def turns(self, thread_id: str) -> tuple[dict[str, Any], ...]: ...
     def forget_closed_thread(self, thread_id: str) -> None: ...
     def forget_thread(self, thread_id: str) -> None: ...
@@ -278,11 +283,29 @@ class WebRuntimeEventCoordinator:
                 reason=method,
             )
             ports.publish_interaction_changes(mutation.changes)
+        managed_interest = bool(
+            thread_id and ports.runtime_interest.has_managed_interest(thread_id)
+        )
         update = (
             self._apply_live_notification(method, params)
-            if thread_id and ports.runtime_interest.has_managed_interest(thread_id)
+            if managed_interest
             else None
         )
+        if (
+            thread_id
+            and not managed_interest
+            and method == "thread/tokenUsage/updated"
+        ):
+            try:
+                ports.read_model.stage_token_usage_replay(method, params)
+            except Exception:
+                # This is optional presentation evidence.  It must not stop
+                # later notification stages or affect resume settlement.
+                logger.exception(
+                    "Ignoring an unusable Web cold-resume token-usage replay: "
+                    "thread=%s",
+                    thread_id[:12],
+                )
         if thread_id and ports.operations.has_unknown_mutation(thread_id):
             ports.operations.reconcile_unknown_from_turns(
                 thread_id,

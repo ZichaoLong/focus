@@ -141,6 +141,15 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   后续 stale read/DTO 409 只表示 response 不可安装，不是 resume known-no-effect 证据。权威 direct-target read 对
   `ThreadSpawn` child 的拒绝也只可在 exact-current document/backend settlement 清理当前 selection；迟到拒绝不能
   清理 replacement target。
+- app-server 在 cold resume success response 后 replay 的 `thread/tokenUsage/updated`，可能先于 Focus 的
+  RuntimeLoop settlement 被处理。只有为 exact Web cold-resume attempt、thread 与 connection generation 预先建立的
+  进程内槽可以暂存这段窗口内的合法 replay；每个 thread 只有一个有界槽，同一 attempt 只保留 latest snapshot，
+  replacement attempt 原子替换 predecessor，旧 receipt 不能 promote 或清理 successor。暂存本身不确认 runtime
+  interest，也不接纳其他 notification。known resume 必须先通过 `PendingThreadResume` 提交 runtime interest，随后才可
+  best-effort promote 该 replay 到 `WebThreadReadModel`。slot begin/stage/promote/discard 任一步失败都只让 context usage
+  暂时 unavailable；它不得等待 replay、发额外 RPC、延迟或拒绝 resume、触发 compensation，或把已经 ACK 的 resume
+  重分类。known failure、outcome unknown、attempt replacement、connection replacement/disconnect 与 backend reset
+  都丢弃相应临时槽；该槽不持久化、不自动 retry，也不取得 subscription、lifecycle 或 replay authority。
 - prepared service-ingress receipt 从 RuntimeLoop prepare 跨越 document-lock release、external worker 与最终 settlement
   保持 shutdown barrier。handler cancellation、executor admission failure 或其它 handoff failure 只可 abandon 尚未
   claim 的 exact receipt；claim 后的 transaction 必须自行 settle，且 shutdown 等待其退出。abandon/settle 只结算

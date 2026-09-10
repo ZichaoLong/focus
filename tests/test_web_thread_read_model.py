@@ -226,6 +226,160 @@ class WebThreadReadModelTests(unittest.TestCase):
         self.assertTrue(available)
         self.assertEqual(usage, {"totalTokens": 12})
 
+    def test_token_usage_replay_promotes_only_the_latest_staged_snapshot(
+        self,
+    ) -> None:
+        receipt = self.read_model.begin_token_usage_replay(
+            "thread-1",
+            connection_generation=1,
+        )
+        self.assertTrue(
+            self.read_model.stage_token_usage_replay(
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": {"totalTokens": 12}},
+            )
+        )
+        latest = {"last": {"totalTokens": 34}}
+        self.assertTrue(
+            self.read_model.stage_token_usage_replay(
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": latest},
+            )
+        )
+        latest["last"]["totalTokens"] = 99
+
+        self.assertTrue(self.read_model.promote_token_usage_replay(receipt))
+        self.assertFalse(self.read_model.promote_token_usage_replay(receipt))
+        usage, available = self.read_model.token_usage("thread-1")
+        self.assertTrue(available)
+        self.assertEqual(usage, {"last": {"totalTokens": 34}})
+
+    def test_token_usage_replay_rejects_malformed_or_unmatched_snapshots(
+        self,
+    ) -> None:
+        self.read_model.apply_notification(
+            "thread/tokenUsage/updated",
+            {"threadId": "thread-1", "tokenUsage": {"totalTokens": 7}},
+        )
+        self.assertFalse(
+            self.read_model.stage_token_usage_replay(
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": {"totalTokens": 12}},
+            )
+        )
+        receipt = self.read_model.begin_token_usage_replay(
+            "thread-1",
+            connection_generation=1,
+        )
+
+        for name, method, params in (
+            (
+                "wrong_method",
+                "turn/completed",
+                {"threadId": "thread-1", "tokenUsage": {"totalTokens": 12}},
+            ),
+            (
+                "missing_thread",
+                "thread/tokenUsage/updated",
+                {"tokenUsage": {"totalTokens": 12}},
+            ),
+            (
+                "wrong_thread",
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-2", "tokenUsage": {"totalTokens": 12}},
+            ),
+            (
+                "invalid_usage",
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": None},
+            ),
+        ):
+            with self.subTest(case=name):
+                self.assertFalse(
+                    self.read_model.stage_token_usage_replay(method, params)
+                )
+
+        self.assertFalse(self.read_model.promote_token_usage_replay(receipt))
+        self.assertEqual(
+            self.read_model.token_usage("thread-1"),
+            ({"totalTokens": 7}, True),
+        )
+
+    def test_token_usage_replay_receipt_prevents_owner_and_attempt_aba(
+        self,
+    ) -> None:
+        predecessor = self.read_model.begin_token_usage_replay(
+            "thread-1",
+            connection_generation=1,
+        )
+        self.assertTrue(
+            self.read_model.stage_token_usage_replay(
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": {"totalTokens": 12}},
+            )
+        )
+        successor = self.read_model.begin_token_usage_replay(
+            "thread-1",
+            connection_generation=2,
+        )
+        self.assertTrue(
+            self.read_model.stage_token_usage_replay(
+                "thread/tokenUsage/updated",
+                {"threadId": "thread-1", "tokenUsage": {"totalTokens": 34}},
+            )
+        )
+
+        self.assertFalse(
+            self.read_model.discard_token_usage_replay(predecessor)
+        )
+        self.assertTrue(self.read_model.promote_token_usage_replay(successor))
+        self.assertEqual(
+            self.read_model.token_usage("thread-1"),
+            ({"totalTokens": 34}, True),
+        )
+
+        foreign = WebThreadReadModel().begin_token_usage_replay(
+            "thread-1",
+            connection_generation=2,
+        )
+        with self.assertRaisesRegex(ValueError, "another owner"):
+            self.read_model.discard_token_usage_replay(foreign)
+
+    def test_token_usage_replay_is_cleared_by_runtime_forget_and_disconnect(
+        self,
+    ) -> None:
+        cleanup_cases = {
+            "runtime": lambda owner: owner.forget_runtime("thread-1"),
+            "closed": lambda owner: owner.forget_closed_thread("thread-1"),
+            "thread": lambda owner: owner.forget_thread("thread-1"),
+            "disconnect": lambda owner: owner.backend_disconnected(),
+        }
+        for name, cleanup in cleanup_cases.items():
+            with self.subTest(cleanup=name):
+                read_model = WebThreadReadModel()
+                receipt = read_model.begin_token_usage_replay(
+                    "thread-1",
+                    connection_generation=1,
+                )
+                observation = read_model.capture_observation("thread-1")
+                self.assertTrue(
+                    read_model.stage_token_usage_replay(
+                        "thread/tokenUsage/updated",
+                        {
+                            "threadId": "thread-1",
+                            "tokenUsage": {"totalTokens": 12},
+                        },
+                    )
+                )
+
+                cleanup(read_model)
+
+                self.assertFalse(
+                    read_model.promote_token_usage_replay(receipt)
+                )
+                self.assertFalse(read_model.observation_is_current(observation))
+                self.assertEqual(read_model.token_usage("thread-1"), (None, False))
+
     def test_live_agent_delta_is_folded_into_the_turn_cache(self) -> None:
         first = self.read_model.apply_notification(
             "item/agentMessage/delta",
