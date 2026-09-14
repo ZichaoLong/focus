@@ -19,19 +19,20 @@ import {
   createWebNextTurnSettings,
   type WebNextTurnSettingsOwner,
 } from '../../../src/focus/client-state/web-next-turn-settings';
-import type {
-  FocusActiveTurnContext,
-  FocusCapabilityMap,
-  FocusGoal,
-  FocusMeta,
-  FocusNextTurnSettings,
-  FocusProjectionEvent,
-  FocusThreadList,
-  FocusThreadScope,
-  FocusThreadSnapshot,
-  FocusThreadSummary,
-  FocusTurnPage,
-  FocusWriterProfile,
+import {
+  FocusApiError,
+  type FocusActiveTurnContext,
+  type FocusCapabilityMap,
+  type FocusGoal,
+  type FocusMeta,
+  type FocusNextTurnSettings,
+  type FocusProjectionEvent,
+  type FocusThreadList,
+  type FocusThreadScope,
+  type FocusThreadSnapshot,
+  type FocusThreadSummary,
+  type FocusTurnPage,
+  type FocusWriterProfile,
 } from '../../../src/focus/types';
 
 const EPOCH = 'epoch-1';
@@ -640,6 +641,68 @@ describe('FocusProjectionSync', () => {
     await secondRefresh;
     expect(h.projection.archivedLoading.value).toBe(false);
     expect(h.projection.archivedThreads.value.map((item) => item.id)).toEqual(['archive-new']);
+  });
+
+  it('retries one stale archived directory read and installs the fresh result', async () => {
+    const h = harness();
+    vi.mocked(h.api.listThreads)
+      .mockRejectedValueOnce(new FocusApiError('stale archived directory', {
+        status: 409,
+        code: 'stale_thread_list',
+      }))
+      .mockResolvedValueOnce(threadList(['archive-new'], { archived: true }));
+
+    await h.projection.refreshArchivedThreads();
+
+    expect(h.api.listThreads).toHaveBeenCalledTimes(2);
+    expect(h.projection.archivedLoading.value).toBe(false);
+    expect(h.projection.archivedThreads.value.map((item) => item.id)).toEqual(['archive-new']);
+  });
+
+  it('bounds an archived directory refresh to one retry and keeps its last valid result', async () => {
+    const h = harness();
+    vi.mocked(h.api.listThreads).mockResolvedValueOnce(
+      threadList(['archive-old'], { archived: true }),
+    );
+    await h.projection.refreshArchivedThreads();
+    vi.mocked(h.api.listThreads).mockClear();
+    vi.mocked(h.api.listThreads).mockRejectedValue(new FocusApiError(
+      'continually stale archived directory',
+      { status: 409, code: 'stale_thread_list' },
+    ));
+
+    await h.projection.refreshArchivedThreads();
+
+    expect(h.api.listThreads).toHaveBeenCalledTimes(2);
+    expect(h.projection.archivedLoading.value).toBe(false);
+    expect(h.projection.archivedThreads.value.map((item) => item.id)).toEqual(['archive-old']);
+  });
+
+  it('removes an unarchived row before its authoritative directory refresh settles', async () => {
+    const h = harness();
+    vi.mocked(h.api.listThreads).mockResolvedValueOnce(
+      threadList(['archive-a'], { archived: true }),
+    );
+    await h.projection.refreshArchivedThreads();
+    const regularRefresh = deferred<FocusThreadList>();
+    const archivedRefresh = deferred<FocusThreadList>();
+    vi.mocked(h.api.listThreads).mockReset()
+      .mockReturnValueOnce(regularRefresh.promise)
+      .mockReturnValueOnce(archivedRefresh.promise);
+
+    h.projection.handleEvent({
+      type: 'thread_invalidated',
+      runtime_epoch: EPOCH,
+      revision: 1,
+      thread_id: 'archive-a',
+      reason: 'thread/unarchived',
+    });
+
+    expect(h.projection.archivedThreads.value).toEqual([]);
+    regularRefresh.resolve(threadList(['archive-a'], { revision: 1 }));
+    archivedRefresh.resolve(threadList([], { revision: 1, archived: true }));
+    await vi.waitFor(() => expect(h.projection.archivedLoading.value).toBe(false));
+    expect(h.projection.archivedThreads.value).toEqual([]);
   });
 
   it('commits a new active-turn delta and schedules its disclosure snapshot', async () => {
@@ -1939,6 +2002,7 @@ describe('FocusProjectionSync', () => {
 
     h.projection.installInitialMeta(meta(99, profile('thread-b', 99)));
     h.projection.clearSnapshot();
+    h.projection.settleUnarchivedThread('thread-a');
     h.projection.settleDeletedThread('thread-a', true);
     h.projection.installGoalResult('thread-a', {
       runtime_epoch: EPOCH, revision: 99, thread_id: 'thread-a', goal: null,

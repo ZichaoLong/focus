@@ -42,6 +42,7 @@ interface ThreadMutationActionsOptions {
     | 'refreshThreads'
     | 'refreshArchivedThreads'
     | 'refreshActiveThread'
+    | 'settleUnarchivedThread'
     | 'settleDeletedThread'
     | 'invalidateWireProjection'
   >;
@@ -275,9 +276,18 @@ export function createThreadMutationActions(
         }
       }
       if (result.upstream_outcome === 'success') {
-        await projection.refreshArchivedThreads();
+        projection.settleUnarchivedThread(threadId);
+        const refreshErrors: unknown[] = [];
+        await Promise.all([
+          projection.refreshArchivedThreads().catch((error) => {
+            refreshErrors.push(error);
+          }),
+          projection.refreshThreads().catch((error) => {
+            refreshErrors.push(error);
+          }),
+        ]);
         if (isDisposed()) return false;
-        await projection.refreshThreads();
+        if (refreshErrors.length > 0) options.reportError(refreshErrors[0]);
       }
       const failure = lifecycleMutationError(result, 'Unarchive');
       if (failure) throw failure;

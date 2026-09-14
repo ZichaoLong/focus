@@ -195,6 +195,36 @@ describe('FocusMutationActions lifecycle receipts', () => {
     }]);
   });
 
+  it('settles a known unarchive before refreshing without reclassifying refresh failure', async () => {
+    const h = harness();
+    const refreshFailure = new Error('archived directory refresh failed');
+    h.refreshArchivedThreads.mockRejectedValueOnce(refreshFailure);
+
+    await expect(h.actions.unarchiveThread('thread-a')).resolves.toBe(true);
+
+    expect(h.settleUnarchivedThread).toHaveBeenCalledOnce();
+    expect(h.settleUnarchivedThread).toHaveBeenCalledWith('thread-a');
+    expect(h.settleUnarchivedThread.mock.invocationCallOrder[0]).toBeLessThan(
+      h.refreshArchivedThreads.mock.invocationCallOrder[0] ?? 0,
+    );
+    expect(h.refreshArchivedThreads).toHaveBeenCalledOnce();
+    expect(h.refreshThreads).toHaveBeenCalledOnce();
+    expect(h.reportError).toHaveBeenCalledOnce();
+    expect(h.reportError).toHaveBeenCalledWith(refreshFailure);
+    expect(h.actions.unknownLifecycleMutations.value).toEqual([]);
+  });
+
+  it('does not remove an archived row when unarchive outcome is unknown', async () => {
+    const h = harness();
+    h.api.unarchiveThread.mockResolvedValueOnce(lifecycleResult('unknown'));
+
+    await expect(h.actions.unarchiveThread('thread-a')).resolves.toBe(false);
+
+    expect(h.settleUnarchivedThread).not.toHaveBeenCalled();
+    expect(h.refreshArchivedThreads).not.toHaveBeenCalled();
+    expect(h.refreshThreads).not.toHaveBeenCalled();
+  });
+
   it('does not let late verify or unlock results mutate a replacement unknown', async () => {
     const verifying = harness();
     installUnknownLifecycle(verifying.actions, 'archive');

@@ -117,6 +117,7 @@ export interface FocusMutationActionsOptions {
     | 'refreshThreads'
     | 'refreshArchivedThreads'
     | 'refreshActiveThread'
+    | 'settleUnarchivedThread'
     | 'settleDeletedThread'
     | 'installGoalResult'
     | 'invalidateWireProjection'

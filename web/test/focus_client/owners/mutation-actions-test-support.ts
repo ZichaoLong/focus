@@ -207,6 +207,7 @@ export interface Harness {
   refreshThreads: ReturnType<typeof vi.fn>;
   refreshArchivedThreads: ReturnType<typeof vi.fn>;
   refreshActiveThread: ReturnType<typeof vi.fn>;
+  settleUnarchivedThread: ReturnType<typeof vi.fn>;
   settleDeletedThread: ReturnType<typeof vi.fn>;
   invalidateWireProjection: ReturnType<typeof vi.fn>;
   promptMessage: ReturnType<typeof vi.fn>;
@@ -307,6 +308,7 @@ export function harness(clientId = 'client-1'): Harness {
   const refreshThreads = vi.fn(async () => true);
   const refreshArchivedThreads = vi.fn(async () => undefined);
   const refreshActiveThread = vi.fn(async () => true);
+  const settleUnarchivedThread = vi.fn();
   const settleDeletedThread = vi.fn();
   const installGoalResult = vi.fn();
   const invalidateWireProjection = vi.fn();
@@ -345,6 +347,7 @@ export function harness(clientId = 'client-1'): Harness {
       refreshThreads,
       refreshArchivedThreads,
       refreshActiveThread,
+      settleUnarchivedThread,
       settleDeletedThread,
       installGoalResult,
       invalidateWireProjection,
@@ -376,6 +379,7 @@ export function harness(clientId = 'client-1'): Harness {
     refreshThreads,
     refreshArchivedThreads,
     refreshActiveThread,
+    settleUnarchivedThread,
     settleDeletedThread,
     invalidateWireProjection,
     promptMessage,

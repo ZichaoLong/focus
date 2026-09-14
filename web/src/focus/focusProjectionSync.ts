@@ -151,6 +151,7 @@ export interface FocusProjectionSync {
   readonly reloadInFlight: Readonly<Ref<boolean>>;
   installInitialMeta(value: FocusMeta): void;
   clearSnapshot(): void;
+  settleUnarchivedThread(threadId: string): void;
   settleDeletedThread(threadId: string, clearActiveProjection: boolean): void;
   installGoalResult(threadId: string, result: FocusGoalResult): void;
   refreshThreads(): Promise<boolean>;
@@ -929,19 +930,30 @@ export function createFocusProjectionSync(
     if (options.navigation.isDisposed) return;
     const generation = requests.begin('archivedList');
     archivedLoading.value = true;
+    const requestEpoch = runtimeEpoch.value;
+    // Preserve the same freshness rule as the primary directory: never
+    // install a stale DTO, but give one replacement read a chance to converge.
+    let staleRetryUsed = false;
     try {
-      const requestEpoch = runtimeEpoch.value;
-      const result = await awaitProjectionResult(
-        options.api.listThreads({ scope: 'global', archived: true }));
-      if (result === disposedResult) return;
-      if (!requests.isCurrent('archivedList', generation)) return;
-      if (responseEpochWasSuperseded(result, requestEpoch)) return;
-      archivedThreads.value = result.threads;
-      archivedTruncated.value = result.truncated;
-      archivedLimit.value = result.limit;
-      applySnapshotCoordinates(result);
-    } catch (error) {
-      if (!isStaleWebReadError(error)) throw error;
+      while (true) {
+        try {
+          const result = await awaitProjectionResult(
+            options.api.listThreads({ scope: 'global', archived: true }));
+          if (result === disposedResult) return;
+          if (!requests.isCurrent('archivedList', generation)) return;
+          if (responseEpochWasSuperseded(result, requestEpoch)) return;
+          archivedThreads.value = result.threads;
+          archivedTruncated.value = result.truncated;
+          archivedLimit.value = result.limit;
+          applySnapshotCoordinates(result);
+          return;
+        } catch (error) {
+          if (!isStaleWebReadError(error)) throw error;
+          if (staleRetryUsed) return;
+          staleRetryUsed = true;
+          if (!requests.isCurrent('archivedList', generation)) return;
+        }
+      }
     } finally {
       if (!options.navigation.isDisposed && requests.isCurrent('archivedList', generation)) archivedLoading.value = false;
     }
@@ -1177,6 +1189,9 @@ export function createFocusProjectionSync(
       || event.type === 'thread_invalidated'
     ) observeActiveTurnDisclosureChange(event);
     if (event.type === 'thread_invalidated' && AUTHORITATIVE_LIFECYCLE_REASONS.has(reason)) {
+      if (reason === 'thread/unarchived' && event.thread_id) {
+        settleUnarchivedThread(event.thread_id);
+      }
       if (
         event.thread_id === options.navigation.activeThreadId.value
         && THREAD_REMOVAL_REASONS.has(reason)
@@ -1467,6 +1482,12 @@ export function createFocusProjectionSync(
     applySnapshotCoordinates(value);
   }
 
+  function settleUnarchivedThread(threadId: string): void {
+    if (options.navigation.isDisposed) return;
+    flushPendingStreamEvents();
+    archivedThreads.value = archivedThreads.value.filter((thread) => thread.id !== threadId);
+  }
+
   function settleDeletedThread(threadId: string, clearActiveProjection: boolean): void {
     if (options.navigation.isDisposed) return;
     flushPendingStreamEvents();
@@ -1541,6 +1562,7 @@ export function createFocusProjectionSync(
       flushPendingStreamEvents();
       snapshot.value = null;
     },
+    settleUnarchivedThread,
     settleDeletedThread,
     installGoalResult,
     refreshThreads,

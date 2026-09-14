@@ -23,6 +23,9 @@
     },
     "web/src/components/chat/ConversationPane.vue": {
       "category": "upstream_derived"
+    },
+    "web/test/focus_client/owners/focus-projection-sync.test.ts": {
+      "category": "focus_owned"
     }
   }
 }
