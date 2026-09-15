@@ -42,6 +42,7 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | app-server typed runtime notice 投影 | `bot/web_runtime/runtime_notice.py` 的 `project_runtime_notice`；有序发布由 `WebRuntimeEventCoordinator` 持有 |
 | browser 当前 document 的有界 runtime notice presentation | `web/src/focus/client-state/runtime-notices.ts` 的 `RuntimeNoticeOwner` |
 | browser 问答 Markdown 内容与完整性保护 | `bot/web_runtime/thread_summary_export.py` 的 `WebThreadSummaryExportService` |
+| browser 当前线程数据 JSONL 内容与完整性保护 | `bot/web_runtime/thread_data_export.py` 的 `WebThreadDataExportService` |
 
 generated 文件不是第二份事实源，禁止手改。TypeScript interface 仍描述字段类型，但 CI 必须逐 interface 证明其
 required field 与 catalog 一致；decoder 必须消费 generated guard，不能再维护平行 key/enum inventory。
@@ -94,6 +95,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v15 新增只读 `GET /api/threads/{thread_id}/export-summary`，并使 thread action capability 中的 `export`
   表示可导出问答 Markdown。该文件只包含每轮首个 User prompt 的文本和 Assistant 最终回答；不新增 response DTO、
   完整导出模式或 v14 route alias。服务与静态资源仍必须同版本部署。
+- v16 新增只读 `GET /api/threads/{thread_id}/export-data`，以 JSONL 导出 app-server 为当前 paginated thread
+  保存并通过 `thread/items/list` 返回的 item。它不改变既有 `export` capability 的问答 Markdown 含义，不新增
+  v15 route alias；服务与静态资源仍必须同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -143,6 +147,17 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
   `Content-Disposition`、partial `.md` 或静默截断。
   完整记录仍由 fcodex TUI `/export` 持有。
+- `GET /api/threads/{thread_id}/export-data` 只为 current authenticated document 导出一个完整 UTF-8 JSONL
+  attachment。owner 先验证 exact direct、non-ephemeral、`history_mode=paginated` thread，再按
+  `sortDirection=asc`、每页 100 items 遍历 `thread/items/list`。每行是 exact
+  `{"threadId": string, "turnId": string, "item": object}`；`item` 在 adapter 验证必需的 `id/type` 后保留
+  app-server response 的全部 JSON 字段，包括已保存的 command、file-change、MCP 等工具调用与结果以及未知 future
+  字段，不进入 browser history projection，也不做 Focus 脱敏、摘要或字段裁剪。该文件是 app-server DTO 的
+  JSON 重编码，不是磁盘 rollout JSONL 的逐字节副本；Focus 不能恢复 app-server 在持久化或返回前已经截断、预览化
+  或省略的内容。导出只扫描目标 thread id，不读取或递归拼接 subagent thread。扫描期间上游仍可追加 item，接口不
+  建立 app-server snapshot/写锁；完整性以本次有序分页实际返回的数据为边界，而非并发写入下的原子时点。
+  扫描总 deadline 为 120 秒，最多 1,000 页，最终 UTF-8 JSONL 最多 256 MiB，并拒绝重复或不前进的 cursor；
+  任一边界触发时返回显式 HTTP error，不能发送 `Content-Disposition`、partial `.jsonl` 或静默截断。
 - document-bound thread directory/open/history/tool-detail/conversation-search 请求必须使用 staged request boundary。
   Gateway 在 per-client lifecycle lock 内核验 exact request token，并经 service-ingress receipt 让 RuntimeLoop
   prepare 不可变 document/target、backend generation、read observation 与 projection coordinates；随后释放该 lock。
@@ -150,10 +165,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   recheck 回到 loop。无 document 的 directory read 也必须由同一 service-ingress barrier 覆盖。较新 document、
   notification、runtime revision/epoch 或 backend generation 使旧 response 以
   `stale_document_read / stale_thread_read / stale_thread_list` 拒绝，不能安装旧 DTO 或覆盖新 cache。
-  summary export 同样跨越 document lock 与 service-ingress barrier，但它是 detached download：prepare 只冻结已认证
-  request target 与 backend connection generation，settlement 不读取 selection、projection revision 或 thread
-  observation。其他 thread event、用户切换或同 document 的新读取不得使已完成文件失效；backend generation replacement
-  仍必须拒绝结果。
+  summary 与 thread-data export 同样跨越 document lock 与 service-ingress barrier，但它们是 detached download：
+  prepare 只冻结已认证 request target 与 backend connection generation，settlement 不读取 selection、projection
+  revision 或 thread observation。其他 thread event、用户切换或同 document 的新读取不得使已完成文件失效；backend
+  generation replacement 仍必须拒绝结果。
 - 上述 cold open 可以在 staged read 中执行已准入的 `thread/resume`。known resume 必须先结算并提交 runtime interest，
   后续 stale read/DTO 409 只表示 response 不可安装，不是 resume known-no-effect 证据。权威 direct-target read 对
   `ThreadSpawn` child 的拒绝也只可在 exact-current document/backend settlement 清理当前 selection；迟到拒绝不能
@@ -283,6 +298,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   temporary summary 可投影 `unknown`。`history_search` 与 `tool_detail` capability 只说明当前 Web build
   是否向浏览器启用相应产品 surface，不证明某个 thread 可检查；per-thread admission 必须仍以 exact
   `history_mode` 为准。
+- thread action capability 的 `export` 仍只表示问答 Markdown 可用。当前线程数据入口只出现在 active-thread header，
+  且 browser 必须同时看到 `export=true` 与 `history_mode=paginated`；legacy/unknown thread 不展示该入口，endpoint
+  仍独立重验 direct、non-ephemeral 与 paginated history，不能把 presentation 条件当 authority。
 - `FocusConversationSearchMatchRange` 是 exact `{start, end}`；两者必须是 snippet 内非空、递增的 UTF-16
   character boundaries。`FocusConversationSearchOccurrence` 必须恰好携
   `{turn_id, item_id, snippet, snippet_match_range, turn_cursor}`；

@@ -124,6 +124,14 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                 run_prepared_thread_summary_export=lambda _prepared: (
                     b"# Codex conversation summary\n"
                 ),
+                prepare_export_thread_data=lambda client_id, thread_id: (
+                    "data-export",
+                    {
+                        "client_id": client_id,
+                        "thread_id": thread_id,
+                    },
+                ),
+                run_prepared_thread_data_export=lambda _prepared: b"",
                 prepare_tool_detail=lambda *args, **kwargs: (
                     "inspection",
                     {"args": args, "kwargs": kwargs},

@@ -55,6 +55,8 @@ class WebGatewayRequestAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 abandon_prepared_thread_read=lambda _prepared: True,
                 prepare_export_thread_summary=lambda *_args, **_kwargs: {},
                 run_prepared_thread_summary_export=lambda _prepared: b"",
+                prepare_export_thread_data=lambda *_args, **_kwargs: None,
+                run_prepared_thread_data_export=lambda _prepared: b"",
                 prepare_tool_detail=lambda *_args, **_kwargs: {},
                 prepare_conversation_search=lambda *_args, **_kwargs: {},
                 start_thread=lambda *_args, **_kwargs: {},

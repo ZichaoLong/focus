@@ -446,6 +446,32 @@ describe('useFocusWebClient Q&A Markdown export', () => {
     expect(client.summaryExporting.value).toBe(false);
     client.dispose();
   });
+
+  it('serializes Q&A and thread-data exports through one browser-local slot', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const gate = deferred<void>();
+    const jsonl = new Blob([], { type: 'application/x-ndjson' });
+    fake.api.exportThreadData = vi.fn(async () => {
+      await gate.promise;
+      return jsonl;
+    });
+    fake.api.exportThreadSummary = vi.fn(async () => new Blob());
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+
+    const first = client.exportThreadData('thread-1');
+    expect(client.threadDataExporting.value).toBe(true);
+    await expect(client.exportThreadData('thread-1')).resolves.toBeNull();
+    await expect(client.exportThreadSummary('thread-1')).resolves.toBeNull();
+    expect(fake.api.exportThreadData).toHaveBeenCalledOnce();
+    expect(fake.api.exportThreadSummary).not.toHaveBeenCalled();
+
+    gate.resolve();
+    await expect(first).resolves.toBe(jsonl);
+    expect(client.threadDataExporting.value).toBe(false);
+    client.dispose();
+  });
 });
 
 describe('useFocusWebClient turn-window preference', () => {

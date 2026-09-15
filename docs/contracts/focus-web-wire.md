@@ -48,6 +48,7 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Typed app-server runtime-notice projection | `project_runtime_notice` in `bot/web_runtime/runtime_notice.py`; ordered publication remains with `WebRuntimeEventCoordinator` |
 | Bounded runtime-notice presentation for the current browser document | `RuntimeNoticeOwner` in `web/src/focus/client-state/runtime-notices.ts` |
 | Browser Q&A-Markdown content and completeness guards | `WebThreadSummaryExportService` in `bot/web_runtime/thread_summary_export.py` |
+| Browser current-thread-data JSONL content and completeness guards | `WebThreadDataExportService` in `bot/web_runtime/thread_data_export.py` |
 
 The generated file is not a second source of truth and must not be edited manually.
 TypeScript interfaces still describe field types, but CI must prove their required
@@ -132,6 +133,11 @@ guards and may not retain parallel key or enum inventories.
   file contains only the first User prompt text and final Assistant answer from
   each turn. It adds no response DTO, full-export mode, or version 14 route
   alias; service and static assets still deploy at the same version.
+- Version 16 adds read-only `GET /api/threads/{thread_id}/export-data`, which
+  exports the items app-server stores for the current paginated thread and
+  returns through `thread/items/list` as JSONL. It does not change the existing
+  `export` capability's Q&A-Markdown meaning and adds no version-15 route alias.
+  Service and static assets still deploy at the same version.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -211,6 +217,28 @@ guards and may not retain parallel key or enum inventories.
   non-progressing cursors. Crossing any boundary returns an explicit HTTP error
   without `Content-Disposition`, a partial `.md`, or silent truncation. The
   fcodex TUI `/export` remains the full-record export.
+- `GET /api/threads/{thread_id}/export-data` returns one complete UTF-8 JSONL
+  attachment for the current authenticated document. The owner first verifies
+  the exact direct, non-ephemeral thread with `history_mode=paginated`, then
+  pages through `thread/items/list` with `sortDirection=asc` and 100 items per
+  page. Each line is exactly
+  `{"threadId": string, "turnId": string, "item": object}`. After the adapter
+  validates required `id/type`, `item` retains every JSON field in the
+  app-server response, including stored command, file-change, MCP, and other
+  tool calls and results plus unknown future fields. It does not enter the
+  browser history projection and Focus does not redact, summarize, or trim its
+  fields. This file is a JSON re-encoding of app-server DTOs, not a byte-for-byte
+  copy of rollout JSONL; Focus cannot restore content app-server already
+  truncated, reduced to a preview, or omitted before persistence or response.
+  The export scans only the target thread id and never reads or recursively
+  joins subagent threads. Upstream may append items while a scan is running,
+  and the endpoint establishes no app-server snapshot or write lock; its
+  completeness boundary is the ordered data returned by that pagination, not
+  one atomic instant under concurrent writes. The scan has a 120-second total
+  deadline, at most 1,000 pages, a 256-MiB final UTF-8 JSONL limit, and rejects
+  repeated or non-progressing cursors. Crossing any boundary returns an
+  explicit HTTP error without `Content-Disposition`, a partial `.jsonl`, or
+  silent truncation.
 - Document-bound thread-directory, open, history, tool-detail, and
   conversation-search requests use the staged request boundary. Under the
   per-client lifecycle lock, Gateway verifies the exact request token and uses a
@@ -223,12 +251,13 @@ guards and may not retain parallel key or enum inventories.
   runtime revision/epoch, or backend generation rejects the old response as
   `stale_document_read / stale_thread_read / stale_thread_list`; it cannot
   install the old DTO or overwrite a newer cache.
-  Summary export crosses the same document-lock and service-ingress barrier but
-  is a detached download: prepare freezes only the authenticated request target
-  and backend connection generation, and settlement does not consult selection,
-  projection revision, or thread observation. Another thread event, navigation,
-  or read in the same document cannot invalidate a completed file; backend
-  generation replacement still rejects it.
+  Summary and thread-data exports cross the same document-lock and
+  service-ingress barrier but are detached downloads: prepare freezes only the
+  authenticated request target and backend connection generation, and
+  settlement does not consult selection, projection revision, or thread
+  observation. Another thread event, navigation, or read in the same document
+  cannot invalidate a completed file; backend generation replacement still
+  rejects it.
 - The staged cold open above may perform an admitted `thread/resume`. A known
   resume settles and commits runtime interest first; a later stale read/DTO 409
   means only that the response is not installable and is not evidence that the
@@ -451,6 +480,12 @@ guards and may not retain parallel key or enum inventories.
   current Web build enables the corresponding browser product surface; they do
   not prove that one thread is inspectable. Per-thread admission still uses its
   exact `history_mode`.
+- The thread action capability `export` continues to mean only that Q&A
+  Markdown is available. The current-thread-data entry appears only in the
+  active-thread header, and the browser must observe both `export=true` and
+  `history_mode=paginated`. Legacy or unknown threads do not show that entry;
+  the endpoint independently rechecks direct, non-ephemeral, paginated history,
+  so the presentation condition is never authority.
 - `FocusConversationSearchMatchRange` is exactly `{start, end}`, with a
   non-empty increasing range on UTF-16 character boundaries inside the
   snippet. `FocusConversationSearchOccurrence` carries exactly

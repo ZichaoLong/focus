@@ -151,6 +151,7 @@ const props = withDefaults(defineProps<{
   deferSubmitClear?: boolean;
   sessionActions?: boolean;
   sessionActionCapabilities?: Partial<SessionActionCapabilities>;
+  threadDataExportAvailable?: boolean;
   allowWorkspaceCreate?: boolean;
   toolDiffPanel?: boolean;
   toolDetailAvailable?: boolean;
@@ -207,6 +208,8 @@ const emit = defineEmits<{
   archiveSession: [id: string];
   /** Chat header: export current session. */
   exportSession: [id: string];
+  /** Chat header: export every stored item in the current thread. */
+  exportThreadData: [id: string];
   reviewSession: [id: string];
   goalSession: [id: string];
   enterReadingMode: [];
@@ -1794,6 +1797,7 @@ defineExpose({
       :pr="pr"
       :session-actions="sessionActions"
       :session-action-capabilities="sessionActionCapabilities"
+      :thread-data-export-available="threadDataExportAvailable"
       :reading-mode-enabled="readingModeEnabled"
       @open-changes="emit('openChanges')"
       @open-pr="pr && emit('openPr', pr.url)"
@@ -1801,6 +1805,7 @@ defineExpose({
       @fork-session="(id) => emit('forkSession', id)"
       @archive-session="(id) => emit('archiveSession', id)"
       @export-session="(id) => emit('exportSession', id)"
+      @export-thread-data="(id) => emit('exportThreadData', id)"
       @review-session="(id) => emit('reviewSession', id)"
       @goal-session="(id) => emit('goalSession', id)"
       @enter-reading-mode="emit('enterReadingMode')"

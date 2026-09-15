@@ -33,6 +33,7 @@ const props = defineProps<{
   pr?: { number: number; state: string; url: string } | null;
   sessionActions?: boolean;
   sessionActionCapabilities?: Partial<SessionActionCapabilities>;
+  threadDataExportAvailable?: boolean;
   readingModeEnabled?: boolean;
 }>();
 
@@ -52,6 +53,7 @@ const emit = defineEmits<{
   forkSession: [id: string];
   archiveSession: [id: string];
   exportSession: [id: string];
+  exportThreadData: [id: string];
   reviewSession: [id: string];
   goalSession: [id: string];
   enterReadingMode: [];
@@ -209,6 +211,12 @@ function exportSession(): void {
   emit('exportSession', props.sessionId);
 }
 
+function exportThreadData(): void {
+  if (!props.sessionId) return;
+  closeMenu();
+  emit('exportThreadData', props.sessionId);
+}
+
 // ---------------------------------------------------------------------------
 // Archive — the Focus shell owns confirmation and the async mutation; the
 // header only emits the intent.
@@ -300,6 +308,13 @@ function setGoal(): void {
           <MenuItem v-if="actionCapabilities.export" @click="exportSession">
             <Icon name="download" size="sm" />
             {{ t('header.exportSession') }}
+          </MenuItem>
+          <MenuItem
+            v-if="actionCapabilities.export && threadDataExportAvailable"
+            @click="exportThreadData"
+          >
+            <Icon name="download" size="sm" />
+            {{ t('header.exportThreadData') }}
           </MenuItem>
           <MenuItem v-if="actionCapabilities.archive" danger @click="startArchive">
             <Icon name="archive" size="sm" />

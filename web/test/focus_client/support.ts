@@ -152,6 +152,10 @@ export class FakeApi implements FocusWebApiPort {
   summaryExportBlob = new Blob(['# Codex conversation summary\n'], {
     type: 'text/markdown',
   });
+  threadDataExportCalls: string[] = [];
+  threadDataExportGate: Promise<void> | null = null;
+  threadDataExportError: Error | null = null;
+  threadDataExportBlob = new Blob([], { type: 'application/x-ndjson' });
   toolDetailCalls: Array<{
     threadId: string;
     locator: FocusToolInspectionLocator;
@@ -468,6 +472,13 @@ export class FakeApi implements FocusWebApiPort {
     if (this.summaryExportGate) await this.summaryExportGate;
     if (this.summaryExportError) throw this.summaryExportError;
     return this.summaryExportBlob;
+  }
+
+  async exportThreadData(threadId: string): Promise<Blob> {
+    this.threadDataExportCalls.push(threadId);
+    if (this.threadDataExportGate) await this.threadDataExportGate;
+    if (this.threadDataExportError) throw this.threadDataExportError;
+    return this.threadDataExportBlob;
   }
 
   async readToolDetail(

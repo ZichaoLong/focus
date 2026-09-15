@@ -15,6 +15,7 @@ export default {
   forkSession: 'Fork session',
   archiveSession: 'Archive',
   exportSession: 'Export Q&A Markdown',
+  exportThreadData: 'Export current thread data',
   reviewSession: 'Review changes',
   setGoal: 'Set goal',
 };

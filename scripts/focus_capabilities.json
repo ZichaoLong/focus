@@ -967,8 +967,8 @@
           "symbol": "WebRuntimeController.run_prepared_thread_summary_export"
         },
         {
-          "path": "web/src/focus/FocusApp.vue",
-          "symbol": "exportThreadSummary"
+          "path": "web/src/focus/focusThreadActions.ts",
+          "symbol": "createFocusThreadActions"
         }
       ],
       "owner": [
@@ -1017,6 +1017,84 @@
           "targets": [
             "web/test/focus-api.test.ts",
             "web/test/focus-summary-export-surface.test.ts",
+            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        }
+      ],
+      "guard": [
+        "import-cycles",
+        "dependency-direction",
+        "source-context",
+        "web-wire",
+        "web-dependency-direction",
+        "web-typecheck"
+      ]
+    },
+    "focus-web-thread-data-export": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_thread_data_export"
+        },
+        {
+          "path": "bot/web_runtime/controller.py",
+          "symbol": "WebRuntimeController.run_prepared_thread_data_export"
+        },
+        {
+          "path": "web/src/focus/focusThreadActions.ts",
+          "symbol": "createFocusThreadActions"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/thread_data_export.py",
+          "symbol": "WebThreadDataExportService"
+        },
+        {
+          "path": "bot/adapters/codex_thread_inspection.py",
+          "symbol": "thread_items_page_from_result"
+        },
+        {
+          "path": "web/src/focus/api.ts",
+          "symbol": "FocusWebApi"
+        },
+        {
+          "path": "web/src/focus/useFocusWebClient.ts",
+          "symbol": "useFocusWebClient"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "4. Endpoint 与 event admission"
+        },
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "5. DTO admission 与能力值"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_thread_data_export.py",
+            "tests/web_runtime/test_thread_history_gateway.py",
+            "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-thread-data-export-api.test.ts",
+            "web/test/focus-thread-data-export-surface.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts"
           ]
         }

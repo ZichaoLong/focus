@@ -70,7 +70,7 @@ class WebGatewayTests(WebGatewayHarness):
         )
         self.assertEqual(
             source.count("self._staged_document_request_to_thread("),
-            5,
+            6,
         )
         self.assertNotIn("self._client_to_thread(", source)
         self.assertIn("self._required_client_id(request)", helper)
@@ -1783,6 +1783,8 @@ class WebGatewayStartupTests(unittest.TestCase):
                     abandon_prepared_thread_read=lambda _prepared: True,
                     prepare_export_thread_summary=lambda *_args, **_kwargs: {},
                     run_prepared_thread_summary_export=lambda _prepared: b"",
+                    prepare_export_thread_data=lambda *_args, **_kwargs: None,
+                    run_prepared_thread_data_export=lambda _prepared: b"",
                     prepare_tool_detail=lambda *_args, **_kwargs: {},
                     prepare_conversation_search=lambda *_args, **_kwargs: {},
                     start_thread=lambda *_args, **_kwargs: {},

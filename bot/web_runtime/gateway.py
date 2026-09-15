@@ -44,6 +44,7 @@ from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspection
 from bot.web_runtime.gateway_external_transaction import (
     WebGatewayExternalTransactionRunner,
 )
+from bot.web_runtime.thread_data_export import THREAD_DATA_EXPORT_FILENAME
 from bot.web_runtime.thread_summary_export import SUMMARY_EXPORT_FILENAME
 from bot.web_runtime.mutation_recovery import (
     is_web_mutation_id,
@@ -145,6 +146,8 @@ class WebGatewayPorts:
     abandon_prepared_thread_read: Callable[[Any], bool]
     prepare_export_thread_summary: Callable[..., Any]
     run_prepared_thread_summary_export: Callable[[Any], bytes]
+    prepare_export_thread_data: Callable[..., Any]
+    run_prepared_thread_data_export: Callable[[Any], bytes]
     prepare_tool_detail: Callable[..., Any]
     prepare_conversation_search: Callable[..., Any]
     start_thread: Callable[..., dict[str, Any]]
@@ -985,6 +988,35 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                 "Cache-Control": "no-store",
                 "Content-Disposition": f'attachment; filename="{SUMMARY_EXPORT_FILENAME}"',
                 "Content-Type": "text/markdown; charset=utf-8",
+            },
+        )
+
+    async def _handle_thread_data_export(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        client_id = self._required_client_id(request)
+        data = await self._staged_document_request_to_thread(
+            self._ports.prepare_export_thread_data,
+            request,
+            client_id,
+            request.match_info["thread_id"],
+            execute=self._ports.run_prepared_thread_data_export,
+        )
+        if not isinstance(data, bytes):
+            raise WebRuntimeError(
+                "Focus produced an invalid thread data export.",
+                code="thread_data_export_protocol_error",
+                status=502,
+            )
+        return web.Response(
+            body=data,
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": (
+                    f'attachment; filename="{THREAD_DATA_EXPORT_FILENAME}"'
+                ),
+                "Content-Type": "application/x-ndjson; charset=utf-8",
             },
         )
 

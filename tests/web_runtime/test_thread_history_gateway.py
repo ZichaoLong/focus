@@ -12,7 +12,78 @@ def _raise_summary_export_too_large() -> bytes:
     )
 
 
+def _raise_thread_data_export_too_large() -> bytes:
+    raise WebRuntimeError(
+        "No partial file was downloaded.",
+        code="thread_data_export_too_large",
+        status=413,
+    )
+
+
 class ThreadHistoryGatewayTests(WebGatewayHarness):
+    async def test_thread_data_export_downloads_one_complete_jsonl_response(
+        self,
+    ) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="data-export-client",
+            incarnation_id="data-export-document",
+        )
+        prepared_calls: list[tuple[str, str]] = []
+
+        def prepare(client_id: str, thread_id: str):
+            prepared_calls.append((client_id, thread_id))
+            return object()
+
+        data = (
+            b'{"threadId":"thread-1","turnId":"turn-1",'
+            b'"item":{"id":"item-1","type":"commandExecution"}}\n'
+        )
+        self.gateway._ports.prepare_export_thread_data = prepare
+        self.gateway._ports.run_prepared_thread_data_export = lambda _prepared: data
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1/export-data",
+            headers=self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), data)
+            self.assertEqual(response.content_type, "application/x-ndjson")
+            self.assertEqual(response.charset, "utf-8")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(
+                response.headers["Content-Disposition"],
+                'attachment; filename="codex-thread-data.jsonl"',
+            )
+        self.assertEqual(prepared_calls, [(document["client_id"], "thread-1")])
+
+    async def test_thread_data_export_failure_never_starts_a_partial_download(
+        self,
+    ) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="data-export-failure-client",
+            incarnation_id="data-export-failure-document",
+        )
+        self.gateway._ports.run_prepared_thread_data_export = lambda _prepared: (
+            _raise_thread_data_export_too_large()
+        )
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1/export-data",
+            headers=self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+        ) as response:
+            self.assertEqual(response.status, 413)
+            self.assertNotIn("Content-Disposition", response.headers)
+            payload = await response.json()
+        self.assertEqual(payload["error"]["code"], "thread_data_export_too_large")
+
     async def test_summary_export_downloads_one_complete_markdown_response(
         self,
     ) -> None:

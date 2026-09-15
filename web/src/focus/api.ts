@@ -222,6 +222,7 @@ export interface FocusWebApiPort {
     turnLimit?: number,
   ): Promise<FocusTurnPage>;
   exportThreadSummary(threadId: string): Promise<Blob>;
+  exportThreadData(threadId: string): Promise<Blob>;
   readToolDetail(
     threadId: string,
     locator: FocusToolInspectionLocator,
@@ -547,6 +548,34 @@ export class FocusWebApi implements FocusWebApiPort {
         status: 502,
         code: 'invalid_gateway_response',
         details: { contract: 'thread summary export' },
+      });
+    }
+    return await response.blob();
+  }
+
+  async exportThreadData(threadId: string): Promise<Blob> {
+    const response = await fetch(focusWebEndpointPath(
+      'thread_data_export',
+      { thread_id: threadId },
+    ), {
+      method: FOCUS_WEB_ENDPOINTS.thread_data_export.method,
+      credentials: 'same-origin',
+      headers: {
+        'X-Focus-Web-Client': this.clientId,
+        'X-Focus-Web-Document': this.requireDocumentToken(),
+      },
+    });
+    if (!response.ok) throw await errorFromResponse(response);
+    const mediaType = response.headers
+      .get('Content-Type')
+      ?.split(';', 1)[0]
+      ?.trim()
+      .toLowerCase();
+    if (mediaType !== 'application/x-ndjson') {
+      throw new FocusApiError('Focus Web returned an invalid thread data export.', {
+        status: 502,
+        code: 'invalid_gateway_response',
+        details: { contract: 'thread data export' },
       });
     }
     return await response.blob();

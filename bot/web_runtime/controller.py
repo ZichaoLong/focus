@@ -108,6 +108,12 @@ from bot.web_runtime.thread_inspection import (
     WebThreadInspectionService,
     WebThreadToolDetailPreparation,
 )
+from bot.web_runtime.thread_data_export import (
+    WebThreadDataExportPorts,
+    WebThreadDataExportPreparation,
+    WebThreadDataExportService,
+    classify_thread_data_export_error,
+)
 from bot.web_runtime.thread_summary_export import (
     WebThreadSummaryExportPorts,
     WebThreadSummaryExportPreparation,
@@ -430,6 +436,15 @@ class WebRuntimeController:
             ports=WebThreadSummaryExportPorts(
                 read_thread=ports.read_thread,
                 list_thread_turns=ports.list_thread_turns,
+                capture_connection_generation=ports.capture_connection_generation,
+                run_if_connection_generation=ports.run_if_connection_generation,
+            ),
+            runtime_context_guard=document_registry.assert_runtime_context,
+        )
+        self._thread_data_export = WebThreadDataExportService(
+            ports=WebThreadDataExportPorts(
+                read_thread=ports.read_thread,
+                list_thread_items=ports.list_thread_items,
                 capture_connection_generation=ports.capture_connection_generation,
                 run_if_connection_generation=ports.run_if_connection_generation,
             ),
@@ -859,6 +874,32 @@ class WebRuntimeController:
             )
         except Exception as exc:
             error = classify_thread_summary_export_error(exc)
+            if error is exc:
+                raise
+            raise error from exc
+
+    def prepare_export_thread_data(
+        self,
+        client_id: str,
+        thread_id: str,
+    ) -> WebThreadDataExportPreparation:
+        return self._thread_data_export.prepare(client_id, thread_id)
+
+    def run_prepared_thread_data_export(
+        self,
+        prepared: WebThreadDataExportPreparation,
+    ) -> bytes:
+        """Run the complete item scan off-loop, then fence backend replacement."""
+
+        try:
+            data = self._thread_data_export.execute(prepared)
+            return self._runtime_call(
+                self._thread_data_export.settle,
+                prepared,
+                data,
+            )
+        except Exception as exc:
+            error = classify_thread_data_export_error(exc)
             if error is exc:
                 raise
             raise error from exc

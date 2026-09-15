@@ -60,6 +60,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const initialized = ref(false);
   const loading = ref(false);
   const summaryExporting = ref(false);
+  const threadDataExporting = ref(false);
   const authRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
@@ -575,7 +576,12 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function exportThreadSummary(threadId: string): Promise<Blob | null> {
     const normalizedThreadId = threadId.trim();
-    if (!normalizedThreadId || summaryExporting.value || navigation.isDisposed) return null;
+    if (
+      !normalizedThreadId
+      || summaryExporting.value
+      || threadDataExporting.value
+      || navigation.isDisposed
+    ) return null;
     summaryExporting.value = true;
     errorMessage.value = '';
     try {
@@ -585,6 +591,26 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       return null;
     } finally {
       summaryExporting.value = false;
+    }
+  }
+
+  async function exportThreadData(threadId: string): Promise<Blob | null> {
+    const normalizedThreadId = threadId.trim();
+    if (
+      !normalizedThreadId
+      || summaryExporting.value
+      || threadDataExporting.value
+      || navigation.isDisposed
+    ) return null;
+    threadDataExporting.value = true;
+    errorMessage.value = '';
+    try {
+      return await api.exportThreadData(normalizedThreadId);
+    } catch (error) {
+      if (!navigation.isDisposed) reportError(error);
+      return null;
+    } finally {
+      threadDataExporting.value = false;
     }
   }
 
@@ -708,6 +734,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     initialized,
     loading,
     summaryExporting,
+    threadDataExporting,
     conversationLoading,
     starting,
     loadingMore: historyNavigation.loading,
@@ -807,6 +834,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     uploadAttachment,
     downloadAttachment,
     exportThreadSummary,
+    exportThreadData,
     submit,
     discardUnknownSubmission,
     takeUnknownSubmissionForRetry,

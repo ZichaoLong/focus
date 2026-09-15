@@ -11,16 +11,17 @@ function source(relativePath: string): string {
 describe('Focus Q&A Markdown export surface', () => {
   it('wires both existing export intents to one fixed-name Blob download', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const actions = source('../src/focus/focusThreadActions.ts');
 
     expect(app).toContain('@export="exportThreadSummary($event)"');
     expect(app).toContain('@export-session="exportThreadSummary($event)"');
-    expect(app).toContain("const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';");
-    expect(app).toContain('const blob = await client.exportThreadSummary(threadId);');
-    expect(app).toContain('if (client.summaryExporting.value)');
-    expect(app).toContain("showTransientNotice(t('focus.summaryExportPreparing'));");
-    expect(app).toContain('anchor.download = SUMMARY_EXPORT_FILENAME;');
-    expect(app).toContain('anchor.click();');
-    expect(app).toContain('URL.revokeObjectURL(url)');
+    expect(actions).toContain("const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';");
+    expect(actions).toContain('(id) => client.exportThreadSummary(id)');
+    expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
+    expect(actions).toContain("preparing: 'focus.summaryExportPreparing'");
+    expect(actions).toContain('downloadBlob(blob, filename)');
+    expect(actions).toContain('anchor.click();');
+    expect(actions).toContain('URL.revokeObjectURL(url)');
   });
 
   it('keeps the Q&A export but removes the misleading loaded-window copy actions', () => {
