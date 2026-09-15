@@ -9,12 +9,23 @@ function source(relativePath: string): string {
 
 
 describe('Focus Q&A Markdown export surface', () => {
-  it('wires both existing export intents to one fixed-name Blob download', () => {
+  it('wires wide and narrow export intents to one fixed-name Blob download', () => {
     const app = source('../src/focus/FocusApp.vue');
     const actions = source('../src/focus/focusThreadActions.ts');
+    const narrowTopBar = source('../src/components/narrow/NarrowTopBar.vue');
+    const narrowSwitcher = source('../src/components/narrow/NarrowSwitcherSheet.vue');
 
     expect(app).toContain('@export="exportThreadSummary($event)"');
     expect(app).toContain('@export-session="exportThreadSummary($event)"');
+    expect(narrowTopBar).toContain('summaryExportAvailable?: boolean;');
+    expect(narrowTopBar).toContain(":label=\"t('header.exportOptions')\"");
+    expect(narrowTopBar).toContain('<Icon name="download" size="lg" />');
+    expect(narrowTopBar).toContain('@click="exportSession"');
+    expect(narrowTopBar).toContain("t('header.exportSession')");
+    expect(narrowSwitcher).toContain('export: [id: string];');
+    expect(narrowSwitcher).toContain("emit('export', id);");
+    expect(narrowSwitcher).toContain("t('sidebar.export')");
+    expect(narrowSwitcher).toContain("return action !== 'export';");
     expect(actions).toContain("const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';");
     expect(actions).toContain('(id) => client.exportThreadSummary(id)');
     expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
@@ -48,8 +59,10 @@ describe('Focus Q&A Markdown export surface', () => {
 
     expect(zhSidebar).toContain("export: '导出问答 Markdown'");
     expect(zhHeader).toContain("exportSession: '导出问答 Markdown'");
+    expect(zhHeader).toContain("exportOptions: '导出选项'");
     expect(enSidebar).toContain("export: 'Export Q&A Markdown'");
     expect(enHeader).toContain("exportSession: 'Export Q&A Markdown'");
+    expect(enHeader).toContain("exportOptions: 'Export options'");
     expect(zhFocus).toContain('仅包含用户问题和最终回答');
     expect(zhFocus).toContain('fcodex 中使用 /export');
     expect(enFocus).toContain('prompts and final replies only');

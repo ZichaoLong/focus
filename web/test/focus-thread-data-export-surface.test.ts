@@ -9,19 +9,24 @@ function source(relativePath: string): string {
 
 
 describe('Focus current-thread data export surface', () => {
-  it('offers a fixed-name JSONL download only from the active thread header', () => {
+  it('offers a fixed-name JSONL download from active-thread chrome in both layouts', () => {
     const app = source('../src/focus/FocusApp.vue');
     const actions = source('../src/focus/focusThreadActions.ts');
     const header = source('../src/components/chat/ChatHeader.vue');
+    const narrowTopBar = source('../src/components/narrow/NarrowTopBar.vue');
     const pane = source('../src/components/chat/ConversationPane.vue');
 
     expect(actions).toContain("const THREAD_DATA_EXPORT_FILENAME = 'codex-thread-data.jsonl';");
+    expect(app).toContain('const threadDataExportAvailable = computed(() => (');
     expect(app).toContain("client.activeThread.value?.history_mode === 'paginated'");
     expect(app).toContain('@export-thread-data="exportThreadData($event)"');
     expect(actions).toContain('(id) => client.exportThreadData(id)');
     expect(actions).toContain('downloadBlob(blob, filename)');
     expect(header).toContain('@click="exportThreadData"');
     expect(header).toContain("t('header.exportThreadData')");
+    expect(narrowTopBar).toContain('threadDataExportAvailable?: boolean;');
+    expect(narrowTopBar).toContain('@click="exportThreadData"');
+    expect(narrowTopBar).toContain("t('header.exportThreadData')");
     expect(pane).toContain("emit('exportThreadData', id)");
 
     const sidebar = source('../src/components/SessionRow.vue');

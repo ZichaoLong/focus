@@ -486,8 +486,9 @@ guards and may not retain parallel key or enum inventories.
   not prove that one thread is inspectable. Per-thread admission still uses its
   exact `history_mode`.
 - The thread action capability `export` continues to mean only that Q&A
-  Markdown is available. The current-thread-data entry appears only in the
-  active-thread header, and the browser must observe both `export=true` and
+  Markdown is available. The current-thread-data entry appears only in active-
+  thread chrome (the wide ChatHeader or the narrow top bar's thread-action
+  menu), and the browser must observe both `export=true` and
   `history_mode=paginated`. Legacy or unknown threads do not show that entry;
   the endpoint independently rechecks direct, non-ephemeral, paginated history,
   so the presentation condition is never authority.

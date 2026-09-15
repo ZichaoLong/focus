@@ -300,8 +300,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   temporary summary 可投影 `unknown`。`history_search` 与 `tool_detail` capability 只说明当前 Web build
   是否向浏览器启用相应产品 surface，不证明某个 thread 可检查；per-thread admission 必须仍以 exact
   `history_mode` 为准。
-- thread action capability 的 `export` 仍只表示问答 Markdown 可用。当前线程数据入口只出现在 active-thread header，
-  且 browser 必须同时看到 `export=true` 与 `history_mode=paginated`；legacy/unknown thread 不展示该入口，endpoint
+- thread action capability 的 `export` 仍只表示问答 Markdown 可用。当前线程数据入口只出现在 active-thread
+  chrome（宽屏 ChatHeader 或窄屏 top bar 的线程动作菜单），且 browser 必须同时看到 `export=true` 与
+  `history_mode=paginated`；legacy/unknown thread 不展示该入口，endpoint
   仍独立重验 direct、non-ephemeral 与 paginated history，不能把 presentation 条件当 authority。
 - `FocusConversationSearchMatchRange` 是 exact `{start, end}`；两者必须是 snippet 内非空、递增的 UTF-16
   character boundaries。`FocusConversationSearchOccurrence` 必须恰好携

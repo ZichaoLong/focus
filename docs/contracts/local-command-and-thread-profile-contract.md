@@ -98,6 +98,11 @@ readiness; loading older history requires both values to equal the requested
 target. Desired subscription edges belong only to
 `WebRuntimeInterestRegistry` and are not another selection.
 
+`WebWriterProfileStore.working_dir` is the browser profile's durable workspace
+for new threads. Selecting or creating a thread does not consume it; later new
+conversations in that browser reuse it until the user chooses another workspace
+or updates it through `/cd`. It is neither instance-wide nor a one-shot setting.
+
 When upstream makes a selected target unusable, Focus atomically clears only
 an exact durable match to draft and increments its generation once; repeated
 cleanup is a no-op. It preserves a replacement materialization and converges

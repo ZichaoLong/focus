@@ -55,7 +55,8 @@ describe('Focus page-level reading mode surface', () => {
     expect(app).toMatch(/<Sidebar\s+v-show="!readingMode"/u);
     expect(app).toContain('v-show="!sidebarCollapsed && !readingMode"');
     expect(app).toMatch(/<NarrowTopBar\s+v-else\s+v-show="!readingMode"/u);
-    expect(app).toContain('v-if="isNarrowViewport && !readingMode"');
+    expect(between(app, '<NarrowTopBar', '</NarrowTopBar>'))
+      .toContain('class="runtime-details-narrow-trigger"');
     expect(app).toMatch(/<FocusPrimaryNotices\s+v-if="!readingMode"/u);
     expect(app).toContain('v-if="unsupportedNotice && !readingMode"');
 

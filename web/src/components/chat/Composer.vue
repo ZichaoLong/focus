@@ -45,6 +45,7 @@ import {
   insertComposerNewline,
   type ComposerSendShortcut,
 } from './composerSendShortcut';
+import { observeComposerModelMenu } from './composerModelMenu';
 
 // ---------------------------------------------------------------------------
 // Props & emits
@@ -652,6 +653,14 @@ const sendDisabled = computed(() => (
 const dropdownOpen = ref(false);
 const permDropdownOpen = ref(false);
 const toolbarRef = ref<HTMLElement | null>(null);
+const modelMenuStyle = ref<Record<string, string>>({ maxHeight: '0px' });
+
+watch(dropdownOpen, (open, _previous, onCleanup) => {
+  if (!open || !toolbarRef.value) return;
+  onCleanup(observeComposerModelMenu(toolbarRef.value, (style) => {
+    modelMenuStyle.value = style;
+  }));
+}, { flush: 'post' });
 
 function toggleDropdown(): void {
   dropdownOpen.value = !dropdownOpen.value;
@@ -1287,81 +1296,83 @@ function selectModel(modelId: string): void {
         </div>
 
         <!-- Model dropdown — current provider models + controls + more -->
-        <div v-if="capabilities.model && dropdownOpen && status" class="model-dropdown" role="menu" @click.stop>
-          <!-- Starred models from other providers -->
-          <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
-          <button
-            v-for="m in starredOtherModels"
-            :key="m.id"
-            class="md-row"
-            :class="{ 'is-current': m.id === status.modelId }"
-            role="menuitem"
-            @click="selectModel(m.id)"
-          >
-            <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
-            <span class="md-name">{{ m.displayName ?? m.model }}</span>
-            <span class="md-provider">{{ m.provider }}</span>
-            <Icon class="md-star" name="star" size="sm" />
-          </button>
-
-          <div v-if="starredOtherModels.length > 0" class="md-divider" />
-
-          <!-- Current provider models -->
-          <div v-if="providerModels.length > 0" class="md-section">{{ currentProvider }}</div>
-          <button
-            v-for="m in providerModels"
-            :key="m.id"
-            class="md-row"
-            :class="{ 'is-current': m.id === status.modelId }"
-            role="menuitem"
-            @click="selectModel(m.id)"
-          >
-            <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
-            <span class="md-name">{{ m.displayName ?? m.model }}</span>
-            <Icon v-if="isStarred(m.id)" class="md-star" name="star" size="sm" />
-          </button>
-
-          <div v-if="providerModels.length > 0" class="md-divider" />
-
-          <!-- Thinking level — segmented control. Effort models show every
-               declared level; boolean models show On/Off; unsupported shows a note. -->
-          <div v-if="capabilities.effort" class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
-            <span class="md-name">{{ t('status.thinkingLabel') }}</span>
-            <span
-              v-if="thinkingAvailability === 'unsupported'"
-              class="md-note"
-            >{{ t('status.modeNotSupported') }}</span>
-            <div
-              v-else
-              class="effort-segments"
-              role="group"
-              :aria-label="t('status.thinkingLabel')"
+        <div v-if="capabilities.model && dropdownOpen && status" class="model-dropdown" :style="modelMenuStyle" role="menu" @click.stop>
+          <div v-if="providerModels.length > 0" class="md-section md-header">{{ currentProvider }}</div>
+          <div class="md-scroll">
+            <!-- Starred models from other providers -->
+            <div v-if="starredOtherModels.length > 0" class="md-section">{{ t('status.starredModels') }}</div>
+            <button
+              v-for="m in starredOtherModels"
+              :key="m.id"
+              class="md-row"
+              :class="{ 'is-current': m.id === status.modelId }"
+              role="menuitem"
+              @click="selectModel(m.id)"
             >
-              <button
-                v-for="seg in thinkingSegments"
-                :key="seg"
-                type="button"
-                class="effort-seg"
-                :class="{ 'is-active': seg === activeThinkingSegment }"
-                :disabled="thinkingReadonly"
-                @click="setThinkingSegment(seg)"
-              >{{ thinkingSegmentLabel(seg) }}</button>
+              <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
+              <span class="md-name">{{ m.displayName ?? m.model }}</span>
+              <span class="md-provider">{{ m.provider }}</span>
+              <Icon class="md-star" name="star" size="sm" />
+            </button>
+
+            <div v-if="starredOtherModels.length > 0" class="md-divider" />
+
+            <!-- Current provider models -->
+            <button
+              v-for="m in providerModels"
+              :key="m.id"
+              class="md-row"
+              :class="{ 'is-current': m.id === status.modelId }"
+              role="menuitem"
+              @click="selectModel(m.id)"
+            >
+              <span class="md-check"><Icon v-if="m.id === status.modelId" name="check" size="sm" /></span>
+              <span class="md-name">{{ m.displayName ?? m.model }}</span>
+              <Icon v-if="isStarred(m.id)" class="md-star" name="star" size="sm" />
+            </button>
+
+            <div v-if="providerModels.length > 0" class="md-divider" />
+
+            <!-- Thinking level — segmented control. Effort models show every
+                 declared level; boolean models show On/Off; unsupported shows a note. -->
+            <div v-if="capabilities.effort" class="md-thinking" :class="{ 'is-readonly': thinkingReadonly }">
+              <span class="md-name">{{ t('status.thinkingLabel') }}</span>
+              <span
+                v-if="thinkingAvailability === 'unsupported'"
+                class="md-note"
+              >{{ t('status.modeNotSupported') }}</span>
+              <div
+                v-else
+                class="effort-segments"
+                role="group"
+                :aria-label="t('status.thinkingLabel')"
+              >
+                <button
+                  v-for="seg in thinkingSegments"
+                  :key="seg"
+                  type="button"
+                  class="effort-seg"
+                  :class="{ 'is-active': seg === activeThinkingSegment }"
+                  :disabled="thinkingReadonly"
+                  @click="setThinkingSegment(seg)"
+                >{{ thinkingSegmentLabel(seg) }}</button>
+              </div>
             </div>
+
+            <div class="md-divider" />
+            <div
+              v-if="modelSettingsHint"
+              class="md-cache-note md-next-turn-note"
+            >{{ modelSettingsHint }}</div>
+            <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
+
+            <div class="md-divider" />
+
+            <!-- More models → open full picker -->
+            <button class="md-row md-row-more" role="menuitem" @click="closeDropdown(); emit('pickModel');">
+              <span class="md-name">{{ t('status.moreModels') }}</span>
+            </button>
           </div>
-
-          <div class="md-divider" />
-          <div
-            v-if="modelSettingsHint"
-            class="md-cache-note md-next-turn-note"
-          >{{ modelSettingsHint }}</div>
-          <div class="md-cache-note">{{ t('status.cacheNote') }}</div>
-
-          <div class="md-divider" />
-
-          <!-- More models → open full picker -->
-          <button class="md-row md-row-more" role="menuitem" @click="closeDropdown(); emit('pickModel');">
-            <span class="md-name">{{ t('status.moreModels') }}</span>
-          </button>
         </div>
       </div>
   </div>
@@ -1843,7 +1854,24 @@ function selectModel(modelId: string): void {
   flex-direction: column;
   gap: 1px;
   font-family: var(--font-ui);
+  /* The measured height includes clipping by the chat pane and mobile viewport. */
+  overflow: hidden;
 }
+
+.md-header {
+  flex: none;
+}
+
+.md-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.md-scroll > * { flex-shrink: 0; }
 
 .md-section {
   padding: 4px 7px 2px;

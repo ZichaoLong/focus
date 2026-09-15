@@ -14,6 +14,7 @@ export default {
   renameSession: '重命名',
   forkSession: '分叉会话',
   archiveSession: '归档',
+  exportOptions: '导出选项',
   exportSession: '导出问答 Markdown',
   exportThreadData: '导出当前线程数据',
   reviewSession: '审视改动',

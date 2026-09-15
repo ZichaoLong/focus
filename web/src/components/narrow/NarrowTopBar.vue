@@ -1,15 +1,17 @@
 <!-- apps/kimi-web/src/components/narrow/NarrowTopBar.vue -->
 <!-- Narrow-layout title bar (50px): a 28px dark workspace square, a tappable middle -->
 <!-- zone showing the mono `workspace / session ⌄` path with a status sub-line -->
-<!-- (● running · branch · N sessions), and a trailing sliders button. Tapping -->
+<!-- (● running · branch · N sessions), and trailing utility actions. Tapping -->
 <!-- the middle opens the switcher sheet; the sliders open the settings sheet. -->
 <!-- Terminal Pro styling, no emoji. -->
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { WorkspaceView } from '../../types';
 import IconButton from '../ui/IconButton.vue';
 import Icon from '../ui/Icon.vue';
+import Menu from '../ui/Menu.vue';
+import MenuItem from '../ui/MenuItem.vue';
 
 const { t } = useI18n();
 
@@ -27,6 +29,12 @@ const props = withDefaults(
     sessionCount?: number;
     /** Existing loaded conversation may enter the page-level reading mode. */
     readingModeEnabled?: boolean;
+    /** Active thread id used by the narrow-only export action menu. */
+    sessionId?: string;
+    /** The active thread may be exported as Q&A Markdown. */
+    summaryExportAvailable?: boolean;
+    /** The active paginated thread may be exported as complete JSONL data. */
+    threadDataExportAvailable?: boolean;
   }>(),
   {
     workspace: null,
@@ -35,6 +43,9 @@ const props = withDefaults(
     branch: '',
     sessionCount: 0,
     readingModeEnabled: false,
+    sessionId: '',
+    summaryExportAvailable: false,
+    threadDataExportAvailable: false,
   },
 );
 
@@ -42,6 +53,8 @@ const emit = defineEmits<{
   openSwitcher: [];
   openSettings: [];
   enterReadingMode: [];
+  exportSession: [id: string];
+  exportThreadData: [id: string];
 }>();
 
 /** First letter of the workspace name for the square glyph. */
@@ -57,6 +70,56 @@ const wsName = computed<string>(() => props.workspace?.name ?? t('workspace.noWo
 const statusText = computed<string>(() =>
   props.running ? t('narrow.running') : t('narrow.idle'),
 );
+
+// The wide ChatHeader owns the same active-thread downloads. Narrow layout
+// replaces that header, so its top bar must retain those actions instead of
+// hiding the capabilities with the desktop-only chrome.
+const exportMenuOpen = ref(false);
+const exportMenuRoot = ref<HTMLElement | null>(null);
+const hasExportActions = computed(() => Boolean(props.sessionId) && (
+  props.summaryExportAvailable || props.threadDataExportAvailable
+));
+
+function closeExportMenu(): void {
+  exportMenuOpen.value = false;
+  if (typeof document !== 'undefined') {
+    document.removeEventListener('mousedown', onDocumentMouseDown);
+  }
+}
+
+function onDocumentMouseDown(event: MouseEvent): void {
+  if (exportMenuRoot.value?.contains(event.target as Node)) return;
+  closeExportMenu();
+}
+
+function toggleExportMenu(): void {
+  if (exportMenuOpen.value) {
+    closeExportMenu();
+    return;
+  }
+  exportMenuOpen.value = true;
+  if (typeof document !== 'undefined') {
+    document.addEventListener('mousedown', onDocumentMouseDown);
+  }
+}
+
+function exportSession(): void {
+  if (!props.sessionId || !props.summaryExportAvailable) return;
+  closeExportMenu();
+  emit('exportSession', props.sessionId);
+}
+
+function exportThreadData(): void {
+  if (!props.sessionId || !props.threadDataExportAvailable) return;
+  closeExportMenu();
+  emit('exportThreadData', props.sessionId);
+}
+
+watch(
+  () => [props.sessionId, props.summaryExportAvailable, props.threadDataExportAvailable],
+  closeExportMenu,
+);
+onUnmounted(closeExportMenu);
 </script>
 
 <template>
@@ -96,13 +159,39 @@ const statusText = computed<string>(() =>
       </span>
     </button>
 
-    <IconButton
-      size="lg"
-      :label="t('narrow.openSettings')"
-      @click="emit('openSettings')"
-    >
-      <Icon name="sliders" size="lg" />
-    </IconButton>
+    <div class="tb-actions">
+      <div v-if="hasExportActions" ref="exportMenuRoot" class="tb-session-actions">
+        <IconButton
+          size="lg"
+          :label="t('header.exportOptions')"
+          :aria-expanded="exportMenuOpen"
+          aria-haspopup="menu"
+          @click.stop="toggleExportMenu"
+        >
+          <Icon name="download" size="lg" />
+        </IconButton>
+        <Menu v-if="exportMenuOpen" class="tb-session-menu" @click.stop>
+          <MenuItem v-if="summaryExportAvailable" size="lg" @click="exportSession">
+            <Icon name="download" size="sm" />
+            {{ t('header.exportSession') }}
+          </MenuItem>
+          <MenuItem v-if="threadDataExportAvailable" size="lg" @click="exportThreadData">
+            <Icon name="download" size="sm" />
+            {{ t('header.exportThreadData') }}
+          </MenuItem>
+        </Menu>
+      </div>
+
+      <slot name="utility-actions" />
+
+      <IconButton
+        size="lg"
+        :label="t('narrow.openSettings')"
+        @click="emit('openSettings')"
+      >
+        <Icon name="sliders" size="lg" />
+      </IconButton>
+    </div>
   </div>
 </template>
 
@@ -195,6 +284,23 @@ const statusText = computed<string>(() =>
   background: var(--color-text-faint);
 }
 .tb-sub .rd.on { background: var(--color-success); }
+
+.tb-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.tb-session-actions {
+  position: relative;
+  flex: none;
+}
+.tb-session-menu {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 4px);
+  right: 0;
+}
 
 .topbar .tb-path { font-family: var(--sans); }
 </style>

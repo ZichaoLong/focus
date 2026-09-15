@@ -102,10 +102,16 @@ describe('Focus targetless workspace draft surface', () => {
     const zh = source('../src/i18n/locales/zh/focus.ts');
 
     expect(en).toContain(
-      "newConversationCwdHint: 'Working directory: {path}. Choose an existing workspace above, or enter /cd <directory> to use another directory on the Focus host; this affects only the next new conversation.'",
+      "newConversationCwdHint: 'Working directory: {path}. Choose an existing workspace above, or enter /cd <directory> to use another directory on the Focus host. New conversations in this browser tab keep using the selected directory until you change it again.'",
+    );
+    expect(en).toContain(
+      "cdUsage: 'Use /cd <an existing directory on this Focus host>. New conversations in this browser tab keep using that directory until you change it again.'",
     );
     expect(zh).toContain(
-      "newConversationCwdHint: '工作目录：{path}。可从上方选择已有工作区，或输入 /cd <目录> 使用 Focus 主机上的其他目录；只影响下一次新会话。'",
+      "newConversationCwdHint: '工作目录：{path}。可从上方选择已有工作区，或输入 /cd <目录> 使用 Focus 主机上的其他目录。当前浏览器标签页的后续新会话会继续使用所选目录，直到再次切换。'",
+    );
+    expect(zh).toContain(
+      "cdUsage: '请使用 /cd <Focus 主机上真实存在的目录>。当前浏览器标签页的后续新会话会继续使用该目录，直到再次切换。'",
     );
   });
 });

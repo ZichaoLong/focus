@@ -317,7 +317,7 @@ function setComposerSendShortcut(value: string): void {
             <div class="archived-meta">
               <strong>{{ thread.title }}</strong>
               <span>{{ thread.cwd }}</span>
-              <code>{{ thread.id }}</code>
+              <code class="archived-thread-id">{{ thread.id }}</code>
             </div>
             <div
               v-if="deleteTarget !== thread.id && (canUnarchive(thread) || canDelete(thread))"
@@ -545,6 +545,7 @@ function setComposerSendShortcut(value: string): void {
 }
 .archived-panel,
 .archived-list { gap: var(--space-3); }
+.archived-panel { container-type: inline-size; }
 .archived-heading,
 .archived-row,
 .archived-actions,
@@ -562,13 +563,21 @@ function setComposerSendShortcut(value: string): void {
   padding: var(--space-3) 0;
   border-top: 1px solid var(--color-line);
 }
-.archived-meta { min-width: 0; gap: 2px; }
+.archived-meta { min-width: 0; flex: 1; gap: 2px; }
 .archived-meta strong,
-.archived-meta span,
-.archived-meta code {
+.archived-meta span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.archived-thread-id {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .archived-meta span,
 .archived-meta code,
@@ -578,6 +587,7 @@ function setComposerSendShortcut(value: string): void {
 }
 .archived-actions,
 .delete-confirm > div { gap: var(--space-2); }
+.archived-actions { flex: none; flex-wrap: wrap; }
 .delete-confirm { flex: 1; max-width: 420px; gap: var(--space-2); }
 .delete-confirm label { gap: var(--space-1); }
 .delete-confirm input {
@@ -661,6 +671,21 @@ function setComposerSendShortcut(value: string): void {
   padding: var(--space-4) 0;
   text-align: center;
 }
+@container (max-width: 480px) {
+  .archived-heading,
+  .archived-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .archived-actions,
+  .delete-confirm > div {
+    justify-content: flex-end;
+  }
+  .delete-confirm {
+    width: 100%;
+    max-width: none;
+  }
+}
 @media (max-width: 640px) {
   .settings-row {
     align-items: flex-start;
@@ -669,8 +694,6 @@ function setComposerSendShortcut(value: string): void {
   .settings-select {
     width: 100%;
   }
-  .archived-heading,
-  .archived-row,
   .backend-reset-heading {
     align-items: stretch;
     flex-direction: column;
@@ -678,10 +701,6 @@ function setComposerSendShortcut(value: string): void {
   .backend-reset-preview dl,
   .backend-reset-result dl {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .archived-actions,
-  .delete-confirm > div {
-    justify-content: flex-end;
   }
 }
 </style>

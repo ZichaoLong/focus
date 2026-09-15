@@ -110,6 +110,12 @@ describe('Focus runtime-details presentation', () => {
 
     expect(app).toContain("selectDetail({ kind: 'runtimeDetails' })");
     expect(app).toContain('class="runtime-details-narrow-trigger"');
+    const narrowTopBarStart = app.indexOf('<NarrowTopBar');
+    const narrowTopBarEnd = app.indexOf('</NarrowTopBar>', narrowTopBarStart);
+    const narrowRuntimeTrigger = app.indexOf('class="runtime-details-narrow-trigger"');
+    expect(narrowRuntimeTrigger).toBeGreaterThan(narrowTopBarStart);
+    expect(narrowRuntimeTrigger).toBeLessThan(narrowTopBarEnd);
+    expect(app).not.toContain('right: calc(max(12px, var(--safe-right)) + 46px)');
     expect(app).toContain('class="runtime-details-collapsed-trigger"');
     expect(app).toContain('class="runtime-details-entry"');
     expect(detailPanel).toContain("target === 'runtimeDetails'");

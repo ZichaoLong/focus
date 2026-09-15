@@ -87,6 +87,10 @@ Web `/cd`、attachment scope、meta 与 scope generation 只读取该值，绝�
 要求两个值都等于请求 target。desired subscription edge 只归 `WebRuntimeInterestRegistry` 所有，不是
 另一份 selection。
 
+`WebWriterProfileStore.working_dir` 是该 browser profile 持久化的新 thread 工作目录。选择或创建 thread
+不会消费它；该 browser 后续的新会话会继续使用此目录，直到用户选择其他工作区或通过 `/cd`
+更新它。它既不是 instance-wide 设置，也不是 one-shot 设置。
+
 当上游使已选 target 变得不可用时，Focus 只把 exact durable match 原子清为 draft，并让 generation 恰好
 加一；重复清理是 no-op。它会保留 replacement materialization，并收敛每个被清 document 的全部
 runtime-interest edge。这种自动 clear 不等同于用户请求的 same-cwd `/cd` rebind：archive、not-found、

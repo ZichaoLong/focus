@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import {
-  computed, nextTick, onMounted, onUnmounted,
-  provide, ref, shallowRef, watch,
-} from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sidebar from '../components/Sidebar.vue';
 import ResizeHandle from '../components/ResizeHandle.vue';
@@ -30,10 +27,7 @@ import FocusPrimaryNotices from './FocusPrimaryNotices.vue';
 import FocusReviewDialog from './FocusReviewDialog.vue';
 import FocusSettingsDialog from './FocusSettingsDialog.vue';
 import { executeCdCommand, parseCdCommand } from './cdCommand';
-import {
-  createFocusDocumentActivityFaviconPreference,
-  syncFocusDocumentActivityFavicon,
-} from './documentActivityFavicon';
+import { createFocusDocumentActivityFaviconPreference, syncFocusDocumentActivityFavicon } from './documentActivityFavicon';
 import { DEFAULT_WEB_DISPLAY_NAME, syncFocusDocumentTitle } from './documentTitle';
 import {
   FOCUS_DETAIL_PANEL_DEFAULT,
@@ -44,10 +38,7 @@ import {
   shouldUseFocusDetailFullscreen,
   type FocusDetailSelection,
 } from './focusDetailPanelState';
-import {
-  isLocalPossiblySentDraft,
-  type UnknownSubmissionDraft,
-} from './mutations/actions';
+import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutations/actions';
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { createFocusThreadActions } from './focusThreadActions';
@@ -55,11 +46,8 @@ import { projectOperatorStatusPresentation } from './operatorWarningPresentation
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 import { useFocusWebClient } from './useFocusWebClient';
 import type {
-  FocusBackendResetPreview,
-  FocusConversationSearchOccurrence,
-  FocusThreadScope,
-  FocusThreadToolDetailPayload,
-  FocusToolInspectionLocator,
+  FocusBackendResetPreview, FocusConversationSearchOccurrence, FocusThreadScope,
+  FocusThreadToolDetailPayload, FocusToolInspectionLocator,
 } from './types';
 
 const { t } = useI18n();
@@ -195,6 +183,10 @@ const activeNextTurnSettingsHint = computed(() => (
   client.running.value ? t('focus.nextTurnSettings') : ''
 ));
 const sessionActionCapabilities = computed(() => client.activeSessionActionCapabilities.value);
+const threadDataExportAvailable = computed(() => (
+  sessionActionCapabilities.value.export
+  && client.activeThread.value?.history_mode === 'paginated'
+));
 const activeTurnContext = computed(() => {
   const snapshot = client.snapshot.value;
   const context = snapshot?.active_turn_context;
@@ -911,28 +903,35 @@ onUnmounted(() => {
         v-else
         v-show="!readingMode"
         :workspace="client.visibleWorkspace.value"
+        :session-id="client.activeThreadId.value"
         :session-title="activeSessionTitle"
         :running="client.running.value"
         :session-count="workspaceSessionCount"
+        :summary-export-available="sessionActionCapabilities.export"
+        :thread-data-export-available="threadDataExportAvailable"
         :reading-mode-enabled="canEnterReadingMode"
         @open-switcher="showNarrowSwitcher = true"
         @open-settings="showSettings = true"
+        @export-session="exportThreadSummary($event)"
+        @export-thread-data="exportThreadData($event)"
         @enter-reading-mode="enterReadingMode"
-      />
-      <IconButton
-        v-if="isNarrowViewport && !readingMode"
-        class="runtime-details-narrow-trigger"
-        size="sm"
-        :label="t('focus.runtimeDetailsOpen')"
-        @click="openRuntimeDetails"
       >
-        <Icon name="info" size="sm" />
-        <span
-          class="runtime-details-dot"
-          :class="runtimeDetailsPresentation.tone"
-          aria-hidden="true"
-        />
-      </IconButton>
+        <template #utility-actions>
+          <IconButton
+            class="runtime-details-narrow-trigger"
+            size="lg"
+            :label="t('focus.runtimeDetailsOpen')"
+            @click="openRuntimeDetails"
+          >
+            <Icon name="info" size="lg" />
+            <span
+              class="runtime-details-dot"
+              :class="runtimeDetailsPresentation.tone"
+              aria-hidden="true"
+            />
+          </IconButton>
+        </template>
+      </NarrowTopBar>
 
       <main class="focus-main">
         <ReadingModeControls
@@ -1026,7 +1025,7 @@ onUnmounted(() => {
           :download-file="client.downloadAttachment"
           :session-actions="true"
           :session-action-capabilities="sessionActionCapabilities"
-          :thread-data-export-available="sessionActionCapabilities.export && client.activeThread.value?.history_mode === 'paginated'"
+          :thread-data-export-available="threadDataExportAvailable"
           :goal="client.goal.value"
           :allow-workspace-create="false"
           :tool-diff-panel="true"
@@ -1241,6 +1240,7 @@ onUnmounted(() => {
         @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
         @create-in-workspace="openWorkspaceDraft($event)"
         @rename="(id, title) => client.renameThread(id, title)"
+        @export="exportThreadSummary($event)"
         @archive="confirmArchiveThread($event)"
       >
         <template #controls>
@@ -1376,7 +1376,6 @@ onUnmounted(() => {
   font-size: var(--text-xs);
   text-align: center;
 }
-.runtime-details-narrow-trigger,
 .runtime-details-collapsed-trigger {
   position: absolute;
   z-index: var(--z-sticky);
@@ -1385,8 +1384,7 @@ onUnmounted(() => {
   box-shadow: var(--shadow-xs);
 }
 .runtime-details-narrow-trigger {
-  top: calc(var(--safe-top) + 12px);
-  right: calc(max(12px, var(--safe-right)) + 46px);
+  position: relative;
 }
 .runtime-details-collapsed-trigger {
   top: calc(var(--space-3) + 36px);

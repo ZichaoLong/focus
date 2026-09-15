@@ -14,6 +14,7 @@ export default {
   renameSession: 'Rename',
   forkSession: 'Fork session',
   archiveSession: 'Archive',
+  exportOptions: 'Export options',
   exportSession: 'Export Q&A Markdown',
   exportThreadData: 'Export current thread data',
   reviewSession: 'Review changes',

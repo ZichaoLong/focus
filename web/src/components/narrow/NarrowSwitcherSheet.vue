@@ -50,6 +50,7 @@ const emit = defineEmits<{
   createInWorkspace: [workspaceId: string];
   addWorkspace: [];
   rename: [id: string, title: string];
+  export: [id: string];
   archive: [id: string];
   /** The parent shell owns confirmation and the async delete mutation. */
   deleteWorkspace: [workspaceId: string];
@@ -152,7 +153,7 @@ function runtimeLabel(session: Session): string {
 }
 
 // ---------------------------------------------------------------------------
-// Per-row kebab menu (rename / archive) — opened from the ⋯ button.
+// Per-row kebab menu (rename / export / archive) — opened from the ⋯ button.
 // Archive is confirmed via modal (consistent with remove-workspace).
 // ---------------------------------------------------------------------------
 const menuFor = ref<string | null>(null);
@@ -173,14 +174,23 @@ function onArchive(id: string): void {
   emit('archive', id);
 }
 
-function canSessionAction(session: Session, action: 'rename' | 'archive'): boolean {
-  // Generic Kimi-derived callers that do not supply Focus's DTO retain their
-  // historical controls. Focus sessions always carry an explicit value.
-  return session.actionCapabilities?.[action] ?? true;
+function onExport(id: string): void {
+  menuFor.value = null;
+  emit('export', id);
+}
+
+function canSessionAction(session: Session, action: 'rename' | 'export' | 'archive'): boolean {
+  const capability = session.actionCapabilities?.[action];
+  if (capability !== undefined) return capability;
+  // Generic Kimi-derived callers retain only their historical rename/archive
+  // controls. Export is a Focus capability and requires an explicit grant.
+  return action !== 'export';
 }
 
 function hasSessionActions(session: Session): boolean {
-  return canSessionAction(session, 'rename') || canSessionAction(session, 'archive');
+  return canSessionAction(session, 'rename')
+    || canSessionAction(session, 'export')
+    || canSessionAction(session, 'archive');
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +319,10 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             <!-- Kebab menu -->
             <Menu v-if="allowSessionActions && menuFor === s.id && hasSessionActions(s)" class="kmenu" @click.stop>
               <MenuItem v-if="canSessionAction(s, 'rename')" size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
+              <MenuItem v-if="canSessionAction(s, 'export')" size="lg" @click="onExport(s.id)">
+                <Icon name="download" size="sm" />
+                {{ t('sidebar.export') }}
+              </MenuItem>
               <MenuItem v-if="canSessionAction(s, 'archive')" size="lg" danger @click="onArchive(s.id)">{{ t('sidebar.archive') }}</MenuItem>
             </Menu>
           </div>
