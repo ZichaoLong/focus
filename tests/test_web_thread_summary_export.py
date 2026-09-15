@@ -212,11 +212,14 @@ class ThreadSummaryExportTests(unittest.TestCase):
         self.assertEqual(
             markdown.decode(),
             "# Codex conversation summary"
-            "\n\n## User\n\nFirst prompt"
-            "\n\n## Assistant\n\nAnswer one"
-            "\n\n## User\n\nStill running"
-            "\n\n## User\n\nSecond\n\nparagraph"
-            "\n\n## Assistant\n\nLegacy final\n",
+            "\n\n## 1. First prompt"
+            "\n\n### User\n\nFirst prompt"
+            "\n\n### Assistant\n\nAnswer one"
+            "\n\n## 2. Still running"
+            "\n\n### User\n\nStill running"
+            "\n\n## 3. Second paragraph"
+            "\n\n### User\n\nSecond\n\nparagraph"
+            "\n\n### Assistant\n\nLegacy final\n",
         )
         self.assertNotIn(b"secret", markdown)
         self.assertEqual(len(read_calls), 1)
@@ -229,6 +232,30 @@ class ThreadSummaryExportTests(unittest.TestCase):
             self.assertEqual(kwargs["limit"], 2)
             self.assertEqual(kwargs["expected_connection_generation"], 7)
         self.assertEqual(generation_checks, [7])
+
+    def test_outline_title_is_bounded_without_truncating_the_prompt_body(self) -> None:
+        prompt = ("x" * 80) + "\ntrailing prompt text"
+        pages = {
+            None: ThreadTurnsPage(
+                turns=[
+                    {
+                        "items": [
+                            {
+                                "type": "userMessage",
+                                "content": [{"type": "text", "text": prompt}],
+                            }
+                        ]
+                    }
+                ]
+            )
+        }
+        service, _calls, _checks = self._service(pages)
+        prepared = service.prepare("client-1", "thread-1")
+
+        markdown = service.execute(prepared).decode()
+
+        self.assertIn(f"\n\n## 1. {('x' * 79)}…\n\n", markdown)
+        self.assertIn(f"\n\n### User\n\n{prompt}\n", markdown)
 
     def test_rejects_a_cursor_loop_without_returning_bytes(self) -> None:
         pages = {

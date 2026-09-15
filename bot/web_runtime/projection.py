@@ -477,7 +477,7 @@ def _project_summary_user_prompts(
         if first_user is None:
             continue
         text_parts, _attachments = _project_user_content(first_user.get("content"))
-        text, title_truncated = _bounded_summary_prompt_text("\n\n".join(text_parts))
+        text, title_truncated = bounded_summary_prompt_text("\n\n".join(text_parts))
         projected.append(
             {
                 "id": f"{turn_id}:user",
@@ -490,7 +490,7 @@ def _project_summary_user_prompts(
     return projected
 
 
-def _bounded_summary_prompt_text(
+def bounded_summary_prompt_text(
     text: str,
     *,
     limit: int = 160,

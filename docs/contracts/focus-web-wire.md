@@ -212,7 +212,12 @@ guards and may not retain parallel key or enum inventories.
   content never enter the file. A Focus attachment envelope contributes only
   its `focus.user_request`; manifest metadata, same-host paths, and internal
   instructions are excluded, while a malformed reserved envelope fails the
-  whole export. The scan has a 30-second total deadline, at most 100 pages, a
+  whole export. Each turn with exportable content has one numbered level-two
+  heading using a whitespace-collapsed excerpt of its first User prompt when
+  visible, or a fixed role label otherwise, bounded to 80 characters with `…`
+  marking truncation. The complete prompt and final answer remain under
+  level-three `User` / `Assistant` headings. The scan has a 30-second total
+  deadline, at most 100 pages, a
   32-MiB final UTF-8 Markdown limit, and rejects repeated or
   non-progressing cursors. Crossing any boundary returns an explicit HTTP error
   without `Content-Disposition`, a partial `.md`, or silent truncation. The

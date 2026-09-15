@@ -22,7 +22,10 @@ from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.direct_thread_target_coordinator import (
     require_web_direct_thread_snapshot,
 )
-from bot.web_runtime.projection import project_user_prompt_text
+from bot.web_runtime.projection import (
+    bounded_summary_prompt_text,
+    project_user_prompt_text,
+)
 from bot.web_runtime.writer_workspace_coordinator import (
     require_web_client_id,
     require_web_thread_id,
@@ -33,6 +36,7 @@ SUMMARY_EXPORT_TIMEOUT_SECONDS = 30.0
 SUMMARY_EXPORT_PAGE_LIMIT = 100
 SUMMARY_EXPORT_MAX_PAGES = 100
 SUMMARY_EXPORT_MAX_OUTPUT_BYTES = 32 * 1024 * 1024
+SUMMARY_EXPORT_OUTLINE_TITLE_LIMIT = 80
 SUMMARY_EXPORT_FILENAME = "codex-conversation-summary.md"
 _TITLE = "# Codex conversation summary"
 
@@ -224,6 +228,7 @@ class WebThreadSummaryExportService:
         cursor: str | None = None
         seen_cursors: set[str] = set()
         page_count = 0
+        outline_number = 0
         while True:
             page_count += 1
             page = self._ports.list_thread_turns(
@@ -247,7 +252,8 @@ class WebThreadSummaryExportService:
                     "Codex exceeded the requested summary turn page size",
                 )
             for turn in page.turns:
-                self._append_turn(output, turn)
+                if self._append_turn(output, turn, outline_number + 1):
+                    outline_number += 1
             self._remaining(prepared.deadline)
 
             next_cursor = page.next_cursor
@@ -283,7 +289,12 @@ class WebThreadSummaryExportService:
         self._append_bytes(output, b"\n")
         return bytes(output)
 
-    def _append_turn(self, output: bytearray, turn: object) -> None:
+    def _append_turn(
+        self,
+        output: bytearray,
+        turn: object,
+        outline_number: int,
+    ) -> bool:
         if not isinstance(turn, dict):
             raise CodexRpcProtocolError(
                 "thread/turns/list",
@@ -317,8 +328,8 @@ class WebThreadSummaryExportService:
                 if phase != "commentary":
                     assistant_item = item
 
-        if user_item is not None:
-            self._append_section(output, "User", self._user_text(user_item))
+        user_text = self._user_text(user_item) if user_item is not None else None
+        assistant_text: str | None = None
         if assistant_item is not None:
             raw_text = assistant_item.get("text")
             if not isinstance(raw_text, str):
@@ -326,9 +337,26 @@ class WebThreadSummaryExportService:
                     "thread/turns/list",
                     "Codex summary history contains an invalid final answer",
                 )
-            text = raw_text.strip()
-            if text:
-                self._append_section(output, "Assistant", text)
+            assistant_text = raw_text.strip() or None
+
+        if user_text is None and assistant_text is None:
+            return False
+        title_source = user_text or (
+            "User prompt" if user_text is not None else "Assistant response"
+        )
+        title, _truncated = bounded_summary_prompt_text(
+            title_source,
+            limit=SUMMARY_EXPORT_OUTLINE_TITLE_LIMIT,
+        )
+        self._append_bytes(
+            output,
+            f"\n\n## {outline_number}. {title}".encode("utf-8"),
+        )
+        if user_text is not None:
+            self._append_section(output, "User", user_text)
+        if assistant_text is not None:
+            self._append_section(output, "Assistant", assistant_text)
+        return True
 
     @staticmethod
     def _user_text(item: dict[str, Any]) -> str:
@@ -368,7 +396,7 @@ class WebThreadSummaryExportService:
         return "\n\n".join(parts)
 
     def _append_section(self, output: bytearray, role: str, text: str) -> None:
-        section = f"\n\n## {role}"
+        section = f"\n\n### {role}"
         if text:
             section += f"\n\n{text}"
         self._append_bytes(output, section.encode("utf-8"))

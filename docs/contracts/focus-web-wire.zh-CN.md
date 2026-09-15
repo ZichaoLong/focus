@@ -143,8 +143,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `itemsView=summary`、每页 100 turns 遍历 `thread/turns/list`。每轮只读取首个 `userMessage` 中 `type=text` 的
   content 与非 commentary 的最终 `agentMessage`；工具结果、reasoning、plan、MCP、commentary、hook prompt 和非文本
   附件内容一律不进入文件。Focus attachment envelope 必须只投影其中的 `focus.user_request`，manifest、同机路径与内部
-  说明不得导出；reserved envelope malformed 时整次导出显式失败。扫描总 deadline 为 30 秒，最多 100 页，最终
-  UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
+  说明不得导出；reserved envelope malformed 时整次导出显式失败。每个有可导出内容的 turn 使用一个带序号的二级
+  标题；标题优先取首个 User prompt 的空白折叠摘录，无可见 prompt 文字时使用固定角色标签，最多 80 字符并以 `…`
+  标记截断。完整 prompt 与最终回答仍分别保留在 `User` / `Assistant` 三级标题正文中。扫描总 deadline 为 30 秒，
+  最多 100 页，最终 UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
   `Content-Disposition`、partial `.md` 或静默截断。
   完整记录仍由 fcodex TUI `/export` 持有。
 - `GET /api/threads/{thread_id}/export-data` 只为 current authenticated document 导出一个完整 UTF-8 JSONL
