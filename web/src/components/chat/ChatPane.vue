@@ -24,7 +24,6 @@ import {
   renderBlockKey,
   turnBlocks,
   turnFinalText,
-  turnToMarkdown,
 } from '../chatTurnRendering';
 
 const { t } = useI18n();
@@ -33,10 +32,6 @@ onUnmounted(() => {
   if (copiedTimer !== null) {
     clearTimeout(copiedTimer);
     copiedTimer = null;
-  }
-  if (copiedConversationTimer !== null) {
-    clearTimeout(copiedConversationTimer);
-    copiedConversationTimer = null;
   }
 });
 
@@ -193,7 +188,6 @@ const showWorking = computed(() => props.working);
 const emit = defineEmits<{
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
-  copyConversationCopied: [];
   /** Show a thinking block's full text in the right-side panel. */
   openThinking: [target: { turnId: string; blockIndex: number }];
   /** Show a compaction divider's summary text in the right-side panel. */
@@ -323,35 +317,6 @@ function copyMessageToComposer(turn: ChatTurn): void {
   emit('copyMessageToComposer', { text: turn.text, attachments: turn.attachments });
 }
 
-// Copy-whole-conversation state
-const copiedConversation = ref(false);
-let copiedConversationTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Convert the entire conversation to Markdown and copy to clipboard. */
-function copyConversation(): void {
-  if (props.turns.length === 0) return;
-  const lines: string[] = [];
-  for (const turn of props.turns) {
-    if (turn.role === 'compaction' || turn.role === 'cron') continue; // dividers / cron notices don't copy
-    const roleLabel = turn.role === 'user' ? 'User' : 'Assistant';
-    const content = turnToMarkdown(turn);
-    if (content.trim()) {
-      lines.push(`**${roleLabel}**\n\n${content}`);
-    }
-  }
-  const markdown = lines.join('\n\n---\n\n');
-  void copyTextToClipboard(markdown).then((ok) => {
-    if (!ok) return;
-    copiedConversation.value = true;
-    emit('copyConversationCopied');
-    if (copiedConversationTimer !== null) clearTimeout(copiedConversationTimer);
-    copiedConversationTimer = setTimeout(() => {
-      copiedConversationTimer = null;
-      copiedConversation.value = false;
-    }, 2000);
-  }).catch(() => {/* ignore */});
-}
-
 function assistantRunEndingAt(index: number): ChatTurn[] {
   const run: ChatTurn[] = [];
   for (let i = index; i >= 0; i--) {
@@ -368,30 +333,6 @@ function assistantRunFinalText(index: number): string {
     .filter(Boolean)
     .join('\n\n');
 }
-
-function finalSummaryText(): string {
-  for (let i = props.turns.length - 1; i >= 0; i -= 1) {
-    if (props.turns[i]?.role === 'assistant') return assistantRunFinalText(i);
-  }
-  return '';
-}
-
-function copyFinalSummary(): void {
-  const text = finalSummaryText();
-  if (!text.trim()) return;
-  void copyTextToClipboard(text).then((ok) => {
-    if (!ok) return;
-    copiedConversation.value = true;
-    emit('copyConversationCopied');
-    if (copiedConversationTimer !== null) clearTimeout(copiedConversationTimer);
-    copiedConversationTimer = setTimeout(() => {
-      copiedConversationTimer = null;
-      copiedConversation.value = false;
-    }, 2000);
-  }).catch(() => {/* ignore */});
-}
-
-defineExpose({ copyConversation, copyFinalSummary });
 
 function isAssistantRunEnd(index: number): boolean {
   const turn = props.turns[index];

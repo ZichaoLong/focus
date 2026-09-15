@@ -1,6 +1,4 @@
 export default {
-  copyAll: '复制全部对话为 Markdown',
-  copyFinalSummary: '仅复制最终总结',
   copied: '已复制',
   changed: '{n} 处改动',
   gitTooltip: '打开「文件 > 改动」',
@@ -16,7 +14,7 @@ export default {
   renameSession: '重命名',
   forkSession: '分叉会话',
   archiveSession: '归档',
-  exportSession: '导出会话',
+  exportSession: '导出问答 Markdown',
   reviewSession: '审视改动',
   setGoal: '设置 Goal',
 };

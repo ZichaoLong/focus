@@ -1083,6 +1083,26 @@ def _project_attachment_envelope(
     return request_text, attachments
 
 
+def project_user_prompt_text(
+    text: str,
+    *,
+    reject_malformed_focus_envelope: bool = False,
+) -> str:
+    """Remove Focus attachment metadata, optionally rejecting malformed envelopes."""
+
+    projected, _attachments = _project_attachment_envelope(
+        text,
+        attachment_url_for_id=None,
+    )
+    if (
+        reject_malformed_focus_envelope
+        and text.startswith(_ATTACHMENT_ENVELOPE_START)
+        and projected == text
+    ):
+        raise ValueError("malformed Focus attachment prompt envelope")
+    return projected
+
+
 def _append_attachment(
     attachments: list[dict[str, Any]],
     attachment: dict[str, Any],

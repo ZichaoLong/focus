@@ -334,13 +334,10 @@ function pickWorkspace(id: string): void {
 // picked 'left' aren't frozen on it with no way back.
 safeRemove(STORAGE_KEYS.contentAlign);
 
-const chatPaneRef = ref<InstanceType<typeof ChatPane> | null>(null);
 const conversationTocRef = ref<InstanceType<typeof ConversationToc> | null>(null);
 const emptyComposerRef = ref<ComposerHandle | null>(null);
 const dockedComposerRef = ref<ComposerHandle | null>(null);
-const copyConversationCopied = ref(false);
 const goalExpandSignal = ref(0);
-let copyConversationCopiedTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Load text (and any attachments) into whichever composer is currently mounted
     (docked vs the empty-session composer). Used when a message is copied into
@@ -384,15 +381,6 @@ function loadComposerRecovery(
   if (composer.loadRecovery(value) !== true) return false;
   attachmentUpload.loadAttachments(attachments ?? []);
   return true;
-}
-
-function handleCopyConversationCopied(): void {
-  copyConversationCopied.value = true;
-  if (copyConversationCopiedTimer !== null) clearTimeout(copyConversationCopiedTimer);
-  copyConversationCopiedTimer = setTimeout(() => {
-    copyConversationCopiedTimer = null;
-    copyConversationCopied.value = false;
-  }, 2000);
 }
 
 function focusGoal(): void {
@@ -1735,10 +1723,6 @@ onUnmounted(() => {
   abandonScrollbarDrag();
   if (pinRaf) cancelRaf(pinRaf);
   if (tocHitTestRaf) cancelRaf(tocHitTestRaf);
-  if (copyConversationCopiedTimer !== null) {
-    clearTimeout(copyConversationCopiedTimer);
-    copyConversationCopiedTimer = null;
-  }
   if (typeof document !== 'undefined') {
     document.removeEventListener('visibilitychange', onVisibilityChange);
   }
@@ -1793,7 +1777,7 @@ defineExpose({
 <template>
   <section class="con" :class="{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }">
     <!-- Chat context header: workspace/session, git status, open-in-editor,
-         copy-all, PR. Hidden for the empty-composer (no session context yet). -->
+         session actions, and PR. Hidden without an active session context. -->
     <ChatHeader
       v-if="!narrowViewport && !showTargetlessComposer"
       v-show="!readingMode"
@@ -1808,13 +1792,10 @@ defineExpose({
       :git-diff-stats="gitDiffStats"
       :is-git-repo="!!gitInfo"
       :pr="pr"
-      :copied="copyConversationCopied"
       :session-actions="sessionActions"
       :session-action-capabilities="sessionActionCapabilities"
       :reading-mode-enabled="readingModeEnabled"
       @open-changes="emit('openChanges')"
-      @copy-all="chatPaneRef?.copyConversation()"
-      @copy-final-summary="chatPaneRef?.copyFinalSummary()"
       @open-pr="pr && emit('openPr', pr.url)"
       @rename-session="(id, title) => emit('renameSession', id, title)"
       @fork-session="(id) => emit('forkSession', id)"
@@ -2012,7 +1993,6 @@ defineExpose({
           </template>
           <template v-else>
             <ChatPane
-              ref="chatPaneRef"
               :key="fileReloadKey ?? 'no-session'"
               :turns="turns"
               :approvals="approvals"
@@ -2031,7 +2011,6 @@ defineExpose({
               :queued="queued"
               @open-file="emit('openFile', $event)"
               @open-media="emit('openMedia', $event)"
-              @copy-conversation-copied="handleCopyConversationCopied"
               @open-thinking="emit('openThinking', $event)"
               @open-compaction="emit('openCompaction', $event)"
               @open-agent="emit('openAgent', $event)"

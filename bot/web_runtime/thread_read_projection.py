@@ -16,6 +16,7 @@ from bot.adapters.base import (
     ThreadSummary,
     ThreadTurnsPage,
 )
+from bot.direct_thread_target_policy import direct_thread_target_denial
 from bot.runtime_state import is_confirmed_inactive_backend_thread_status
 from bot.stores.interaction_lease_store import InteractionLease
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLease
@@ -146,6 +147,14 @@ def project_thread_action_capabilities(
         and holder.holder_id == f"web:{str(client_id or '').strip()}"
     )
     direct_target = str(summary.subagent_kind or "").strip() != "threadSpawn"
+    exportable = bool(
+        thread_id
+        and not summary.ephemeral
+        and summary.history_mode in {"legacy", "paginated"}
+        and not direct_thread_target_denial(
+            summary, operation="export this conversation"
+        )
+    )
     mutable = bool(
         thread_id
         and direct_target
@@ -165,7 +174,7 @@ def project_thread_action_capabilities(
         "delete": mutable and inactive and archived,
         "compact": mutable and inactive and not archived,
         "fork": False,
-        "export": False,
+        "export": exportable,
         "review": mutable and inactive and not archived,
         "goal": mutable
         and (

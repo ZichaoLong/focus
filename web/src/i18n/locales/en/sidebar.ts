@@ -20,7 +20,7 @@ export default {
   copyFailed: 'Copy failed',
   archive: 'Archive',
   fork: 'Fork session',
-  export: 'Export session',
+  export: 'Export Q&A Markdown',
   delete: 'Delete',
   removeWorkspace: 'Remove workspace',
   noSessions: 'No conversations yet',

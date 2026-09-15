@@ -1,7 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/ChatHeader.vue -->
 <!-- Thin context bar above the chat: workspace / session name, git branch +
-     status, "open in editor", and a ⋮ more-menu that bundles copy-all plus
-     the same session actions available from the sidebar session row. -->
+     status, "open in editor", and a ⋮ more-menu with the same session actions
+     available from the sidebar session row. -->
 <script setup lang="ts">
 import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -31,8 +31,6 @@ const props = defineProps<{
   isGitRepo?: boolean;
   /** GitHub PR for the current branch, when known (null/undefined = none). */
   pr?: { number: number; state: string; url: string } | null;
-  /** True for ~2s after a successful copy-all, to flip the icon to a check. */
-  copied?: boolean;
   sessionActions?: boolean;
   sessionActionCapabilities?: Partial<SessionActionCapabilities>;
   readingModeEnabled?: boolean;
@@ -48,8 +46,6 @@ const actionCapabilities = computed<SessionActionCapabilities>(() => ({
 }));
 
 const emit = defineEmits<{
-  copyAll: [];
-  copyFinalSummary: [];
   openChanges: [];
   openPr: [url: string];
   renameSession: [id: string, title: string];
@@ -146,16 +142,6 @@ onUnmounted(() => {
   document.removeEventListener('mousedown', onDocClick);
   window.removeEventListener('resize', onScrollOrResize);
 });
-
-function onCopyAll(): void {
-  emit('copyAll');
-  closeMenu();
-}
-
-function onCopyFinalSummary(): void {
-  emit('copyFinalSummary');
-  closeMenu();
-}
 
 // ---------------------------------------------------------------------------
 // Copy session ID
@@ -268,7 +254,7 @@ function setGoal(): void {
       </Tooltip>
     </div>
 
-    <!-- More menu trigger: copy-all + session actions -->
+    <!-- More menu trigger for session actions. -->
     <IconButton
       ref="kebabRef"
       class="ch-act-more"
@@ -289,16 +275,7 @@ function setGoal(): void {
       :style="menuStyle"
       @click.stop
     >
-      <MenuItem @click="onCopyAll">
-        <Icon :name="copied ? 'check' : 'copy'" size="sm" />
-        {{ copied ? t('header.copied') : t('header.copyAll') }}
-      </MenuItem>
-      <MenuItem @click="onCopyFinalSummary">
-        <Icon name="file-text" size="sm" />
-        {{ t('header.copyFinalSummary') }}
-      </MenuItem>
       <template v-if="sessionId">
-        <MenuItem separator />
         <MenuItem @click="copySessionId">
           <Icon :name="copiedId ? 'check' : 'copy'" size="sm" />
           {{ copiedId ? t('header.copied') : t('header.copySessionId') }}

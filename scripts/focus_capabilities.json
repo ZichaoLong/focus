@@ -956,6 +956,88 @@
         "web-typecheck"
       ]
     },
+    "focus-web-summary-export": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_thread_summary_export"
+        },
+        {
+          "path": "bot/web_runtime/controller.py",
+          "symbol": "WebRuntimeController.run_prepared_thread_summary_export"
+        },
+        {
+          "path": "web/src/focus/FocusApp.vue",
+          "symbol": "exportThreadSummary"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/thread_summary_export.py",
+          "symbol": "WebThreadSummaryExportService"
+        },
+        {
+          "path": "bot/web_runtime/thread_read_projection.py",
+          "symbol": "project_thread_action_capabilities"
+        },
+        {
+          "path": "bot/web_runtime/projection.py",
+          "symbol": "project_user_prompt_text"
+        },
+        {
+          "path": "web/src/focus/api.ts",
+          "symbol": "FocusWebApi"
+        },
+        {
+          "path": "web/src/focus/useFocusWebClient.ts",
+          "symbol": "useFocusWebClient"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "4. Endpoint 与 event admission"
+        },
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "5. DTO admission 与能力值"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_thread_summary_export.py",
+            "tests/web_runtime/test_thread_history_gateway.py",
+            "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-api.test.ts",
+            "web/test/focus-summary-export-surface.test.ts",
+            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        }
+      ],
+      "guard": [
+        "import-cycles",
+        "dependency-direction",
+        "source-context",
+        "web-wire",
+        "web-dependency-direction",
+        "web-typecheck"
+      ]
+    },
     "focus-web-tool-output-presentation": {
       "entry": [
         {

@@ -421,6 +421,33 @@ describe('useFocusWebClient runtime notice routing', () => {
   });
 });
 
+describe('useFocusWebClient Q&A Markdown export', () => {
+  it('allows only one browser-local export request at a time', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const gate = deferred<void>();
+    const markdown = new Blob(['# Codex conversation summary\n'], {
+      type: 'text/markdown',
+    });
+    fake.api.exportThreadSummary = vi.fn(async () => {
+      await gate.promise;
+      return markdown;
+    });
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+
+    const first = client.exportThreadSummary('thread-1');
+    expect(client.summaryExporting.value).toBe(true);
+    await expect(client.exportThreadSummary('thread-1')).resolves.toBeNull();
+    expect(fake.api.exportThreadSummary).toHaveBeenCalledOnce();
+
+    gate.resolve();
+    await expect(first).resolves.toBe(markdown);
+    expect(client.summaryExporting.value).toBe(false);
+    client.dispose();
+  });
+});
+
 describe('useFocusWebClient turn-window preference', () => {
   function turns(count: number) {
     return Array.from({ length: count }, (_, index) => ({

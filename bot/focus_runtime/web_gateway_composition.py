@@ -101,6 +101,16 @@ def compose_web_gateway(
             abandon_prepared_thread_read=lambda prepared: ingress().abandon_prepared_external_transaction(
                 prepared
             ),
+            prepare_export_thread_summary=lambda client_id,
+            thread_id: ingress().prepare_external_transaction(
+                web_runtime.prepare_export_thread_summary,
+                client_id,
+                thread_id,
+            ),
+            run_prepared_thread_summary_export=lambda prepared: ingress().run_prepared_external_transaction(
+                prepared,
+                web_runtime.run_prepared_thread_summary_export,
+            ),
             prepare_tool_detail=lambda client_id,
             thread_id,
             turn_id,

@@ -59,6 +59,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const operatorStatusStale = computed(() => operatorStatusFreshness.value === 'stale');
   const initialized = ref(false);
   const loading = ref(false);
+  const summaryExporting = ref(false);
   const authRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
@@ -572,6 +573,21 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     return api.attachmentBlob(fileId);
   }
 
+  async function exportThreadSummary(threadId: string): Promise<Blob | null> {
+    const normalizedThreadId = threadId.trim();
+    if (!normalizedThreadId || summaryExporting.value || navigation.isDisposed) return null;
+    summaryExporting.value = true;
+    errorMessage.value = '';
+    try {
+      return await api.exportThreadSummary(normalizedThreadId);
+    } catch (error) {
+      if (!navigation.isDisposed) reportError(error);
+      return null;
+    } finally {
+      summaryExporting.value = false;
+    }
+  }
+
   async function loadOlderMessages(sessionId: string): Promise<boolean> {
     if (sessionId !== activeThreadId.value) return false;
     return historyNavigation.loadOlderPage();
@@ -691,6 +707,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     threadScope,
     initialized,
     loading,
+    summaryExporting,
     conversationLoading,
     starting,
     loadingMore: historyNavigation.loading,
@@ -789,6 +806,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     deleteThread,
     uploadAttachment,
     downloadAttachment,
+    exportThreadSummary,
     submit,
     discardUnknownSubmission,
     takeUnknownSubmissionForRetry,

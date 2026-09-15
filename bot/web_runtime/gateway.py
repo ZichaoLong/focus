@@ -44,6 +44,7 @@ from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspection
 from bot.web_runtime.gateway_external_transaction import (
     WebGatewayExternalTransactionRunner,
 )
+from bot.web_runtime.thread_summary_export import SUMMARY_EXPORT_FILENAME
 from bot.web_runtime.mutation_recovery import (
     is_web_mutation_id,
 )
@@ -142,6 +143,8 @@ class WebGatewayPorts:
     prepare_list_older_turns: Callable[..., Any]
     run_prepared_thread_read: Callable[[Any], dict[str, Any]]
     abandon_prepared_thread_read: Callable[[Any], bool]
+    prepare_export_thread_summary: Callable[..., Any]
+    run_prepared_thread_summary_export: Callable[[Any], bytes]
     prepare_tool_detail: Callable[..., Any]
     prepare_conversation_search: Callable[..., Any]
     start_thread: Callable[..., dict[str, Any]]
@@ -956,6 +959,33 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                 items_view=items_view,
                 turn_limit=turn_limit,
             )
+        )
+
+    async def _handle_thread_summary_export(
+        self,
+        request: web.Request,
+    ) -> web.Response:
+        client_id = self._required_client_id(request)
+        markdown = await self._staged_document_request_to_thread(
+            self._ports.prepare_export_thread_summary,
+            request,
+            client_id,
+            request.match_info["thread_id"],
+            execute=self._ports.run_prepared_thread_summary_export,
+        )
+        if not isinstance(markdown, bytes):
+            raise WebRuntimeError(
+                "Focus produced an invalid Q&A Markdown export.",
+                code="thread_summary_export_protocol_error",
+                status=502,
+            )
+        return web.Response(
+            body=markdown,
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'attachment; filename="{SUMMARY_EXPORT_FILENAME}"',
+                "Content-Type": "text/markdown; charset=utf-8",
+            },
         )
 
     async def _handle_start_thread(self, request: web.Request) -> web.Response:

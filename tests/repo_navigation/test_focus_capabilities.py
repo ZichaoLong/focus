@@ -78,6 +78,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "focus-web-mutations",
                 "focus-web-next-turn-settings",
                 "focus-web-request-admission",
+                "focus-web-summary-export",
                 "focus-web-thread-inspection",
                 "focus-web-tool-output-presentation",
                 "focus-web-trusted-proxy-access",

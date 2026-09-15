@@ -121,6 +121,42 @@ const wireActiveTurnContext = {
 installFocusApiTestHooks();
 
 describe('FocusWebApi bootstrap', () => {
+  it('downloads Q&A Markdown through the catalogued authenticated route', async () => {
+    window.location.hash = '';
+    const markdown = '# Codex conversation summary\n\n## User\n\nHello\n';
+    const fetchMock = vi.fn(async (path: string, options?: RequestInit) => {
+      if (path === '/api/client/register') {
+        return new Response(JSON.stringify(registration()), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      if (path === '/api/meta') {
+        return new Response(JSON.stringify(meta), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      expect(path).toBe('/api/threads/thread-1/export-summary');
+      expect(options?.method).toBe('GET');
+      expect(options?.headers).toMatchObject({
+        'X-Focus-Web-Client': expect.any(String),
+        'X-Focus-Web-Document': expect.any(String),
+      });
+      return new Response(markdown, {
+        status: 200,
+        headers: { 'Content-Type': 'text/markdown; charset=utf-8' },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const api = new FocusWebApi();
+    await api.initialize();
+
+    const blob = await api.exportThreadSummary('thread-1');
+
+    expect(await blob.text()).toBe(markdown);
+  });
+
   it('reads and partially updates instance next-turn settings without navigation intent', async () => {
     window.location.hash = '';
     const fetchMock = vi.fn(async (path: string, options?: RequestInit) => {

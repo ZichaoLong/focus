@@ -41,6 +41,7 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | browser-local document activity favicon preference 与 presentation | `web/src/focus/documentActivityFavicon.ts` 的 `createFocusDocumentActivityFaviconPreference` 与 `syncFocusDocumentActivityFavicon` |
 | app-server typed runtime notice 投影 | `bot/web_runtime/runtime_notice.py` 的 `project_runtime_notice`；有序发布由 `WebRuntimeEventCoordinator` 持有 |
 | browser 当前 document 的有界 runtime notice presentation | `web/src/focus/client-state/runtime-notices.ts` 的 `RuntimeNoticeOwner` |
+| browser 问答 Markdown 内容与完整性保护 | `bot/web_runtime/thread_summary_export.py` 的 `WebThreadSummaryExportService` |
 
 generated 文件不是第二份事实源，禁止手改。TypeScript interface 仍描述字段类型，但 CI 必须逐 interface 证明其
 required field 与 catalog 一致；decoder 必须消费 generated guard，不能再维护平行 key/enum inventory。
@@ -90,6 +91,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `view` query、compatibility decoder 与 alias 一律删除；服务与静态资源必须同版本部署。
 - v14 为 `FocusMeta` 新增必填 `web_display_name`，使 browser 使用配置的部署显示名称维护 document title。
   v13 browser 不保留缺字段 compatibility decoder；服务与静态资源仍必须同版本部署。
+- v15 新增只读 `GET /api/threads/{thread_id}/export-summary`，并使 thread action capability 中的 `export`
+  表示可导出问答 Markdown。该文件只包含每轮首个 User prompt 的文本和 Assistant 最终回答；不新增 response DTO、
+  完整导出模式或 v14 route alias。服务与静态资源仍必须同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -130,6 +134,15 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   detail 的唯一历史 endpoint；`full` 请求必须携非空 opaque `cursor`，只有 `summary` 可以省略 cursor。一个 browser
   preference generation 内 recent、summary 与 full 必须使用同一个 page width，保证 summary locator 可直接复用于
   同页 full 请求，而不建立 range/offset 语义。width 改变会废弃旧 locator/detail intent，并以新 width 重建。
+- `GET /api/threads/{thread_id}/export-summary` 只为 current authenticated document 导出一个完整 UTF-8 Markdown
+  attachment。owner 先验证 exact direct、non-ephemeral、persisted-history thread，再按 `sortDirection=asc`、
+  `itemsView=summary`、每页 100 turns 遍历 `thread/turns/list`。每轮只读取首个 `userMessage` 中 `type=text` 的
+  content 与非 commentary 的最终 `agentMessage`；工具结果、reasoning、plan、MCP、commentary、hook prompt 和非文本
+  附件内容一律不进入文件。Focus attachment envelope 必须只投影其中的 `focus.user_request`，manifest、同机路径与内部
+  说明不得导出；reserved envelope malformed 时整次导出显式失败。扫描总 deadline 为 30 秒，最多 100 页，最终
+  UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
+  `Content-Disposition`、partial `.md` 或静默截断。
+  完整记录仍由 fcodex TUI `/export` 持有。
 - document-bound thread directory/open/history/tool-detail/conversation-search 请求必须使用 staged request boundary。
   Gateway 在 per-client lifecycle lock 内核验 exact request token，并经 service-ingress receipt 让 RuntimeLoop
   prepare 不可变 document/target、backend generation、read observation 与 projection coordinates；随后释放该 lock。
@@ -137,6 +150,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   recheck 回到 loop。无 document 的 directory read 也必须由同一 service-ingress barrier 覆盖。较新 document、
   notification、runtime revision/epoch 或 backend generation 使旧 response 以
   `stale_document_read / stale_thread_read / stale_thread_list` 拒绝，不能安装旧 DTO 或覆盖新 cache。
+  summary export 同样跨越 document lock 与 service-ingress barrier，但它是 detached download：prepare 只冻结已认证
+  request target 与 backend connection generation，settlement 不读取 selection、projection revision 或 thread
+  observation。其他 thread event、用户切换或同 document 的新读取不得使已完成文件失效；backend generation replacement
+  仍必须拒绝结果。
 - 上述 cold open 可以在 staged read 中执行已准入的 `thread/resume`。known resume 必须先结算并提交 runtime interest，
   后续 stale read/DTO 409 只表示 response 不可安装，不是 resume known-no-effect 证据。权威 direct-target read 对
   `ThreadSpawn` child 的拒绝也只可在 exact-current document/backend settlement 清理当前 selection；迟到拒绝不能

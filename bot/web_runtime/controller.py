@@ -108,6 +108,12 @@ from bot.web_runtime.thread_inspection import (
     WebThreadInspectionService,
     WebThreadToolDetailPreparation,
 )
+from bot.web_runtime.thread_summary_export import (
+    WebThreadSummaryExportPorts,
+    WebThreadSummaryExportPreparation,
+    WebThreadSummaryExportService,
+    classify_thread_summary_export_error,
+)
 from bot.web_runtime.thread_mutation_coordinator import (
     WebLifecycleTargetReader,
     WebLifecycleTargetReaderPorts,
@@ -417,6 +423,15 @@ class WebRuntimeController:
                 ),
                 settle_runtime_cleanup_candidates=self._lifecycle.settle_runtime_cleanup_candidates,
                 delete_thread_scope=self._workspace.delete_thread_scope_external,
+            ),
+            runtime_context_guard=document_registry.assert_runtime_context,
+        )
+        self._thread_summary_export = WebThreadSummaryExportService(
+            ports=WebThreadSummaryExportPorts(
+                read_thread=ports.read_thread,
+                list_thread_turns=ports.list_thread_turns,
+                capture_connection_generation=ports.capture_connection_generation,
+                run_if_connection_generation=ports.run_if_connection_generation,
             ),
             runtime_context_guard=document_registry.assert_runtime_context,
         )
@@ -821,6 +836,32 @@ class WebRuntimeController:
             thread_id,
             **kwargs,
         )
+
+    def prepare_export_thread_summary(
+        self,
+        client_id: str,
+        thread_id: str,
+    ) -> WebThreadSummaryExportPreparation:
+        return self._thread_summary_export.prepare(client_id, thread_id)
+
+    def run_prepared_thread_summary_export(
+        self,
+        prepared: WebThreadSummaryExportPreparation,
+    ) -> bytes:
+        """Run the complete scan off-loop, then fence backend replacement."""
+
+        try:
+            markdown = self._thread_summary_export.execute(prepared)
+            return self._runtime_call(
+                self._thread_summary_export.settle,
+                prepared,
+                markdown,
+            )
+        except Exception as exc:
+            error = classify_thread_summary_export_error(exc)
+            if error is exc:
+                raise
+            raise error from exc
 
     def run_prepared_thread_read(
         self,

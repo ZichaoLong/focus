@@ -221,6 +221,7 @@ export interface FocusWebApiPort {
     itemsView?: FocusTurnPage['items_view'],
     turnLimit?: number,
   ): Promise<FocusTurnPage>;
+  exportThreadSummary(threadId: string): Promise<Blob>;
   readToolDetail(
     threadId: string,
     locator: FocusToolInspectionLocator,
@@ -521,6 +522,34 @@ export class FocusWebApi implements FocusWebApiPort {
       'turn page',
       { parameters: { thread_id: threadId }, query: params },
     );
+  }
+
+  async exportThreadSummary(threadId: string): Promise<Blob> {
+    const response = await fetch(focusWebEndpointPath(
+      'thread_summary_export',
+      { thread_id: threadId },
+    ), {
+      method: FOCUS_WEB_ENDPOINTS.thread_summary_export.method,
+      credentials: 'same-origin',
+      headers: {
+        'X-Focus-Web-Client': this.clientId,
+        'X-Focus-Web-Document': this.requireDocumentToken(),
+      },
+    });
+    if (!response.ok) throw await errorFromResponse(response);
+    const mediaType = response.headers
+      .get('Content-Type')
+      ?.split(';', 1)[0]
+      ?.trim()
+      .toLowerCase();
+    if (mediaType !== 'text/markdown') {
+      throw new FocusApiError('Focus Web returned an invalid Markdown export.', {
+        status: 502,
+        code: 'invalid_gateway_response',
+        details: { contract: 'thread summary export' },
+      });
+    }
+    return await response.blob();
   }
 
   readToolDetail(

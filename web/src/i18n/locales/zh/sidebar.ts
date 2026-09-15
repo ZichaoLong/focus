@@ -20,7 +20,7 @@ export default {
   copyFailed: '复制失败',
   archive: '归档',
   fork: '分叉会话',
-  export: '导出会话',
+  export: '导出问答 Markdown',
   delete: '删除',
   removeWorkspace: '移除工作区',
   noSessions: '暂无对话',

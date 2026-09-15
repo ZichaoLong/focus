@@ -186,7 +186,7 @@ function forkRow(): void {
   emit('fork', props.session.id);
 }
 
-// Export this session as a ZIP
+// Export this session as Q&A Markdown.
 function exportRow(): void {
   closeMenu();
   emit('export', props.session.id);

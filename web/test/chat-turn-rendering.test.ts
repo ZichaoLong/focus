@@ -11,7 +11,6 @@ import {
   toolStackPosition,
   turnBlocks,
   turnFinalText,
-  turnToMarkdown,
 } from '../src/components/chatTurnRendering';
 
 function tool(id: string, over: Partial<ToolCall> = {}): ToolCall {
@@ -269,19 +268,6 @@ describe('turnFinalText', () => {
       { kind: 'text', text: 'second' },
     ]);
     expect(turnFinalText(turn)).toBe('first\n\nsecond');
-  });
-});
-
-describe('turnToMarkdown', () => {
-  it('renders thinking as a quote, text verbatim, and tool output as a fenced block', () => {
-    const turn = assistantTurn([
-      { kind: 'thinking', thinking: 'line1\nline2' },
-      { kind: 'text', text: 'hello' },
-      toolBlock('a', { name: 'bash', output: ['out1', 'out2'] }),
-    ]);
-    expect(turnToMarkdown(turn)).toBe(
-      ['> **Thinking**\n> line1\n> line2', 'hello', '```\n[bash]\nout1\nout2\n```'].join('\n\n'),
-    );
   });
 });
 

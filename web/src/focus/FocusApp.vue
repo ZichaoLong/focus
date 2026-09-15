@@ -85,6 +85,7 @@ const detailOpen = computed(() => detailSelection.value !== null);
 const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
 const unsupportedNotice = ref('');
 let unsupportedNoticeTimer: ReturnType<typeof window.setTimeout> | null = null;
+const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';
 const { colorScheme, setColorScheme } = useAppearance();
 const { confirm } = useConfirmDialog();
 const { viewportWidth } = useViewportWidth();
@@ -666,6 +667,26 @@ function showUnsupported(): void {
   showTransientNotice(t('focus.fileUnavailable'));
 }
 
+async function exportThreadSummary(threadId: string): Promise<void> {
+  if (client.summaryExporting.value) {
+    showTransientNotice(t('focus.summaryExportBusy'));
+    return;
+  }
+  showTransientNotice(t('focus.summaryExportPreparing'));
+  const blob = await client.exportThreadSummary(threadId);
+  if (blob === null) return;
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = SUMMARY_EXPORT_FILENAME;
+  anchor.style.display = 'none';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  showTransientNotice(t('focus.summaryExportComplete'));
+}
+
 async function confirmArchiveThread(threadId: string): Promise<void> {
   const approved = await confirm({
     title: t('sidebar.archive'),
@@ -861,6 +882,7 @@ onUnmounted(() => {
           @select="client.selectThread($event)"
           @rename="(id, title) => client.renameThread(id, title)"
           @archive="confirmArchiveThread($event)"
+          @export="exportThreadSummary($event)"
           @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
           @create-in-workspace="openWorkspaceDraft($event)"
           @open-settings="showSettings = true"
@@ -1051,6 +1073,7 @@ onUnmounted(() => {
           @copy-message-to-composer="handleCopyMessageToComposer"
           @rename-session="(id, title) => client.renameThread(id, title)"
           @archive-session="confirmArchiveThread($event)"
+          @export-session="exportThreadSummary($event)"
           @review-session="showReviewDialog = true"
           @goal-session="showGoalDialog = true"
           @enter-reading-mode="enterReadingMode"

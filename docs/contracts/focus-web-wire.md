@@ -47,6 +47,7 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Browser-local document-activity favicon preference and presentation | `createFocusDocumentActivityFaviconPreference` and `syncFocusDocumentActivityFavicon` in `web/src/focus/documentActivityFavicon.ts` |
 | Typed app-server runtime-notice projection | `project_runtime_notice` in `bot/web_runtime/runtime_notice.py`; ordered publication remains with `WebRuntimeEventCoordinator` |
 | Bounded runtime-notice presentation for the current browser document | `RuntimeNoticeOwner` in `web/src/focus/client-state/runtime-notices.ts` |
+| Browser Q&A-Markdown content and completeness guards | `WebThreadSummaryExportService` in `bot/web_runtime/thread_summary_export.py` |
 
 The generated file is not a second source of truth and must not be edited manually.
 TypeScript interfaces still describe field types, but CI must prove their required
@@ -126,6 +127,11 @@ guards and may not retain parallel key or enum inventories.
   browser to maintain its document title from the configured deployment display
   name. A version 13 browser retains no missing-field compatibility decoder;
   service and static assets still deploy at the same version.
+- Version 15 adds read-only `GET /api/threads/{thread_id}/export-summary` and
+  makes the thread action capability `export` mean Q&A-Markdown export. The
+  file contains only the first User prompt text and final Assistant answer from
+  each turn. It adds no response DTO, full-export mode, or version 14 route
+  alias; service and static assets still deploy at the same version.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -190,6 +196,21 @@ guards and may not retain parallel key or enum inventories.
   summary, and full use one page width within a browser preference generation,
   so its summary locator is reusable for that full page. A width change retires
   old locators/detail intent and rebuilds them at the new width.
+- `GET /api/threads/{thread_id}/export-summary` returns one complete UTF-8
+  Markdown attachment for the current authenticated document. Its owner first
+  verifies an exact direct, non-ephemeral thread with persisted history, then
+  walks `thread/turns/list` with `sortDirection=asc`, `itemsView=summary`, and
+  100 turns per page. Each turn contributes only `type=text` content from its
+  first `userMessage` and its non-commentary final `agentMessage`; tool results,
+  reasoning, plans, MCP data, commentary, hook prompts, and non-text attachment
+  content never enter the file. A Focus attachment envelope contributes only
+  its `focus.user_request`; manifest metadata, same-host paths, and internal
+  instructions are excluded, while a malformed reserved envelope fails the
+  whole export. The scan has a 30-second total deadline, at most 100 pages, a
+  32-MiB final UTF-8 Markdown limit, and rejects repeated or
+  non-progressing cursors. Crossing any boundary returns an explicit HTTP error
+  without `Content-Disposition`, a partial `.md`, or silent truncation. The
+  fcodex TUI `/export` remains the full-record export.
 - Document-bound thread-directory, open, history, tool-detail, and
   conversation-search requests use the staged request boundary. Under the
   per-client lifecycle lock, Gateway verifies the exact request token and uses a
@@ -202,6 +223,12 @@ guards and may not retain parallel key or enum inventories.
   runtime revision/epoch, or backend generation rejects the old response as
   `stale_document_read / stale_thread_read / stale_thread_list`; it cannot
   install the old DTO or overwrite a newer cache.
+  Summary export crosses the same document-lock and service-ingress barrier but
+  is a detached download: prepare freezes only the authenticated request target
+  and backend connection generation, and settlement does not consult selection,
+  projection revision, or thread observation. Another thread event, navigation,
+  or read in the same document cannot invalidate a completed file; backend
+  generation replacement still rejects it.
 - The staged cold open above may perform an admitted `thread/resume`. A known
   resume settles and commits runtime interest first; a later stale read/DTO 409
   means only that the response is not installable and is not evidence that the

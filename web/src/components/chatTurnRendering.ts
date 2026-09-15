@@ -106,22 +106,6 @@ export function turnFinalText(turn: ChatTurn): string {
     .join('\n\n');
 }
 
-/** Convert a single turn to Markdown. */
-export function turnToMarkdown(turn: ChatTurn): string {
-  const parts: string[] = [];
-  for (const blk of turnBlocks(turn)) {
-    if (blk.kind === 'thinking' && blk.thinking) {
-      parts.push(`> **Thinking**\n> ${blk.thinking.split('\n').join('\n> ')}`);
-    } else if (blk.kind === 'text' && blk.text) {
-      parts.push(blk.text);
-    } else if (blk.kind === 'tool' && blk.tool.output && blk.tool.output.length > 0) {
-      const output = blk.tool.output.join('\n');
-      parts.push(`\`\`\`\n[${blk.tool.name}]\n${output}\n\`\`\``);
-    }
-  }
-  return parts.join('\n\n');
-}
-
 export function toolStackKey(item: ToolStackItem): string {
   return item.tool.id || `tool-${item.sourceIndex}`;
 }

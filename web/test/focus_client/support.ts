@@ -146,6 +146,12 @@ export class FakeApi implements FocusWebApiPort {
     itemsView: 'summary' | 'full';
     turnLimit: number;
   }> = [];
+  summaryExportCalls: string[] = [];
+  summaryExportGate: Promise<void> | null = null;
+  summaryExportError: Error | null = null;
+  summaryExportBlob = new Blob(['# Codex conversation summary\n'], {
+    type: 'text/markdown',
+  });
   toolDetailCalls: Array<{
     threadId: string;
     locator: FocusToolInspectionLocator;
@@ -455,6 +461,13 @@ export class FakeApi implements FocusWebApiPort {
   ) {
     this.olderTurnCalls.push({ threadId, cursor, itemsView, turnLimit });
     return this.olderTurns;
+  }
+
+  async exportThreadSummary(threadId: string): Promise<Blob> {
+    this.summaryExportCalls.push(threadId);
+    if (this.summaryExportGate) await this.summaryExportGate;
+    if (this.summaryExportError) throw this.summaryExportError;
+    return this.summaryExportBlob;
   }
 
   async readToolDetail(

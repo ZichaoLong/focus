@@ -68,6 +68,8 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
                 prepare_list_older_turns=lambda *_args, **_kwargs: {},
                 run_prepared_thread_read=lambda prepared: prepared,
                 abandon_prepared_thread_read=lambda _prepared: True,
+                prepare_export_thread_summary=lambda *_args, **_kwargs: {},
+                run_prepared_thread_summary_export=lambda _prepared: b"",
                 prepare_tool_detail=lambda *_args, **_kwargs: {},
                 prepare_conversation_search=lambda *_args, **_kwargs: {},
                 start_thread=lambda *_args, **_kwargs: {},

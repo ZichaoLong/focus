@@ -1,9 +1,78 @@
 """Gateway admission regressions for bounded thread-history reads."""
 
+from bot.web_runtime.contract import WebRuntimeError
 from tests.web_runtime.gateway_harness import WebGatewayHarness
 
 
+def _raise_summary_export_too_large() -> bytes:
+    raise WebRuntimeError(
+        "No partial file was downloaded.",
+        code="thread_summary_export_too_large",
+        status=413,
+    )
+
+
 class ThreadHistoryGatewayTests(WebGatewayHarness):
+    async def test_summary_export_downloads_one_complete_markdown_response(
+        self,
+    ) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="summary-export-client",
+            incarnation_id="summary-export-document",
+        )
+        prepared_calls: list[tuple[str, str]] = []
+
+        def prepare(client_id: str, thread_id: str):
+            prepared_calls.append((client_id, thread_id))
+            return object()
+
+        markdown = "# Codex conversation summary\n\n## User\n\n你好\n".encode()
+        self.gateway._ports.prepare_export_thread_summary = prepare
+        self.gateway._ports.run_prepared_thread_summary_export = (
+            lambda _prepared: markdown
+        )
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1/export-summary",
+            headers=self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), markdown)
+            self.assertEqual(response.content_type, "text/markdown")
+            self.assertEqual(response.charset, "utf-8")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertEqual(
+                response.headers["Content-Disposition"],
+                'attachment; filename="codex-conversation-summary.md"',
+            )
+        self.assertEqual(prepared_calls, [(document["client_id"], "thread-1")])
+
+    async def test_summary_export_failure_never_starts_a_partial_download(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="summary-export-failure-client",
+            incarnation_id="summary-export-failure-document",
+        )
+        self.gateway._ports.run_prepared_thread_summary_export = lambda _prepared: (
+            _raise_summary_export_too_large()
+        )
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1/export-summary",
+            headers=self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+        ) as response:
+            self.assertEqual(response.status, 413)
+            self.assertNotIn("Content-Disposition", response.headers)
+            payload = await response.json()
+        self.assertEqual(payload["error"]["code"], "thread_summary_export_too_large")
+
     async def test_history_page_admits_only_exact_items_view(self) -> None:
         await self._authenticate()
         document = await self._register_document(

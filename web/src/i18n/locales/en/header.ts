@@ -1,6 +1,4 @@
 export default {
-  copyAll: 'Copy all as Markdown',
-  copyFinalSummary: 'Copy final summary',
   copied: 'Copied',
   changed: '{n} changed',
   gitTooltip: 'Open Files > Changed',
@@ -16,7 +14,7 @@ export default {
   renameSession: 'Rename',
   forkSession: 'Fork session',
   archiveSession: 'Archive',
-  exportSession: 'Export session',
+  exportSession: 'Export Q&A Markdown',
   reviewSession: 'Review changes',
   setGoal: 'Set goal',
 };
