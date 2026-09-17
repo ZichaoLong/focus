@@ -28,6 +28,7 @@ export default {
   resizeDetailPanelAria: 'Resize detail panel width',
   retry: 'Retry',
   enterReadingMode: 'Enter reading mode',
+  readingModePending: 'Waiting to enter reading mode…',
   exitReadingMode: 'Exit reading mode',
   newConversation: 'New conversation',
   newConversationCwdHint: 'Working directory: {path}. Choose an existing workspace above, or enter /cd <directory> to use another directory on the Focus host. New conversations in this browser tab keep using the selected directory until you change it again.',

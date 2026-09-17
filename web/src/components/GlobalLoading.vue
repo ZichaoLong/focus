@@ -3,23 +3,39 @@
      Focus Gateway snapshot. -->
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
+import Button from './ui/Button.vue';
 import Spinner from './ui/Spinner.vue';
 /** Last connection error from the first-load auth gate's retry loop, shown so
  *  a "cannot connect" state is diagnosable instead of a bare spinner. */
-defineProps<{ issue?: string | null }>();
+withDefaults(defineProps<{
+  issue?: string | null;
+  readingModeRequested?: boolean;
+}>(), {
+  readingModeRequested: false,
+});
+const emit = defineEmits<{ requestReadingMode: [] }>();
 const { t } = useI18n();
 </script>
 
 <template>
-  <div class="gload" role="status" :aria-label="t('app.connecting')">
+  <div class="gload">
     <div class="gload-box">
-      <div class="gload-logo" aria-hidden="true"><span>F</span> Focus</div>
-      <Spinner size="md" :label="t('app.connecting')" />
-      <div class="gload-text">{{ t('app.connecting') }}</div>
-      <div v-if="issue" class="gload-issue">
-        <div>{{ t('app.connectRetrying') }}</div>
-        <div class="gload-issue-detail">{{ issue }}</div>
+      <div class="gload-status" role="status" :aria-label="t('app.connecting')">
+        <div class="gload-logo" aria-hidden="true"><span>F</span> Focus</div>
+        <Spinner size="md" :label="t('app.connecting')" />
+        <div class="gload-text">{{ t('app.connecting') }}</div>
+        <div v-if="issue" class="gload-issue">
+          <div>{{ t('app.connectRetrying') }}</div>
+          <div class="gload-issue-detail">{{ issue }}</div>
+        </div>
       </div>
+      <Button
+        variant="secondary"
+        :disabled="readingModeRequested"
+        @click="emit('requestReadingMode')"
+      >
+        {{ t(readingModeRequested ? 'focus.readingModePending' : 'focus.enterReadingMode') }}
+      </Button>
     </div>
   </div>
 </template>
@@ -46,9 +62,15 @@ const { t } = useI18n();
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  gap: var(--space-4);
   /* nudge slightly above center — feels more intentional than dead-center */
   transform: translateY(-6%);
+}
+.gload-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
 }
 .gload-logo {
   display: flex;

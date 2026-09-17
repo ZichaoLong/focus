@@ -41,6 +41,7 @@ import {
 import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutations/actions';
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
+import { useFocusReadingMode } from './focusReadingMode';
 import { createFocusThreadActions } from './focusThreadActions';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
@@ -60,9 +61,6 @@ const showSettings = ref(false);
 const showModelPicker = ref(false);
 const showGoalDialog = ref(false);
 const showReviewDialog = ref(false);
-type FocusPresentationMode = 'normal' | 'reading';
-const presentationMode = ref<FocusPresentationMode>('normal');
-const readingMode = computed(() => presentationMode.value === 'reading');
 const detailSelection = ref<FocusDetailSelection | null>(null);
 const detailTarget = computed(() => detailSelection.value?.kind ?? null);
 const focusDetailPanel = shallowRef<
@@ -220,33 +218,29 @@ const canEnterReadingMode = computed(() => (
   && !client.conversationLoading.value
   && client.turns.value.length > 0
 ));
-
-function focusReadingModeToggle(): void {
-  void nextTick(() => {
-    Array.from(document.querySelectorAll<HTMLButtonElement>('[data-reading-mode-toggle]'))
-      .find((button) => button.offsetParent !== null)
-      ?.focus({ preventScroll: true });
-  });
-}
-
-function enterReadingMode(): void {
-  if (!canEnterReadingMode.value || readingMode.value) return;
-  showNarrowSwitcher.value = false;
-  showSettings.value = false;
-  showModelPicker.value = false;
-  showGoalDialog.value = false;
-  showReviewDialog.value = false;
-  closeDetail();
-  presentationMode.value = 'reading';
-  focusReadingModeToggle();
-}
-
-function exitReadingMode(): void {
-  if (!readingMode.value) return;
-  showNarrowSwitcher.value = false;
-  presentationMode.value = 'normal';
-  focusReadingModeToggle();
-}
+const {
+  readingMode,
+  pendingReadingModeIntent,
+  requestReadingMode,
+  enterReadingMode,
+  exitReadingMode,
+} = useFocusReadingMode({
+  canEnter: canEnterReadingMode,
+  documentAccessAvailable: currentDocumentAccessAvailable,
+  initialized: client.initialized,
+  meta: client.meta,
+  conversationLoading: client.conversationLoading,
+  turns: client.turns,
+  dismissSwitcher: () => { showNarrowSwitcher.value = false; },
+  dismissChrome: () => {
+    showNarrowSwitcher.value = false;
+    showSettings.value = false;
+    showModelPicker.value = false;
+    showGoalDialog.value = false;
+    showReviewDialog.value = false;
+    closeDetail();
+  },
+});
 const conversationSearchVisible = computed(() => (
   Boolean(client.activeThreadId.value)
   && currentDocumentAccessAvailable.value
@@ -754,12 +748,6 @@ watch(client.activeThreadId, (threadId) => {
   closeDetail();
   if (!threadId) exitReadingMode();
 });
-watch(
-  [() => client.conversationLoading.value, () => client.turns.value.length],
-  ([loading, turnCount]) => {
-    if (readingMode.value && !loading && turnCount === 0) exitReadingMode();
-  },
-);
 watch(currentDocumentAccessAvailable, (available) => {
   if (!available) {
     closeDetail();
@@ -1262,7 +1250,12 @@ onUnmounted(() => {
     <ConfirmDialogHost />
 
     <Transition name="gload-fade">
-      <GlobalLoading v-if="!client.initialized.value" :issue="client.errorMessage.value" />
+      <GlobalLoading
+        v-if="!client.initialized.value"
+        :issue="client.errorMessage.value"
+        :reading-mode-requested="pendingReadingModeIntent"
+        @request-reading-mode="requestReadingMode"
+      />
     </Transition>
   </div>
 </template>

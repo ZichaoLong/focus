@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { effectScope, ref } from 'vue';
 import { describe, expect, it } from 'vitest';
 import enFocus from '../src/i18n/locales/en/focus';
 import zhFocus from '../src/i18n/locales/zh/focus';
+import { useFocusReadingMode } from '../src/focus/focusReadingMode';
 
 function source(relativePath: string): string {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), 'utf8');
@@ -19,15 +21,17 @@ function between(value: string, start: string, end: string): string {
 describe('Focus page-level reading mode surface', () => {
   it('keeps the ordinary session switch surfaces while adding one page-owned mode', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const readingModeOwner = source('../src/focus/focusReadingMode.ts');
     const header = source('../src/components/chat/ChatHeader.vue');
     const narrowTopBar = source('../src/components/narrow/NarrowTopBar.vue');
 
-    expect(app).toContain("type FocusPresentationMode = 'normal' | 'reading';");
-    expect(app).toContain("const presentationMode = ref<FocusPresentationMode>('normal');");
-    expect(app).toContain(
+    expect(readingModeOwner).toContain("type FocusPresentationMode = 'normal' | 'reading';");
+    expect(readingModeOwner).toContain("const presentationMode = ref<FocusPresentationMode>('normal');");
+    expect(readingModeOwner).toContain(
       "const readingMode = computed(() => presentationMode.value === 'reading');",
     );
-    expect(app).not.toMatch(/readingMode[\s\S]{0,80}(localStorage|STORAGE_KEYS)/u);
+    expect(app).toContain('} = useFocusReadingMode({');
+    expect(readingModeOwner).not.toMatch(/localStorage|sessionStorage|STORAGE_KEYS/u);
 
     const narrowTopBarIndex = app.indexOf('<NarrowTopBar');
     const mainIndex = app.indexOf('<main class="focus-main">', narrowTopBarIndex);
@@ -84,6 +88,7 @@ describe('Focus page-level reading mode surface', () => {
 
   it('offers exit, conversation-switch, and Prompt history actions at the reading edge', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const readingModeOwner = source('../src/focus/focusReadingMode.ts');
     const controls = source('../src/components/chat/ReadingModeControls.vue');
 
     expect(app).toMatch(/<ReadingModeControls\s+v-if="readingMode"/u);
@@ -126,13 +131,14 @@ describe('Focus page-level reading mode surface', () => {
     expect(switcher).toContain(':allow-session-actions="!readingMode"');
 
     const exit = between(
-      app,
+      readingModeOwner,
       'function exitReadingMode(): void {',
-      '\n}\nconst conversationSearchVisible',
+      '\n  }\n\n  watch(',
     );
-    expect(exit.indexOf('showNarrowSwitcher.value = false;')).toBeLessThan(
+    expect(exit.indexOf('options.dismissSwitcher();')).toBeLessThan(
       exit.indexOf("presentationMode.value = 'normal';"),
     );
+    expect(app).toContain('dismissSwitcher: () => { showNarrowSwitcher.value = false; },');
 
     expect(enFocus.enterReadingMode).toBe('Enter reading mode');
     expect(enFocus.exitReadingMode).toBe('Exit reading mode');
@@ -143,6 +149,7 @@ describe('Focus page-level reading mode surface', () => {
 
   it('keeps reading across a loaded-session switch and exits only for a settled empty target', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const readingModeOwner = source('../src/focus/focusReadingMode.ts');
 
     expect(app).toContain(`const canEnterReadingMode = computed(() => (
   currentDocumentAccessAvailable.value
@@ -154,15 +161,15 @@ describe('Focus page-level reading mode surface', () => {
     const activeThreadWatcher = between(
       app,
       'watch(client.activeThreadId,',
-      'watch(\n  [() => client.conversationLoading.value',
+      'watch(currentDocumentAccessAvailable',
     );
     expect(activeThreadWatcher).toContain('if (!threadId) exitReadingMode();');
     expect(activeThreadWatcher).not.toContain("presentationMode.value = 'normal'");
 
     const settledEmptyWatcher = between(
-      app,
-      'watch(\n  [() => client.conversationLoading.value',
-      'watch(currentDocumentAccessAvailable',
+      readingModeOwner,
+      'watch(\n    [() => options.conversationLoading.value',
+      'watch(\n    [\n      () => options.canEnter.value',
     );
     expect(settledEmptyWatcher).toContain(
       'if (readingMode.value && !loading && turnCount === 0) exitReadingMode();',
@@ -184,8 +191,96 @@ describe('Focus page-level reading mode surface', () => {
       'watch(conversationSearchVisible',
     );
     expect(accessWatcher).toContain('exitReadingMode();');
-    expect(app).toContain("presentationMode.value = 'reading';");
-    expect(app).toContain("presentationMode.value = 'normal';");
+    expect(readingModeOwner).toContain("presentationMode.value = 'reading';");
+    expect(readingModeOwner).toContain("presentationMode.value = 'normal';");
+  });
+
+  it('captures one document-local reading intent while the initial snapshot loads', () => {
+    const app = source('../src/focus/FocusApp.vue');
+    const loading = source('../src/components/GlobalLoading.vue');
+    const readingModeOwner = source('../src/focus/focusReadingMode.ts');
+
+    expect(readingModeOwner).toContain('const pendingReadingModeIntent = ref(false);');
+    expect(readingModeOwner).not.toMatch(/localStorage|sessionStorage|STORAGE_KEYS/u);
+    const request = between(
+      readingModeOwner,
+      'function requestReadingMode(): void {',
+      '\n  }\n\n  function exitReadingMode',
+    );
+    expect(request).toContain('if (!options.documentAccessAvailable.value) return;');
+    expect(request).toContain('if (options.canEnter.value) {');
+    expect(request).toContain('pendingReadingModeIntent.value = true;');
+
+    const intentWatcher = between(
+      readingModeOwner,
+      'watch(\n    [\n      () => options.canEnter.value',
+      'watch(\n    () => options.documentAccessAvailable.value',
+    );
+    expect(intentWatcher).toContain('if (canEnter) {');
+    expect(intentWatcher).toContain('enterReadingMode();');
+    expect(intentWatcher).toContain('if (initialized && meta && !conversationLoading) {');
+    expect(intentWatcher).toContain('pendingReadingModeIntent.value = false;');
+    expect(intentWatcher).toContain("{ flush: 'sync' }");
+
+    const accessWatcher = between(readingModeOwner, 'watch(\n    () => options.documentAccessAvailable.value', '\n\n  return {');
+    expect(accessWatcher.indexOf('pendingReadingModeIntent.value = false;')).toBeLessThan(
+      accessWatcher.indexOf('exitReadingMode();'),
+    );
+    expect(app).toContain(':reading-mode-requested="pendingReadingModeIntent"');
+    expect(app).toContain('@request-reading-mode="requestReadingMode"');
+
+    expect(loading).toContain('readingModeRequested?: boolean;');
+    expect(loading).toContain('const emit = defineEmits<{ requestReadingMode: [] }>();');
+    expect(loading).toContain(':disabled="readingModeRequested"');
+    expect(loading).toContain("@click=\"emit('requestReadingMode')\"");
+    expect(loading).toContain("'focus.readingModePending' : 'focus.enterReadingMode'");
+    expect(enFocus.readingModePending).toBe('Waiting to enter reading mode…');
+    expect(zhFocus.readingModePending).toBe('等待进入阅读模式…');
+  });
+
+  it('consumes, retains, and clears the pending intent at its lifecycle boundaries', () => {
+    const canEnter = ref(false);
+    const documentAccessAvailable = ref(true);
+    const initialized = ref(false);
+    const meta = ref<unknown | null>(null);
+    const conversationLoading = ref(true);
+    const turns = ref<unknown[]>([]);
+    let dismissed = 0;
+    const scope = effectScope();
+    const mode = scope.run(() => useFocusReadingMode({
+      canEnter,
+      documentAccessAvailable,
+      initialized,
+      meta,
+      conversationLoading,
+      turns,
+      dismissSwitcher: () => {},
+      dismissChrome: () => { dismissed += 1; },
+    }))!;
+
+    mode.requestReadingMode();
+    expect(mode.pendingReadingModeIntent.value).toBe(true);
+    initialized.value = true;
+    conversationLoading.value = false;
+    expect(mode.pendingReadingModeIntent.value).toBe(true);
+
+    turns.value = [{}];
+    canEnter.value = true;
+    expect(mode.pendingReadingModeIntent.value).toBe(false);
+    expect(mode.readingMode.value).toBe(true);
+    expect(dismissed).toBe(1);
+
+    mode.exitReadingMode();
+    canEnter.value = false;
+    mode.requestReadingMode();
+    meta.value = {};
+    expect(mode.pendingReadingModeIntent.value).toBe(false);
+
+    meta.value = null;
+    mode.requestReadingMode();
+    documentAccessAvailable.value = false;
+    expect(mode.pendingReadingModeIntent.value).toBe(false);
+    scope.stop();
   });
 
   it('keeps draft/submission owners mounted and reveals input before imperative focus', () => {
@@ -222,9 +317,10 @@ describe('Focus page-level reading mode surface', () => {
     expect(pane).toContain(':surface-mode="readingMode ? \'hidden\' : composerSurfaceMode"');
     expect(pane).toContain('const composerSurfaceMode = ref<ComposerSurfaceMode>(\'compact\');');
 
-    const enter = between(app, 'function enterReadingMode(): void {', '\n}\n\nfunction exitReadingMode');
-    const exit = between(app, 'function exitReadingMode(): void {', '\n}\nconst conversationSearchVisible');
-    expect(app).toContain('.find((button) => button.offsetParent !== null)');
+    const readingModeOwner = source('../src/focus/focusReadingMode.ts');
+    const enter = between(readingModeOwner, 'function enterReadingMode(): void {', '\n  }\n\n  function requestReadingMode');
+    const exit = between(readingModeOwner, 'function exitReadingMode(): void {', '\n  }\n\n  watch(');
+    expect(readingModeOwner).toContain('.find((button) => button.offsetParent !== null)');
     expect(enter).not.toContain('focusComposer');
     expect(exit).not.toContain('focusComposer');
   });

@@ -28,6 +28,7 @@ export default {
   resizeDetailPanelAria: '调整详情面板宽度',
   retry: '重试',
   enterReadingMode: '进入阅读模式',
+  readingModePending: '等待进入阅读模式…',
   exitReadingMode: '退出阅读模式',
   newConversation: '新对话',
   newConversationCwdHint: '工作目录：{path}。可从上方选择已有工作区，或输入 /cd <目录> 使用 Focus 主机上的其他目录。当前浏览器标签页的后续新会话会继续使用所选目录，直到再次切换。',
