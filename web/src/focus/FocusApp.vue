@@ -1186,6 +1186,7 @@ onUnmounted(() => {
         :reasoning-effort-options="client.reasoningEffortOptions.value"
         :permissions-profile-id="client.permissionsProfileId.value"
         :permissions-profiles="client.meta.value?.permissions_profiles ?? []"
+        :runtime-identity="client.meta.value?.runtime_identity ?? null"
         :archived-threads="client.archivedThreads.value"
         :archived-loading="client.archivedLoading.value"
         :archived-truncated="client.archivedTruncated.value"

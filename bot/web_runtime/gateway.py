@@ -95,6 +95,7 @@ class WebGatewayConfig:
     host: str = "127.0.0.1"
     port: int = 0
     session_ttl_seconds: float = 8 * 60 * 60
+    session_max_lifetime_seconds: float = 7 * 24 * 60 * 60
     disconnect_grace_seconds: float = 1200.0
     event_queue_limit: int = 128
     static_dir: pathlib.Path | None = None
@@ -190,6 +191,7 @@ class WebGateway(WebGatewayThreadInspectionMixin):
         self._runtime_store = WebGatewayRuntimeStore(self._data_dir)
         self._auth = WebAuthManager(
             session_ttl_seconds=config.session_ttl_seconds,
+            session_max_lifetime_seconds=config.session_max_lifetime_seconds,
             on_bootstrap_rotated=self._handle_bootstrap_rotated,
         )
         self._request_admission = WebGatewayRequestAdmission(
@@ -380,6 +382,11 @@ class WebGateway(WebGatewayThreadInspectionMixin):
         session_ttl = float(self._config.session_ttl_seconds)
         if not math.isfinite(session_ttl) or session_ttl < MIN_WEB_SESSION_TTL_SECONDS:
             raise ValueError("web_session_ttl_seconds 必须是至少 60 秒的有限数值")
+        session_max_lifetime = float(self._config.session_max_lifetime_seconds)
+        if not math.isfinite(session_max_lifetime) or session_max_lifetime < MIN_WEB_SESSION_TTL_SECONDS:
+            raise ValueError("web_session_max_lifetime_seconds 必须是至少 60 秒的有限数值")
+        if session_max_lifetime < session_ttl:
+            raise ValueError("web_session_max_lifetime_seconds 必须大于等于 web_session_ttl_seconds")
         disconnect_grace = float(self._config.disconnect_grace_seconds)
         if not math.isfinite(disconnect_grace) or disconnect_grace < 0.0:
             raise ValueError("web_disconnect_grace_seconds 必须是非负有限数值")
@@ -432,7 +439,11 @@ class WebGateway(WebGatewayThreadInspectionMixin):
         )
         for endpoint in FOCUS_WEB_ENDPOINTS:
             register = getattr(app.router, f"add_{endpoint.method.lower()}")
-            register(endpoint.path, getattr(self, endpoint.handler))
+            register(
+                endpoint.path,
+                getattr(self, endpoint.handler),
+                name=endpoint.name,
+            )
         # Keep an API typo or a stale client contract from being silently
         # served the SPA shell. This also catches a known path with the wrong
         # HTTP method after aiohttp has exhausted its method-specific route.
@@ -1404,13 +1415,19 @@ class WebGateway(WebGatewayThreadInspectionMixin):
 
     async def _expire_session_after(self, session: WebAuthSession) -> None:
         try:
-            await asyncio.sleep(max(session.expires_at - time.time(), 0.0))
-            self._auth.revoke(session.session_token)
-            await self._close_session_sockets(
-                session.session_token,
-                event_type="session_expired",
-                close_message=b"Focus Web session expired",
-            )
+            deadline = session.expires_at
+            while True:
+                await asyncio.sleep(max(deadline - time.time(), 0.0))
+                current = self._auth.expire_if_due(session.session_token)
+                if current is not None:
+                    deadline = current.expires_at
+                    continue
+                await self._close_session_sockets(
+                    session.session_token,
+                    event_type="session_expired",
+                    close_message=b"Focus Web session expired",
+                )
+                return
         except asyncio.CancelledError:
             return
         finally:

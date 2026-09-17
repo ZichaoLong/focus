@@ -50,8 +50,10 @@ upstream `~/.codex/config.toml` 或 binding 持久化 runtime setting；Web
   及其 data directory；唯一可拨号的 endpoint 来源是该实例经过认证的实时
   `service/status` 响应，且必须已经完成协议 READY 与 replacement-generation admission。
 - Web Gateway 始终只接受 `127.0.0.1`、`localhost` 或 `::1` 作为 `web_host`；
-  `web_session_ttl_seconds` 至少为 60 秒。它们是 schema 准入规则，Gateway 中的
-  同值检查只是防御性运行时断言，不能成为另一份配置合同。
+  `web_session_ttl_seconds`（空闲窗口）与 `web_session_max_lifetime_seconds`
+  （签发后的绝对寿命）都必须是至少 60 秒的有限数值，且绝对寿命不得小于空闲窗口。
+  默认值分别为 28800 秒（8 小时）与 604800 秒（7 天）。它们是 schema 准入规则，
+  Gateway 中的同值检查只是防御性运行时断言，不能成为另一份配置合同。
 - `source_kinds` 必须是非空字符串组成的非空列表，绝不能把一个标量字符串按字符
   拆开。
 - `approval_policy` 是封闭的本地枚举；唯一保留的旧值迁移是权限合同中记录的

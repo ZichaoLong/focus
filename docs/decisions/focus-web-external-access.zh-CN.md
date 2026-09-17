@@ -68,6 +68,25 @@ session audience 精确一致。Local/external、不同 origin 或不同 label �
 互用。Proof 本身不是 writer、interaction-response、backend 或 control-plane credential；
 已注册 Web document 仍遵守现有 RuntimeLoop、document 与 root-operation 准入。
 
+Local 与 external session 使用同一寿命合同。`web_session_ttl_seconds` 是滑动空闲窗口：
+只有通过 session、audience、Origin 与 CSRF 准入，并由 route catalog 明确列为用户操作的
+mutation 才续期。包括 prompt/新建线程、设置或 workspace 变更、附件上传、审批/结构化问题
+响应、interrupt、用户发起的 unknown-mutation discard/retry，以及
+rename/compact/review/goal/archive/unarchive/delete 与 backend reset。
+普通 GET、导出下载、WebSocket ping/pong 或服务端 event、document register/reconnect、后台
+projection 读取以及 unknown-mutation 自动核验都不续期。一个浏览器的标签页共享同一 session；
+任一标签页的合格操作都会续期该 session。
+
+续期保持原 session token、CSRF 与 audience，不轮换 capability；新空闲截止时间为
+`min(当前时间 + web_session_ttl_seconds, absolute deadline)`。Absolute deadline 在签发时
+按 `web_session_max_lifetime_seconds` 固定，默认 7 天，即使持续操作也不能越过。续期与到期
+撤销在同一 session state lock 上线性化；旧 deadline 唤醒的到期任务必须重新读取权威 deadline，
+不能撤销已经续期的 session。合格 mutation 在 handler 前完成续期，因此 application-level
+成功或错误 response 都刷新 cookie 的 `Max-Age`；未通过 Origin/CSRF 的请求不续期。若 response
+写回前已经发生并发 logout/revoke，则该 response 清除 cookie，不能把已撤销 token 重新写回。
+若 response 丢失，服务端可能已续期而浏览器仍按旧 cookie 到期，结果只会是较早重新认证，
+不会获得额外 authority，也不会自动重放 effect。
+
 External 页面 URL 是可书签化的 configured origin，不含 fragment token。
 `focusctl web open` 和 runtime discovery 仍只发布 loopback local endpoint，不发布 external
 origin、proof 或 label。运行中 session 失效或 service 重启后，当前合同只保证用户显式

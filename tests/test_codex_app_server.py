@@ -334,16 +334,29 @@ class CodexAppServerAdapterTests(unittest.TestCase):
             None,
             timeout=30.0,
         )
-        self.assertEqual(
-            adapter._initialize_identity,
+
+    def test_current_app_server_identity_uses_exact_ready_handshake(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        fake_rpc = Mock()
+        fake_rpc.current_initialize_result.return_value = (
+            7,
             {
-                "connection_generation": 7,
-                "user_agent": "codex_cli_rs/0.146.0",
-                "codex_home": "/tmp/codex-home",
-                "platform_family": "unix",
-                "platform_os": "linux",
+                "userAgent": "codex_cli_rs/0.146.0",
+                "codexHome": "/tmp/codex-home",
             },
         )
+        adapter._rpc = fake_rpc
+
+        self.assertEqual(
+            adapter.current_app_server_identity(timeout=0.25),
+            {"user_agent": "codex_cli_rs/0.146.0"},
+        )
+        fake_rpc.current_initialize_result.assert_called_once_with(timeout=0.25)
+
+        for initialize_result in (None, (8, {}), (8, {"userAgent": "  "})):
+            with self.subTest(initialize_result=initialize_result):
+                fake_rpc.current_initialize_result.return_value = initialize_result
+                self.assertIsNone(adapter.current_app_server_identity())
 
     def test_requirements_envelope_must_be_present_and_typed(self) -> None:
         for result in ({}, {"requirements": []}, {"requirements": "managed"}):

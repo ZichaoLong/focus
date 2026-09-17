@@ -122,6 +122,18 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
         finally:
             self.gateway._config = valid_config
 
+    def test_gateway_defensive_config_requires_absolute_session_cap(self) -> None:
+        valid_config = self.gateway._config
+        try:
+            self.gateway._config = replace(
+                valid_config,
+                session_max_lifetime_seconds=valid_config.session_ttl_seconds - 1,
+            )
+            with self.assertRaisesRegex(ValueError, "必须大于等于"):
+                self.gateway._validate_config()
+        finally:
+            self.gateway._config = valid_config
+
     def test_gateway_defensive_config_explains_remote_access_paths(self) -> None:
         valid_config = self.gateway._config
         try:

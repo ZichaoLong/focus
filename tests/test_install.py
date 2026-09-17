@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import install
+from bot.installed_build_identity import read_installed_build_identity
 from scripts.build_support.install_bundle import development_release_tag
 
 
@@ -70,6 +71,7 @@ class InstallTests(unittest.TestCase):
                 version="4.0.0.dev0",
                 channel=channel,
                 build_id="build-1",
+                source_revision="a" * 40,
             ),
         )
 
@@ -666,23 +668,33 @@ class InstallTests(unittest.TestCase):
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
-                        with patch("install._recreate_venv", side_effect=recreate):
-                            with patch("install._venv_uses_supported_python", return_value=True):
-                                with patch("install._venv_has_pip", return_value=True):
-                                    with patch("install._reject_pip_destination_overrides"):
-                                        with patch(
-                                            "install._run_pip_install",
-                                            side_effect=record_pip_install,
-                                        ):
+                        with patch(
+                            "bot.instance_layout.global_data_dir",
+                            return_value=data_root / "_global",
+                        ):
+                            with patch("install._recreate_venv", side_effect=recreate):
+                                with patch(
+                                    "install._venv_uses_supported_python",
+                                    return_value=True,
+                                ):
+                                    with patch("install._venv_has_pip", return_value=True):
+                                        with patch("install._reject_pip_destination_overrides"):
                                             with patch(
-                                                "install._run_pip_check",
-                                                side_effect=record_pip_check,
+                                                "install._run_pip_install",
+                                                side_effect=record_pip_install,
                                             ):
                                                 with patch(
-                                                    "install._run_checked",
-                                                    side_effect=record_checked,
+                                                    "install._run_pip_check",
+                                                    side_effect=record_pip_check,
                                                 ):
-                                                    install.main(["--artifact", "focus.zip"])
+                                                    with patch(
+                                                        "install._run_checked",
+                                                        side_effect=record_checked,
+                                                    ):
+                                                        install.main(["--artifact", "focus.zip"])
+                                                        installed_build = read_installed_build_identity(
+                                                            data_root / "_global"
+                                                        )
 
         self.assertEqual(
             pip_calls,
@@ -708,6 +720,12 @@ class InstallTests(unittest.TestCase):
         )
         self.assertFalse(stale_payload.exists())
         self.assertEqual(self.install_transaction.events, ["enter", "complete"])
+        self.assertIsNotNone(installed_build)
+        assert installed_build is not None
+        self.assertEqual(installed_build.version, "4.0.0.dev0")
+        self.assertEqual(installed_build.channel, "local")
+        self.assertEqual(installed_build.build_id, "build-1")
+        self.assertEqual(installed_build.source_revision, "a" * 40)
 
     def test_main_rejects_rebuilt_venv_with_incompatible_python(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -731,17 +749,25 @@ class InstallTests(unittest.TestCase):
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
-                        with patch("install._venv_uses_supported_python", return_value=False):
-                            with patch(
-                                "install._recreate_venv",
-                                side_effect=recreate,
-                            ) as recreate_venv:
-                                with patch("install._run_pip_install") as pip_install:
-                                    with self.assertRaisesRegex(SystemExit, "重建后仍不是"):
-                                        install.main(["--artifact", "focus.zip"])
+                        with patch(
+                            "bot.instance_layout.global_data_dir",
+                            return_value=data_root / "_global",
+                        ):
+                            with patch("install._venv_uses_supported_python", return_value=False):
+                                with patch(
+                                    "install._recreate_venv",
+                                    side_effect=recreate,
+                                ) as recreate_venv:
+                                    with patch("install._run_pip_install") as pip_install:
+                                        with self.assertRaisesRegex(SystemExit, "重建后仍不是"):
+                                            install.main(["--artifact", "focus.zip"])
+            installed_build_after_failure = read_installed_build_identity(
+                data_root / "_global"
+            )
         recreate_venv.assert_called_once_with(data_root / ".venv")
         pip_install.assert_not_called()
         self.assertEqual(self.install_transaction.events, ["enter", "abort"])
+        self.assertIsNone(installed_build_after_failure)
 
     def test_main_migration_uses_installed_package_not_checkout(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -760,25 +786,29 @@ class InstallTests(unittest.TestCase):
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
-                        with patch("install._venv_uses_supported_python", return_value=True):
-                            with patch("install._recreate_venv"):
-                                with patch("install._venv_has_pip", return_value=True):
-                                    with patch("install._reject_pip_destination_overrides"):
-                                        with patch("install._run_pip_install"):
-                                            with patch("install._run_pip_check"):
-                                                with patch(
-                                                    "install._run_checked",
-                                                    side_effect=lambda command: checked_calls.append(
-                                                        list(command)
-                                                    ),
-                                                ):
-                                                    install.main(
-                                                        [
-                                                            "--artifact",
-                                                            "focus.zip",
-                                                            "--migrate-from-feishu-codex",
-                                                        ]
-                                                    )
+                        with patch(
+                            "bot.instance_layout.global_data_dir",
+                            return_value=data_root / "_global",
+                        ):
+                            with patch("install._venv_uses_supported_python", return_value=True):
+                                with patch("install._recreate_venv"):
+                                    with patch("install._venv_has_pip", return_value=True):
+                                        with patch("install._reject_pip_destination_overrides"):
+                                            with patch("install._run_pip_install"):
+                                                with patch("install._run_pip_check"):
+                                                    with patch(
+                                                        "install._run_checked",
+                                                        side_effect=lambda command: checked_calls.append(
+                                                            list(command)
+                                                        ),
+                                                    ):
+                                                        install.main(
+                                                            [
+                                                                "--artifact",
+                                                                "focus.zip",
+                                                                "--migrate-from-feishu-codex",
+                                                            ]
+                                                        )
         self.assertEqual(
             checked_calls[-1],
             [

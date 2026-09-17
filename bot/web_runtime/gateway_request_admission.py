@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import re
 import secrets
 import time
@@ -16,6 +17,10 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
+from bot.focus_web_wire_catalog import (
+    FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES,
+    FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES,
+)
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, validate_instance_name
 from bot.network_contract import (
     FOCUS_LOOPBACK_HOSTS,
@@ -46,6 +51,10 @@ _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}\Z")
 _REQUEST_KEY_FACTORY = getattr(web, "RequestKey", web.AppKey)
 _AUTH_SESSION_KEY = _REQUEST_KEY_FACTORY("focus_web_session", WebAuthSession)
 _AUTH_AUDIENCE_KEY = _REQUEST_KEY_FACTORY("focus_web_audience", WebAuthAudience)
+_RENEWED_AUTH_SESSION_KEY = _REQUEST_KEY_FACTORY(
+    "focus_web_renewed_session",
+    WebAuthSession,
+)
 
 
 class WebGatewayRequestAdmission:
@@ -99,8 +108,10 @@ class WebGatewayRequestAdmission:
             )
             if request.path == "/api/backend-reset":
                 response.headers["Cache-Control"] = "no-store"
+            self._set_renewed_session_cookie(response, request)
             return response
-        except web.HTTPException:
+        except web.HTTPException as exc:
+            self._set_renewed_session_cookie(exc, request)
             raise
         except Exception:
             self._logger.exception(
@@ -119,6 +130,7 @@ class WebGatewayRequestAdmission:
             )
             if request.path == "/api/backend-reset":
                 response.headers["Cache-Control"] = "no-store"
+            self._set_renewed_session_cookie(response, request)
             return response
 
     @web.middleware
@@ -207,7 +219,20 @@ class WebGatewayRequestAdmission:
                     ),
                     content_type="application/json",
                 )
-        return await handler(request)
+        renews_session = await self._renews_session(request)
+        if renews_session:
+            renewed = self._auth.renew_if_live(session.session_token)
+            if renewed is None or renewed.audience != audience:
+                raise web.HTTPUnauthorized(
+                    text=('{"error":{"code":"unauthorized","message":"Focus Web session expired."}}'),
+                    content_type="application/json",
+                )
+            request[_AUTH_SESSION_KEY] = renewed
+            request[_RENEWED_AUTH_SESSION_KEY] = renewed
+        response = await handler(request)
+        if renews_session:
+            self._set_renewed_session_cookie(response, request)
+        return response
 
     @staticmethod
     def session(request: web.Request) -> WebAuthSession:
@@ -247,8 +272,35 @@ class WebGatewayRequestAdmission:
             secure=request.secure or session.audience.kind == "external",
             samesite="Strict",
             path="/",
-            max_age=max(int(session.expires_at - time.time()), 60),
+            max_age=max(math.ceil(session.expires_at - time.time()), 1),
         )
+
+    def _set_renewed_session_cookie(
+        self,
+        response: web.StreamResponse,
+        request: web.Request,
+    ) -> None:
+        renewed = request.get(_RENEWED_AUTH_SESSION_KEY)
+        if not isinstance(renewed, WebAuthSession):
+            return
+        session = self._auth.authenticate(renewed.session_token)
+        if session is None or session.audience != renewed.audience:
+            self.clear_session_cookie(response)
+            return
+        self.set_session_cookie(response, request, session)
+
+    @staticmethod
+    async def _renews_session(request: web.Request) -> bool:
+        route_name = request.match_info.route.name
+        if route_name in FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES:
+            return True
+        if route_name not in FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES:
+            return False
+        try:
+            body = await request.json()
+        except Exception:
+            return False
+        return isinstance(body, dict) and body.get("action") in {"discard", "retry"}
 
     def clear_session_cookie(self, response: web.StreamResponse) -> None:
         response.del_cookie(self._session_cookie_name, path="/")

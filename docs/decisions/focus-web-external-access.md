@@ -85,6 +85,35 @@ The proof is not a writer, interaction-response, backend, or control-plane
 credential. A registered Web document still follows the existing RuntimeLoop,
 document, and root-operation admission.
 
+Local and external sessions share one lifetime contract.
+`web_session_ttl_seconds` is a sliding idle window. It is refreshed only by a
+mutation that passes session, audience, Origin, and CSRF admission and whose
+route is explicitly cataloged as a user action. These actions include prompts
+and new threads, settings or workspace changes, attachment uploads,
+approval/structured-input responses, interrupts, user-initiated unknown-
+mutation discard/retry settlement, rename/compact/review/goal/archive/
+unarchive/delete operations, and backend reset. Ordinary GETs, export downloads,
+WebSocket ping/pong or server events, document registration and reconnection,
+background projection reads, and automatic unknown-mutation verification do
+not refresh it. Browser tabs share the same session; a
+qualifying action in any tab refreshes that session.
+
+Renewal preserves the session token, CSRF token, and audience rather than
+rotating a capability. The new idle deadline is
+`min(now + web_session_ttl_seconds, absolute deadline)`. The absolute deadline
+is fixed at issuance from `web_session_max_lifetime_seconds`, seven days by
+default, and cannot be crossed even under continuous activity. Renewal and
+expiry revocation linearize on the same session-state lock. An expiry task that
+wakes at an old deadline must reread the authoritative deadline and cannot
+revoke a renewed session. A qualifying mutation renews before its handler, so
+both successful and application-error responses refresh the cookie `Max-Age`;
+requests that fail Origin or CSRF admission do not. If a concurrent logout or
+revocation has already completed before that response writes its cookie, the
+response clears the cookie and cannot reinstall the revoked token. If a
+response is lost, the server may be renewed while the browser retains the old
+cookie deadline. This can only force earlier reauthentication; it grants no
+extra authority and never replays an effect automatically.
+
 The external page URL is the bookmarkable configured origin and contains no
 fragment token. `focusctl web open` and runtime discovery continue to publish
 only the local loopback endpoint; neither publishes the external origin, proof,

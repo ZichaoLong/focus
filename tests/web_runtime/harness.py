@@ -178,6 +178,18 @@ class WebRuntimeControllerHarness(unittest.TestCase):
                     **kwargs,
                 ),
                 list_models=lambda: self.fake.list_models(),
+                runtime_identity=lambda: {
+                    "focus_version": "5.0.0",
+                    "installed_build": {
+                        "version": "5.0.0",
+                        "channel": "local",
+                        "build_id": "test-build",
+                        "source_revision": "test-revision",
+                    },
+                    "codex_app_server": {
+                        "user_agent": "codex_cli_rs/0.146.0",
+                    },
+                },
                 list_loaded_thread_ids=lambda **kwargs: (
                     self.fake.list_loaded_thread_ids(**kwargs)
                 ),

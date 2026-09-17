@@ -137,6 +137,22 @@ class CodexRpcConnectionTests(unittest.TestCase):
             sent_notifications,
             [{"jsonrpc": "2.0", "method": "initialized"}],
         )
+        identity = client.current_initialize_result()
+        self.assertIsNotNone(identity)
+        assert identity is not None
+        self.assertEqual(identity[0], 1)
+        self.assertEqual(identity[1]["userAgent"], "codex_cli_rs/0.146.0")
+        identity[1]["userAgent"] = "mutated-copy"
+        fresh_identity = client.current_initialize_result()
+        self.assertIsNotNone(fresh_identity)
+        assert fresh_identity is not None
+        self.assertEqual(
+            fresh_identity[1]["userAgent"],
+            "codex_cli_rs/0.146.0",
+        )
+
+        client._connection_state = _CONNECTION_DISCONNECTED
+        self.assertIsNone(client.current_initialize_result())
 
     def test_connect_ws_disables_default_frame_limit(self) -> None:
         client = RpcConnection(connect_timeout_seconds=0.1)

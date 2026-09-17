@@ -182,6 +182,7 @@ class CodexConfig:
     web_trusted_proxy_origin: str = ""
     web_trusted_proxy_proof_sha256: str = ""
     web_session_ttl_seconds: float = 8 * 60 * 60
+    web_session_max_lifetime_seconds: float = 7 * 24 * 60 * 60
     web_disconnect_grace_seconds: float = 1200.0
     web_static_dir: str = ""
     connect_timeout_seconds: float = 15.0
@@ -343,6 +344,23 @@ class CodexConfig:
                 raise ValueError(
                     "codex.yaml trusted proxy mode 要求 `web_port` 为固定非零端口"
                 )
+        web_session_ttl_seconds = _number(
+            config,
+            "web_session_ttl_seconds",
+            defaults.web_session_ttl_seconds,
+            minimum=MIN_WEB_SESSION_TTL_SECONDS,
+        )
+        web_session_max_lifetime_seconds = _number(
+            config,
+            "web_session_max_lifetime_seconds",
+            defaults.web_session_max_lifetime_seconds,
+            minimum=MIN_WEB_SESSION_TTL_SECONDS,
+        )
+        if web_session_max_lifetime_seconds < web_session_ttl_seconds:
+            raise ValueError(
+                "codex.yaml 配置 `web_session_max_lifetime_seconds` 必须大于等于 "
+                "`web_session_ttl_seconds`"
+                )
         approvals_reviewer = _string(
             config,
             "approvals_reviewer",
@@ -386,12 +404,8 @@ class CodexConfig:
             web_port=web_port,
             web_trusted_proxy_origin=web_trusted_proxy_origin,
             web_trusted_proxy_proof_sha256=web_trusted_proxy_proof_sha256,
-            web_session_ttl_seconds=_number(
-                config,
-                "web_session_ttl_seconds",
-                defaults.web_session_ttl_seconds,
-                minimum=MIN_WEB_SESSION_TTL_SECONDS,
-            ),
+            web_session_ttl_seconds=web_session_ttl_seconds,
+            web_session_max_lifetime_seconds=web_session_max_lifetime_seconds,
             web_disconnect_grace_seconds=_number(
                 config,
                 "web_disconnect_grace_seconds",

@@ -53,6 +53,7 @@ from bot.codex_config import CodexConfig
 from bot.config import load_config_file
 from bot.constants import resolve_working_dir
 from bot.instance_layout import current_instance_name, global_data_dir
+from bot.focus_runtime.runtime_identity import RuntimeIdentityProjection
 from bot.stores.instance_registry_store import InstanceRegistryStore
 from bot.codex_protocol.client import (
     CodexRpcProtocolError,
@@ -328,6 +329,7 @@ class FocusRuntime:
             trusted_proxy_origin=cfg.web_trusted_proxy_origin,
             trusted_proxy_proof_sha256=cfg.web_trusted_proxy_proof_sha256,
             session_ttl_seconds=cfg.web_session_ttl_seconds,
+            session_max_lifetime_seconds=cfg.web_session_max_lifetime_seconds,
             disconnect_grace_seconds=cfg.web_disconnect_grace_seconds,
             static_dir=pathlib.Path(web_static_dir_raw).expanduser() if web_static_dir_raw else None,
         )
@@ -583,6 +585,10 @@ class FocusRuntime:
             runtime_context_guard=self._runtime_loop.assert_worker_context,
         )
         binding_coordinator: BindingRuntimeCoordinator
+        runtime_identity = RuntimeIdentityProjection(
+            global_data_root=self._global_data_dir,
+            current_app_server_identity=self._adapter.current_app_server_identity,
+        )
         web_runtime = WebRuntimeController(
             instance_name=self._instance_name,
             web_display_name=cfg.web_display_name,
@@ -603,6 +609,7 @@ class FocusRuntime:
                     **kwargs,
                 ),
                 list_models=lambda: self._adapter.list_models(include_hidden=False),
+                runtime_identity=runtime_identity.snapshot,
                 list_loaded_thread_ids=self._adapter.list_loaded_thread_ids,
                 managed_loaded_thread_inventory=(
                     service_authority.managed_loaded_thread_inventory

@@ -577,6 +577,10 @@
           "symbol": "ServiceRuntimeAuthority"
         },
         {
+          "path": "bot/focus_runtime/runtime_identity.py",
+          "symbol": "RuntimeIdentityProjection"
+        },
+        {
           "path": "bot/focus_runtime/thread_targets.py",
           "symbol": "CodexThreadTargetService"
         },
@@ -1298,6 +1302,14 @@
           "symbol": "FOCUS_WEB_EVENTS"
         },
         {
+          "path": "bot/focus_web_wire_catalog.py",
+          "symbol": "FOCUS_WEB_RECORDS"
+        },
+        {
+          "path": "bot/focus_runtime/runtime_identity.py",
+          "symbol": "RuntimeIdentityProjection"
+        },
+        {
           "path": "bot/web_runtime/runtime_notice.py",
           "symbol": "project_runtime_notice"
         },
@@ -1346,6 +1358,10 @@
           "symbol": "decodeFocusDocumentRegistration"
         },
         {
+          "path": "web/src/focus/httpResponseDecoder.ts",
+          "symbol": "decodeFocusMeta"
+        },
+        {
           "path": "web/src/focus/projectionEventDecoder.ts",
           "symbol": "decodeFocusRuntimeNoticeDetail"
         }
@@ -1388,8 +1404,11 @@
           "targets": [
             "web/test/focus-api.test.ts",
             "web/test/focus-prompt-dispatch-api.test.ts",
+            "web/test/focus-runtime-identity-decoder.test.ts",
+            "web/test/focus-runtime-identity-surface.test.ts",
             "web/test/focus-runtime-notice-decoder.test.ts",
             "web/test/focus-runtime-notice-surface.test.ts",
+            "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/focus_client/transport-projection.test.ts"
           ]
         }

@@ -18,6 +18,16 @@ export const meta = {
   product: 'Focus',
   instance: 'default',
   web_display_name: 'Focus Web',
+  runtime_identity: {
+    focus_version: '5.0.0',
+    installed_build: {
+      version: '5.0.0',
+      channel: 'stable',
+      build_id: 'build-1',
+      source_revision: 'a'.repeat(40),
+    },
+    codex_app_server: { user_agent: 'codex_cli_rs/0.146.0' },
+  },
   csrf_token: 'csrf-1',
   runtime_epoch: 'epoch-1',
   revision: 0,

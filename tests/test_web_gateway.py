@@ -1472,6 +1472,8 @@ class WebGatewayTests(WebGatewayHarness):
         self.assertEqual(status, 401)
         self.assertEqual(payload["error"]["code"], "unauthorized")
         self.assertEqual(profile_updates, [])
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
+        self.assertNotIn("focus_web_session_default", cookies)
         await socket.close()
 
     async def test_same_document_websocket_reconnect_is_not_a_reissue(self):
@@ -1656,11 +1658,17 @@ class WebGatewayTests(WebGatewayHarness):
         await socket.receive_json()
         cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
         session_token = cookies["focus_web_session_default"].value
+        active = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(active)
+        assert active is not None
         expired = WebAuthSession(
             session_token=session_token,
             csrf_token=auth["csrf_token"],
             expires_at=time.time(),
+            absolute_expires_at=active.absolute_expires_at,
         )
+        with self.gateway._auth._lock:
+            self.gateway._auth._sessions[session_token] = expired
         assert self.gateway._loop is not None
         future = asyncio.run_coroutine_threadsafe(
             self.gateway._expire_session_after(expired),
@@ -1688,11 +1696,17 @@ class WebGatewayTests(WebGatewayHarness):
             self.assertEqual(response.status, 200)
         cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
         session_token = cookies["focus_web_session_default"].value
+        active = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(active)
+        assert active is not None
         expired = WebAuthSession(
             session_token=session_token,
             csrf_token=auth["csrf_token"],
             expires_at=time.time(),
+            absolute_expires_at=active.absolute_expires_at,
         )
+        with self.gateway._auth._lock:
+            self.gateway._auth._sessions[session_token] = expired
         assert self.gateway._loop is not None
         future = asyncio.run_coroutine_threadsafe(
             self.gateway._expire_session_after(expired),
@@ -1701,6 +1715,40 @@ class WebGatewayTests(WebGatewayHarness):
 
         await asyncio.to_thread(future.result, 2)
         self.assertEqual(self.disconnected, [document["client_id"]])
+
+    async def test_expiry_task_rereads_deadline_after_activity_renewal(self):
+        auth = await self._authenticate()
+        await self._register_document(
+            resume_client_id="tab-renewed",
+            incarnation_id="renewed-document",
+        )
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
+        session_token = cookies["focus_web_session_default"].value
+        active = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(active)
+        assert active is not None
+        self.gateway._auth._session_ttl_seconds = 7200
+        renewed = self.gateway._auth.renew_if_live(session_token)
+        self.assertIsNotNone(renewed)
+        assert renewed is not None
+        stale = WebAuthSession(
+            session_token=session_token,
+            csrf_token=auth["csrf_token"],
+            expires_at=time.time(),
+            absolute_expires_at=active.absolute_expires_at,
+        )
+        assert self.gateway._loop is not None
+        future = asyncio.run_coroutine_threadsafe(
+            self.gateway._expire_session_after(stale),
+            self.gateway._loop,
+        )
+
+        await asyncio.sleep(0.05)
+        self.assertFalse(future.done())
+        self.assertEqual(self.gateway._auth.authenticate(session_token), renewed)
+        self.assertEqual(self.disconnected, [])
+        future.cancel()
+        await asyncio.sleep(0.05)
 
     async def test_client_id_hint_cannot_cross_authenticated_sessions(self):
         await self._authenticate()

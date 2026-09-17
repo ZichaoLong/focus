@@ -14,6 +14,7 @@ CLI as one offline payload.
 | --- | --- |
 | Closed bundle/channel-manifest schemas, construction, and validation | `scripts/build_support/install_bundle.py` |
 | Stable/development/local-artifact selection, download, and install-transaction boundary | `install.py` |
+| Identity record for the latest successful bundle installation | `bot/installed_build_identity.py`; commit timing remains owned by `install.py` |
 | Isolated argv shape for installed Python modules | `bot/managed_python.py` |
 | Clean Focus-wheel build and source-payload verification | `scripts/build_support/python_distribution.py` |
 | GitHub Release validation, upload ordering, and development retention | `scripts/build_support/github_publication.py` |
@@ -161,6 +162,18 @@ controls import authority only for the current Focus Python process and does not
 delete ordinary environment variables, so PATH and existing Focus/provider/Codex
 configuration remain available to downstream tools. This is not a hot upgrade,
 multi-generation environment, or automatic rollback state machine.
+
+After the complete install body succeeds and before originally running instances
+are restored, the installer atomically writes the validated bundle's `version`,
+`channel`, `build_id`, and `source_revision` to `installed-build.json` in the
+shared global data directory. The file uses the closed `focus-installed-build`
+schema version 1 and describes the managed Focus installation shared by all
+instances rather than any one instance. A failed install does not commit the
+candidate bundle identity and leaves stopped services offline. Runtime projection
+accepts the record only when it is strict and its `version` matches the current
+Python package version. An older installation without this record reports an
+unknown identity; it must not infer channel/build from a checkout, working
+directory, GitHub's latest Release, or the wheel version.
 
 Remote channels require GitHub access. Python networking honors standard
 `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. `--artifact` removes only the Focus

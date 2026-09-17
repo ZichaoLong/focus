@@ -12,6 +12,7 @@
 | --- | --- |
 | bundle 与 channel manifest 的闭合 schema、构建和验证 | `scripts/build_support/install_bundle.py` |
 | stable / development / local artifact 的选择、下载与安装事务边界 | `install.py` |
+| 最近一次成功安装的 bundle 身份记录 | `bot/installed_build_identity.py`；提交时机由 `install.py` 持有 |
 | 已安装 Python module 的隔离 argv 形状 | `bot/managed_python.py` |
 | Focus wheel 的 clean build 与 source-payload 核验 | `scripts/build_support/python_distribution.py` |
 | GitHub Release 状态核验、上传顺序与 development retention | `scripts/build_support/github_publication.py` |
@@ -128,6 +129,13 @@ Conda、用户 site-packages、当前目录和 `PYTHONPATH` 中的包不属于�
 隔离 module argv，不再经过用户 wrapper。隔离模式只控制 Focus 当前 Python 进程的 import authority，
 不会删除普通环境变量，因此 PATH、Focus/provider/Codex 配置仍可按既有合同传给下游工具。这个流程不是
 热升级，也不建立多代环境或自动回滚状态机。
+
+完整安装 body 成功后、原运行实例恢复前，安装器把已验证 bundle 的 `version`、`channel`、`build_id` 与
+`source_revision` 原子写入共享 global data dir 的 `installed-build.json`。该文件使用闭合
+`focus-installed-build` schema version 1，只描述所有实例共用的受管 Focus 安装，不属于任一实例。安装失败不会
+提交候选 bundle 身份，且事务会让已停止的 service 保持离线；运行时只在记录严格有效且其中 `version` 与当前
+Python package version 一致时投影该身份。旧安装没有该记录时必须报告身份未知，不能从 checkout、工作目录、
+GitHub latest Release 或 wheel version 反推 channel/build。
 
 remote channel 需要访问 GitHub；标准 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 会由 Python 网络栈使用。
 `--artifact` 只消除 Focus bundle 的 GitHub 下载，pip 仍可能按自身 index、proxy、证书和 cache 配置下载

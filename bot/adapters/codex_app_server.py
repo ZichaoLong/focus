@@ -199,7 +199,6 @@ class CodexAppServerAdapter(AgentAdapter):
             app_server_runtime_store=app_server_runtime_store,
             app_server_data_dir=config.app_server_data_dir or None,
         )
-        self._initialize_identity: dict[str, Any] = {}
 
     def _handle_rpc_initialized(
         self,
@@ -208,13 +207,7 @@ class CodexAppServerAdapter(AgentAdapter):
     ) -> None:
         """Validate Focus requirements for this exact connection before work."""
 
-        self._initialize_identity = {
-            "connection_generation": int(connection_generation),
-            "user_agent": _read_string(initialize_result, "userAgent"),
-            "codex_home": _read_string(initialize_result, "codexHome"),
-            "platform_family": _read_string(initialize_result, "platformFamily"),
-            "platform_os": _read_string(initialize_result, "platformOs"),
-        }
+        del connection_generation, initialize_result
         result = self._require_object_result(
             "configRequirements/read",
             self._rpc_request(
@@ -272,6 +265,26 @@ class CodexAppServerAdapter(AgentAdapter):
 
     def current_app_server_url(self) -> str:
         return self._rpc.current_app_server_url()
+
+    def current_app_server_identity(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, str] | None:
+        """Project the actual ready app-server handshake without reconnecting."""
+
+        snapshot = self._rpc.current_initialize_result(timeout=timeout)
+        if snapshot is None:
+            return None
+        _connection_generation, initialize_result = snapshot
+        user_agent = initialize_result.get("userAgent")
+        if (
+            not isinstance(user_agent, str)
+            or not user_agent
+            or user_agent.strip() != user_agent
+        ):
+            return None
+        return {"user_agent": user_agent}
 
     def connection_generation(
         self,

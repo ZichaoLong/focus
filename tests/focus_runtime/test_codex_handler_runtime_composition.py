@@ -217,6 +217,20 @@ class CodexHandlerRuntimeCompositionTests(CodexHandlerHarness):
             proof_sha256,
         )
 
+    def test_handler_projects_web_session_lifetime_config_to_gateway(self) -> None:
+        handler, _bot = self._make_handler(
+            {
+                "web_session_ttl_seconds": 1800,
+                "web_session_max_lifetime_seconds": 86400,
+            }
+        )
+
+        self.assertEqual(handler._web_config.session_ttl_seconds, 1800)
+        self.assertEqual(
+            handler._web_config.session_max_lifetime_seconds,
+            86400,
+        )
+
     def test_web_next_turn_seed_and_feishu_binding_defaults_stay_independent(self) -> None:
         handler, _bot = self._make_handler(
             {

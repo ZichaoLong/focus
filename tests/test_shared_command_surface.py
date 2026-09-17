@@ -57,6 +57,10 @@ class _StubAdapter:
     def stop(self) -> None:
         return None
 
+    def current_app_server_identity(self, *, timeout=None):
+        del timeout
+        return None
+
     def list_loaded_thread_ids(self) -> list[str]:
         return []
 

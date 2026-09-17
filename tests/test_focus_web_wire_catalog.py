@@ -119,8 +119,8 @@ def _assert_catalog_record(
 
 
 class FocusWebWireCatalogTests(unittest.TestCase):
-    def test_internal_interaction_scope_does_not_cross_v16_wire(self) -> None:
-        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 16)
+    def test_internal_interaction_scope_does_not_cross_v17_wire(self) -> None:
+        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 17)
         pending = project_pending_request(
             {
                 "request_key": "request-1",
@@ -208,6 +208,33 @@ class FocusWebWireCatalogTests(unittest.TestCase):
                 "retired_request_count": 0,
                 "purged_thread_count": 0,
                 "projection_warnings": [],
+            },
+        )
+
+    def test_runtime_identity_records_keep_install_and_handshake_scoped(self) -> None:
+        installed_build = {
+            "version": "5.0.0",
+            "channel": "stable",
+            "build_id": "build-123",
+            "source_revision": "a" * 40,
+        }
+        _assert_catalog_record(
+            self,
+            "installed_build_identity",
+            installed_build,
+        )
+        _assert_catalog_record(
+            self,
+            "codex_app_server_identity",
+            {"user_agent": "codex_cli_rs/0.146.0"},
+        )
+        _assert_catalog_record(
+            self,
+            "runtime_identity",
+            {
+                "focus_version": "5.0.0",
+                "installed_build": installed_build,
+                "codex_app_server": {"user_agent": "codex_cli_rs/0.146.0"},
             },
         )
 

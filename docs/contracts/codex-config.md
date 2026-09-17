@@ -62,9 +62,13 @@ the example projection, and the focused schema tests together.  Adding a new
   instance's authenticated live `service/status` response, after protocol
   readiness and replacement-generation admission.
 - The Web Gateway always accepts only `127.0.0.1`, `localhost`, or `::1` as
-  `web_host`, and `web_session_ttl_seconds` is at least 60 seconds. These are
-  schema admission rules; matching Gateway checks are defensive runtime
-  assertions, not a second configuration contract.
+  `web_host`. `web_session_ttl_seconds` (the idle window) and
+  `web_session_max_lifetime_seconds` (the absolute lifetime after issuance)
+  must both be finite values of at least 60 seconds, and the absolute lifetime
+  must not be shorter than the idle window. Their defaults are 28,800 seconds
+  (8 hours) and 604,800 seconds (7 days), respectively. These are schema
+  admission rules; matching Gateway checks are defensive runtime assertions,
+  not a second configuration contract.
 - `source_kinds` is a nonempty list of nonempty strings.  It is never expanded
   character by character from one scalar string.
 - `approval_policy` is a closed local enum.  The sole legacy migration is

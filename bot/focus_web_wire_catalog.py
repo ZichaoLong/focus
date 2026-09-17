@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 16
+FOCUS_WEB_WIRE_VERSION: Final = 17
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -310,6 +310,39 @@ FOCUS_WEB_ENDPOINTS: Final = (
     FocusWebEndpointSpec("events", "GET", "/api/events", "_handle_events"),
 )
 
+# Only authenticated, CSRF-admitted actions that directly express a user
+# intent refresh the Web session's idle deadline. Registration/reconnection,
+# reads, event transport, logout, and automatic unknown-mutation verification
+# deliberately remain outside this set.
+FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
+    {
+        "backend_reset_execute",
+        "profile",
+        "next_turn_settings_update",
+        "attachment_upload",
+        "thread_start",
+        "thread_prompt",
+        "thread_interrupt",
+        "thread_rename",
+        "thread_compact",
+        "thread_review",
+        "thread_goal_set",
+        "thread_goal_clear",
+        "thread_archive",
+        "thread_unarchive",
+        "thread_delete",
+        "request_respond",
+    }
+)
+FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset({"thread_unknown_mutation"})
+_FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
+    {
+        "auth_bootstrap",
+        "auth_logout",
+        "client_register",
+    }
+)
+
 FOCUS_WEB_EVENTS: Final = (
     FocusWebEventSpec("backend_disconnected"),
     FocusWebEventSpec("hello"),
@@ -329,6 +362,7 @@ FOCUS_WEB_EVENTS: Final = (
 )
 
 FOCUS_WEB_ENUMS: Final = (
+    _enum("focus_install_channel", "stable development local"),
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
@@ -416,10 +450,26 @@ FOCUS_WEB_RECORDS: Final = (
         "runtime_epoch revision next_turn_settings",
     ),
     _record(
+        "installed_build_identity",
+        "FocusInstalledBuildIdentity",
+        "version channel build_id source_revision",
+        "channel:focus_install_channel",
+    ),
+    _record(
+        "codex_app_server_identity",
+        "FocusCodexAppServerIdentity",
+        "user_agent",
+    ),
+    _record(
+        "runtime_identity",
+        "FocusRuntimeIdentity",
+        "focus_version installed_build codex_app_server",
+    ),
+    _record(
         "meta",
         "FocusMeta",
         "runtime_epoch revision product instance web_display_name csrf_token default_working_dir "
-        "models writer_profile next_turn_settings approval_policies "
+        "models writer_profile next_turn_settings runtime_identity approval_policies "
         "permissions_profiles capabilities",
     ),
     _record(
@@ -757,6 +807,19 @@ for record in FOCUS_WEB_RECORDS:
 _route_keys = {(endpoint.method, endpoint.path) for endpoint in FOCUS_WEB_ENDPOINTS}
 if len(_route_keys) != len(FOCUS_WEB_ENDPOINTS):
     raise ValueError("duplicate Focus Web endpoint method/path")
+
+_endpoint_names = {endpoint.name for endpoint in FOCUS_WEB_ENDPOINTS}
+if not FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES <= _endpoint_names:
+    raise ValueError("unknown Focus Web session activity endpoint")
+if not FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES <= _endpoint_names:
+    raise ValueError("unknown conditional Focus Web session activity endpoint")
+_mutation_endpoint_names = {endpoint.name for endpoint in FOCUS_WEB_ENDPOINTS if endpoint.method != "GET"}
+if _mutation_endpoint_names != (
+    FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES
+    | FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES
+    | _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES
+):
+    raise ValueError("Focus Web mutation endpoints must declare renewal policy")
 
 
 def require_focus_web_event_type(value: object) -> str:

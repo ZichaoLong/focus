@@ -29,6 +29,8 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | wire version、endpoint、event、required field、封闭 enum | `bot/focus_web_wire_catalog.py` |
 | TypeScript 只读投影 | `web/src/focus/focusWire.generated.ts`，只能由 `scripts/generate_focus_web_wire.py` 生成 |
 | HTTP DTO 生产 | 对应 Gateway/application owner；通用 projection helper 在 `bot/web_runtime/projection.py` |
+| 已安装 Focus bundle 身份 | `bot/installed_build_identity.py`；安装提交边界链接[安装制品交付合同](./install-artifact-delivery.zh-CN.md) |
+| 当前 Codex app-server 握手身份 | `CodexRpcConnection` 的 ready-generation initialize result；adapter 只做 browser-safe 投影 |
 | ordinary existing-thread prompt result receipt | `WebPromptResultRegistry`；行为链接 [Focus Web prompt mutation 恢复合同](./focus-web-prompt-mutation-recovery.zh-CN.md) |
 | next-turn settings DTO 与 mutation transaction | `WebNextTurnSettingsCoordinator`，durable fact 由 `WebNextTurnSettingsStore` 持有；行为链接 [runtime settings 事实源合同](./runtime-settings-fact-sources.zh-CN.md) |
 | event revision 与 fan-out | `FocusWebProjection` |
@@ -98,6 +100,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v16 新增只读 `GET /api/threads/{thread_id}/export-data`，以 JSONL 导出 app-server 为当前 paginated thread
   保存并通过 `thread/items/list` 返回的 item。它不改变既有 `export` capability 的问答 Markdown 含义，不新增
   v15 route alias；服务与静态资源仍必须同版本部署。
+- v17 为 `FocusMeta` 新增必填 `runtime_identity`，包含当前 Focus package version、可选的已验证安装 bundle
+  身份，以及可选的当前 ready-generation app-server `userAgent`。v16 browser 不保留缺字段 compatibility decoder；
+  服务与静态资源仍必须同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -245,6 +250,13 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   解析。没有 active thread 时只显示部署名称。thread switch、rename 与 meta 安装会同步更新 title；Focus 不按字符数
   裁剪会话侧字符串，标签页可见宽度由 browser chrome 自然截断。换行和连续空白只在 document-title presentation
   中折叠为单个空格，不修改持久化 thread name 或 preview。
+- `FocusMeta.runtime_identity` 必须恰好包含 `focus_version`、`installed_build` 与 `codex_app_server`。
+  `installed_build` 为 `null`，或为闭合的 `{version,channel,build_id,source_revision}`；其中 channel 只能是
+  `stable / development / local`，且 version 必须等于 `focus_version`。记录缺失、损坏或与当前 package version
+  不匹配时必须投影 `null`，不得猜测来源。`codex_app_server` 为 `null`，或只含当前 ready connection 的 initialize
+  response 中 non-empty、无首尾空白的原始 `userAgent`；读取不得启动或重连 backend，也不得用磁盘上的
+  `codex --version`、wrapper argv、`codexHome` 或旧 connection generation 补值。`backend_disconnected` 会立即清除
+  browser 已安装的 app-server 身份，后续权威 meta 才能安装新握手值。
 - browser document favicon 只消费当前选中 thread 的既有 `running` presentation、browser connection 状态及同一 module
   持有的 browser-local 展示偏好，不创建新的 runtime fact 或 wire vocabulary。偏好默认开启；同源 `localStorage` 中只有
   `focus-web.activity-favicon-enabled` 的精确值 `0` 表示关闭，关闭时只写入该值，重新开启时删除该 key。当前 document

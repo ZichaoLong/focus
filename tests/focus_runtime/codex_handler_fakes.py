@@ -289,6 +289,14 @@ class _FakeAdapter:
     def current_app_server_url(self) -> str:
         return self.config.app_server_url
 
+    def current_app_server_identity(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> dict[str, str] | None:
+        del timeout
+        return None
+
     def connection_generation(
         self,
         *,

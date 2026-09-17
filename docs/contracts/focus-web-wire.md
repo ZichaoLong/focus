@@ -35,6 +35,8 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Wire version, endpoints, events, required fields, and closed enums | `bot/focus_web_wire_catalog.py` |
 | Read-only TypeScript projection | `web/src/focus/focusWire.generated.ts`, generated only by `scripts/generate_focus_web_wire.py` |
 | HTTP DTO production | The relevant Gateway/application owner; shared projection helpers live in `bot/web_runtime/projection.py` |
+| Installed Focus bundle identity | `bot/installed_build_identity.py`; the install commit boundary links to the [install-artifact delivery contract](./install-artifact-delivery.md) |
+| Current Codex app-server handshake identity | The ready-generation initialize result in `CodexRpcConnection`; the adapter only creates the browser-safe projection |
 | Ordinary existing-thread prompt result receipt | `WebPromptResultRegistry`; behavior links to the [Focus Web prompt mutation recovery contract](./focus-web-prompt-mutation-recovery.md) |
 | Next-turn-settings DTO and mutation transaction | `WebNextTurnSettingsCoordinator`, backed by the durable fact in `WebNextTurnSettingsStore`; behavior links to the [runtime-settings fact-source contract](./runtime-settings-fact-sources.md) |
 | Event revision and fan-out | `FocusWebProjection` |
@@ -138,6 +140,11 @@ guards and may not retain parallel key or enum inventories.
   returns through `thread/items/list` as JSONL. It does not change the existing
   `export` capability's Q&A-Markdown meaning and adds no version-15 route alias.
   Service and static assets still deploy at the same version.
+- Version 17 adds required `runtime_identity` to `FocusMeta`. It contains the
+  current Focus package version, an optional validated installed-bundle identity,
+  and the optional `userAgent` of the current ready-generation app-server. A
+  version 16 browser retains no missing-field compatibility decoder; service and
+  static assets still deploy at the same version.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -390,6 +397,18 @@ guards and may not retain parallel key or enum inventories.
   browser chrome naturally clips the visible tab. Document-title presentation
   only collapses newlines and consecutive whitespace to one space and does not
   mutate the persisted thread name or preview.
+- `FocusMeta.runtime_identity` contains exactly `focus_version`,
+  `installed_build`, and `codex_app_server`. `installed_build` is either null or
+  the closed `{version,channel,build_id,source_revision}` shape. Its channel is
+  one of `stable / development / local`, and its version equals `focus_version`.
+  A missing, damaged, or package-version-mismatched record projects as null and
+  never triggers source inference. `codex_app_server` is either null or contains
+  only the nonempty, non-whitespace-padded raw `userAgent` from the initialize
+  response of the current ready connection. Reading it cannot start or reconnect
+  the backend, and cannot substitute on-disk `codex --version`, wrapper argv,
+  `codexHome`, or an older connection generation. `backend_disconnected`
+  immediately clears the app-server identity installed in the browser; only a
+  later authoritative meta response can install a new handshake value.
 - The browser document favicon consumes only the existing `running`
   presentation for the selected thread, the browser connection state, and the
   browser-local presentation preference owned by the same module; it creates no

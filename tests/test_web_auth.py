@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from bot.web_runtime.auth import WebAuthManager
 
@@ -108,6 +109,68 @@ class WebAuthManagerTests(unittest.TestCase):
 
         self.assertIsNotNone(auth.exchange_bootstrap(original))
         self.assertEqual(observed, [original])
+
+    def test_renewal_slides_idle_deadline_without_rotating_capabilities(self):
+        with patch("bot.web_runtime.auth.time.time", return_value=100.0) as clock:
+            auth = WebAuthManager(
+                session_ttl_seconds=60,
+                session_max_lifetime_seconds=300,
+            )
+            session = auth.exchange_bootstrap(auth.bootstrap_token)
+            self.assertIsNotNone(session)
+            assert session is not None
+            self.assertEqual(session.expires_at, 160.0)
+            self.assertEqual(session.absolute_expires_at, 400.0)
+
+            clock.return_value = 130.0
+            renewed = auth.renew_if_live(session.session_token)
+
+            self.assertIsNotNone(renewed)
+            assert renewed is not None
+            self.assertEqual(renewed.session_token, session.session_token)
+            self.assertEqual(renewed.csrf_token, session.csrf_token)
+            self.assertEqual(renewed.expires_at, 190.0)
+            self.assertEqual(renewed.absolute_expires_at, 400.0)
+
+            # A task waking at the old deadline observes the authoritative
+            # renewal instead of revoking the session it captured earlier.
+            clock.return_value = 160.0
+            self.assertEqual(auth.expire_if_due(session.session_token), renewed)
+            clock.return_value = 190.0
+            self.assertIsNone(auth.expire_if_due(session.session_token))
+
+    def test_renewal_is_capped_and_cannot_revive_expired_or_revoked_session(self):
+        with patch("bot.web_runtime.auth.time.time", return_value=100.0) as clock:
+            auth = WebAuthManager(
+                session_ttl_seconds=60,
+                session_max_lifetime_seconds=180,
+            )
+            session = auth.exchange_bootstrap(auth.bootstrap_token)
+            self.assertIsNotNone(session)
+            assert session is not None
+
+            for active_at in (150.0, 200.0):
+                clock.return_value = active_at
+                self.assertIsNotNone(auth.renew_if_live(session.session_token))
+            clock.return_value = 250.0
+            capped = auth.renew_if_live(session.session_token)
+            self.assertIsNotNone(capped)
+            assert capped is not None
+            self.assertEqual(capped.expires_at, 280.0)
+            self.assertEqual(capped.absolute_expires_at, 280.0)
+
+            clock.return_value = 280.0
+            self.assertIsNone(auth.renew_if_live(session.session_token))
+            self.assertIsNone(auth.authenticate(session.session_token))
+
+            replacement = auth.issue_external_session(
+                external_origin="https://focus.example.test",
+                proxy_identity="proxy:user",
+            )
+            self.assertIsNotNone(replacement)
+            assert replacement is not None
+            self.assertTrue(auth.revoke(replacement.session_token))
+            self.assertIsNone(auth.renew_if_live(replacement.session_token))
 
 
 if __name__ == "__main__":

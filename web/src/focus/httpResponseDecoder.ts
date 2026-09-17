@@ -10,6 +10,7 @@ import type {
   FocusDocumentRegistration,
   FocusGoalResult,
   FocusGatewayErrorBody,
+  FocusInstalledBuildIdentity,
   FocusLifecycleResult,
   FocusLifecycleVerification,
   FocusLifecycleVerificationResult,
@@ -23,6 +24,7 @@ import type {
   FocusPromptResultReceipt,
   FocusRenameResult,
   FocusRequestResponseResult,
+  FocusRuntimeIdentity,
   FocusThreadList,
   FocusThreadConversationSearchPage,
   FocusThreadSnapshot,
@@ -226,6 +228,42 @@ function isModel(value: unknown): value is FocusModel {
     return false;
   }
   return value.upgrade_info === null || isUpgradeInfo(value.upgrade_info);
+}
+
+function isInstalledBuildIdentity(
+  value: unknown,
+): value is FocusInstalledBuildIdentity {
+  if (
+    !isRequiredRecord('installed_build_identity', value)
+    || !hasExactRequiredFields('installed_build_identity', value)
+  ) return false;
+  return isNonEmptyTrimmedString(value.version)
+    && isFocusWebWireEnum('focus_install_channel', value.channel)
+    && isNonEmptyTrimmedString(value.build_id)
+    && isNonEmptyTrimmedString(value.source_revision);
+}
+
+function isCodexAppServerIdentity(value: unknown): boolean {
+  return isRequiredRecord('codex_app_server_identity', value)
+    && hasExactRequiredFields('codex_app_server_identity', value)
+    && isNonEmptyTrimmedString(value.user_agent);
+}
+
+function isRuntimeIdentity(value: unknown): value is FocusRuntimeIdentity {
+  if (
+    !isRequiredRecord('runtime_identity', value)
+    || !hasExactRequiredFields('runtime_identity', value)
+    || !isNonEmptyTrimmedString(value.focus_version)
+  ) return false;
+  if (
+    value.installed_build !== null
+    && (
+      !isInstalledBuildIdentity(value.installed_build)
+      || value.installed_build.version !== value.focus_version
+    )
+  ) return false;
+  return value.codex_app_server === null
+    || isCodexAppServerIdentity(value.codex_app_server);
 }
 
 function isLifecycleVerification(value: unknown): value is FocusLifecycleVerification {
@@ -443,6 +481,7 @@ export const decodeFocusMeta: FocusHttpDecoder<FocusMeta> = (value) => {
   if (!Array.isArray(value.models) || !value.models.every(isModel)) return null;
   if (!isWriterProfile(value.writer_profile)) return null;
   if (!isNextTurnSettings(value.next_turn_settings)) return null;
+  if (!isRuntimeIdentity(value.runtime_identity)) return null;
   if (!isStringArray(value.approval_policies)) return null;
   if (
     !Array.isArray(value.permissions_profiles)

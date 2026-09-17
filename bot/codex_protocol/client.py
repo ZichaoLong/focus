@@ -100,6 +100,13 @@ class CodexRpcClient:
     def current_app_server_url(self) -> str:
         return self._connection.current_app_server_url()
 
+    def current_initialize_result(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> tuple[int, dict[str, Any]] | None:
+        return self._connection.current_initialize_result(timeout=timeout)
+
     def connection_generation(
         self,
         *,

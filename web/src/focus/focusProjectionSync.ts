@@ -1172,6 +1172,16 @@ export function createFocusProjectionSync(
       return;
     }
     if (event.type === 'backend_disconnected') {
+      const currentMeta = meta.value;
+      if (currentMeta && currentMeta.runtime_identity.codex_app_server !== null) {
+        meta.value = {
+          ...currentMeta,
+          runtime_identity: {
+            ...currentMeta.runtime_identity,
+            codex_app_server: null,
+          },
+        };
+      }
       observeGlobalActiveTurnDisclosureChange(event);
     }
     if (event.type === 'mutation_reconciled' && event.thread_id) {

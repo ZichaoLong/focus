@@ -193,6 +193,147 @@ class WebGatewayRequestAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["product"], "Focus")
         self.assertEqual(self.meta_clients, [document["client_id"]])
 
+    async def test_only_explicit_csrf_admitted_activity_renews_the_session(
+        self,
+    ) -> None:
+        auth_result = await self._authenticate()
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
+        session_token = cookies["focus_web_session_default"].value
+        issued = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(issued)
+        assert issued is not None
+
+        # Make a renewal materially visible without waiting in real time.
+        self.gateway._auth._session_ttl_seconds = 7200
+        document = await self._register_document()
+        self.assertEqual(self.gateway._auth.authenticate(session_token), issued)
+
+        async with self.session.get(
+            f"{self.endpoint}/api/meta",
+            headers=self._document_headers(document),
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertNotIn("Set-Cookie", response.headers)
+        self.assertEqual(self.gateway._auth.authenticate(session_token), issued)
+
+        async with self.session.post(
+            f"{self.endpoint}/api/profile",
+            json={"working_dir": "/work/rejected"},
+            headers=self._document_headers(
+                document,
+                origin=self.endpoint,
+                csrf="wrong-csrf",
+            ),
+        ) as response:
+            self.assertEqual(response.status, 403)
+            self.assertNotIn("Set-Cookie", response.headers)
+        self.assertEqual(self.gateway._auth.authenticate(session_token), issued)
+
+        socket = await self.session.ws_connect(
+            self._events_url(document, csrf=str(auth_result["csrf_token"])),
+            headers={"Origin": self.endpoint},
+        )
+        try:
+            await socket.receive_json(timeout=2)
+            await socket.send_str("ping")
+            pong = await socket.receive_str(timeout=2)
+            self.assertEqual(pong, "pong")
+            self.assertEqual(self.gateway._auth.authenticate(session_token), issued)
+
+            async with self.session.post(
+                f"{self.endpoint}/api/profile",
+                json={"working_dir": "/work/project"},
+                headers=self._document_headers(
+                    document,
+                    origin=self.endpoint,
+                    csrf=str(auth_result["csrf_token"]),
+                ),
+            ) as response:
+                self.assertEqual(response.status, 200)
+                self.assertIn("Set-Cookie", response.headers)
+
+            renewed = self.gateway._auth.authenticate(session_token)
+            self.assertIsNotNone(renewed)
+            assert renewed is not None
+            self.assertGreater(renewed.expires_at, issued.expires_at)
+            self.assertEqual(renewed.session_token, issued.session_token)
+            self.assertEqual(renewed.csrf_token, issued.csrf_token)
+            self.assertEqual(
+                renewed.absolute_expires_at,
+                issued.absolute_expires_at,
+            )
+        finally:
+            await socket.close()
+
+    async def test_admitted_activity_renews_on_application_error(self) -> None:
+        auth_result = await self._authenticate()
+        document = await self._register_document()
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
+        session_token = cookies["focus_web_session_default"].value
+        issued = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(issued)
+        assert issued is not None
+        self.gateway._auth._session_ttl_seconds = 7200
+
+        def fail_update(*_args, **_kwargs):
+            raise RuntimeError("profile backend unavailable")
+
+        self.gateway._ports.update_profile = fail_update
+        async with self.session.post(
+            f"{self.endpoint}/api/profile",
+            json={"working_dir": "/work/project"},
+            headers=self._document_headers(
+                document,
+                origin=self.endpoint,
+                csrf=str(auth_result["csrf_token"]),
+            ),
+        ) as response:
+            self.assertEqual(response.status, 500)
+            self.assertIn("Set-Cookie", response.headers)
+
+        renewed = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(renewed)
+        assert renewed is not None
+        self.assertGreater(renewed.expires_at, issued.expires_at)
+
+    async def test_unknown_mutation_renews_only_for_user_settlement(self) -> None:
+        auth_result = await self._authenticate()
+        document = await self._register_document()
+        cookies = self.session.cookie_jar.filter_cookies(URL(self.endpoint))
+        session_token = cookies["focus_web_session_default"].value
+        issued = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(issued)
+        assert issued is not None
+        self.gateway._auth._session_ttl_seconds = 7200
+        url = f"{self.endpoint}/api/threads/thread-1/mutation-unknown"
+        headers = self._document_headers(
+            document,
+            origin=self.endpoint,
+            csrf=str(auth_result["csrf_token"]),
+        )
+
+        async with self.session.post(
+            url,
+            json={"action": "verify_lifecycle", "mutation_id": "mutation-1"},
+            headers=headers,
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertNotIn("Set-Cookie", response.headers)
+        self.assertEqual(self.gateway._auth.authenticate(session_token), issued)
+
+        async with self.session.post(
+            url,
+            json={"action": "discard", "mutation_id": "mutation-1"},
+            headers=headers,
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("Set-Cookie", response.headers)
+
+        renewed = self.gateway._auth.authenticate(session_token)
+        self.assertIsNotNone(renewed)
+        assert renewed is not None
+        self.assertGreater(renewed.expires_at, issued.expires_at)
+
     async def test_one_browser_keeps_two_loopback_instance_sessions(self) -> None:
         default_document = await self._authenticate_and_register()
         explorer_root = self.root / "explorer"

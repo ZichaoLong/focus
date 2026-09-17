@@ -534,9 +534,20 @@ def main(argv: list[str] | None = None) -> None:
         # All remote I/O and artifact validation is complete before Focus owns
         # service state or mutates the managed environment.
         from bot.install_lifecycle import ManagedInstallLifecycleError
+        from bot.installed_build_identity import (
+            InstalledBuildIdentity,
+            write_installed_build_identity,
+        )
+        from bot.instance_layout import global_data_dir
         from bot.platform_paths import default_data_root
 
         venv_dir = default_data_root() / ".venv"
+        installed_build = InstalledBuildIdentity(
+            version=bundle.metadata.version,
+            channel=bundle.metadata.channel,
+            build_id=bundle.metadata.build_id,
+            source_revision=bundle.metadata.source_revision,
+        )
         try:
             transaction = _managed_install_transaction()
             with transaction:
@@ -568,6 +579,9 @@ def main(argv: list[str] | None = None) -> None:
                     _run_checked([*command, "migrate", "from-feishu-codex"])
                 else:
                     _run_checked([*command, "bootstrap-install"])
+                # The record becomes visible before the transaction restores
+                # services, and only after the complete install body succeeds.
+                write_installed_build_identity(global_data_dir(), installed_build)
         except ManagedInstallLifecycleError as exc:
             raise SystemExit(str(exc)) from exc
 

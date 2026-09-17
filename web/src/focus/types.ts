@@ -88,6 +88,23 @@ export interface FocusModel {
   } | null;
 }
 
+export interface FocusInstalledBuildIdentity {
+  version: string;
+  channel: FocusWebWireEnum<'focus_install_channel'>;
+  build_id: string;
+  source_revision: string;
+}
+
+export interface FocusCodexAppServerIdentity {
+  user_agent: string;
+}
+
+export interface FocusRuntimeIdentity {
+  focus_version: string;
+  installed_build: FocusInstalledBuildIdentity | null;
+  codex_app_server: FocusCodexAppServerIdentity | null;
+}
+
 export interface FocusMeta extends FocusCoordinates {
   product: string;
   instance: string;
@@ -97,6 +114,7 @@ export interface FocusMeta extends FocusCoordinates {
   models: FocusModel[];
   writer_profile: FocusWriterProfile;
   next_turn_settings: FocusNextTurnSettings;
+  runtime_identity: FocusRuntimeIdentity;
   approval_policies: string[];
   permissions_profiles: { id: string; label: string }[];
   capabilities: FocusCapabilityMap;

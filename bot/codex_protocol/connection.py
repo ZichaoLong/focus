@@ -614,6 +614,27 @@ class CodexRpcConnection:
                 else ""
             )
 
+    def current_initialize_result(
+        self,
+        *,
+        timeout: float | None = None,
+    ) -> tuple[int, dict[str, Any]] | None:
+        """Return the initialize result for the exact ready connection."""
+
+        deadline = self._deadline_from_timeout(timeout)
+        with held_lock_before_deadline(
+            self._lock,
+            deadline_monotonic=deadline,
+            operation="initialize result read",
+        ):
+            if (
+                self._closing
+                or not self._is_ready_locked()
+                or self._initialize_result is None
+            ):
+                return None
+            return self._connection_generation, dict(self._initialize_result)
+
     def _connection_target_url(self) -> str:
         if self._managed_process is not None:
             return self._managed_process.active_url

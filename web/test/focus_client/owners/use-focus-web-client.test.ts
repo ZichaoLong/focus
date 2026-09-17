@@ -106,6 +106,11 @@ function meta(revision: number): FocusMeta {
     product: 'Focus',
     instance: 'test',
     web_display_name: 'Focus Web',
+    runtime_identity: {
+      focus_version: '5.0.0',
+      installed_build: null,
+      codex_app_server: { user_agent: 'codex_cli_rs/0.146.0' },
+    },
     csrf_token: 'csrf',
     default_working_dir: '/work',
     models: [],

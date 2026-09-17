@@ -16,6 +16,7 @@ import { useI18n } from 'vue-i18n';
 import type {
   FocusBackendResetPreview,
   FocusBackendResetResult,
+  FocusRuntimeIdentity,
   FocusThreadSummary,
 } from './types';
 
@@ -32,6 +33,7 @@ const props = defineProps<{
   reasoningEffortOptions: string[];
   permissionsProfileId: string;
   permissionsProfiles: { id: string; label: string }[];
+  runtimeIdentity: FocusRuntimeIdentity | null;
   archivedThreads: FocusThreadSummary[];
   archivedLoading: boolean;
   archivedTruncated: boolean;
@@ -67,7 +69,7 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
-const section = ref<'preferences' | 'archived' | 'danger'>('preferences');
+const section = ref<'preferences' | 'archived' | 'about' | 'danger'>('preferences');
 const deleteTarget = ref('');
 const deleteConfirmation = ref('');
 
@@ -84,7 +86,12 @@ watch(
 );
 
 function setSection(value: string): void {
-  if (value !== 'preferences' && value !== 'archived' && value !== 'danger') return;
+  if (
+    value !== 'preferences'
+    && value !== 'archived'
+    && value !== 'about'
+    && value !== 'danger'
+  ) return;
   const enteringDanger = value === 'danger' && section.value !== 'danger';
   section.value = value;
   if (value === 'archived') emit('refreshArchived');
@@ -166,10 +173,12 @@ function setComposerSendShortcut(value: string): void {
   >
     <div class="settings-list">
       <SegmentedControl
+        class="settings-sections"
         :model-value="section"
         :options="[
           { value: 'preferences', label: t('focus.runtime') },
           { value: 'archived', label: t('focus.archived') },
+          { value: 'about', label: t('focus.about') },
           { value: 'danger', label: t('focus.dangerZone') },
         ]"
         size="sm"
@@ -360,6 +369,61 @@ function setComposerSendShortcut(value: string): void {
         </div>
       </section>
 
+      <section v-else-if="section === 'about'" class="about-panel">
+        <div>
+          <div class="settings-label">{{ t('focus.about') }}</div>
+          <div class="settings-description">{{ t('focus.aboutDescription') }}</div>
+        </div>
+
+        <article class="runtime-identity-card">
+          <div class="settings-label">Focus</div>
+          <dl>
+            <div>
+              <dt>{{ t('focus.focusVersion') }}</dt>
+              <dd>
+                <code class="runtime-identity-value">
+                  {{ runtimeIdentity?.focus_version ?? t('focus.unknown') }}
+                </code>
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('focus.focusInstalledBuild') }}</dt>
+              <dd v-if="runtimeIdentity?.installed_build">
+                <code class="runtime-identity-value">{{ runtimeIdentity.installed_build.channel }}/{{ runtimeIdentity.installed_build.build_id }}</code>
+              </dd>
+              <dd v-else class="runtime-identity-unavailable">
+                {{ t('focus.focusInstallIdentityUnavailable') }}
+              </dd>
+            </div>
+            <div v-if="runtimeIdentity?.installed_build">
+              <dt>{{ t('focus.focusSourceRevision') }}</dt>
+              <dd>
+                <code class="runtime-identity-value">
+                  {{ runtimeIdentity.installed_build.source_revision }}
+                </code>
+              </dd>
+            </div>
+          </dl>
+        </article>
+
+        <article class="runtime-identity-card">
+          <div class="settings-label">Codex app-server</div>
+          <dl>
+            <div>
+              <dt>{{ t('focus.codexHandshakeIdentity') }}</dt>
+              <dd v-if="runtimeIdentity?.codex_app_server">
+                <code class="runtime-identity-value">
+                  {{ runtimeIdentity.codex_app_server.user_agent }}
+                </code>
+              </dd>
+              <dd v-else class="runtime-identity-unavailable">
+                {{ t('focus.codexIdentityUnavailable') }}
+              </dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
       <section v-else class="danger-panel">
         <div>
           <div class="settings-label danger-label">{{ t('focus.dangerZone') }}</div>
@@ -502,6 +566,17 @@ function setComposerSendShortcut(value: string): void {
   flex-direction: column;
   gap: var(--space-4);
 }
+.settings-sections {
+  width: 100%;
+}
+.settings-sections :deep(.ui-seg__item) {
+  min-width: 0;
+  height: auto;
+  min-height: 24px;
+  flex: 1;
+  line-height: var(--leading-tight);
+  white-space: normal;
+}
 .settings-row {
   display: flex;
   align-items: center;
@@ -610,6 +685,50 @@ function setComposerSendShortcut(value: string): void {
   color: var(--color-text-muted);
   text-align: center;
 }
+.about-panel,
+.runtime-identity-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.runtime-identity-card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+.runtime-identity-card dl {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+}
+.runtime-identity-card dl > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.45fr) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+.runtime-identity-card dt,
+.runtime-identity-unavailable {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+.runtime-identity-card dd {
+  min-width: 0;
+  margin: 0;
+}
+.runtime-identity-value {
+  display: block;
+  max-width: 100%;
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  white-space: normal;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
 .danger-panel,
 .backend-reset-card,
 .backend-reset-preview,
@@ -700,6 +819,9 @@ function setComposerSendShortcut(value: string): void {
   }
   .backend-reset-preview dl,
   .backend-reset-result dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .runtime-identity-card dl > div {
     grid-template-columns: minmax(0, 1fr);
   }
 }

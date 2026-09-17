@@ -17,6 +17,21 @@ class WebRuntimeWorkspaceProfileTests(WebRuntimeControllerHarness):
 
         self.assertEqual(meta["web_display_name"], "Focus Web")
         self.assertEqual(
+            meta["runtime_identity"],
+            {
+                "focus_version": "5.0.0",
+                "installed_build": {
+                    "version": "5.0.0",
+                    "channel": "local",
+                    "build_id": "test-build",
+                    "source_revision": "test-revision",
+                },
+                "codex_app_server": {
+                    "user_agent": "codex_cli_rs/0.146.0",
+                },
+            },
+        )
+        self.assertEqual(
             meta["writer_profile"],
             {
                 "selected_thread_id": "",

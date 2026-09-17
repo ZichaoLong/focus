@@ -16,6 +16,10 @@ class CodexRpcClientFacadeTests(unittest.TestCase):
             "rotation"
         )
         connection.current_app_server_url.return_value = "ws://127.0.0.1:43210"
+        connection.current_initialize_result.return_value = (
+            7,
+            {"userAgent": "codex_cli_rs/0.146.0"},
+        )
         connection.connection_generation.return_value = 7
         connection.request.return_value = {"ok": True}
         guard = Mock()
@@ -38,6 +42,7 @@ class CodexRpcClientFacadeTests(unittest.TestCase):
         client.stop(timeout=1.5)
         rotation = client.rotate_server_request_authority_after_backend_stop()
         url = client.current_app_server_url()
+        initialize_result = client.current_initialize_result(timeout=0.25)
         generation = client.connection_generation(
             timeout=0.5,
             require_existing_connection=True,
@@ -79,8 +84,13 @@ class CodexRpcClientFacadeTests(unittest.TestCase):
         connection.stop.assert_called_once_with(timeout=1.5)
         self.assertEqual(rotation, "rotation")
         self.assertEqual(url, "ws://127.0.0.1:43210")
+        self.assertEqual(
+            initialize_result,
+            (7, {"userAgent": "codex_cli_rs/0.146.0"}),
+        )
         self.assertEqual(generation, 7)
         self.assertEqual(result, {"ok": True})
+        connection.current_initialize_result.assert_called_once_with(timeout=0.25)
         connection.connection_generation.assert_called_once_with(
             timeout=0.5,
             require_existing_connection=True,
@@ -164,6 +174,7 @@ class CodexRpcClientFacadeTests(unittest.TestCase):
                 "stop",
                 "rotate_server_request_authority_after_backend_stop",
                 "current_app_server_url",
+                "current_initialize_result",
                 "connection_generation",
                 "fence_backend_reset_generation",
                 "request",

@@ -163,6 +163,7 @@ class WebRuntimePorts:
     list_threads: Callable[..., list[ThreadSummary]]
     read_thread: Callable[..., ThreadSnapshot]
     list_models: Callable[[], list[RuntimeModelSummary]]
+    runtime_identity: Callable[[], dict[str, Any]]
     list_loaded_thread_ids: Callable[[], list[str]]
     managed_loaded_thread_inventory: Callable[[], ManagedLoadedThreadInventorySnapshot]
     list_thread_runtime_leases: Callable[[], list[Any]]
@@ -595,6 +596,7 @@ class WebRuntimeController:
             "product": "Focus",
             "instance": self._instance_name,
             "web_display_name": self._web_display_name,
+            "runtime_identity": self._ports.runtime_identity(),
             "default_working_dir": self._workspace.default_working_dir,
             "models": models,
             "writer_profile": self._workspace.profile_payload(profile),

@@ -15,6 +15,10 @@ class CodexConfigTests(unittest.TestCase):
     def test_parser_defaults_are_the_dataclass_defaults(self) -> None:
         self.assertEqual(CodexConfig.from_dict({}), CodexConfig())
         self.assertEqual(CodexConfig().web_disconnect_grace_seconds, 1200.0)
+        self.assertEqual(
+            CodexConfig().web_session_max_lifetime_seconds,
+            7 * 24 * 60 * 60,
+        )
         self.assertEqual(CodexConfig().web_display_name, "Focus Web")
         self.assertEqual(CodexConfig().web_trusted_proxy_origin, "")
         self.assertEqual(CodexConfig().web_trusted_proxy_proof_sha256, "")
@@ -125,13 +129,30 @@ class CodexConfigTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "web_session_ttl_seconds"):
             CodexConfig.from_dict({"web_session_ttl_seconds": 59.9})
+        with self.assertRaisesRegex(
+            ValueError,
+            "web_session_max_lifetime_seconds",
+        ):
+            CodexConfig.from_dict({"web_session_max_lifetime_seconds": 59.9})
+        with self.assertRaisesRegex(ValueError, "必须大于等于"):
+            CodexConfig.from_dict(
+                {
+                    "web_session_ttl_seconds": 3600,
+                    "web_session_max_lifetime_seconds": 3599,
+                }
+            )
 
         config = CodexConfig.from_dict(
-            {"web_host": "LOCALHOST", "web_session_ttl_seconds": 60}
+            {
+                "web_host": "LOCALHOST",
+                "web_session_ttl_seconds": 60,
+                "web_session_max_lifetime_seconds": 600,
+            }
         )
 
         self.assertEqual(config.web_host, "localhost")
         self.assertEqual(config.web_session_ttl_seconds, 60.0)
+        self.assertEqual(config.web_session_max_lifetime_seconds, 600.0)
 
     def test_trusted_proxy_config_is_an_atomic_exact_remote_mode(self) -> None:
         proof_sha256 = "0123456789abcdef" * 4

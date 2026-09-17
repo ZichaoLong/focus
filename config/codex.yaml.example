@@ -44,8 +44,13 @@ web_enabled: true
 # web_trusted_proxy_origin: https://focus.example.com
 # web_trusted_proxy_proof_sha256: <64-lowercase-hex-sha256>
 
-# 浏览器会话有效期（秒）；最小值：60；默认值：28800（8 小时）
+# 浏览器会话空闲超时（秒）；最小值：60；默认值：28800（8 小时）。
+# 已认证且通过 CSRF 准入的显式用户操作会重新计时；读取、WebSocket、重连和后台同步不会。
 # web_session_ttl_seconds: 28800
+
+# 浏览器会话从签发起的绝对最长寿命（秒）；不得小于空闲超时；默认值：604800（7 天）。
+# 即使持续操作，到达该期限后也必须重新认证。
+# web_session_max_lifetime_seconds: 604800
 
 # 浏览器 WebSocket 断开后，同一已认证 document identity 的重连宽限期（秒）；默认值：1200。
 # 该宽限期只维护 document capability 与页面连续性，不创建或延长 main-turn writer。
