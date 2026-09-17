@@ -317,6 +317,8 @@
     "test/focus-reading-mode-surface.test.ts",
     "test/focus-response-capability.test.ts",
     "test/focus-runtime-details-surface.test.ts",
+    "test/focus-runtime-identity-decoder.test.ts",
+    "test/focus-runtime-identity-surface.test.ts",
     "test/focus-runtime-notice-decoder.test.ts",
     "test/focus-runtime-notice-surface.test.ts",
     "test/focus-summary-export-surface.test.ts",
