@@ -17,7 +17,7 @@ from scripts.build_support.github_publication import (
     publish_install_bundle,
     validate_publication_input,
 )
-from scripts.build_support.install_bundle import (
+from bot.installation.install_bundle import (
     build_install_bundle,
     development_release_tag,
     sha256_file,
@@ -168,7 +168,7 @@ class GitHubPublicationTests(unittest.TestCase):
         version = "4.0.0" if channel == "stable" else "4.0.0.dev0"
         release_tag = "4.0.0" if channel == "stable" else None
         with patch(
-            "scripts.build_support.install_bundle.build_validated_wheel",
+            "bot.installation.install_bundle.build_validated_wheel",
             side_effect=self._wheel_builder(version),
         ):
             built = build_install_bundle(

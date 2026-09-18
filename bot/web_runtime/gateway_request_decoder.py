@@ -246,6 +246,56 @@ def decode_backend_reset_request(body: dict[str, Any]) -> tuple[bool, int]:
     return force, generation
 
 
+def decode_update_source_request(body: dict[str, Any]) -> tuple[str, str]:
+    if (
+        set(body) != {"url", "confirmation"}
+        or not isinstance(body.get("url"), str)
+        or not isinstance(body.get("confirmation"), str)
+        or not body["url"].strip()
+        or body["url"] != body["url"].strip()
+        or body["confirmation"] != "change-source"
+    ):
+        raise WebRuntimeError(
+            "更新源请求必须包含 exact url 与 change-source confirmation。",
+            code="invalid_update_source_request",
+            status=400,
+        )
+    return body["url"], body["confirmation"]
+
+
+def decode_update_check_request(body: dict[str, Any]) -> str:
+    if set(body) != {"commit"} or not isinstance(body.get("commit"), str):
+        raise WebRuntimeError(
+            "更新检查请求必须只包含 commit 字符串；留空使用 main。",
+            code="invalid_update_check_request",
+            status=400,
+        )
+    if body["commit"] != body["commit"].strip():
+        raise WebRuntimeError(
+            "commit 不能包含首尾空白。",
+            code="invalid_update_check_request",
+            status=400,
+        )
+    return body["commit"]
+
+
+def decode_update_apply_request(body: dict[str, Any]) -> tuple[str, str]:
+    if (
+        set(body) != {"operation_id", "confirmation"}
+        or not isinstance(body.get("operation_id"), str)
+        or not isinstance(body.get("confirmation"), str)
+        or not body["operation_id"].strip()
+        or body["operation_id"] != body["operation_id"].strip()
+        or body["confirmation"] != body["operation_id"]
+    ):
+        raise WebRuntimeError(
+            "应用更新请求必须包含 matching operation_id 与 confirmation。",
+            code="invalid_update_apply_request",
+            status=400,
+        )
+    return body["operation_id"], body["confirmation"]
+
+
 def decode_request_response_capability(body: dict[str, Any]) -> str:
     value = body.get("response_capability")
     if (

@@ -705,6 +705,41 @@ async function confirmBackendReset(preview: FocusBackendResetPreview): Promise<v
   }
 }
 
+async function confirmUpdateSource(url: string): Promise<void> {
+  const normalized = url.trim();
+  if (!normalized) return;
+  try {
+    await confirm({
+      title: t('focus.updateSourceConfirmTitle'),
+      message: t('focus.updateSourceConfirmMessage', { url: normalized }),
+      confirmLabel: t('focus.updateSaveSource'),
+      cancelLabel: t('focus.cancel'),
+      confirmationText: 'CHANGE',
+      confirmationLabel: t('focus.updateSourceConfirmationLabel'),
+      confirmationPlaceholder: 'CHANGE',
+      variant: 'danger',
+      action: async () => { await client.configureUpdateSource(normalized); },
+    });
+  } catch { /* Shared error presentation carries a failed source mutation. */ }
+}
+
+async function confirmFocusUpdate(operationId: string): Promise<void> {
+  if (!operationId.trim()) return;
+  try {
+    await confirm({
+      title: t('focus.updateConfirmTitle'),
+      message: t('focus.updateConfirmMessage'),
+      confirmLabel: t('focus.updateApply'),
+      cancelLabel: t('focus.cancel'),
+      confirmationText: operationId,
+      confirmationLabel: t('focus.updateConfirmationLabel'),
+      confirmationPlaceholder: operationId,
+      variant: 'danger',
+      action: async () => { await client.applyUpdate(operationId); },
+    });
+  } catch { /* The update owner records failure or unknown outcome. */ }
+}
+
 async function submitGoal(objective: string): Promise<void> {
   try {
     conversationPaneRef.value?.prepareTimelineMutation();
@@ -1188,6 +1223,9 @@ onUnmounted(() => {
         :backend-reset-loading="client.backendResetLoading.value"
         :backend-reset-busy="client.backendResetBusy.value"
         :backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"
+        :update-status="client.updateStatus.value"
+        :update-loading="client.updateLoading.value"
+        :update-busy="client.updateBusy.value"
         @set-color-scheme="setColorScheme"
         @set-turn-window-limit="client.setTurnWindowLimit($event)"
         @set-activity-favicon-enabled="activityFaviconPreference.setEnabled($event)"
@@ -1200,6 +1238,10 @@ onUnmounted(() => {
         @delete-thread="(threadId, confirmation) => client.deleteThread(threadId, confirmation)"
         @refresh-backend-reset="client.refreshBackendReset"
         @confirm-backend-reset="confirmBackendReset"
+        @refresh-update="client.refreshUpdateStatus"
+        @configure-update-source="confirmUpdateSource"
+        @check-update="client.checkUpdate($event)"
+        @apply-update="confirmFocusUpdate"
       />
 
       <FocusGoalDialog

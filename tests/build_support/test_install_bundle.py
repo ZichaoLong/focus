@@ -9,7 +9,7 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from scripts.build_support.install_bundle import (
+from bot.installation.install_bundle import (
     BUNDLE_MANIFEST_NAME,
     CHANNEL_MANIFEST_NAMES,
     InstallBundleError,
@@ -78,7 +78,7 @@ class InstallBundleTests(unittest.TestCase):
         if channel == "stable":
             kwargs["release_tag"] = "4.0.0"
         with patch(
-            "scripts.build_support.install_bundle.build_validated_wheel",
+            "bot.installation.install_bundle.build_validated_wheel",
             side_effect=self._fake_wheel_builder,
         ):
             return build_install_bundle(
@@ -143,7 +143,7 @@ class InstallBundleTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch(
-                "scripts.build_support.install_bundle.build_validated_wheel"
+                "bot.installation.install_bundle.build_validated_wheel"
             ) as wheel_builder:
                 with self.assertRaisesRegex(InstallBundleError, "npm run build"):
                     build_install_bundle(
@@ -255,7 +255,7 @@ class InstallBundleTests(unittest.TestCase):
             root = pathlib.Path(tmpdir)
             source = self._write_source(root)
             with patch(
-                "scripts.build_support.install_bundle.build_validated_wheel",
+                "bot.installation.install_bundle.build_validated_wheel",
                 side_effect=self._fake_wheel_builder,
             ):
                 with self.assertRaisesRegex(InstallBundleError, "不能声明release_tag"):

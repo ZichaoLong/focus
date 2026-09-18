@@ -10,11 +10,11 @@
 
 | 事实或动作 | 唯一 owner |
 | --- | --- |
-| bundle 与 channel manifest 的闭合 schema、构建和验证 | `scripts/build_support/install_bundle.py` |
-| stable / development / local artifact 的选择、下载与安装事务边界 | `install.py` |
-| 最近一次成功安装的 bundle 身份记录 | `bot/installed_build_identity.py`；提交时机由 `install.py` 持有 |
+| bundle 与 channel manifest 的闭合 schema、构建和验证 | `bot/installation/install_bundle.py` |
+| stable / development / local artifact 的选择、下载与安装事务边界 | `bot/installation/installer.py`（`install.py` 只是公开入口） |
+| 最近一次成功安装的 bundle 身份记录 | `bot/installed_build_identity.py`；提交时机由 `bot/installation/installer.py` 持有 |
 | 已安装 Python module 的隔离 argv 形状 | `bot/managed_python.py` |
-| Focus wheel 的 clean build 与 source-payload 核验 | `scripts/build_support/python_distribution.py` |
+| Focus wheel 的 clean build 与 source-payload 核验 | `bot/installation/python_distribution.py` |
 | GitHub Release 状态核验、上传顺序与 development retention | `scripts/build_support/github_publication.py` |
 | 本地 bundle 入口 | `scripts/build_install_bundle.py` |
 | 当前 workspace 的 Web build、临时 local bundle 与正式安装器串联 | `scripts/install_workspace.sh` |

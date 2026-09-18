@@ -18,6 +18,7 @@ import type {
   FocusBackendResetResult,
   FocusRuntimeIdentity,
   FocusThreadSummary,
+  FocusUpdateStatus,
 } from './types';
 
 const props = defineProps<{
@@ -44,6 +45,9 @@ const props = defineProps<{
   backendResetLoading: boolean;
   backendResetBusy: boolean;
   backendResetOutcomeUnknown: boolean;
+  updateStatus: FocusUpdateStatus | null;
+  updateLoading: boolean;
+  updateBusy: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -60,6 +64,10 @@ const emit = defineEmits<{
   deleteThread: [threadId: string, confirmation: string];
   refreshBackendReset: [];
   confirmBackendReset: [preview: FocusBackendResetPreview];
+  refreshUpdate: [];
+  configureUpdateSource: [url: string];
+  checkUpdate: [commit: string];
+  applyUpdate: [operationId: string];
 }>();
 
 const { t } = useI18n();
@@ -69,9 +77,11 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
-const section = ref<'preferences' | 'archived' | 'about' | 'danger'>('preferences');
+const section = ref<'preferences' | 'archived' | 'about' | 'update' | 'danger'>('preferences');
 const deleteTarget = ref('');
 const deleteConfirmation = ref('');
+const updateSourceUrl = ref('');
+const updateCommit = ref('');
 
 watch(
   () => props.open,
@@ -81,7 +91,19 @@ watch(
       deleteConfirmation.value = '';
     } else if (!wasOpen && section.value === 'danger') {
       emit('refreshBackendReset');
+    } else if (!wasOpen && section.value === 'update') {
+      emit('refreshUpdate');
     }
+    if (open && props.updateStatus?.source.url) {
+      updateSourceUrl.value = props.updateStatus.source.url;
+    }
+  },
+);
+
+watch(
+  () => props.updateStatus?.source.url,
+  (url) => {
+    if (url && !updateSourceUrl.value) updateSourceUrl.value = url;
   },
 );
 
@@ -90,12 +112,14 @@ function setSection(value: string): void {
     value !== 'preferences'
     && value !== 'archived'
     && value !== 'about'
+    && value !== 'update'
     && value !== 'danger'
   ) return;
   const enteringDanger = value === 'danger' && section.value !== 'danger';
   section.value = value;
   if (value === 'archived') emit('refreshArchived');
   if (enteringDanger) emit('refreshBackendReset');
+  if (value === 'update') emit('refreshUpdate');
 }
 
 function backendResetStatusLabel(status: FocusBackendResetPreview['status']): string {
@@ -179,6 +203,7 @@ function setComposerSendShortcut(value: string): void {
           { value: 'preferences', label: t('focus.runtime') },
           { value: 'archived', label: t('focus.archived') },
           { value: 'about', label: t('focus.about') },
+          { value: 'update', label: t('focus.update') },
           { value: 'danger', label: t('focus.dangerZone') },
         ]"
         size="sm"
@@ -422,6 +447,77 @@ function setComposerSendShortcut(value: string): void {
             </div>
           </dl>
         </article>
+      </section>
+
+      <section v-else-if="section === 'update'" class="about-panel update-panel">
+        <div>
+          <div class="settings-label">{{ t('focus.updateTitle') }}</div>
+          <div class="settings-description">{{ t('focus.updateDescription') }}</div>
+        </div>
+
+        <div class="update-card">
+          <label class="update-field">
+            <span class="settings-label">{{ t('focus.updateSource') }}</span>
+            <input v-model="updateSourceUrl" type="url" autocomplete="off" spellcheck="false" />
+          </label>
+          <div class="update-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              :disabled="updateBusy || !updateSourceUrl.trim()"
+              @click="emit('configureUpdateSource', updateSourceUrl.trim())"
+            >
+              {{ t('focus.updateSaveSource') }}
+            </Button>
+          </div>
+          <div class="settings-description">{{ t('focus.updateSourceWarning') }}</div>
+        </div>
+
+        <div class="update-card">
+          <label class="update-field">
+            <span class="settings-label">{{ t('focus.updateCommit') }}</span>
+            <input
+              v-model="updateCommit"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              :placeholder="t('focus.updateCommitPlaceholder')"
+            />
+          </label>
+          <div class="update-actions">
+            <Button
+              size="sm"
+              variant="secondary"
+              :loading="updateBusy || updateLoading"
+              :disabled="updateBusy || updateLoading"
+              @click="emit('checkUpdate', updateCommit.trim())"
+            >
+              {{ t('focus.updateCheck') }}
+            </Button>
+            <Button
+              v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"
+              size="sm"
+              variant="primary"
+              :loading="updateBusy"
+              :disabled="updateBusy"
+              @click="emit('applyUpdate', updateStatus.operation_id)"
+            >
+              {{ t('focus.updateApply') }}
+            </Button>
+          </div>
+          <dl v-if="updateStatus" class="update-status">
+            <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ updateStatus.state }}</dd></div>
+            <div v-if="updateStatus.operation_source"><dt>{{ t('focus.updateOperationSource') }}</dt><dd><code>{{ updateStatus.operation_source.url }}@{{ updateStatus.operation_source.branch }}</code></dd></div>
+            <div v-if="updateStatus.requested_commit"><dt>{{ t('focus.updateRequestedCommit') }}</dt><dd><code>{{ updateStatus.requested_commit }}</code></dd></div>
+            <div v-if="updateStatus.resolved_commit"><dt>{{ t('focus.updateResolvedCommit') }}</dt><dd><code>{{ updateStatus.resolved_commit }}</code></dd></div>
+            <div v-if="updateStatus.installation_started"><dt>{{ t('focus.updateInstallationStarted') }}</dt><dd>{{ t('focus.updateInstallationStartedValue') }}</dd></div>
+          </dl>
+          <Banner v-if="updateStatus?.message" variant="info">{{ updateStatus.message }}</Banner>
+          <Banner v-if="updateStatus?.error" variant="danger">{{ updateStatus.error }}</Banner>
+          <div v-if="updateStatus?.state === 'ready'" class="settings-description">
+            {{ t('focus.updateReadyConfirmation', { operation: updateStatus.operation_id }) }}
+          </div>
+        </div>
       </section>
 
       <section v-else class="danger-panel">
@@ -729,6 +825,39 @@ function setComposerSendShortcut(value: string): void {
   user-select: text;
   -webkit-user-select: text;
 }
+.update-panel,
+.update-card,
+.update-field,
+.update-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.update-card {
+  padding: var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-raised);
+}
+.update-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-2);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+}
+.update-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.update-status { margin: 0; }
+.update-status > div {
+  display: grid;
+  grid-template-columns: minmax(120px, .4fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+.update-status dt { color: var(--color-text-muted); font-size: var(--text-sm); }
+.update-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .danger-panel,
 .backend-reset-card,
 .backend-reset-preview,

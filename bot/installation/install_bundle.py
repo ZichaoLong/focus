@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from email.parser import BytesParser
 from typing import Any
 
-from scripts.build_support.python_distribution import (
+from bot.installation.python_distribution import (
     PythonDistributionBuildError,
     build_validated_wheel,
 )

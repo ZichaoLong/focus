@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 17
+FOCUS_WEB_WIRE_VERSION: Final = 19
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -140,6 +140,30 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "_handle_client_register",
     ),
     FocusWebEndpointSpec("meta", "GET", "/api/meta", "_handle_meta"),
+    FocusWebEndpointSpec(
+        "update_status",
+        "GET",
+        "/api/update",
+        "_handle_update_status",
+    ),
+    FocusWebEndpointSpec(
+        "update_source",
+        "POST",
+        "/api/update/source",
+        "_handle_update_source",
+    ),
+    FocusWebEndpointSpec(
+        "update_check",
+        "POST",
+        "/api/update/check",
+        "_handle_update_check",
+    ),
+    FocusWebEndpointSpec(
+        "update_apply",
+        "POST",
+        "/api/update/apply",
+        "_handle_update_apply",
+    ),
     FocusWebEndpointSpec(
         "operator_status",
         "GET",
@@ -332,6 +356,9 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "thread_unarchive",
         "thread_delete",
         "request_respond",
+        "update_source",
+        "update_check",
+        "update_apply",
     }
 )
 FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset({"thread_unknown_mutation"})
@@ -363,6 +390,7 @@ FOCUS_WEB_EVENTS: Final = (
 
 FOCUS_WEB_ENUMS: Final = (
     _enum("focus_install_channel", "stable development local"),
+    _enum("update_state", "idle checking ready applying succeeded failed unknown"),
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
@@ -471,6 +499,14 @@ FOCUS_WEB_RECORDS: Final = (
         "runtime_epoch revision product instance web_display_name csrf_token default_working_dir "
         "models writer_profile next_turn_settings runtime_identity approval_policies "
         "permissions_profiles capabilities",
+    ),
+    _record("update_source", "FocusUpdateSource", "url branch"),
+    _record(
+        "update_status",
+        "FocusUpdateStatus",
+        "source operation_source operation_id state requested_commit resolved_commit message error "
+        "preflight updated_at restart_required installation_started",
+        "state:update_state",
     ),
     _record(
         "operator_warning",

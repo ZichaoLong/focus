@@ -7,8 +7,8 @@ import unittest
 import zipfile
 from unittest.mock import patch
 
-from scripts.build_support import python_distribution
-from scripts.build_support.python_distribution import (
+from bot.installation import python_distribution
+from bot.installation.python_distribution import (
     PythonDistributionBuildError,
     build_validated_wheel,
     isolated_setuptools_build,

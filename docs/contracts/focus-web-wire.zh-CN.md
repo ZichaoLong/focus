@@ -103,6 +103,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v17 为 `FocusMeta` 新增必填 `runtime_identity`，包含当前 Focus package version、可选的已验证安装 bundle
   身份，以及可选的当前 ready-generation app-server `userAgent`。v16 browser 不保留缺字段 compatibility decoder；
   服务与静态资源仍必须同版本部署。
+- v18 新增 machine-level 浏览器更新的 `GET /api/update`、source/check/apply endpoint 与封闭的
+  `update_state`；更新动作不授予 thread 或 writer authority。
+- v19 为更新状态增加本次 operation 固定的 `operation_source` 与 `installation_started`，使来源漂移和停服后
+  的失败/未知结果可以被浏览器如实展示。v18 browser 不保留兼容 decoder；服务与静态资源仍必须同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -435,6 +439,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   retry loop，也不授予 writer、owner、lifecycle、settings、approval、FIFO 或 mutation authority。
 
 ## 6. 安装与失败语义
+
+浏览器更新 endpoint、machine-level source、预检、独立 updater、service restart 与
+失败/unknown 处理遵循[Focus Web 浏览器更新合同](./focus-web-update.zh-CN.md)；本文件只约束
+其 wire admission 与 browser decode。
 
 - HTTP response 只有完整 decode 成功后才可交给 view/projection owner；失败结果不得通过 TypeScript cast 安装。
 - 历史 summary/full page 是 request-local 的有界展示数据，不得 merge 到 process-local live thread read model。浏览器

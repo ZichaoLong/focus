@@ -23,6 +23,7 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusUpdateStatus,
   FocusWriterProfile,
   FocusWriterProfileResult,
 } from './types';
@@ -47,6 +48,7 @@ import {
   decodeFocusMutationResult,
   decodeFocusNextTurnSettingsResult,
   decodeFocusOperatorStatusResponse,
+  decodeFocusUpdateStatus,
   decodeFocusRenameResult,
   decodeFocusRequestResponseResult,
   decodeFocusPromptResultReceipt,
@@ -80,6 +82,17 @@ const PROMPT_POST_PRE_EFFECT_ERROR_CODES: ReadonlySet<string> = new Set([
 ]);
 const PROMPT_RESULT_LOOKUP_PRE_EFFECT_ERROR_CODES: ReadonlySet<string> = new Set([
   'prompt_result_unavailable',
+]);
+const UPDATE_PRE_EFFECT_ERROR_CODES: ReadonlySet<string> = new Set([
+  'unauthorized',
+  'csrf_failed',
+  'invalid_client',
+  'document_unregistered',
+  'document_replaced',
+  'invalid_json',
+  'invalid_update_apply_request',
+  'update_unavailable',
+  'update_rejected',
 ]);
 
 function newDocumentIncarnation(): string {
@@ -185,6 +198,10 @@ export interface FocusWebApiPort {
   initialize(): Promise<FocusMeta>;
   meta(): Promise<FocusMeta>;
   operatorStatus(): Promise<FocusOperatorStatus>;
+  updateStatus(): Promise<FocusUpdateStatus>;
+  configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus>;
+  checkUpdate(commit: string): Promise<FocusUpdateStatus>;
+  applyUpdate(operationId: string, confirmation: string): Promise<FocusUpdateStatus>;
   backendResetPreview(): Promise<FocusBackendResetPreview>;
   backendResetExecute(input: {
     force: boolean;
@@ -381,6 +398,44 @@ export class FocusWebApi implements FocusWebApiPort {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  updateStatus(): Promise<FocusUpdateStatus> {
+    return this.request(
+      'update_status',
+      decodeFocusUpdateStatus,
+      'update status',
+    );
+  }
+
+  configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus> {
+    return this.request(
+      'update_source',
+      decodeFocusUpdateStatus,
+      'update source',
+      { body: { url, confirmation } },
+    );
+  }
+
+  checkUpdate(commit: string): Promise<FocusUpdateStatus> {
+    return this.request(
+      'update_check',
+      decodeFocusUpdateStatus,
+      'update check',
+      { body: { commit } },
+    );
+  }
+
+  applyUpdate(operationId: string, confirmation: string): Promise<FocusUpdateStatus> {
+    return this.request(
+      'update_apply',
+      decodeFocusUpdateStatus,
+      'update apply',
+      {
+        body: { operation_id: operationId, confirmation },
+        preEffectFocusErrorCodes: UPDATE_PRE_EFFECT_ERROR_CODES,
+      },
+    );
   }
 
   backendResetPreview(): Promise<FocusBackendResetPreview> {

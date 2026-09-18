@@ -12,11 +12,11 @@ CLI as one offline payload.
 
 | Fact or action | Sole owner |
 | --- | --- |
-| Closed bundle/channel-manifest schemas, construction, and validation | `scripts/build_support/install_bundle.py` |
-| Stable/development/local-artifact selection, download, and install-transaction boundary | `install.py` |
-| Identity record for the latest successful bundle installation | `bot/installed_build_identity.py`; commit timing remains owned by `install.py` |
+| Closed bundle/channel-manifest schemas, construction, and validation | `bot/installation/install_bundle.py` |
+| Stable/development/local-artifact selection, download, and install-transaction boundary | `bot/installation/installer.py` (with `install.py` as the public entry point) |
+| Identity record for the latest successful bundle installation | `bot/installed_build_identity.py`; commit timing remains owned by `bot/installation/installer.py` |
 | Isolated argv shape for installed Python modules | `bot/managed_python.py` |
-| Clean Focus-wheel build and source-payload verification | `scripts/build_support/python_distribution.py` |
+| Clean Focus-wheel build and source-payload verification | `bot/installation/python_distribution.py` |
 | GitHub Release validation, upload ordering, and development retention | `scripts/build_support/github_publication.py` |
 | Local bundle entry point | `scripts/build_install_bundle.py` |
 | Current-workspace Web build, temporary local bundle, and official-installer orchestration | `scripts/install_workspace.sh` |

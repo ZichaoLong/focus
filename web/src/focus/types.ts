@@ -105,6 +105,28 @@ export interface FocusRuntimeIdentity {
   codex_app_server: FocusCodexAppServerIdentity | null;
 }
 
+export type FocusUpdateState = FocusWebWireEnum<'update_state'>;
+
+export interface FocusUpdateSource {
+  url: string;
+  branch: string;
+}
+
+export interface FocusUpdateStatus {
+  source: FocusUpdateSource;
+  operation_source: FocusUpdateSource | null;
+  operation_id: string;
+  state: FocusUpdateState;
+  requested_commit: string;
+  resolved_commit: string;
+  message: string;
+  error: string;
+  preflight: Record<string, unknown>;
+  updated_at: number;
+  restart_required: boolean;
+  installation_started: boolean;
+}
+
 export interface FocusMeta extends FocusCoordinates {
   product: string;
   instance: string;

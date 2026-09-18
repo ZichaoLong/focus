@@ -230,11 +230,16 @@ class ManagedInstallTransaction:
         self._status_timeout_seconds = max(float(status_timeout_seconds), 0.0)
         self._status_poll_seconds = max(float(status_poll_seconds), 0.0)
         self._state = "new"
+        self._stop_phase_started = False
         self._originally_running: tuple[str, ...] = ()
         self._prepared_instances: list[str] = []
         self._maintenance_leases: list[tuple[str, MaintenanceLease]] = []
         self._restored_instances: tuple[str, ...] = ()
         self._handoff_barrier_yielded = False
+
+    @property
+    def stop_phase_started(self) -> bool:
+        return self._stop_phase_started
 
     @property
     def originally_running_instances(self) -> tuple[str, ...]:
@@ -263,6 +268,7 @@ class ManagedInstallTransaction:
                 self._prepare_instance(instance_name)
 
             stop_phase_started = bool(self._originally_running)
+            self._stop_phase_started = stop_phase_started
             for instance_name in self._originally_running:
                 self._ports.stop_service(instance_name)
             self._wait_for_running_state(

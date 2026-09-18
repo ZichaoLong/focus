@@ -11,7 +11,7 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.build_support.install_bundle import (
+from bot.installation.install_bundle import (
     CHANNEL_MANIFEST_NAMES,
     InstallBundleError,
     ChannelManifest,

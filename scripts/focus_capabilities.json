@@ -1306,6 +1306,14 @@
           "symbol": "FOCUS_WEB_RECORDS"
         },
         {
+          "path": "bot/installation/update.py",
+          "symbol": "FocusUpdateController"
+        },
+        {
+          "path": "bot/installation/update_worker.py",
+          "symbol": "main"
+        },
+        {
           "path": "bot/focus_runtime/runtime_identity.py",
           "symbol": "RuntimeIdentityProjection"
         },
@@ -1388,7 +1396,14 @@
             "tests/test_web_gateway_external_transaction.py",
             "tests/test_web_gateway_next_turn_settings.py",
             "tests/test_web_gateway_request_decoder.py",
+            "tests/test_web_update_controller.py",
             "tests/web_runtime/test_thread_history_gateway.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-update-api.test.ts"
           ]
         }
       ],

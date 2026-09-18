@@ -145,6 +145,13 @@ guards and may not retain parallel key or enum inventories.
   and the optional `userAgent` of the current ready-generation app-server. A
   version 16 browser retains no missing-field compatibility decoder; service and
   static assets still deploy at the same version.
+- Version 18 adds the machine-level browser-update `GET /api/update` and
+  source/check/apply endpoints with the closed `update_state` vocabulary; these
+  actions do not grant thread or writer authority.
+- Version 19 adds the pinned per-operation `operation_source` and
+  `installation_started` fields so source drift and post-shutdown failure/unknown
+  outcomes can be presented honestly. A version 18 browser retains no compatibility
+  decoder; service and static assets still deploy at the same version.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -711,6 +718,11 @@ guards and may not retain parallel key or enum inventories.
   writer, owner, lifecycle, settings, approval, FIFO, or mutation authority.
 
 ## 6. Installation and Failure Semantics
+
+Browser update endpoints, the machine-level source, preflight, independent updater,
+service restart, and failed/unknown handling follow the [Focus Web Browser Update
+Contract](./focus-web-update.md); this document governs their wire admission and browser
+decode only.
 
 - An HTTP response reaches a view or projection owner only after a complete decode.
   A failed result cannot be installed through a TypeScript cast.

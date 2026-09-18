@@ -51,6 +51,7 @@ from bot.web_runtime.mutation_recovery import (
 )
 from bot.web_runtime.projection import FocusWebProjection
 from bot.web_runtime.contract import WebRuntimeError
+from bot.web_runtime.update_controller import FocusUpdateError
 
 logger = logging.getLogger(__name__)
 
@@ -173,6 +174,12 @@ class WebGatewayPorts:
     client_transport_disconnected: Callable[[str], None]
     client_document_reissued: Callable[[str], None]
     client_disconnected: Callable[[str], None]
+    # The update owner is optional for legacy embedders/tests that construct a
+    # Gateway without the managed installer surface.
+    update_status: Callable[[], dict[str, Any]] | None = None
+    update_source: Callable[[str, str], dict[str, Any]] | None = None
+    update_check: Callable[[str], dict[str, Any]] | None = None
+    update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
 class WebGateway(WebGatewayThreadInspectionMixin):
@@ -690,6 +697,68 @@ class WebGateway(WebGatewayThreadInspectionMixin):
             client_id,
         )
         return web.json_response({**payload, "csrf_token": session.csrf_token})
+
+    def _require_update_port(self, name: str) -> Callable[..., dict[str, Any]]:
+        port = getattr(self._ports, name, None)
+        if not callable(port):
+            raise WebRuntimeError(
+                "当前 Focus 安装不支持浏览器更新。",
+                code="update_unavailable",
+                status=503,
+            )
+        return port
+
+    async def _call_update_port(
+        self,
+        name: str,
+        request: web.Request,
+        client_id: str,
+        *args: Any,
+    ) -> dict[str, Any]:
+        try:
+            return await self._document_request_to_thread(
+                self._require_update_port(name),
+                request,
+                client_id,
+                *args,
+                pass_client_id=False,
+            )
+        except FocusUpdateError as exc:
+            raise WebRuntimeError(
+                str(exc),
+                code="update_rejected",
+                status=409,
+            ) from exc
+
+    async def _handle_update_status(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        payload = await self._call_update_port("update_status", request, client_id)
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def _handle_update_source(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        body = await request_decoder.decode_json_object(request)
+        url, confirmation = request_decoder.decode_update_source_request(body)
+        payload = await self._call_update_port(
+            "update_source", request, client_id, url, confirmation
+        )
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def _handle_update_check(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        body = await request_decoder.decode_json_object(request)
+        commit = request_decoder.decode_update_check_request(body)
+        payload = await self._call_update_port("update_check", request, client_id, commit)
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def _handle_update_apply(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        body = await request_decoder.decode_json_object(request)
+        operation_id, confirmation = request_decoder.decode_update_apply_request(body)
+        payload = await self._call_update_port(
+            "update_apply", request, client_id, operation_id, confirmation
+        )
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
 
     async def _handle_operator_status(self, request: web.Request) -> web.Response:
         # Require the current browser-document capability just like /api/meta,

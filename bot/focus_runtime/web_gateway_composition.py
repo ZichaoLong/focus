@@ -12,11 +12,13 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
+from bot.instance_layout import global_data_dir
 from bot.service_runtime_lifecycle import ServiceRuntimeIngressDispatcher
 from bot.web_runtime.backend_reset_controller import WebBackendResetController
 from bot.web_runtime.controller import WebRuntimeController
 from bot.web_runtime.gateway import WebGateway, WebGatewayConfig, WebGatewayPorts
 from bot.web_runtime.projection import FocusWebProjection
+from bot.web_runtime.update_controller import FocusUpdateController
 
 
 def compose_web_gateway(
@@ -31,6 +33,8 @@ def compose_web_gateway(
     operator_status: Callable[[], dict[str, Any]],
 ) -> WebGateway:
     """Build the Gateway without exposing its port catalog to the root."""
+
+    update_controller = FocusUpdateController(global_data_root=global_data_dir())
 
     def abandon_prepared_prompt(prepared: Any) -> bool:
         dispatcher = ingress()
@@ -254,6 +258,22 @@ def compose_web_gateway(
             client_disconnected=lambda client_id: runtime_call(
                 web_runtime.client_disconnected,
                 client_id,
+            ),
+            update_status=(update_controller.snapshot if update_controller is not None else None),
+            update_source=(
+                update_controller.configure_source
+                if update_controller is not None
+                else None
+            ),
+            update_check=(
+                update_controller.start_check
+                if update_controller is not None
+                else None
+            ),
+            update_apply=(
+                update_controller.apply
+                if update_controller is not None
+                else None
             ),
         ),
     )

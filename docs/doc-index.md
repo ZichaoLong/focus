@@ -103,6 +103,7 @@ Status guidance:
 - [`focus-web-prompt-mutation-recovery.md`](./contracts/focus-web-prompt-mutation-recovery.md)
 - [`fcodex-operation-owner.md`](./contracts/fcodex-operation-owner.md)
 - [`install-artifact-delivery.md`](./contracts/install-artifact-delivery.md)
+- [`focus-web-update.md`](./contracts/focus-web-update.md)
 
 ### Architecture
 
@@ -171,6 +172,7 @@ Status guidance:
 | How do fcodex connections separate ordinary realtime input from exclusive actions, constrain targetless app-server RPCs, and keep transport/server-request recovery separate from writer authority? | [`root-operation-owner.md`](./contracts/root-operation-owner.md), [`fcodex-operation-owner.md`](./contracts/fcodex-operation-owner.md) |
 | What is Focus Web's self-hosted external-access boundary, including loopback defaults, reverse proxy, shared trust, and future public exposure? | [`focus-web-external-access.md`](./decisions/focus-web-external-access.md) |
 | After cloning, where does the default install obtain Focus and the Web build, and what governs stable, development, local bundles, download validation, and explicit publication? | [`install-artifact-delivery.md`](./contracts/install-artifact-delivery.md), [`python-dependency-locking.md`](./decisions/python-dependency-locking.md) |
+| How does a browser update choose a Git source and commit, run network/dependency/disk preflight, stop and install services, restart, and report failure? | [`focus-web-update.md`](./contracts/focus-web-update.md), [`install-artifact-delivery.md`](./contracts/install-artifact-delivery.md) |
 | Where are Python runtime, build, and development dependencies declared; how are locks regenerated or explicitly upgraded; and what reproducibility does installation actually guarantee? | [`python-dependency-locking.md`](./decisions/python-dependency-locking.md) |
 | What cross-instance safety rule applies before attach / resume, and why is `ThreadRuntimeLease` alone not enough? | [`cross-instance-live-runtime-admission.md`](./decisions/cross-instance-live-runtime-admission.md), [`runtime-control-surface.md`](./contracts/runtime-control-surface.md) |
 | What should be covered in manual group-chat regression testing? | [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md) |

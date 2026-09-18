@@ -66,7 +66,7 @@ class WebGatewayTests(WebGatewayHarness):
 
         self.assertEqual(
             source.count("self._document_request_to_thread("),
-            21,
+            22,
         )
         self.assertEqual(
             source.count("self._staged_document_request_to_thread("),

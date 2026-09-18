@@ -37,6 +37,7 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusUpdateStatus,
   FocusUnknownLifecycleMutation,
   FocusWriterProfile,
   FocusWriterProfileResult,
@@ -503,6 +504,54 @@ export const decodeFocusMeta: FocusHttpDecoder<FocusMeta> = (value) => {
 };
 
 export const decodeFocusOperatorStatusResponse = decodeFocusOperatorStatus;
+
+function isFocusUpdateSource(value: unknown): boolean {
+  return isRequiredRecord('update_source', value)
+    && hasExactRequiredFields('update_source', value)
+    && isNonEmptyTrimmedString(value.url)
+    && value.branch === 'main'
+    && (() => {
+      try {
+        const parsed = new URL(value.url);
+        return (parsed.protocol === 'https:' || parsed.protocol === 'ssh:')
+          && !parsed.password
+          && !parsed.search
+          && !parsed.hash
+          && Boolean(parsed.hostname)
+          && (parsed.protocol === 'ssh:' || !parsed.username);
+      } catch {
+        return false;
+      }
+    })();
+}
+
+export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (value) => {
+  if (
+    !isRequiredRecord('update_status', value)
+    || !hasExactRequiredFields('update_status', value)
+    || !isFocusWebWireEnum('update_state', value.state)
+    || !isFocusUpdateSource(value.source)
+    || (value.operation_source !== null && !isFocusUpdateSource(value.operation_source))
+    || !hasString(value, 'operation_id')
+    || !hasString(value, 'requested_commit')
+    || !hasString(value, 'resolved_commit')
+    || !hasString(value, 'message')
+    || !hasString(value, 'error')
+    || !isRequiredRecord('update_source', value.source)
+    || !isRequiredRecord('update_status', value)
+    || typeof value.preflight !== 'object'
+    || value.preflight === null
+    || Array.isArray(value.preflight)
+    || !isNonNegativeFiniteNumber(value.updated_at)
+    || typeof value.restart_required !== 'boolean'
+    || typeof value.installation_started !== 'boolean'
+  ) return null;
+  if (value.operation_id === '' && value.operation_source !== null) return null;
+  if (value.operation_id !== '' && value.operation_source === null) return null;
+  if (value.requested_commit !== '' && !new RegExp('^[0-9a-f]{7,40}$', 'u').test(value.requested_commit as string)) return null;
+  if (value.resolved_commit !== '' && !new RegExp('^[0-9a-f]{40}$', 'u').test(value.resolved_commit as string)) return null;
+  return value as unknown as FocusUpdateStatus;
+};
 
 export const decodeFocusBackendResetPreview: FocusHttpDecoder<FocusBackendResetPreview> = (
   value,

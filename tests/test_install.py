@@ -14,9 +14,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-import install
+from bot.installation import installer as install
 from bot.installed_build_identity import read_installed_build_identity
-from scripts.build_support.install_bundle import development_release_tag
+from bot.installation.install_bundle import development_release_tag
 
 
 class _FakeManagedInstallTransaction:
@@ -38,7 +38,7 @@ class InstallTests(unittest.TestCase):
     def setUp(self) -> None:
         self.install_transaction = _FakeManagedInstallTransaction()
         self.transaction_patcher = patch(
-            "install._managed_install_transaction",
+            "bot.installation.installer._managed_install_transaction",
             return_value=self.install_transaction,
         )
         self.transaction_factory = self.transaction_patcher.start()
@@ -251,7 +251,7 @@ class InstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
             failure = subprocess.CalledProcessError(1, ["python", "-m", "ensurepip"])
-            with patch("install.venv.EnvBuilder.create", side_effect=failure):
+            with patch("bot.installation.installer.venv.EnvBuilder.create", side_effect=failure):
                 with self.assertRaises(SystemExit) as raised:
                     install._recreate_venv(venv_dir)
         self.assertIs(raised.exception.__cause__, failure)
@@ -267,7 +267,7 @@ class InstallTests(unittest.TestCase):
             with self.subTest(errno=failure.errno):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
-                    with patch("install.venv.EnvBuilder.create", side_effect=failure):
+                    with patch("bot.installation.installer.venv.EnvBuilder.create", side_effect=failure):
                         with self.assertRaises(type(failure)) as raised:
                             install._recreate_venv(venv_dir)
                 self.assertIs(raised.exception, failure)
@@ -275,7 +275,7 @@ class InstallTests(unittest.TestCase):
     def test_recreate_venv_explicitly_disables_system_site_packages(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
-            with patch("install.venv.EnvBuilder") as builder:
+            with patch("bot.installation.installer.venv.EnvBuilder") as builder:
                 install._recreate_venv(venv_dir)
 
         builder.assert_called_once_with(with_pip=True, system_site_packages=False)
@@ -285,7 +285,7 @@ class InstallTests(unittest.TestCase):
         venv_dir = pathlib.Path("/tmp/focus-venv")
         expected_python = install._venv_python_path(venv_dir)
         with patch(
-            "install.subprocess.run",
+            "bot.installation.installer.subprocess.run",
             return_value=subprocess.CompletedProcess([str(expected_python)], 0),
         ) as run:
             self.assertTrue(install._venv_uses_supported_python(venv_dir))
@@ -300,16 +300,16 @@ class InstallTests(unittest.TestCase):
             subprocess.TimeoutExpired([str(expected_python)], 10),
         ):
             if isinstance(failure, subprocess.CompletedProcess):
-                context = patch("install.subprocess.run", return_value=failure)
+                context = patch("bot.installation.installer.subprocess.run", return_value=failure)
             else:
-                context = patch("install.subprocess.run", side_effect=failure)
+                context = patch("bot.installation.installer.subprocess.run", side_effect=failure)
             with context:
                 self.assertFalse(install._venv_uses_supported_python(venv_dir))
 
     def test_run_pip_install_fails_closed_without_adding_index(self) -> None:
         venv_python = pathlib.Path("/tmp/focus-venv/bin/python")
         failure = subprocess.CalledProcessError(1, ["pip"])
-        with patch("install.subprocess.run", side_effect=failure) as run:
+        with patch("bot.installation.installer.subprocess.run", side_effect=failure) as run:
             with self.assertRaises(SystemExit) as raised:
                 install._run_pip_install(venv_python, "focus.whl")
         self.assertEqual(run.call_count, 1)
@@ -353,7 +353,7 @@ class InstallTests(unittest.TestCase):
             ),
             stderr="",
         )
-        with patch("install.subprocess.run", return_value=result) as run:
+        with patch("bot.installation.installer.subprocess.run", return_value=result) as run:
             with self.assertRaises(SystemExit) as raised:
                 install._reject_pip_destination_overrides(venv_python)
 
@@ -372,7 +372,7 @@ class InstallTests(unittest.TestCase):
             stdout="install.user='false'\nglobal.target=''\n",
             stderr="",
         )
-        with patch("install.subprocess.run", return_value=result):
+        with patch("bot.installation.installer.subprocess.run", return_value=result):
             install._reject_pip_destination_overrides(venv_python)
 
     def test_pip_check_uses_isolated_interpreter_and_sanitized_environment(self) -> None:
@@ -382,7 +382,7 @@ class InstallTests(unittest.TestCase):
             {"PYTHONPATH": "/opt/ascend/python", "HTTPS_PROXY": "proxy"},
             clear=True,
         ):
-            with patch("install.subprocess.run") as run:
+            with patch("bot.installation.installer.subprocess.run") as run:
                 install._run_pip_check(venv_python)
 
         self.assertEqual(
@@ -419,7 +419,7 @@ class InstallTests(unittest.TestCase):
             "published_at": "2026-08-22T10:00:00Z",
         }
         with patch(
-            "install._download_github_json",
+            "bot.installation.installer._download_github_json",
             side_effect=(
                 stable,
                 [legacy_fixed, older_development, development],
@@ -436,7 +436,7 @@ class InstallTests(unittest.TestCase):
 
     def test_release_for_channel_rejects_cross_channel_release(self) -> None:
         with patch(
-            "install._download_github_json",
+            "bot.installation.installer._download_github_json",
             return_value={
                 "draft": False,
                 "prerelease": True,
@@ -483,7 +483,7 @@ class InstallTests(unittest.TestCase):
         revision = "a" * 40
         tag = development_release_tag("build-1")
         with patch(
-            "install._download_github_json",
+            "bot.installation.installer._download_github_json",
             return_value={
                 "ref": f"refs/tags/{tag}",
                 "object": {"type": "commit", "sha": revision},
@@ -503,7 +503,7 @@ class InstallTests(unittest.TestCase):
         tag_sha = "b" * 40
         revision = "a" * 40
         with patch(
-            "install._download_github_json",
+            "bot.installation.installer._download_github_json",
             side_effect=(
                 {
                     "ref": "refs/tags/4.0.0",
@@ -591,17 +591,17 @@ class InstallTests(unittest.TestCase):
         }
         sentinel = object()
         args = SimpleNamespace(artifact=None, channel="development")
-        with patch("install._release_for_channel", return_value=release):
+        with patch("bot.installation.installer._release_for_channel", return_value=release):
             with patch(
-                "install._read_response_bytes",
+                "bot.installation.installer._read_response_bytes",
                 side_effect=(manifest_raw, bundle_raw),
             ):
                 with patch(
-                    "install._release_tag_commit",
+                    "bot.installation.installer._release_tag_commit",
                     return_value=source_revision,
                 ):
                     with patch(
-                        "scripts.build_support.install_bundle.validate_install_bundle",
+                        "bot.installation.install_bundle.validate_install_bundle",
                         return_value=sentinel,
                     ) as validate:
                         with install._resolved_install_bundle(args) as resolved:
@@ -619,9 +619,9 @@ class InstallTests(unittest.TestCase):
             raise SystemExit("bundle hash mismatch")
             yield
 
-        with patch("install._ensure_supported_python"):
-            with patch("install._resolved_install_bundle", side_effect=fail_resolution):
-                with patch("install._recreate_venv") as recreate:
+        with patch("bot.installation.installer._ensure_supported_python"):
+            with patch("bot.installation.installer._resolved_install_bundle", side_effect=fail_resolution):
+                with patch("bot.installation.installer._recreate_venv") as recreate:
                     with self.assertRaisesRegex(SystemExit, "hash mismatch"):
                         install.main(["--artifact", "broken.zip"])
         self.transaction_factory.assert_not_called()
@@ -662,9 +662,9 @@ class InstallTests(unittest.TestCase):
                 install_steps.append("bootstrap")
                 checked_calls.append(list(command))
 
-            with patch("install._ensure_supported_python"):
+            with patch("bot.installation.installer._ensure_supported_python"):
                 with patch(
-                    "install._resolved_install_bundle",
+                    "bot.installation.installer._resolved_install_bundle",
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
@@ -672,23 +672,23 @@ class InstallTests(unittest.TestCase):
                             "bot.instance_layout.global_data_dir",
                             return_value=data_root / "_global",
                         ):
-                            with patch("install._recreate_venv", side_effect=recreate):
+                            with patch("bot.installation.installer._recreate_venv", side_effect=recreate):
                                 with patch(
-                                    "install._venv_uses_supported_python",
+                                    "bot.installation.installer._venv_uses_supported_python",
                                     return_value=True,
                                 ):
-                                    with patch("install._venv_has_pip", return_value=True):
-                                        with patch("install._reject_pip_destination_overrides"):
+                                    with patch("bot.installation.installer._venv_has_pip", return_value=True):
+                                        with patch("bot.installation.installer._reject_pip_destination_overrides"):
                                             with patch(
-                                                "install._run_pip_install",
+                                                "bot.installation.installer._run_pip_install",
                                                 side_effect=record_pip_install,
                                             ):
                                                 with patch(
-                                                    "install._run_pip_check",
+                                                    "bot.installation.installer._run_pip_check",
                                                     side_effect=record_pip_check,
                                                 ):
                                                     with patch(
-                                                        "install._run_checked",
+                                                        "bot.installation.installer._run_checked",
                                                         side_effect=record_checked,
                                                     ):
                                                         install.main(["--artifact", "focus.zip"])
@@ -743,9 +743,9 @@ class InstallTests(unittest.TestCase):
                 venv_python.parent.mkdir(parents=True, exist_ok=True)
                 venv_python.write_text("", encoding="utf-8")
 
-            with patch("install._ensure_supported_python"):
+            with patch("bot.installation.installer._ensure_supported_python"):
                 with patch(
-                    "install._resolved_install_bundle",
+                    "bot.installation.installer._resolved_install_bundle",
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
@@ -753,12 +753,12 @@ class InstallTests(unittest.TestCase):
                             "bot.instance_layout.global_data_dir",
                             return_value=data_root / "_global",
                         ):
-                            with patch("install._venv_uses_supported_python", return_value=False):
+                            with patch("bot.installation.installer._venv_uses_supported_python", return_value=False):
                                 with patch(
-                                    "install._recreate_venv",
+                                    "bot.installation.installer._recreate_venv",
                                     side_effect=recreate,
                                 ) as recreate_venv:
-                                    with patch("install._run_pip_install") as pip_install:
+                                    with patch("bot.installation.installer._run_pip_install") as pip_install:
                                         with self.assertRaisesRegex(SystemExit, "重建后仍不是"):
                                             install.main(["--artifact", "focus.zip"])
             installed_build_after_failure = read_installed_build_identity(
@@ -780,9 +780,9 @@ class InstallTests(unittest.TestCase):
             (venv_dir / "pyvenv.cfg").write_text("home = /python\n", encoding="utf-8")
             venv_python.write_text("", encoding="utf-8")
             checked_calls: list[list[str]] = []
-            with patch("install._ensure_supported_python"):
+            with patch("bot.installation.installer._ensure_supported_python"):
                 with patch(
-                    "install._resolved_install_bundle",
+                    "bot.installation.installer._resolved_install_bundle",
                     side_effect=lambda _args: self._yield_bundle(bundle),
                 ):
                     with patch("bot.platform_paths.default_data_root", return_value=data_root):
@@ -790,14 +790,14 @@ class InstallTests(unittest.TestCase):
                             "bot.instance_layout.global_data_dir",
                             return_value=data_root / "_global",
                         ):
-                            with patch("install._venv_uses_supported_python", return_value=True):
-                                with patch("install._recreate_venv"):
-                                    with patch("install._venv_has_pip", return_value=True):
-                                        with patch("install._reject_pip_destination_overrides"):
-                                            with patch("install._run_pip_install"):
-                                                with patch("install._run_pip_check"):
+                            with patch("bot.installation.installer._venv_uses_supported_python", return_value=True):
+                                with patch("bot.installation.installer._recreate_venv"):
+                                    with patch("bot.installation.installer._venv_has_pip", return_value=True):
+                                        with patch("bot.installation.installer._reject_pip_destination_overrides"):
+                                            with patch("bot.installation.installer._run_pip_install"):
+                                                with patch("bot.installation.installer._run_pip_check"):
                                                     with patch(
-                                                        "install._run_checked",
+                                                        "bot.installation.installer._run_checked",
                                                         side_effect=lambda command: checked_calls.append(
                                                             list(command)
                                                         ),
