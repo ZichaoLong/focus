@@ -186,6 +186,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     archivedLoading,
     archivedTruncated,
     archivedLimit,
+    reloadInFlight,
   } = projection;
   // Request loading can finish before a covering snapshot is installed when
   // navigation converges through fresh metadata and projection recovery stays
@@ -762,6 +763,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     archivedLoading,
     archivedTruncated,
     archivedLimit,
+    reloadInFlight,
     turnWindowLimit: turnWindow.limit,
     actionBusy,
     mutationBusyByThread,

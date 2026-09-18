@@ -29,4 +29,16 @@ describe('Focus runtime notice surface', () => {
     expect(primary).not.toContain('runtimeRetrying');
     expect(primary).not.toContain('runtimeWarning');
   });
+
+  it('keeps stale projection recovery visible without making it a prompt retry', () => {
+    const app = source('../src/focus/FocusApp.vue');
+    const primary = source('../src/focus/FocusPrimaryNotices.vue');
+
+    expect(primary).toContain('projectionStale');
+    expect(primary).toContain('projectionReloading');
+    expect(primary).toContain("emit('reloadProjection')");
+    expect(app).toContain(':projection-stale="client.snapshotInvalidated.value"');
+    expect(app).toContain(':projection-reloading="client.reloadInFlight.value"');
+    expect(app).toContain('@reload-projection="client.reloadAll"');
+  });
 });

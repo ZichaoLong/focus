@@ -52,6 +52,15 @@ function firstPromptDraft(): UnknownSubmissionDraft {
 }
 
 describe('FocusMutationActions shared prompt and interrupt authority', () => {
+  it('does not let a stale projection block a new prompt mutation', async () => {
+    const h = harness();
+    h.snapshotInvalidated.value = true;
+
+    expect(h.actions.canSubmit.value).toBe(true);
+    await expect(h.actions.submit('fresh prompt while resyncing')).resolves.toBe(true);
+    expect(h.api.submitPrompt).toHaveBeenCalledOnce();
+  });
+
   it('lets a materialized non-owner interrupt and submit one shared prompt POST', async () => {
     const h = harness();
     h.activeThread.value = {

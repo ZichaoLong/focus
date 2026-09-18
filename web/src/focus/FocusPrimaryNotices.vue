@@ -12,6 +12,8 @@ import type { FocusLifecycleOperation, FocusLifecycleTargetState } from './types
 
 const props = defineProps<{
   documentReloadRequired: boolean;
+  projectionStale: boolean;
+  projectionReloading: boolean;
   backendResetOutcomeUnknown: boolean;
   errorMessage: string;
   primaryRuntimeErrors: readonly RuntimeNoticeItem[];
@@ -28,6 +30,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reload: [];
+  reloadProjection: [];
   openRuntimeDetails: [];
   retryUnknownSubmission: [draft: UnknownSubmissionDraft];
   discardUnknownSubmission: [attemptKey: string];
@@ -50,6 +53,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
 <template>
   <div
     v-if="documentReloadRequired
+      || projectionStale
       || backendResetOutcomeUnknown
       || errorMessage
       || primaryRuntimeErrors.length > 0
@@ -65,6 +69,26 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
         <span>{{ t('focus.documentReplaced') }}</span>
         <Button size="sm" variant="secondary" @click="emit('reload')">
           {{ t('focus.reloadPage') }}
+        </Button>
+      </span>
+    </Banner>
+
+    <Banner v-if="projectionStale" variant="warning">
+      <span class="primary-notice-with-actions">
+        <span>
+          {{ projectionReloading
+            ? t('focus.projectionReloading')
+            : t('focus.projectionStale') }}
+        </span>
+        <Button
+          size="sm"
+          variant="secondary"
+          :disabled="projectionReloading"
+          @click="emit('reloadProjection')"
+        >
+          {{ projectionReloading
+            ? t('focus.projectionReloadingAction')
+            : t('focus.reloadProjection') }}
         </Button>
       </span>
     </Banner>

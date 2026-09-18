@@ -935,6 +935,8 @@ onUnmounted(() => {
         <FocusPrimaryNotices
           v-if="!readingMode"
           :document-reload-required="client.documentReloadRequired.value"
+          :projection-stale="client.snapshotInvalidated.value"
+          :projection-reloading="client.reloadInFlight.value"
           :backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"
           :error-message="client.errorMessage.value"
           :primary-runtime-errors="runtimeDetailsPresentation.primaryRuntimeErrors"
@@ -948,6 +950,7 @@ onUnmounted(() => {
           :connection="client.connection.value"
           :can-recover-unknown-submission="canRecoverUnknownSubmission"
           @reload="client.reloadDocument"
+          @reload-projection="client.reloadAll"
           @open-runtime-details="openRuntimeDetails"
           @retry-unknown-submission="retryUnknownSubmission"
           @discard-unknown-submission="client.discardUnknownSubmission($event)"

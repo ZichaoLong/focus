@@ -266,16 +266,20 @@ export function createFocusMutationActions(
       draft.operation === THREAD_CREATE_FIRST_PROMPT_OPERATION
     ))
   ));
-  const canSubmit = computed(() => (
-    options.connection.value === 'connected'
-    && navigation.scopeReady.value
-    && !projection.snapshotInvalidated.value
-    && (
-      navigation.activeThreadId.value !== ''
-      || !unknownThreadCreateDraftExists.value
-    )
-    && !threadMutations.isBusy(navigation.activeThreadId.value)
-  ));
+  const canSubmit = computed(() => {
+    // Snapshot freshness is presentation state, not mutation admission. A
+    // direct prompt POST carries its own scope/identity receipt and the
+    // server validates the current turn at prepare time, so a failed or
+    // in-flight projection reload must not strand the Composer. Lifecycle
+    // and navigation repair still fence writes through scopeReady below.
+    return options.connection.value === 'connected'
+      && navigation.scopeReady.value
+      && (
+        navigation.activeThreadId.value !== ''
+        || !unknownThreadCreateDraftExists.value
+      )
+      && !threadMutations.isBusy(navigation.activeThreadId.value);
+  });
   const canRetryUnknownSubmission = computed(() => {
     const draft = unknownSubmissionDraft.value;
     const localPossiblySent = isLocalPossiblySentDraft(draft);

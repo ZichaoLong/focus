@@ -1262,7 +1262,10 @@ describe('useFocusWebClient create-outcome navigation', () => {
     expect(client.meta.value?.revision).toBe(0);
     expect(client.threads.value[0]?.title).toBe('Initial');
     expect(client.snapshotInvalidated.value).toBe(true);
-    expect(client.canSubmit.value).toBe(false);
+    // A projection failure only makes the displayed thread stale. The direct
+    // prompt endpoint still validates its own scope and active turn, so a new
+    // prompt must remain admissible while the reload retries in the background.
+    expect(client.canSubmit.value).toBe(true);
 
     // The invalidation remains retryable without relying on another WebSocket
     // event or a hidden caller. A complete automatic retry is the only
