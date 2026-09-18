@@ -133,6 +133,7 @@ class FocusVerificationTests(unittest.TestCase):
                 ),
             )
         )
+
         root = pathlib.Path("/tmp/focus-root")
         commands = focus_verify.build_commands(
             catalog,
@@ -182,6 +183,32 @@ class FocusVerificationTests(unittest.TestCase):
                     root / "web",
                 ),
             ),
+        )
+
+    def test_node_override_is_used_for_web_runner_and_guards(self) -> None:
+        catalog = focus_capabilities.CapabilityCatalog(
+            capabilities=(
+                _capability(
+                    "web",
+                    focused=(
+                        focus_capabilities.VerificationReference(
+                            runner="vitest", targets=("web/test/example.test.ts",)
+                        ),
+                    ),
+                    guards=("web-dependency-direction", "web-typecheck"),
+                ),
+            )
+        )
+
+        commands = focus_verify.build_commands(
+            catalog,
+            ("web",),
+            python_executable="/exact/python",
+            node_executable="/opt/node/bin/node",
+        )
+
+        self.assertTrue(
+            all(command.argv[0] == "/opt/node/bin/node" for command in commands)
         )
 
     def test_unknown_capability_runner_and_guard_fail_before_execution(self) -> None:
@@ -261,12 +288,14 @@ class FocusVerificationTests(unittest.TestCase):
         def run(*_: object, **__: object) -> subprocess.CompletedProcess[str]:
             raise OSError("missing executable")
 
+        stderr = io.StringIO()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
-            io.StringIO()
+            stderr
         ):
             result = focus_verify.run_commands((command,), run=run)
 
         self.assertEqual(result, 2)
+        self.assertIn("blocked-by-environment", stderr.getvalue())
 
     def test_real_catalog_dry_run_emits_json_without_execution(self) -> None:
         output = io.StringIO()

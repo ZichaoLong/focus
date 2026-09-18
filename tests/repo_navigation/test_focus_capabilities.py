@@ -279,11 +279,15 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
         self.assertNotIn("TODO", skill_text)
         self.assertIn("docs/architecture/development-navigation.zh-CN.md", skill_text)
         self.assertIn("focus_nav.py paths", skill_text)
-        agents_text = (focus_capabilities.REPO_ROOT / "AGENTS.example.md").read_text(
-            encoding="utf-8"
+        self.assertIn("--node <exact-path>", skill_text)
+        self.assertFalse(
+            (focus_capabilities.REPO_ROOT / "AGENTS.example.md").exists()
         )
-        self.assertIn("development-navigation.zh-CN.md", agents_text)
-        self.assertIn("English synchronized peer", agents_text)
+        navigation_text = (
+            focus_capabilities.REPO_ROOT
+            / "docs/architecture/development-navigation.zh-CN.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("英文同步副本", navigation_text)
         self.assertIn(
             "$navigate-focus-development",
             (skill_root / "agents/openai.yaml").read_text(encoding="utf-8"),

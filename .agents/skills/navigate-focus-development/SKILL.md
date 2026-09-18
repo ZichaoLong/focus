@@ -43,7 +43,7 @@ Run the reviewed focused tests, sentinels, and guards:
 python scripts/focus_verify.py <capability>
 ```
 
-Pass `--python <exact-path>` when the task requires a specific interpreter. Use
+Pass `--python <exact-path>` or `--node <exact-path>` when required. Use
 `--dry-run` to inspect the fixed argv/cwd plan before execution.
 
 Complete stale-index handling, navigation-impact closure, and wider gates as

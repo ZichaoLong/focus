@@ -51,6 +51,7 @@ def _runner_command(
     targets: tuple[str, ...],
     *,
     python_executable: str,
+    node_executable: str,
     repo_root: pathlib.Path,
 ) -> VerificationCommand:
     if runner == "pytest":
@@ -67,7 +68,7 @@ def _runner_command(
         return VerificationCommand(
             label="runner:vitest",
             argv=(
-                _NODE_EXECUTABLE,
+                node_executable,
                 "node_modules/vitest/vitest.mjs",
                 "run",
                 *web_targets,
@@ -78,7 +79,11 @@ def _runner_command(
 
 
 def _guard_command(
-    guard: str, *, python_executable: str, repo_root: pathlib.Path
+    guard: str,
+    *,
+    python_executable: str,
+    node_executable: str,
+    repo_root: pathlib.Path,
 ) -> VerificationCommand:
     specifications: dict[str, tuple[pathlib.Path, tuple[str, ...]]] = {
         "import-cycles": (
@@ -95,7 +100,7 @@ def _guard_command(
         ),
         "web-dependency-direction": (
             repo_root / "web",
-            (_NODE_EXECUTABLE, "scripts/check-focus-dependency-direction.mjs"),
+            (node_executable, "scripts/check-focus-dependency-direction.mjs"),
         ),
         "web-wire": (
             repo_root,
@@ -104,7 +109,7 @@ def _guard_command(
         "web-typecheck": (
             repo_root / "web",
             (
-                _NODE_EXECUTABLE,
+                node_executable,
                 "node_modules/vue-tsc/bin/vue-tsc.js",
                 "--noEmit",
             ),
@@ -122,6 +127,7 @@ def build_commands(
     capability_names: Sequence[str],
     *,
     python_executable: str,
+    node_executable: str = _NODE_EXECUTABLE,
     repo_root: pathlib.Path = REPO_ROOT,
 ) -> tuple[VerificationCommand, ...]:
     """Build a stable argv-only plan from reviewed runner and guard aliases."""
@@ -130,6 +136,8 @@ def build_commands(
         raise VerificationError("at least one capability is required")
     if not python_executable or "\0" in python_executable:
         raise VerificationError("--python must be one nonempty executable path")
+    if not node_executable or "\0" in node_executable:
+        raise VerificationError("--node must be one nonempty executable path")
     selected = tuple(catalog.require(name) for name in sorted(set(capability_names)))
     targets: dict[str, set[str]] = {runner: set() for runner in _RUNNER_ORDER}
     guards: set[str] = set()
@@ -151,6 +159,7 @@ def build_commands(
             runner,
             tuple(sorted(targets[runner])),
             python_executable=python_executable,
+            node_executable=node_executable,
             repo_root=root,
         )
         for runner in _RUNNER_ORDER
@@ -158,7 +167,10 @@ def build_commands(
     ]
     commands.extend(
         _guard_command(
-            guard, python_executable=python_executable, repo_root=root
+            guard,
+            python_executable=python_executable,
+            node_executable=node_executable,
+            repo_root=root,
         )
         for guard in _GUARD_ORDER
         if guard in guards
@@ -193,7 +205,11 @@ def run_commands(
         try:
             completed = execute(list(command.argv), cwd=command.cwd, check=False)
         except OSError as exc:
-            print(f"Focus verification could not start {command.label}: {exc}", file=sys.stderr)
+            print(
+                "Focus verification blocked-by-environment at "
+                f"{command.label}: {exc}",
+                file=sys.stderr,
+            )
             return 2
         if completed.returncode:
             print(
@@ -216,6 +232,11 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
         help="Exact Python executable used for pytest and Python guards.",
     )
     parser.add_argument(
+        "--node",
+        default=_NODE_EXECUTABLE,
+        help="Exact Node executable used for Vitest and Web guards.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print the argv/cwd plan as JSON without executing it.",
@@ -231,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             catalog,
             args.capability,
             python_executable=args.python,
+            node_executable=args.node,
         )
     except (focus_capabilities.CapabilityMapError, VerificationError) as exc:
         print(f"Focus verification plan is invalid: {exc}", file=sys.stderr)

@@ -34,6 +34,22 @@ class DevelopFocusSkillTests(unittest.TestCase):
         self.assertIn("validation run is not publication", text)
         self.assertIn("feature implementation", text)
         self.assertIn("behavior change", text)
+        for required in (
+            "`inspect`",
+            "`change`",
+            "`integrate`",
+            "`publish`",
+            "blocked-by-environment",
+            "relevant workflow",
+            "read-only by default",
+            "task-local",
+            "pre-existing differences untouched",
+            "remote read-back",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, text)
+        self.assertNotIn("AGENTS.example.md", text)
+        self.assertFalse((focus_capabilities.REPO_ROOT / "AGENTS.example.md").exists())
 
         discipline = (
             focus_capabilities.REPO_ROOT
@@ -41,40 +57,6 @@ class DevelopFocusSkillTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("功能实现、行为变更与重构", discipline)
         self.assertIn("合同、代码、测试、guard 与导航影响", discipline)
-
-    def test_agents_template_keeps_upstream_paths_task_local(self) -> None:
-        text = (focus_capabilities.REPO_ROOT / "AGENTS.example.md").read_text(
-            encoding="utf-8"
-        )
-        for required in (
-            "strictly read-only by default",
-            "task-local parameter",
-            "never persist it",
-            "full 40-character commit",
-            "pre-existing differences untouched",
-        ):
-            with self.subTest(required=required):
-                self.assertIn(required, text)
-
-    def test_agents_template_requires_upstream_parity_before_local_machinery(
-        self,
-    ) -> None:
-        text = (focus_capabilities.REPO_ROOT / "AGENTS.example.md").read_text(
-            encoding="utf-8"
-        )
-        for required in (
-            "A bounded non-guarantee can be the correct contract",
-            "Stable fallback",
-            "Forward upstream-owned fields semantically unchanged",
-            "Do not whitelist, strip, normalize",
-            "upstream-parity and subtraction option first",
-            "do not add polling, persistence, replay, quarantine",
-            "measurable reduction in user risk",
-            "net complexity",
-            "before any production edit",
-        ):
-            with self.subTest(required=required):
-                self.assertIn(required, text)
 
     def test_metadata_requires_explicit_invocation(self) -> None:
         text = (self.skill_root / "agents/openai.yaml").read_text(encoding="utf-8")

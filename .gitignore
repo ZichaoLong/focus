@@ -19,7 +19,7 @@ web/node_modules/
 data/
 config/system.yaml
 config/codex.yaml
-# Local private agent preferences stay untracked; templates remain versioned.
+# Local private agent preferences stay untracked.
 AGENTS.md
 AGENTS.zh-CN.md
 .backuptodo

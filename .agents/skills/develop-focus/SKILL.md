@@ -1,50 +1,50 @@
 ---
 name: develop-focus
-description: Execute an explicitly requested Focus repository diagnosis, review, feature implementation, behavior change, or refactoring task under the current applicable repository instructions and canonical navigation/change-cone discipline. Use when the user invokes $develop-focus and wants the task carried through scoped verification without restating the development discipline.
+description: Execute an explicitly requested Focus diagnosis, review, feature implementation, behavior change, or refactoring task through the current repository authority, change-cone, and verification discipline.
 ---
 
 # Develop Focus
 
-Work from the Focus repository root. This is an execution router, not authority
-for architecture, behavior, permissions, campaign scope, or stop decisions.
+Work from the Focus repository root. This is an execution router, not authority for product behavior, permissions, campaign scope, or stop decisions.
 
-## Load current authority
+## Classify the request
 
-1. Read the user's task and every `AGENTS.md` applicable to the repository root
-   and the paths already implicated by the task.
-2. Re-resolve applicable instructions before reading or editing a newly reached
-   directory and after moving files into a different instruction scope.
-3. Apply current instructions for updates, approvals, campaigns, validation,
-   convergence, stopping, and handoff; do not create a parallel status source.
-4. Read `docs/architecture/development-navigation.zh-CN.md` completely and use
-   `$navigate-focus-development` as its thin operational entry. That document
-   alone governs source roles, read-cone expansion, stale-index handling,
-   navigation-impact closure, and verification scope.
-5. For install-artifact or publication work, read
-   `docs/contracts/install-artifact-delivery.zh-CN.md`; an ordinary build or
-   validation run is not publication.
-6. If instructions conflict or a required source is unavailable, preserve
-   normal instruction precedence and follow the current applicable stop path.
-   This skill grants no exception or additional authority.
+Use one lane before reading broadly: `inspect` is read-only diagnosis/review;
+`change` implements or refactors and verifies; `integrate` commits or pushes
+only when explicitly requested; `publish` handles install artifacts, releases,
+or tags. Do not turn an inspect request into a change.
 
-## Complete the task
+## Load authority
 
-1. Inspect the current branch, HEAD, and worktree without modifying or
-   discarding unrelated user changes.
-2. Give the opening progress update required by current instructions, then
-   locate the smallest evidence-backed read/change cone.
-3. Execute only work authorized by the request. Distinguish authoritative
-   sources, regression evidence, derived navigation, and temporary campaign
-   state using the canonical navigation document.
-4. If current instructions require campaign governance, use their campaign
-   procedure and sole active ledger before production edits; do not encode
-   campaign rules in this skill.
-5. Complete coherent task transactions. Whenever evidence expands the cone,
-   reload newly applicable instructions before continuing.
-6. After each transaction, run its required focused checks and close every
-   contract, code, test, guard, and navigation impact required by the current
-   sources. Run wider gates when the applicable instructions or risk require.
-7. Continue until the requested outcome is verified or a current stop rule is
-   met. Ask only for the exact decision or authority then required.
-8. Finish outcome-first: report material changes, validation evidence,
-   navigation-impact status, and any genuine remaining risk or blocker.
+1. Read the user task and applicable repository `AGENTS.md` files. Exclude
+   dependency, vendor, and generated trees unless the task explicitly enters
+   them. If no repository `AGENTS.md` applies, use the user instruction,
+   canonical repository docs, and this router; no template is an authority.
+2. Re-resolve instructions before entering a new scope. Read
+   `docs/architecture/development-navigation.zh-CN.md` completely and use
+   `$navigate-focus-development`; it owns source roles, read-cone expansion,
+   stale-index handling, navigation closure, and verification scope.
+3. If a campaign ledger is explicitly active, follow it as the sole temporary
+   status source; otherwise do not invent campaign state or a parallel plan.
+4. For upstream-owned behavior, inspect official or pinned upstream evidence
+   first. Upstream checkouts are read-only by default, task-local, and must keep
+   pre-existing differences untouched; durable citations use full 40-character
+   commits. For UI behavior, add browser/device verification when available.
+5. For publication, read `docs/contracts/install-artifact-delivery.zh-CN.md`
+   and the relevant workflow; a validation run is not publication.
+
+## Preflight and execution
+
+1. Confirm repository root, baseline worktree, platform, toolchain, and dependencies. Inspect the fixed verification plan before running it.
+2. Classify every gate as `passed`, `failed`, `not-run`, or
+   `blocked-by-environment`; never present a missing tool as a code failure.
+3. Select the smallest evidence-backed change cone with
+   `$navigate-focus-development`. Keep `inspect` read-only; for `change`, close
+   contract, owner, consumer, test, guard, and navigation impacts together.
+4. Map risk to the relevant CI workflow and wider gates. For `integrate`, stage
+   only owned paths, recheck the baseline and final worktree, and report the
+   exact commit and remote result. For `publish`, verify artifact, tag, release,
+   source revision, and remote read-back; do not retry an ambiguous upload.
+5. Stop when the requested outcome is verified or a current stop rule applies;
+   do not expand into unrelated findings. Report changes, verification status,
+   unmapped/stale refs, blockers, residual risk, and the next decision.
