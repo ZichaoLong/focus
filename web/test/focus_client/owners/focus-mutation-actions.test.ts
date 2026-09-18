@@ -189,6 +189,8 @@ describe('FocusMutationActions single-POST settlement', () => {
     exact.api.submitPrompt.mockResolvedValueOnce(promptReceipt('known_no_effect'));
     await expect(exact.actions.submit('turn A changed')).resolves.toBe(false);
     expect(exact.reportError).toHaveBeenCalledOnce();
+    expect(exact.actions.starting.value).toBe(false);
+    expect(exact.actions.canSubmit.value).toBe(true);
     expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
 
     const refused = harness();
@@ -198,6 +200,8 @@ describe('FocusMutationActions single-POST settlement', () => {
       effectEvidence: 'pre_effect',
     }));
     await expect(refused.actions.submit('retry explicitly')).resolves.toBe(false);
+    expect(refused.actions.starting.value).toBe(false);
+    expect(refused.actions.canSubmit.value).toBe(true);
     expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
   });
 
@@ -387,6 +391,26 @@ describe('FocusMutationActions single-POST settlement', () => {
 });
 
 describe('FocusMutationActions thread-create first-prompt recovery', () => {
+  it('settles a successful first prompt before target projection converges', async () => {
+    const h = harness();
+    h.setScope(scopeReceipt('', '/draft', 4));
+    h.activeThreadId.value = '';
+    const confirmation = deferred<boolean>();
+    h.confirmUnconfirmedThread.mockReturnValueOnce(confirmation.promise);
+
+    const submitting = h.actions.submit('new thread prompt');
+    await vi.waitFor(() => expect(h.api.startThread).toHaveBeenCalledOnce());
+    await expect(submitting).resolves.toBe(true);
+
+    // The prompt result is terminal even though the direct snapshot is still
+    // loading. Composer settlement must not wait for that read.
+    expect(h.actions.starting.value).toBe(false);
+    expect(h.confirmUnconfirmedThread).toHaveBeenCalledWith('thread-new');
+
+    confirmation.resolve(true);
+    await vi.waitFor(() => expect(h.refreshThreads).toHaveBeenCalledOnce());
+  });
+
   it('keeps draft thread creation on startThread and records typed text-only unknown', async () => {
     const h = harness();
     h.actions.installInitialState({ unknown_lifecycle_mutations: [] } as unknown as FocusMeta);
@@ -472,13 +496,23 @@ describe('FocusMutationActions thread-create first-prompt recovery', () => {
     const h = harness();
     h.setScope(scopeReceipt('', '/draft', 4));
     h.activeThreadId.value = '';
+    const confirmation = deferred<boolean>();
+    h.confirmUnconfirmedThread.mockReturnValueOnce(confirmation.promise);
     h.api.startThread.mockRejectedValueOnce(new FocusApiError('turn not started', {
       status: 409,
       code: 'thread_created_turn_not_started',
       details: { thread_id: 'thread-new' },
     }));
 
-    await expect(h.actions.submit('retain me')).resolves.toBe(false);
+    const submitting = h.actions.submit('retain me');
+    await expect(submitting).resolves.toBe(false);
+    // A known capacity/no-effect first-turn refusal must release the
+    // Composer before the newly-created thread's projection read finishes.
+    expect(h.actions.starting.value).toBe(false);
+    expect(h.confirmUnconfirmedThread).toHaveBeenCalledWith('thread-new');
+
+    confirmation.resolve(true);
+    await vi.waitFor(() => expect(h.refreshThreads).toHaveBeenCalledOnce());
     expect(h.api.submitPrompt).not.toHaveBeenCalled();
   });
 });

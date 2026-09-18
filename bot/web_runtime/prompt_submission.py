@@ -965,17 +965,25 @@ class WebPromptSubmissionCoordinator:
             turn_id=turn_id,
             reason_code=reason_code,
         )
-        try:
-            self._projection.publish(
-                "thread_invalidated",
-                thread_id=prepared.thread_id,
-                reason=f"web_prompt_{receipt.status}",
-            )
-        except Exception:
-            logger.exception(
-                "Unable to publish Web prompt settlement: thread=%s",
-                prepared.thread_id[:12],
-            )
+        # A known-no-effect rejection (for example, an upstream model-capacity
+        # refusal) did not change the canonical thread projection.  Publishing
+        # ``thread_invalidated`` for it would make every browser discard its
+        # usable snapshot and disable the Composer until a full reload
+        # converges, even though the exact payload is explicitly retryable.
+        # Successful and outcome-unknown effects still require the normal
+        # invalidation so readers cannot observe a stale turn projection.
+        if receipt.status != "known_no_effect":
+            try:
+                self._projection.publish(
+                    "thread_invalidated",
+                    thread_id=prepared.thread_id,
+                    reason=f"web_prompt_{receipt.status}",
+                )
+            except Exception:
+                logger.exception(
+                    "Unable to publish Web prompt settlement: thread=%s",
+                    prepared.thread_id[:12],
+                )
         return receipt
 
     def _replace_known_no_effect_reason(

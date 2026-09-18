@@ -54,8 +54,8 @@ describe('Focus Web draft creation and attachments', () => {
 
     expect(api.startThreadCalls).toHaveLength(1);
     expect(api.submitPromptCalls).toEqual([]);
-    expect(client.activeThreadId.value).toBe('thread-new');
-    expect(client.snapshot.value?.thread.id).toBe('thread-new');
+    await vi.waitFor(() => expect(client.activeThreadId.value).toBe('thread-new'));
+    await vi.waitFor(() => expect(client.snapshot.value?.thread.id).toBe('thread-new'));
     expect(client.errorMessage.value).toBe('');
     expect(readSpy.mock.invocationCallOrder[0]).toBeLessThan(
       listSpy.mock.invocationCallOrder[1]!,

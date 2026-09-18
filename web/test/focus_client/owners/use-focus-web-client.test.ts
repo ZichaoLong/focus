@@ -1028,11 +1028,14 @@ describe('useFocusWebClient create-outcome navigation', () => {
 
     await expect(client.submit('hello')).resolves.toBe(false);
 
-    expect(fake.api.readThread).toHaveBeenCalledWith('thread-new', expect.any(Number));
-    expect(fake.api.meta).toHaveBeenCalled();
+    await vi.waitFor(() => expect(fake.api.readThread).toHaveBeenCalledWith(
+      'thread-new',
+      expect.any(Number),
+    ));
+    await vi.waitFor(() => expect(fake.api.meta).toHaveBeenCalled());
+    await vi.waitFor(() => expect(client.scopeReady.value).toBe(true));
     expect(client.activeThreadId.value).toBe('');
     expect(client.activeWorkspaceId.value).toBe('/draft');
-    expect(client.scopeReady.value).toBe(true);
     expect(client.composerScopeId.value).toBe(
       'client-1:generation:2:draft:/draft',
     );

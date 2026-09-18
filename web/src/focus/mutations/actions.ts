@@ -736,17 +736,28 @@ export function createFocusMutationActions(
           intentGeneration: intent,
         });
         if (isDisposed() || !options.intentClock.intentIsCurrent(intent)) return true;
-        // The create response is the authority for the new target.  Confirm
-        // it directly before asking the directory projection to converge;
-        // a stale/lagging list must not turn a successful create into a draft.
-        await navigation.confirmUnconfirmedThread(result.thread_id).catch((error) => {
-          reportErrorIfCurrent(error);
-        });
-        if (!isDisposed()) {
-          void projection.refreshThreads().catch((error) => {
-            reportErrorIfCurrent(error);
+        // The create response is the authority for the new target.  The
+        // Composer settlement must not wait for the direct read/list
+        // convergence: a slow or failed projection (including an upstream
+        // capacity refusal that leaves a newly-created empty thread) must not
+        // keep the exact press-time payload pending.  Confirm the target and
+        // refresh the directory in the background; navigation and projection
+        // owners fence those reads against newer targets.
+        void (async () => {
+          await navigation.confirmUnconfirmedThread(result.thread_id).catch((error) => {
+            reportErrorIfCurrent(error, options.intentClock.intentIsCurrent(intent));
           });
-        }
+          // confirmUnconfirmedThread owns a newer navigation intent when it
+          // succeeds; the original prompt intent is therefore intentionally
+          // no longer current at this point.  The list refresh is harmless
+          // presentation work and remains request-generation fenced by the
+          // projection owner.
+          if (!isDisposed()) {
+            void projection.refreshThreads().catch((error) => {
+              reportErrorIfCurrent(error, true);
+            });
+          }
+        })();
         return true;
       }
       return false;
@@ -771,10 +782,19 @@ export function createFocusMutationActions(
             return false;
           }
           if (options.intentClock.intentIsCurrent(intent)) {
-            await projection.refreshThreads().catch(() => false);
-            if (!isDisposed() && options.intentClock.intentIsCurrent(intent)) {
-              await navigation.confirmUnconfirmedThread(createdThreadId).catch(() => false);
-            }
+            // Recovery selection is presentation convergence only.  The
+            // possibly-sent handoff is already durably recorded, so do not
+            // hold the Composer settlement on a slow snapshot/list read.
+            void (async () => {
+              const confirmed = await navigation.confirmUnconfirmedThread(createdThreadId)
+                .catch(() => false);
+              if (
+                confirmed
+                && !isDisposed()
+              ) {
+                await projection.refreshThreads().catch(() => false);
+              }
+            })();
           }
           return true;
         }
@@ -782,10 +802,25 @@ export function createFocusMutationActions(
       if (error instanceof FocusApiError && error.code === 'thread_created_turn_not_started') {
         const createdThreadId = String(error.details.thread_id ?? '').trim();
         if (createdThreadId && options.intentClock.intentIsCurrent(intent)) {
-          await projection.refreshThreads().catch((refreshError) => reportErrorIfCurrent(refreshError));
-          if (!isDisposed() && options.intentClock.intentIsCurrent(intent)) {
-            await navigation.confirmUnconfirmedThread(createdThreadId);
-          }
+          // This is authoritative known-no-effect for the first turn.  Keep
+          // the original Composer payload available immediately; selecting
+          // the committed empty thread and refreshing its list are best-effort
+          // background projection work.
+          void (async () => {
+            const confirmed = await navigation.confirmUnconfirmedThread(createdThreadId)
+              .catch((confirmError) => {
+                reportErrorIfCurrent(confirmError, options.intentClock.intentIsCurrent(intent));
+                return false;
+              });
+            if (
+              confirmed
+              && !isDisposed()
+            ) {
+              await projection.refreshThreads().catch((refreshError) => {
+                reportErrorIfCurrent(refreshError, true);
+              });
+            }
+          })();
         }
         return false;
       }

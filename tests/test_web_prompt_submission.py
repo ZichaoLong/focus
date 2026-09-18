@@ -363,6 +363,10 @@ class WebPromptSubmissionTests(unittest.TestCase):
         cases = (
             CodexRpcPreSendError("turn/start", RuntimeError("offline")),
             CodexRpcError("turn/start", {"message": "rejected"}),
+            CodexRpcError(
+                "turn/start",
+                {"message": "Selected model is at capacity"},
+            ),
         )
         for error in cases:
             with self.subTest(error=type(error).__name__):
@@ -371,6 +375,11 @@ class WebPromptSubmissionTests(unittest.TestCase):
                 result = self._result(self._prepare(harness=harness), harness=harness)
                 self.assertEqual(result["status"], "known_no_effect")
                 self.assertEqual(result["turn_id"], "")
+                self.assertEqual(
+                    harness.projection.events,
+                    [],
+                    "a no-effect refusal must not invalidate the browser snapshot",
+                )
 
     def test_transport_protocol_timeout_and_missing_start_id_are_unknown(self) -> None:
         cases: tuple[Exception | None, dict[str, Any] | None] = (
@@ -388,6 +397,25 @@ class WebPromptSubmissionTests(unittest.TestCase):
                 result = self._result(self._prepare(harness=harness), harness=harness)
                 self.assertEqual(result["status"], "outcome_unknown")
                 self.assertEqual(result["turn_id"], "")
+
+    def test_effectful_prompt_settlements_still_invalidate_projection(self) -> None:
+        succeeded = self._result(self._prepare())
+        self.assertEqual(succeeded["status"], "succeeded")
+        self.assertEqual(self.harness.projection.events[-1]["reason"], "web_prompt_succeeded")
+
+        unknown_harness = self._build()
+        unknown_harness.backend.start_error = CodexRpcTransportError(
+            "turn/start", {"message": "lost"}
+        )
+        unknown = self._result(
+            self._prepare(harness=unknown_harness),
+            harness=unknown_harness,
+        )
+        self.assertEqual(unknown["status"], "outcome_unknown")
+        self.assertEqual(
+            unknown_harness.projection.events[-1]["reason"],
+            "web_prompt_outcome_unknown",
+        )
 
     def test_exact_active_turn_steers_once_without_start_fallback(self) -> None:
         self.harness.read_model.replace_turns(
