@@ -48,3 +48,20 @@ or tags. Do not turn an inspect request into a change.
 5. Stop when the requested outcome is verified or a current stop rule applies;
    do not expand into unrelated findings. Report changes, verification status,
    unmapped/stale refs, blockers, residual risk, and the next decision.
+
+## Local and GitHub CI gates
+
+Local verification is pre-push evidence, not a substitute for remote CI. Before
+an explicitly requested `integrate`, inspect the workflows triggered by the
+target ref, run the focused cone plus the required wider local equivalents, and
+classify every skipped or unavailable gate.
+
+After pushing, query GitHub Actions for the exact pushed commit SHA and wait for
+the applicable workflow runs to finish. Treat the remote result as part of
+integration completion: a pending, cancelled, or failed required run is not
+green and must not be reported as complete. Inspect failed logs and distinguish
+code failures from infrastructure or external-service failures; retry only when
+the failure is clearly transient and the retry is safe. If GitHub status cannot
+be read, report it as `not-run` or `blocked-by-environment` rather than inferring
+success. The final handoff must include the commit SHA, workflows considered,
+and each remote result.

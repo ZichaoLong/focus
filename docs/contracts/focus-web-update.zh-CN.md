@@ -29,6 +29,12 @@ service。操作会在临时目录 clone/fetch 精确 commit、构建 Web produc
 - 目标文件系统的可用字节、inode、临时目录和 bundle staging 空间；
 - bundle 中的 Focus wheel、依赖锁和 source revision 一致性。
 
+每次 check 开始时，updater 只解析一次 Node/npm 工具链，并在该次 check 的所有
+Web 命令中复用同一对已验证的可执行文件。解析优先使用 updater 明确收到的稳定
+工具链路径（`FOCUS_NODE_BIN`/`FOCUS_NPM_BIN`）和 PATH，其次才使用 fnm/nvm 的稳定默认 alias；不会读取或执行 shell
+启动文件，也不会在已安装版本中盲选最高版本。解析结果（路径、版本和来源）会
+写入预检记录；apply 使用已经准备好的离线 bundle，不会重新解析 Node/npm。
+
 独立 updater 会继承部署用户明确配置的 Git/SSH、HTTP(S)/SOCKS 代理、pip/npm
 index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据等任意 service 环境
 转发给 source-controlled build hook。预检因此使用与该部署用户安装相同的网络与依赖

@@ -15,10 +15,15 @@ from bot.installation.update_process import UpdateError, UpdateLaunchOutcomeUnkn
 # provider credentials or arbitrary environment into source-controlled build
 # hooks.
 _FORWARDED_ENVIRONMENT = (
+    "PATH",
     "FOCUS_CONFIG_ROOT",
     "FOCUS_DATA_ROOT",
     "FOCUS_BIN_DIR",
+    "FOCUS_NODE_BIN",
+    "FOCUS_NPM_BIN",
     "HOME",
+    "FNM_DIR",
+    "NVM_DIR",
     "XDG_CONFIG_HOME",
     "XDG_CACHE_HOME",
     "SSH_AUTH_SOCK",

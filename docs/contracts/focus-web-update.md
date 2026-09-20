@@ -31,6 +31,14 @@ shutdown:
 - free bytes, inodes, temporary-directory, and bundle-staging checks; and
 - Focus wheel, dependency-lock, and source-revision consistency checks.
 
+At the start of each check, the updater resolves one Node/npm toolchain and reuses
+that validated pair for every Web command in the check. Resolution prefers an
+explicit stable toolchain path (`FOCUS_NODE_BIN`/`FOCUS_NPM_BIN`) and the updater
+PATH, then stable fnm/nvm default aliases; it never reads or executes shell startup
+files or blindly chooses the highest installed version. The selected paths, versions,
+and source are recorded in the preflight journal. Apply uses the already prepared
+offline bundle and does not resolve Node/npm again.
+
 The independent updater forwards the deployment user's explicit Git/SSH, HTTP(S)/SOCKS
 proxy, pip/npm index, and certificate settings together with the Focus roots. It does not
 forward arbitrary service or provider/API credentials into source-controlled build hooks,

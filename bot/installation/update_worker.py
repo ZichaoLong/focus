@@ -11,6 +11,7 @@ import sys
 
 from bot.installation import installer
 from bot.installation.install_bundle import validate_install_bundle
+from bot.installation.node_toolchain import resolve_node_toolchain
 from bot.installation.offline import seal_wheelhouse, verify_wheelhouse
 from bot.installation.update import UpdateJournal
 from bot.installation.update_process import UpdateError, run
@@ -110,13 +111,12 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
     source = operation["operation_source"]
     try:
         disk = _disk((journal.root, default_data_root()))
+        toolchain = resolve_node_toolchain()
+        npm_environment = toolchain.environment()
         run(["git", "clone", "--filter=blob:none", "--no-checkout", "--single-branch", "--branch", "main", source["url"], str(checkout)], cwd=root, label="git clone", env=None)
         revision = _revision(checkout, operation["requested_commit"])
-        npm = shutil.which("npm")
-        if not npm:
-            raise UpdateError("npm is unavailable")
-        run([npm, "--prefix", str(checkout / "web"), "ci"], cwd=checkout, label="npm ci")
-        run([npm, "--prefix", str(checkout / "web"), "run", "build"], cwd=checkout, label="Web build")
+        run([str(toolchain.npm), "--prefix", str(checkout / "web"), "ci"], cwd=checkout, label="npm ci", env=npm_environment)
+        run([str(toolchain.npm), "--prefix", str(checkout / "web"), "run", "build"], cwd=checkout, label="Web build", env=npm_environment)
         output.mkdir()
         build_python = _build_python(checkout, root)
         run([str(build_python), "-I", str(checkout / "scripts" / "build_install_bundle.py"), "--output-dir", str(output),
@@ -139,7 +139,8 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
         digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
         journal.settle(operation["operation_id"], "checking", state="ready", resolved_commit=revision,
                        message="Source, Web build, dependency, disk and offline-install preflight passed",
-                       preflight={"git": "passed", "web_build": "passed", "pip": "passed", "disk": "passed",
+                       preflight={"git": "passed", "node": "passed", "npm": "passed", "web_build": "passed",
+                                  "pip": "passed", "disk": "passed", "node_toolchain": toolchain.preflight(),
                                   "free_bytes": disk["free_bytes"], "free_inodes": disk["free_inodes"], "wheelhouse_files": wheel_inodes},
                        bundle_sha256=digest, staging_dir=str(root), bundle_path=str(bundle),
                        wheelhouse_path=str(wheelhouse), offline_requirements=str(offline_req), installation_started=False)

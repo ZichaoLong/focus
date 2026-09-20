@@ -1318,6 +1318,10 @@
           "symbol": "main"
         },
         {
+          "path": "bot/installation/node_toolchain.py",
+          "symbol": "resolve_node_toolchain"
+        },
+        {
           "path": "bot/focus_runtime/runtime_identity.py",
           "symbol": "RuntimeIdentityProjection"
         },

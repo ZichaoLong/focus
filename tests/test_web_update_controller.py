@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from bot.installation.update import FocusUpdateController, UpdateError, validate_commit, validate_source
 from bot.installation.update_launcher import launch_update_worker
+from bot.installation.node_toolchain import resolve_node_toolchain
 from bot.installation.update_process import UpdateLaunchOutcomeUnknown
 
 
@@ -184,9 +185,137 @@ class UpdateLauncherTests(unittest.TestCase):
         )
         self.assertNotIn("OPENAI_API_KEY", launcher_environment)
         command = run.call_args.args[0]
+        self.assertIn("--setenv=PATH=/usr/bin", command)
         self.assertIn("--no-block", command)
         self.assertIn("--user", command)
         self.assertIn("focus-update-test-check", command)
+
+
+class NodeToolchainTests(unittest.TestCase):
+    @staticmethod
+    def _write_version_script(path: pathlib.Path, version: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"#!/bin/sh\nprintf '%s\\n' '{version}'\n", encoding="utf-8")
+        path.chmod(0o755)
+
+    def test_resolver_uses_stable_fnm_alias_when_manager_path_has_no_node(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            fnm_root = root / "fnm"
+            bin_dir = fnm_root / "aliases" / "default" / "bin"
+            node = bin_dir / "node"
+            npm = bin_dir / "npm"
+            self._write_version_script(node, "v22.22.0")
+            self._write_version_script(npm, "10.9.2")
+
+            toolchain = resolve_node_toolchain(
+                {
+                    "HOME": str(root),
+                    "FNM_DIR": str(fnm_root),
+                    "PATH": str(root / "empty-path"),
+                }
+            )
+
+        self.assertEqual(toolchain.node, node)
+        self.assertEqual(toolchain.npm, npm)
+        self.assertEqual(toolchain.source, f"fnm-default:{fnm_root}")
+        self.assertEqual(toolchain.node_version, "v22.22.0")
+        self.assertEqual(toolchain.npm_version, "10.9.2")
+        self.assertTrue(toolchain.environment({"PATH": "/usr/bin"})["PATH"].startswith(f"{bin_dir}:"))
+
+    def test_resolver_prefers_explicit_pair_over_path_and_stable_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            explicit_bin = root / "explicit"
+            explicit_node = explicit_bin / "node"
+            explicit_npm = explicit_bin / "npm"
+            self._write_version_script(explicit_node, "v22.22.0")
+            self._write_version_script(explicit_npm, "10.9.2")
+
+            alias_bin = root / "fnm" / "aliases" / "default" / "bin"
+            self._write_version_script(alias_bin / "node", "v25.9.0")
+            self._write_version_script(alias_bin / "npm", "11.0.0")
+
+            toolchain = resolve_node_toolchain(
+                {
+                    "HOME": str(root),
+                    "FNM_DIR": str(root / "fnm"),
+                    "PATH": str(root / "empty-path"),
+                    "FOCUS_NODE_BIN": str(explicit_node),
+                    "FOCUS_NPM_BIN": str(explicit_npm),
+                }
+            )
+
+        self.assertEqual(toolchain.source, "explicit-toolchain")
+        self.assertEqual(toolchain.node, explicit_node)
+        self.assertEqual(toolchain.npm, explicit_npm)
+        self.assertEqual(toolchain.node_version, "v22.22.0")
+
+    def test_resolver_pins_the_installation_behind_a_fnm_alias(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            fnm_root = root / "fnm"
+            installation = fnm_root / "node-versions" / "v22.22.0" / "installation"
+            self._write_version_script(installation / "bin" / "node", "v22.22.0")
+            self._write_version_script(installation / "bin" / "npm", "10.9.2")
+            default_alias = fnm_root / "aliases" / "default"
+            default_alias.parent.mkdir(parents=True)
+            default_alias.symlink_to(installation, target_is_directory=True)
+
+            toolchain = resolve_node_toolchain(
+                {
+                    "HOME": str(root),
+                    "FNM_DIR": str(fnm_root),
+                    "PATH": str(root / "empty-path"),
+                }
+            )
+
+            newer_installation = fnm_root / "node-versions" / "v25.9.0" / "installation"
+            self._write_version_script(newer_installation / "bin" / "node", "v25.9.0")
+            self._write_version_script(newer_installation / "bin" / "npm", "11.0.0")
+            default_alias.unlink()
+            default_alias.symlink_to(newer_installation, target_is_directory=True)
+
+        self.assertEqual(toolchain.node, installation / "bin" / "node")
+        self.assertEqual(toolchain.npm, installation / "bin" / "npm")
+        self.assertEqual(toolchain.bin_dir, installation / "bin")
+        self.assertEqual(toolchain.node_version, "v22.22.0")
+
+    def test_resolver_reports_missing_toolchain(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            with self.assertRaisesRegex(UpdateError, "Node/npm is unavailable"):
+                resolve_node_toolchain(
+                    {
+                        "HOME": str(root),
+                        "PATH": str(root / "empty-path"),
+                        "FNM_DIR": str(root / "missing-fnm"),
+                    }
+                )
+
+    def test_resolver_does_not_use_process_path_when_environment_omits_it(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            with self.assertRaisesRegex(UpdateError, "Node/npm is unavailable"):
+                resolve_node_toolchain(
+                    {
+                        "HOME": str(root),
+                        "FNM_DIR": str(root / "missing-fnm"),
+                    }
+                )
+
+    def test_resolver_fails_closed_for_incomplete_explicit_toolchain(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            node = root / "node"
+            self._write_version_script(node, "v22.22.0")
+            with self.assertRaisesRegex(UpdateError, "matching Node/npm pair"):
+                resolve_node_toolchain(
+                    {
+                        "PATH": str(root / "empty-path"),
+                        "FOCUS_NODE_BIN": str(node),
+                    }
+                )
 
 
 if __name__ == "__main__":
