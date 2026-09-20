@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import os
 import pathlib
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from bot.installation.update import FocusUpdateController, UpdateError, validate_commit, validate_source
+from bot.installation.update_launcher import launch_update_worker
 from bot.installation.update_process import UpdateLaunchOutcomeUnknown
 
 
@@ -61,6 +64,46 @@ class UpdateJournalTests(unittest.TestCase):
             self.assertEqual(result["state"], "unknown")
             self.assertIn("launch timed out", result["error"])
 
+    def test_inactive_unknown_check_can_be_replaced_by_explicit_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
+            current = controller.journal.read()
+            current.update(
+                operation_id="a" * 32,
+                state="unknown",
+                unit=f"focus-update-{'a' * 32}-check.service",
+                error="launcher timed out",
+                installation_started=False,
+                operation_source={"url": "https://example.com/focus.git", "branch": "main"},
+            )
+            controller.journal.write(current)
+            with patch("bot.installation.update.unit_active", return_value=False):
+                with patch("bot.installation.update.unavailable_reason", return_value=""):
+                    with patch(
+                        "bot.installation.update.launch_worker",
+                        side_effect=UpdateError("launcher refused"),
+                    ):
+                        result = controller.start_check("")
+            self.assertEqual(result["state"], "failed")
+            self.assertIn("launcher refused", result["error"])
+
+    def test_unknown_apply_cannot_be_replaced_by_check(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
+            current = controller.journal.read()
+            current.update(
+                operation_id="a" * 32,
+                state="unknown",
+                unit=f"focus-update-{'a' * 32}-apply.service",
+                installation_started=False,
+                operation_source={"url": "https://example.com/focus.git", "branch": "main"},
+            )
+            controller.journal.write(current)
+            with patch("bot.installation.update.unit_active", return_value=False):
+                with patch("bot.installation.update.unavailable_reason", return_value=""):
+                    with self.assertRaises(UpdateError):
+                        controller.start_check("")
+
     def test_source_change_removes_ready_staging(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
@@ -98,6 +141,52 @@ class UpdateJournalTests(unittest.TestCase):
             controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
             with self.assertRaises(UpdateError):
                 controller.apply("not-an-operation", "not-an-operation")
+
+
+class UpdateLauncherTests(unittest.TestCase):
+    def test_launcher_preserves_user_bus_without_forwarding_arbitrary_secrets(self) -> None:
+        class Journal:
+            path = pathlib.Path("/tmp/focus-update-operation.json")
+
+            @staticmethod
+            def read() -> dict[str, str]:
+                return {"unit": "focus-update-test-check.service"}
+
+        completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+        with patch.dict(
+            os.environ,
+            {
+                "PATH": "/usr/bin",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+                "OPENAI_API_KEY": "must-not-reach-the-launcher-environment",
+            },
+            clear=True,
+        ):
+            with patch(
+                "bot.installation.update_launcher.shutil.which",
+                return_value="/usr/bin/systemd-run",
+            ):
+                with patch(
+                    "bot.installation.update_launcher.subprocess.run",
+                    return_value=completed,
+                ) as run:
+                    launch_update_worker(Journal(), "a" * 32, "check")
+
+        launcher_environment = run.call_args.kwargs["env"]
+        self.assertEqual(
+            launcher_environment,
+            {
+                "PATH": "/usr/bin",
+                "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
+                "XDG_RUNTIME_DIR": "/run/user/1000",
+            },
+        )
+        self.assertNotIn("OPENAI_API_KEY", launcher_environment)
+        command = run.call_args.args[0]
+        self.assertIn("--no-block", command)
+        self.assertIn("--user", command)
+        self.assertIn("focus-update-test-check", command)
 
 
 if __name__ == "__main__":

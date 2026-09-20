@@ -39,6 +39,11 @@ so preflight uses the same package and network authorities as that user's instal
 A failure is recorded as `failed` while the old service continues running. A successful
 check is `ready` for one exact commit and has no implicit fallback.
 
+If a check is recorded as `unknown` but its check transient unit is definitively inactive
+and installation never started, a new explicit check may replace that stale operation.
+An `unknown` apply operation remains blocked for manual inspection and cannot be replaced
+by a new check.
+
 ## 3. Apply, restart, and result
 
 `POST /api/update/apply` requires the ready operation id and a second user confirmation.

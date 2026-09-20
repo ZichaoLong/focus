@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
-import os
 
 from bot.installation.update_process import UpdateError, UpdateLaunchOutcomeUnknown
 
@@ -53,6 +53,7 @@ _FORWARDED_ENVIRONMENT = (
     "npm_config_no_proxy",
     "NODE_EXTRA_CA_CERTS",
 )
+_SYSTEMD_USER_BUS_ENVIRONMENT = ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
 
 
 def launch_update_worker(journal, operation_id: str, mode: str) -> None:
@@ -70,6 +71,10 @@ def launch_update_worker(journal, operation_id: str, mode: str) -> None:
     command = [
         systemd_run,
         *setenv_args,
+        # A check/apply worker is a long-lived oneshot service.  Do not make
+        # the launcher wait for that service to finish before returning the
+        # durable admission response to the browser.
+        "--no-block",
         "--user",
         "--unit",
         unit.removesuffix(".service"),
@@ -88,7 +93,17 @@ def launch_update_worker(journal, operation_id: str, mode: str) -> None:
         "--mode",
         mode,
     ]
-    environment = {"PATH": os.environ.get("PATH", "")}
+    # systemd-run --user talks to the caller's user manager over the user bus.
+    # Keep only the bus locator and PATH in the launcher environment; the
+    # explicitly allow-listed values above are passed to the worker itself.
+    environment = {
+        "PATH": os.environ.get("PATH", ""),
+        **{
+            name: os.environ[name]
+            for name in _SYSTEMD_USER_BUS_ENVIRONMENT
+            if os.environ.get(name)
+        },
+    }
     try:
         result = subprocess.run(
             command,

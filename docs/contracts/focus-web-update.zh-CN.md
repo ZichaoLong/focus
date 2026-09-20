@@ -37,6 +37,10 @@ index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据�
 失败时 operation 为 `failed`，旧服务继续运行。成功时 operation 为 `ready`，
 只保留一个精确 commit 的 staging 结果，不接受隐式 fallback。
 
+如果一次 check 的启动结果为 `unknown`，但对应的 check transient unit 已明确 inactive
+且尚未进入安装阶段，用户再次显式点击检查可以替换这个旧 operation；apply 阶段的
+`unknown` 始终需要人工检查，不会被新的检查覆盖。
+
 ## 3. 应用、重启与结果
 
 `POST /api/update/apply` 必须携带 ready operation id，并由用户再次确认。在 Linux

@@ -149,7 +149,7 @@ export default {
   runtime: 'Runtime',
   about: 'About',
   update: 'Update',
-  aboutDescription: 'Identity of this Focus installation and its actual Codex app-server connection.',
+  aboutDescription: 'View this Focus installation and its actual Codex app-server connection, and check or apply browser updates.',
   updateTitle: 'Update Focus',
   updateDescription: 'Check a precise commit from a configured Git source, run network/dependency/disk preflight, then apply it after explicit confirmation.',
   updateSource: 'Git update source',

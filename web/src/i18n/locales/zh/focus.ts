@@ -149,7 +149,7 @@ export default {
   runtime: '运行时',
   about: '关于',
   update: '更新',
-  aboutDescription: '当前 Focus 安装及其实际连接的 Codex app-server 身份。',
+  aboutDescription: '查看当前 Focus 安装及其实际连接的 Codex app-server 身份，并检查或应用浏览器更新。',
   updateTitle: '更新 Focus',
   updateDescription: '从配置的 Git 源检查精确 commit，先执行网络、依赖和磁盘预检，再在显式确认后应用更新。',
   updateSource: 'Git 更新源',

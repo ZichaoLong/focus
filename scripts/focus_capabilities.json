@@ -1310,6 +1310,10 @@
           "symbol": "FocusUpdateController"
         },
         {
+          "path": "bot/installation/update_launcher.py",
+          "symbol": "launch_update_worker"
+        },
+        {
           "path": "bot/installation/update_worker.py",
           "symbol": "main"
         },

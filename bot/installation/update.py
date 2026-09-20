@@ -214,6 +214,17 @@ class FocusUpdateController:
         if staging.exists():
             shutil.rmtree(staging)
 
+    @staticmethod
+    def _recoverable_unknown_check(value: dict) -> bool:
+        """Allow an explicit retry after a check-only launcher outcome is settled."""
+
+        return (
+            value["state"] == "unknown"
+            and value["unit"].endswith("-check.service")
+            and not value["installation_started"]
+            and unit_active(value["unit"]) is False
+        )
+
     def snapshot(self) -> dict:
         with self.journal.locked():
             return self._snapshot()
@@ -224,7 +235,10 @@ class FocusUpdateController:
             raise UpdateError("Changing the source requires explicit confirmation")
         with self.journal.locked():
             current = self.journal.read()
-            if current["state"] in {"checking", "applying", "unknown"}:
+            if current["state"] in {"checking", "applying"} or (
+                current["state"] == "unknown"
+                and not self._recoverable_unknown_check(current)
+            ):
                 raise UpdateError("An update is active or its outcome is unknown")
             if current["state"] == "ready":
                 self._remove_staging(current)
@@ -238,7 +252,10 @@ class FocusUpdateController:
             raise UpdateError(reason)
         with self.journal.locked():
             current = self.journal.read()
-            if current["state"] in {"checking", "applying", "unknown"}:
+            if current["state"] in {"checking", "applying"} or (
+                current["state"] == "unknown"
+                and not self._recoverable_unknown_check(current)
+            ):
                 raise UpdateError("An update is active or its outcome is unknown")
             if current["operation_id"]:
                 self._remove_staging(current)

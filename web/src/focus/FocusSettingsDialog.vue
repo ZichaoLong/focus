@@ -77,7 +77,7 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
-const section = ref<'preferences' | 'archived' | 'about' | 'update' | 'danger'>('preferences');
+const section = ref<'preferences' | 'archived' | 'about' | 'danger'>('preferences');
 const deleteTarget = ref('');
 const deleteConfirmation = ref('');
 const updateSourceUrl = ref('');
@@ -91,7 +91,7 @@ watch(
       deleteConfirmation.value = '';
     } else if (!wasOpen && section.value === 'danger') {
       emit('refreshBackendReset');
-    } else if (!wasOpen && section.value === 'update') {
+    } else if (!wasOpen && section.value === 'about') {
       emit('refreshUpdate');
     }
     if (open && props.updateStatus?.source.url) {
@@ -112,14 +112,13 @@ function setSection(value: string): void {
     value !== 'preferences'
     && value !== 'archived'
     && value !== 'about'
-    && value !== 'update'
     && value !== 'danger'
   ) return;
   const enteringDanger = value === 'danger' && section.value !== 'danger';
   section.value = value;
   if (value === 'archived') emit('refreshArchived');
+  if (value === 'about') emit('refreshUpdate');
   if (enteringDanger) emit('refreshBackendReset');
-  if (value === 'update') emit('refreshUpdate');
 }
 
 function backendResetStatusLabel(status: FocusBackendResetPreview['status']): string {
@@ -203,7 +202,6 @@ function setComposerSendShortcut(value: string): void {
           { value: 'preferences', label: t('focus.runtime') },
           { value: 'archived', label: t('focus.archived') },
           { value: 'about', label: t('focus.about') },
-          { value: 'update', label: t('focus.update') },
           { value: 'danger', label: t('focus.dangerZone') },
         ]"
         size="sm"
@@ -447,75 +445,72 @@ function setComposerSendShortcut(value: string): void {
             </div>
           </dl>
         </article>
-      </section>
 
-      <section v-else-if="section === 'update'" class="about-panel update-panel">
-        <div>
+        <div class="about-update-section">
           <div class="settings-label">{{ t('focus.updateTitle') }}</div>
           <div class="settings-description">{{ t('focus.updateDescription') }}</div>
-        </div>
-
-        <div class="update-card">
-          <label class="update-field">
-            <span class="settings-label">{{ t('focus.updateSource') }}</span>
-            <input v-model="updateSourceUrl" type="url" autocomplete="off" spellcheck="false" />
-          </label>
-          <div class="update-actions">
-            <Button
-              size="sm"
-              variant="secondary"
-              :disabled="updateBusy || !updateSourceUrl.trim()"
-              @click="emit('configureUpdateSource', updateSourceUrl.trim())"
-            >
-              {{ t('focus.updateSaveSource') }}
-            </Button>
+          <div class="update-card">
+            <label class="update-field">
+              <span class="settings-label">{{ t('focus.updateSource') }}</span>
+              <input v-model="updateSourceUrl" type="url" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="update-actions">
+              <Button
+                size="sm"
+                variant="secondary"
+                :disabled="updateBusy || !updateSourceUrl.trim()"
+                @click="emit('configureUpdateSource', updateSourceUrl.trim())"
+              >
+                {{ t('focus.updateSaveSource') }}
+              </Button>
+            </div>
+            <div class="settings-description">{{ t('focus.updateSourceWarning') }}</div>
           </div>
-          <div class="settings-description">{{ t('focus.updateSourceWarning') }}</div>
-        </div>
 
-        <div class="update-card">
-          <label class="update-field">
-            <span class="settings-label">{{ t('focus.updateCommit') }}</span>
-            <input
-              v-model="updateCommit"
-              type="text"
-              autocomplete="off"
-              spellcheck="false"
-              :placeholder="t('focus.updateCommitPlaceholder')"
-            />
-          </label>
-          <div class="update-actions">
-            <Button
-              size="sm"
-              variant="secondary"
-              :loading="updateBusy || updateLoading"
-              :disabled="updateBusy || updateLoading"
-              @click="emit('checkUpdate', updateCommit.trim())"
-            >
-              {{ t('focus.updateCheck') }}
-            </Button>
-            <Button
-              v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"
-              size="sm"
-              variant="primary"
-              :loading="updateBusy"
-              :disabled="updateBusy"
-              @click="emit('applyUpdate', updateStatus.operation_id)"
-            >
-              {{ t('focus.updateApply') }}
-            </Button>
-          </div>
-          <dl v-if="updateStatus" class="update-status">
-            <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ updateStatus.state }}</dd></div>
-            <div v-if="updateStatus.operation_source"><dt>{{ t('focus.updateOperationSource') }}</dt><dd><code>{{ updateStatus.operation_source.url }}@{{ updateStatus.operation_source.branch }}</code></dd></div>
-            <div v-if="updateStatus.requested_commit"><dt>{{ t('focus.updateRequestedCommit') }}</dt><dd><code>{{ updateStatus.requested_commit }}</code></dd></div>
-            <div v-if="updateStatus.resolved_commit"><dt>{{ t('focus.updateResolvedCommit') }}</dt><dd><code>{{ updateStatus.resolved_commit }}</code></dd></div>
-            <div v-if="updateStatus.installation_started"><dt>{{ t('focus.updateInstallationStarted') }}</dt><dd>{{ t('focus.updateInstallationStartedValue') }}</dd></div>
-          </dl>
-          <Banner v-if="updateStatus?.message" variant="info">{{ updateStatus.message }}</Banner>
-          <Banner v-if="updateStatus?.error" variant="danger">{{ updateStatus.error }}</Banner>
-          <div v-if="updateStatus?.state === 'ready'" class="settings-description">
-            {{ t('focus.updateReadyConfirmation', { operation: updateStatus.operation_id }) }}
+          <div class="update-card">
+            <label class="update-field">
+              <span class="settings-label">{{ t('focus.updateCommit') }}</span>
+              <input
+                v-model="updateCommit"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                :placeholder="t('focus.updateCommitPlaceholder')"
+              />
+            </label>
+            <div class="update-actions">
+              <Button
+                size="sm"
+                variant="secondary"
+                :loading="updateBusy || updateLoading"
+                :disabled="updateBusy || updateLoading"
+                @click="emit('checkUpdate', updateCommit.trim())"
+              >
+                {{ t('focus.updateCheck') }}
+              </Button>
+              <Button
+                v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"
+                size="sm"
+                variant="primary"
+                :loading="updateBusy"
+                :disabled="updateBusy"
+                @click="emit('applyUpdate', updateStatus.operation_id)"
+              >
+                {{ t('focus.updateApply') }}
+              </Button>
+            </div>
+            <dl v-if="updateStatus" class="update-status">
+              <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ updateStatus.state }}</dd></div>
+              <div v-if="updateStatus.operation_source"><dt>{{ t('focus.updateOperationSource') }}</dt><dd><code>{{ updateStatus.operation_source.url }}@{{ updateStatus.operation_source.branch }}</code></dd></div>
+              <div v-if="updateStatus.requested_commit"><dt>{{ t('focus.updateRequestedCommit') }}</dt><dd><code>{{ updateStatus.requested_commit }}</code></dd></div>
+              <div v-if="updateStatus.resolved_commit"><dt>{{ t('focus.updateResolvedCommit') }}</dt><dd><code>{{ updateStatus.resolved_commit }}</code></dd></div>
+              <div v-if="updateStatus.installation_started"><dt>{{ t('focus.updateInstallationStarted') }}</dt><dd>{{ t('focus.updateInstallationStartedValue') }}</dd></div>
+            </dl>
+            <Banner v-if="updateStatus?.message" variant="info">{{ updateStatus.message }}</Banner>
+            <Banner v-if="updateStatus?.error" variant="danger">{{ updateStatus.error }}</Banner>
+            <div v-if="updateStatus?.state === 'ready'" class="settings-description">
+              {{ t('focus.updateReadyConfirmation', { operation: updateStatus.operation_id }) }}
+            </div>
           </div>
         </div>
       </section>
@@ -787,6 +782,25 @@ function setComposerSendShortcut(value: string): void {
   flex-direction: column;
   gap: var(--space-3);
 }
+.about-panel {
+  max-height: min(62vh, 620px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-2);
+  scrollbar-color: var(--color-text-muted) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.about-panel::-webkit-scrollbar { width: 10px; }
+.about-panel::-webkit-scrollbar-track { background: transparent; }
+.about-panel::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-color: var(--color-text-muted);
+}
+.about-panel::-webkit-scrollbar-thumb:hover { background-color: var(--color-text); }
 .runtime-identity-card {
   padding: var(--space-4);
   border: 1px solid var(--color-line);
@@ -825,7 +839,7 @@ function setComposerSendShortcut(value: string): void {
   user-select: text;
   -webkit-user-select: text;
 }
-.update-panel,
+.about-update-section,
 .update-card,
 .update-field,
 .update-status {
