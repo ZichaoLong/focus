@@ -241,6 +241,7 @@
     "src/focus/FocusSettingsDialog.vue",
     "src/focus/FocusSettingsSurface.vue",
     "src/focus/FocusToolSourceDetailPanel.vue",
+    "src/focus/FocusUpdateProgress.vue",
     "src/focus/api.ts",
     "src/focus/cdCommand.ts",
     "src/focus/client-state/browser-turn-window.ts",
