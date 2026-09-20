@@ -152,6 +152,10 @@ guards and may not retain parallel key or enum inventories.
   `installation_started` fields so source drift and post-shutdown failure/unknown
   outcomes can be presented honestly. A version 18 browser retains no compatibility
   decoder; service and static assets still deploy at the same version.
+- Version 20 adds durable update `phase`, phase-start/last-progress timestamps, and
+  bounded byte `progress` so long checks can show their current stage and real download
+  progress. Raw Git/npm/pip output is not projected. A version 19 browser retains no
+  compatibility decoder; service and static assets still deploy at the same version.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated

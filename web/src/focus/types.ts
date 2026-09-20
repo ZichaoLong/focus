@@ -107,10 +107,17 @@ export interface FocusRuntimeIdentity {
 
 export type FocusUpdateState = FocusWebWireEnum<'update_state'>;
 export type FocusUpdateTarget = FocusWebWireEnum<'update_target'>;
+export type FocusUpdatePhase = FocusWebWireEnum<'update_phase'>;
 
 export interface FocusUpdateSource {
   url: string;
   branch: string;
+}
+
+export interface FocusUpdateProgress {
+  current: number;
+  total: number | null;
+  unit: FocusWebWireEnum<'update_progress_unit'>;
 }
 
 export interface FocusUpdateStatus {
@@ -127,6 +134,10 @@ export interface FocusUpdateStatus {
   updated_at: number;
   restart_required: boolean;
   installation_started: boolean;
+  phase: FocusUpdatePhase;
+  phase_started_at: number;
+  last_progress_at: number;
+  progress: FocusUpdateProgress | null;
 }
 
 export interface FocusMeta extends FocusCoordinates {

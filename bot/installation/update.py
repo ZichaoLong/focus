@@ -1,7 +1,7 @@
 """Machine-wide browser-update journal, source and single-flight admission.
 
 See docs/contracts/focus-web-update.zh-CN.md. Workers run outside the service
-cgroup and the managed venv; only exact operation settlement can write results.
+cgroup and the managed venv; only exact operation progress/settlement can write results.
 """
 
 from __future__ import annotations
@@ -27,8 +27,40 @@ from bot.platform_paths import default_data_root
 DEFAULT_SOURCE = "https://github.com/ZichaoLong/focus.git"
 UPDATE_TARGETS = frozenset({"stable", "main"})
 STATES = {"idle", "checking", "ready", "applying", "succeeded", "failed", "unknown"}
+UPDATE_SCHEMA = "focus-web-update-3"
+UPDATE_PHASES = frozenset(
+    {
+        "idle",
+        "starting",
+        "disk_preflight",
+        "release_metadata",
+        "release_download",
+        "release_verify",
+        "source_clone",
+        "source_revision",
+        "node_preflight",
+        "npm_install",
+        "web_build",
+        "bundle_build",
+        "bundle_validate",
+        "python_preflight",
+        "dependency_download",
+        "wheelhouse_verify",
+        "final_disk_check",
+        "apply_validate",
+        "apply_prepare",
+        "apply_install",
+        "apply_restart",
+        "ready",
+        "succeeded",
+        "failed",
+        "unknown",
+    }
+)
+UPDATE_PROGRESS_UNITS = frozenset({"bytes"})
 PUBLIC_FIELDS = ("operation_id", "target", "state", "requested_commit", "resolved_commit", "message",
-                 "error", "preflight", "updated_at", "installation_started", "operation_source")
+                 "error", "preflight", "updated_at", "installation_started", "operation_source",
+                 "phase", "phase_started_at", "last_progress_at", "progress")
 _PRIVATE_FIELDS = ("unit", "bundle_sha256", "staging_dir", "bundle_path", "wheelhouse_path", "offline_requirements")
 
 
@@ -90,6 +122,36 @@ def write_json(path: pathlib.Path, value: dict) -> None:
     atomic_write_text(path, json.dumps(value, ensure_ascii=False, sort_keys=True) + "\n", mode=0o600)
 
 
+def _phase_for_state(state: object) -> str:
+    if isinstance(state, str) and state in STATES:
+        return {
+            "idle": "idle",
+            "checking": "starting",
+            "ready": "ready",
+            "applying": "apply_validate",
+            "succeeded": "succeeded",
+            "failed": "failed",
+            "unknown": "unknown",
+        }[state]
+    return "idle"
+
+
+def _valid_progress(value: object) -> bool:
+    if value is None:
+        return True
+    if not isinstance(value, dict) or set(value) != {"current", "total", "unit"}:
+        return False
+    current = value["current"]
+    total = value["total"]
+    return (
+        type(current) is int
+        and current >= 0
+        and (total is None or (type(total) is int and total > 0 and current <= total))
+        and isinstance(value["unit"], str)
+        and value["unit"] in UPDATE_PROGRESS_UNITS
+    )
+
+
 class UpdateJournal:
     def __init__(self, root: pathlib.Path):
         self.root = pathlib.Path(root).resolve()
@@ -111,18 +173,27 @@ class UpdateJournal:
             return dict(operation_id="", target="", state="idle", requested_commit="", resolved_commit="",
                         operation_source=None, message="", error="", preflight={},
                         updated_at=0.0, installation_started=False, unit="", bundle_sha256="",
-                        staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="")
-        if value.get("schema") == "focus-web-update-1" and "target" not in value:
+                        staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="",
+                        phase="idle", phase_started_at=0.0, last_progress_at=0.0, progress=None)
+        if value.get("schema") in {"focus-web-update-1", "focus-web-update-2"}:
             # The original browser updater only built from the configured main
             # source. Preserve an existing idle/ready journal when the target
-            # field is introduced; a new write upgrades it to schema 2.
+            # field is introduced; a new write upgrades it to schema 3.
+            if value.get("schema") == "focus-web-update-1" and "target" not in value:
+                value = {
+                    **value,
+                    "target": "main" if value.get("operation_id") else "",
+                }
             value = {
                 **value,
-                "schema": "focus-web-update-2",
-                "target": "main" if value.get("operation_id") else "",
+                "schema": UPDATE_SCHEMA,
+                "phase": _phase_for_state(value.get("state")),
+                "phase_started_at": value.get("updated_at", 0.0),
+                "last_progress_at": value.get("updated_at", 0.0),
+                "progress": None,
             }
         if (set(value) != {*PUBLIC_FIELDS, *_PRIVATE_FIELDS, "schema"}
-                or value["schema"] != "focus-web-update-2"
+                or value["schema"] != UPDATE_SCHEMA
                 or not isinstance(value["state"], str) or value["state"] not in STATES
                 or not isinstance(value["operation_id"], str)
                 or not isinstance(value["target"], str)
@@ -130,6 +201,12 @@ class UpdateJournal:
                 or re.fullmatch(r"[0-9a-f]{32}", value["operation_id"]) is None
                 or type(value["installation_started"]) is not bool
                 or type(value["updated_at"]) not in {float, int} or not math.isfinite(value["updated_at"])
+                or not isinstance(value["phase"], str) or value["phase"] not in UPDATE_PHASES
+                or type(value["phase_started_at"]) not in {float, int} or not math.isfinite(value["phase_started_at"])
+                or value["phase_started_at"] < 0
+                or type(value["last_progress_at"]) not in {float, int} or not math.isfinite(value["last_progress_at"])
+                or value["last_progress_at"] < 0
+                or not _valid_progress(value["progress"])
                 or not isinstance(value["preflight"], dict)
                 or any(not isinstance(value[k], str) for k in ("unit", "bundle_sha256", "requested_commit", "resolved_commit", "message", "error", "staging_dir", "bundle_path", "wheelhouse_path", "offline_requirements"))):
             raise UpdateError("Invalid update journal; no update may proceed")
@@ -144,7 +221,7 @@ class UpdateJournal:
         return value
 
     def write(self, value: dict) -> None:
-        write_json(self.path, {**value, "schema": "focus-web-update-2", "updated_at": time.time()})
+        write_json(self.path, {**value, "schema": UPDATE_SCHEMA, "updated_at": time.time()})
 
     def directory(self, operation_id: str) -> pathlib.Path:
         if re.fullmatch(r"[0-9a-f]{32}", operation_id) is None:
@@ -157,6 +234,34 @@ class UpdateJournal:
             if value["operation_id"] != operation_id or value["state"] != expected:
                 raise UpdateError("Update operation changed; refusing stale worker settlement")
             self.write({**value, **changes})
+
+    def progress(
+        self,
+        operation_id: str,
+        expected: str,
+        *,
+        phase: str,
+        message: str,
+        progress: dict | None = None,
+    ) -> None:
+        if phase not in UPDATE_PHASES:
+            raise UpdateError("Invalid update progress phase")
+        if not _valid_progress(progress):
+            raise UpdateError("Invalid update progress payload")
+        with self.locked():
+            value = self.read()
+            if value["operation_id"] != operation_id or value["state"] != expected:
+                raise UpdateError("Update operation changed; refusing stale worker progress")
+            now = time.time()
+            phase_started_at = now if value["phase"] != phase else value["phase_started_at"]
+            self.write({
+                **value,
+                "phase": phase,
+                "phase_started_at": phase_started_at,
+                "last_progress_at": now,
+                "progress": progress,
+                "message": message,
+            })
 
 
 def unit_active(unit: str) -> bool | None:
@@ -205,15 +310,25 @@ class FocusUpdateController:
         if value["state"] in {"checking", "applying"} and time.time() - value["updated_at"] > 30:
             active = unit_active(value["unit"])
             if active is False:
+                now = time.time()
                 value.update(
                     state="failed" if value["state"] == "checking" else "unknown",
                     error="Updater exited without a final result. Inspect the host before retrying.",
+                    phase="failed" if value["state"] == "checking" else "unknown",
+                    phase_started_at=now,
+                    last_progress_at=now,
+                    progress=None,
                 )
                 self.journal.write(value)
             elif active is None:
+                now = time.time()
                 value.update(
                     state="unknown",
                     error="Could not determine updater unit state. Inspect the host before retrying.",
+                    phase="unknown",
+                    phase_started_at=now,
+                    last_progress_at=now,
+                    progress=None,
                 )
                 self.journal.write(value)
         return {**{k: value[k] for k in PUBLIC_FIELDS}, "source": self._source(),
@@ -260,7 +375,16 @@ class FocusUpdateController:
                 raise UpdateError("An update is active or its outcome is unknown")
             if current["state"] == "ready":
                 self._remove_staging(current)
-                self.journal.write({**current, "state": "failed", "error": "Source changed; prepare again"})
+                now = time.time()
+                self.journal.write({
+                    **current,
+                    "state": "failed",
+                    "error": "Source changed; prepare again",
+                    "phase": "failed",
+                    "phase_started_at": now,
+                    "last_progress_at": now,
+                    "progress": None,
+                })
             write_json(self.source_path, {"url": url, "branch": "main"})
             return self._snapshot()
 
@@ -286,22 +410,28 @@ class FocusUpdateController:
             if current["operation_id"]:
                 self._remove_staging(current)
             operation_id = secrets.token_hex(16)
+            now = time.time()
             value = dict(operation_id=operation_id, target=target, state="checking", requested_commit=requested,
                          resolved_commit="", operation_source=self._source() if target == "main" else None,
-                         message="Preparing source and dependencies",
+                         message="Preparing the update check",
                          error="", preflight={}, updated_at=time.time(), installation_started=False,
                          unit=f"focus-update-{operation_id}-check.service", bundle_sha256="",
-                         staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="")
+                         staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="",
+                         phase="starting", phase_started_at=now, last_progress_at=now, progress=None)
             self.journal.write(value)
             # Once launch is attempted its outcome may be ambiguous; never
             # repeat this POST. GET reconciles the exact unit and journal.
             try:
                 launch_worker(self.journal, operation_id, "check")
             except UpdateLaunchOutcomeUnknown as exc:
-                value.update(state="unknown", error=str(exc))
+                now = time.time()
+                value.update(state="unknown", error=str(exc), phase="unknown",
+                             phase_started_at=now, last_progress_at=now, progress=None)
                 self.journal.write(value)
             except Exception as exc:
-                value.update(state="failed", error=str(exc) or "Updater could not be started")
+                now = time.time()
+                value.update(state="failed", error=str(exc) or "Updater could not be started",
+                             phase="failed", phase_started_at=now, last_progress_at=now, progress=None)
                 self.journal.write(value)
             return self._snapshot()
 
@@ -313,15 +443,21 @@ class FocusUpdateController:
             if (not operation_id or operation_id != confirmation or operation_id != value["operation_id"]
                     or value["state"] != "ready"):
                 raise UpdateError("Only the exact prepared operation can be confirmed and applied")
+            now = time.time()
             value.update(state="applying", message="Rechecking before shutdown", error="",
-                         unit=f"focus-update-{operation_id}-apply.service")
+                         unit=f"focus-update-{operation_id}-apply.service", phase="apply_validate",
+                         phase_started_at=now, last_progress_at=now, progress=None)
             self.journal.write(value)
             try:
                 launch_worker(self.journal, operation_id, "apply")
             except UpdateLaunchOutcomeUnknown as exc:
-                value.update(state="unknown", error=str(exc))
+                now = time.time()
+                value.update(state="unknown", error=str(exc), phase="unknown",
+                             phase_started_at=now, last_progress_at=now, progress=None)
                 self.journal.write(value)
             except Exception as exc:
-                value.update(state="failed", error=str(exc) or "Updater could not be started")
+                now = time.time()
+                value.update(state="failed", error=str(exc) or "Updater could not be started",
+                             phase="failed", phase_started_at=now, last_progress_at=now, progress=None)
                 self.journal.write(value)
             return self._snapshot()

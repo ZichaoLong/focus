@@ -18,7 +18,7 @@ import urllib.parse
 import urllib.request
 import venv
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, Callable
 
 
 _GITHUB_REPOSITORY = "ZichaoLong/focus"
@@ -30,6 +30,7 @@ _DOWNLOAD_TIMEOUT_SECONDS = 60
 _PIP_DESTINATION_OPTIONS = frozenset({"target", "prefix", "root", "user"})
 _FALSE_CONFIG_VALUES = frozenset({"", "0", "false", "no", "off"})
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
+ProgressCallback = Callable[[str, str, int | None, int | None], None]
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -251,6 +252,7 @@ def _read_response_bytes(
     *,
     maximum: int,
     expected_size: int | None = None,
+    progress: Callable[[int, int | None], None] | None = None,
 ) -> bytes:
     try:
         with urllib.request.urlopen(  # noqa: S310 - URLs are fixed or GitHub-owned asset URLs.
@@ -258,6 +260,7 @@ def _read_response_bytes(
             timeout=_DOWNLOAD_TIMEOUT_SECONDS,
         ) as response:
             declared_length = response.headers.get("Content-Length")
+            parsed_length: int | None = None
             if declared_length is not None:
                 try:
                     parsed_length = int(declared_length)
@@ -267,7 +270,20 @@ def _read_response_bytes(
                     raise SystemExit("GitHub响应超过安装器允许的大小。")
                 if expected_size is not None and parsed_length != expected_size:
                     raise SystemExit("GitHub制品Content-Length与channel manifest不一致。")
-            payload = response.read(maximum + 1)
+            total = expected_size if expected_size is not None else parsed_length
+            received = 0
+            chunks: list[bytes] = []
+            if progress is not None:
+                progress(0, total)
+            while received <= maximum:
+                chunk = response.read(min(64 * 1024, maximum - received + 1))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                received += len(chunk)
+                if progress is not None and (total is None or received <= total):
+                    progress(received, total)
+            payload = b"".join(chunks)
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, socket.timeout) as exc:
         raise SystemExit(f"无法从GitHub读取安装制品：{exc}") from exc
     if len(payload) > maximum:
@@ -358,7 +374,11 @@ def _stable_release() -> dict[str, Any]:
 
 
 @contextlib.contextmanager
-def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
+def _resolved_install_bundle(
+    args: argparse.Namespace,
+    *,
+    progress: ProgressCallback | None = None,
+) -> Iterator[Any]:
     from bot.installation.install_bundle import (
         CHANNEL_MANIFEST_NAMES,
         InstallBundleError,
@@ -378,6 +398,8 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
         expected_build_id: str | None = None
         expected_source_revision: str | None = None
         if artifact is None:
+            if progress is not None:
+                progress("release_metadata", "Reading the latest stable Release", None, None)
             release = _stable_release()
             release_tag = release["tag_name"]
             channel_name = CHANNEL_MANIFEST_NAMES["stable"]
@@ -388,11 +410,21 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
             )
             if channel_size > _MAX_CHANNEL_MANIFEST_BYTES:
                 raise SystemExit("GitHub channel manifest超过安装器上限。")
+            if progress is not None:
+                progress("release_download", "Downloading the stable channel manifest", 0, channel_size)
             channel_raw = _read_response_bytes(
                 urllib.request.Request(channel_url, headers={"User-Agent": "focus-installer"}),
                 maximum=_MAX_CHANNEL_MANIFEST_BYTES,
                 expected_size=channel_size,
+                progress=(
+                    (lambda current, total: progress(
+                        "release_download", "Downloading the stable channel manifest", current, total
+                    ))
+                    if progress is not None else None
+                ),
             )
+            if progress is not None:
+                progress("release_verify", "Verifying the stable Release metadata", None, None)
             manifest = parse_channel_manifest(channel_raw, expected_channel="stable")
             if manifest.release_tag != release_tag:
                 raise SystemExit("channel manifest的release_tag与GitHub Release不一致。")
@@ -406,13 +438,23 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
             if bundle_size != manifest.bundle.size:
                 raise SystemExit("GitHub asset size与channel manifest不一致。")
             artifact = root / manifest.bundle.name
+            if progress is not None:
+                progress("release_download", "Downloading the stable Focus bundle", 0, bundle_size)
             artifact.write_bytes(
                 _read_response_bytes(
                     urllib.request.Request(bundle_url, headers={"User-Agent": "focus-installer"}),
                     maximum=manifest.bundle.size,
                     expected_size=manifest.bundle.size,
+                    progress=(
+                        (lambda current, total: progress(
+                            "release_download", "Downloading the stable Focus bundle", current, total
+                        ))
+                        if progress is not None else None
+                    ),
                 )
             )
+            if progress is not None:
+                progress("release_verify", "Verifying the stable Focus bundle", None, None)
             if sha256_file(artifact) != manifest.bundle.sha256:
                 raise SystemExit("GitHub bundle SHA-256与channel manifest不一致。")
             expected_channel = manifest.channel
@@ -423,6 +465,8 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
             artifact = artifact.expanduser()
 
         try:
+            if progress is not None:
+                progress("bundle_validate", "Validating the Focus install bundle", None, None)
             bundle = validate_install_bundle(
                 artifact,
                 extraction_dir=root / "validated",

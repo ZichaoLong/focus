@@ -62,6 +62,13 @@ single-flight refusal remains required. When that refusal is received, the brows
 the current status and explains that another operation is active instead of submitting a
 second check.
 
+The updater persists a bounded fixed `phase`, phase-start time, last-real-progress time,
+and optional byte progress in the journal. Stable download phases report received/total
+bytes when the response supplies a size. Raw Git/npm/pip output is not projected into the
+browser or a public journal, preventing credential-bearing URLs from leaking. Phase timing
+is diagnostic evidence and must not be used to invent percentages for unreported build or
+dependency work.
+
 If a status read temporarily fails, the browser may continue polling at a bounded cadence but must mark
 the last known status stale; a network error is not evidence that the operation ended. An
 `unknown` result blocks new checks and applies until an operator inspects the service and

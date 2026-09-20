@@ -84,8 +84,30 @@ class UpdateJournalTests(unittest.TestCase):
 
             migrated = controller.journal.read()
 
-            self.assertEqual(migrated["schema"], "focus-web-update-2")
+            self.assertEqual(migrated["schema"], "focus-web-update-3")
             self.assertEqual(migrated["target"], "main")
+            self.assertEqual(migrated["phase"], "ready")
+            self.assertIsNone(migrated["progress"])
+
+    def test_progress_persists_phase_and_byte_count(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
+            with patch("bot.installation.update.unavailable_reason", return_value=""):
+                with patch("bot.installation.update.launch_worker"):
+                    started = controller.start_check("stable", "")
+            controller.journal.progress(
+                started["operation_id"],
+                "checking",
+                phase="release_download",
+                message="Downloading the stable Focus bundle",
+                progress={"current": 128, "total": 256, "unit": "bytes"},
+            )
+
+            observed = controller.snapshot()
+
+            self.assertEqual(observed["phase"], "release_download")
+            self.assertEqual(observed["progress"], {"current": 128, "total": 256, "unit": "bytes"})
+            self.assertEqual(observed["message"], "Downloading the stable Focus bundle")
 
     def test_launch_failure_is_settled_as_failed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

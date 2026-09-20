@@ -432,6 +432,34 @@ class InstallTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "不受信任"):
             install._asset_download_url(asset, expected_name="focus.zip")
 
+    def test_release_download_reports_bounded_byte_progress(self) -> None:
+        class Response:
+            headers = {"Content-Length": "6"}
+
+            def __init__(self) -> None:
+                self.chunks = [b"abc", b"def"]
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args) -> None:
+                return None
+
+            def read(self, _size: int) -> bytes:
+                return self.chunks.pop(0) if self.chunks else b""
+
+        progress: list[tuple[int, int | None]] = []
+        with patch("bot.installation.installer.urllib.request.urlopen", return_value=Response()):
+            payload = install._read_response_bytes(
+                install.urllib.request.Request("https://github.com/example/focus.zip"),
+                maximum=10,
+                expected_size=6,
+                progress=lambda current, total: progress.append((current, total)),
+            )
+
+        self.assertEqual(payload, b"abcdef")
+        self.assertEqual(progress, [(0, 6), (3, 6), (6, 6)])
+
     def test_artifact_failure_happens_before_managed_transaction(self) -> None:
         @contextlib.contextmanager
         def fail_resolution(_args: argparse.Namespace):

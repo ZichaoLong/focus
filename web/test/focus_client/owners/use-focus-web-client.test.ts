@@ -256,6 +256,16 @@ function updateStatus(
     updated_at: 1,
     restart_required: state === 'applying',
     installation_started: false,
+    phase: state === 'idle'
+      ? 'idle'
+      : state === 'checking'
+        ? 'starting'
+        : state === 'applying'
+          ? 'apply_validate'
+          : state,
+    phase_started_at: 1,
+    last_progress_at: 1,
+    progress: null,
   };
 }
 

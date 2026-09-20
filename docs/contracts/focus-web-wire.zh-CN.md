@@ -107,6 +107,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `update_state`；更新动作不授予 thread 或 writer authority。
 - v19 为更新状态增加本次 operation 固定的 `operation_source` 与 `installation_started`，使来源漂移和停服后
   的失败/未知结果可以被浏览器如实展示。v18 browser 不保留兼容 decoder；服务与静态资源仍必须同版本部署。
+- v20 为更新状态增加持久化 `phase`、阶段开始/最近进展时间与受限的字节 `progress`，使长时间检查可以显示
+  当前阶段和实际下载进度；不透传 Git/npm/pip 原始输出。v19 browser 不保留兼容 decoder；服务与静态资源仍必须
+  同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身

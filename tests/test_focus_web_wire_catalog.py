@@ -120,7 +120,7 @@ def _assert_catalog_record(
 
 class FocusWebWireCatalogTests(unittest.TestCase):
     def test_internal_interaction_scope_does_not_cross_v19_wire(self) -> None:
-        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 19)
+        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 20)
         pending = project_pending_request(
             {
                 "request_key": "request-1",

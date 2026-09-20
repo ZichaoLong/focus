@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 19
+FOCUS_WEB_WIRE_VERSION: Final = 20
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -392,6 +392,14 @@ FOCUS_WEB_ENUMS: Final = (
     _enum("focus_install_channel", "stable local"),
     _enum("update_target", "stable main"),
     _enum("update_state", "idle checking ready applying succeeded failed unknown"),
+    _enum(
+        "update_phase",
+        "idle starting disk_preflight release_metadata release_download release_verify "
+        "source_clone source_revision node_preflight npm_install web_build bundle_build "
+        "bundle_validate python_preflight dependency_download wheelhouse_verify final_disk_check "
+        "apply_validate apply_prepare apply_install apply_restart ready succeeded failed unknown",
+    ),
+    _enum("update_progress_unit", "bytes"),
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
@@ -503,11 +511,17 @@ FOCUS_WEB_RECORDS: Final = (
     ),
     _record("update_source", "FocusUpdateSource", "url branch"),
     _record(
+        "update_progress",
+        "FocusUpdateProgress",
+        "current total unit",
+        "unit:update_progress_unit",
+    ),
+    _record(
         "update_status",
         "FocusUpdateStatus",
         "source operation_source operation_id target state requested_commit resolved_commit message error "
-        "preflight updated_at restart_required installation_started",
-        "state:update_state target:update_target",
+        "preflight updated_at restart_required installation_started phase phase_started_at last_progress_at progress",
+        "state:update_state target:update_target phase:update_phase",
     ),
     _record(
         "operator_warning",

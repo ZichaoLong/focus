@@ -33,6 +33,37 @@ const elapsed = computed(() => {
   const seconds = Math.max(0, Math.floor((now.value - props.observedAt) / 1000));
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 });
+const phaseLabel = computed(() => {
+  const phase = props.status?.phase;
+  return phase ? t(`focus.updatePhase_${phase}`) : '';
+});
+const phaseElapsed = computed(() => {
+  const startedAt = props.status?.phase_started_at;
+  if (!startedAt) return '';
+  const seconds = Math.max(0, Math.floor((now.value - startedAt * 1000) / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+});
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KiB', 'MiB', 'GiB'];
+  let value = bytes;
+  let unit = 'B';
+  for (const candidate of units) {
+    value /= 1024;
+    unit = candidate;
+    if (value < 1024 || candidate === units[units.length - 1]) break;
+  }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${unit}`;
+}
+const progressText = computed(() => {
+  const progress = props.status?.progress;
+  if (!progress) return '';
+  const current = formatBytes(progress.current);
+  if (progress.total === null) return current;
+  const total = formatBytes(progress.total);
+  const percent = Math.min(100, Math.floor((progress.current / progress.total) * 100));
+  return `${current} / ${total} (${percent}%)`;
+});
 const heading = computed(() => {
   if (props.status?.state === 'checking') {
     return t('focus.updateChecking', { target: props.status.target });
@@ -53,6 +84,18 @@ const heading = computed(() => {
     </div>
     <p v-if="active">{{ t('focus.updateBackground') }}</p>
     <p v-if="active && observedAt">{{ t('focus.updateElapsed', { elapsed }) }}</p>
+    <p v-if="active && phaseLabel">
+      {{ t('focus.updateCurrentPhase', { phase: phaseLabel }) }}
+    </p>
+    <p v-if="active && phaseElapsed">
+      {{ t('focus.updatePhaseElapsed', { elapsed: phaseElapsed }) }}
+    </p>
+    <p v-if="active && progressText">
+      {{ t('focus.updateProgress', { progress: progressText }) }}
+    </p>
+    <p v-if="active && status?.last_progress_at">
+      {{ t('focus.updateLastProgress', { time: new Date(status.last_progress_at * 1000).toLocaleString(locale) }) }}
+    </p>
     <p v-if="status?.updated_at">
       {{ t('focus.updateLastRecorded', { time: new Date(status.updated_at * 1000).toLocaleString(locale) }) }}
     </p>

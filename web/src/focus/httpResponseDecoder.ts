@@ -37,6 +37,7 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusUpdateProgress,
   FocusUpdateStatus,
   FocusUnknownLifecycleMutation,
   FocusWriterProfile,
@@ -505,6 +506,17 @@ export const decodeFocusMeta: FocusHttpDecoder<FocusMeta> = (value) => {
 
 export const decodeFocusOperatorStatusResponse = decodeFocusOperatorStatus;
 
+function isFocusUpdateProgress(value: unknown): value is FocusUpdateProgress {
+  if (
+    !isRequiredRecord('update_progress', value)
+    || !hasExactRequiredFields('update_progress', value)
+    || !isNonNegativeSafeInteger(value.current)
+    || (value.total !== null && !isPositiveSafeInteger(value.total))
+    || !isFocusWebWireEnum('update_progress_unit', value.unit)
+  ) return false;
+  return value.total === null || value.current <= value.total;
+}
+
 function isFocusUpdateSource(value: unknown): boolean {
   return isRequiredRecord('update_source', value)
     && hasExactRequiredFields('update_source', value)
@@ -546,6 +558,10 @@ export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (val
     || !isNonNegativeFiniteNumber(value.updated_at)
     || typeof value.restart_required !== 'boolean'
     || typeof value.installation_started !== 'boolean'
+    || !isFocusWebWireEnum('update_phase', value.phase)
+    || !isNonNegativeFiniteNumber(value.phase_started_at)
+    || !isNonNegativeFiniteNumber(value.last_progress_at)
+    || (value.progress !== null && !isFocusUpdateProgress(value.progress))
   ) return null;
   if (value.operation_id === '' && value.operation_source !== null) return null;
   if (value.operation_id !== '' && value.target === 'main' && value.operation_source === null) return null;
