@@ -66,6 +66,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const updateStatus = ref<FocusUpdateStatus | null>(null);
   const updateLoading = ref(false);
   const updateBusy = ref(false);
+  const updateStatusStale = ref(false);
+  const updateNotice = ref('');
+  const updateObservedAt = ref(0);
+  const updateApplyStarted = ref(false);
+  const updateOperationActive = computed(() => (
+    updateStatus.value?.state === 'checking' || updateStatus.value?.state === 'applying'
+    || updateApplyStarted.value
+  ));
+  const updateActionsDisabled = computed(() => (
+    updateBusy.value || updateLoading.value || updateOperationActive.value
+    || updateStatusStale.value || updateStatus.value?.state === 'unknown'
+  ));
   const authRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
@@ -77,7 +89,6 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   let operatorStatusRefreshPromise: Promise<void> | null = null;
   let updatePollTimer: ReturnType<typeof setTimeout> | null = null;
   let updateReloadTimer: ReturnType<typeof setTimeout> | null = null;
-  let updateApplyStarted = false;
   let updateApplyStartedAt = 0;
   const intentClock = new ClientIntentClock();
   const turnWindow = createBrowserTurnWindow();
@@ -558,7 +569,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearUpdatePoll();
     if (navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
     const state = updateStatus.value?.state;
-    if (state !== 'checking' && state !== 'applying' && !updateApplyStarted) return;
+    if (state !== 'checking' && state !== 'applying' && !updateApplyStarted.value) return;
     updatePollTimer = setTimeout(() => {
       updatePollTimer = null;
       void refreshUpdateStatus({ silent: true });
@@ -566,12 +577,35 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   async function refreshUpdateStatus(options: { silent?: boolean } = {}): Promise<void> {
-    if (navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
+    if (updateBusy.value) return;
+    await readUpdateStatus(options);
+  }
+
+  function installUpdateStatus(observed: FocusUpdateStatus): void {
+    if (observed.operation_id !== updateStatus.value?.operation_id
+      || observed.state !== updateStatus.value?.state) {
+      updateObservedAt.value = Date.now();
+    }
+    updateStatus.value = observed;
+    updateStatusStale.value = false;
+    if (observed.state === 'applying' && !updateApplyStarted.value) {
+      updateApplyStarted.value = true;
+      updateApplyStartedAt = Date.now();
+    } else if (observed.state !== 'applying' && observed.state !== 'succeeded') {
+      updateApplyStarted.value = false;
+      updateApplyStartedAt = 0;
+    }
+    if (!updateOperationActive.value) updateNotice.value = '';
+  }
+
+  async function readUpdateStatus(options: { silent?: boolean } = {}): Promise<void> {
+    if (updateLoading.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
     updateLoading.value = true;
     try {
       const observed = await api.updateStatus();
-      updateStatus.value = observed;
-      if (observed.state === 'succeeded' && updateApplyStarted && updateReloadTimer === null) {
+      if (navigation.isDisposed) return;
+      installUpdateStatus(observed);
+      if (observed.state === 'succeeded' && updateApplyStarted.value && updateReloadTimer === null) {
         updateReloadTimer = setTimeout(() => {
           updateReloadTimer = null;
           window.location.reload();
@@ -579,12 +613,14 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       }
       scheduleUpdatePoll();
     } catch (error) {
+      if (navigation.isDisposed) return;
+      updateStatusStale.value = true;
       // The old process intentionally loses its memory-only session during a
       // restart. A 401/409 after an apply is therefore positive evidence that
       // the new process is reachable, but not evidence that the installation
       // succeeded; reload the complete document and let the new process report
       // its durable journal. Network failures remain bounded and visible.
-      if (updateApplyStarted) {
+      if (updateApplyStarted.value) {
         const elapsed = Date.now() - updateApplyStartedAt;
         const knownNewProcess = error instanceof FocusApiError
           && (error.status === 401 || error.code === 'document_unregistered' || error.code === 'document_replaced');
@@ -601,59 +637,87 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
           clearUpdatePoll();
           reportError(new Error('Focus 更新器未能在限定时间内恢复；请检查 service 状态和更新 journal。'));
         }
-      } else if (!options.silent) {
-        reportError(error);
+      } else {
+        if (!reportFatalError(error) && !options.silent) reportError(error);
+        scheduleUpdatePoll();
       }
     } finally {
       updateLoading.value = false;
     }
   }
 
+  async function reconcileUpdateRejection(error: unknown): Promise<void> {
+    if (navigation.isDisposed) return;
+    if (error instanceof FocusApiError && error.status === 409 && error.code === 'update_rejected') {
+      await readUpdateStatus();
+      if (navigation.isDisposed) return;
+      if (!updateStatusStale.value && updateOperationActive.value) {
+        updateNotice.value = i18n.global.t('focus.updateAlreadyActive');
+        return;
+      }
+    }
+    reportError(error);
+  }
+
   async function configureUpdateSource(url: string): Promise<void> {
-    if (updateBusy.value || navigation.isDisposed) return;
+    if (updateActionsDisabled.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
+    clearUpdatePoll();
     updateBusy.value = true;
+    updateNotice.value = '';
     errorMessage.value = '';
     try {
-      updateStatus.value = await api.configureUpdateSource(url.trim(), 'change-source');
+      const observed = await api.configureUpdateSource(url.trim(), 'change-source');
+      if (!navigation.isDisposed) installUpdateStatus(observed);
     } catch (error) {
-      reportError(error);
+      await reconcileUpdateRejection(error);
     } finally {
       updateBusy.value = false;
     }
   }
 
   async function checkUpdate(target: 'stable' | 'main', commit: string): Promise<void> {
-    if (updateBusy.value || navigation.isDisposed) return;
+    if (updateActionsDisabled.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
+    clearUpdatePoll();
     updateBusy.value = true;
-    updateApplyStarted = false;
+    updateNotice.value = '';
+    updateApplyStarted.value = false;
     updateApplyStartedAt = 0;
     errorMessage.value = '';
     try {
-      updateStatus.value = await api.checkUpdate(target, commit.trim());
+      const observed = await api.checkUpdate(target, commit.trim());
+      if (navigation.isDisposed) return;
+      installUpdateStatus(observed);
       scheduleUpdatePoll();
     } catch (error) {
-      reportError(error);
+      await reconcileUpdateRejection(error);
     } finally {
       updateBusy.value = false;
     }
   }
 
   async function applyUpdate(operationId: string): Promise<void> {
-    if (updateBusy.value || navigation.isDisposed) return;
+    if (updateActionsDisabled.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value
+      || updateStatus.value?.state !== 'ready' || updateStatus.value.operation_id !== operationId) return;
+    clearUpdatePoll();
     updateBusy.value = true;
-    updateApplyStarted = true;
+    updateNotice.value = '';
+    updateApplyStarted.value = true;
+    updateObservedAt.value = Date.now();
     updateApplyStartedAt = Date.now();
     errorMessage.value = '';
     try {
-      updateStatus.value = await api.applyUpdate(operationId, operationId);
+      const observed = await api.applyUpdate(operationId, operationId);
+      if (navigation.isDisposed) return;
+      installUpdateStatus(observed);
       scheduleUpdatePoll();
     } catch (error) {
+      if (navigation.isDisposed) return;
       const preEffect = error instanceof FocusApiError
         && error.effectEvidence === 'pre_effect';
       if (preEffect) {
-        updateApplyStarted = false;
+        updateApplyStarted.value = false;
         updateApplyStartedAt = 0;
-        reportError(error);
+        await reconcileUpdateRejection(error);
       } else {
         // The POST may have reached the updater just before the service went
         // away. Keep the operation in the unknown/reconnect path instead of
@@ -880,6 +944,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     updateStatus,
     updateLoading,
     updateBusy,
+    updateOperationActive,
+    updateActionsDisabled,
+    updateStatusStale,
+    updateNotice,
+    updateObservedAt,
     conversationLoading,
     starting,
     loadingMore: historyNavigation.loading,

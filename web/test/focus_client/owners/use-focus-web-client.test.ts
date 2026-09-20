@@ -12,6 +12,7 @@ import type {
   FocusThreadToolDetailScanPage,
   FocusThreadSummary,
   FocusToolInspectionLocator,
+  FocusUpdateStatus,
   FocusWriterProfileResult,
 } from '../../../src/focus/types';
 import { FocusApiError } from '../../../src/focus/types';
@@ -234,6 +235,30 @@ function snapshot(revision: number, title: string): FocusThreadSnapshot {
   };
 }
 
+function updateStatus(
+  state: FocusUpdateStatus['state'],
+  target: FocusUpdateStatus['target'] = state === 'idle' ? '' : 'main',
+): FocusUpdateStatus {
+  const operationId = state === 'idle' ? '' : 'b'.repeat(32);
+  return {
+    source: { url: 'https://example.com/focus.git', branch: 'main' },
+    operation_source: target === 'main'
+      ? { url: 'https://example.com/focus.git', branch: 'main' }
+      : null,
+    operation_id: operationId,
+    target,
+    state,
+    requested_commit: '',
+    resolved_commit: '',
+    message: state === 'checking' ? 'Preparing source and dependencies' : '',
+    error: '',
+    preflight: {},
+    updated_at: 1,
+    restart_required: state === 'applying',
+    installation_started: false,
+  };
+}
+
 function selectedSnapshot(
   threadId: string,
   title: string,
@@ -275,6 +300,7 @@ interface EventHandlers {
 
 function testApi(intentGenerationFloor = 0) {
   let handlers: EventHandlers | null = null;
+  let currentUpdateStatus = updateStatus('idle');
   const socket = { close: vi.fn() } as unknown as WebSocket;
   const api = {
     clientId: 'client-1',
@@ -284,6 +310,16 @@ function testApi(intentGenerationFloor = 0) {
     meta: vi.fn(async () => meta(0)),
     backendResetPreview: vi.fn(async () => backendResetPreview()),
     backendResetExecute: vi.fn(),
+    updateStatus: vi.fn(async () => structuredClone(currentUpdateStatus)),
+    configureUpdateSource: vi.fn(async () => structuredClone(currentUpdateStatus)),
+    checkUpdate: vi.fn(async (target: 'stable' | 'main') => {
+      currentUpdateStatus = updateStatus('checking', target);
+      return structuredClone(currentUpdateStatus);
+    }),
+    applyUpdate: vi.fn(async () => {
+      currentUpdateStatus = updateStatus('applying');
+      return structuredClone(currentUpdateStatus);
+    }),
     listThreads: vi.fn(async () => threadList(0, 'Initial')),
     readThread: vi.fn(async () => snapshot(0, 'Initial')),
     readToolDetail: vi.fn(async (
@@ -422,6 +458,45 @@ describe('useFocusWebClient runtime notice routing', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(fake.api.readThread).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+});
+
+describe('useFocusWebClient update operation state', () => {
+  it('keeps update actions disabled while a background check is still running', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+
+    await client.checkUpdate('main', '');
+
+    expect(fake.api.checkUpdate).toHaveBeenCalledOnce();
+    expect(client.updateOperationActive.value).toBe(true);
+    expect(client.updateActionsDisabled.value).toBe(true);
+
+    await client.checkUpdate('stable', '');
+    expect(fake.api.checkUpdate).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+
+  it('reconciles a concurrent-operation refusal into the durable active status', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const active = updateStatus('checking', 'stable');
+    vi.mocked(fake.api.checkUpdate).mockRejectedValueOnce(new FocusApiError(
+      'An update is active or its outcome is unknown',
+      { status: 409, code: 'update_rejected' },
+    ));
+    vi.mocked(fake.api.updateStatus).mockResolvedValueOnce(active);
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+
+    await client.checkUpdate('stable', '');
+
+    expect(client.updateStatus.value).toMatchObject({ state: 'checking', target: 'stable' });
+    expect(client.updateNotice.value).not.toBe('');
+    expect(client.updateActionsDisabled.value).toBe(true);
     client.dispose();
   });
 });

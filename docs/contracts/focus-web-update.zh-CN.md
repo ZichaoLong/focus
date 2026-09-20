@@ -47,6 +47,16 @@ index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据�
 失败时 operation 为 `failed`，旧服务继续运行。成功时 operation 为 `ready`，
 只保留一个精确 target/commit 的 staging 结果，不接受隐式 fallback。
 
+`checking` 与 `applying` 是持久化的长操作状态，不等同于启动 updater 的 HTTP 请求已经结束。
+浏览器必须持续轮询并显示当前目标、阶段消息、operation id 与最近记录；在这两个状态期间，
+检查另一个目标、修改更新源和应用其它 operation 都必须禁用。关闭“关于”面板不会取消操作，
+重新打开后应先读取同一份 journal。多个浏览器标签页仍可能同时发起请求，因此后端的 single-flight
+拒绝必须保留；收到该拒绝时，浏览器应读取当前状态并说明已有操作，而不是重发第二个检查。
+
+如果状态读取暂时失败，浏览器可以按有限频率继续轮询，但必须把最后已知状态标记为过期，不能把网络错误
+解释为操作已结束。`unknown` 结果表示边界不明；在主机检查 service 和 journal 前，浏览器不得
+开始新的检查或应用。
+
 如果一次 check 的启动结果为 `unknown`，但对应的 check transient unit 已明确 inactive
 且尚未进入安装阶段，用户再次显式点击检查可以替换这个旧 operation；apply 阶段的
 `unknown` 始终需要人工检查，不会被新的检查覆盖。

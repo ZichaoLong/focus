@@ -7,6 +7,7 @@ import Select from '../components/ui/Select.vue';
 import Button from '../components/ui/Button.vue';
 import Banner from '../components/ui/Banner.vue';
 import Icon from '../components/ui/Icon.vue';
+import FocusUpdateProgress from './FocusUpdateProgress.vue';
 import {
   isComposerSendShortcut,
   type ComposerSendShortcut,
@@ -49,6 +50,11 @@ const props = defineProps<{
   updateStatus: FocusUpdateStatus | null;
   updateLoading: boolean;
   updateBusy: boolean;
+  updateOperationActive: boolean;
+  updateActionsDisabled: boolean;
+  updateStatusStale: boolean;
+  updateNotice: string;
+  updateObservedAt: number;
 }>();
 
 const emit = defineEmits<{
@@ -465,13 +471,13 @@ function setComposerSendShortcut(value: string): void {
           <div class="update-card">
             <label class="update-field">
               <span class="settings-label">{{ t('focus.updateSource') }}</span>
-              <input v-model="updateSourceUrl" type="url" autocomplete="off" spellcheck="false" />
+              <input v-model="updateSourceUrl" type="url" autocomplete="off" spellcheck="false" :disabled="updateActionsDisabled" />
             </label>
             <div class="update-actions">
               <Button
                 size="sm"
                 variant="secondary"
-                :disabled="updateBusy || !updateSourceUrl.trim()"
+                :disabled="updateActionsDisabled || !updateSourceUrl.trim()"
                 @click="emit('configureUpdateSource', updateSourceUrl.trim())"
               >
                 {{ t('focus.updateSaveSource') }}
@@ -481,6 +487,15 @@ function setComposerSendShortcut(value: string): void {
           </div>
 
           <div class="update-card">
+            <FocusUpdateProgress
+              :status="updateStatus"
+              :active="updateOperationActive"
+              :busy="updateBusy"
+              :stale="updateStatusStale"
+              :notice="updateNotice"
+              :observed-at="updateObservedAt"
+              :visible="open && section === 'about'"
+            />
             <label class="update-field">
               <span class="settings-label">{{ t('focus.updateMainCommit') }}</span>
               <input
@@ -489,14 +504,14 @@ function setComposerSendShortcut(value: string): void {
                 autocomplete="off"
                 spellcheck="false"
                 :placeholder="t('focus.updateCommitPlaceholder')"
+                :disabled="updateActionsDisabled"
               />
             </label>
             <div class="update-actions">
               <Button
                 size="sm"
                 variant="secondary"
-                :loading="updateBusy || updateLoading"
-                :disabled="updateBusy || updateLoading"
+                :disabled="updateActionsDisabled"
                 @click="emit('checkUpdate', 'main', updateCommit.trim())"
               >
                 {{ t('focus.updateCheckMain') }}
@@ -504,8 +519,7 @@ function setComposerSendShortcut(value: string): void {
               <Button
                 size="sm"
                 variant="secondary"
-                :loading="updateBusy || updateLoading"
-                :disabled="updateBusy || updateLoading"
+                :disabled="updateActionsDisabled"
                 @click="emit('checkUpdate', 'stable', '')"
               >
                 {{ t('focus.updateCheckStable') }}
@@ -514,15 +528,23 @@ function setComposerSendShortcut(value: string): void {
                 v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"
                 size="sm"
                 variant="primary"
-                :loading="updateBusy"
-                :disabled="updateBusy"
+                :disabled="updateActionsDisabled"
                 @click="emit('applyUpdate', updateStatus.operation_id)"
               >
                 {{ t('focus.updateApply') }}
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                :loading="updateLoading"
+                :disabled="updateBusy || updateLoading"
+                @click="emit('refreshUpdate')"
+              >
+                {{ t('focus.updateRefresh') }}
+              </Button>
             </div>
             <dl v-if="updateStatus" class="update-status">
-              <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ updateStatus.state }}</dd></div>
+              <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ t(`focus.updateState_${updateStatus.state}`) }}</dd></div>
               <div v-if="updateStatus.target"><dt>{{ t('focus.updateTarget') }}</dt><dd>{{ updateStatus.target }}</dd></div>
               <div v-if="updateStatus.operation_id" class="update-operation-id">
                 <dt>{{ t('focus.updateOperationId') }}</dt>

@@ -52,6 +52,21 @@ so preflight uses the same package and network authorities as that user's instal
 A failure is recorded as `failed` while the old service continues running. A successful
 check is `ready` for one exact target/commit and has no implicit fallback.
 
+`checking` and `applying` are durable long-running states; they do not mean that the
+updater's admission HTTP request has finished the work. The browser must keep polling
+and show the current target, stage message, operation id, and latest recorded time. While
+either state is active, checking another target, changing the source, and applying a
+different operation are disabled. Closing the About panel does not cancel the operation;
+reopening it reads the same journal. Multiple browser tabs can still race, so the backend
+single-flight refusal remains required. When that refusal is received, the browser reads
+the current status and explains that another operation is active instead of submitting a
+second check.
+
+If a status read temporarily fails, the browser may continue polling at a bounded cadence but must mark
+the last known status stale; a network error is not evidence that the operation ended. An
+`unknown` result blocks new checks and applies until an operator inspects the service and
+journal on the host.
+
 If a check is recorded as `unknown` but its check transient unit is definitively inactive
 and installation never started, a new explicit check may replace that stale operation.
 An `unknown` apply operation remains blocked for manual inspection and cannot be replaced
