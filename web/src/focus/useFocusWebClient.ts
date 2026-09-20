@@ -622,14 +622,14 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     }
   }
 
-  async function checkUpdate(commit: string): Promise<void> {
+  async function checkUpdate(target: 'stable' | 'main', commit: string): Promise<void> {
     if (updateBusy.value || navigation.isDisposed) return;
     updateBusy.value = true;
     updateApplyStarted = false;
     updateApplyStartedAt = 0;
     errorMessage.value = '';
     try {
-      updateStatus.value = await api.checkUpdate(commit.trim());
+      updateStatus.value = await api.checkUpdate(target, commit.trim());
       scheduleUpdatePoll();
     } catch (error) {
       reportError(error);

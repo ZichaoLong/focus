@@ -9,6 +9,7 @@ function source(relativePath: string): string {
 describe('Focus Web turn-window settings surface', () => {
   it('offers only 5, 10, and 20 and wires the browser-local owner', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
     const dialog = source('../src/focus/FocusSettingsDialog.vue');
     const en = source('../src/i18n/locales/en/focus.ts');
     const zh = source('../src/i18n/locales/zh/focus.ts');
@@ -19,8 +20,9 @@ describe('Focus Web turn-window settings surface', () => {
     expect(dialog).toContain('<option value="5">5</option>');
     expect(dialog).toContain('<option value="10">10</option>');
     expect(dialog).toContain('<option value="20">20</option>');
-    expect(app).toContain(':turn-window-limit="client.turnWindowLimit.value"');
-    expect(app).toContain('@set-turn-window-limit="client.setTurnWindowLimit($event)"');
+    expect(settingsSurface).toContain(':turn-window-limit="props.client.turnWindowLimit.value"');
+    expect(settingsSurface).toContain('@set-turn-window-limit="props.client.setTurnWindowLimit($event)"');
+    expect(app).toContain('<FocusSettingsSurface');
     expect(en).toContain('turnWindowDescription:');
     expect(zh).toContain('turnWindowDescription:');
   });

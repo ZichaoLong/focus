@@ -15,8 +15,6 @@ from bot.installation.install_bundle import (
     CHANNEL_MANIFEST_NAMES,
     InstallBundleError,
     ChannelManifest,
-    development_release_tag,
-    is_development_release_tag,
     parse_channel_manifest,
     sha256_file,
     validate_install_bundle,
@@ -24,7 +22,6 @@ from bot.installation.install_bundle import (
 
 
 DEFAULT_REPOSITORY = "ZichaoLong/focus"
-DEFAULT_DEVELOPMENT_RETENTION = 5
 
 _COMMIT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
@@ -291,114 +288,6 @@ class GitHubReleaseClient:
             git_object = tag_payload.get("object")
         raise GitHubPublicationError(f"GitHub tag {tag} annotated tag嵌套过深")
 
-    def _validate_development_release(
-        self,
-        release: ReleaseState,
-        *,
-        source_revision: str,
-        allow_draft: bool,
-    ) -> None:
-        if not is_development_release_tag(release.tag) or not release.prerelease:
-            raise GitHubPublicationError(
-                "development bundle只能发布到唯一命名的prerelease"
-            )
-        if release.draft and not allow_draft:
-            raise GitHubPublicationError("development Release仍是draft")
-        if release.target_commitish != source_revision:
-            raise GitHubPublicationError(
-                "development Release target_commitish与source_revision不一致"
-            )
-        if not release.draft:
-            if not release.published_at:
-                raise GitHubPublicationError("development prerelease缺少published_at")
-            if self.tag_commit(release.tag) != source_revision:
-                raise GitHubPublicationError(
-                    "development Release tag与source_revision不一致"
-                )
-
-    def development_release(
-        self,
-        *,
-        tag: str,
-        source_revision: str,
-        build_id: str,
-    ) -> ReleaseState:
-        if tag != development_release_tag(build_id):
-            raise GitHubPublicationError("development Release tag与build_id不一致")
-        existing_revision = self.tag_commit(tag)
-        if existing_revision is not None and existing_revision != source_revision:
-            raise GitHubPublicationError(
-                "development Release tag已指向其他source revision"
-            )
-        release = self.release(tag)
-        if release is None:
-            result = self._run(
-                "release",
-                "create",
-                tag,
-                "--repo",
-                self.repository,
-                "--target",
-                source_revision,
-                "--title",
-                f"Focus development build {build_id}",
-                "--notes",
-                (
-                    "Explicitly published installable development build. "
-                    f"Source revision: `{source_revision}`. "
-                    "Use `install.sh --channel development`."
-                ),
-                "--draft",
-                "--prerelease",
-            )
-            # A transport failure can still have created the draft. Read it
-            # back before classifying the external outcome.
-            release = self.release(tag)
-            if release is None:
-                raise GitHubPublicationError(
-                    "创建development draft后无法证明其存在："
-                    f"{result.stderr.strip() or 'unknown outcome'}"
-                )
-        self._validate_development_release(
-            release,
-            source_revision=source_revision,
-            allow_draft=True,
-        )
-        return release
-
-    def publish_development_release(
-        self,
-        release: ReleaseState,
-        *,
-        source_revision: str,
-    ) -> ReleaseState:
-        if release.draft:
-            result = self._run(
-                "release",
-                "edit",
-                release.tag,
-                "--repo",
-                self.repository,
-                "--draft=false",
-                "--prerelease",
-            )
-            refreshed = self.release_by_id(
-                release.release_id,
-                expected_tag=release.tag,
-            )
-            if refreshed is None:
-                raise GitHubPublicationError(
-                    "发布development prerelease后无法证明其存在："
-                    f"{result.stderr.strip() or 'unknown outcome'}"
-                )
-            release = refreshed
-        self._validate_development_release(
-            release,
-            source_revision=source_revision,
-            allow_draft=False,
-        )
-        return release
-
     def stable_release(self, tag: str, *, source_revision: str) -> ReleaseState:
         release = self.release(tag)
         if release is None:
@@ -490,53 +379,6 @@ class GitHubReleaseClient:
             )
         return refreshed
 
-    def development_releases(self) -> tuple[ReleaseState, ...]:
-        releases: list[ReleaseState] = []
-        for raw_release in self._release_payloads():
-            tag = raw_release.get("tag_name")
-            if not is_development_release_tag(tag):
-                continue
-            release = self._release_state(raw_release, expected_tag=tag)
-            if release.draft:
-                continue
-            if not release.prerelease or not release.published_at:
-                raise GitHubPublicationError(
-                    f"development tag {release.tag}不是完整published prerelease"
-                )
-            releases.append(release)
-        return tuple(releases)
-
-    def delete_development_release_best_effort(
-        self,
-        release: ReleaseState,
-    ) -> str | None:
-        result = self._run(
-            "release",
-            "delete",
-            release.tag,
-            "--repo",
-            self.repository,
-            "--cleanup-tag",
-            "--yes",
-        )
-        try:
-            remaining_release = self.release_by_id(
-                release.release_id,
-                expected_tag=release.tag,
-            )
-            remaining_revision = self.tag_commit(release.tag)
-        except GitHubPublicationError as exc:
-            return str(exc)
-        if remaining_release is None and remaining_revision is None:
-            return None
-        state = []
-        if remaining_release is not None:
-            state.append("Release remains")
-        if remaining_revision is not None:
-            state.append("tag remains")
-        details = result.stderr.strip() or "unknown cleanup outcome"
-        return f"{details}; {', '.join(state)}"
-
 
 def validate_publication_input(
     *,
@@ -544,8 +386,8 @@ def validate_publication_input(
     bundle_path: pathlib.Path,
     channel_manifest_path: pathlib.Path,
 ) -> PublicationInput:
-    if channel not in {"stable", "development"}:
-        raise GitHubPublicationError("publication channel必须是stable或development")
+    if channel != "stable":
+        raise GitHubPublicationError("publication channel必须是stable")
     bundle_path = bundle_path.resolve()
     channel_manifest_path = channel_manifest_path.resolve()
     if channel_manifest_path.name != CHANNEL_MANIFEST_NAMES[channel]:
@@ -565,18 +407,13 @@ def validate_publication_input(
         raise GitHubPublicationError("传入bundle的SHA-256与channel manifest不一致")
     if _COMMIT_SHA.fullmatch(manifest.source_revision) is None:
         raise GitHubPublicationError("发布制品的source_revision必须是完整40位commit SHA")
-    if channel == "development" and manifest.release_tag != development_release_tag(
-        manifest.build_id
-    ):
-        raise GitHubPublicationError("development release tag必须与build_id一致")
-    if channel == "stable":
-        normalized_tag = (
-            manifest.release_tag[1:]
-            if manifest.release_tag.startswith("v")
-            else manifest.release_tag
-        )
-        if normalized_tag != manifest.version:
-            raise GitHubPublicationError("stable release tag与bundle version不一致")
+    normalized_tag = (
+        manifest.release_tag[1:]
+        if manifest.release_tag.startswith("v")
+        else manifest.release_tag
+    )
+    if normalized_tag != manifest.version:
+        raise GitHubPublicationError("stable release tag与bundle version不一致")
     with tempfile.TemporaryDirectory(
         prefix="focus-publication-preflight-",
         ignore_cleanup_errors=True,
@@ -627,21 +464,11 @@ def publish_install_bundle(
     publication: PublicationInput,
     *,
     client: GitHubReleaseClient,
-    development_retention: int = DEFAULT_DEVELOPMENT_RETENTION,
 ) -> tuple[str, ...]:
-    if type(development_retention) is not int or development_retention <= 0:
-        raise GitHubPublicationError("development retention必须是正整数")
-    if publication.channel == "development":
-        release = client.development_release(
-            tag=publication.manifest.release_tag,
-            source_revision=publication.manifest.source_revision,
-            build_id=publication.manifest.build_id,
-        )
-    else:
-        release = client.stable_release(
-            publication.manifest.release_tag,
-            source_revision=publication.manifest.source_revision,
-        )
+    release = client.stable_release(
+        publication.manifest.release_tag,
+        source_revision=publication.manifest.source_revision,
+    )
 
     # Unique bundle first. Its presence alone is not channel authority.
     release = _publish_one(
@@ -649,52 +476,11 @@ def publish_install_bundle(
         release=release,
         local_path=publication.bundle_path,
     )
-    # Both assets are immutable. A development build remains hidden as a draft
-    # until both have been uploaded and reconciled.
+    # Both assets are immutable and reconciled after each upload.
     release = _publish_one(
         client=client,
         release=release,
         local_path=publication.channel_manifest_path,
     )
 
-    cleanup_warnings: list[str] = []
-    if publication.channel == "development":
-        expected_assets = {
-            publication.bundle_path.name,
-            publication.channel_manifest_path.name,
-        }
-        actual_assets = {asset.name for asset in release.assets}
-        if len(release.assets) != len(expected_assets) or actual_assets != expected_assets:
-            raise GitHubPublicationError(
-                "development draft必须只包含当前bundle与channel manifest"
-            )
-        release = client.publish_development_release(
-            release,
-            source_revision=publication.manifest.source_revision,
-        )
-        try:
-            retained_releases = client.development_releases()
-        except GitHubPublicationError as exc:
-            cleanup_warnings.append(f"retention discovery: {exc}")
-            return tuple(cleanup_warnings)
-        existing = {
-            item.tag: item
-            for item in (*retained_releases, release)
-        }
-        ordered = sorted(
-            (item for item in existing.values() if item.tag != release.tag),
-            key=lambda item: (item.published_at or "", item.release_id),
-            reverse=True,
-        )
-        keep = {release.tag}
-        keep.update(item.tag for item in ordered[: development_retention - 1])
-        for old_release in existing.values():
-            if old_release.tag in keep:
-                continue
-            try:
-                warning = client.delete_development_release_best_effort(old_release)
-            except GitHubPublicationError as exc:
-                warning = str(exc)
-            if warning is not None:
-                cleanup_warnings.append(f"{old_release.tag}: {warning}")
-    return tuple(cleanup_warnings)
+    return ()

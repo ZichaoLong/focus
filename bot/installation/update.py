@@ -25,8 +25,9 @@ from bot.platform_paths import default_data_root
 
 
 DEFAULT_SOURCE = "https://github.com/ZichaoLong/focus.git"
+UPDATE_TARGETS = frozenset({"stable", "main"})
 STATES = {"idle", "checking", "ready", "applying", "succeeded", "failed", "unknown"}
-PUBLIC_FIELDS = ("operation_id", "state", "requested_commit", "resolved_commit", "message",
+PUBLIC_FIELDS = ("operation_id", "target", "state", "requested_commit", "resolved_commit", "message",
                  "error", "preflight", "updated_at", "installation_started", "operation_source")
 _PRIVATE_FIELDS = ("unit", "bundle_sha256", "staging_dir", "bundle_path", "wheelhouse_path", "offline_requirements")
 
@@ -51,6 +52,12 @@ def validate_commit(value: str) -> str:
     if not isinstance(value, str) or (value and re.fullmatch(r"[0-9a-fA-F]{7,40}", value) is None):
         raise UpdateError("Enter a 7–40 character commit SHA, or leave empty for main")
     return value.lower()
+
+
+def validate_target(value: str) -> str:
+    if value not in UPDATE_TARGETS:
+        raise UpdateError("Update target must be stable or main")
+    return value
 
 
 def read_json(path: pathlib.Path) -> dict | None:
@@ -101,14 +108,25 @@ class UpdateJournal:
     def read(self) -> dict:
         value = read_json(self.path)
         if value is None:
-            return dict(operation_id="", state="idle", requested_commit="", resolved_commit="",
+            return dict(operation_id="", target="", state="idle", requested_commit="", resolved_commit="",
                         operation_source=None, message="", error="", preflight={},
                         updated_at=0.0, installation_started=False, unit="", bundle_sha256="",
                         staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="")
+        if value.get("schema") == "focus-web-update-1" and "target" not in value:
+            # The original browser updater only built from the configured main
+            # source. Preserve an existing idle/ready journal when the target
+            # field is introduced; a new write upgrades it to schema 2.
+            value = {
+                **value,
+                "schema": "focus-web-update-2",
+                "target": "main" if value.get("operation_id") else "",
+            }
         if (set(value) != {*PUBLIC_FIELDS, *_PRIVATE_FIELDS, "schema"}
-                or value["schema"] != "focus-web-update-1"
+                or value["schema"] != "focus-web-update-2"
                 or not isinstance(value["state"], str) or value["state"] not in STATES
                 or not isinstance(value["operation_id"], str)
+                or not isinstance(value["target"], str)
+                or (value["target"] and value["target"] not in UPDATE_TARGETS)
                 or re.fullmatch(r"[0-9a-f]{32}", value["operation_id"]) is None
                 or type(value["installation_started"]) is not bool
                 or type(value["updated_at"]) not in {float, int} or not math.isfinite(value["updated_at"])
@@ -117,16 +135,16 @@ class UpdateJournal:
             raise UpdateError("Invalid update journal; no update may proceed")
         source = value["operation_source"]
         if source is None:
-            if value["state"] != "idle" or value["operation_id"]:
+            if value["target"] == "main" or (value["target"] == "" and value["operation_id"]):
                 raise UpdateError("Invalid pinned update source")
-        elif not isinstance(source, dict) or set(source) != {"url", "branch"} or source["branch"] != "main":
+        elif value["target"] != "main" or not isinstance(source, dict) or set(source) != {"url", "branch"} or source["branch"] != "main":
             raise UpdateError("Invalid pinned update source")
         else:
             validate_source(source["url"])
         return value
 
     def write(self, value: dict) -> None:
-        write_json(self.path, {**value, "schema": "focus-web-update-1", "updated_at": time.time()})
+        write_json(self.path, {**value, "schema": "focus-web-update-2", "updated_at": time.time()})
 
     def directory(self, operation_id: str) -> pathlib.Path:
         if re.fullmatch(r"[0-9a-f]{32}", operation_id) is None:
@@ -246,8 +264,16 @@ class FocusUpdateController:
             write_json(self.source_path, {"url": url, "branch": "main"})
             return self._snapshot()
 
-    def start_check(self, commit: str) -> dict:
+    def start_check(self, target: str, commit: str | None = None) -> dict:
+        if commit is None:
+            # Keep direct callers from the pre-target API on the safe main
+            # path; browser requests always provide an explicit target.
+            commit = target
+            target = "main"
+        target = validate_target(target)
         requested = validate_commit(commit)
+        if target == "stable" and requested:
+            raise UpdateError("Stable updates do not accept a commit; choose main for a commit")
         if reason := unavailable_reason():
             raise UpdateError(reason)
         with self.journal.locked():
@@ -260,8 +286,9 @@ class FocusUpdateController:
             if current["operation_id"]:
                 self._remove_staging(current)
             operation_id = secrets.token_hex(16)
-            value = dict(operation_id=operation_id, state="checking", requested_commit=requested,
-                         resolved_commit="", operation_source=self._source(), message="Preparing source and dependencies",
+            value = dict(operation_id=operation_id, target=target, state="checking", requested_commit=requested,
+                         resolved_commit="", operation_source=self._source() if target == "main" else None,
+                         message="Preparing source and dependencies",
                          error="", preflight={}, updated_at=time.time(), installation_started=False,
                          unit=f"focus-update-{operation_id}-check.service", bundle_sha256="",
                          staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="")

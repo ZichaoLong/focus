@@ -85,6 +85,41 @@ class WebGatewayRequestFieldDecoderTests(unittest.TestCase):
                     message="attachment_ids must be an array of strings.",
                 )
 
+    def test_update_check_requires_stable_or_main_and_an_exact_commit(self) -> None:
+        self.assertEqual(
+            request_decoder.decode_update_check_request(
+                {"target": "stable", "commit": ""}
+            ),
+            ("stable", ""),
+        )
+        self.assertEqual(
+            request_decoder.decode_update_check_request(
+                {"target": "main", "commit": "abcdef1"}
+            ),
+            ("main", "abcdef1"),
+        )
+        invalid = (
+            {},
+            {"target": "development", "commit": ""},
+            {"target": "stable", "commit": None},
+            {"target": "main", "commit": " abcdef1"},
+            {"target": "main", "commit": "abcdef1 "},
+            {"target": "main", "commit": "", "extra": True},
+        )
+        for body in invalid:
+            with self.subTest(body=body):
+                with self.assertRaises(WebRuntimeError) as caught:
+                    request_decoder.decode_update_check_request(body)
+                self.assert_runtime_error(
+                    caught.exception,
+                    code="invalid_update_check_request",
+                    message="更新检查请求必须包含 stable/main target 与 commit 字符串。"
+                    if body.get("target") not in {"main", "stable"}
+                    or not isinstance(body.get("commit"), str)
+                    or set(body) != {"target", "commit"}
+                    else "commit 不能包含首尾空白。",
+                )
+
     def test_exact_text_preserves_whitespace_contract(self) -> None:
         for value in ("text", "internal space"):
             with self.subTest(value=value):

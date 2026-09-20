@@ -14,7 +14,7 @@ from bot.atomic_file import atomic_write_text
 INSTALLED_BUILD_IDENTITY_FILE_NAME = "installed-build.json"
 INSTALLED_BUILD_IDENTITY_SCHEMA = "focus-installed-build"
 INSTALLED_BUILD_IDENTITY_SCHEMA_VERSION = 1
-INSTALL_CHANNELS = frozenset({"stable", "development", "local"})
+INSTALL_CHANNELS = frozenset({"stable", "local"})
 
 _MAX_IDENTITY_BYTES = 64 * 1024
 _SAFE_IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")

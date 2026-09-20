@@ -14,6 +14,7 @@ describe('Focus runtime identity settings surface', () => {
   it('shows installed Focus and current app-server identities in About', () => {
     const dialog = source('../src/focus/FocusSettingsDialog.vue');
     const app = source('../src/focus/FocusApp.vue');
+    const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
 
     expect(dialog).toContain("'preferences' | 'archived' | 'about' | 'danger'");
     expect(dialog).toContain("value: 'about', label: t('focus.about')");
@@ -24,7 +25,8 @@ describe('Focus runtime identity settings surface', () => {
     expect(dialog).toContain('runtimeIdentity.codex_app_server.user_agent');
     expect(dialog).toContain("section === 'about'");
     expect(dialog).toContain("t('focus.updateTitle')");
-    expect(app).toContain(':runtime-identity="client.meta.value?.runtime_identity ?? null"');
+    expect(settingsSurface).toContain(':runtime-identity="props.client.meta.value?.runtime_identity ?? null"');
+    expect(app).toContain('<FocusSettingsSurface');
   });
 
   it('keeps complete diagnostic identifiers wrapped and manually selectable', () => {

@@ -263,10 +263,14 @@ def decode_update_source_request(body: dict[str, Any]) -> tuple[str, str]:
     return body["url"], body["confirmation"]
 
 
-def decode_update_check_request(body: dict[str, Any]) -> str:
-    if set(body) != {"commit"} or not isinstance(body.get("commit"), str):
+def decode_update_check_request(body: dict[str, Any]) -> tuple[str, str]:
+    if (
+        set(body) != {"target", "commit"}
+        or body.get("target") not in {"stable", "main"}
+        or not isinstance(body.get("commit"), str)
+    ):
         raise WebRuntimeError(
-            "更新检查请求必须只包含 commit 字符串；留空使用 main。",
+            "更新检查请求必须包含 stable/main target 与 commit 字符串。",
             code="invalid_update_check_request",
             status=400,
         )
@@ -276,7 +280,7 @@ def decode_update_check_request(body: dict[str, Any]) -> str:
             code="invalid_update_check_request",
             status=400,
         )
-    return body["commit"]
+    return str(body["target"]), body["commit"]
 
 
 def decode_update_apply_request(body: dict[str, Any]) -> tuple[str, str]:

@@ -16,7 +16,7 @@ from bot.installed_build_identity import (
 
 class InstalledBuildIdentityTests(unittest.TestCase):
     def test_round_trip_preserves_every_install_channel(self) -> None:
-        for channel in ("stable", "development", "local"):
+        for channel in ("stable", "local"):
             with self.subTest(channel=channel):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     root = pathlib.Path(tmpdir)

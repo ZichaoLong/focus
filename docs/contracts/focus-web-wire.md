@@ -407,7 +407,7 @@ guards and may not retain parallel key or enum inventories.
 - `FocusMeta.runtime_identity` contains exactly `focus_version`,
   `installed_build`, and `codex_app_server`. `installed_build` is either null or
   the closed `{version,channel,build_id,source_revision}` shape. Its channel is
-  one of `stable / development / local`, and its version equals `focus_version`.
+  one of `stable / local`, and its version equals `focus_version`.
   A missing, damaged, or package-version-mismatched record projects as null and
   never triggers source inference. `codex_app_server` is either null or contains
   only the nonempty, non-whitespace-padded raw `userAgent` from the initialize

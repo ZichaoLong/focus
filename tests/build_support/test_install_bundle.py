@@ -14,7 +14,6 @@ from bot.installation.install_bundle import (
     CHANNEL_MANIFEST_NAMES,
     InstallBundleError,
     build_install_bundle,
-    development_release_tag,
     parse_bundle_manifest,
     parse_channel_manifest,
     sha256_file,
@@ -46,8 +45,8 @@ class InstallBundleTests(unittest.TestCase):
         return source
 
     @staticmethod
-    def _fake_wheel_builder(**kwargs) -> pathlib.Path:
-        wheel = kwargs["output_dir"] / "focus-4.0.0.dev0-py3-none-any.whl"
+    def _fake_wheel_builder(*, version: str = "4.0.0.dev0", **kwargs) -> pathlib.Path:
+        wheel = kwargs["output_dir"] / f"focus-{version}-py3-none-any.whl"
         with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr("bot/__init__.py", "")
             for name in (
@@ -59,8 +58,8 @@ class InstallBundleTests(unittest.TestCase):
             ):
                 archive.writestr(name, name)
             archive.writestr(
-                "focus-4.0.0.dev0.dist-info/METADATA",
-                "Metadata-Version: 2.4\nName: focus\nVersion: 4.0.0.dev0\n\n",
+                f"focus-{version}.dist-info/METADATA",
+                f"Metadata-Version: 2.4\nName: focus\nVersion: {version}\n\n",
             )
         return wheel
 
@@ -69,6 +68,7 @@ class InstallBundleTests(unittest.TestCase):
         root: pathlib.Path,
         *,
         channel: str = "local",
+        release_tag: str | None = None,
         output_name: str = "output",
     ):
         source = root / "source"
@@ -76,10 +76,16 @@ class InstallBundleTests(unittest.TestCase):
             source = self._write_source(root)
         kwargs = {}
         if channel == "stable":
-            kwargs["release_tag"] = "4.0.0"
+            kwargs["release_tag"] = release_tag or "4.0.0"
+        builder = self._fake_wheel_builder
+        if channel == "stable":
+            def stable_wheel_builder(**kwargs):
+                return self._fake_wheel_builder(version="4.0.0", **kwargs)
+
+            builder = stable_wheel_builder
         with patch(
             "bot.installation.install_bundle.build_validated_wheel",
-            side_effect=self._fake_wheel_builder,
+            side_effect=builder,
         ):
             return build_install_bundle(
                 source_dir=source,
@@ -114,20 +120,20 @@ class InstallBundleTests(unittest.TestCase):
     def test_remote_build_emits_matching_closed_channel_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            built = self._build(root, channel="development")
+            built = self._build(root, channel="stable")
             self.assertIsNotNone(built.channel_manifest_path)
             assert built.channel_manifest_path is not None
             self.assertEqual(
                 built.channel_manifest_path.name,
-                CHANNEL_MANIFEST_NAMES["development"],
+                CHANNEL_MANIFEST_NAMES["stable"],
             )
             parsed = parse_channel_manifest(
                 built.channel_manifest_path.read_bytes(),
-                expected_channel="development",
+                expected_channel="stable",
             )
             self.assertEqual(
                 parsed.release_tag,
-                development_release_tag(parsed.build_id),
+                "4.0.0",
             )
             self.assertEqual(parsed.bundle.name, built.bundle_path.name)
             self.assertEqual(parsed.bundle.size, built.bundle_path.stat().st_size)
@@ -233,13 +239,13 @@ class InstallBundleTests(unittest.TestCase):
     def test_validation_binds_bundle_identity_to_channel_descriptor(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
-            built = self._build(root, channel="development")
+            built = self._build(root, channel="stable")
             with self.assertRaisesRegex(InstallBundleError, "build_id"):
                 validate_install_bundle(
                     built.bundle_path,
                     extraction_dir=root / "extract",
-                    expected_channel="development",
-                    expected_version="4.0.0.dev0",
+                    expected_channel="stable",
+                    expected_version="4.0.0",
                     expected_build_id="another-build",
                     expected_source_revision="a" * 40,
                 )
@@ -248,38 +254,20 @@ class InstallBundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
             with self.assertRaisesRegex(InstallBundleError, "wheel version"):
-                self._build(root, channel="stable")
-
-    def test_development_build_derives_release_tag_and_rejects_override(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            root = pathlib.Path(tmpdir)
-            source = self._write_source(root)
-            with patch(
-                "bot.installation.install_bundle.build_validated_wheel",
-                side_effect=self._fake_wheel_builder,
-            ):
-                with self.assertRaisesRegex(InstallBundleError, "不能声明release_tag"):
-                    build_install_bundle(
-                        source_dir=source,
-                        output_dir=root / "output",
-                        channel="development",
-                        source_revision="a" * 40,
-                        build_id="build-1",
-                        release_tag="development-custom",
-                    )
+                self._build(root, channel="stable", release_tag="4.0.1")
 
     def test_channel_manifest_rejects_cross_channel_and_unknown_fields(self) -> None:
         payload = {
             "build_id": "build-1",
             "bundle": {"name": "focus.zip", "sha256": "0" * 64, "size": 12},
-            "channel": "development",
-            "release_tag": development_release_tag("build-1"),
+            "channel": "stable",
+            "release_tag": "4.0.0-dev",
             "schema": "focus-install-channel",
             "schema_version": 1,
             "source_revision": "a" * 40,
-            "version": "4.0.0-dev",
+            "version": "4.0.0",
         }
-        with self.assertRaisesRegex(InstallBundleError, "预期"):
+        with self.assertRaisesRegex(InstallBundleError, "stable release tag"):
             parse_channel_manifest(
                 json.dumps(payload).encode(),
                 expected_channel="stable",
@@ -288,7 +276,7 @@ class InstallBundleTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallBundleError, "闭合schema"):
             parse_channel_manifest(
                 json.dumps(payload).encode(),
-                expected_channel="development",
+                expected_channel="stable",
             )
 
 

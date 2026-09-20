@@ -18,6 +18,7 @@ import type {
   FocusBackendResetResult,
   FocusRuntimeIdentity,
   FocusThreadSummary,
+  FocusUpdateTarget,
   FocusUpdateStatus,
 } from './types';
 
@@ -66,7 +67,7 @@ const emit = defineEmits<{
   confirmBackendReset: [preview: FocusBackendResetPreview];
   refreshUpdate: [];
   configureUpdateSource: [url: string];
-  checkUpdate: [commit: string];
+  checkUpdate: [target: FocusUpdateTarget, commit: string];
   applyUpdate: [operationId: string];
 }>();
 
@@ -82,6 +83,7 @@ const deleteTarget = ref('');
 const deleteConfirmation = ref('');
 const updateSourceUrl = ref('');
 const updateCommit = ref('');
+const copiedOperationId = ref(false);
 
 watch(
   () => props.open,
@@ -119,6 +121,17 @@ function setSection(value: string): void {
   if (value === 'archived') emit('refreshArchived');
   if (value === 'about') emit('refreshUpdate');
   if (enteringDanger) emit('refreshBackendReset');
+}
+
+async function copyOperationId(operationId: string): Promise<void> {
+  if (!operationId || !navigator.clipboard) return;
+  try {
+    await navigator.clipboard.writeText(operationId);
+    copiedOperationId.value = true;
+    window.setTimeout(() => { copiedOperationId.value = false; }, 1800);
+  } catch {
+    copiedOperationId.value = false;
+  }
 }
 
 function backendResetStatusLabel(status: FocusBackendResetPreview['status']): string {
@@ -469,7 +482,7 @@ function setComposerSendShortcut(value: string): void {
 
           <div class="update-card">
             <label class="update-field">
-              <span class="settings-label">{{ t('focus.updateCommit') }}</span>
+              <span class="settings-label">{{ t('focus.updateMainCommit') }}</span>
               <input
                 v-model="updateCommit"
                 type="text"
@@ -484,9 +497,18 @@ function setComposerSendShortcut(value: string): void {
                 variant="secondary"
                 :loading="updateBusy || updateLoading"
                 :disabled="updateBusy || updateLoading"
-                @click="emit('checkUpdate', updateCommit.trim())"
+                @click="emit('checkUpdate', 'main', updateCommit.trim())"
               >
-                {{ t('focus.updateCheck') }}
+                {{ t('focus.updateCheckMain') }}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                :loading="updateBusy || updateLoading"
+                :disabled="updateBusy || updateLoading"
+                @click="emit('checkUpdate', 'stable', '')"
+              >
+                {{ t('focus.updateCheckStable') }}
               </Button>
               <Button
                 v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"
@@ -501,6 +523,16 @@ function setComposerSendShortcut(value: string): void {
             </div>
             <dl v-if="updateStatus" class="update-status">
               <div><dt>{{ t('focus.updateStatus') }}</dt><dd>{{ updateStatus.state }}</dd></div>
+              <div v-if="updateStatus.target"><dt>{{ t('focus.updateTarget') }}</dt><dd>{{ updateStatus.target }}</dd></div>
+              <div v-if="updateStatus.operation_id" class="update-operation-id">
+                <dt>{{ t('focus.updateOperationId') }}</dt>
+                <dd>
+                  <code>{{ updateStatus.operation_id }}</code>
+                  <Button size="sm" variant="secondary" @click="copyOperationId(updateStatus.operation_id)">
+                    {{ copiedOperationId ? t('focus.updateCopied') : t('focus.updateCopyOperationId') }}
+                  </Button>
+                </dd>
+              </div>
               <div v-if="updateStatus.operation_source"><dt>{{ t('focus.updateOperationSource') }}</dt><dd><code>{{ updateStatus.operation_source.url }}@{{ updateStatus.operation_source.branch }}</code></dd></div>
               <div v-if="updateStatus.requested_commit"><dt>{{ t('focus.updateRequestedCommit') }}</dt><dd><code>{{ updateStatus.requested_commit }}</code></dd></div>
               <div v-if="updateStatus.resolved_commit"><dt>{{ t('focus.updateResolvedCommit') }}</dt><dd><code>{{ updateStatus.resolved_commit }}</code></dd></div>
@@ -872,6 +904,12 @@ function setComposerSendShortcut(value: string): void {
 }
 .update-status dt { color: var(--color-text-muted); font-size: var(--text-sm); }
 .update-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.update-operation-id dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
 .danger-panel,
 .backend-reset-card,
 .backend-reset-preview,

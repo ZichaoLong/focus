@@ -25,7 +25,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import FocusGoalDialog from './FocusGoalDialog.vue';
 import FocusPrimaryNotices from './FocusPrimaryNotices.vue';
 import FocusReviewDialog from './FocusReviewDialog.vue';
-import FocusSettingsDialog from './FocusSettingsDialog.vue';
+import FocusSettingsSurface from './FocusSettingsSurface.vue';
 import { executeCdCommand, parseCdCommand } from './cdCommand';
 import { createFocusDocumentActivityFaviconPreference, syncFocusDocumentActivityFavicon } from './documentActivityFavicon';
 import { DEFAULT_WEB_DISPLAY_NAME, syncFocusDocumentTitle } from './documentTitle';
@@ -50,7 +50,6 @@ import type {
   FocusBackendResetPreview, FocusConversationSearchOccurrence, FocusThreadScope,
   FocusThreadToolDetailPayload, FocusToolInspectionLocator,
 } from './types';
-
 const { t } = useI18n();
 const client = useFocusWebClient();
 const activityFaviconPreference = createFocusDocumentActivityFaviconPreference();
@@ -104,7 +103,6 @@ const visibleDetailPanelWidth = computed(() => clampPanelWidth(
 const detailPanelStyle = computed(() => (
   detailPanelFullscreen.value ? undefined : { width: `${visibleDetailPanelWidth.value}px` }
 ));
-
 async function ensureDetailPanelLoaded(): Promise<void> {
   if (focusDetailPanel.value) {
     detailPanelLoadState.value = 'ready';
@@ -130,12 +128,10 @@ async function ensureDetailPanelLoaded(): Promise<void> {
     });
   return detailPanelLoadPromise;
 }
-
 // Focus deliberately has no workspace-file read API.  Returning null is an
 // explicit refusal understood by Markdown.vue: local image syntax becomes an
 // honest unavailable notice instead of a same-origin request for a server path.
 provide('resolveImage', async () => null);
-
 const activeSessionTitle = computed(() => {
   if (!client.activeThreadId.value) return t('focus.newConversation');
   return client.activeThread.value?.title ?? '';
@@ -1199,49 +1195,18 @@ onUnmounted(() => {
         @close="showModelPicker = false"
       />
 
-      <FocusSettingsDialog
+      <FocusSettingsSurface
         v-model:open="showSettings"
+        :client="client"
         :color-scheme="colorScheme"
-        :turn-window-limit="client.turnWindowLimit.value"
         :activity-favicon-enabled="activityFaviconPreference.enabled.value"
         :composer-send-shortcut="composerSendShortcutPreference.shortcut.value"
-        :connection="client.connection.value"
-        :approval-policy="client.approvalPolicy.value"
-        :approval-policies="client.meta.value?.approval_policies ?? []"
-        :reasoning-effort="client.thinking.value ?? ''"
-        :reasoning-effort-options="client.reasoningEffortOptions.value"
-        :permissions-profile-id="client.permissionsProfileId.value"
-        :permissions-profiles="client.meta.value?.permissions_profiles ?? []"
-        :runtime-identity="client.meta.value?.runtime_identity ?? null"
-        :archived-threads="client.archivedThreads.value"
-        :archived-loading="client.archivedLoading.value"
-        :archived-truncated="client.archivedTruncated.value"
-        :archived-limit="client.archivedLimit.value"
-        :lifecycle-busy-by-thread="client.mutationBusyByThread.value"
-        :backend-reset-preview="client.backendResetPreview.value"
-        :backend-reset-result="client.backendResetResult.value"
-        :backend-reset-loading="client.backendResetLoading.value"
-        :backend-reset-busy="client.backendResetBusy.value"
-        :backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"
-        :update-status="client.updateStatus.value"
-        :update-loading="client.updateLoading.value"
-        :update-busy="client.updateBusy.value"
-        @set-color-scheme="setColorScheme"
-        @set-turn-window-limit="client.setTurnWindowLimit($event)"
-        @set-activity-favicon-enabled="activityFaviconPreference.setEnabled($event)"
-        @set-composer-send-shortcut="composerSendShortcutPreference.setShortcut($event)"
-        @set-approval-policy="client.setApprovalPolicy($event)"
-        @set-reasoning-effort="client.setReasoningEffort($event)"
-        @set-permissions-profile="client.setPermissionsProfile($event)"
-        @refresh-archived="client.refreshArchivedThreads"
-        @unarchive="client.unarchiveThread($event)"
-        @delete-thread="(threadId, confirmation) => client.deleteThread(threadId, confirmation)"
-        @refresh-backend-reset="client.refreshBackendReset"
-        @confirm-backend-reset="confirmBackendReset"
-        @refresh-update="client.refreshUpdateStatus"
-        @configure-update-source="confirmUpdateSource"
-        @check-update="client.checkUpdate($event)"
-        @apply-update="confirmFocusUpdate"
+        :set-color-scheme="setColorScheme"
+        :set-activity-favicon-enabled="activityFaviconPreference.setEnabled"
+        :set-composer-send-shortcut="composerSendShortcutPreference.setShortcut"
+        :confirm-backend-reset="confirmBackendReset"
+        :confirm-update-source="confirmUpdateSource"
+        :confirm-focus-update="confirmFocusUpdate"
       />
 
       <FocusGoalDialog
@@ -1417,6 +1382,8 @@ onUnmounted(() => {
 }
 .runtime-details-collapsed-trigger {
   position: absolute;
+  top: calc(var(--space-3) + 36px);
+  left: var(--space-3);
   z-index: var(--z-sticky);
   background: var(--color-surface-raised);
   border-color: var(--color-line);
@@ -1424,10 +1391,6 @@ onUnmounted(() => {
 }
 .runtime-details-narrow-trigger {
   position: relative;
-}
-.runtime-details-collapsed-trigger {
-  top: calc(var(--space-3) + 36px);
-  left: var(--space-3);
 }
 .runtime-details-narrow-trigger .runtime-details-dot,
 .runtime-details-collapsed-trigger .runtime-details-dot {

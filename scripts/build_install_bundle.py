@@ -62,10 +62,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--release-tag",
-        help=(
-            "Existing Release tag required for stable; development derives one "
-            "from build_id; forbidden for local."
-        ),
+        help="Existing Release tag required for stable; forbidden for local.",
     )
     parser.add_argument("--build-id", help="Optional publication/build identifier.")
     parser.add_argument("--source-revision", help="Defaults to current Git HEAD plus +dirty.")

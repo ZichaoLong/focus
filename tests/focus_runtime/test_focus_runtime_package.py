@@ -37,7 +37,7 @@ class FocusRuntimePackageTests(unittest.TestCase):
             global_data_root = pathlib.Path(tmpdir)
             identity = InstalledBuildIdentity(
                 version=__version__,
-                channel="development",
+                channel="stable",
                 build_id="build-123",
                 source_revision="a" * 40,
             )

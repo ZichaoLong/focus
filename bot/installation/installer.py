@@ -24,7 +24,6 @@ from typing import Any
 _GITHUB_REPOSITORY = "ZichaoLong/focus"
 _GITHUB_API_ROOT = f"https://api.github.com/repos/{_GITHUB_REPOSITORY}"
 _GITHUB_API_VERSION = "2022-11-28"
-_GITHUB_RELEASE_PAGE_SIZE = 100
 _MAX_RELEASE_RESPONSE_BYTES = 2 * 1024 * 1024
 _MAX_CHANNEL_MANIFEST_BYTES = 64 * 1024
 _DOWNLOAD_TIMEOUT_SECONDS = 60
@@ -39,8 +38,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "来源：\n"
-            "  默认等同于 --channel stable，下载最新正式 GitHub Release 的 Focus bundle。\n"
-            "  --channel development 下载最新独立 development prerelease 的 bundle。\n"
+            "  默认下载本仓库最新正式 GitHub Release 的 Focus bundle。\n"
             "  --artifact PATH 使用已下载或本地构建的 bundle，不访问 GitHub。\n"
             "\n"
             "bundle 是 GitHub Release 可下载的 Focus ZIP 制品，包含 Focus wheel（含 Web）、\n"
@@ -61,13 +59,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "再把输出的 ZIP 传给 --artifact；构建本身不会发布到 GitHub。"
         ),
     )
-    source = parser.add_mutually_exclusive_group()
-    source.add_argument(
-        "--channel",
-        choices=("stable", "development"),
-        help="从对应 GitHub Release channel 下载；默认 stable。",
-    )
-    source.add_argument(
+    parser.add_argument(
         "--artifact",
         type=pathlib.Path,
         metavar="PATH",
@@ -79,8 +71,6 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="安装新 FOCUS 后执行一次性旧 feishu-codex 迁移。",
     )
     args = parser.parse_args(argv)
-    if args.channel is None and args.artifact is None:
-        args.channel = "stable"
     return args
 
 
@@ -304,45 +294,6 @@ def _github_json_object(url: str) -> dict[str, Any]:
     return payload
 
 
-def _latest_development_release(raw_releases: Any) -> dict[str, Any]:
-    from bot.installation.install_bundle import is_development_release_tag
-
-    if not isinstance(raw_releases, list):
-        raise SystemExit("GitHub Release列表响应必须是array。")
-    candidates: list[dict[str, Any]] = []
-    for release in raw_releases:
-        if not isinstance(release, dict):
-            raise SystemExit("GitHub Release列表包含非object条目。")
-        tag = release.get("tag_name")
-        if not is_development_release_tag(tag):
-            continue
-        if type(release.get("draft")) is not bool or type(
-            release.get("prerelease")
-        ) is not bool:
-            raise SystemExit("development Release状态字段无效。")
-        if release["draft"]:
-            continue
-        release_id = release.get("id")
-        published_at = release.get("published_at")
-        if (
-            type(release_id) is not int
-            or release_id <= 0
-            or not isinstance(published_at, str)
-            or not published_at
-        ):
-            raise SystemExit("development Release发布时间或id无效。")
-        candidates.append(release)
-    if not candidates:
-        raise SystemExit("GitHub上没有已发布的Focus development prerelease。")
-    latest = max(
-        candidates,
-        key=lambda release: (release["published_at"], release["id"]),
-    )
-    if not latest["prerelease"]:
-        raise SystemExit("最新development tag没有发布为prerelease。")
-    return latest
-
-
 def _release_tag_commit(tag: str) -> str:
     encoded_tag = urllib.parse.quote(tag, safe="")
     payload = _github_json_object(
@@ -391,32 +342,8 @@ def _release_asset(release: dict[str, Any], name: str) -> dict[str, Any]:
     return matches[0]
 
 
-def _require_development_release_assets(
-    release: dict[str, Any],
-    *,
-    bundle_name: str,
-    channel_manifest_name: str,
-) -> None:
-    assets = release.get("assets")
-    if not isinstance(assets, list):
-        raise SystemExit("GitHub Release缺少assets列表。")
-    names = [item.get("name") for item in assets if isinstance(item, dict)]
-    expected = {bundle_name, channel_manifest_name}
-    if len(names) != len(expected) or set(names) != expected:
-        raise SystemExit("development Release必须只包含bundle与channel manifest。")
-
-
-def _release_for_channel(channel: str) -> dict[str, Any]:
-    if channel == "stable":
-        release = _github_json_object(f"{_GITHUB_API_ROOT}/releases/latest")
-    elif channel == "development":
-        release = _latest_development_release(
-            _download_github_json(
-                f"{_GITHUB_API_ROOT}/releases?per_page={_GITHUB_RELEASE_PAGE_SIZE}"
-            )
-        )
-    else:
-        raise SystemExit(f"不受支持的安装channel：{channel}")
+def _stable_release() -> dict[str, Any]:
+    release = _github_json_object(f"{_GITHUB_API_ROOT}/releases/latest")
     tag = release.get("tag_name")
     if (
         release.get("draft") is not False
@@ -425,10 +352,8 @@ def _release_for_channel(channel: str) -> dict[str, Any]:
         or not tag
     ):
         raise SystemExit("GitHub Release状态或tag无效。")
-    if channel == "stable" and release["prerelease"]:
-        raise SystemExit("stable channel不能使用prerelease。")
-    if channel == "development" and not release["prerelease"]:
-        raise SystemExit("development channel必须使用prerelease。")
+    if release["prerelease"]:
+        raise SystemExit("最新正式 Release 不能是 prerelease。")
     return release
 
 
@@ -453,10 +378,9 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
         expected_build_id: str | None = None
         expected_source_revision: str | None = None
         if artifact is None:
-            channel = args.channel
-            release = _release_for_channel(channel)
+            release = _stable_release()
             release_tag = release["tag_name"]
-            channel_name = CHANNEL_MANIFEST_NAMES[channel]
+            channel_name = CHANNEL_MANIFEST_NAMES["stable"]
             channel_asset = _release_asset(release, channel_name)
             channel_url, channel_size = _asset_download_url(
                 channel_asset,
@@ -469,15 +393,9 @@ def _resolved_install_bundle(args: argparse.Namespace) -> Iterator[Any]:
                 maximum=_MAX_CHANNEL_MANIFEST_BYTES,
                 expected_size=channel_size,
             )
-            manifest = parse_channel_manifest(channel_raw, expected_channel=channel)
+            manifest = parse_channel_manifest(channel_raw, expected_channel="stable")
             if manifest.release_tag != release_tag:
                 raise SystemExit("channel manifest的release_tag与GitHub Release不一致。")
-            if channel == "development":
-                _require_development_release_assets(
-                    release,
-                    bundle_name=manifest.bundle.name,
-                    channel_manifest_name=channel_name,
-                )
             if _release_tag_commit(release_tag) != manifest.source_revision:
                 raise SystemExit("GitHub Release tag与bundle source_revision不一致。")
             bundle_asset = _release_asset(release, manifest.bundle.name)

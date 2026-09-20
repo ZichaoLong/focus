@@ -155,6 +155,7 @@ describe('Focus Composer send shortcut', () => {
 
   it('wires the preference through both Composer sites and the settings dialog', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
     const pane = source('../src/components/chat/ConversationPane.vue');
     const dock = source('../src/components/chat/ChatDock.vue');
     const composer = source('../src/components/chat/Composer.vue');
@@ -164,9 +165,13 @@ describe('Focus Composer send shortcut', () => {
     expect(app.match(
       /:composer-send-shortcut="composerSendShortcutPreference\.shortcut\.value"/gu,
     )).toHaveLength(2);
-    expect(app).toContain(
-      '@set-composer-send-shortcut="composerSendShortcutPreference.setShortcut($event)"',
+    expect(settingsSurface).toContain(
+      ':composer-send-shortcut="props.composerSendShortcut"',
     );
+    expect(settingsSurface).toContain(
+      '@set-composer-send-shortcut="props.setComposerSendShortcut($event)"',
+    );
+    expect(app).toContain('<FocusSettingsSurface');
     expect(pane.match(/:send-shortcut="composerSendShortcut"/gu)).toHaveLength(2);
     expect(dock).toContain(':send-shortcut="sendShortcut"');
     expect(composer).toContain('composerKeyRequestsSubmit(e, props.sendShortcut)');

@@ -13,11 +13,11 @@ CLI as one offline payload.
 | Fact or action | Sole owner |
 | --- | --- |
 | Closed bundle/channel-manifest schemas, construction, and validation | `bot/installation/install_bundle.py` |
-| Stable/development/local-artifact selection, download, and install-transaction boundary | `bot/installation/installer.py` (with `install.py` as the public entry point) |
+| Stable/local-artifact selection, download, and install-transaction boundary | `bot/installation/installer.py` (with `install.py` as the public entry point) |
 | Identity record for the latest successful bundle installation | `bot/installed_build_identity.py`; commit timing remains owned by `bot/installation/installer.py` |
 | Isolated argv shape for installed Python modules | `bot/managed_python.py` |
 | Clean Focus-wheel build and source-payload verification | `bot/installation/python_distribution.py` |
-| GitHub Release validation, upload ordering, and development retention | `scripts/build_support/github_publication.py` |
+| GitHub Release validation and upload ordering | `scripts/build_support/github_publication.py` |
 | Local bundle entry point | `scripts/build_install_bundle.py` |
 | Current-workspace Web build, temporary local bundle, and official-installer orchestration | `scripts/install_workspace.sh` |
 | Sole repository artifact-upload entry point | `scripts/publish_install_bundle.py` |
@@ -46,7 +46,7 @@ The current schema is:
 | --- | --- |
 | `schema` | Exactly `focus-install-bundle` |
 | `schema_version` | Integer `1` |
-| `channel` | `stable`, `development`, or `local` |
+| `channel` | `stable` or `local` |
 | `version` | Nonempty safe identifier matching the Focus wheel version |
 | `build_id` | Nonempty safe identifier for this build |
 | `source_revision` | Declared source revision; publication accepts a 40-character lowercase commit SHA and requires inner/outer equality |
@@ -68,11 +68,10 @@ directory. Any mismatch rejects the whole bundle before the install transaction.
 
 ## 3. Outer Channel Manifest
 
-Remote `stable` and `development` bundles also carry one outer channel manifest in
+Remote `stable` bundles also carry one outer channel manifest in
 the same GitHub Release:
 
 - stable: `focus-install-stable.json`;
-- development: `focus-install-development.json`.
 
 It is another strict UTF-8 JSON object that rejects duplicate keys, unknown fields,
 and missing fields:
@@ -97,7 +96,7 @@ and this contract does not claim otherwise.
 
 ### Stable
 
-With no explicit source, the installer behaves as `--channel stable`: it reads the
+With no explicit source, the installer reads the
 repository's latest non-draft, non-prerelease GitHub Release and requires exactly
 one stable channel manifest plus its referenced bundle. Removing an optional
 leading `v`, the stable Release tag equals the wheel version and resolves to the
@@ -105,36 +104,18 @@ bundle's `source_revision`. Stable bundle and channel-manifest assets are immuta
 publication rejects an existing name with different bytes.
 
 Stable publication uses an already-created formal Release. If the latest Release
-has no bundle, the installer does not fall back to development, checkout sources,
-or an older Release.
-
-### Development
-
-Every explicitly published development build creates a separate non-draft
-prerelease. Its tag is exactly `development-build-<build_id>` and resolves to the bundle's
-`source_revision`, so the Release page, GitHub-generated source archives, and
-installable bundle identify the same source snapshot. The installer selects the
-newest published entry by `published_at` and Release id from the GitHub Release
-list, then requires it to be a complete development prerelease. Validation failure
-does not fall back to an older prerelease or the legacy fixed `development-builds`
-Release.
-
-Each development Release contains only that build's uniquely named immutable bundle
-and immutable `focus-install-development.json` descriptor. Publication retains the
-newest five development prereleases on a best-effort basis by deleting each older
-Release together with its tag. Cleanup failure warns but does not revoke the newly
-published prerelease.
+has no bundle, the installer does not fall back to checkout sources or an older Release.
 
 ### Local Artifact
 
 `--artifact PATH` uses the explicitly selected bundle ZIP without contacting
 GitHub or requiring an outer channel manifest. It still validates the complete
 inner schema, every payload byte, wheel identity, and Web payload. `local` is the
-default developer-build shape. A separately downloaded stable/development ZIP can
+default developer-build shape. A separately downloaded stable ZIP can
 also be installed through `--artifact`, but doing so does not reinterpret its
 channel.
 
-There is no implicit fallback among the three authorities. A caller repairs the
+There is no implicit fallback among the two authorities. A caller repairs the
 selected source or explicitly chooses another one.
 
 ## 5. Install Transaction and Network Boundary
@@ -213,21 +194,15 @@ already-built and validated bundle plus its matching channel manifest.
 Publication completes bundle, channel-manifest, and source-revision preflight first.
 Stable then verifies the existing formal Release and tag, and uploads the immutable
 bundle followed by its channel manifest; successful manifest upload and read-back is
-the stable publication commit point. Development creates a unique draft prerelease
-targeting the exact `source_revision`, uploads and reconciles both immutable assets,
-then publishes the draft. Only that visibility transition is the development
-publication commit point. An ambiguous upload or publication result is reconciled
+the stable publication commit point. An ambiguous upload result is reconciled
 from GitHub by commit, size, and SHA-256, and fails closed if the same result cannot
 be proved.
 
-The formal workflow writes the checked-out, gated `HEAD` to `source_revision` and
-derives the development tag from `build_id`. The standalone upload command cannot
-prove a clean caller worktree, but publication must prove that the target GitHub tag
+The formal workflow writes the checked-out, gated `HEAD` to `source_revision`. The
+standalone upload command cannot prove a clean caller worktree, but publication must prove that the target GitHub tag
 resolves to that exact commit.
 
-Stable requires an existing formal Release and immutable assets. Each development
-publication creates a unique draft, keeps every asset immutable, and publishes only
-after complete verification. Ordinary validation must not become publication by
+Stable requires an existing formal Release and immutable assets. Ordinary validation must not become publication by
 reusing upload side effects or implicitly creating tags.
 
 ## 7. Maintenance Closure

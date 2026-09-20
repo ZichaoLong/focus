@@ -26,11 +26,9 @@ BUNDLE_MANIFEST_NAME = "manifest.json"
 DEPENDENCY_LOCK_NAME = "requirements.lock"
 CHANNEL_MANIFEST_NAMES = {
     "stable": "focus-install-stable.json",
-    "development": "focus-install-development.json",
     "local": "focus-install-local.json",
 }
-DEVELOPMENT_RELEASE_TAG_PREFIX = "development-build-"
-REMOTE_CHANNELS = frozenset({"stable", "development"})
+REMOTE_CHANNELS = frozenset({"stable"})
 ALL_CHANNELS = frozenset(CHANNEL_MANIFEST_NAMES)
 
 _MAX_BUNDLE_BYTES = 256 * 1024 * 1024
@@ -79,6 +77,7 @@ class BundleMetadata:
 @dataclass(frozen=True, slots=True)
 class ValidatedInstallBundle:
     root: pathlib.Path
+    artifact_path: pathlib.Path
     metadata: BundleMetadata
     wheel_path: pathlib.Path
     dependency_lock_path: pathlib.Path
@@ -181,29 +180,6 @@ def _require_string(value: Any, *, label: str, identifier: bool = False) -> str:
     return value
 
 
-def development_release_tag(build_id: str) -> str:
-    """Return the only development Release tag allowed for one build."""
-
-    build_id = _require_string(build_id, label="build_id", identifier=True)
-    return _require_string(
-        f"{DEVELOPMENT_RELEASE_TAG_PREFIX}{build_id}",
-        label="development release tag",
-        identifier=True,
-    )
-
-
-def is_development_release_tag(value: object) -> bool:
-    if not isinstance(value, str) or not value.startswith(
-        DEVELOPMENT_RELEASE_TAG_PREFIX
-    ):
-        return False
-    build_id = value.removeprefix(DEVELOPMENT_RELEASE_TAG_PREFIX)
-    return (
-        _SAFE_IDENTIFIER.fullmatch(value) is not None
-        and _SAFE_IDENTIFIER.fullmatch(build_id) is not None
-    )
-
-
 def _validate_remote_channel_identity(
     *,
     channel: str,
@@ -216,13 +192,6 @@ def _validate_remote_channel_identity(
         raise InstallBundleError(
             "remote channel source_revision必须是完整40位小写commit SHA"
         )
-    if channel == "development":
-        expected = development_release_tag(build_id)
-        if release_tag != expected:
-            raise InstallBundleError(
-                f"development release tag必须由build_id确定：{expected}"
-            )
-        return
     normalized_tag = release_tag[1:] if release_tag.startswith("v") else release_tag
     if normalized_tag != version:
         raise InstallBundleError(
@@ -365,7 +334,7 @@ def channel_manifest_payload(
     bundle_sha256: str,
 ) -> dict[str, Any]:
     if metadata.channel not in REMOTE_CHANNELS:
-        raise InstallBundleError("只有stable/development bundle可生成远端channel manifest")
+        raise InstallBundleError("只有stable bundle可生成远端channel manifest")
     release_tag = _require_string(release_tag, label="release tag", identifier=True)
     _validate_remote_channel_identity(
         channel=metadata.channel,
@@ -562,7 +531,7 @@ def build_install_bundle(
     )
     if channel == "stable" and not release_tag:
         raise InstallBundleError("stable bundle必须声明release_tag")
-    if channel in {"local", "development"} and release_tag is not None:
+    if channel == "local" and release_tag is not None:
         raise InstallBundleError(f"{channel} bundle不能声明release_tag")
 
     source_dir = source_dir.resolve()
@@ -607,8 +576,6 @@ def build_install_bundle(
                 wheel_bytes + b"\0" + lock_bytes + b"\0" + channel.encode("ascii")
             ).hexdigest()[:16]
         build_id = _require_string(build_id, label="build_id", identifier=True)
-        if channel == "development":
-            release_tag = development_release_tag(build_id)
         if channel in REMOTE_CHANNELS:
             _validate_remote_channel_identity(
                 channel=channel,
@@ -796,6 +763,7 @@ def validate_install_bundle(
         raise InstallBundleError("bundle dependency lock不是有效的locked requirements投影")
     return ValidatedInstallBundle(
         root=extraction_dir,
+        artifact_path=artifact_path,
         metadata=metadata,
         wheel_path=wheel_path,
         dependency_lock_path=extraction_dir / lock.name,

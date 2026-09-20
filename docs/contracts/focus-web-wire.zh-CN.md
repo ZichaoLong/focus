@@ -256,7 +256,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   中折叠为单个空格，不修改持久化 thread name 或 preview。
 - `FocusMeta.runtime_identity` 必须恰好包含 `focus_version`、`installed_build` 与 `codex_app_server`。
   `installed_build` 为 `null`，或为闭合的 `{version,channel,build_id,source_revision}`；其中 channel 只能是
-  `stable / development / local`，且 version 必须等于 `focus_version`。记录缺失、损坏或与当前 package version
+  `stable / local`，且 version 必须等于 `focus_version`。记录缺失、损坏或与当前 package version
   不匹配时必须投影 `null`，不得猜测来源。`codex_app_server` 为 `null`，或只含当前 ready connection 的 initialize
   response 中 non-empty、无首尾空白的原始 `userAgent`；读取不得启动或重连 backend，也不得用磁盘上的
   `codex --version`、wrapper argv、`codexHome` 或旧 connection generation 补值。`backend_disconnected` 会立即清除

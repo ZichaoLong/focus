@@ -16,13 +16,18 @@ and it does not update the Codex app-server or CLI.
 - Changing the source requires explicit confirmation. Each check accepts a newly entered
   commit; an empty value resolves remote `refs/heads/main` once and then pins the build
   to the complete 40-character SHA.
+- The only targets are `main` and `stable`. `main` uses the machine-level Git source and
+  builds the selected source; `stable` downloads the latest formal Focus GitHub Release
+  bundle, ignores the custom Git source, and does not rebuild Web assets. Stable does not
+  accept a commit input.
 
 ## 2. Check and preflight
 
-`POST /api/update/check` creates one bounded background check and does not change the
-current installation or service. It clones/fetches the exact commit into a temporary
-directory, builds Web production assets and a local bundle, and completes before any
-shutdown:
+`POST /api/update/check` carries a `target` and an optional `commit` for `main`. It creates
+one bounded background check and does not change the current installation or service.
+The `main` path clones/fetches the exact commit, builds Web production assets and a local
+bundle; the `stable` path downloads and validates the formal Release bundle. Both complete
+before any shutdown:
 
 - Git, Node/npm, Python, package-index, proxy, and certificate requests;
 - pip installation and `pip check` in a staging managed environment;
@@ -45,7 +50,7 @@ forward arbitrary service or provider/API credentials into source-controlled bui
 so preflight uses the same package and network authorities as that user's installation.
 
 A failure is recorded as `failed` while the old service continues running. A successful
-check is `ready` for one exact commit and has no implicit fallback.
+check is `ready` for one exact target/commit and has no implicit fallback.
 
 If a check is recorded as `unknown` but its check transient unit is definitively inactive
 and installation never started, a new explicit check may replace that stale operation.
@@ -54,7 +59,8 @@ by a new check.
 
 ## 3. Apply, restart, and result
 
-`POST /api/update/apply` requires the ready operation id and a second user confirmation.
+`POST /api/update/apply` requires the ready operation id (shown separately and copyable in
+the browser) and a second user confirmation.
 On Linux Focus starts an independent updater in a transient systemd user unit (other
 platforms fail closed before shutdown). The existing managed-install transaction
 proves every instance idle, closes ingress, stops services, installs the validated bundle,
@@ -69,7 +75,8 @@ consume the new static assets.
 
 ## 4. Wire and lifecycle
 
-`GET /api/update` returns the machine-level source and operation journal. Source, check,
+`GET /api/update` returns the machine-level source and operation journal, including target
+and operation id. Source, check,
 and apply are authenticated same-origin, CSRF-protected user actions and renew the current
 Web session. The journal does not own thread, writer, approval, or recovery authority.
 Transport loss during the update is a service lifecycle effect, not proof of installation

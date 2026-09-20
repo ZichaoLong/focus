@@ -106,6 +106,7 @@ export interface FocusRuntimeIdentity {
 }
 
 export type FocusUpdateState = FocusWebWireEnum<'update_state'>;
+export type FocusUpdateTarget = FocusWebWireEnum<'update_target'>;
 
 export interface FocusUpdateSource {
   url: string;
@@ -116,6 +117,7 @@ export interface FocusUpdateStatus {
   source: FocusUpdateSource;
   operation_source: FocusUpdateSource | null;
   operation_id: string;
+  target: FocusWebWireEnum<'update_target'> | '';
   state: FocusUpdateState;
   requested_commit: string;
   resolved_commit: string;

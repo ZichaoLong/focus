@@ -2,7 +2,7 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/install-artifact-delivery.md`。
 
-本文定义 Focus 源码、可安装 bundle、GitHub Release channel、本地构建和显式发布之间的边界。
+本文定义 Focus 源码、可安装 bundle、GitHub Release、本地构建和显式发布之间的边界。
 它解决生成的 Web production assets 不再进入 Git 历史后，clone、下载与开发构建仍然共用一条可验证
 安装路径的问题；它不承诺把 Python、第三方 wheel 或 Codex CLI 一并离线交付。
 
@@ -11,11 +11,11 @@
 | 事实或动作 | 唯一 owner |
 | --- | --- |
 | bundle 与 channel manifest 的闭合 schema、构建和验证 | `bot/installation/install_bundle.py` |
-| stable / development / local artifact 的选择、下载与安装事务边界 | `bot/installation/installer.py`（`install.py` 只是公开入口） |
+| stable / local artifact 的选择、下载与安装事务边界 | `bot/installation/installer.py`（`install.py` 只是公开入口） |
 | 最近一次成功安装的 bundle 身份记录 | `bot/installed_build_identity.py`；提交时机由 `bot/installation/installer.py` 持有 |
 | 已安装 Python module 的隔离 argv 形状 | `bot/managed_python.py` |
 | Focus wheel 的 clean build 与 source-payload 核验 | `bot/installation/python_distribution.py` |
-| GitHub Release 状态核验、上传顺序与 development retention | `scripts/build_support/github_publication.py` |
+| GitHub Release 状态核验与上传顺序 | `scripts/build_support/github_publication.py` |
 | 本地 bundle 入口 | `scripts/build_install_bundle.py` |
 | 当前 workspace 的 Web build、临时 local bundle 与正式安装器串联 | `scripts/install_workspace.sh` |
 | 唯一仓库制品上传入口 | `scripts/publish_install_bundle.py` |
@@ -40,7 +40,7 @@ bundle 必须恰好包含三个普通、未加密、无目录层级的 ZIP entry
 | --- | --- |
 | `schema` | 必须为 `focus-install-bundle` |
 | `schema_version` | 必须为整数 `1` |
-| `channel` | `stable`、`development` 或 `local` |
+| `channel` | `stable` 或 `local` |
 | `version` | Focus wheel 的非空安全版本标识 |
 | `build_id` | 本次构建的非空安全标识 |
 | `source_revision` | 构建声明的源码 revision；公开发布只接受 40 位小写 commit SHA，并要求内外 manifest 一致 |
@@ -59,10 +59,9 @@ bundle 必须恰好包含三个普通、未加密、无目录层级的 ZIP entry
 
 ## 3. 外层 channel manifest
 
-远端 `stable` 和 `development` bundle 还必须在同一个 GitHub Release 中带一个外层 channel manifest：
+远端 `stable` bundle 还必须在同一个 GitHub Release 中带一个外层 channel manifest：
 
 - stable：`focus-install-stable.json`；
-- development：`focus-install-development.json`。
 
 它同样是拒绝重复 key、未知字段和缺失字段的严格 UTF-8 JSON object：
 
@@ -84,34 +83,21 @@ GitHub/HTTPS 不是相互独立的签名或信任根；本合同不把它描述�
 
 ### stable
 
-未指定来源时，安装器等同于 `--channel stable`：读取本仓库 GitHub 的 latest 非 draft、非 prerelease
+未指定来源时，安装器读取本仓库 GitHub 的 latest 非 draft、非 prerelease
 Release，并要求其中恰好存在 stable channel manifest 及其指向的 bundle。stable Release tag 去掉可选前导
 `v` 后必须等于 wheel version，而且必须解析到 bundle 的 `source_revision`。stable bundle 和 stable channel
 manifest 都是 immutable asset；已有同名不同内容时拒绝覆盖。
 
 stable 发布只使用已经显式创建的正式 Release。安装器不会因为 latest Release 尚无 bundle 而回退到
-development、checkout 源码或另一旧 Release。
-
-### development
-
-每次显式发布 development build 都创建一个独立的非 draft prerelease。其 tag 必须是
-`development-build-<build_id>`，并精确解析到 bundle 的 `source_revision`；Release 页面、GitHub 自动生成的
-source archives 和可安装 bundle 因而指向同一次源码快照。安装器从 GitHub Release 列表中按
-`published_at` 和 Release id 选择最新发布项，并要求它是完整的 development prerelease；验证失败时不回退
-到更旧 prerelease，也不读取旧的固定 `development-builds` Release。
-
-每个 development Release 只承载该 build 唯一命名且不可覆盖的 bundle，以及不可覆盖的
-`focus-install-development.json` descriptor。发布完成后 best-effort 只保留最近五个 development
-prerelease；清理会同时删除整个旧 Release 及其 tag。清理失败只产生告警，不得撤销已经发布的新
-prerelease。
+checkout 源码或另一旧 Release。
 
 ### local artifact
 
 `--artifact PATH` 使用用户明确选择的 bundle ZIP，不访问 GitHub，也不需要外层 channel manifest。
 它仍完整验证内层 schema、所有 payload 字节、wheel identity 和 Web payload。`local` bundle 是开发者默认
-构建形状；显式下载的 stable/development ZIP 也可经 `--artifact` 安装，但不会因此变成另一个 channel。
+构建形状；显式下载的 stable ZIP 也可经 `--artifact` 安装，但不会因此变成另一个 channel。
 
-三种 authority 之间没有隐式 fallback。来源解析或验证失败时，用户修复该来源后重试或显式选择另一来源。
+两种 authority 之间没有隐式 fallback。来源解析或验证失败时，用户修复该来源后重试或显式选择另一来源。
 
 ## 5. 安装事务与网络边界
 
@@ -137,7 +123,7 @@ Conda、用户 site-packages、当前目录和 `PYTHONPATH` 中的包不属于�
 Python package version 一致时投影该身份。旧安装没有该记录时必须报告身份未知，不能从 checkout、工作目录、
 GitHub latest Release 或 wheel version 反推 channel/build。
 
-remote channel 需要访问 GitHub；标准 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 会由 Python 网络栈使用。
+stable 需要访问 GitHub；标准 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 会由 Python 网络栈使用。
 `--artifact` 只消除 Focus bundle 的 GitHub 下载，pip 仍可能按自身 index、proxy、证书和 cache 配置下载
 第三方依赖。bundle 不含 Python 解释器、第三方 wheelhouse 或第三方 artifact hashes，因此用户可以先单独
 下载 ZIP 再转移到目标机，但本项目不承诺完整零网络安装。
@@ -162,16 +148,13 @@ matching channel manifest。
 
 发布先对 bundle、channel manifest 和 source revision 做完整 preflight。stable 再核验已存在的正式 Release
 及其 tag，依次上传不可变 bundle 和 channel manifest；channel manifest 上传并读回核验成功是 stable 发布
-commit point。development 则以精确 `source_revision` 为 target 创建唯一 draft prerelease，依次上传并读回
-核验两个不可变 asset，最后把 draft 发布为 prerelease；只有这个可见性切换才是 development 发布 commit
-point。上传或发布结果不明确时，发布器从 GitHub 读回 Release、tag 与 asset，并按 commit、size 和 SHA-256
+commit point。上传结果不明确时，发布器从 GitHub 读回 Release、tag 与 asset，并按 commit、size 和 SHA-256
 reconciliation；无法证明相同结果就失败关闭。
 
-正式 workflow 把已 checkout、通过门禁的 `HEAD` 写入 `source_revision`，并由 `build_id` 派生 development
-tag。独立上传命令不能证明调用者 worktree clean，但发布时必须证明目标 GitHub tag 精确解析到该 commit。
+正式 workflow 把已 checkout、通过门禁的 `HEAD` 写入 `source_revision`。独立上传命令不能证明调用者
+worktree clean，但发布时必须证明目标 GitHub tag 精确解析到该 commit。
 
-stable 发布要求目标正式 Release 已存在且 assets immutable。development 每次创建唯一 draft，所有 asset
-immutable，且只在完整核验后发布。普通验证不得通过复用发布脚本、workflow side effect 或隐式 tag 创建而升级
+stable 发布要求目标正式 Release 已存在且 assets immutable。普通验证不得通过复用发布脚本、workflow side effect 或隐式 tag 创建而升级
 为发布。
 
 ## 7. 维护闭环

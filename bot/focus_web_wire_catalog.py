@@ -389,7 +389,8 @@ FOCUS_WEB_EVENTS: Final = (
 )
 
 FOCUS_WEB_ENUMS: Final = (
-    _enum("focus_install_channel", "stable development local"),
+    _enum("focus_install_channel", "stable local"),
+    _enum("update_target", "stable main"),
     _enum("update_state", "idle checking ready applying succeeded failed unknown"),
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
@@ -504,9 +505,9 @@ FOCUS_WEB_RECORDS: Final = (
     _record(
         "update_status",
         "FocusUpdateStatus",
-        "source operation_source operation_id state requested_commit resolved_commit message error "
+        "source operation_source operation_id target state requested_commit resolved_commit message error "
         "preflight updated_at restart_required installation_started",
-        "state:update_state",
+        "state:update_state target:update_target",
     ),
     _record(
         "operator_warning",

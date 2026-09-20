@@ -24,6 +24,7 @@ import type {
   FocusToolInspectionLocator,
   FocusTurnPage,
   FocusUpdateStatus,
+  FocusUpdateTarget,
   FocusWriterProfile,
   FocusWriterProfileResult,
 } from './types';
@@ -200,7 +201,7 @@ export interface FocusWebApiPort {
   operatorStatus(): Promise<FocusOperatorStatus>;
   updateStatus(): Promise<FocusUpdateStatus>;
   configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus>;
-  checkUpdate(commit: string): Promise<FocusUpdateStatus>;
+  checkUpdate(target: FocusUpdateTarget, commit: string): Promise<FocusUpdateStatus>;
   applyUpdate(operationId: string, confirmation: string): Promise<FocusUpdateStatus>;
   backendResetPreview(): Promise<FocusBackendResetPreview>;
   backendResetExecute(input: {
@@ -417,12 +418,12 @@ export class FocusWebApi implements FocusWebApiPort {
     );
   }
 
-  checkUpdate(commit: string): Promise<FocusUpdateStatus> {
+  checkUpdate(target: FocusUpdateTarget, commit: string): Promise<FocusUpdateStatus> {
     return this.request(
       'update_check',
       decodeFocusUpdateStatus,
       'update check',
-      { body: { commit } },
+      { body: { target, commit } },
     );
   }
 

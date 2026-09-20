@@ -133,6 +133,8 @@ describe('Focus runtime-details presentation', () => {
 
   it('keeps the Focus shell below its reviewed source-size threshold', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
     expect(app.split('\n').length).toBeLessThan(1_500);
+    expect(settingsSurface.split('\n').length).toBeLessThan(150);
   });
 });

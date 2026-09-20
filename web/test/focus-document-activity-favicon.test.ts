@@ -262,6 +262,7 @@ describe('Focus Web document activity favicon', () => {
 
   it('wires the browser-local preference through the settings surface', () => {
     const app = source('../src/focus/FocusApp.vue');
+    const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
     const dialog = source('../src/focus/FocusSettingsDialog.vue');
     const en = source('../src/i18n/locales/en/focus.ts');
     const zh = source('../src/i18n/locales/zh/focus.ts');
@@ -270,11 +271,18 @@ describe('Focus Web document activity favicon', () => {
     expect(dialog).toContain('setActivityFaviconEnabled: [value: boolean]');
     expect(dialog).toContain("emit('setActivityFaviconEnabled', true)");
     expect(dialog).toContain("emit('setActivityFaviconEnabled', false)");
+    expect(settingsSurface).toContain(
+      ':activity-favicon-enabled="props.activityFaviconEnabled"',
+    );
+    expect(settingsSurface).toContain(
+      '@set-activity-favicon-enabled="props.setActivityFaviconEnabled($event)"',
+    );
+    expect(app).toContain('<FocusSettingsSurface');
     expect(app).toContain(
       ':activity-favicon-enabled="activityFaviconPreference.enabled.value"',
     );
     expect(app).toContain(
-      '@set-activity-favicon-enabled="activityFaviconPreference.setEnabled($event)"',
+      ':set-activity-favicon-enabled="activityFaviconPreference.setEnabled"',
     );
     expect(en).toContain('activityFaviconDescription:');
     expect(zh).toContain('activityFaviconDescription:');

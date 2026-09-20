@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import os
+import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from bot.installation.update import FocusUpdateController, UpdateError, validate_commit, validate_source
+from bot.installation.update import (
+    FocusUpdateController,
+    UpdateError,
+    validate_commit,
+    validate_source,
+    validate_target,
+)
 from bot.installation.update_launcher import launch_update_worker
 from bot.installation.node_toolchain import resolve_node_toolchain
 from bot.installation.update_process import UpdateLaunchOutcomeUnknown
@@ -29,6 +36,26 @@ class UpdateInputTests(unittest.TestCase):
                 with self.assertRaises(UpdateError):
                     validate_source(value)
 
+    def test_target_only_exposes_stable_and_main(self) -> None:
+        self.assertEqual(validate_target("stable"), "stable")
+        self.assertEqual(validate_target("main"), "main")
+        with self.assertRaisesRegex(UpdateError, "stable or main"):
+            validate_target("development")
+
+    def test_stable_check_does_not_pin_a_commit_or_source(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
+            with self.assertRaisesRegex(UpdateError, "do not accept a commit"):
+                controller.start_check("stable", "a" * 40)
+            with patch("bot.installation.update.unavailable_reason", return_value=""):
+                with patch(
+                    "bot.installation.update.launch_worker",
+                    side_effect=UpdateError("launcher refused"),
+                ):
+                    result = controller.start_check("stable", "")
+            self.assertEqual(result["target"], "stable")
+            self.assertIsNone(result["operation_source"])
+
 
 class UpdateJournalTests(unittest.TestCase):
     def test_default_snapshot_is_machine_scoped(self) -> None:
@@ -39,6 +66,26 @@ class UpdateJournalTests(unittest.TestCase):
             self.assertEqual(snapshot["state"], "idle")
             self.assertEqual(snapshot["preflight"], {})
             self.assertIn("operation_source", snapshot)
+
+    def test_old_main_only_journal_is_migrated_to_target_schema(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            controller = FocusUpdateController(global_data_root=pathlib.Path(raw))
+            value = controller.journal.read()
+            value.update(
+                schema="focus-web-update-1",
+                operation_id="a" * 32,
+                state="ready",
+                unit=f"focus-update-{'a' * 32}-check.service",
+                resolved_commit="b" * 40,
+                operation_source={"url": "https://example.com/focus.git", "branch": "main"},
+            )
+            value.pop("target")
+            controller.journal.path.write_text(json.dumps(value), encoding="utf-8")
+
+            migrated = controller.journal.read()
+
+            self.assertEqual(migrated["schema"], "focus-web-update-2")
+            self.assertEqual(migrated["target"], "main")
 
     def test_launch_failure_is_settled_as_failed(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -71,6 +118,7 @@ class UpdateJournalTests(unittest.TestCase):
             current = controller.journal.read()
             current.update(
                 operation_id="a" * 32,
+                target="main",
                 state="unknown",
                 unit=f"focus-update-{'a' * 32}-check.service",
                 error="launcher timed out",
@@ -94,6 +142,7 @@ class UpdateJournalTests(unittest.TestCase):
             current = controller.journal.read()
             current.update(
                 operation_id="a" * 32,
+                target="main",
                 state="unknown",
                 unit=f"focus-update-{'a' * 32}-apply.service",
                 installation_started=False,
@@ -114,6 +163,7 @@ class UpdateJournalTests(unittest.TestCase):
             current = controller.journal.read()
             current.update(
                 operation_id=operation_id,
+                target="main",
                 state="ready",
                 requested_commit="",
                 resolved_commit="b" * 40,

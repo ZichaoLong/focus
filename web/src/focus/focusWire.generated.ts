@@ -274,8 +274,11 @@ export function focusWebEndpointPath(
 export const FOCUS_WEB_ENUMS = {
   "focus_install_channel": [
     "stable",
-    "development",
     "local"
+  ],
+  "update_target": [
+    "stable",
+    "main"
   ],
   "update_state": [
     "idle",
@@ -633,6 +636,7 @@ export const FOCUS_WEB_RECORDS = {
       "source",
       "operation_source",
       "operation_id",
+      "target",
       "state",
       "requested_commit",
       "resolved_commit",
@@ -644,7 +648,8 @@ export const FOCUS_WEB_RECORDS = {
       "installation_started"
     ],
     "enumFields": {
-      "state": "update_state"
+      "state": "update_state",
+      "target": "update_target"
     }
   },
   "operator_warning": {

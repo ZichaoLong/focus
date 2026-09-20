@@ -3,44 +3,22 @@ name: Publish installable bundle
 on:
   workflow_dispatch:
     inputs:
-      channel:
-        description: Install channel to publish
-        required: true
-        type: choice
-        options:
-          - development
-          - stable
       release_tag:
-        description: Existing formal Release tag (required only for stable)
-        required: false
+        description: Existing formal Release tag
+        required: true
         type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: focus-install-publication-${{ inputs.channel }}
+  group: focus-install-publication-stable
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Validate publication inputs
-        shell: bash
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
-        run: |
-          if [[ "$CHANNEL" == "stable" && -z "$RELEASE_TAG_INPUT" ]]; then
-            echo "stable publication requires release_tag" >&2
-            exit 2
-          fi
-          if [[ "$CHANNEL" == "development" && -n "$RELEASE_TAG_INPUT" ]]; then
-            echo "development derives a unique tag from build_id; leave release_tag empty" >&2
-            exit 2
-          fi
-
       - name: Checkout selected source ref
         uses: actions/checkout@v4
 
@@ -114,25 +92,18 @@ jobs:
         id: artifact
         shell: bash
         env:
-          CHANNEL: ${{ inputs.channel }}
           RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
         run: |
           source_revision="$(git rev-parse HEAD)"
-          release_tag_args=()
-          if [[ "$CHANNEL" == "development" ]]; then
-            build_id="${source_revision:0:12}-${GITHUB_RUN_ID}"
-          else
-            build_id="${source_revision:0:12}"
-            release_tag_args=(--release-tag "$RELEASE_TAG_INPUT")
-          fi
+          build_id="${source_revision:0:12}"
           python scripts/build_install_bundle.py \
-            --channel "$CHANNEL" \
+            --channel stable \
             --build-id "$build_id" \
             --source-revision "$source_revision" \
-            "${release_tag_args[@]}" \
+            --release-tag "$RELEASE_TAG_INPUT" \
             --output-dir build/install-publish
           bundle="$(find build/install-publish -maxdepth 1 -type f -name '*.zip' -print -quit)"
-          manifest="build/install-publish/focus-install-${CHANNEL}.json"
+          manifest="build/install-publish/focus-install-stable.json"
           test -n "$bundle" && test -f "$manifest"
           echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
           echo "manifest=$manifest" >> "$GITHUB_OUTPUT"
@@ -142,6 +113,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           python scripts/publish_install_bundle.py
-          --channel "${{ inputs.channel }}"
           --bundle "${{ steps.artifact.outputs.bundle }}"
           --channel-manifest "${{ steps.artifact.outputs.manifest }}"

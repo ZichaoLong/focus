@@ -48,7 +48,7 @@ cd /path/to/focus
 bash install.sh
 ```
 
-默认从本仓库 GitHub Releases 下载最新 stable bundle。development、已下载或本地 bundle
+默认从本仓库 GitHub Releases 下载最新 stable bundle。已下载或本地 bundle
 （`--artifact`，无需解压）以及代理边界见 `bash install.sh --help`。
 如需指定解释器，可执行 `FOCUS_INSTALL_PYTHON=/path/to/python3.13 bash install.sh`。
 

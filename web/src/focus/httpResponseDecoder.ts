@@ -530,6 +530,7 @@ export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (val
     !isRequiredRecord('update_status', value)
     || !hasExactRequiredFields('update_status', value)
     || !isFocusWebWireEnum('update_state', value.state)
+    || (value.target !== '' && !isFocusWebWireEnum('update_target', value.target))
     || !isFocusUpdateSource(value.source)
     || (value.operation_source !== null && !isFocusUpdateSource(value.operation_source))
     || !hasString(value, 'operation_id')
@@ -547,7 +548,10 @@ export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (val
     || typeof value.installation_started !== 'boolean'
   ) return null;
   if (value.operation_id === '' && value.operation_source !== null) return null;
-  if (value.operation_id !== '' && value.operation_source === null) return null;
+  if (value.operation_id !== '' && value.target === 'main' && value.operation_source === null) return null;
+  if (value.operation_id !== '' && value.target === 'stable' && value.operation_source !== null) return null;
+  if (value.operation_id === '' && value.target !== '') return null;
+  if (value.operation_id !== '' && value.target === '') return null;
   if (value.requested_commit !== '' && !new RegExp('^[0-9a-f]{7,40}$', 'u').test(value.requested_commit as string)) return null;
   if (value.resolved_commit !== '' && !new RegExp('^[0-9a-f]{40}$', 'u').test(value.resolved_commit as string)) return null;
   return value as unknown as FocusUpdateStatus;

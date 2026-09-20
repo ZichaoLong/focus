@@ -15,14 +15,18 @@
 - 修改更新源必须显式确认；每次检查都重新填写 commit。commit 留空时先读取
   远程 `refs/heads/main`，随后固定为完整 40 位 SHA，构建期间不得重新解析
   `main`。
+- 检查目标只有 `main` 与 `stable`：`main` 使用上述 machine-level Git 源并构建
+  当前源码；`stable` 固定读取 Focus GitHub 最新正式 Release 的已发布 bundle，
+  不使用自定义 Git 源，也不重新构建 Web。stable 不接受 commit 输入。
 
 ## 2. 检查与预检
 
-`POST /api/update/check` 只创建一个有界的后台检查操作，不改变当前安装或
-service。操作会在临时目录 clone/fetch 精确 commit、构建 Web production assets
-和 local bundle，并在停服前完成：
+`POST /api/update/check` 携带 `target` 与（main 可选的）`commit`，只创建一个有界的后台检查操作，
+不改变当前安装或 service。main 操作会在临时目录 clone/fetch 精确 commit、构建 Web production assets
+和 local bundle；stable 操作下载并验证正式 Release bundle。两者都在停服前完成：
 
-- Git、Node/npm 与 Python 可用性以及 package index、代理、证书的实际请求；
+- 对 main：Git、Node/npm 与 Python 可用性以及 package index、代理、证书的实际请求；对 stable：Git/Node
+  构建步骤标记为不适用，但仍执行 bundle、Python、package index、代理与证书检查；
 - staging 受管环境中的 pip 安装和 `pip check`；
 - 下载完整 wheelhouse 并记录文件清单，使应用阶段使用 `--no-index` 离线安装，
   不会在停服后意外发起第二次网络请求；
@@ -41,7 +45,7 @@ index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据�
 来源。
 
 失败时 operation 为 `failed`，旧服务继续运行。成功时 operation 为 `ready`，
-只保留一个精确 commit 的 staging 结果，不接受隐式 fallback。
+只保留一个精确 target/commit 的 staging 结果，不接受隐式 fallback。
 
 如果一次 check 的启动结果为 `unknown`，但对应的 check transient unit 已明确 inactive
 且尚未进入安装阶段，用户再次显式点击检查可以替换这个旧 operation；apply 阶段的
@@ -49,7 +53,7 @@ index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据�
 
 ## 3. 应用、重启与结果
 
-`POST /api/update/apply` 必须携带 ready operation id，并由用户再次确认。在 Linux
+`POST /api/update/apply` 必须携带 ready operation id（浏览器会单独显示并允许复制），并由用户再次确认。在 Linux
 上 Focus 以独立的 systemd user transient unit 启动可信 updater；其他平台在停服前
 明确拒绝应用。该 updater 由既有 managed install transaction 证明所有实例 idle，
 关闭 ingress，停服，安装已验证 bundle，再启动原先运行的实例并等待 service 状态。
@@ -62,7 +66,7 @@ service 恢复后完整 reload document，才能使用新的静态资源。
 
 ## 4. Wire 与生命周期
 
-`GET /api/update` 返回 machine-level source 与当前 operation journal；source、
+`GET /api/update` 返回 machine-level source 与当前 operation journal（含 target 与 operation id）；source、
 check、apply 都是 authenticated same-origin、CSRF 保护的用户动作，并续期当前
 Web session。journal 不授予 thread、writer、approval 或 recovery authority；
 更新期间连接断开只是 service lifecycle 的结果，不得把断线当作安装成功。

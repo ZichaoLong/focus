@@ -178,7 +178,7 @@ class WebGatewayPorts:
     # Gateway without the managed installer surface.
     update_status: Callable[[], dict[str, Any]] | None = None
     update_source: Callable[[str, str], dict[str, Any]] | None = None
-    update_check: Callable[[str], dict[str, Any]] | None = None
+    update_check: Callable[[str, str], dict[str, Any]] | None = None
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
@@ -747,8 +747,8 @@ class WebGateway(WebGatewayThreadInspectionMixin):
     async def _handle_update_check(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         body = await request_decoder.decode_json_object(request)
-        commit = request_decoder.decode_update_check_request(body)
-        payload = await self._call_update_port("update_check", request, client_id, commit)
+        target, commit = request_decoder.decode_update_check_request(body)
+        payload = await self._call_update_port("update_check", request, client_id, target, commit)
         return web.json_response(payload, headers={"Cache-Control": "no-store"})
 
     async def _handle_update_apply(self, request: web.Request) -> web.Response:

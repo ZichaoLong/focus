@@ -12,6 +12,10 @@ const focusApp = readFileSync(
   fileURLToPath(new URL('../src/focus/FocusApp.vue', import.meta.url)),
   'utf8',
 );
+const settingsSurface = readFileSync(
+  fileURLToPath(new URL('../src/focus/FocusSettingsSurface.vue', import.meta.url)),
+  'utf8',
+);
 const primaryNotices = readFileSync(
   fileURLToPath(new URL('../src/focus/FocusPrimaryNotices.vue', import.meta.url)),
   'utf8',
@@ -116,9 +120,10 @@ describe('Focus backend reset settings surface', () => {
     expect(primaryNotices).toContain(
       '<Banner v-if="backendResetOutcomeUnknown" variant="danger">',
     );
-    expect(focusApp).toContain(':backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"');
-    expect(focusApp).toContain('@refresh-backend-reset="client.refreshBackendReset"');
-    expect(focusApp).toContain('@confirm-backend-reset="confirmBackendReset"');
+    expect(settingsSurface).toContain(':backend-reset-outcome-unknown="props.client.backendResetOutcomeUnknown.value"');
+    expect(settingsSurface).toContain('@refresh-backend-reset="props.client.refreshBackendReset"');
+    expect(settingsSurface).toContain('@confirm-backend-reset="props.confirmBackendReset"');
+    expect(focusApp).toContain('<FocusSettingsSurface');
     expect(focusApp).not.toContain('retryBackendReset');
     expect(focusApp).not.toContain('clearBackendReset');
   });

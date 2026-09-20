@@ -8,6 +8,7 @@ import os
 import pathlib
 import shutil
 import sys
+from types import SimpleNamespace
 
 from bot.installation import installer
 from bot.installation.install_bundle import validate_install_bundle
@@ -108,23 +109,38 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
     root.mkdir(parents=True, exist_ok=False)
     checkout = root / "source"
     output = root / "install"
+    target = operation["target"]
     source = operation["operation_source"]
     try:
         disk = _disk((journal.root, default_data_root()))
-        toolchain = resolve_node_toolchain()
-        npm_environment = toolchain.environment()
-        run(["git", "clone", "--filter=blob:none", "--no-checkout", "--single-branch", "--branch", "main", source["url"], str(checkout)], cwd=root, label="git clone", env=None)
-        revision = _revision(checkout, operation["requested_commit"])
-        run([str(toolchain.npm), "--prefix", str(checkout / "web"), "ci"], cwd=checkout, label="npm ci", env=npm_environment)
-        run([str(toolchain.npm), "--prefix", str(checkout / "web"), "run", "build"], cwd=checkout, label="Web build", env=npm_environment)
         output.mkdir()
-        build_python = _build_python(checkout, root)
-        run([str(build_python), "-I", str(checkout / "scripts" / "build_install_bundle.py"), "--output-dir", str(output),
-             "--source-revision", revision, "--build-id", f"web-{revision[:12]}"], cwd=checkout, label="Focus bundle build")
-        bundles = tuple(output.glob("focus-install-*.zip"))
-        if len(bundles) != 1:
-            raise UpdateError("source build must produce exactly one Focus bundle")
-        bundle = bundles[0]
+        node_preflight: dict[str, object] = {"status": "skipped"}
+        if target == "stable":
+            with installer._resolved_install_bundle(SimpleNamespace(artifact=None)) as downloaded:
+                bundle = output / downloaded.artifact_path.name
+                shutil.copy2(downloaded.artifact_path, bundle)
+                revision = downloaded.metadata.source_revision
+            git_status = "skipped"
+            web_status = "skipped"
+        else:
+            if not source:
+                raise UpdateError("main update operation is missing its Git source")
+            toolchain = resolve_node_toolchain()
+            npm_environment = toolchain.environment()
+            node_preflight = {"status": "passed", **toolchain.preflight()}
+            run(["git", "clone", "--filter=blob:none", "--no-checkout", "--single-branch", "--branch", "main", source["url"], str(checkout)], cwd=root, label="git clone", env=None)
+            revision = _revision(checkout, operation["requested_commit"])
+            run([str(toolchain.npm), "--prefix", str(checkout / "web"), "ci"], cwd=checkout, label="npm ci", env=npm_environment)
+            run([str(toolchain.npm), "--prefix", str(checkout / "web"), "run", "build"], cwd=checkout, label="Web build", env=npm_environment)
+            build_python = _build_python(checkout, root)
+            run([str(build_python), "-I", str(checkout / "scripts" / "build_install_bundle.py"), "--output-dir", str(output),
+                 "--source-revision", revision, "--build-id", f"web-{revision[:12]}"], cwd=checkout, label="Focus bundle build")
+            bundles = tuple(output.glob("focus-install-*.zip"))
+            if len(bundles) != 1:
+                raise UpdateError("source build must produce exactly one Focus bundle")
+            bundle = bundles[0]
+            git_status = "passed"
+            web_status = "passed"
         validated = validate_install_bundle(bundle, extraction_dir=root / "validated")
         preflight_venv = root / "preflight-venv"
         run([getattr(sys, "_base_executable", sys.executable), "-m", "venv", str(preflight_venv)], cwd=root, label="preflight Python")
@@ -138,9 +154,12 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
         _disk((journal.root, default_data_root()), staged=bundle.stat().st_size + expanded)
         digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
         journal.settle(operation["operation_id"], "checking", state="ready", resolved_commit=revision,
-                       message="Source, Web build, dependency, disk and offline-install preflight passed",
-                       preflight={"git": "passed", "node": "passed", "npm": "passed", "web_build": "passed",
-                                  "pip": "passed", "disk": "passed", "node_toolchain": toolchain.preflight(),
+                       message=("Stable bundle, dependency, disk and offline-install preflight passed"
+                                if target == "stable" else
+                                "Source, Web build, dependency, disk and offline-install preflight passed"),
+                       preflight={"target": target, "git": git_status, "node": node_preflight.get("status", "skipped"),
+                                  "npm": node_preflight.get("status", "skipped"), "web_build": web_status,
+                                  "pip": "passed", "disk": "passed", "node_toolchain": node_preflight,
                                   "free_bytes": disk["free_bytes"], "free_inodes": disk["free_inodes"], "wheelhouse_files": wheel_inodes},
                        bundle_sha256=digest, staging_dir=str(root), bundle_path=str(bundle),
                        wheelhouse_path=str(wheelhouse), offline_requirements=str(offline_req), installation_started=False)
