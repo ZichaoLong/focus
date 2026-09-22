@@ -54,6 +54,7 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
         operations = Mock(name="operations")
         operations.has_unknown_mutation.return_value = False
         prompt_results = Mock(name="prompt_results")
+        prompt_results.has_prompt_result_reconciliation.return_value = False
 
         lifecycle = Mock(name="lifecycle")
         attachments = Mock(name="attachments")
@@ -852,10 +853,49 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
             "root-1",
             list(turns),
         )
-        reconcile_prompts = (
-            owners.prompt_results.reconcile_prompt_results_from_turns
+        owners.prompt_results.reconcile_prompt_results_from_turns.assert_not_called()
+
+    def test_prompt_reconciliation_is_limited_to_user_messages_and_reuses_turns(
+        self,
+    ) -> None:
+        coordinator, owners, _callbacks = self._build()
+        owners.runtime_interest.has_managed_interest.return_value = False
+        owners.operations.has_unknown_mutation.return_value = True
+        owners.prompt_results.has_prompt_result_reconciliation.return_value = True
+        turns = ({"id": "turn-1", "status": "inProgress", "items": []},)
+        owners.read_model.turns.return_value = turns
+
+        coordinator.handle_notification(
+            "item/commandExecution/outputDelta",
+            {"threadId": "root-1", "turnId": "turn-1", "delta": "chunk"},
         )
-        reconcile_prompts.assert_called_once_with("root-1", list(turns))
+
+        owners.read_model.turns.assert_called_once_with("root-1")
+        owners.prompt_results.reconcile_prompt_results_from_turns.assert_not_called()
+        owners.read_model.turns.reset_mock()
+
+        coordinator.handle_notification(
+            "item/completed",
+            {
+                "threadId": "root-1",
+                "turnId": "turn-1",
+                "item": {
+                    "id": "user-1",
+                    "type": "userMessage",
+                    "clientId": "focus-web:mutation-1",
+                },
+            },
+        )
+
+        owners.read_model.turns.assert_called_once_with("root-1")
+        owners.operations.reconcile_unknown_from_turns.assert_called_with(
+            "root-1",
+            list(turns),
+        )
+        owners.prompt_results.reconcile_prompt_results_from_turns.assert_called_once_with(
+            "root-1",
+            list(turns),
+        )
 
     def test_error_notice_follows_existing_thread_invalidation(self) -> None:
         coordinator, owners, callbacks = self._build()

@@ -220,6 +220,13 @@ guards and may not retain parallel key or enum inventories.
   summary, and full use one page width within a browser preference generation,
   so its summary locator is reusable for that full page. A width change retires
   old locators/detail intent and rebuilds them at the new width.
+- After serialization, large JSON success responses for the thread directory,
+  thread snapshot, and history page (at least 16 KiB) negotiate `gzip` or
+  `deflate` from the request's `Accept-Encoding` and send
+  `Vary: Accept-Encoding`. A client without compression support receives the
+  same identity JSON. Compression changes only the HTTP representation; it does
+  not change DTOs, revisions, cursors, or stale-read semantics. Small JSON,
+  error responses, and attachment downloads do not use this path.
 - `GET /api/threads/{thread_id}/export-summary` returns one complete UTF-8
   Markdown attachment for the current authenticated document. Its owner first
   verifies an exact direct, non-ephemeral thread with persisted history, then
@@ -325,6 +332,15 @@ guards and may not retain parallel key or enum inventories.
   successful Web delete uses the same
   shutdown barrier. These flights are not durable, are not replayed, and gain no
   lifecycle authority.
+- Incremental notifications such as `item/.../delta` already publish compact
+  stream details; they do not copy the complete turns window for Prompt-result
+  observation. Prompt-result reconciliation runs only for `turn/started`,
+  `turn/completed`, or `item/started` / `item/completed` carrying an item with
+  `type=userMessage`, and only while that thread has a pending or
+  outcome-unknown Focus prompt receipt. If unknown-mutation and Prompt-result
+  reconciliation both run for one notification, they share one turns read.
+  This optimization does not change receipt status, transcript-evidence rules,
+  or notification ordering.
 - `GET /api/threads/{thread_id}/turns/{turn_id}/tool-items/{item_id}` is the
   read-only terminal-tool-detail endpoint for a paginated thread. Its query
   requires exactly one `view=preview|full`, with either no or one canonical ASCII

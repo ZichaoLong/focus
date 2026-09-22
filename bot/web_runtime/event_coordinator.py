@@ -121,6 +121,8 @@ class WebEventOperationPort(Protocol):
 
 
 class WebEventPromptResultPort(Protocol):
+    def has_prompt_result_reconciliation(self, thread_id: str) -> bool: ...
+
     def reconcile_prompt_results_from_turns(
         self,
         thread_id: str,
@@ -306,15 +308,23 @@ class WebRuntimeEventCoordinator:
                     "thread=%s",
                     thread_id[:12],
                 )
+        turns: list[dict[str, Any]] | None = None
         if thread_id and ports.operations.has_unknown_mutation(thread_id):
+            turns = list(ports.read_model.turns(thread_id))
             ports.operations.reconcile_unknown_from_turns(
                 thread_id,
-                list(ports.read_model.turns(thread_id)),
+                turns,
             )
-        if thread_id:
+        if (
+            thread_id
+            and self._notification_may_reconcile_prompt_result(method, params)
+            and ports.prompt_results.has_prompt_result_reconciliation(thread_id)
+        ):
+            if turns is None:
+                turns = list(ports.read_model.turns(thread_id))
             ports.prompt_results.reconcile_prompt_results_from_turns(
                 thread_id,
-                list(ports.read_model.turns(thread_id)),
+                turns,
             )
         if method == "turn/completed" and thread_id:
             ports.lifecycle.maybe_release_runtime(
@@ -605,3 +615,17 @@ class WebRuntimeEventCoordinator:
         if not isinstance(thread, dict):
             return ""
         return str(thread.get("id", "") or "").strip()
+
+    @staticmethod
+    def _notification_may_reconcile_prompt_result(
+        method: str,
+        params: dict[str, Any],
+    ) -> bool:
+        """Limit transcript scans to notifications carrying user-message facts."""
+
+        if method in {"turn/started", "turn/completed"}:
+            return True
+        if method not in {"item/started", "item/completed"}:
+            return False
+        item = params.get("item")
+        return isinstance(item, dict) and item.get("type") == "userMessage"

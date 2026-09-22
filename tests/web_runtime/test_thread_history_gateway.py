@@ -1,5 +1,8 @@
 """Gateway admission regressions for bounded thread-history reads."""
 
+import gzip
+import json
+
 from bot.web_runtime.contract import WebRuntimeError
 from tests.web_runtime.gateway_harness import WebGatewayHarness
 
@@ -21,6 +24,65 @@ def _raise_thread_data_export_too_large() -> bytes:
 
 
 class ThreadHistoryGatewayTests(WebGatewayHarness):
+    async def test_large_thread_snapshot_negotiates_gzip_without_changing_json(
+        self,
+    ) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="compression-client",
+            incarnation_id="compression-document",
+        )
+        payload = {
+            "thread": {"id": "thread-1"},
+            "turns": [
+                {
+                    "id": "turn-1",
+                    "status": "completed",
+                    "items": [{"id": "message-1", "type": "agentMessage", "text": "x" * 40_000}],
+                }
+            ],
+        }
+        self.gateway._ports.run_prepared_thread_read = lambda _prepared: payload
+        headers = {
+            **self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+            "Accept-Encoding": "gzip",
+        }
+
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1",
+            headers=headers,
+            auto_decompress=False,
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers["Content-Encoding"], "gzip")
+            self.assertIn("Accept-Encoding", response.headers["Vary"])
+            compressed = await response.read()
+
+        self.assertLess(len(compressed), len(json.dumps(payload).encode()))
+        self.assertEqual(json.loads(gzip.decompress(compressed)), payload)
+
+        identity_headers = {
+            **self._client_headers(
+                document,
+                include_origin=False,
+                include_csrf=False,
+            ),
+            "Accept-Encoding": "identity",
+        }
+        async with self.session.get(
+            f"{self.endpoint}/api/threads/thread-1",
+            headers=identity_headers,
+            auto_decompress=False,
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertNotIn("Content-Encoding", response.headers)
+            self.assertIn("Accept-Encoding", response.headers["Vary"])
+            self.assertEqual(json.loads(await response.read()), payload)
+
     async def test_thread_data_export_downloads_one_complete_jsonl_response(
         self,
     ) -> None:

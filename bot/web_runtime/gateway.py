@@ -78,6 +78,7 @@ _STATIC_NO_STORE_FILENAMES = {
 _STOP_TIMEOUT_SECONDS = 5.0
 _MAX_EXTERNAL_SESSION_SOCKETS = 8
 _MAX_EXTERNAL_SOCKETS = 128
+_JSON_COMPRESSION_MIN_BYTES = 16 * 1024
 
 
 class WebGatewayShutdownError(RuntimeError):
@@ -514,6 +515,27 @@ class WebGateway(WebGatewayThreadInspectionMixin):
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
+
+    @staticmethod
+    def _json_response(data: Any, **kwargs: Any) -> web.Response:
+        """Build a large JSON response with negotiated HTTP compression.
+
+        A response keeps the existing JSON DTO and is compressed only after it
+        crosses the threshold.  ``aiohttp`` performs the Accept-Encoding
+        negotiation and writes the matching Content-Encoding/Length headers;
+        the Vary header makes that representation choice cache-safe.
+        """
+
+        response = web.json_response(data, **kwargs)
+        body = response.body
+        if body is None or len(body) < _JSON_COMPRESSION_MIN_BYTES:
+            return response
+        response.enable_compression()
+        vary = [value.strip() for value in response.headers.get("Vary", "").split(",")]
+        if not any(value.lower() == "accept-encoding" for value in vary):
+            vary.append("Accept-Encoding")
+        response.headers["Vary"] = ", ".join(value for value in vary if value)
+        return response
 
     async def _handle_health(self, _request: web.Request) -> web.Response:
         return web.json_response({"ok": True, "product": "Focus"})
@@ -1002,13 +1024,13 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                 prepared,
                 self._ports.run_prepared_thread_read,
             )
-        return web.json_response(result)
+        return self._json_response(result)
 
     async def _handle_thread(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         thread_id = request.match_info["thread_id"]
         turn_limit = request_decoder.decode_turn_window_limit(request.query)
-        return web.json_response(
+        return self._json_response(
             await self._staged_document_request_to_thread(
                 self._ports.prepare_read_thread,
                 request,
@@ -1032,7 +1054,7 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                 "History items view must be 'summary' or 'full'.",
                 code="invalid_items_view",
             )
-        return web.json_response(
+        return self._json_response(
             await self._staged_document_request_to_thread(
                 self._ports.prepare_list_older_turns,
                 request,

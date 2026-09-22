@@ -417,6 +417,36 @@ class WebPromptSubmissionTests(unittest.TestCase):
             "web_prompt_outcome_unknown",
         )
 
+    def test_prompt_reconciliation_candidate_tracks_pending_and_unknown_receipts(
+        self,
+    ) -> None:
+        self.assertFalse(
+            self.harness.coordinator.has_prompt_result_reconciliation(self.thread_id)
+        )
+
+        pending = self._prepare()
+        self.assertTrue(
+            self.harness.coordinator.has_prompt_result_reconciliation(self.thread_id)
+        )
+        self._result(pending)
+        self.assertFalse(
+            self.harness.coordinator.has_prompt_result_reconciliation(self.thread_id)
+        )
+
+        unknown_harness = self._build()
+        unknown_harness.backend.start_error = CodexRpcTransportError(
+            "turn/start", {"message": "lost"}
+        )
+        self._result(
+            self._prepare(harness=unknown_harness),
+            harness=unknown_harness,
+        )
+        self.assertTrue(
+            unknown_harness.coordinator.has_prompt_result_reconciliation(
+                self.thread_id
+            )
+        )
+
     def test_exact_active_turn_steers_once_without_start_fallback(self) -> None:
         self.harness.read_model.replace_turns(
             self.thread_id,

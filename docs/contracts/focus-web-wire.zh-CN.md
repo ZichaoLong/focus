@@ -150,6 +150,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   detail 的唯一历史 endpoint；`full` 请求必须携非空 opaque `cursor`，只有 `summary` 可以省略 cursor。一个 browser
   preference generation 内 recent、summary 与 full 必须使用同一个 page width，保证 summary locator 可直接复用于
   同页 full 请求，而不建立 range/offset 语义。width 改变会废弃旧 locator/detail intent，并以新 width 重建。
+- thread directory、thread snapshot 与 history page 的大型 JSON success response 在序列化后达到 16 KiB 时，按请求的
+  `Accept-Encoding` 协商 `gzip`/`deflate`，并发送 `Vary: Accept-Encoding`；不支持压缩的 client 继续收到完全相同的
+  identity JSON。压缩只改变 HTTP representation，不改变 DTO、revision、cursor 或 stale-read 语义；小 JSON、错误响应与
+  attachment download 不走这条压缩路径。
 - `GET /api/threads/{thread_id}/export-summary` 只为 current authenticated document 导出一个完整 UTF-8 Markdown
   attachment。owner 先验证 exact direct、non-ephemeral、persisted-history thread，再按 `sortDirection=asc`、
   `itemsView=summary`、每页 100 turns 遍历 `thread/turns/list`。每轮只读取首个 `userMessage` 中 `type=text` 的
@@ -206,6 +210,11 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   匹配原 observation/epoch 的结果，旧结果直接丢弃。worker 调度失败或没有 successor 可收敛的投影失败只发布轻量
   `thread_invalidated`，不能阻塞 notification。权威 `thread/deleted` 或 known Web delete success 的 attachment-scope 物理清理使用同一 shutdown
   barrier。上述 flight 不持久化、不自动 replay，也不取得 lifecycle authority。
+- `item/.../delta` 等增量通知已经只发布 compact stream detail；它们不会为了 Prompt-result 观察而复制完整 turns
+  window。Prompt-result reconciliation 只在 `turn/started`、`turn/completed`，或携 `type=userMessage` item 的
+  `item/started`、`item/completed` 上进行，并且仅当该 thread 存在 pending/outcome-unknown Focus prompt receipt；
+  unknown-mutation 与 Prompt-result reconciliation 若在同一 notification 触发，共用一次 turns read。该优化不改变
+  receipt 状态、transcript evidence 规则或 notification 顺序。
 - `GET /api/threads/{thread_id}/turns/{turn_id}/tool-items/{item_id}` 是 paginated thread 的只读 terminal
   tool-detail endpoint。query 必须恰好携一项 `view=preview|full`，可选零项或一项 canonical ASCII unsigned 32-bit
   `change_index`，以及可选的一项 exact opaque `cursor`；空值、重复项、前导零、符号、空白、未知 key 或超界值一律以

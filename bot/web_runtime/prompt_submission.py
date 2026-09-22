@@ -295,6 +295,24 @@ class WebPromptResultRegistry:
         )
         return result if result is not None and result.thread_id == normalized_thread_id else None
 
+    def has_reconciliation_candidate(self, thread_id: str) -> bool:
+        """Return whether transcript evidence can still settle this thread."""
+
+        self._runtime_context_guard()
+        normalized_thread_id = str(thread_id or "").strip()
+        if not normalized_thread_id:
+            return False
+        if any(
+            active.result.thread_id == normalized_thread_id
+            for active in self._active.values()
+        ):
+            return True
+        return any(
+            terminal.thread_id == normalized_thread_id
+            and terminal.status in {"pending", "outcome_unknown"}
+            for terminal in self._terminal.values()
+        )
+
     def retire_backend_epoch_after_stop(
         self,
     ) -> WebPromptBackendEpochRetirementReceipt:
@@ -898,6 +916,12 @@ class WebPromptSubmissionCoordinator:
         except Exception:
             logger.exception("Unable to publish observed Web prompt result")
         return True
+
+    def has_prompt_result_reconciliation(self, thread_id: str) -> bool:
+        """Avoid copying a thread window when no prompt receipt needs evidence."""
+
+        self._runtime_context_guard()
+        return self._results.has_reconciliation_candidate(thread_id)
 
     def _claim_prompt_effect(
         self,
