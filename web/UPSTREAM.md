@@ -65,6 +65,9 @@ digests with the manifest; it does not synchronize Focus with a newer Kimi
 commit. A new import would require a separate explicit decision and is not a
 routine development or release requirement.
 
+The Markdown formula and code copy components and their copy regression
+tests are Focus-owned additions, explicitly listed in `focus_owned_files`.
+
 This guard is intentionally not part of `npm run build`: build and release
 remain reproducible from checked-in code and license evidence, without a
 developer-specific `~/llm/kimi-code` path. The notice generator reads the

@@ -1,6 +1,20 @@
 <!-- apps/kimi-web/src/components/chat/Markdown.vue -->
+<script lang="ts">
+import { setCustomComponents } from 'markstream-vue';
+import MarkdownMath from './MarkdownMath.vue';
+import MarkdownCodeBlock from './MarkdownCodeBlock.vue';
+
+// Scope overrides to Focus renderers, including formulas nested inside prose,
+// lists and tables. Code copy headers survive highlighter loading/failure.
+const MARKDOWN_SCOPE = 'focus-markdown';
+setCustomComponents(MARKDOWN_SCOPE, {
+  math_inline: MarkdownMath,
+  math_block: MarkdownMath,
+  code_block: MarkdownCodeBlock,
+});
+</script>
 <script setup lang="ts">
-import { computed, inject, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
+import { computed, inject, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { MarkdownRender } from 'markstream-vue';
 import { useIsDark } from '../../composables/useIsDark';
@@ -82,6 +96,16 @@ const renderPlan = computed(() => {
   // is never `streaming`, so the large/heavy-session case still gets `pre`.
   if (props.streaming) return { codeRenderer: 'shiki' as const, codeFenceCount: 0, codeChars: 0 };
   return markdownRenderPlan(props.text ?? '');
+});
+
+provide('focusMarkdownCodeRenderer', computed(() => renderPlan.value.codeRenderer));
+const componentScope = computed(() => {
+  // A custom registry disables markstream's stable-node parsing reuse. Keep
+  // that fast path for ordinary prose; the parser still owns node admission.
+  const text = props.text ?? '';
+  return text.includes('\\(') || text.includes('\\[') || text.includes('$$')
+    || text.includes('```') || text.includes('~~~') || text.includes('    ') || text.includes('\t')
+    ? MARKDOWN_SCOPE : undefined;
 });
 
 // Code blocks follow the app colour scheme (shiki re-renders on flip).
@@ -264,10 +288,9 @@ onUnmounted(() => {
 const CODE_LIGHT_THEME = 'github-light';
 const CODE_DARK_THEME = 'github-dark';
 
-// Props forwarded to each code block. markstream's CodeBlock ships its own
-// header with a copy button + language label, so we keep the header + copy
-// button (preserving our previous per-block copy affordance) and turn off the
-// monaco-only buttons (expand / preview / font-size) that don't fit a chat.
+// Default props for markstream's code path. MarkdownCodeBlock owns ordinary
+// code headers and copying, including when the inner renderer falls back to
+// plain text. Hide the editor-only actions that do not fit a chat.
 //
 // `loading: false` is the important one. markstream's CodeBlock shows a loading
 // SKELETON whenever `!stream && loading`, and its `loading` prop DEFAULTS TO
@@ -358,6 +381,7 @@ function copyDiff(code: string, idx: number): void {
         v-if="seg.kind === 'md'"
         :key="`${i}:${markdownRuntimeRevision}`"
         :content="seg.text"
+        :custom-id="componentScope"
         :custom-markdown-it="configureFocusMarkdownMath"
         mode="chat"
         :code-renderer="renderPlan.codeRenderer"
@@ -551,6 +575,12 @@ function copyDiff(code: string, idx: number): void {
   padding: 4px 12px;
   color: var(--color-text-muted);
   font: var(--text-xs) var(--font-mono);
+}
+.md :deep(.md-code-block .code-block-container) {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 .md :deep(.code-block-header *) {
   color: var(--color-text-muted);

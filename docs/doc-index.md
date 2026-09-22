@@ -100,6 +100,7 @@ Status guidance:
 - [`server-request-lifecycle.md`](./contracts/server-request-lifecycle.md)
 - [`codex-app-server-schema-drift.md`](./contracts/codex-app-server-schema-drift.md)
 - [`focus-web-wire.md`](./contracts/focus-web-wire.md)
+- [`focus-web-markdown-copy.md`](./contracts/focus-web-markdown-copy.md)
 - [`focus-web-prompt-mutation-recovery.md`](./contracts/focus-web-prompt-mutation-recovery.md)
 - [`fcodex-operation-owner.md`](./contracts/fcodex-operation-owner.md)
 - [`install-artifact-delivery.md`](./contracts/install-artifact-delivery.md)
