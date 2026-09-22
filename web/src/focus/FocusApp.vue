@@ -208,11 +208,12 @@ const runtimeDetailsAttentionCount = computed(() => (
 const currentDocumentAccessAvailable = computed(() => (
   !client.authRequired.value && !client.documentReloadRequired.value
 ));
+// Reading mode can show the selected thread's loading state before its content arrives.
 const canEnterReadingMode = computed(() => (
   currentDocumentAccessAvailable.value
+  && client.initialized.value
   && Boolean(client.activeThreadId.value)
-  && !client.conversationLoading.value
-  && client.turns.value.length > 0
+  && (client.conversationLoading.value || client.turns.value.length > 0)
 ));
 const {
   readingMode,

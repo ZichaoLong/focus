@@ -89,7 +89,7 @@ const props = withDefaults(defineProps<{
   composerSendShortcut?: ComposerSendShortcut;
   /** Page-level reading mode hides shell chrome while keeping transcript owners mounted. */
   readingMode?: boolean;
-  /** Whether this loaded conversation can enter page-level reading mode. */
+  /** Whether this selected conversation can enter page-level reading mode, including while loading. */
   readingModeEnabled?: boolean;
   /** True while switching sessions and the turns array is not yet loaded. */
   sessionLoading?: boolean;

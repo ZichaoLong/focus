@@ -84,6 +84,7 @@
 - [`codex-app-server-schema-drift.zh-CN.md`](./contracts/codex-app-server-schema-drift.zh-CN.md)
 - [`focus-web-wire.zh-CN.md`](./contracts/focus-web-wire.zh-CN.md)
 - [`focus-web-markdown-copy.zh-CN.md`](./contracts/focus-web-markdown-copy.zh-CN.md)
+- [`focus-web-reading-mode.zh-CN.md`](./contracts/focus-web-reading-mode.zh-CN.md)
 - [`focus-web-prompt-mutation-recovery.zh-CN.md`](./contracts/focus-web-prompt-mutation-recovery.zh-CN.md)
 - [`fcodex-operation-owner.zh-CN.md`](./contracts/fcodex-operation-owner.zh-CN.md)
 - [`install-artifact-delivery.zh-CN.md`](./contracts/install-artifact-delivery.zh-CN.md)

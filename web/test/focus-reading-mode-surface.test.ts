@@ -147,15 +147,15 @@ describe('Focus page-level reading mode surface', () => {
     expect(Object.keys(enFocus).sort()).toEqual(Object.keys(zhFocus).sort());
   });
 
-  it('keeps reading across a loaded-session switch and exits only for a settled empty target', () => {
+  it('allows entry during a session switch and exits only for a settled empty target', () => {
     const app = source('../src/focus/FocusApp.vue');
     const readingModeOwner = source('../src/focus/focusReadingMode.ts');
 
     expect(app).toContain(`const canEnterReadingMode = computed(() => (
   currentDocumentAccessAvailable.value
+  && client.initialized.value
   && Boolean(client.activeThreadId.value)
-  && !client.conversationLoading.value
-  && client.turns.value.length > 0
+  && (client.conversationLoading.value || client.turns.value.length > 0)
 ));`);
 
     const activeThreadWatcher = between(

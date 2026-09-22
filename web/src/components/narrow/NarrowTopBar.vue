@@ -27,7 +27,7 @@ const props = withDefaults(
     branch?: string;
     /** Number of sessions in the active workspace (sub-line). */
     sessionCount?: number;
-    /** Existing loaded conversation may enter the page-level reading mode. */
+    /** The selected conversation may enter reading mode, including while loading. */
     readingModeEnabled?: boolean;
     /** Active thread id used by the narrow-only export action menu. */
     sessionId?: string;
