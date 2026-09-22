@@ -30,6 +30,14 @@ parsed. Formula-like ordinary text does not receive an automatic formula button.
 
 ## Presentation and clipboard
 
+Inline formula copy buttons are hidden by default without consuming text width
+or changing line height. Hovering a formula or focusing the formula or its copy
+control with the keyboard reveals a floating control above it, or below near the viewport's top
+edge. Moving the pointer onto the control keeps it visible. A short touch tap on
+the formula only reveals the control; tapping its button copies. Outside taps,
+scrolling, or Escape dismiss it. Long-press selection, selection dragging, and
+scroll gestures retain native browser behavior without copying or opening it.
+
 The Markdown presentation layer owns formula and code copy controls.
 Formula buttons support keyboard and touch input; horizontal display-math
 scrolling must not conceal them. Clipboard writes reuse the browser API and
