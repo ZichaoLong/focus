@@ -995,6 +995,18 @@
         {
           "path": "web/src/focus/useFocusWebClient.ts",
           "symbol": "useFocusWebClient"
+        },
+        {
+          "path": "web/src/focus/summaryPrintWindow.ts",
+          "symbol": "openSummaryPrintWindow"
+        },
+        {
+          "path": "web/src/focus/summaryPrintPreparation.ts",
+          "symbol": "prepareSummaryPrint"
+        },
+        {
+          "path": "web/src/focus/SummaryPrintApp.vue",
+          "symbol": "render"
         }
       ],
       "contract": [
@@ -1005,6 +1017,10 @@
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
+          "heading": "完整性与渲染"
         }
       ],
       "focused-test": [
@@ -1021,7 +1037,10 @@
           "targets": [
             "web/test/focus-api.test.ts",
             "web/test/focus-summary-export-surface.test.ts",
-            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+            "web/test/focus_client/owners/use-focus-web-client.test.ts",
+            "web/test/summary-print-markdown.test.ts",
+            "web/test/summary-print-window.test.ts",
+            "web/test/focus-thread-actions.test.ts"
           ]
         }
       ],

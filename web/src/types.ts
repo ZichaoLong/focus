@@ -538,3 +538,9 @@ export interface PromptAttachment {
   mediaType?: string;
   size?: number;
 }
+
+/** Q&A export intent shared by all session menus. */
+export interface SummaryExportRequest {
+  threadId: string;
+  format: 'markdown' | 'print';
+}

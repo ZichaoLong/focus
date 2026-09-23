@@ -2,6 +2,7 @@
 <!-- A single session row: status dot + title + time + attention pill + kebab. -->
 <!-- Inline rename (dblclick) and delete-confirm live here. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../types';
 import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { Session, SessionActionCapabilities } from '../types';
@@ -46,7 +47,7 @@ const emit = defineEmits<{
   rename: [id: string, title: string];
   archive: [id: string];
   fork: [id: string];
-  export: [id: string];
+  export: [request: SummaryExportRequest];
 }>();
 
 // Full, absolute timestamp shown on hover (the row's `time` is a short relative
@@ -186,10 +187,10 @@ function forkRow(): void {
   emit('fork', props.session.id);
 }
 
-// Export this session as Q&A Markdown.
-function exportRow(): void {
+// Export this session as Q&A Markdown or a print preview.
+function exportRow(format: SummaryExportRequest['format']): void {
   closeMenu();
-  emit('export', props.session.id);
+  emit('export', { threadId: props.session.id, format });
 }
 
 // Archive — the Focus shell owns confirmation and the async mutation; the row
@@ -324,9 +325,13 @@ defineExpose({ closeMenu });
             <Icon name="git-fork" size="sm" />
             {{ t('sidebar.fork') }}
           </MenuItem>
-          <MenuItem v-if="actionCapabilities.export" @click="exportRow">
+          <MenuItem v-if="actionCapabilities.export" @click="exportRow('markdown')">
             <Icon name="download" size="sm" />
             {{ t('sidebar.export') }}
+          </MenuItem>
+          <MenuItem v-if="actionCapabilities.export" @click="exportRow('print')">
+            <Icon name="download" size="sm" />
+            {{ t('focus.printSummary') }}
           </MenuItem>
           <MenuItem v-if="actionCapabilities.archive" danger @click="startArchive">
             <Icon name="archive" size="sm" />

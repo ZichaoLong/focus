@@ -5,6 +5,7 @@
      Tapping a session selects it AND closes the sheet; tapping a group header
      folds it, same as the wide-layout sidebar. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../../types';
 import { ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { Session, WorkspaceGroup, WorkspaceView } from '../../types';
@@ -50,7 +51,7 @@ const emit = defineEmits<{
   createInWorkspace: [workspaceId: string];
   addWorkspace: [];
   rename: [id: string, title: string];
-  export: [id: string];
+  export: [request: SummaryExportRequest];
   archive: [id: string];
   /** The parent shell owns confirmation and the async delete mutation. */
   deleteWorkspace: [workspaceId: string];
@@ -174,9 +175,9 @@ function onArchive(id: string): void {
   emit('archive', id);
 }
 
-function onExport(id: string): void {
+function onExport(id: string, format: SummaryExportRequest['format']): void {
   menuFor.value = null;
-  emit('export', id);
+  emit('export', { threadId: id, format });
 }
 
 function canSessionAction(session: Session, action: 'rename' | 'export' | 'archive'): boolean {
@@ -319,9 +320,13 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             <!-- Kebab menu -->
             <Menu v-if="allowSessionActions && menuFor === s.id && hasSessionActions(s)" class="kmenu" @click.stop>
               <MenuItem v-if="canSessionAction(s, 'rename')" size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
-              <MenuItem v-if="canSessionAction(s, 'export')" size="lg" @click="onExport(s.id)">
+              <MenuItem v-if="canSessionAction(s, 'export')" size="lg" @click="onExport(s.id, 'markdown')">
                 <Icon name="download" size="sm" />
                 {{ t('sidebar.export') }}
+              </MenuItem>
+              <MenuItem v-if="canSessionAction(s, 'export')" size="lg" @click="onExport(s.id, 'print')">
+                <Icon name="download" size="sm" />
+                {{ t('focus.printSummary') }}
               </MenuItem>
               <MenuItem v-if="canSessionAction(s, 'archive')" size="lg" danger @click="onArchive(s.id)">{{ t('sidebar.archive') }}</MenuItem>
             </Menu>

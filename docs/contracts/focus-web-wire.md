@@ -247,6 +247,8 @@ guards and may not retain parallel key or enum inventories.
   non-progressing cursors. Crossing any boundary returns an explicit HTTP error
   without `Content-Disposition`, a partial `.md`, or silent truncation. The
   fcodex TUI `/export` remains the full-record export.
+  The same complete Markdown also feeds the browser [Q&A print preview](focus-web-summary-print.md)
+  for printing / saving as PDF, without a new endpoint, DTO or PDF capability.
 - `GET /api/threads/{thread_id}/export-data` returns one complete UTF-8 JSONL
   attachment for the current authenticated document. The owner first verifies
   the exact direct, non-ephemeral thread with `history_mode=paginated`, then

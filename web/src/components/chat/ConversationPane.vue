@@ -1,5 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/ConversationPane.vue -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../../types';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ActivationBadges, AppGoal, AppModel, AppSkill, ApprovalBlock, ChatTurn, ComposerCapabilities, ComposerSurfaceMode, ConversationStatus, FilePreviewRequest, PermissionMode, QueuedPromptView, QuestionResponse, SessionActionCapabilities, TaskItem, ThinkingLevel, TodoView, ToolCall, ToolMedia, TurnAttachment, UIQuestion, WorkspaceView } from '../../types';
@@ -207,7 +208,7 @@ const emit = defineEmits<{
   /** Chat header / session row: archive current session. */
   archiveSession: [id: string];
   /** Chat header: export current session. */
-  exportSession: [id: string];
+  exportSession: [request: SummaryExportRequest];
   /** Chat header: export every stored item in the current thread. */
   exportThreadData: [id: string];
   reviewSession: [id: string];
@@ -1804,7 +1805,7 @@ defineExpose({
       @rename-session="(id, title) => emit('renameSession', id, title)"
       @fork-session="(id) => emit('forkSession', id)"
       @archive-session="(id) => emit('archiveSession', id)"
-      @export-session="(id) => emit('exportSession', id)"
+      @export-session="(request) => emit('exportSession', request)"
       @export-thread-data="(id) => emit('exportThreadData', id)"
       @review-session="(id) => emit('reviewSession', id)"
       @goal-session="(id) => emit('goalSession', id)"

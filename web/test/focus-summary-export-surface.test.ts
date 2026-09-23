@@ -20,10 +20,10 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(narrowTopBar).toContain('summaryExportAvailable?: boolean;');
     expect(narrowTopBar).toContain(":label=\"t('header.exportOptions')\"");
     expect(narrowTopBar).toContain('<Icon name="download" size="lg" />');
-    expect(narrowTopBar).toContain('@click="exportSession"');
+    expect(narrowTopBar).toContain('@click="exportSession(\'markdown\')"');
     expect(narrowTopBar).toContain("t('header.exportSession')");
-    expect(narrowSwitcher).toContain('export: [id: string];');
-    expect(narrowSwitcher).toContain("emit('export', id);");
+    expect(narrowSwitcher).toContain('export: [request: SummaryExportRequest];');
+    expect(narrowSwitcher).toContain("emit('export', { threadId: id, format });");
     expect(narrowSwitcher).toContain("t('sidebar.export')");
     expect(narrowSwitcher).toContain("return action !== 'export';");
     expect(actions).toContain("const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';");
@@ -46,7 +46,7 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(chatPane).not.toContain('copyFinalSummary');
     expect(pane).not.toContain('@copy-all');
     expect(pane).not.toContain('@copy-final-summary');
-    expect(header).toContain('@click="exportSession"');
+    expect(header).toContain('@click="exportSession(\'markdown\')"');
   });
 
   it('labels the export as Q&A and explains its exact scope', () => {

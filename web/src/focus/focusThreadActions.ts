@@ -1,3 +1,6 @@
+import type { SummaryExportRequest } from '../types';
+import { openSummaryPrintWindow } from './summaryPrintWindow';
+
 interface FocusThreadActionClient {
   readonly summaryExporting: { readonly value: boolean };
   readonly threadDataExporting: { readonly value: boolean };
@@ -54,7 +57,27 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
     notify(translate(messageKeys.complete));
   }
 
-  function exportThreadSummary(threadId: string): Promise<void> {
+  async function exportThreadSummary({ threadId, format }: SummaryExportRequest): Promise<void> {
+    if (format === 'print') {
+      if (client.summaryExporting.value || client.threadDataExporting.value) {
+        notify(translate('focus.summaryExportBusy'));
+        return;
+      }
+      // Open within the click's user activation, before fetching any history.
+      const preview = openSummaryPrintWindow();
+      if (!preview) {
+        notify(translate('focus.printPopupBlocked'));
+        return;
+      }
+      try {
+        const blob = await client.exportThreadSummary(threadId);
+        if (blob === null) preview.fail();
+        else preview.deliver(await blob.text());
+      } catch {
+        preview.fail();
+      }
+      return;
+    }
     return runExport(
       threadId,
       (id) => client.exportThreadSummary(id),

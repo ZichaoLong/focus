@@ -5,6 +5,7 @@
 <!-- the middle opens the switcher sheet; the sliders open the settings sheet. -->
 <!-- Terminal Pro styling, no emoji. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../../types';
 import { computed, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { WorkspaceView } from '../../types';
@@ -53,7 +54,7 @@ const emit = defineEmits<{
   openSwitcher: [];
   openSettings: [];
   enterReadingMode: [];
-  exportSession: [id: string];
+  exportSession: [request: SummaryExportRequest];
   exportThreadData: [id: string];
 }>();
 
@@ -103,10 +104,10 @@ function toggleExportMenu(): void {
   }
 }
 
-function exportSession(): void {
+function exportSession(format: SummaryExportRequest['format']): void {
   if (!props.sessionId || !props.summaryExportAvailable) return;
   closeExportMenu();
-  emit('exportSession', props.sessionId);
+  emit('exportSession', { threadId: props.sessionId, format });
 }
 
 function exportThreadData(): void {
@@ -171,9 +172,13 @@ onUnmounted(closeExportMenu);
           <Icon name="download" size="lg" />
         </IconButton>
         <Menu v-if="exportMenuOpen" class="tb-session-menu" @click.stop>
-          <MenuItem v-if="summaryExportAvailable" size="lg" @click="exportSession">
+          <MenuItem v-if="summaryExportAvailable" size="lg" @click="exportSession('markdown')">
             <Icon name="download" size="sm" />
             {{ t('header.exportSession') }}
+          </MenuItem>
+          <MenuItem v-if="summaryExportAvailable" size="lg" @click="exportSession('print')">
+            <Icon name="download" size="sm" />
+            {{ t('focus.printSummary') }}
           </MenuItem>
           <MenuItem v-if="threadDataExportAvailable" size="lg" @click="exportThreadData">
             <Icon name="download" size="sm" />

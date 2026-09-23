@@ -165,6 +165,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   最多 100 页，最终 UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
   `Content-Disposition`、partial `.md` 或静默截断。
   完整记录仍由 fcodex TUI `/export` 持有。
+  同一完整 Markdown 还可由浏览器[问答打印页](focus-web-summary-print.zh-CN.md)用于打印／另存为 PDF；
+  该消费者不新增 endpoint、DTO 或 PDF capability。
 - `GET /api/threads/{thread_id}/export-data` 只为 current authenticated document 导出一个完整 UTF-8 JSONL
   attachment。owner 先验证 exact direct、non-ephemeral、`history_mode=paginated` thread，再按
   `sortDirection=asc`、每页 100 items 遍历 `thread/items/list`。每行是 exact

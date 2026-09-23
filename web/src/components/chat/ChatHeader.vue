@@ -3,6 +3,7 @@
      status, "open in editor", and a ⋮ more-menu with the same session actions
      available from the sidebar session row. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../../types';
 import { computed, nextTick, onUnmounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { copyTextToClipboard } from '../../lib/clipboard';
@@ -52,7 +53,7 @@ const emit = defineEmits<{
   renameSession: [id: string, title: string];
   forkSession: [id: string];
   archiveSession: [id: string];
-  exportSession: [id: string];
+  exportSession: [request: SummaryExportRequest];
   exportThreadData: [id: string];
   reviewSession: [id: string];
   goalSession: [id: string];
@@ -205,10 +206,10 @@ function forkSession(): void {
 // ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
-function exportSession(): void {
+function exportSession(format: SummaryExportRequest['format']): void {
   if (!props.sessionId) return;
   closeMenu();
-  emit('exportSession', props.sessionId);
+  emit('exportSession', { threadId: props.sessionId, format });
 }
 
 function exportThreadData(): void {
@@ -305,9 +306,13 @@ function setGoal(): void {
             <Icon name="git-fork" size="sm" />
             {{ t('header.forkSession') }}
           </MenuItem>
-          <MenuItem v-if="actionCapabilities.export" @click="exportSession">
+          <MenuItem v-if="actionCapabilities.export" @click="exportSession('markdown')">
             <Icon name="download" size="sm" />
             {{ t('header.exportSession') }}
+          </MenuItem>
+          <MenuItem v-if="actionCapabilities.export" @click="exportSession('print')">
+            <Icon name="download" size="sm" />
+            {{ t('focus.printSummary') }}
           </MenuItem>
           <MenuItem
             v-if="actionCapabilities.export && threadDataExportAvailable"

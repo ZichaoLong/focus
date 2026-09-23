@@ -1,5 +1,4 @@
 import { createApp } from 'vue';
-import FocusApp from './focus/FocusApp.vue';
 import i18n from './i18n';
 import { installClientErrorCapture } from './debug/trace';
 import '@fontsource-variable/inter/opsz.css';
@@ -11,4 +10,8 @@ import './style.css';
 // debug flag, console output is included too; HMR restores listeners/wrappers.
 installClientErrorCapture();
 
-createApp(FocusApp).use(i18n).mount('#app');
+// A print preview is a standalone document, not another active Focus client.
+const app = new URLSearchParams(window.location.search).get('print') === 'summary'
+  ? await import('./focus/SummaryPrintApp.vue')
+  : await import('./focus/FocusApp.vue');
+createApp(app.default).use(i18n).mount('#app');

@@ -3,6 +3,7 @@
      The old workspace rail and workspace tabs have been removed;
      workspace switching, folding and renaming all live in the group header. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../types';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { copyTextToClipboard } from '../lib/clipboard';
@@ -87,7 +88,7 @@ const emit = defineEmits<{
   rename: [id: string, title: string];
   archive: [id: string];
   fork: [id: string];
-  export: [id: string];
+  export: [request: SummaryExportRequest];
   renameWorkspace: [id: string, name: string];
   deleteWorkspace: [id: string];
   reorderWorkspaces: [ids: string[]];
@@ -637,7 +638,7 @@ function onLogoClick(): void {
               @rename-session="(id, title) => emit('rename', id, title)"
               @archive-session="(id) => emit('archive', id)"
               @fork-session="(id) => emit('fork', id)"
-              @export-session="(id) => emit('export', id)"
+              @export-session="(request) => emit('export', request)"
               @load-more="onLoadMore"
               @toggle-expand="toggleExpand"
               @confirm-rename="confirmRenameWorkspace"

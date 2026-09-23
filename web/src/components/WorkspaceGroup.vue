@@ -5,6 +5,7 @@
      search and the header stay in Sidebar; this component renders a single
      group and forwards every interaction back up. -->
 <script setup lang="ts">
+import type { SummaryExportRequest } from '../types';
 import { computed, type ComponentPublicInstance, type Ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { SessionActionCapabilities, WorkspaceGroup, WorkspaceView } from '../types';
@@ -47,7 +48,7 @@ const emit = defineEmits<{
   renameSession: [id: string, title: string];
   archiveSession: [id: string];
   forkSession: [id: string];
-  exportSession: [id: string];
+  exportSession: [request: SummaryExportRequest];
   loadMore: [workspaceId: string];
   toggleExpand: [workspaceId: string];
   confirmRename: [];

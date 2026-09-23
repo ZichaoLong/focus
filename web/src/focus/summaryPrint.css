@@ -1,0 +1,67 @@
+/* A standalone paper layout. Chat clipping/virtualization never enters here. */
+html.summary-print-page,
+.summary-print-page body,
+.summary-print-page #app {
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  color-scheme: light;
+  color: #171717;
+  background: #eee;
+}
+
+.summary-print-page #app { position: static; inset: auto; }
+
+.summary-print { padding: 24px; font-size: 15px; line-height: 1.6; }
+.summary-print-toolbar { max-width: 900px; margin: 0 auto 24px; }
+.summary-print-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+.summary-print-actions h1 { font-size: 20px; font-weight: var(--weight-medium); }
+.summary-print-actions button { padding: 10px 18px; border: 1px solid #333; border-radius: 6px; background: #222; color: white; cursor: pointer; }
+.summary-print-actions button:disabled { opacity: .5; cursor: wait; }
+.summary-print-toolbar p { margin: 8px 0; font-size: 14px; }
+.summary-print-status { max-width: 900px; margin: 24px auto; }
+.summary-print-content { box-sizing: border-box; max-width: 900px; padding: 40px; margin: auto; background: white; overflow-wrap: anywhere; }
+.summary-print-content:empty { display: none; }
+.summary-print-content h1 { font-size: 24px; }
+.summary-print-content h2 { font-size: 20px; border-top: 1px solid #ccc; padding-top: 20px; }
+.summary-print-content h3 { font-size: 17px; }
+.summary-print-content :is(h1, h2, h3, h4, h5, h6) { font-weight: var(--weight-medium); margin: 1.2em 0 .6em; break-after: avoid; }
+.summary-print-content :is(p, pre, table, blockquote, ul, ol, figure) { margin: .8em 0; }
+.summary-print-content :is(ul, ol) { padding-left: 1.8em; }
+.summary-print-content ul { list-style: disc; }
+.summary-print-content ol { list-style: decimal; }
+.summary-print-content blockquote { border-left: 3px solid #aaa; padding-left: 16px; color: #444; }
+.summary-print-content pre { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; padding: 12px; border: 1px solid #ddd; background: #f7f7f7; font-size: 12px; break-inside: auto; }
+.summary-print-content code { font-family: var(--font-mono); font-size: .85em; }
+.summary-print-content pre code { font-size: inherit; }
+.summary-print-content a { color: #17548c; text-decoration: underline; }
+.summary-print-content table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
+.summary-print-content :is(th, td) { border: 1px solid #aaa; padding: 6px; vertical-align: top; overflow-wrap: anywhere; }
+.summary-print-content thead { display: table-header-group; }
+.summary-print-content tr { break-inside: avoid; }
+.summary-print-content :is(img, svg) { max-width: 100%; height: auto; }
+.summary-print-content figure { break-inside: avoid; }
+.summary-print-content .summary-source { white-space: pre-wrap; overflow-wrap: anywhere; }
+.summary-print-content .katex-display { margin: .8em 0; }
+.summary-print-content .katex-display > .katex { white-space: normal; overflow-wrap: anywhere; }
+.summary-print-content .katex { font-size: 1.05em; }
+
+@media (max-width: 600px) {
+  .summary-print { padding: 12px; }
+  .summary-print-content { padding: 18px; }
+}
+
+@page { margin: 16mm; }
+
+@media print {
+  html.summary-print-page,
+  .summary-print-page body,
+  .summary-print-page #app { background: white; height: auto; overflow: visible; }
+  .summary-print { padding: 0; font-size: 10.5pt; }
+  .summary-print-toolbar { display: none !important; }
+  .summary-print-content { padding: 0; max-width: none; }
+  .summary-print[data-status="loading"] .summary-print-content { display: none; }
+  .summary-print-content pre { font-size: 8pt; }
+  .summary-print-content table { font-size: 9pt; }
+  .summary-print-content p { orphans: 3; widows: 3; }
+}
