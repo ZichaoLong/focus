@@ -1021,6 +1021,10 @@
         {
           "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
           "heading": "完整性与渲染"
+        },
+        {
+          "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
+          "heading": "正文强调与换行"
         }
       ],
       "focused-test": [
@@ -1039,6 +1043,7 @@
             "web/test/focus-summary-export-surface.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/summary-print-markdown.test.ts",
+            "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
             "web/test/focus-thread-actions.test.ts"
           ]

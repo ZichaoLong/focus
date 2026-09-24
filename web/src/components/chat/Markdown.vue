@@ -27,7 +27,7 @@ import {
 } from '../../lib/markdownDiffFence';
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
 import { prepareMarkdownRuntime } from '../../lib/markdownRuntime';
-import { configureFocusMarkdownMath } from '../../lib/markdownMath';
+import { configureFocusMarkdown } from '../../lib/markdownParser';
 import {
   collectLocalImageSources,
   rewriteLocalImageSources,
@@ -382,7 +382,7 @@ function copyDiff(code: string, idx: number): void {
         :key="`${i}:${markdownRuntimeRevision}`"
         :content="seg.text"
         :custom-id="componentScope"
-        :custom-markdown-it="configureFocusMarkdownMath"
+        :custom-markdown-it="configureFocusMarkdown"
         mode="chat"
         :code-renderer="renderPlan.codeRenderer"
         :is-dark="isDark"
@@ -433,6 +433,9 @@ function copyDiff(code: string, idx: number): void {
 /* Base prose — assistant message text. */
 .md {
   font: 400 15px/1.6 var(--font-ui);
+  /* CJK fallback fonts may ship only a regular face. Keep emphasis visible
+     without synthesizing italics or changing the rest of the application. */
+  font-synthesis: weight;
   color: var(--color-text);
   word-break: break-word;
 }

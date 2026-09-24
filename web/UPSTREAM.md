@@ -67,6 +67,8 @@ routine development or release requirement.
 
 The Markdown formula and code copy components and their copy regression
 tests are Focus-owned additions, explicitly listed in `focus_owned_files`.
+The shared Markdown parser configuration and CJK emphasis regression tests
+are also Focus-owned additions.
 
 This guard is intentionally not part of `npm run build`: build and release
 remain reproducible from checked-in code and license evidence, without a

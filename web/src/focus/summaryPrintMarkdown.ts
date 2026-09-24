@@ -1,10 +1,10 @@
 import { getMarkdown } from 'markstream-vue';
 import katex from 'katex';
-import { configureFocusMarkdownMath } from '../lib/markdownMath';
+import { configureFocusMarkdown } from '../lib/markdownParser';
 
 /** Static, complete rendering: no chat virtualization, diff folding or workers. */
 export function renderSummaryPrintMarkdown(source: string): { html: string; fallback: boolean } {
-  const md = configureFocusMarkdownMath(getMarkdown('focus-summary-print'));
+  const md = configureFocusMarkdown(getMarkdown('focus-summary-print'));
   md.set({ html: false, linkify: true });
   const escape = md.utils.escapeHtml;
   let fallback = false;

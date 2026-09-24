@@ -20,7 +20,8 @@ html.summary-print-page,
 .summary-print-actions button:disabled { opacity: .5; cursor: wait; }
 .summary-print-toolbar p { margin: 8px 0; font-size: 14px; }
 .summary-print-status { max-width: 900px; margin: 24px auto; }
-.summary-print-content { box-sizing: border-box; max-width: 900px; padding: 40px; margin: auto; background: white; overflow-wrap: anywhere; }
+.summary-print-content { box-sizing: border-box; max-width: 900px; padding: 40px; margin: auto; background: white; overflow-wrap: anywhere; font-synthesis: weight; }
+.summary-print-content strong { font-weight: var(--weight-semibold); }
 .summary-print-content:empty { display: none; }
 .summary-print-content h1 { font-size: 24px; }
 .summary-print-content h2 { font-size: 20px; border-top: 1px solid #ccc; padding-top: 20px; }

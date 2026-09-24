@@ -25,6 +25,9 @@ batches, code folding or head/tail diff truncation. Code retains every line and
 can wrap and span pages. Tables wrap cells, span pages and repeat headers.
 The native print layout hides controls and instructions.
 
+CJK punctuation emphasis and bold font fallback follow the shared
+[prose rendering contract](focus-web-markdown-rendering.md).
+
 - Math reuses the exact grammar from `markdownMath.ts`: same-line `\(...\)` and
   block-position `\[...\]` or `$$...$$`. Do not guess single-dollar, unclosed or
   prose-position block math. Unrecognized content remains text; KaTeX failures

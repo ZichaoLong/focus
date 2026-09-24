@@ -21,6 +21,8 @@ Markdown；内容与边界由 [Web wire 合同](focus-web-wire.zh-CN.md) 的
 聊天虚拟化、渐进批次、代码折叠或 diff 头尾截取。代码保留全部行并允许换行和跨页；
 表格允许单元格换行、跨页并重复表头。原生打印布局隐藏界面控件和使用说明。
 
+中文标点附近的加粗识别与粗体字体回退复用[正文渲染合同](focus-web-markdown-rendering.zh-CN.md)。
+
 - 公式复用 `markdownMath.ts` 的 exact grammar：同一行闭合的 `\(...\)`，块位置的
   `\[...\]` 或 `$$...$$`。不猜测单美元、未闭合或正文中的块公式。未识别内容按
   文字保留，KaTeX 失败时保留含定界符的源码。KaTeX 禁止 trusted HTML/URL 扩展。

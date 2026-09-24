@@ -84,6 +84,7 @@
 - [`codex-app-server-schema-drift.zh-CN.md`](./contracts/codex-app-server-schema-drift.zh-CN.md)
 - [`focus-web-wire.zh-CN.md`](./contracts/focus-web-wire.zh-CN.md)
 - [`focus-web-markdown-copy.zh-CN.md`](./contracts/focus-web-markdown-copy.zh-CN.md)
+- [`focus-web-markdown-rendering.zh-CN.md`](./contracts/focus-web-markdown-rendering.zh-CN.md)
 - [`focus-web-summary-print.zh-CN.md`](./contracts/focus-web-summary-print.zh-CN.md)
 - [`focus-web-reading-mode.zh-CN.md`](./contracts/focus-web-reading-mode.zh-CN.md)
 - [`focus-web-prompt-mutation-recovery.zh-CN.md`](./contracts/focus-web-prompt-mutation-recovery.zh-CN.md)
