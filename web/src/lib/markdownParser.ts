@@ -3,6 +3,9 @@ import { configureFocusMarkdownMath } from './markdownMath';
 
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 const PUNCTUATION = /\p{P}/u;
+const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
+// Punctuation in CJK, vertical-form and full/halfwidth Unicode blocks.
+const CJK_PUNCTUATION = /[\u3000-\u303f\ufe10-\ufe1f\ufe30-\ufe4f\uff00-\uff65]/u;
 
 interface InlineState {
   src: string;
@@ -25,16 +28,38 @@ interface InlineState {
   push(type: string, tag: string, nesting: number): { content: string };
 }
 
+function characterBeside(state: InlineState, position: number, direction: -1 | 1): string {
+  // Two UTF-16 units include an adjacent supplementary-plane Han character.
+  return direction === -1
+    ? [...state.src.slice(Math.max(0, position - 2), position)].at(-1) ?? ''
+    : [...state.src.slice(position, Math.min(position + 2, state.posMax))][0] ?? '';
+}
+
+function hasCjkPunctuationContext(state: InlineState, position: number, direction: -1 | 1): boolean {
+  let character = characterBeside(state, position, direction);
+  // Shared quotes and ASCII punctuation need adjacent CJK text on the inside.
+  // Stop at a star run so another ** cannot lend its CJK context.
+  while (PUNCTUATION.test(character) && character !== '*') {
+    if (CJK_PUNCTUATION.test(character)) return true;
+    position += direction * character.length;
+    character = characterBeside(state, position, direction);
+  }
+  return CJK.test(character);
+}
+
 function cjkStrongDelimiter(state: InlineState, silent: boolean): boolean {
   if (silent || state.src[state.pos] !== '*') return false;
   const scanned = state.scanDelims(state.pos, true);
   if (scanned.length !== 2) return false;
 
-  // Two UTF-16 units include an adjacent supplementary-plane Han character.
-  const before = [...state.src.slice(Math.max(0, state.pos - 2), state.pos)].at(-1) ?? '';
-  const after = [...state.src.slice(state.pos + 2, Math.min(state.pos + 4, state.posMax))][0] ?? '';
-  const open = scanned.can_open || (CJK.test(before) && PUNCTUATION.test(after));
-  const close = scanned.can_close || (PUNCTUATION.test(before) && CJK.test(after));
+  const before = characterBeside(state, state.pos, -1);
+  const after = characterBeside(state, state.pos + 2, 1);
+  const open = scanned.can_open || (PUNCTUATION.test(after)
+    && (CJK.test(before) || (LETTER_OR_NUMBER.test(before)
+      && hasCjkPunctuationContext(state, state.pos + 2, 1))));
+  const close = scanned.can_close || (PUNCTUATION.test(before)
+    && (CJK.test(after) || (LETTER_OR_NUMBER.test(after)
+      && hasCjkPunctuationContext(state, state.pos, -1))));
   if (open === scanned.can_open && close === scanned.can_close) return false;
 
   // Only relax the boundary of ** next to CJK prose. The parser still owns

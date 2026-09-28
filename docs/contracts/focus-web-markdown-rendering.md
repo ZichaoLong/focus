@@ -10,7 +10,11 @@ copy behavior follows the [Markdown copy contract](focus-web-markdown-copy.md).
 
 Double-asterisk strong emphasis adjacent to Chinese, Japanese or Korean text
 accepts punctuation inside its boundaries, including `**结论。**后续` and
-`这里**“重点”**继续`. Markdown still pairs delimiters; do not repair presentation
+`这里**“重点”**继续`. Outside letters or numbers are also accepted when the inside
+punctuation is CJK-specific/fullwidth, or its punctuation run directly adjoins
+CJK text on the inside: `**结论。**Mamba`, `RoPE**（局部）**2`, and
+`2026**“中文”**Next`. Shared quotes and punctuation in purely English text keep
+their existing rules. Markdown still pairs delimiters; do not repair presentation
 by rewriting the whole source, inserting spaces or adding line breaks. Other
 emphasis syntax retains its existing rules. Asterisks inside code, escapes,
 link destinations and recognized formulas must not become prose emphasis.
@@ -28,8 +32,9 @@ modify stored messages, copied source or exported Markdown.
 
 ## Verification boundary
 
-Regression coverage includes CJK punctuation, nested inline syntax, lists and
-tables, code and escapes, math, streaming/final transitions, line breaks and
+Regression coverage includes CJK punctuation beside CJK text, Latin letters and
+numbers, nested inline syntax, lists and tables, code and escapes, math,
+streaming/final transitions, line breaks and
 print. Browser checks use the actual Markdown component at wide and narrow
 viewports to verify emphasis, font fallback, paragraphs and code lines.
 A narrow viewport does not establish compatibility with every device's fonts.
