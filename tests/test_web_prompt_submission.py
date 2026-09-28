@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from bot.adapters.base import ThreadSnapshot, ThreadSummary
+from bot.adapters.base import ThreadGoalSummary, ThreadSnapshot, ThreadSummary
 from bot.codex_protocol.client import (
     CodexRpcError,
     CodexRpcPreSendError,
@@ -23,6 +23,7 @@ from bot.thread_effective_settings import ThreadEffectiveSettingsRegistry
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.interest import WebRuntimeInterestRegistry
+from bot.web_runtime.goal_resume_policy import WebGoalResumePolicy, WebGoalResumePorts
 from bot.web_runtime.prompt_submission import (
     WebPromptSubmissionCoordinator,
     WebPromptSubmissionPorts,
@@ -138,12 +139,6 @@ class _Operations:
         )
 
 
-class _GoalPolicy:
-    @staticmethod
-    def requires_writer_admission(_goal: Any) -> bool:
-        return False
-
-
 class _Projection:
     def __init__(self) -> None:
         self.events: list[dict[str, Any]] = []
@@ -162,6 +157,9 @@ class _Backend:
         self.steer_response: dict[str, Any] = {"turnId": "turn-A"}
         self.start_error: Exception | None = None
         self.steer_error: Exception | None = None
+        self.goal: ThreadGoalSummary | None = None
+        self.goal_error: Exception | None = None
+        self.goal_reads = 0
         self.start_calls: list[dict[str, Any]] = []
         self.steer_calls: list[dict[str, Any]] = []
         self.read_calls: list[tuple[str, bool]] = []
@@ -183,9 +181,11 @@ class _Backend:
             )
         )
 
-    @staticmethod
-    def get_thread_goal(_thread_id: str, **_kwargs: Any) -> None:
-        return None
+    def get_thread_goal(self, _thread_id: str, **_kwargs: Any) -> ThreadGoalSummary | None:
+        self.goal_reads += 1
+        if self.goal_error is not None:
+            raise self.goal_error
+        return self.goal
 
     def start_turn(self, **kwargs: Any) -> dict[str, Any]:
         self.start_calls.append(kwargs)
@@ -280,7 +280,10 @@ class WebPromptSubmissionTests(unittest.TestCase):
             documents=documents,
             workspace=workspace,  # type: ignore[arg-type]
             operations=operations,  # type: ignore[arg-type]
-            goal_policy=_GoalPolicy(),  # type: ignore[arg-type]
+            goal_policy=WebGoalResumePolicy(
+                ports=WebGoalResumePorts(get_thread_goal=backend.get_thread_goal),
+                runtime_context_guard=runtime_guard,
+            ),
             read_model=read_model,
             projection=projection,  # type: ignore[arg-type]
             next_turn_settings=next_turn_settings,
@@ -332,7 +335,7 @@ class WebPromptSubmissionTests(unittest.TestCase):
             ),
         )
 
-    def _result(self, prepared, *, harness: _Harness | None = None) -> dict[str, str]:
+    def _result(self, prepared, *, harness: _Harness | None = None) -> dict[str, Any]:
         owner = harness or self.harness
         return owner.coordinator.run_prepared_prompt(prepared)
 
@@ -358,6 +361,99 @@ class WebPromptSubmissionTests(unittest.TestCase):
         self.assertEqual(len(self.harness.backend.start_calls), 1)
         self.assertEqual(self.harness.backend.steer_calls, [])
         self.assertEqual(self.harness.settings_calls, [])
+
+    def test_system_error_allows_one_ordinary_input_after_goal_and_settings_checks(self) -> None:
+        self.harness.backend.status = "systemError"
+        prepared = self._prepare()
+
+        result = self._result(prepared)
+        duplicate = self._result(self._prepare(prepared.mutation_id))
+
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual(result["observed_thread_status"], "systemError")
+        self.assertEqual(result["diagnostic_stage"], "upstream")
+        self.assertGreater(result["recorded_at"], 0)
+        self.assertEqual(duplicate, result)
+        self.assertEqual(self.harness.backend.goal_reads, 1)
+        self.assertEqual(len(self.harness.settings_calls), 1)
+        self.assertEqual(len(self.harness.backend.start_calls), 1)
+        self.assertEqual(self.harness.backend.start_calls[0]["model"], "gpt-test")
+        self.assertEqual(self.harness.backend.steer_calls, [])
+
+    def test_system_error_does_not_bypass_goal_safety(self) -> None:
+        for goal_status in ("active", "futureStatus", "paused"):
+            with self.subTest(goal_status=goal_status):
+                harness = self._build()
+                harness.backend.status = "systemError"
+                harness.backend.goal = ThreadGoalSummary(
+                    thread_id=self.thread_id, objective="existing goal", status=goal_status
+                )
+                result = self._result(self._prepare(harness=harness), harness=harness)
+                allowed = goal_status == "paused"
+                self.assertEqual(result["status"], "succeeded" if allowed else "known_no_effect")
+                self.assertEqual(len(harness.backend.start_calls), int(allowed))
+                if not allowed:
+                    self.assertEqual(result["reason_code"], "goal_continuation_requires_resolution")
+                    self.assertEqual(result["diagnostic_stage"], "goal_check")
+
+        self.harness.backend.status = "systemError"
+        self.harness.backend.goal_error = TimeoutError("goal lookup unavailable")
+        result = self._result(self._prepare())
+        self.assertEqual(result["reason_code"], "goal_state_unconfirmed")
+        self.assertEqual(result["diagnostic_stage"], "goal_check")
+        self.assertEqual(self.harness.backend.start_calls, [])
+
+    def test_unknown_states_remain_rejected_with_stable_payload_free_diagnostics(self) -> None:
+        for state in ("", "unknown", "futureStatus", "malformed\n" + "x" * 150):
+            with self.subTest(state=state):
+                harness = self._build()
+                harness.backend.status = state
+                prepared = self._prepare(text="private-prompt-marker", harness=harness)
+                with self.assertLogs("bot.web_runtime.prompt_submission", level="WARNING") as logs:
+                    result = self._result(prepared, harness=harness)
+                self.assertEqual(result["status"], "known_no_effect")
+                self.assertEqual(result["reason_code"], "thread_state_unconfirmed")
+                self.assertEqual(result["observed_thread_status"], state[:128])
+                self.assertEqual(result["diagnostic_stage"], "thread_status")
+                self.assertEqual(harness.backend.start_calls, [])
+                self.assertEqual(harness.backend.goal_reads, 0)
+                self.assertIn(prepared.mutation_id, logs.output[0])
+                self.assertIn(self.thread_id, logs.output[0])
+                self.assertNotIn("private-prompt-marker", logs.output[0])
+                self.assertNotIn("\n", logs.output[0])
+                self.assertEqual(harness.coordinator.prompt_result(
+                    self.client_id, self.thread_id, mutation_id=prepared.mutation_id,
+                ), result)
+
+    def test_system_error_keeps_exact_steer_without_start_fallback(self) -> None:
+        self.harness.backend.status = "systemError"
+        self.harness.read_model.replace_turns(
+            self.thread_id, [{"id": "turn-A", "status": "inProgress", "items": []}],
+        )
+        self.harness.backend.steer_error = CodexRpcError(
+            "turn/steer", {"message": "no active turn to steer"},
+        )
+        result = self._result(self._prepare())
+        self.assertEqual(result["reason_code"], "active_turn_changed")
+        self.assertEqual(result["diagnostic_stage"], "upstream")
+        self.assertIsNone(result["observed_thread_status"])
+        self.assertEqual(len(self.harness.backend.steer_calls), 1)
+        self.assertEqual(self.harness.backend.start_calls, [])
+
+    def test_system_error_does_not_retry_upstream_rejection_or_unknown_delivery(self) -> None:
+        for error, status in (
+            (CodexRpcError("turn/start", {"message": "rejected"}), "known_no_effect"),
+            (CodexRpcTransportError("turn/start", {"message": "lost"}), "outcome_unknown"),
+        ):
+            with self.subTest(status=status):
+                harness = self._build()
+                harness.backend.status = "systemError"
+                harness.backend.start_error = error
+                result = self._result(self._prepare(harness=harness), harness=harness)
+                self.assertEqual(result["status"], status)
+                self.assertEqual(result["observed_thread_status"], "systemError")
+                self.assertEqual(result["diagnostic_stage"], "upstream")
+                self.assertEqual(len(harness.backend.start_calls), 1)
 
     def test_pre_send_and_decoded_rejection_are_known_no_effect(self) -> None:
         cases = (
@@ -532,6 +628,8 @@ class WebPromptSubmissionTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "known_no_effect")
         self.assertEqual(result["reason_code"], "stale_attachment_scope")
+        self.assertIsNone(result["observed_thread_status"])
+        self.assertEqual(result["diagnostic_stage"], "scope_check")
         self.assertEqual(self.harness.workspace.scope_claims, 1)
         self.assertEqual(self.harness.backend.read_calls, [])
         self.assertEqual(self.harness.backend.start_calls, [])
@@ -946,7 +1044,10 @@ class WebPromptSubmissionTests(unittest.TestCase):
                 documents=documents,
                 workspace=workspace,
                 operations=operations,  # type: ignore[arg-type]
-                goal_policy=_GoalPolicy(),  # type: ignore[arg-type]
+                goal_policy=WebGoalResumePolicy(
+                    ports=WebGoalResumePorts(get_thread_goal=backend.get_thread_goal),
+                    runtime_context_guard=runtime.assert_worker_context,
+                ),
                 read_model=read_model,
                 projection=projection,  # type: ignore[arg-type]
                 next_turn_settings=next_turn_settings,

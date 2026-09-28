@@ -106,6 +106,11 @@ Gateway 先验证 exact closed body、connected document 与 materialized direct
 `mode=start` 并唯一调用官方 `turn/start`；该路径保留既有 goal/next-turn safety，但不显式调用
 `thread/resume`，也不增加本地 compare-and-set start、writer lease 或额外 replay guarantee。
 
+普通 prompt 的 `mode=start` 允许 exact `systemError` 状态在通过既有 goal 与 next-turn settings 检查后
+调用这一次 `turn/start`，由上游判断能否接收输入。空值、未知或未复核的状态仍以
+`thread_state_unconfirmed` 拒绝。这个例外仅属于普通输入，不能把 `systemError` 变成 confirmed-inactive
+证据；review、compact、归档、删除、goal mutation 与 runtime/lease 的状态规则保持各自 authority。
+
 attachment store 使用既有 exact submission claim/pin：known-no-effect 在返回该结果前尝试 exact rollback；known success
 或 outcome unknown 保持 submitted。若 upstream text effect 已 authoritative known-no-effect、但 rollback 返回 false 或
 抛错，receipt 仍为 `known_no_effect`，同时必须携 `reason_code=attachment_rollback_failed`。这个 code 只说明旧附件
@@ -134,7 +139,16 @@ GET `/api/threads/{thread_id}/prompt-result/{mutation_id}` 的查询结果使用
   `turn/start` response 的 authoritative `turn.id`。`pending`、pre-effect 或 unknown 没有该证据时为 `""`；
   request/submission tracking id 不得伪装成 actual turn identity；
 - `reason_code`：没有附加分类时为 `""`。`attachment_rollback_failed` 精确表示 text effect 已知未发生、但旧 attachment
-  chips 不能安全复用；其他值只解释本 request，不取得 lifecycle 或 retry authority。
+  chips 不能安全复用；其他值只解释本 request，不取得 lifecycle 或 retry authority；
+- `observed_thread_status`：本次 metadata read 实际观察到的状态，最多 128 个 Unicode 字符；未读到状态为 `null`，
+  与确实读到空字符串不同。该历史诊断不能用作当前线程状态或准入依据；
+- `diagnostic_stage`：记录结果所在的阶段，非空、无首尾空白、最多 64 字符，只用于诊断；
+- `recorded_at`：本条 receipt 记录时的正数 Unix 秒时间戳；重复 POST/GET 返回已有值，权威结果更新才产生新值。
+
+失败 receipt 以既有 `mutation_id` 作为诊断编号。服务日志记录同一编号、thread、时间、结果、原因、阶段和观察状态，
+不保存 Prompt 正文、附件内容或 capability。浏览器提供折叠详情与复制按钮，复制内容也只包含这些诊断坐标。
+没有 server receipt 的 transport/lookup 错误只记录浏览器时间与对应阶段，观察状态为 `null`，不得借用页面缓存状态
+冒充服务端证据；这份展示不改变 result receipt、Composer 结算或重发规则。
 
 原始 POST 在 admitted transaction 完成 safety settlement 后以 HTTP 200 返回 terminal receipt；同 identity duplicate
 可以读到已有 `pending` 或 terminal receipt。strict validation、document/target/source-scope admission failure 继续使用

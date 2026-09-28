@@ -110,6 +110,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v20 为更新状态增加持久化 `phase`、阶段开始/最近进展时间与受限的字节 `progress`，使长时间检查可以显示
   当前阶段和实际下载进度；不透传 Git/npm/pip 原始输出。v19 browser 不保留兼容 decoder；服务与静态资源仍必须
   同版本部署。
+- v21 为 prompt result receipt 增加必填的 `observed_thread_status`、`diagnostic_stage` 与 `recorded_at`，
+  用于失败诊断与复制；诊断不授予当前状态或重发 authority。v20 browser 不保留兼容 decoder，服务与静态资源
+  仍必须同版本部署。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -255,7 +258,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `effect_observed / user_discard / retry_opened` disposition；对应 control HTTP settlement 使用同一词汇。
   ordinary prompt 改用独立 result-receipt status，browser recovery 绝不从 lifecycle `already_reconciled` 推断是否恢复草稿。
 - `prompt_result_receipt` 统一承载 single-POST prompt 与 GET-only result query。它必须包含 exact
-  thread/mutation/server-derived client-message coordinates，以及封闭的 status/mode、`turn_id` 与 `reason_code`；
+  thread/mutation/server-derived client-message coordinates，以及封闭的 status/mode、`turn_id`、`reason_code` 和
+  `observed_thread_status`、`diagnostic_stage`、`recorded_at` 三项诊断字段；
   empty optional coordinate 仍以 required empty string 表示，不能通过缺字段制造另一种 shape。
 
 ## 5. DTO admission 与能力值
@@ -419,7 +423,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - 一次性 response capability（例如 pending request 的 `connection_generation` 与 `response_capability`）必须保留
   签发 owner 给出的原值。projection 不得猜测、重建或签发替代 capability。
 - ordinary existing-thread prompt 的 `FocusPromptResultReceipt` 必须恰好携
-  `{thread_id, mutation_id, client_user_message_id, status, mode, turn_id, reason_code}`。
+  `{thread_id, mutation_id, client_user_message_id, status, mode, turn_id, reason_code,
+  observed_thread_status, diagnostic_stage, recorded_at}`。
   `client_user_message_id` 必须是 server-derived `focus-web:<mutation_id>`；`status` 只允许
   `pending / succeeded / known_no_effect / outcome_unknown`，`mode` 只允许 `start / steer`。
   steer 的 `turn_id` 始终是 prepare 时冻结的 exact expected turn；validated `mode=start + status=succeeded` 必须保留
@@ -427,7 +432,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   空字符串；request/submission tracking id 不得伪装成 actual turn identity。`reason_code` 没有附加分类时同样是
   空字符串。`attachment_rollback_failed` 只表示 text effect 已 known-no-effect、但旧 attachment chips 不能安全
   复用；browser 必须保留 text-only 或以更保守的 UI settlement 移除旧 chips，并明确要求重新添加附件。其他 code
-  只解释 exact request。
+  只解释 exact request。`observed_thread_status` 是最多 128 个 Unicode 字符的已观察状态，未观察为 `null`；
+  `diagnostic_stage` 是非空、无首尾空白且最多 64 字符的诊断阶段；`recorded_at` 是大于 0 且不超过
+  `8.64e12` 的有限 Unix 秒时间戳，可由浏览器 Date 表示。字段必须存在，诊断语义由
+  [prompt mutation 恢复合同](./focus-web-prompt-mutation-recovery.zh-CN.md)拥有，不参与发送准入。
   matching transcript client id 可把 unknown 正面对账为 succeeded；缺少 matching id 不能推断 known-no-effect。
 - prompt backend connection generation 是 server-private staged-effect pin，绝不进入 receipt、snapshot 或 event；它也
   不同于 pending server request 投影中的 `connection_generation`，后者属于该 request 的 one-shot response authority。

@@ -38,6 +38,11 @@ import {
   createWebPromptResultLocatorStore,
   type WebPromptResultLocator,
 } from '../webPromptResultLocators';
+import {
+  FocusPromptError,
+  webPromptTransportDiagnostic,
+  type WebPromptDiagnostic,
+} from '../webPromptDiagnostic';
 import { createPendingRequestResponses } from './pending-request-responses';
 import {
   createThreadMutationActions,
@@ -65,6 +70,7 @@ export type {
 
 export type FocusPromptMessageKey =
   | 'promptKnownNoEffect'
+  | 'promptThreadStateUnconfirmed'
   | 'promptKnownNoEffectAfterReload'
   | 'promptOutcomeUnknown'
   | 'promptPending'
@@ -127,7 +133,7 @@ export interface FocusMutationActionsOptions {
   canCompact: Readonly<Ref<boolean>>;
   attachmentsAreAvailable(): boolean;
   defaultDraftWorkspace(): string;
-  promptMessage(key: FocusPromptMessageKey, values?: { reason: string }): string;
+  promptMessage(key: FocusPromptMessageKey, values?: { reason: string; threadStatus?: string }): string;
   reportError(error: unknown): void;
   reportFatalError(error: unknown): boolean;
   clearError(): void;
@@ -553,11 +559,18 @@ export function createFocusMutationActions(
   function reportPromptMessage(
     key: FocusPromptMessageKey,
     reasonCode = '',
+    diagnostic?: WebPromptDiagnostic,
   ): void {
     if (isDisposed()) return;
-    options.reportError(new Error(options.promptMessage(key, {
+    const message = options.promptMessage(key, {
       reason: reasonCode ? ` (${reasonCode})` : '',
-    })));
+      ...(key === 'promptThreadStateUnconfirmed'
+        ? { threadStatus: JSON.stringify(diagnostic?.observed_thread_status ?? null) }
+        : {}),
+    });
+    options.reportError(diagnostic
+      ? new FocusPromptError(message, diagnostic)
+      : new Error(message));
   }
 
   async function reconcilePromptResultsForThread(
@@ -581,24 +594,30 @@ export function createFocusMutationActions(
           reportPromptMessage(
             'promptKnownNoEffectAfterReload',
             result.reason_code,
+            result,
           );
         } else if (result.status === 'outcome_unknown') {
-          reportPromptMessage('promptOutcomeUnknown', result.reason_code);
+          reportPromptMessage('promptOutcomeUnknown', result.reason_code, result);
         } else if (result.status === 'pending') {
-          reportPromptMessage('promptPending', result.reason_code);
+          reportPromptMessage('promptPending', result.reason_code, result);
         }
       } catch (error) {
         if (error instanceof FocusApiError
           && error.effectEvidence === 'pre_effect'
           && error.code === 'prompt_result_unavailable') {
           promptResultLocators.forget(locator);
-          reportPromptMessage('promptResultUnavailable');
+          reportPromptMessage('promptResultUnavailable', '',
+            webPromptTransportDiagnostic(locator, 'outcome_unknown', error.code, 'result_lookup'));
           return;
         }
         if (options.reportFatalError(error)) return;
         // A reload is lookup-only. A missing/temporarily unavailable receipt
         // never authorizes replay and can be queried again by a later reload.
-        if (presentLookupFailure) reportPromptMessage('promptResultLookupFailed');
+        if (presentLookupFailure) {
+          const reason = error instanceof FocusApiError ? error.code : 'result_lookup_failed';
+          reportPromptMessage('promptResultLookupFailed', '',
+            webPromptTransportDiagnostic(locator, 'outcome_unknown', reason, 'result_lookup'));
+        }
       }
     }));
   }
@@ -622,11 +641,13 @@ export function createFocusMutationActions(
 
   function reportPromptReceipt(result: FocusPromptResultReceipt): void {
     if (result.status === 'known_no_effect') {
-      reportPromptMessage('promptKnownNoEffect', result.reason_code);
+      reportPromptMessage(result.reason_code === 'thread_state_unconfirmed'
+        ? 'promptThreadStateUnconfirmed'
+        : 'promptKnownNoEffect', result.reason_code, result);
     } else if (result.status === 'outcome_unknown') {
-      reportPromptMessage('promptOutcomeUnknown', result.reason_code);
+      reportPromptMessage('promptOutcomeUnknown', result.reason_code, result);
     } else if (result.status === 'pending') {
-      reportPromptMessage('promptPending', result.reason_code);
+      reportPromptMessage('promptPending', result.reason_code, result);
     }
   }
 
@@ -640,13 +661,15 @@ export function createFocusMutationActions(
     if (!exact) {
       // A mismatched success response cannot prove no effect. Treat the exact
       // payload as possibly sent so it cannot be replayed with one click.
-      reportPromptMessage('promptOutcomeUnknown', 'invalid_receipt_identity');
+      reportPromptMessage('promptOutcomeUnknown', 'invalid_receipt_identity',
+        webPromptTransportDiagnostic(locator, 'outcome_unknown',
+          'invalid_receipt_identity', 'receipt_identity'));
       return true;
     }
     if (result.status !== 'known_no_effect') return true;
     if (result.reason_code === 'attachment_rollback_failed'
       && attachments.length > 0) {
-      reportPromptMessage('promptAttachmentRollbackFailed');
+      reportPromptMessage('promptAttachmentRollbackFailed', '', result);
       // The exact Composer owner can keep the text while retiring unsafe old
       // chips. If it has already been replaced, commit is the fail-closed
       // fallback; ComposerSubmission itself will never clear newer input.
@@ -705,15 +728,18 @@ export function createFocusMutationActions(
           convergePromptProjection(receipt, intent);
           if (!options.reportFatalError(error)
             && options.intentClock.intentIsCurrent(intent)) {
+            const reason = error instanceof FocusApiError ? error.code : 'transport_error';
             if (knownNoEffect) {
               reportPromptMessage(
                 'promptKnownNoEffect',
-                error instanceof FocusApiError ? error.code : '',
+                reason,
+                webPromptTransportDiagnostic(locator, 'known_no_effect', reason),
               );
             } else {
               reportPromptMessage(
                 'promptOutcomeUnknown',
-                error instanceof FocusApiError ? error.code : '',
+                reason,
+                webPromptTransportDiagnostic(locator, 'outcome_unknown', reason),
               );
             }
           }

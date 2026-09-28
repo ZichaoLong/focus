@@ -17,6 +17,29 @@ from tests.web_runtime.harness import (
 
 
 class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
+    def test_system_error_still_blocks_exclusive_and_lifecycle_actions(self):
+        self.fake.status = "systemError"
+        actions = {
+            "compact": lambda: self.controller.compact_thread("tab-1", "thread-1"),
+            "review": lambda: self.controller.start_review(
+                "tab-1", "thread-1", target={"type": "baseBranch", "branch": "main"},
+            ),
+            "archive": lambda: self.controller.archive_thread("tab-1", "thread-1"),
+            "delete": lambda: self.controller.delete_thread(
+                "tab-1", "thread-1", confirmation="thread-1",
+            ),
+        }
+        for name, action in actions.items():
+            with self.subTest(action=name):
+                with self.assertRaises(WebRuntimeError) as caught:
+                    action()
+                self.assertEqual(caught.exception.code, "thread_state_unconfirmed")
+        self.assertEqual(self.fake.compacted, [])
+        self.assertEqual(self.fake.reviews, [])
+        self.assertEqual(self.fake.archived, [])
+        self.assertEqual(self.fake.deleted, [])
+        self.assertIsNone(self.store.load("thread-1"))
+
     def test_authoritative_archive_notification_drops_web_observation(self):
         self.controller.read_thread("tab-1", "thread-1")
         self.profile_store.update(

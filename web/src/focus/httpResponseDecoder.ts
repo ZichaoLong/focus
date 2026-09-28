@@ -1076,7 +1076,15 @@ FocusHttpDecoder<FocusPromptResultReceipt> = (value) => {
     || !isFocusWebWireEnum('prompt_result_status', value.status)
     || !isFocusWebWireEnum('prompt_result_mode', value.mode)
     || !isTrimmedString(value.turn_id)
-    || !isTrimmedString(value.reason_code)) return null;
+    || !isTrimmedString(value.reason_code)
+    || (value.observed_thread_status !== null
+      && (typeof value.observed_thread_status !== 'string'
+        || [...value.observed_thread_status].length > 128))
+    || !isNonEmptyTrimmedString(value.diagnostic_stage)
+    || value.diagnostic_stage.length > 64
+    || !isFiniteNumber(value.recorded_at)
+    || value.recorded_at <= 0
+    || value.recorded_at > 8.64e12) return null;
   if (value.mode === 'steer' && !isNonEmptyTrimmedString(value.turn_id)) return null;
   if (value.mode === 'start') {
     if (value.status === 'succeeded') {

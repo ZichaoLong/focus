@@ -253,6 +253,9 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
             "mode": "start",
             "turn_id": "turn-1",
             "reason_code": "",
+            "observed_thread_status": "idle",
+            "diagnostic_stage": "upstream",
+            "recorded_at": 1_790_550_000,
         }
         self.prompt_results[mutation_id] = result
         return result

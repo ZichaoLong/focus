@@ -238,6 +238,9 @@ export interface FocusPromptResultReceipt {
   mode: FocusPromptResultMode;
   turn_id: string;
   reason_code: string;
+  observed_thread_status: string | null;
+  diagnostic_stage: string;
+  recorded_at: number;
 }
 
 /** The three lifecycle states that app-server can authoritatively distinguish. */

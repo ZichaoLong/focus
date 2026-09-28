@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { FocusPromptError } from '../../../src/focus/webPromptDiagnostic';
 import {
   createFirstPromptPossiblySentDraft,
   THREAD_CREATE_FIRST_PROMPT_OPERATION,
@@ -37,6 +38,9 @@ function promptReceipt(
     mode: 'steer',
     turn_id: 'turn-1',
     reason_code: status === 'known_no_effect' ? 'turn_replaced' : '',
+    observed_thread_status: null,
+    diagnostic_stage: 'upstream',
+    recorded_at: 1_790_550_000,
     ...overrides,
   };
 }
@@ -177,6 +181,36 @@ describe('FocusMutationActions upload receipts', () => {
 });
 
 describe('FocusMutationActions single-POST settlement', () => {
+  it('reports exact refusal diagnostics without locking new prompts or retaining their text', async () => {
+    const h = harness();
+    const result = promptReceipt('known_no_effect', {
+      mode: 'start',
+      turn_id: '',
+      reason_code: 'thread_state_unconfirmed',
+      observed_thread_status: 'futureStatus',
+      diagnostic_stage: 'thread_status',
+    });
+    h.api.submitPrompt.mockResolvedValueOnce(result);
+
+    await expect(h.actions.submit('private-prompt-marker')).resolves.toBe(false);
+
+    const error = h.reportError.mock.calls[0]![0] as FocusPromptError;
+    expect(error).toBeInstanceOf(FocusPromptError);
+    expect(JSON.parse(error.diagnostic)).toMatchObject({
+      diagnostic_id: PROMPT_MUTATION_ID,
+      thread_id: 'thread-a',
+      reason_code: 'thread_state_unconfirmed',
+      observed_thread_status: 'futureStatus',
+      stage: 'thread_status',
+      recorded_at: new Date(result.recorded_at * 1000).toISOString(),
+    });
+    expect(error.diagnostic).not.toContain('private-prompt-marker');
+    expect(h.api.submitPrompt).toHaveBeenCalledOnce();
+    expect(h.actions.starting.value).toBe(false);
+    expect(h.actions.canSubmit.value).toBe(true);
+    expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
+  });
+
   it('settles succeeded before background projection convergence finishes', async () => {
     const h = harness();
     const refresh = deferred<boolean>();

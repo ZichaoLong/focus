@@ -156,6 +156,10 @@ guards and may not retain parallel key or enum inventories.
   bounded byte `progress` so long checks can show their current stage and real download
   progress. Raw Git/npm/pip output is not projected. A version 19 browser retains no
   compatibility decoder; service and static assets still deploy at the same version.
+- Version 21 adds required `observed_thread_status`, `diagnostic_stage`, and
+  `recorded_at` fields to prompt result receipts for copyable failure diagnostics.
+  Diagnostics grant no current-state or retry authority. A version 20 browser
+  retains no compatibility decoder; service and assets still deploy together.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -407,7 +411,8 @@ guards and may not retain parallel key or enum inventories.
   never infers draft restoration from lifecycle `already_reconciled`.
 - `prompt_result_receipt` is the one result for the single-POST prompt and the
   GET-only result query. It contains exact thread/mutation/server-derived
-  client-message coordinates, closed status/mode, `turn_id`, and `reason_code`.
+  client-message coordinates, closed status/mode, `turn_id`, `reason_code`, and the
+  diagnostic fields `observed_thread_status`, `diagnostic_stage`, and `recorded_at`.
   An empty optional coordinate is still represented by a required empty string;
   omitting a field cannot create another shape.
 
@@ -689,7 +694,8 @@ guards and may not retain parallel key or enum inventories.
   capability.
 - An ordinary existing-thread prompt's `FocusPromptResultReceipt` contains exactly
   `{thread_id, mutation_id, client_user_message_id, status, mode, turn_id,
-  reason_code}`. `client_user_message_id` is the server-derived
+  reason_code, observed_thread_status, diagnostic_stage, recorded_at}`.
+  `client_user_message_id` is the server-derived
   `focus-web:<mutation_id>`. `status` admits only `pending / succeeded /
   known_no_effect / outcome_unknown`, while `mode` admits only `start / steer`.
   For steer, `turn_id` is always the exact expected turn frozen at prepare. A
@@ -701,7 +707,12 @@ guards and may not retain parallel key or enum inventories.
   effect is known-no-effect while old attachment chips are unsafe to reuse; the
   browser retains text-only or uses a more conservative UI settlement that removes
   those chips and explicitly requests reattachment. Other codes explain only the
-  exact request. A matching
+  exact request. `observed_thread_status` is an observed string bounded to 128 Unicode
+  characters, or `null` if not observed. `diagnostic_stage` is nonempty, trimmed, and
+  at most 64 characters. `recorded_at` is finite Unix seconds greater than zero and
+  at most `8.64e12`, representable by browser Date. These fields are required;
+  the [prompt mutation recovery contract](./focus-web-prompt-mutation-recovery.md)
+  owns their diagnostic meaning, and they do not participate in send admission. A matching
   transcript client id may positively reconcile unknown to succeeded; absence of a
   match cannot imply known-no-effect.
 - The prompt backend-connection generation is a server-private staged-effect pin and

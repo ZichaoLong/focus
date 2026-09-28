@@ -16,6 +16,9 @@ const RECEIPT = {
   mode: 'steer',
   turn_id: 'turn-1',
   reason_code: '',
+  observed_thread_status: null,
+  diagnostic_stage: 'upstream',
+  recorded_at: 1_790_550_000,
 } as const;
 
 installFocusApiTestHooks();
@@ -208,6 +211,29 @@ describe('Focus prompt result receipt decoder', () => {
       client_user_message_id: 'focus-web:00000000-0000-4000-8000-000000000002',
     })).toBeNull();
     expect(decodeFocusPromptResultReceipt({ ...RECEIPT, status: 'reserved' })).toBeNull();
+  });
+
+  it.each([
+    { observed_thread_status: 42 },
+    { observed_thread_status: 'x'.repeat(129) },
+    { diagnostic_stage: '' },
+    { diagnostic_stage: 'x'.repeat(65) },
+    { recorded_at: 0 },
+    { recorded_at: Number.NaN },
+    { recorded_at: Number.POSITIVE_INFINITY },
+    { recorded_at: 8.64e12 + 1 },
+    { recorded_at: '2026-09-28' },
+  ])('rejects malformed diagnostic fields %j', (fields) => {
+    expect(decodeFocusPromptResultReceipt({ ...RECEIPT, ...fields })).toBeNull();
+  });
+
+  it('distinguishes an observed empty state from a state that was not read', () => {
+    for (const state of [null, '', 'systemError', 'futureStatus', '😀'.repeat(128)]) {
+      const value = { ...RECEIPT, observed_thread_status: state };
+      expect(decodeFocusPromptResultReceipt(value)).toEqual(value);
+    }
+    const { observed_thread_status: _omitted, ...missing } = RECEIPT;
+    expect(decodeFocusPromptResultReceipt(missing)).toBeNull();
   });
 
   it.each([

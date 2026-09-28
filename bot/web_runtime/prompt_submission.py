@@ -10,7 +10,8 @@ not retain prompt text, attachment ids, capabilities, or payload digests.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+import time
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Literal
 
 from bot.codex_protocol.client import (
@@ -20,6 +21,7 @@ from bot.codex_protocol.client import (
     CodexRpcTransportError,
 )
 from bot.runtime_loop import RuntimeContextGuard
+from bot.runtime_state import BACKEND_THREAD_STATUS_SYSTEM_ERROR
 from bot.stores.web_attachment_store import WebAttachmentSubmissionClaimReceipt
 from bot.stores.web_next_turn_settings_store import WebNextTurnSettings
 from bot.thread_runtime_authority import ThreadStartBlockedByUnsubscribe
@@ -69,8 +71,11 @@ class WebPromptResultReceipt:
     mode: WebPromptMode
     turn_id: str = ""
     reason_code: str = ""
+    observed_thread_status: str | None = None
+    diagnostic_stage: str = "prepare"
+    recorded_at: float = field(default_factory=time.time)
 
-    def projection_dict(self) -> dict[str, str]:
+    def projection_dict(self) -> dict[str, Any]:
         return {
             "thread_id": self.thread_id,
             "mutation_id": self.mutation_id,
@@ -79,6 +84,9 @@ class WebPromptResultReceipt:
             "mode": self.mode,
             "turn_id": self.turn_id,
             "reason_code": self.reason_code,
+            "observed_thread_status": self.observed_thread_status,
+            "diagnostic_stage": self.diagnostic_stage,
+            "recorded_at": self.recorded_at,
         }
 
 
@@ -221,6 +229,8 @@ class WebPromptResultRegistry:
         status: Literal["succeeded", "known_no_effect", "outcome_unknown"],
         turn_id: str = "",
         reason_code: str = "",
+        observed_thread_status: str | None = None,
+        diagnostic_stage: str = "prepare",
     ) -> WebPromptResultReceipt:
         self._runtime_context_guard()
         self._require_preparation(prepared)
@@ -247,6 +257,8 @@ class WebPromptResultRegistry:
             mode=prepared.mode,
             turn_id=str(turn_id or prepared.turn_id).strip(),
             reason_code=str(reason_code or "").strip(),
+            observed_thread_status=observed_thread_status,
+            diagnostic_stage=diagnostic_stage,
         )
         self._remember_terminal(result)
         return result
@@ -342,14 +354,11 @@ class WebPromptResultRegistry:
                     status=409,
                 )
             return current
-        updated = WebPromptResultReceipt(
-            thread_id=current.thread_id,
-            mutation_id=current.mutation_id,
-            client_user_message_id=current.client_user_message_id,
-            status=current.status,
-            mode=current.mode,
-            turn_id=current.turn_id,
+        updated = replace(
+            current,
             reason_code=str(reason_code or "").strip(),
+            diagnostic_stage="attachment_rollback",
+            recorded_at=time.time(),
         )
         self._remember_terminal(updated)
         return updated
@@ -384,18 +393,17 @@ class WebPromptResultRegistry:
             if turn_id is None or (active.result.mode == "start" and not turn_id):
                 continue
             self._active.pop(mutation_id, None)
-            observed = WebPromptResultReceipt(
-                thread_id=active.result.thread_id,
-                mutation_id=active.result.mutation_id,
-                client_user_message_id=active.result.client_user_message_id,
+            observed = replace(
+                active.result,
                 status="succeeded",
-                mode=active.result.mode,
                 turn_id=(
                     active.result.turn_id
                     if active.result.mode == "steer"
                     else turn_id or active.result.turn_id
                 ),
                 reason_code="transcript_observed",
+                diagnostic_stage="transcript",
+                recorded_at=time.time(),
             )
             self._remember_terminal(observed)
             updated.append(observed)
@@ -408,18 +416,17 @@ class WebPromptResultRegistry:
             turn_id = matches.get(terminal.client_user_message_id)
             if turn_id is None or (terminal.mode == "start" and not turn_id):
                 continue
-            observed = WebPromptResultReceipt(
-                thread_id=terminal.thread_id,
-                mutation_id=terminal.mutation_id,
-                client_user_message_id=terminal.client_user_message_id,
+            observed = replace(
+                terminal,
                 status="succeeded",
-                mode=terminal.mode,
                 turn_id=(
                     terminal.turn_id
                     if terminal.mode == "steer"
                     else turn_id or terminal.turn_id
                 ),
                 reason_code="transcript_observed",
+                diagnostic_stage="transcript",
+                recorded_at=time.time(),
             )
             self._remember_terminal(observed)
             updated.append(observed)
@@ -428,6 +435,19 @@ class WebPromptResultRegistry:
     def _remember_terminal(self, result: WebPromptResultReceipt) -> None:
         self._terminal.pop(result.mutation_id, None)
         self._terminal[result.mutation_id] = result
+        if result.status != "succeeded":
+            logger.warning(
+                "Web prompt diagnostic: id=%s thread=%s time=%.6f mode=%s "
+                "result=%s reason=%s stage=%s observed_thread_status=%r",
+                result.mutation_id,
+                result.thread_id,
+                result.recorded_at,
+                result.mode,
+                result.status,
+                result.reason_code,
+                result.diagnostic_stage,
+                result.observed_thread_status,
+            )
         while len(self._terminal) > _PROMPT_RESULT_LIMIT:
             evicted = next(iter(self._terminal))
             self._terminal.pop(evicted)
@@ -662,7 +682,7 @@ class WebPromptSubmissionCoordinator:
     def run_prepared_prompt(
         self,
         prepared: WebPromptPreparation,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """Perform metadata/attachment/RPC work outside RuntimeLoop."""
 
         if not isinstance(prepared, WebPromptPreparation):
@@ -681,6 +701,8 @@ class WebPromptSubmissionCoordinator:
         effect_started = False
         fatal_error: BaseException | None = None
         terminal_before_effect: WebPromptResultReceipt | None = None
+        observed_thread_status: str | None = None
+        diagnostic_stage = "scope_check"
         try:
             self._workspace.claim_composer_scope_receipt_external(
                 prepared.composer_scope
@@ -688,6 +710,7 @@ class WebPromptSubmissionCoordinator:
             metadata = None
             settings: WebNextTurnSettings | None = None
             if prepared.mode == "start":
+                diagnostic_stage = "thread_read"
                 metadata = self._ports.read_thread(
                     prepared.thread_id,
                     False,
@@ -698,11 +721,18 @@ class WebPromptSubmissionCoordinator:
                     thread_id=prepared.thread_id,
                     operation="发送消息",
                 )
+                observed_thread_status = str(metadata.summary.status or "")[:128]
                 if metadata.summary.status != "active":
-                    require_confirmed_inactive_web_thread(
-                        metadata.summary.status,
-                        operation="start a new prompt",
-                    )
+                    diagnostic_stage = "thread_status"
+                    # Ordinary input can recover an errored thread via the
+                    # upstream start-or-steer path. This grants no idle proof
+                    # to lifecycle, exclusive-turn, or lease operations.
+                    if metadata.summary.status != BACKEND_THREAD_STATUS_SYSTEM_ERROR:
+                        require_confirmed_inactive_web_thread(
+                            metadata.summary.status,
+                            operation="start a new prompt",
+                        )
+                    diagnostic_stage = "goal_check"
                     goal = self._read_goal_external(prepared)
                     if self._goal_policy.requires_writer_admission(goal):
                         raise WebRuntimeError(
@@ -717,7 +747,9 @@ class WebPromptSubmissionCoordinator:
                                 "operation": "start a new prompt",
                             },
                         )
+                    diagnostic_stage = "settings"
                     settings = self._next_turn_settings()
+            diagnostic_stage = "attachments"
             attachments, attachment_claim = (
                 self._workspace.claim_prompt_attachments_external(
                     prepared.client_id,
@@ -725,12 +757,14 @@ class WebPromptSubmissionCoordinator:
                     attachment_ids=list(prepared.attachment_ids),
                 )
             )
+            diagnostic_stage = "input"
             input_items = self._workspace.prompt_input_items_external(
                 prepared.text,
                 attachments,
                 thread_id=prepared.thread_id,
                 requested_model=(settings.model if settings is not None else ""),
             )
+            diagnostic_stage = "effect_claim"
             terminal_before_effect = self._runtime_call(
                 self._claim_prompt_effect,
                 prepared,
@@ -746,6 +780,7 @@ class WebPromptSubmissionCoordinator:
                 result_turn_id = terminal_before_effect.turn_id
             else:
                 effect_started = True
+                diagnostic_stage = "upstream"
                 if prepared.mode == "steer":
                     response = self._ports.steer_turn(
                         thread_id=prepared.thread_id,
@@ -840,12 +875,15 @@ class WebPromptSubmissionCoordinator:
             )
             if status == "known_no_effect" and not restored:
                 reason_code = "attachment_rollback_failed"
+                diagnostic_stage = "attachment_rollback"
             receipt = self._runtime_call(
                 self._settle_prompt,
                 prepared,
                 status=status,
                 turn_id=result_turn_id,
                 reason_code=reason_code,
+                observed_thread_status=observed_thread_status,
+                diagnostic_stage=diagnostic_stage,
             )
         if fatal_error is not None:
             raise fatal_error
@@ -857,7 +895,7 @@ class WebPromptSubmissionCoordinator:
         thread_id: str,
         *,
         mutation_id: str,
-    ) -> dict[str, str]:
+    ) -> dict[str, Any]:
         """Read one exact process-local result without dispatching any work."""
 
         self._runtime_context_guard()
@@ -981,6 +1019,8 @@ class WebPromptSubmissionCoordinator:
         status: Literal["succeeded", "known_no_effect", "outcome_unknown"],
         turn_id: str,
         reason_code: str,
+        observed_thread_status: str | None,
+        diagnostic_stage: str,
     ) -> WebPromptResultReceipt:
         self._runtime_context_guard()
         receipt = self._results.settle(
@@ -988,6 +1028,8 @@ class WebPromptSubmissionCoordinator:
             status=status,
             turn_id=turn_id,
             reason_code=reason_code,
+            observed_thread_status=observed_thread_status,
+            diagnostic_stage=diagnostic_stage,
         )
         # A known-no-effect rejection (for example, an upstream model-capacity
         # refusal) did not change the canonical thread projection.  Publishing

@@ -594,6 +594,9 @@ export class FakeApi implements FocusWebApiPort {
       mode: 'start' as const,
       turn_id: 'turn-new',
       reason_code: '',
+      observed_thread_status: null,
+      diagnostic_stage: 'upstream',
+      recorded_at: 1_790_550_000,
     };
   }
 
@@ -607,6 +610,9 @@ export class FakeApi implements FocusWebApiPort {
       mode: 'start' as const,
       turn_id: 'turn-new',
       reason_code: '',
+      observed_thread_status: null,
+      diagnostic_stage: 'upstream',
+      recorded_at: 1_790_550_000,
     };
   }
 

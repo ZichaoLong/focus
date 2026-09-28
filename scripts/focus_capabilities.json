@@ -1653,6 +1653,10 @@
         {
           "path": "web/src/focus/mutations/actions.ts",
           "symbol": "createFocusMutationActions"
+        },
+        {
+          "path": "web/src/focus/FocusPromptDiagnostic.vue",
+          "symbol": "copyDiagnostic"
         }
       ],
       "owner": [
@@ -1762,7 +1766,8 @@
             "web/test/focus_client/owners/thread-mutation-actions.test.ts",
             "web/test/focus_client/owners/pending-request-responses.test.ts",
             "web/test/focus_client/owners/web-prompt-result-locators.test.ts",
-            "web/test/focus_client/owners/web-prompt-mutation-recovery.test.ts"
+            "web/test/focus_client/owners/web-prompt-mutation-recovery.test.ts",
+            "web/test/focus-prompt-diagnostic.test.ts"
           ]
         }
       ],
@@ -1772,7 +1777,8 @@
           "targets": [
             "tests/test_fcodex_shared_steer.py",
             "tests/web_runtime/test_steer_projection.py",
-            "tests/test_codex_app_server_generation_pinned_turns.py"
+            "tests/test_codex_app_server_generation_pinned_turns.py",
+            "tests/web_runtime/test_directory_thread_actions.py::WebRuntimeDirectoryThreadActionTests::test_system_error_still_blocks_exclusive_and_lifecycle_actions"
           ]
         }
       ],

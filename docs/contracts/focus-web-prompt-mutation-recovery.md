@@ -145,6 +145,13 @@ back to `turn/start`. Only an attempt whose prepare found no exact active id sel
 goal/next-turn safety but does not explicitly call `thread/resume`; it adds no local
 compare-and-set start, writer lease, or replay guarantee.
 
+Ordinary `mode=start` input also admits exact `systemError` after the existing goal
+and next-turn settings checks, issuing that single `turn/start` for upstream to
+accept or reject. Empty, unknown, and unreviewed statuses still fail with
+`thread_state_unconfirmed`. This ordinary-input exception is not confirmed-inactive
+evidence: review, compact, archive, delete, goal mutations, and runtime/lease
+operations retain their own status authority.
+
 The attachment store uses the existing exact submission claim/pin. Known-no-effect
 attempts exact rollback before returning that result; known success or outcome unknown
 leaves it submitted. If the upstream text effect is authoritatively known-no-effect
@@ -185,7 +192,24 @@ GET `/api/threads/{thread_id}/prompt-result/{mutation_id}` use the same exact
 - `reason_code`: `""` without an additional classification.
   `attachment_rollback_failed` says exactly that the text effect is known not to have
   occurred but the old attachment chips are unsafe to reuse. Other values explain
-  only this request; none grants lifecycle or retry authority.
+  only this request; none grants lifecycle or retry authority;
+- `observed_thread_status`: the status actually observed by this attempt's metadata
+  read, bounded to 128 Unicode characters. `null` means no status was read and differs
+  from an observed empty string. Historical diagnostics grant no current-state or
+  admission authority;
+- `diagnostic_stage`: a nonempty, trimmed string of at most 64 characters describing
+  where the result was recorded; diagnostic only;
+- `recorded_at`: positive Unix seconds when this receipt was recorded. Duplicate
+  POST/GET returns the existing value; authoritative result updates record a new one.
+
+Failed receipts use the existing `mutation_id` as their diagnostic id. Service logs
+record that id, thread, time, outcome, reason, stage, and observed status without
+prompt text, attachment contents, or capabilities. The browser provides collapsed
+details and a copy button for only these diagnostic coordinates. Transport/lookup
+errors without a server receipt record browser time and their corresponding stage
+with a null observed status, never a cached page state masquerading as server
+evidence. This presentation changes no receipt authority, Composer settlement, or
+retry rule.
 
 After safety settlement, the original admitted POST returns its terminal receipt with
 HTTP 200. A same-identity duplicate may read an existing `pending` or terminal

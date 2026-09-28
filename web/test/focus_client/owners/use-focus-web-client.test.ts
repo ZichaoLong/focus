@@ -393,6 +393,9 @@ function testApi(intentGenerationFloor = 0) {
       mode: 'steer' as const,
       turn_id: 'turn-1',
       reason_code: '',
+      observed_thread_status: null,
+      diagnostic_stage: 'upstream',
+      recorded_at: 1_790_550_000,
     })),
     readNextTurnSettings: vi.fn(async () => ({
       runtime_epoch: EPOCH,
@@ -440,6 +443,60 @@ afterEach(() => {
 });
 
 describe('useFocusWebClient runtime notice routing', () => {
+  it('exposes exact prompt diagnostics and clears them before a new attempt', async () => {
+    stubBrowser();
+    const fake = testApi();
+    vi.mocked(fake.api.submitPrompt).mockImplementationOnce(async (threadId, input) => ({
+      thread_id: threadId,
+      mutation_id: input.mutationId,
+      client_user_message_id: `focus-web:${input.mutationId}`,
+      mode: 'start',
+      turn_id: '',
+      status: 'known_no_effect',
+      reason_code: 'thread_state_unconfirmed',
+      observed_thread_status: 'futureStatus',
+      diagnostic_stage: 'thread_status',
+      recorded_at: 1_790_550_000,
+    }));
+    const client = useFocusWebClient(fake.api);
+    try {
+      await client.load();
+      fake.handlers.open?.();
+      await expect(client.submit('private input')).resolves.toBe(false);
+      expect(client.errorMessage.value).toContain('futureStatus');
+      expect(JSON.parse(client.errorPresentation.value.diagnostic)).toMatchObject({
+        thread_id: 'thread-1',
+        reason_code: 'thread_state_unconfirmed',
+        observed_thread_status: 'futureStatus',
+      });
+      expect(client.errorPresentation.value.diagnostic).not.toContain('private input');
+
+      const next = deferred<Awaited<ReturnType<FocusWebApiPort['submitPrompt']>>>();
+      vi.mocked(fake.api.submitPrompt).mockReturnValueOnce(next.promise);
+      const submitting = client.submit('next explicit input');
+      expect(client.errorMessage.value).toBe('');
+      expect(client.errorPresentation.value.diagnostic).toBe('');
+      const [threadId, input] = vi.mocked(fake.api.submitPrompt).mock.calls[1]!;
+      next.resolve({
+        thread_id: threadId,
+        mutation_id: input.mutationId,
+        client_user_message_id: `focus-web:${input.mutationId}`,
+        mode: 'start',
+        turn_id: 'new-turn',
+        status: 'succeeded',
+        reason_code: 'upstream_acknowledged',
+        observed_thread_status: 'systemError',
+        diagnostic_stage: 'upstream',
+        recorded_at: 1_790_550_001,
+      });
+      await expect(submitting).resolves.toBe(true);
+      expect(client.errorPresentation.value.diagnostic).toBe('');
+      expect(fake.api.submitPrompt).toHaveBeenCalledTimes(2);
+    } finally {
+      client.dispose();
+    }
+  });
+
   it('publishes a typed notice without turning it into a projection reload', async () => {
     stubBrowser();
     const fake = testApi();

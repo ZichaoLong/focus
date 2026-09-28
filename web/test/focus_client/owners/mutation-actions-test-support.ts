@@ -263,6 +263,9 @@ export function harness(clientId = 'client-1'): Harness {
       mode: 'steer' as const,
       turn_id: 'turn-1',
       reason_code: '',
+      observed_thread_status: null,
+      diagnostic_stage: 'upstream',
+      recorded_at: 1_790_550_000,
     })),
     readPromptResult: vi.fn(async () => ({
       thread_id: 'thread-a',
@@ -272,6 +275,9 @@ export function harness(clientId = 'client-1'): Harness {
       mode: 'steer' as const,
       turn_id: 'turn-1',
       reason_code: '',
+      observed_thread_status: null,
+      diagnostic_stage: 'upstream',
+      recorded_at: 1_790_550_000,
     })),
     resolveUnknownMutation: vi.fn(async (
       threadId: string,

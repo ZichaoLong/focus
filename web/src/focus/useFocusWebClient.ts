@@ -29,6 +29,7 @@ import { createWebNextTurnSettings } from './client-state/web-next-turn-settings
 import { createBrowserTurnWindow } from './client-state/browser-turn-window';
 import { createThreadInspection } from './client-state/thread-inspection';
 import { createRuntimeNoticeOwner } from './client-state/runtime-notices';
+import { FocusPromptError } from './webPromptDiagnostic';
 import {
   FocusApiError,
   isStaleWebReadError,
@@ -84,7 +85,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // retrying that stale capability: a browser reload must register a fresh
   // document identity first.
   const documentReloadRequired = ref(false);
-  const errorMessage = ref('');
+  const errorPresentation = ref({ message: '', diagnostic: '' });
+  const errorMessage = computed(() => errorPresentation.value.message);
   let operatorStatusTimer: ReturnType<typeof setTimeout> | null = null;
   let operatorStatusRefreshPromise: Promise<void> | null = null;
   let updatePollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -119,9 +121,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearHistoryView: () => clearHistoryView(),
     updateThreadQuery,
     reportError,
-    clearError: () => {
-      errorMessage.value = '';
-    },
+    clearError,
     setNavigationLoading: (value) => {
       loading.value = value;
     },
@@ -171,7 +171,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     projectionAccessIsAvailable: () => !authRequired.value && !documentReloadRequired.value,
     currentErrorMessage: () => errorMessage.value,
     clearErrorMessageIf: (message) => {
-      if (message && errorMessage.value === message) errorMessage.value = '';
+      if (message && errorMessage.value === message) clearError();
     },
     activeThreadWasRemoved: () => {
       navigation.clearToRepairDraft(
@@ -458,9 +458,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     )),
     reportError,
     reportFatalError,
-    clearError: () => {
-      errorMessage.value = '';
-    },
+    clearError,
   });
   const {
     starting,
@@ -509,7 +507,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   function requireAuthentication(): void {
     authRequired.value = true;
-    errorMessage.value = '';
+    clearError();
     clearOperatorStatusTimer();
     transportSession.suspend();
   }
@@ -521,7 +519,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   function requireDocumentReload(): void {
     documentReloadRequired.value = true;
-    errorMessage.value = '';
+    clearError();
     clearOperatorStatusTimer();
     transportSession.suspend();
   }
@@ -547,11 +545,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       requireAuthentication();
       return;
     }
-    errorMessage.value = error instanceof Error ? error.message : String(error);
+    errorPresentation.value = {
+      message: error instanceof Error ? error.message : String(error),
+      diagnostic: error instanceof FocusPromptError ? error.diagnostic : '',
+    };
+  }
+
+  function clearError(): void {
+    errorPresentation.value = { message: '', diagnostic: '' };
   }
 
   async function refreshBackendReset(): Promise<void> {
-    errorMessage.value = '';
+    clearError();
     const observed = await backendReset.refreshPreview();
     if (observed !== null) return;
     const error = backendReset.previewError.value;
@@ -664,7 +669,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearUpdatePoll();
     updateBusy.value = true;
     updateNotice.value = '';
-    errorMessage.value = '';
+    clearError();
     try {
       const observed = await api.configureUpdateSource(url.trim(), 'change-source');
       if (!navigation.isDisposed) installUpdateStatus(observed);
@@ -682,7 +687,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     updateNotice.value = '';
     updateApplyStarted.value = false;
     updateApplyStartedAt = 0;
-    errorMessage.value = '';
+    clearError();
     try {
       const observed = await api.checkUpdate(target, commit.trim());
       if (navigation.isDisposed) return;
@@ -704,7 +709,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     updateApplyStarted.value = true;
     updateObservedAt.value = Date.now();
     updateApplyStartedAt = Date.now();
-    errorMessage.value = '';
+    clearError();
     try {
       const observed = await api.applyUpdate(operationId, operationId);
       if (navigation.isDisposed) return;
@@ -741,7 +746,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   async function executeBackendReset(
     preview: Parameters<typeof backendReset.execute>[0],
   ): Promise<FocusBackendResetExecutionOutcome> {
-    errorMessage.value = '';
+    clearError();
     const outcome = await backendReset.execute(preview);
     if (outcome.disposition === 'known-no-effect') {
       const presentedError = outcome.refreshError ?? outcome.error;
@@ -784,7 +789,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       || navigation.isDisposed
     ) return null;
     summaryExporting.value = true;
-    errorMessage.value = '';
+    clearError();
     try {
       return await api.exportThreadSummary(normalizedThreadId);
     } catch (error) {
@@ -804,7 +809,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       || navigation.isDisposed
     ) return null;
     threadDataExporting.value = true;
-    errorMessage.value = '';
+    clearError();
     try {
       return await api.exportThreadData(normalizedThreadId);
     } catch (error) {
@@ -860,7 +865,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       .searchParams.get(THREAD_QUERY_KEY)?.trim() ?? '';
     loading.value = true;
     authRequired.value = false;
-    errorMessage.value = '';
+    clearError();
     try {
       const initialMeta = await api.initialize();
       if (navigation.isDisposed) return;
@@ -983,6 +988,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     authRequired,
     documentReloadRequired,
     errorMessage,
+    errorPresentation,
     unknownSubmissionDraft,
     unknownSubmissionDrafts,
     unknownLifecycleMutations,

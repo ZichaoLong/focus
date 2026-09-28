@@ -2,6 +2,7 @@
 import { useI18n } from 'vue-i18n';
 import Banner from '../components/ui/Banner.vue';
 import Button from '../components/ui/Button.vue';
+import FocusPromptDiagnostic from './FocusPromptDiagnostic.vue';
 import type { RuntimeNoticeItem } from './client-state/runtime-notices';
 import type {
   UnknownLifecycleMutation,
@@ -15,7 +16,7 @@ const props = defineProps<{
   projectionStale: boolean;
   projectionReloading: boolean;
   backendResetOutcomeUnknown: boolean;
-  errorMessage: string;
+  error: { message: string; diagnostic: string };
   primaryRuntimeErrors: readonly RuntimeNoticeItem[];
   primaryOperatorWarningCount: number;
   operatorErrorCount: number;
@@ -55,7 +56,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
     v-if="documentReloadRequired
       || projectionStale
       || backendResetOutcomeUnknown
-      || errorMessage
+      || error.message
       || primaryRuntimeErrors.length > 0
       || primaryOperatorWarningCount > 0
       || operatorDegradedWithoutDetails
@@ -226,7 +227,16 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
       </span>
     </Banner>
 
-    <Banner v-if="errorMessage" variant="danger">{{ errorMessage }}</Banner>
+    <Banner v-if="error.message" variant="danger">
+      <div class="primary-runtime-error">
+        <span>{{ error.message }}</span>
+        <FocusPromptDiagnostic
+          v-if="error.diagnostic"
+          :key="error.diagnostic"
+          :diagnostic="error.diagnostic"
+        />
+      </div>
+    </Banner>
   </div>
 </template>
 

@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 20
+FOCUS_WEB_WIRE_VERSION: Final = 21
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -754,7 +754,8 @@ FOCUS_WEB_RECORDS: Final = (
     _record(
         "prompt_result_receipt",
         "FocusPromptResultReceipt",
-        "thread_id mutation_id client_user_message_id status mode turn_id reason_code",
+        "thread_id mutation_id client_user_message_id status mode turn_id reason_code "
+        "observed_thread_status diagnostic_stage recorded_at",
         "status:prompt_result_status mode:prompt_result_mode",
     ),
     _record("rename_result", "FocusRenameResult", "accepted thread_id name"),
