@@ -13,13 +13,18 @@ const { t } = useI18n();
 
 <style scoped>
 .tool-detail-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
   color: var(--color-accent);
-  font: var(--text-xs) var(--font-ui);
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
+  font: inherit;
+  padding: 0;
   cursor: pointer;
   white-space: nowrap;
 }
-.tool-detail-button:hover, .tool-detail-button[aria-pressed='true'] { background: var(--color-surface-sunken); }
-.tool-detail-button:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+.tool-detail-button:hover, .tool-detail-button:focus-visible {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tool-detail-button:focus-visible { outline: none; }
 </style>
