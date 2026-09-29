@@ -305,6 +305,7 @@
     "src/i18n/locales/en/focus.ts",
     "src/i18n/locales/zh/focus.ts",
     "src/lib/authenticatedMedia.ts",
+    "src/lib/download.ts",
     "src/lib/markdownDiffFence.ts",
     "src/lib/markdownLocalImages.ts",
     "src/lib/markdownMath.ts",

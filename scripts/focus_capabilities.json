@@ -1009,6 +1009,10 @@
           "symbol": "prepareSummaryPrint"
         },
         {
+          "path": "web/src/lib/download.ts",
+          "symbol": "downloadBlob"
+        },
+        {
           "path": "web/src/focus/FocusThreadActions.vue",
           "symbol": "requestExportOptions"
         }
@@ -1112,6 +1116,10 @@
         {
           "path": "bot/adapters/codex_thread_inspection.py",
           "symbol": "thread_items_page_from_result"
+        },
+        {
+          "path": "web/src/lib/download.ts",
+          "symbol": "downloadBlob"
         },
         {
           "path": "web/src/focus/api.ts",
