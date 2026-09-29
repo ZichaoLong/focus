@@ -528,7 +528,7 @@ function copyDiff(code: string, idx: number): void {
    largest inner block margin (0.8rem) so it collapses evenly into a uniform gap
    regardless of block type; going lower would let the inner margins take over
    and make spacing uneven. */
-.md :deep(.node-slot + .node-slot) {
+.md > :deep(.markdown-renderer > .node-slot + .node-slot) {
   margin-top: 0.8rem;
 }
 
@@ -763,6 +763,14 @@ function copyDiff(code: string, idx: number): void {
   min-width: 100%;
   max-width: none !important;
   table-layout: auto !important;
+}
+/* Long replies activate markstream's virtualized ancestor styles, which turn
+   even nested node wrappers into flow-root blocks. Table cells contain inline
+   nodes: keep those wrappers transparent so text, math and emphasis share a
+   line instead of becoming separate paragraphs. */
+.md :deep(.table-node .markdown-renderer > .node-slot),
+.md :deep(.table-node .markdown-renderer > .node-slot > .node-content) {
+  display: contents !important;
 }
 .md :deep(.table-node th),
 .md :deep(.table-node td) {

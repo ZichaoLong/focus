@@ -24,6 +24,12 @@ Chat prose preserves ordinary newlines, explicit hard breaks and blank-line
 paragraphs. Code retains its lines and indentation. A bold sentence without a
 following source newline does not become a standalone heading or paragraph.
 
+Text, inline math, emphasis, links and inline code inside table cells share one
+inline flow. Long-reply rendering optimizations and inline-node boundaries must
+not introduce line breaks or paragraph gaps. Paragraph spacing does not apply
+to inline cell fragments. Cells may still wrap naturally to their available
+width, and wide tables continue to scroll horizontally within their own wrapper.
+
 Chat Markdown and print prose allow browser weight synthesis when a real bold
 font face is unavailable, keeping CJK emphasis visible. Do not enable synthetic
 italics or change font policy elsewhere in the application. Font appearance
@@ -36,5 +42,7 @@ Regression coverage includes CJK punctuation beside CJK text, Latin letters and
 numbers, nested inline syntax, lists and tables, code and escapes, math,
 streaming/final transitions, line breaks and
 print. Browser checks use the actual Markdown component at wide and narrow
-viewports to verify emphasis, font fallback, paragraphs and code lines.
+viewports to verify emphasis, font fallback, paragraphs and code lines, plus
+mixed inline table content and horizontal scrolling with long-reply rendering
+optimizations active.
 A narrow viewport does not establish compatibility with every device's fonts.
