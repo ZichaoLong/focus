@@ -22,6 +22,15 @@ function mockDownload() {
   return { anchor, create, revoke };
 }
 
+function mockSavePicker() {
+  const download = mockDownload();
+  const stream = { write: vi.fn(async (_blob: Blob) => {}), close: vi.fn(async () => {}), abort: vi.fn(async () => {}) };
+  const handle = { createWritable: vi.fn(async () => stream) };
+  const picker = vi.fn(async (_options: unknown) => handle);
+  vi.stubGlobal('window', { setTimeout, isSecureContext: true, showSaveFilePicker: picker });
+  return { ...download, stream, handle, picker };
+}
+
 function setup() {
   const preview = { deliver: vi.fn(), fail: vi.fn() };
   vi.mocked(openSummaryPrintWindow).mockReturnValue(preview);
@@ -168,14 +177,141 @@ describe('named Markdown and JSONL downloads', () => {
   });
 
   it.each([false, true])('does not download a failed read and permits retry (throws: %s)', async (throws) => {
-    const { actions, client } = setup();
+    const { actions, client, notify } = setup();
     const { anchor } = mockDownload();
     client.exportThreadData.mockImplementationOnce(async () => { if (throws) throw new Error('network'); return null; });
-    const first = actions.exportThreadData('one');
-    if (throws) await expect(first).rejects.toThrow('network');
-    else await first;
+    await actions.exportThreadData('one');
     expect(anchor.click).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalledWith('focus.threadDataExportComplete');
+    if (throws) expect(notify).toHaveBeenCalledWith('focus.exportSaveFailed');
     await actions.exportThreadData('one');
     expect(anchor.click).toHaveBeenCalledOnce();
+  });
+});
+
+describe('system Save As for Markdown and JSONL', () => {
+  it.each(['markdown', 'jsonl'] as const)('selects a %s file before fetching and writes the complete content', async (format) => {
+    const { actions, client, requestExportOptions, notify } = setup();
+    const { picker, handle, stream, anchor, create } = mockSavePicker();
+    const choice = deferred<ExportOptionsChoice | null>();
+    requestExportOptions.mockReturnValue(choice.promise);
+    const load = format === 'markdown' ? client.exportThreadSummary : client.exportThreadData;
+    const blob = new Blob([format === 'markdown' ? '# Codex conversation summary\n\n正文' : '{"原始":"数据"}\n']);
+    load.mockImplementation(async () => {
+      expect(picker).toHaveBeenCalledOnce();
+      expect(handle.createWritable).not.toHaveBeenCalled();
+      return blob;
+    });
+    const exporting = format === 'markdown'
+      ? actions.exportThreadSummary({ threadId: 'selected-thread', format })
+      : actions.exportThreadData('selected-thread');
+    expect(picker).not.toHaveBeenCalled();
+    choice.resolve({ filename: '自定/文件', documentTitle: '独立文档标题' });
+    await exporting;
+    expect(picker).toHaveBeenCalledExactlyOnceWith({
+      suggestedName: format === 'markdown' ? '自定-文件.md' : '自定-文件.jsonl',
+      types: format === 'markdown'
+        ? [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+        : [{ description: 'JSON Lines', accept: { 'application/x-ndjson': ['.jsonl'] } }],
+    });
+    expect(load).toHaveBeenCalledExactlyOnceWith('selected-thread');
+    expect(await stream.write.mock.calls[0]![0].text()).toBe(format === 'markdown'
+      ? '# 独立文档标题\n\n正文' : '{"原始":"数据"}\n');
+    expect(stream.close).toHaveBeenCalledOnce();
+    expect(stream.abort).not.toHaveBeenCalled();
+    expect(anchor.click).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenLastCalledWith(format === 'markdown'
+      ? 'focus.summaryExportComplete' : 'focus.threadDataExportComplete');
+  });
+
+  it('cancels without fetching or downloading and releases the export gate', async () => {
+    const { actions, client, notify } = setup();
+    const { picker, handle, anchor } = mockSavePicker();
+    picker.mockRejectedValueOnce(new DOMException('Cancelled', 'AbortError'));
+    await actions.exportThreadData('one');
+    expect(client.exportThreadData).not.toHaveBeenCalled();
+    expect(handle.createWritable).not.toHaveBeenCalled();
+    expect(anchor.click).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
+    await actions.exportThreadData('two');
+    expect(client.exportThreadData).toHaveBeenCalledExactlyOnceWith('two');
+  });
+
+  it('holds the export gate through the picker and final close, keeping the original target and title', async () => {
+    const { actions, client, notify, getThreadTitle, requestExportOptions } = setup();
+    const { picker, handle, stream } = mockSavePicker();
+    const selection = deferred<typeof handle>();
+    const closed = deferred<void>();
+    picker.mockReturnValueOnce(selection.promise);
+    stream.close.mockReturnValueOnce(closed.promise);
+    const exporting = actions.exportThreadSummary({ threadId: 'original', format: 'markdown' });
+    await vi.waitFor(() => expect(picker).toHaveBeenCalledOnce());
+    getThreadTitle.mockReturnValue('Changed thread');
+    await actions.exportThreadData('other');
+    await actions.exportThreadSummary({ threadId: 'other', format: 'print' });
+    expect(client.exportThreadSummary).not.toHaveBeenCalled();
+    expect(openSummaryPrintWindow).not.toHaveBeenCalled();
+    selection.resolve(handle);
+    await vi.waitFor(() => expect(stream.close).toHaveBeenCalledOnce());
+    await actions.exportThreadData('other');
+    expect(requestExportOptions).toHaveBeenCalledOnce();
+    expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('original');
+    expect(await stream.write.mock.calls[0]![0].text()).toBe('# 目标会话\n\nFull history');
+    expect(notify).not.toHaveBeenCalledWith('focus.summaryExportComplete');
+    closed.resolve();
+    await exporting;
+    expect(notify).toHaveBeenLastCalledWith('focus.summaryExportComplete');
+  });
+
+  it.each(['insecure', 'missing', 'SecurityError', 'NotSupportedError'])('uses ordinary downloads when the picker is unavailable: %s', async (reason) => {
+    const { actions, client } = setup();
+    const { picker, handle, anchor } = mockSavePicker();
+    if (reason === 'insecure') vi.stubGlobal('window', { setTimeout, isSecureContext: false, showSaveFilePicker: picker });
+    else if (reason === 'missing') vi.stubGlobal('window', { setTimeout, isSecureContext: true });
+    else picker.mockRejectedValueOnce(new DOMException('Unavailable', reason));
+    await actions.exportThreadData('one');
+    if (reason === 'insecure' || reason === 'missing') expect(picker).not.toHaveBeenCalled();
+    expect(handle.createWritable).not.toHaveBeenCalled();
+    expect(client.exportThreadData).toHaveBeenCalledExactlyOnceWith('one');
+    expect(anchor.download).toBe('目标会话.jsonl');
+    expect(anchor.click).toHaveBeenCalledOnce();
+  });
+
+  it.each(['NotAllowedError', 'UnknownError'])('reports other picker errors without fetching or silently downloading: %s', async (reason) => {
+    const { actions, client, notify } = setup();
+    const { picker, anchor } = mockSavePicker();
+    picker.mockRejectedValueOnce(new DOMException('Failed', reason));
+    await actions.exportThreadData('one');
+    expect(client.exportThreadData).not.toHaveBeenCalled();
+    expect(anchor.click).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenCalledExactlyOnceWith('focus.exportSaveFailed');
+    await actions.exportThreadData('two');
+    expect(client.exportThreadData).toHaveBeenCalledExactlyOnceWith('two');
+  });
+
+  it.each([false, true])('never opens a writable stream on a failed export (throws: %s)', async (throws) => {
+    const { actions, client, notify } = setup();
+    const { handle, anchor } = mockSavePicker();
+    client.exportThreadData.mockImplementationOnce(async () => { if (throws) throw new Error('network'); return null; });
+    await actions.exportThreadData('one');
+    expect(handle.createWritable).not.toHaveBeenCalled();
+    expect(anchor.click).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalledWith('focus.threadDataExportComplete');
+  });
+
+  it.each(['createWritable', 'write', 'close'] as const)('reports a %s failure without claiming success or starting a second download', async (step) => {
+    const { actions, notify } = setup();
+    const { handle, stream, anchor } = mockSavePicker();
+    const fail = step === 'createWritable' ? handle.createWritable : stream[step];
+    fail.mockRejectedValueOnce(new DOMException('Cannot save', 'NotAllowedError'));
+    await actions.exportThreadData('one');
+    expect(anchor.click).not.toHaveBeenCalled();
+    expect(notify).toHaveBeenLastCalledWith('focus.exportSaveFailed');
+    expect(notify).not.toHaveBeenCalledWith('focus.threadDataExportComplete');
+    if (step !== 'createWritable') expect(stream.abort).toHaveBeenCalledOnce();
+    if (step === 'write') expect(stream.close).not.toHaveBeenCalled();
+    await actions.exportThreadData('two');
+    expect(notify).toHaveBeenLastCalledWith('focus.threadDataExportComplete');
   });
 });

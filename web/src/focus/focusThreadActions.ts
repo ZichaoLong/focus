@@ -37,6 +37,39 @@ export interface FocusThreadActionsOptions {
   translate(key: string): string;
 }
 
+type ExportDestination = { kind: 'download' } | { kind: 'file'; handle: FileSystemFileHandle };
+type SavePickerWindow = Window & {
+  showSaveFilePicker?: (options: {
+    suggestedName: string;
+    types: { description: string; accept: Record<string, string[]> }[];
+  }) => Promise<FileSystemFileHandle>;
+};
+
+async function chooseExportDestination(
+  filename: string, format: ExportOptionsRequest['format'],
+): Promise<ExportDestination | null> {
+  const browser = window as SavePickerWindow;
+  if (!browser.isSecureContext || typeof browser.showSaveFilePicker !== 'function') {
+    return { kind: 'download' };
+  }
+  try {
+    // Still in the naming dialog's confirmation gesture, before any export fetch.
+    const handle = await browser.showSaveFilePicker({
+      suggestedName: filename,
+      types: format === 'markdown'
+        ? [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+        : [{ description: 'JSON Lines', accept: { 'application/x-ndjson': ['.jsonl'] } }],
+    });
+    return { kind: 'file', handle };
+  } catch (error) {
+    if (error instanceof DOMException) {
+      if (error.name === 'AbortError') return null;
+      if (error.name === 'SecurityError' || error.name === 'NotSupportedError') return { kind: 'download' };
+    }
+    throw error;
+  }
+}
+
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
@@ -47,6 +80,23 @@ function downloadBlob(blob: Blob, filename: string): void {
   anchor.click();
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function saveExportBlob(destination: ExportDestination, blob: Blob, filename: string): Promise<void> {
+  if (destination.kind === 'download') {
+    downloadBlob(blob, filename);
+    return;
+  }
+  // Do not open a writable stream until the complete export is available.
+  const stream = await destination.handle.createWritable();
+  try {
+    await stream.write(blob);
+    await stream.close();
+  } catch (error) {
+    // Discard staged writes where possible, preserving the original failure.
+    await stream.abort().catch(() => {});
+    throw error;
+  }
 }
 
 export function createFocusThreadActions(options: FocusThreadActionsOptions) {
@@ -82,14 +132,22 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
         notify(translate(messageKeys.busy));
         return;
       }
+      const destination = await chooseExportDestination(filename, format);
+      if (destination === null) return;
+      if (client.summaryExporting.value || client.threadDataExporting.value) {
+        notify(translate(messageKeys.busy));
+        return;
+      }
       notify(translate(messageKeys.preparing));
       const blob = await load(threadId);
       if (blob === null) return;
       const download = format === 'markdown'
         ? new Blob([titleSummaryMarkdown(await blob.text(), chosen.documentTitle ?? documentTitle)], { type: blob.type })
         : blob;
-      downloadBlob(download, filename);
+      await saveExportBlob(destination, download, filename);
       notify(translate(messageKeys.complete));
+    } catch {
+      notify(translate('focus.exportSaveFailed'));
     } finally {
       exportPending = false;
     }

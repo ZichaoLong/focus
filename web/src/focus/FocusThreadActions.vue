@@ -72,6 +72,7 @@ defineExpose(actions);
       <p id="export-filename-preview" class="export-preview" aria-live="polite">
         {{ filename ? t('focus.exportFilenamePreview', { filename }) : t('focus.exportFilenameRequired') }}
       </p>
+      <p class="export-preview">{{ t('focus.exportSaveLocationHelp') }}</p>
       <label v-if="request?.format === 'markdown'" class="export-label">
         <span>{{ t('focus.exportDocumentTitle') }}</span>
         <Input v-model="documentTitle" autocomplete="off" :placeholder="DEFAULT_SUMMARY_TITLE" aria-describedby="export-title-help" />
