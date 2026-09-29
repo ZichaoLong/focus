@@ -102,6 +102,7 @@ Status guidance:
 - [`focus-web-wire.md`](./contracts/focus-web-wire.md)
 - [`focus-web-markdown-copy.md`](./contracts/focus-web-markdown-copy.md)
 - [`focus-web-markdown-rendering.md`](./contracts/focus-web-markdown-rendering.md)
+- [`focus-web-export-filenames.md`](./contracts/focus-web-export-filenames.md)
 - [`focus-web-summary-print.md`](./contracts/focus-web-summary-print.md)
 - [`focus-web-reading-mode.md`](./contracts/focus-web-reading-mode.md)
 - [`focus-web-prompt-mutation-recovery.md`](./contracts/focus-web-prompt-mutation-recovery.md)

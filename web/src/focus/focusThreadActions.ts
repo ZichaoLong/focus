@@ -1,4 +1,5 @@
 import type { SummaryExportRequest } from '../types';
+import { normalizeExportFilename, suggestExportFilename } from './exportFilename';
 import { openSummaryPrintWindow } from './summaryPrintWindow';
 
 interface FocusThreadActionClient {
@@ -9,8 +10,15 @@ interface FocusThreadActionClient {
   archiveThread(threadId: string): Promise<boolean>;
 }
 
-interface FocusThreadActionsOptions {
+export interface ExportFilenameRequest {
+  format: 'markdown' | 'jsonl';
+  suggestedFilename: string;
+}
+
+export interface FocusThreadActionsOptions {
   client: FocusThreadActionClient;
+  getThreadTitle(threadId: string): string;
+  requestFilename(options: ExportFilenameRequest): Promise<string | null>;
   confirm(options: {
     title: string;
     message: string;
@@ -21,9 +29,6 @@ interface FocusThreadActionsOptions {
   notify(message: string): void;
   translate(key: string): string;
 }
-
-const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';
-const THREAD_DATA_EXPORT_FILENAME = 'codex-thread-data.jsonl';
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -39,49 +44,73 @@ function downloadBlob(blob: Blob, filename: string): void {
 
 export function createFocusThreadActions(options: FocusThreadActionsOptions) {
   const { client, notify, translate } = options;
+  let exportPending = false;
+
+  function exportBusy(): boolean {
+    return exportPending || client.summaryExporting.value || client.threadDataExporting.value;
+  }
 
   async function runExport(
     threadId: string,
     load: (id: string) => Promise<Blob | null>,
-    filename: string,
+    format: ExportFilenameRequest['format'],
     messageKeys: { busy: string; preparing: string; complete: string },
   ): Promise<void> {
-    if (client.summaryExporting.value || client.threadDataExporting.value) {
+    if (exportBusy()) {
       notify(translate(messageKeys.busy));
       return;
     }
-    notify(translate(messageKeys.preparing));
-    const blob = await load(threadId);
-    if (blob === null) return;
-    downloadBlob(blob, filename);
-    notify(translate(messageKeys.complete));
+    exportPending = true;
+    try {
+      const chosen = await options.requestFilename({
+        format, suggestedFilename: suggestExportFilename(options.getThreadTitle(threadId), format),
+      });
+      if (chosen === null) return;
+      const filename = normalizeExportFilename(chosen, format);
+      if (!filename) return;
+      if (client.summaryExporting.value || client.threadDataExporting.value) {
+        notify(translate(messageKeys.busy));
+        return;
+      }
+      notify(translate(messageKeys.preparing));
+      const blob = await load(threadId);
+      if (blob === null) return;
+      downloadBlob(blob, filename);
+      notify(translate(messageKeys.complete));
+    } finally {
+      exportPending = false;
+    }
   }
 
   async function exportThreadSummary({ threadId, format }: SummaryExportRequest): Promise<void> {
     if (format === 'print') {
-      if (client.summaryExporting.value || client.threadDataExporting.value) {
+      if (exportBusy()) {
         notify(translate('focus.summaryExportBusy'));
         return;
       }
+      const filename = suggestExportFilename(options.getThreadTitle(threadId), 'print');
       // Open within the click's user activation, before fetching any history.
       const preview = openSummaryPrintWindow();
       if (!preview) {
         notify(translate('focus.printPopupBlocked'));
         return;
       }
+      exportPending = true;
       try {
         const blob = await client.exportThreadSummary(threadId);
         if (blob === null) preview.fail();
-        else preview.deliver(await blob.text());
+        else preview.deliver(await blob.text(), filename);
       } catch {
         preview.fail();
+      } finally {
+        exportPending = false;
       }
       return;
     }
     return runExport(
       threadId,
       (id) => client.exportThreadSummary(id),
-      SUMMARY_EXPORT_FILENAME,
+      'markdown',
       {
         busy: 'focus.summaryExportBusy',
         preparing: 'focus.summaryExportPreparing',
@@ -94,7 +123,7 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
     return runExport(
       threadId,
       (id) => client.exportThreadData(id),
-      THREAD_DATA_EXPORT_FILENAME,
+      'jsonl',
       {
         busy: 'focus.threadDataExportBusy',
         preparing: 'focus.threadDataExportPreparing',

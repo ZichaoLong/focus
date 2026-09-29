@@ -9,14 +9,14 @@ function source(relativePath: string): string {
 
 
 describe('Focus Q&A Markdown export surface', () => {
-  it('wires wide and narrow export intents to one fixed-name Blob download', () => {
+  it('wires wide and narrow export intents to the shared named Blob download', () => {
     const app = source('../src/focus/FocusApp.vue');
     const actions = source('../src/focus/focusThreadActions.ts');
     const narrowTopBar = source('../src/components/narrow/NarrowTopBar.vue');
     const narrowSwitcher = source('../src/components/narrow/NarrowSwitcherSheet.vue');
 
-    expect(app).toContain('@export="exportThreadSummary($event)"');
-    expect(app).toContain('@export-session="exportThreadSummary($event)"');
+    expect(app).toContain('@export="threadActions?.exportThreadSummary($event)"');
+    expect(app).toContain('@export-session="threadActions?.exportThreadSummary($event)"');
     expect(narrowTopBar).toContain('summaryExportAvailable?: boolean;');
     expect(narrowTopBar).toContain(":label=\"t('header.exportOptions')\"");
     expect(narrowTopBar).toContain('<Icon name="download" size="lg" />');
@@ -26,7 +26,7 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(narrowSwitcher).toContain("emit('export', { threadId: id, format });");
     expect(narrowSwitcher).toContain("t('sidebar.export')");
     expect(narrowSwitcher).toContain("return action !== 'export';");
-    expect(actions).toContain("const SUMMARY_EXPORT_FILENAME = 'codex-conversation-summary.md';");
+    expect(app).toContain('<FocusThreadActions');
     expect(actions).toContain('(id) => client.exportThreadSummary(id)');
     expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
     expect(actions).toContain("preparing: 'focus.summaryExportPreparing'");

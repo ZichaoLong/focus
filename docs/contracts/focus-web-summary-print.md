@@ -8,6 +8,8 @@ The desktop conversation menu, sidebar session menu, narrow top export menu and
 narrow session switcher offer both Export Q&A Markdown and Print / Save as PDF
 when the existing `export` capability is available. Printing shares the busy
 gate with Markdown and thread-data exports.
+Filename dialogs and PDF default suggestions follow the
+[export filename contract](focus-web-export-filenames.md).
 
 `createFocusThreadActions` obtains the complete Markdown through the existing
 authenticated `exportThreadSummary` operation. Content and limits belong to

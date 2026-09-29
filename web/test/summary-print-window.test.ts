@@ -31,16 +31,17 @@ describe('standalone print handoff', () => {
     const url = new URL(browser.open.mock.calls[0]![0] as unknown as string);
     expect(url.search).toBe('?print=summary');
     expect(url.href).not.toContain('secret');
+    expect(decodeURI(url.href)).not.toContain('所选会话');
     const ready = { channel: 'focus-summary-print', token: url.hash.slice(1), ready: true };
     message(ready, child, 'https://attacker.test');
     message(ready, {}, 'https://focus.test');
     message({ ...ready, token: 'wrong' });
-    if (contentFirst) preview.deliver('Complete original Q&A');
+    if (contentFirst) preview.deliver('Complete original Q&A', '所选会话.pdf');
     expect(child.postMessage).not.toHaveBeenCalled();
     message(ready);
-    if (!contentFirst) preview.deliver('Complete original Q&A');
+    if (!contentFirst) preview.deliver('Complete original Q&A', '所选会话.pdf');
     expect(child.postMessage).toHaveBeenCalledExactlyOnceWith({
-      channel: 'focus-summary-print', token: ready.token, markdown: 'Complete original Q&A',
+      channel: 'focus-summary-print', token: ready.token, markdown: 'Complete original Q&A', suggestedFilename: '所选会话.pdf',
     }, 'https://focus.test');
     expect(listeners.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
@@ -58,7 +59,7 @@ describe('standalone print handoff', () => {
     const preview = openSummaryPrintWindow()!;
     if (reason === 'closed') child.closed = true;
     vi.advanceTimersByTime(90_000);
-    preview.deliver('Late');
+    preview.deliver('Late', 'late.pdf');
     expect(child.postMessage).not.toHaveBeenCalled();
     expect(listeners.size).toBe(0);
     expect(vi.getTimerCount()).toBe(0);
@@ -68,13 +69,13 @@ describe('standalone print handoff', () => {
     const { browser, opener, message, listeners } = mockWindow();
     const content = vi.fn(); const error = vi.fn();
     receiveSummaryPrint(content, error);
-    const data = { channel: 'focus-summary-print', token: 'rendezvous', markdown: '# Q&A' };
+    const data = { channel: 'focus-summary-print', token: 'rendezvous', markdown: '# Q&A', suggestedFilename: '所选会话.pdf' };
     message(data);
     message(data, opener, 'https://attacker.test');
     message({ ...data, token: 'bad' }, opener);
     expect(content).not.toHaveBeenCalled();
     message(data, opener);
-    expect(content).toHaveBeenCalledExactlyOnceWith('# Q&A');
+    expect(content).toHaveBeenCalledExactlyOnceWith('# Q&A', '所选会话.pdf');
     expect(error).not.toHaveBeenCalled();
     expect(browser.history.replaceState).toHaveBeenCalledWith(null, '', '/?print=summary');
     expect(browser.opener).toBeNull();
@@ -92,5 +93,13 @@ describe('standalone print handoff', () => {
     expect(error).toHaveBeenCalledOnce();
     expect(content).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('retains complete content with a fallback name when an older opener omits the suggestion', () => {
+    const { opener, message } = mockWindow();
+    const content = vi.fn();
+    receiveSummaryPrint(content, vi.fn());
+    message({ channel: 'focus-summary-print', token: 'rendezvous', markdown: '# Original' }, opener);
+    expect(content).toHaveBeenCalledExactlyOnceWith('# Original', 'codex-conversation-summary.pdf');
   });
 });

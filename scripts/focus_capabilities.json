@@ -1005,8 +1005,8 @@
           "symbol": "prepareSummaryPrint"
         },
         {
-          "path": "web/src/focus/SummaryPrintApp.vue",
-          "symbol": "render"
+          "path": "web/src/focus/FocusThreadActions.vue",
+          "symbol": "requestFilename"
         }
       ],
       "contract": [
@@ -1025,6 +1025,14 @@
         {
           "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
           "heading": "正文强调与换行"
+        },
+        {
+          "path": "docs/contracts/focus-web-export-filenames.zh-CN.md",
+          "heading": "命名与下载"
+        },
+        {
+          "path": "docs/contracts/focus-web-export-filenames.zh-CN.md",
+          "heading": "PDF 建议名"
         }
       ],
       "focused-test": [
@@ -1045,7 +1053,8 @@
             "web/test/summary-print-markdown.test.ts",
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
-            "web/test/focus-thread-actions.test.ts"
+            "web/test/focus-thread-actions.test.ts",
+            "web/test/export-filename.test.ts"
           ]
         }
       ],
@@ -1097,6 +1106,10 @@
         {
           "path": "web/src/focus/useFocusWebClient.ts",
           "symbol": "useFocusWebClient"
+        },
+        {
+          "path": "web/src/focus/FocusThreadActions.vue",
+          "symbol": "requestFilename"
         }
       ],
       "contract": [
@@ -1107,6 +1120,10 @@
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-export-filenames.zh-CN.md",
+          "heading": "命名与下载"
         }
       ],
       "focused-test": [
@@ -1123,7 +1140,9 @@
           "targets": [
             "web/test/focus-thread-data-export-api.test.ts",
             "web/test/focus-thread-data-export-surface.test.ts",
-            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+            "web/test/focus_client/owners/use-focus-web-client.test.ts",
+            "web/test/export-filename.test.ts",
+            "web/test/focus-thread-actions.test.ts"
           ]
         }
       ],

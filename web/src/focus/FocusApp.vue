@@ -42,7 +42,7 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
-import { createFocusThreadActions } from './focusThreadActions';
+import FocusThreadActions from './FocusThreadActions.vue';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 import { useFocusWebClient } from './useFocusWebClient';
@@ -650,13 +650,7 @@ function showUnsupported(): void {
   showTransientNotice(t('focus.fileUnavailable'));
 }
 
-const { exportThreadSummary, exportThreadData, confirmArchiveThread } =
-  createFocusThreadActions({
-    client,
-    confirm,
-    notify: showTransientNotice,
-    translate: (key) => t(key),
-  });
+const threadActions = ref<InstanceType<typeof FocusThreadActions> | null>(null);
 
 async function confirmBackendReset(preview: FocusBackendResetPreview): Promise<void> {
   const force = preview.status === 'force-only';
@@ -870,8 +864,8 @@ onUnmounted(() => {
           :allow-workspace-reorder="false"
           @select="client.selectThread($event)"
           @rename="(id, title) => client.renameThread(id, title)"
-          @archive="confirmArchiveThread($event)"
-          @export="exportThreadSummary($event)"
+          @archive="threadActions?.confirmArchiveThread($event)"
+          @export="threadActions?.exportThreadSummary($event)"
           @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
           @create-in-workspace="openWorkspaceDraft($event)"
           @open-settings="showSettings = true"
@@ -932,8 +926,8 @@ onUnmounted(() => {
         :reading-mode-enabled="canEnterReadingMode"
         @open-switcher="showNarrowSwitcher = true"
         @open-settings="showSettings = true"
-        @export-session="exportThreadSummary($event)"
-        @export-thread-data="exportThreadData($event)"
+        @export-session="threadActions?.exportThreadSummary($event)"
+        @export-thread-data="threadActions?.exportThreadData($event)"
         @enter-reading-mode="enterReadingMode"
       >
         <template #utility-actions>
@@ -1072,9 +1066,9 @@ onUnmounted(() => {
           @search-conversation="openConversationSearch"
           @copy-message-to-composer="handleCopyMessageToComposer"
           @rename-session="(id, title) => client.renameThread(id, title)"
-          @archive-session="confirmArchiveThread($event)"
-          @export-session="exportThreadSummary($event)"
-          @export-thread-data="exportThreadData($event)"
+          @archive-session="threadActions?.confirmArchiveThread($event)"
+          @export-session="threadActions?.exportThreadSummary($event)"
+          @export-thread-data="threadActions?.exportThreadData($event)"
           @review-session="showReviewDialog = true"
           @goal-session="showGoalDialog = true"
           @enter-reading-mode="enterReadingMode"
@@ -1240,8 +1234,8 @@ onUnmounted(() => {
         @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
         @create-in-workspace="openWorkspaceDraft($event)"
         @rename="(id, title) => client.renameThread(id, title)"
-        @export="exportThreadSummary($event)"
-        @archive="confirmArchiveThread($event)"
+        @export="threadActions?.exportThreadSummary($event)"
+        @archive="threadActions?.confirmArchiveThread($event)"
       >
         <template #controls>
           <SegmentedControl
@@ -1258,6 +1252,12 @@ onUnmounted(() => {
       </NarrowSwitcherSheet>
     </div>
 
+    <FocusThreadActions
+      ref="threadActions"
+      :client="client"
+      :confirm="confirm"
+      :notify="showTransientNotice"
+    />
     <ConfirmDialogHost />
 
     <Transition name="gload-fade">

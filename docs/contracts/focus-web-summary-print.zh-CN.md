@@ -7,6 +7,7 @@
 桌面会话菜单、侧栏会话菜单、窄屏顶部导出菜单和窄屏会话切换菜单，在既有
 `export` capability 可用时，同时提供“导出问答 Markdown”和“打印／另存为 PDF”。
 打印操作与 Markdown、线程数据导出共用正在导出的互斥状态。
+文件名输入框与 PDF 默认建议名遵循[导出文件名合同](focus-web-export-filenames.zh-CN.md)。
 
 `createFocusThreadActions` 通过现有 authenticated `exportThreadSummary` 取得完整
 Markdown；内容与边界由 [Web wire 合同](focus-web-wire.zh-CN.md) 的

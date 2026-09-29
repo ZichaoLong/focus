@@ -15,7 +15,8 @@ const status = ref<'loading' | 'ready' | 'error'>('loading');
 const fallback = ref(false);
 let dispose = () => {};
 
-async function render(markdown: string): Promise<void> {
+async function render(markdown: string, suggestedFilename: string): Promise<void> {
+  document.title = suggestedFilename.replace(/\.pdf$/i, '') || 'Focus — Q&A';
   try {
     const rendered = renderSummaryPrintMarkdown(markdown);
     html.value = rendered.html;
@@ -44,7 +45,7 @@ function print(): void {
 onMounted(() => {
   document.title = 'Focus — Q&A';
   document.documentElement.classList.add('summary-print-page');
-  dispose = receiveSummaryPrint((markdown) => { void render(markdown); }, () => { status.value = 'error'; });
+  dispose = receiveSummaryPrint((markdown, filename) => { void render(markdown, filename); }, () => { status.value = 'error'; });
 });
 onUnmounted(() => { dispose(); document.documentElement.classList.remove('summary-print-page'); });
 </script>
