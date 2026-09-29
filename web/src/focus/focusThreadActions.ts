@@ -140,7 +140,10 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
       }
       notify(translate(messageKeys.preparing));
       const blob = await load(threadId);
-      if (blob === null) return;
+      if (blob === null) {
+        notify(translate('focus.exportSaveFailed'));
+        return;
+      }
       const download = format === 'markdown'
         ? new Blob([titleSummaryMarkdown(await blob.text(), chosen.documentTitle ?? documentTitle)], { type: blob.type })
         : blob;

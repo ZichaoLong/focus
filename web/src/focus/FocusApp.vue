@@ -43,6 +43,7 @@ import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
 import FocusThreadActions from './FocusThreadActions.vue';
+import FocusTransientNotice from './FocusTransientNotice.vue';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 import { useFocusWebClient } from './useFocusWebClient';
@@ -69,8 +70,7 @@ const detailPanelLoadState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 let detailPanelLoadPromise: Promise<void> | null = null;
 const detailOpen = computed(() => detailSelection.value !== null);
 const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
-const unsupportedNotice = ref('');
-let unsupportedNoticeTimer: ReturnType<typeof window.setTimeout> | null = null;
+const transientNotice = ref<InstanceType<typeof FocusTransientNotice> | null>(null);
 const { colorScheme, setColorScheme } = useAppearance();
 const { confirm } = useConfirmDialog();
 const { viewportWidth } = useViewportWidth();
@@ -632,12 +632,7 @@ function closeDetail(): void {
 }
 
 function showTransientNotice(message: string): void {
-  unsupportedNotice.value = message;
-  if (unsupportedNoticeTimer !== null) window.clearTimeout(unsupportedNoticeTimer);
-  unsupportedNoticeTimer = window.setTimeout(() => {
-    unsupportedNotice.value = '';
-    unsupportedNoticeTimer = null;
-  }, 4000);
+  transientNotice.value?.show(message);
 }
 
 function showUnsupported(): void {
@@ -786,7 +781,6 @@ watch(detailOpen, (open) => {
 
 onUnmounted(() => {
   client.dispose();
-  if (unsupportedNoticeTimer !== null) window.clearTimeout(unsupportedNoticeTimer);
   window.visualViewport?.removeEventListener('resize', syncAppHeight);
   window.visualViewport?.removeEventListener('scroll', syncAppHeight);
   window.removeEventListener('resize', syncAppHeight);
@@ -946,11 +940,17 @@ onUnmounted(() => {
           v-if="readingMode"
           :narrow-viewport="isNarrowViewport"
           :session-title="activeSessionTitle"
+          :session-id="client.activeThreadId.value"
           :switcher-open="showNarrowSwitcher"
           :prompt-history-disabled="client.conversationLoading.value"
+          :summary-export-available="sessionActionCapabilities.export"
+          :thread-data-export-available="threadDataExportAvailable"
+          :export-disabled="client.conversationLoading.value || client.summaryExporting.value || client.threadDataExporting.value"
           @exit="exitReadingMode"
           @switch-session="showNarrowSwitcher = true"
           @prompt-history="conversationPaneRef?.openPromptHistory()"
+          @export-session="threadActions?.exportThreadSummary($event)"
+          @export-thread-data="threadActions?.exportThreadData($event)"
         />
         <FocusPrimaryNotices
           v-if="!readingMode"
@@ -979,9 +979,7 @@ onUnmounted(() => {
           @unlock-lifecycle-mutation="client.unlockUnknownLifecycleMutation($event)"
         />
 
-        <div v-if="unsupportedNotice && !readingMode" class="transient-notice" role="status">
-          {{ unsupportedNotice }}
-        </div>
+        <FocusTransientNotice ref="transientNotice" :reading-mode="readingMode" />
         <ConversationPane
           ref="conversationPaneRef"
           :narrow-viewport="isNarrowViewport"
@@ -1394,21 +1392,6 @@ onUnmounted(() => {
   top: 3px;
   right: 3px;
 }
-.transient-notice {
-  position: absolute;
-  z-index: var(--z-sticky);
-  top: var(--space-3);
-  left: 50%;
-  max-width: min(520px, calc(100% - var(--space-6)));
-  transform: translateX(-50%);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--color-warning-bd);
-  border-radius: var(--radius-md);
-  background: var(--color-warning-soft);
-  color: var(--color-text);
-  box-shadow: var(--shadow-md);
-  overflow-wrap: anywhere;
-}
 .directory-scope {
   width: 100%;
   margin: 0 0 var(--space-2);
@@ -1477,9 +1460,6 @@ onUnmounted(() => {
 .focus-app.narrow-viewport .focus-main {
   flex: 1;
   min-height: 0;
-}
-@media (max-width: 640px) {
-  .transient-notice { top: var(--space-2); }
 }
 @media (min-width: 641px) {
   .focus-app.reading-mode :deep(.sheet-panel) {

@@ -4,8 +4,9 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 ## Scope and entry points
 
-The desktop conversation menu, sidebar session menu, narrow top export menu and
-narrow session switcher offer both Export Q&A Markdown and Print / Save as PDF
+The desktop conversation menu, sidebar session menu, narrow top export menu,
+narrow session switcher and reading-mode export menu at every viewport size offer
+both Export Q&A Markdown and Print / Save as PDF
 when the existing `export` capability is available. Printing shares the busy
 gate with Markdown and thread-data exports.
 Filename dialogs and PDF default suggestions follow the

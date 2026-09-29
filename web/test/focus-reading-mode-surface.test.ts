@@ -62,7 +62,7 @@ describe('Focus page-level reading mode surface', () => {
     expect(between(app, '<NarrowTopBar', '</NarrowTopBar>'))
       .toContain('class="runtime-details-narrow-trigger"');
     expect(app).toMatch(/<FocusPrimaryNotices\s+v-if="!readingMode"/u);
-    expect(app).toContain('v-if="unsupportedNotice && !readingMode"');
+    expect(app).toContain('<FocusTransientNotice ref="transientNotice" :reading-mode="readingMode" />');
 
     expect(pane).toContain("<section class=\"con\" :class=\"{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }\">");
     expect(pane).toMatch(/<ChatHeader[\s\S]*?v-show="!readingMode"/u);

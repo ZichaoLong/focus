@@ -183,7 +183,7 @@ describe('named Markdown and JSONL downloads', () => {
     await actions.exportThreadData('one');
     expect(anchor.click).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalledWith('focus.threadDataExportComplete');
-    if (throws) expect(notify).toHaveBeenCalledWith('focus.exportSaveFailed');
+    expect(notify).toHaveBeenCalledWith('focus.exportSaveFailed');
     await actions.exportThreadData('one');
     expect(anchor.click).toHaveBeenCalledOnce();
   });
@@ -298,6 +298,7 @@ describe('system Save As for Markdown and JSONL', () => {
     expect(handle.createWritable).not.toHaveBeenCalled();
     expect(anchor.click).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalledWith('focus.threadDataExportComplete');
+    expect(notify).toHaveBeenLastCalledWith('focus.exportSaveFailed');
   });
 
   it.each(['createWritable', 'write', 'close'] as const)('reports a %s failure without claiming success or starting a second download', async (step) => {

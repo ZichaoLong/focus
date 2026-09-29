@@ -248,6 +248,7 @@
     "src/focus/FocusSettingsSurface.vue",
     "src/focus/FocusThreadActions.vue",
     "src/focus/FocusToolSourceDetailPanel.vue",
+    "src/focus/FocusTransientNotice.vue",
     "src/focus/FocusUpdateProgress.vue",
     "src/focus/SummaryPrintApp.vue",
     "src/focus/api.ts",

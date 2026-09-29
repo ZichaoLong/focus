@@ -22,3 +22,20 @@
 
 `web/src/focus/FocusApp.vue` 持有入口条件，`web/src/focus/focusReadingMode.ts`
 持有页面展示状态及初次连接的待处理阅读意图；会话选择与加载仍由现有客户端负责。
+
+## 导出
+
+宽屏和窄屏的 `ReadingModeControls.vue` 均提供当前会话的导出菜单：既有 `export`
+capability 可用时显示问答 Markdown 与打印／另存为 PDF；当前会话还采用 paginated
+历史时显示线程 JSONL。没有会话或没有可用导出能力时隐藏入口，加载会话或读取导出内容时
+禁用入口；整个命名及保存过程仍由现有导出互斥控制。切换会话、能力改变、打开会话切换器、切换屏幕布局或退出阅读模式时关闭菜单；
+点击菜单外部、移出键盘焦点或 Escape 也可收起，Escape 将焦点返回导出按钮。
+
+导出只发出当前会话的格式选择事件，由 `FocusApp.vue` 转交现有 `FocusThreadActions.vue`
+流程，不退出阅读模式，不从当前阅读窗口或聊天 DOM 截取内容。命名、独立文档标题、
+系统另存为与兼容下载遵循[导出文件名合同](focus-web-export-filenames.zh-CN.md)，PDF
+遵循[问答打印合同](focus-web-summary-print.zh-CN.md)。会话切换列表仍只用于阅读导航。
+
+用户主动操作触发的短暂提示由 `FocusTransientNotice.vue` 持有显示和自动清理，阅读模式
+也可见。导出读取失败必须显示失败提示；提示位于阅读工具栏下方且不拦截点击，不恢复
+普通模式的常驻告警栏。
