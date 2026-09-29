@@ -2,6 +2,7 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { SummaryExportRequest } from '../../types';
+import type { RuntimeDetailsTone } from '../../focus/runtimeDetailsPresentation';
 import Button from '../ui/Button.vue';
 import Icon from '../ui/Icon.vue';
 import IconButton from '../ui/IconButton.vue';
@@ -17,6 +18,8 @@ const props = withDefaults(defineProps<{
   summaryExportAvailable?: boolean;
   threadDataExportAvailable?: boolean;
   exportDisabled?: boolean;
+  runtimeDetailsTone?: RuntimeDetailsTone;
+  runtimeDetailsOpen?: boolean;
 }>(), {
   narrowViewport: false,
   sessionId: '',
@@ -25,6 +28,8 @@ const props = withDefaults(defineProps<{
   summaryExportAvailable: false,
   threadDataExportAvailable: false,
   exportDisabled: false,
+  runtimeDetailsTone: 'neutral',
+  runtimeDetailsOpen: false,
 });
 
 const emit = defineEmits<{
@@ -33,6 +38,8 @@ const emit = defineEmits<{
   promptHistory: [];
   exportSession: [request: SummaryExportRequest];
   exportThreadData: [id: string];
+  openRuntimeDetails: [];
+  openSettings: [];
 }>();
 
 const { t } = useI18n();
@@ -179,6 +186,27 @@ onUnmounted(closeExportMenu);
         </MenuItem>
       </Menu>
     </div>
+    <IconButton
+      class="reading-runtime-details"
+      size="sm"
+      :label="t('focus.runtimeDetailsOpen')"
+      :title="t('focus.runtimeDetailsOpen')"
+      :aria-expanded="runtimeDetailsOpen"
+      @click="closeExportMenu(); emit('openRuntimeDetails')"
+    >
+      <Icon name="info" size="sm" />
+      <span class="reading-runtime-dot" :class="runtimeDetailsTone" aria-hidden="true" />
+    </IconButton>
+    <IconButton
+      class="reading-settings"
+      size="sm"
+      :label="t('settings.title')"
+      :title="t('settings.title')"
+      aria-haspopup="dialog"
+      @click="closeExportMenu(); emit('openSettings')"
+    >
+      <Icon name="settings" size="sm" />
+    </IconButton>
   </div>
 </template>
 
@@ -200,7 +228,9 @@ onUnmounted(closeExportMenu);
 }
 .reading-mode-exit,
 .reading-prompt-history,
-.reading-export-button {
+.reading-export-button,
+.reading-runtime-details,
+.reading-settings {
   width: 30px;
   height: 30px;
   background: var(--color-surface-raised);
@@ -209,6 +239,7 @@ onUnmounted(closeExportMenu);
 }
 .reading-mode-controls.is-narrow .reading-prompt-history { margin-left: auto; }
 .reading-session-switch {
+  flex: 0 1 auto;
   min-width: 0;
   max-width: min(52vw, 240px);
 }
@@ -222,6 +253,18 @@ onUnmounted(closeExportMenu);
   min-width: 0;
 }
 .reading-export { position: relative; flex: none; }
+.reading-runtime-details { position: relative; }
+.reading-runtime-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-faint);
+}
+.reading-runtime-dot.advisory { background: var(--color-warning); }
+.reading-runtime-dot.danger { background: var(--color-danger); }
 .reading-export-menu {
   position: absolute;
   z-index: var(--z-dropdown);

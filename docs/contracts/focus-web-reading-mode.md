@@ -32,6 +32,20 @@ consume it when the selected conversation becomes eligible for reading mode.
 initial connection intent. Existing client owners retain session selection and
 loading responsibility.
 
+## Reading toolbar
+
+Wide and narrow reading toolbars offer exit, session switching, Prompt history,
+available exports, runtime details and settings. Narrow layouts use that order;
+wide layouts retain their reversed order. Keep a single row with 30px icon
+buttons. The session title shrinks to the remaining space and truncates with an
+ellipsis rather than shrinking icon buttons or overflowing the page horizontally.
+
+Runtime details uses the existing information icon and runtime-status dot;
+settings uses the gear icon. Both reuse the existing detail and settings panels.
+Opening either closes the export menu, session switcher and the other panel.
+Opening or closing these panels does not exit reading mode, remount the transcript
+or explicitly change the reading position; closing returns to reading.
+
 ## Viewport reconciliation, compositing, and diagnostics
 
 `web/src/focus/focusViewport.ts` owns the fixed shell's visible height and top

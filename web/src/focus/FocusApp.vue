@@ -518,6 +518,18 @@ function openRuntimeDetails(): void {
   selectDetail({ kind: 'runtimeDetails' });
 }
 
+function openReadingRuntimeDetails(): void {
+  showNarrowSwitcher.value = false;
+  showSettings.value = false;
+  openRuntimeDetails();
+}
+
+function openReadingSettings(): void {
+  showNarrowSwitcher.value = false;
+  closeDetail();
+  showSettings.value = true;
+}
+
 function openThinking(target: { turnId: string; blockIndex: number }): void {
   const turn = client.turns.value.find((item) => item.id === target.turnId);
   const block = turn?.blocks?.[target.blockIndex];
@@ -929,11 +941,15 @@ onUnmounted(() => {
           :summary-export-available="sessionActionCapabilities.export"
           :thread-data-export-available="threadDataExportAvailable"
           :export-disabled="client.conversationLoading.value || client.summaryExporting.value || client.threadDataExporting.value"
+          :runtime-details-tone="runtimeDetailsPresentation.tone"
+          :runtime-details-open="detailTarget === 'runtimeDetails'"
           @exit="exitReadingMode"
           @switch-session="showNarrowSwitcher = true"
           @prompt-history="conversationPaneRef?.openPromptHistory()"
           @export-session="threadActions?.exportThreadSummary($event)"
           @export-thread-data="threadActions?.exportThreadData($event)"
+          @open-runtime-details="openReadingRuntimeDetails"
+          @open-settings="openReadingSettings"
         />
         <FocusPrimaryNotices
           v-if="!readingMode"
