@@ -1,12 +1,14 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/EditTool.vue -->
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { DiffViewLine, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { diffStats } from '../../../lib/diffLines';
 import { buildEditDiffLines } from '../../../lib/toolDiff';
 import { toolGlyph, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
+import ToolDetailButton from './ToolDetailButton.vue';
+import { useToolPresentation } from './useToolPresentation';
 import ToolOutputBlock, { hasPresentedToolOutput } from './ToolOutputBlock.vue';
 
 const props = withDefaults(
@@ -15,6 +17,7 @@ const props = withDefaults(
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
+    toolDetailTarget?: ToolCall | null;
   }>(),
   { stackPosition: 'single', toolDiffPanel: false },
 );
@@ -32,7 +35,9 @@ const glyph = computed(() => toolGlyph(props.tool.name));
 const summary = computed(() => toolSummary(props.tool.name, props.tool.arg));
 const summaryFull = computed(() => toolSummary(props.tool.name, props.tool.arg, true));
 
-const editDiff = computed<DiffViewLine[] | null>(() => props.tool.diff?.lines ?? buildEditDiffLines(props.tool));
+const editDiff = computed<DiffViewLine[] | null>(() => (
+  canLoadDetail.value || props.tool.outputDeferred ? null : props.tool.diff?.lines ?? buildEditDiffLines(props.tool)
+));
 const chip = computed(() => {
   const diff = editDiff.value;
   if (diff && props.tool.status !== 'error') {
@@ -46,24 +51,10 @@ const hasOutput = computed(() => hasPresentedToolOutput(
   props.tool.output,
   props.tool.outputOmittedChars,
 ));
-const open = ref(props.tool.defaultExpanded === true && hasOutput.value);
-const canExpand = computed(() => hasOutput.value && !props.toolDiffPanel);
-const hasInspectableDetail = computed(() => (
-  props.toolDiffPanel
-  && props.tool.status !== 'running'
-  && props.tool.inspectionLocator?.kind === 'fileChange'
-));
-const canLoadDetail = computed(() => (
-  hasInspectableDetail.value && props.toolDetailAvailable
-));
+const { canLoadDetail, detailOpen, canExpand, open, toggle } = useToolPresentation(
+  props, 'fileChange', computed(() => hasOutput.value),
+);
 
-function toggle(): void {
-  if (props.toolDiffPanel) {
-    emit('openToolDiff', props.tool.id);
-    return;
-  }
-  if (hasOutput.value) open.value = !open.value;
-}
 </script>
 
 <template>
@@ -74,16 +65,15 @@ function toggle(): void {
     :arg="!open ? summary : ''"
     :time="tool.timing"
     :open="open"
-    :expandable="canExpand || toolDiffPanel"
+    :expandable="canExpand"
     :stacked="stackPosition !== 'single'"
     :stack-position="stackPosition"
     @toggle="toggle"
   >
     <template #trailing>
       <span v-if="chip" class="chip">{{ chip }}</span>
-      <span v-if="hasInspectableDetail" class="detail-chip">
-        {{ t(canLoadDetail ? 'tools.detail.load' : 'tools.detail.unavailable') }}
-      </span>
+      <ToolDetailButton v-if="canLoadDetail || detailOpen" :active="detailOpen" @toggle="emit('openToolDiff', tool.id)" />
+      <span v-else-if="tool.outputDeferred" class="detail-unavailable">{{ t('tools.detail.unavailable') }}</span>
     </template>
     <div v-if="summaryFull" class="bb-summary">{{ summaryFull }}</div>
     <ToolOutputBlock
@@ -101,8 +91,8 @@ function toggle(): void {
   font-size: var(--text-xs);
   flex: none;
 }
-.detail-chip {
-  color: var(--color-accent);
+.detail-unavailable {
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
   flex: none;
 }

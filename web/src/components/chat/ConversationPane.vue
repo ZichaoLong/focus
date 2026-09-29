@@ -156,6 +156,7 @@ const props = withDefaults(defineProps<{
   allowWorkspaceCreate?: boolean;
   toolDiffPanel?: boolean;
   toolDetailAvailable?: boolean;
+  toolDetailTarget?: ToolCall | null;
 }>(), {
   composerReady: true,
   readingMode: false,
@@ -2012,7 +2013,7 @@ defineExpose({
               :loading-more-error="loadingMoreError"
               :history-auto-load-armed="historyAutoLoadArmed"
               :tool-diff-panel="toolDiffPanel !== false"
-              :tool-detail-available="toolDetailAvailable"
+              :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
               :download-file="downloadFile"
               :queued="queued"
               @open-file="emit('openFile', $event)"

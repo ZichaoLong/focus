@@ -288,6 +288,26 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
             detail=detail,
         )
 
+    def test_saved_history_mode_is_frozen_before_detached_tool_projection(self) -> None:
+        scheduled = []
+        coordinator, owners, callbacks = self._build(schedule_projection=scheduled.append)
+        owners.runtime_interest.has_managed_interest.return_value = True
+        owners.read_model.history_mode.return_value = "paginated"
+        owners.read_model.apply_notification.return_value = WebThreadNotificationUpdate(
+            method="item/completed", thread_id="root-1", detail={"turn_id": "turn-1"},
+            raw_turn={"id": "turn-1", "status": "inProgress", "items": [
+                {"id": "command", "type": "commandExecution", "status": "completed",
+                 "command": "echo saved", "aggregatedOutput": "saved output"},
+            ]},
+        )
+        coordinator.handle_notification("item/completed", {"threadId": "root-1", "turnId": "turn-1"})
+        owners.read_model.history_mode.return_value = "legacy"
+        detail = coordinator.project_notification(scheduled[0])
+        tool = detail["turns"][0]["tools"][0]
+        self.assertTrue(tool["outputDeferred"])
+        self.assertEqual(tool["output"], [])
+        callbacks.publish_projection.assert_not_called()
+
     def test_notification_projection_keeps_one_flight_and_latest_successor(
         self,
     ) -> None:

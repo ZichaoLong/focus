@@ -19,6 +19,8 @@ html.summary-print-page,
 .summary-print-actions button { padding: 10px 18px; border: 1px solid #333; border-radius: 6px; background: #222; color: white; cursor: pointer; }
 .summary-print-actions button:disabled { opacity: .5; cursor: wait; }
 .summary-print-toolbar p { margin: 8px 0; font-size: 14px; }
+.summary-title-editor { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; font-size: 14px; }
+.summary-title-editor input { min-width: 0; padding: 8px 10px; color: #171717; background: white; border: 1px solid #888; border-radius: 6px; }
 .summary-print-status { max-width: 900px; margin: 24px auto; }
 .summary-print-content { box-sizing: border-box; max-width: 900px; padding: 40px; margin: auto; background: white; overflow-wrap: anywhere; font-synthesis: weight; }
 .summary-print-content strong { font-weight: var(--weight-semibold); }

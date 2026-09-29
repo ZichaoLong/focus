@@ -1,10 +1,12 @@
 <!-- apps/kimi-web/src/components/chat/tool-calls/GenericTool.vue -->
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { CommandExecutionAction, FilePreviewRequest, ToolCall, ToolMedia } from '../../../types';
 import { normalizeToolName, toolChip, toolGlyph, toolLabel, toolSummary } from '../../../lib/toolMeta';
 import ToolRow from '../ToolRow.vue';
+import ToolDetailButton from './ToolDetailButton.vue';
+import { useToolPresentation } from './useToolPresentation';
 import ToolOutputBlock, { hasPresentedToolOutput } from './ToolOutputBlock.vue';
 
 const props = withDefaults(
@@ -13,6 +15,7 @@ const props = withDefaults(
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
+    toolDetailTarget?: ToolCall | null;
   }>(),
   { stackPosition: 'single', toolDiffPanel: false },
 );
@@ -43,18 +46,9 @@ const commandExecutionLines = computed(() => {
   for (const action of facts.commandActions ?? []) lines.push(commandActionLine(action));
   return lines;
 });
-const canExpand = computed(
-  () => hasOutput.value || isRunningBash.value || commandExecutionLines.value.length > 0,
+const { canLoadDetail, detailOpen, canExpand, open, toggle } = useToolPresentation(
+  props, 'commandExecution', computed(() => hasOutput.value || isRunningBash.value || commandExecutionLines.value.length > 0),
 );
-const hasInspectableDetail = computed(() => (
-  props.toolDiffPanel
-  && props.tool.status !== 'running'
-  && props.tool.inspectionLocator?.kind === 'commandExecution'
-));
-const canLoadDetail = computed(() => (
-  hasInspectableDetail.value && props.toolDetailAvailable
-));
-const open = ref(props.tool.defaultExpanded === true && canExpand.value);
 
 const status = computed<'running' | 'ok' | 'error'>(() => props.tool.status as 'running' | 'ok' | 'error');
 const label = computed(() => toolLabel(props.tool.name));
@@ -69,28 +63,6 @@ const chip = computed(() =>
     timing: props.tool.timing,
     status: props.tool.status,
   }),
-);
-
-function toggle(): void {
-  if (hasInspectableDetail.value) {
-    emit('openToolDiff', props.tool.id);
-    return;
-  }
-  if (canExpand.value) open.value = !open.value;
-}
-
-watch(
-  () => [
-    props.tool.defaultExpanded,
-    props.tool.output?.length,
-    props.tool.outputOmittedChars,
-    props.tool.status,
-    props.tool.name,
-    commandExecutionLines.value.length,
-  ] as const,
-  () => {
-    if (props.tool.defaultExpanded === true && canExpand.value) open.value = true;
-  },
 );
 
 function commandActionLine(action: CommandExecutionAction): string {
@@ -113,16 +85,15 @@ function commandActionLine(action: CommandExecutionAction): string {
     :arg="!open ? summary : ''"
     :time="tool.name !== 'bash' ? tool.timing : ''"
     :open="open"
-    :expandable="canExpand || hasInspectableDetail"
+    :expandable="canExpand"
     :stacked="stackPosition !== 'single'"
     :stack-position="stackPosition"
     @toggle="toggle"
   >
     <template #trailing>
       <span v-if="chip" class="chip">{{ chip }}</span>
-      <span v-if="hasInspectableDetail" class="detail-chip">
-        {{ t(canLoadDetail ? 'tools.detail.load' : 'tools.detail.unavailable') }}
-      </span>
+      <ToolDetailButton v-if="canLoadDetail || detailOpen" :active="detailOpen" @toggle="emit('openToolDiff', tool.id)" />
+      <span v-else-if="tool.outputDeferred" class="detail-unavailable">{{ t('tools.detail.unavailable') }}</span>
     </template>
     <div v-if="summaryFull" class="bb-summary">{{ summaryFull }}</div>
     <div v-if="commandExecutionLines.length > 0" class="execution-facts">
@@ -151,8 +122,8 @@ function commandActionLine(action: CommandExecutionAction): string {
   font-size: var(--text-xs);
   flex: none;
 }
-.detail-chip {
-  color: var(--color-accent);
+.detail-unavailable {
+  color: var(--color-text-muted);
   font-size: var(--text-xs);
   flex: none;
 }

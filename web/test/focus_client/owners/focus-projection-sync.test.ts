@@ -1121,6 +1121,56 @@ describe('FocusProjectionSync', () => {
     expect(merged?.blocks?.[0]).toEqual({ kind: 'tool', tool: omittedTool });
   });
 
+  it.each(['commandExecution', 'fileChange'] as const)('releases streamed output for deferred %s and ignores late deltas', async (kind) => {
+    const h = harness();
+    await primeActive(h);
+    h.projection.handleEvent(threadDelta(1, 'thread-a', {
+      method: 'turn/started',
+      active_turn_id: 'turn-1',
+      active_turn_status: 'inProgress',
+    }));
+    h.projection.handleEvent(threadDelta(2, 'thread-a', {
+      method: 'item/commandExecution/outputDelta',
+      active_turn_id: 'turn-1',
+      active_turn_status: 'inProgress',
+      stream_delta: {
+        turn_id: 'turn-1',
+        item_id: 'command-1',
+        kind: 'tool_output',
+        delta: 'locally streamed output',
+      },
+    }));
+    const omittedTool: ToolCall = {
+      id: kind === 'fileChange' ? 'command-1:1' : 'command-1',
+      name: 'Shell',
+      arg: '',
+      status: 'ok',
+      output: [],
+      outputDeferred: true,
+      inspectionLocator: { turn_id: 'turn-1', item_id: 'command-1', kind, change_index: kind === 'fileChange' ? 0 : null },
+    };
+    h.projection.handleEvent(threadDelta(3, 'thread-a', {
+      method: 'item/completed',
+      turns: [{
+        id: 'turn-1:assistant',
+        role: 'assistant',
+        no: 1,
+        text: '',
+        status: 'inProgress',
+        tools: [omittedTool],
+        blocks: [{ kind: 'tool', tool: omittedTool }],
+      }],
+    }));
+
+    h.projection.handleEvent(threadDelta(4, 'thread-a', {
+      method: 'item/commandExecution/outputDelta',
+      stream_delta: { turn_id: 'turn-1', item_id: 'command-1', kind: 'tool_output', delta: 'late' },
+    }));
+    const merged = h.projection.snapshot.value?.turns[0];
+    expect(merged?.tools).toEqual([omittedTool]);
+    expect(merged?.blocks?.[0]).toEqual({ kind: 'tool', tool: omittedTool });
+  });
+
   it('installs canonical user-before-assistant order after an early live delta', async () => {
     const h = harness();
     await primeActive(h);

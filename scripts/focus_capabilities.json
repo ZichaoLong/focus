@@ -1006,7 +1006,7 @@
         },
         {
           "path": "web/src/focus/FocusThreadActions.vue",
-          "symbol": "requestFilename"
+          "symbol": "requestExportOptions"
         }
       ],
       "contract": [
@@ -1054,7 +1054,8 @@
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
             "web/test/focus-thread-actions.test.ts",
-            "web/test/export-filename.test.ts"
+            "web/test/export-filename.test.ts",
+            "web/test/summary-document-title.test.ts"
           ]
         }
       ],
@@ -1109,7 +1110,7 @@
         },
         {
           "path": "web/src/focus/FocusThreadActions.vue",
-          "symbol": "requestFilename"
+          "symbol": "requestExportOptions"
         }
       ],
       "contract": [
@@ -1186,6 +1187,14 @@
         {
           "path": "web/src/focus/toolOutputPresentation.ts",
           "symbol": "appendBoundedToolOutput"
+        },
+        {
+          "path": "web/src/components/chat/tool-calls/useToolPresentation.ts",
+          "symbol": "useToolPresentation"
+        },
+        {
+          "path": "bot/web_runtime/notification_projection.py",
+          "symbol": "project_notification"
         }
       ],
       "contract": [
@@ -1200,7 +1209,10 @@
           "targets": [
             "tests/test_web_projection.py",
             "tests/test_web_thread_read_model.py",
-            "tests/web_runtime/test_tool_output_presentation.py"
+            "tests/web_runtime/test_tool_output_presentation.py",
+            "tests/web_runtime/test_deferred_tool_output.py",
+            "tests/test_web_thread_open_coordinator.py",
+            "tests/test_web_runtime_event_coordinator.py"
           ]
         },
         {
@@ -1210,7 +1222,9 @@
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/swarm-card-rows.test.ts",
             "web/test/tool-output-dom-window.test.ts",
-            "web/test/tool-output-presentation.test.ts"
+            "web/test/tool-output-presentation.test.ts",
+            "web/test/tool-presentation.test.ts",
+            "web/test/deferred-tool-output.test.ts"
           ]
         }
       ],
@@ -1296,7 +1310,8 @@
             "web/test/conversation-inspection-surface.test.ts",
             "web/test/focus-detail-panel-surface.test.ts",
             "web/test/focus_client/owners/focus-history-navigation.test.ts",
-            "web/test/tool-output-dom-window.test.ts"
+            "web/test/tool-output-dom-window.test.ts",
+            "web/test/tool-presentation.test.ts"
           ]
         }
       ],

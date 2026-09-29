@@ -40,10 +40,11 @@ export default {
   output: {
     linesOmitted: '此浏览器视图已省略 {count} 行。',
     boundedOmitted: 'Focus Web 已省略此工具输出中间的 {count} 个字符；当前显示有界的开头和结尾。',
-    aggregateOmitted: '当前页面的 16 项输出 / 262,144 个 Unicode code point 展示预算已耗尽；此工具输出的全部 {count} 个字符均已省略。',
+    aggregateOmitted: '此输出未随对话加载（省略 {count} 个字符）。',
   },
   detail: {
-    load: '加载详情',
+    load: '查看详情',
+    close: '收起详情',
     unavailable: '更多详情不可用',
     loading: '正在加载已保存详情…',
     preview: '已保存详情预览',

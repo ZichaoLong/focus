@@ -40,10 +40,11 @@ export default {
   output: {
     linesOmitted: '{count} lines omitted from this browser view.',
     boundedOmitted: 'Focus Web omitted {count} characters from the middle of this tool output; showing a bounded head and tail.',
-    aggregateOmitted: 'The current page\'s 16-output / 262,144-code-point display budget was exhausted; all {count} characters of this tool output were omitted.',
+    aggregateOmitted: 'This output was not loaded with the conversation ({count} characters omitted).',
   },
   detail: {
-    load: 'Load detail',
+    load: 'View detail',
+    close: 'Close detail',
     unavailable: 'More detail unavailable',
     loading: 'Loading saved detail…',
     preview: 'Saved detail preview',

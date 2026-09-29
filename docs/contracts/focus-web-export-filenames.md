@@ -25,9 +25,18 @@ non-active sidebar sessions. Unavailable names fall back to
   Check the client's export state again after confirmation. Capture the target
   thread ID and suggested name before waiting; navigation cannot retarget them.
 - Confirmation reads the complete Blob through the existing authenticated API.
-  The name only sets the browser's `download` attribute, without rewriting the
-  Markdown heading, Q&A text or JSONL data, or changing the endpoint's default
+  The filename only sets the browser's `download` attribute. The separate document
+  title replaces only the exporter's generated leading heading, preserving Q&A
+  text, JSONL data and the endpoint's default
   `Content-Disposition`. Content scope remains in the [Web wire contract](focus-web-wire.md).
+
+The Markdown dialog also offers an independent document title, defaulting to the
+clicked thread's title. Missing or blank titles use `Codex conversation summary`.
+`summaryDocumentTitle.ts` normalizes it to a single line of plain text and escapes
+Markdown syntax. Only the known generated leading heading is replaced; unfamiliar
+openings and headings inside Q&A remain intact. Editing this title does not rename
+the session or track filename edits. It stays in memory, out of URLs and server
+requests. JSONL has no document title field.
 
 The browser owns the final name and location and may further sanitize characters
 or append a collision suffix. No `showSaveFilePicker`, backend or deployment
@@ -38,6 +47,7 @@ dependency is required.
 Printing adds no naming dialog and still opens the preview synchronously on click.
 The selected thread's `.pdf` suggestion travels with the full Markdown in memory.
 The print page sets `document.title` to the suggestion without the extension for
-browsers to use as a default save name. This does not rewrite the preview's body
-heading or guarantee browsers adopt the name; users can rename in the system save
-UI. Lifecycle and device limits follow the [Q&A print contract](focus-web-summary-print.md).
+browsers to use as a default save name. The preview has an editable document title,
+defaulting to the clicked thread's title, that immediately updates the printed H1
+through plain text binding. It leaves the suggested filename in `document.title`
+independent. Browsers need not adopt that name; users can rename in the system save UI. Lifecycle and device limits follow the [Q&A print contract](focus-web-summary-print.md).

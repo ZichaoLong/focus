@@ -175,6 +175,12 @@ function isToolCall(value: unknown): value is ToolCall {
   if (!isTrimmedString(value.id, false)) return false;
   if (typeof value.name !== 'string' || typeof value.arg !== 'string') return false;
   if (!['ok', 'running', 'error'].includes(String(value.status))) return false;
+  if (!optionalProperty(value, 'outputDeferred', (item) => item === true)) return false;
+  if (value.outputDeferred === true && (
+    value.status === 'running' || !isFocusWireToolInspectionLocator(value.inspectionLocator)
+    || !Array.isArray(value.output) || value.output.length !== 0
+    || ['diff', 'outputTruncated', 'outputOmittedChars', 'outputHeadLineCount'].some((key) => hasOwn(value, key))
+  )) return false;
   if (!optionalProperty(value, 'timing', (item) => typeof item === 'string')) return false;
   if (!optionalProperty(value, 'output', isStringArray)) return false;
   if (!optionalProperty(value, 'outputOmittedChars', isNonNegativeSafeInteger)) return false;

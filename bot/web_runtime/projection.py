@@ -320,6 +320,7 @@ def project_thread_snapshot(
     requests = [project_pending_request(item) for item in pending_requests]
     projected_turns = project_turns(
         snapshot.turns,
+        defer_tool_output=snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral,
         attachment_url_for_path=attachment_url_for_path,
         attachment_url_for_id=attachment_url_for_id,
     )
@@ -367,6 +368,7 @@ def project_thread_snapshot(
 def project_turn_page(
     turns: Iterable[dict[str, Any]],
     *,
+    defer_tool_output: bool = False,
     items_view: str,
     page_cursor: str | None,
     next_cursor: str | None,
@@ -379,6 +381,7 @@ def project_turn_page(
     elif items_view == "full":
         projected_turns = project_turns(
             turns,
+            defer_tool_output=defer_tool_output,
             attachment_url_for_path=attachment_url_for_path,
             attachment_url_for_id=attachment_url_for_id,
         )
@@ -561,6 +564,7 @@ def _pending_interaction_kind(requests: list[dict[str, Any]]) -> str:
 def project_turns(
     turns: Iterable[dict[str, Any]],
     *,
+    defer_tool_output: bool = False,
     attachment_url_for_path: Callable[[str], str] | None = None,
     attachment_url_for_id: Callable[[str], str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -813,6 +817,7 @@ def project_turns(
                 continue
             projected_tools = _project_tools(
                 raw_item,
+                defer_tool_output=defer_tool_output and bool(raw_turn.get("id")),
                 turn_id=turn_id,
                 attachment_url_for_path=attachment_url_for_path,
                 presentation_budget=presentation_budget,
@@ -1135,12 +1140,14 @@ def _non_negative_int(value: Any) -> int | None:
 def _project_tools(
     item: dict[str, Any],
     *,
+    defer_tool_output: bool = False,
     turn_id: str = "",
     attachment_url_for_path: Callable[[str], str] | None = None,
     presentation_budget: ToolOutputPresentationBudget | None = None,
 ) -> list[dict[str, Any]]:
     tools = _project_tools_unbudgeted(
         item,
+        defer_tool_output=defer_tool_output,
         turn_id=turn_id,
         attachment_url_for_path=attachment_url_for_path,
     )
@@ -1191,17 +1198,22 @@ def _attach_inspection_locator(
 def _project_tools_unbudgeted(
     item: dict[str, Any],
     *,
+    defer_tool_output: bool = False,
     turn_id: str = "",
     attachment_url_for_path: Callable[[str], str] | None = None,
 ) -> list[dict[str, Any]]:
     item_type = str(item.get("type", "") or "").strip()
     if item_type == "commandExecution":
-        output = str(item.get("aggregatedOutput", "") or "")
+        source: dict[str, Any] = {}
+        _attach_inspection_locator(source, item=item, turn_id=turn_id, change_index=None)
+        deferred = defer_tool_output and bool(source)
+        output = "" if deferred else str(item.get("aggregatedOutput", "") or "")
         tool = _generic_tool(
             item,
             name="Shell",
             arg=str(item.get("command", "") or ""),
             output=output,
+            output_deferred=deferred,
             prebounded_omitted_chars=_cached_aggregated_output_omitted_chars(item),
             prebounded_head_line_count=(
                 _cached_aggregated_output_head_line_count(item)
@@ -1215,12 +1227,7 @@ def _project_tools_unbudgeted(
         # card can explain *where* and *how* the command ran without turning a
         # server path into a browser file link or terminal capability.
         tool["commandExecution"] = _project_command_execution_facts(item)
-        _attach_inspection_locator(
-            tool,
-            item=item,
-            turn_id=turn_id,
-            change_index=None,
-        )
+        tool.update(source)
         return [tool]
     if item_type == "turnDiff":
         diff = str(item.get("diff", "") or "")
@@ -1246,7 +1253,10 @@ def _project_tools_unbudgeted(
             if not isinstance(change, dict):
                 continue
             path = str(change.get("path", "") or "")
-            diff = str(change.get("diff", "") or "")
+            source = {}
+            _attach_inspection_locator(source, item=item, turn_id=turn_id, change_index=index)
+            deferred = defer_tool_output and bool(source)
+            diff = "" if deferred else str(change.get("diff", "") or "")
             kind, move_path = _file_change_kind(change.get("kind"))
             name = {"add": "Write", "delete": "Delete"}.get(kind, "Edit")
             tool_item = dict(item)
@@ -1260,6 +1270,7 @@ def _project_tools_unbudgeted(
                 name=name,
                 arg=_json_text(arg),
                 output=diff,
+                output_deferred=deferred,
                 prebounded_omitted_chars=_cached_change_diff_omitted_chars(
                     item,
                     index,
@@ -1270,17 +1281,13 @@ def _project_tools_unbudgeted(
                 ),
                 status=_tool_status(item.get("status")),
             )
-            tool["diff"] = {
-                "path": path,
-                "lines": _unified_diff_lines(_projected_tool_output_text(tool)),
-                **_projected_diff_omission(tool),
-            }
-            _attach_inspection_locator(
-                tool,
-                item=item,
-                turn_id=turn_id,
-                change_index=index,
-            )
+            if not deferred:
+                tool["diff"] = {
+                    "path": path,
+                    "lines": _unified_diff_lines(_projected_tool_output_text(tool)),
+                    **_projected_diff_omission(tool),
+                }
+            tool.update(source)
             tools.append(tool)
         if tools:
             return tools
@@ -1606,12 +1613,23 @@ def _generic_tool(
     name: str,
     arg: str,
     output: str | list[str],
+    output_deferred: bool = False,
     prebounded_omitted_chars: int = 0,
     prebounded_head_line_count: int = 0,
     status: str = "ok",
     timing: str = "",
     media: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if output_deferred:
+        return {
+            "id": str(item["id"]),
+            "name": name,
+            "arg": arg,
+            "status": status,
+            "output": [],
+            "outputDeferred": True,
+            **({"timing": timing} if timing else {}),
+        }
     metadata = item.get(INTERNAL_PRESENTATION_METADATA_KEY)
     if (
         isinstance(metadata, CachedToolOutputPresentation)

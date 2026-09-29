@@ -160,6 +160,9 @@ guards and may not retain parallel key or enum inventories.
   `recorded_at` fields to prompt result receipts for copyable failure diagnostics.
   Diagnostics grant no current-state or retry authority. A version 20 browser
   retains no compatibility decoder; service and assets still deploy together.
+- Version 22 adds `outputDeferred=true` to transcript tools: saved terminal output
+  is awaiting an exact-locator read. This differs from truncation or empty output;
+  detail responses cannot use this shape.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -611,6 +614,24 @@ guards and may not retain parallel key or enum inventories.
 - Tool-output character budgets and omission counts use Unicode code points in
   decoded strings, not UTF-16 code units or encoded bytes. A conceptual LF
   between adjacent line-array entries counts as one code point.
+- For confirmed non-ephemeral `paginated` conversations, snapshots, full history
+  pages and live projections with known history mode defer terminal commandExecution/
+  fileChange outputs with exact inspection locators. `outputDeferred=true` retains
+  name, arguments, status, execution facts and locator, with `output=[]`, no diff
+  or omission fields, no output/diff parsing and no transcript output budget use.
+  Successful open installs history mode into the existing read-model; unload,
+  close, forget and epoch changes clear it. Unknown/legacy history, running tools
+  and tools without exact locators keep bounded inline output. Detail preview/full
+  still fresh-read their source; preview cannot be deferred. Completion releases
+  previous browser stream output, including fileChange's original item placeholder,
+  and later output deltas for that source are ignored. Tool/block mirrors must agree.
+- Completed tools with available saved details use a compact row and an independent
+  View/Close detail button, without duplicate inline output or fold chevron. Inline
+  folding remains keyboard-accessible for running/local fallback information;
+  updates respect manual collapse. A running tool's open inline body closes when
+  saved detail becomes available. If deferred content becomes unavailable, say so
+  without claiming an empty result or no changes. Closing/replacing detail still
+  cancels requests and releases the sole browser-local detail slot.
 - Each tool-card output in a full snapshot/page first receives a per-output
   presentation bound: at most 65,536 source code points remain, split into a
   16,384-character head and 49,152-character tail. On middle omission,
@@ -634,8 +655,8 @@ guards and may not retain parallel key or enum inventories.
   changing or rediscovering the marker protocol. A non-empty per-output shape
   localizes the exact trusted marker row as a middle-omission disclosure and
   truthfully states that a bounded head and tail remain. The empty/zero-index
-  aggregate shape instead states that the current 16-output / 262,144-code-point
-  budget omitted the entire body; it never claims that a head or tail is shown.
+  aggregate shape uses a short output-not-loaded notice with the exact omitted
+  character count; it never claims that a head or tail is shown.
   Marker-like tool-authored text without matching admitted coordinates is
   ordinary output and never becomes omission authority.
 - A live tool-output `delta` is a raw string chunk. The browser concatenates chunks in

@@ -30,7 +30,6 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(actions).toContain('(id) => client.exportThreadSummary(id)');
     expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
     expect(actions).toContain("preparing: 'focus.summaryExportPreparing'");
-    expect(actions).toContain('downloadBlob(blob, filename)');
     expect(actions).toContain('anchor.click();');
     expect(actions).toContain('URL.revokeObjectURL(url)');
   });

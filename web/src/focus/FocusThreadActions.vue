@@ -5,7 +5,8 @@ import Button from '../components/ui/Button.vue';
 import Dialog from '../components/ui/Dialog.vue';
 import Input from '../components/ui/Input.vue';
 import { normalizeExportFilename } from './exportFilename';
-import { createFocusThreadActions, type ExportFilenameRequest, type FocusThreadActionsOptions } from './focusThreadActions';
+import { DEFAULT_SUMMARY_TITLE } from './summaryDocumentTitle';
+import { createFocusThreadActions, type ExportOptionsChoice, type ExportOptionsRequest, type FocusThreadActionsOptions } from './focusThreadActions';
 import type { useFocusWebClient } from './useFocusWebClient';
 
 const props = defineProps<{
@@ -14,21 +15,26 @@ const props = defineProps<{
   notify: (message: string) => void;
 }>();
 const { t } = useI18n();
-const request = shallowRef<(ExportFilenameRequest & { resolve: (value: string | null) => void }) | null>(null);
+const request = shallowRef<(ExportOptionsRequest & { resolve: (value: ExportOptionsChoice | null) => void }) | null>(null);
 const value = ref('');
+const documentTitle = ref('');
 const filename = computed(() => request.value ? normalizeExportFilename(value.value, request.value.format) : '');
 
-function requestFilename(options: ExportFilenameRequest): Promise<string | null> {
+function requestExportOptions(options: ExportOptionsRequest): Promise<ExportOptionsChoice | null> {
   value.value = options.suggestedFilename;
+  documentTitle.value = options.suggestedDocumentTitle ?? '';
   return new Promise((resolve) => { request.value = { ...options, resolve }; });
 }
-function settle(filename: string | null): void {
+function settle(choice: ExportOptionsChoice | null): void {
   const pending = request.value;
   request.value = null;
-  pending?.resolve(filename);
+  pending?.resolve(choice);
 }
 function submit(): void {
-  if (filename.value) settle(filename.value);
+  if (filename.value) settle({
+    filename: filename.value,
+    ...(request.value?.format === 'markdown' ? { documentTitle: documentTitle.value } : {}),
+  });
 }
 function selectStem(event: FocusEvent): void {
   const input = event.target as HTMLInputElement;
@@ -44,7 +50,7 @@ function getThreadTitle(threadId: string): string {
 
 const actions = createFocusThreadActions({
   client: props.client, confirm: props.confirm, notify: props.notify,
-  translate: (key) => t(key), getThreadTitle, requestFilename,
+  translate: (key) => t(key), getThreadTitle, requestExportOptions,
 });
 onBeforeUnmount(() => settle(null));
 defineExpose(actions);
@@ -66,6 +72,11 @@ defineExpose(actions);
       <p id="export-filename-preview" class="export-preview" aria-live="polite">
         {{ filename ? t('focus.exportFilenamePreview', { filename }) : t('focus.exportFilenameRequired') }}
       </p>
+      <label v-if="request?.format === 'markdown'" class="export-label">
+        <span>{{ t('focus.exportDocumentTitle') }}</span>
+        <Input v-model="documentTitle" autocomplete="off" :placeholder="DEFAULT_SUMMARY_TITLE" aria-describedby="export-title-help" />
+      </label>
+      <p v-if="request?.format === 'markdown'" id="export-title-help" class="export-preview">{{ t('focus.exportDocumentTitleHelp') }}</p>
       <div class="export-actions">
         <Button type="button" variant="secondary" @click="settle(null)">{{ t('focus.cancel') }}</Button>
         <Button type="submit" variant="primary" :disabled="!filename">{{ t('focus.exportDownload') }}</Button>

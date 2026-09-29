@@ -877,6 +877,7 @@ class WebThreadOpenCoordinator:
             prepared_turns=self._read_model.prepare_turn_replacement(
                 prepared.initial.thread_id,
                 turns_page.turns,
+                history_mode=(summary.history_mode or "") if not summary.ephemeral else "",
             ),
             interaction_lease=interaction_lease,
             interaction_lease_error=interaction_lease_error,
@@ -1751,7 +1752,10 @@ class WebThreadOpenCoordinator:
             items_view=prepared.items_view,
             expected_connection_generation=generation,
         )
-        return WebThreadHistoryEffect(profile=profile, page=page)
+        return WebThreadHistoryEffect(
+            profile=profile, page=page,
+            defer_tool_output=snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral,
+        )
 
     def settle_list_older_turns(
         self,
@@ -1773,6 +1777,7 @@ class WebThreadOpenCoordinator:
             items_view=prepared.items_view,
             page=effect.page,
             receipt=receipt,
+            defer_tool_output=effect.defer_tool_output,
         )
 
     def _claim_history_projection(

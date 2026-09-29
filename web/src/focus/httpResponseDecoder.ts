@@ -902,6 +902,7 @@ function isToolDetailPreview(
     || !hasExactRequiredFields('tool_detail_preview', value)
     || value.view !== 'preview'
     || !isFocusWireToolCall(value.tool)
+    || value.tool.outputDeferred === true
     || !value.tool.inspectionLocator
     || !sameToolInspectionLocator(value.tool.inspectionLocator, expectedLocator)
   ) return false;

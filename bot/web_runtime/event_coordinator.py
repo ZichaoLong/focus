@@ -109,6 +109,7 @@ class WebEventReadModelPort(Protocol):
         thread_id: str,
     ) -> tuple[dict[str, Any], ...]: ...
     def cwd(self, thread_id: str) -> str: ...
+    def history_mode(self, thread_id: str) -> str: ...
 
 
 class WebEventOperationPort(Protocol):
@@ -601,6 +602,7 @@ class WebRuntimeEventCoordinator:
             observation=ports.read_model.capture_observation(update.thread_id),
             update=update,
             cwd=ports.read_model.cwd(update.thread_id),
+            defer_tool_output=ports.read_model.history_mode(update.thread_id) == "paginated",
             collaboration_turns=(
                 ports.read_model.collaboration_turns(update.thread_id)
             ),

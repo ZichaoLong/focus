@@ -21,7 +21,6 @@ describe('Focus current-thread data export surface', () => {
     expect(app).toContain("client.activeThread.value?.history_mode === 'paginated'");
     expect(app).toContain('@export-thread-data="threadActions?.exportThreadData($event)"');
     expect(actions).toContain('(id) => client.exportThreadData(id)');
-    expect(actions).toContain('downloadBlob(blob, filename)');
     expect(header).toContain('@click="exportThreadData"');
     expect(header).toContain("t('header.exportThreadData')");
     expect(narrowTopBar).toContain('threadDataExportAvailable?: boolean;');

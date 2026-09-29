@@ -32,6 +32,7 @@ class WebNotificationProjectionReceipt:
     observation: WebThreadReadObservationReceipt
     update: WebThreadNotificationUpdate
     cwd: str = ""
+    defer_tool_output: bool = False
     collaboration_turns: tuple[dict[str, Any], ...] = field(
         default=(),
         repr=False,
@@ -55,6 +56,7 @@ def project_notification(
         return detail
     projected = project_turns(
         [update.raw_turn],
+        defer_tool_output=receipt.defer_tool_output,
         attachment_url_for_path=attachment_url_for_path,
         attachment_url_for_id=attachment_url_for_id,
     )

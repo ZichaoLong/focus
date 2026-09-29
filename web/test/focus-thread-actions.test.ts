@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFocusThreadActions } from '../src/focus/focusThreadActions';
+import { createFocusThreadActions, type ExportOptionsChoice, type ExportOptionsRequest } from '../src/focus/focusThreadActions';
 import { openSummaryPrintWindow } from '../src/focus/summaryPrintWindow';
 
 vi.mock('../src/focus/summaryPrintWindow', () => ({ openSummaryPrintWindow: vi.fn() }));
@@ -32,23 +32,23 @@ function setup() {
   };
   const notify = vi.fn();
   const getThreadTitle = vi.fn(() => '目标会话');
-  const requestFilename = vi.fn(async ({ suggestedFilename }: { suggestedFilename: string }): Promise<string | null> => suggestedFilename);
-  const actions = createFocusThreadActions({ client, notify, getThreadTitle, requestFilename, translate: (key) => key, confirm: vi.fn() });
-  return { preview, client, notify, getThreadTitle, requestFilename, actions };
+  const requestExportOptions = vi.fn(async ({ suggestedFilename, suggestedDocumentTitle }: ExportOptionsRequest): Promise<ExportOptionsChoice | null> => ({ filename: suggestedFilename, documentTitle: suggestedDocumentTitle }));
+  const actions = createFocusThreadActions({ client, notify, getThreadTitle, requestExportOptions, translate: (key) => key, confirm: vi.fn() });
+  return { preview, client, notify, getThreadTitle, requestExportOptions, actions };
 }
 
 describe('Q&A print action', () => {
   it('opens synchronously before fetching the complete export and never claims a saved PDF', async () => {
-    const { client, preview, actions, notify, requestFilename, getThreadTitle } = setup();
+    const { client, preview, actions, notify, requestExportOptions, getThreadTitle } = setup();
     client.exportThreadSummary.mockImplementation(async () => {
       expect(openSummaryPrintWindow).toHaveBeenCalledOnce();
       return new Blob(['Full history']);
     });
     await actions.exportThreadSummary({ threadId: 'not-the-active-thread', format: 'print' });
     expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('not-the-active-thread');
-    expect(preview.deliver).toHaveBeenCalledExactlyOnceWith('Full history', '目标会话.pdf');
+    expect(preview.deliver).toHaveBeenCalledExactlyOnceWith('Full history', '目标会话.pdf', '目标会话');
     expect(getThreadTitle).toHaveBeenCalledExactlyOnceWith('not-the-active-thread');
-    expect(requestFilename).not.toHaveBeenCalled();
+    expect(requestExportOptions).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
   });
 
@@ -78,74 +78,74 @@ describe('Q&A print action', () => {
   });
 
   it('snapshots the selected title before loading and holds the gate through Blob reading', async () => {
-    const { client, actions, preview, getThreadTitle, requestFilename } = setup();
+    const { client, actions, preview, getThreadTitle, requestExportOptions } = setup();
     const content = deferred<string>();
     client.exportThreadSummary.mockResolvedValue({ text: () => content.promise } as Blob);
     const printing = actions.exportThreadSummary({ threadId: 'one', format: 'print' });
     getThreadTitle.mockReturnValue('另一会话');
     await actions.exportThreadData('two');
-    expect(requestFilename).not.toHaveBeenCalled();
+    expect(requestExportOptions).not.toHaveBeenCalled();
     content.resolve('Full original Markdown');
     await printing;
-    expect(preview.deliver).toHaveBeenCalledWith('Full original Markdown', '目标会话.pdf');
+    expect(preview.deliver).toHaveBeenCalledWith('Full original Markdown', '目标会话.pdf', '目标会话');
   });
 });
 
 describe('named Markdown and JSONL downloads', () => {
-  it('waits for confirmation, keeps the exact target, and downloads the unchanged Markdown Blob', async () => {
-    const { client, actions, requestFilename, getThreadTitle } = setup();
+  it('waits for confirmation, keeps the exact target, and downloads the chosen document heading with the original body', async () => {
+    const { client, actions, requestExportOptions, getThreadTitle } = setup();
     const { anchor, create, revoke } = mockDownload();
-    const name = deferred<string | null>();
-    requestFilename.mockReturnValue(name.promise);
+    const name = deferred<ExportOptionsChoice | null>();
+    requestExportOptions.mockReturnValue(name.promise);
     const exporting = actions.exportThreadSummary({ threadId: 'sidebar-thread', format: 'markdown' });
     expect(getThreadTitle).toHaveBeenCalledExactlyOnceWith('sidebar-thread');
-    expect(requestFilename).toHaveBeenCalledExactlyOnceWith({ format: 'markdown', suggestedFilename: '目标会话.md' });
+    expect(requestExportOptions).toHaveBeenCalledExactlyOnceWith({ format: 'markdown', suggestedFilename: '目标会话.md', suggestedDocumentTitle: '目标会话' });
     expect(client.exportThreadSummary).not.toHaveBeenCalled();
     getThreadTitle.mockReturnValue('Changed active thread');
-    name.resolve('我的归档');
+    name.resolve({ filename: '我的归档', documentTitle: '独立标题' });
     await exporting;
     expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('sidebar-thread');
     expect(anchor.download).toBe('我的归档.md');
     expect(anchor.click).toHaveBeenCalledOnce();
     expect(anchor.remove).toHaveBeenCalledOnce();
-    expect(await create.mock.calls[0]![0].text()).toBe('Full history');
+    expect(await create.mock.calls[0]![0].text()).toBe('# 独立标题\n\nFull history');
     vi.runAllTimers();
     expect(revoke).toHaveBeenCalledExactlyOnceWith('blob:export');
   });
 
   it('uses the same naming flow for JSONL and preserves its content', async () => {
-    const { actions, client, requestFilename } = setup();
+    const { actions, client, requestExportOptions } = setup();
     const { anchor, create } = mockDownload();
-    requestFilename.mockResolvedValue('工具/记录.JSONL');
+    requestExportOptions.mockResolvedValue({ filename: '工具/记录.JSONL', documentTitle: 'Ignored for JSONL' });
     await actions.exportThreadData('data-thread');
-    expect(requestFilename).toHaveBeenCalledWith({ format: 'jsonl', suggestedFilename: '目标会话.jsonl' });
+    expect(requestExportOptions).toHaveBeenCalledWith({ format: 'jsonl', suggestedFilename: '目标会话.jsonl' });
     expect(client.exportThreadData).toHaveBeenCalledExactlyOnceWith('data-thread');
     expect(anchor.download).toBe('工具-记录.jsonl');
     expect(await create.mock.calls[0]![0].text()).toBe('{"full":"record"}\n');
   });
 
   it.each([null, '', '   ', '.md'])('does not fetch or download on cancellation or an empty name: %s', async (choice) => {
-    const { actions, client, requestFilename, notify } = setup();
+    const { actions, client, requestExportOptions, notify } = setup();
     const { anchor } = mockDownload();
-    requestFilename.mockResolvedValue(choice);
+    requestExportOptions.mockResolvedValue(choice === null ? null : { filename: choice });
     await actions.exportThreadSummary({ threadId: 'one', format: 'markdown' });
     expect(client.exportThreadSummary).not.toHaveBeenCalled();
     expect(anchor.click).not.toHaveBeenCalled();
     expect(notify).not.toHaveBeenCalled();
     // Cancelling releases the gate for another format.
-    requestFilename.mockResolvedValue('retry');
+    requestExportOptions.mockResolvedValue({ filename: 'retry' });
     await actions.exportThreadData('two');
     expect(client.exportThreadData).toHaveBeenCalledExactlyOnceWith('two');
   });
 
   it('prevents competing dialogs and print popups while choosing a filename', async () => {
-    const { actions, client, requestFilename } = setup();
-    const name = deferred<string | null>();
-    requestFilename.mockReturnValue(name.promise);
+    const { actions, client, requestExportOptions } = setup();
+    const name = deferred<ExportOptionsChoice | null>();
+    requestExportOptions.mockReturnValue(name.promise);
     const first = actions.exportThreadData('one');
     await actions.exportThreadSummary({ threadId: 'two', format: 'markdown' });
     await actions.exportThreadSummary({ threadId: 'three', format: 'print' });
-    expect(requestFilename).toHaveBeenCalledOnce();
+    expect(requestExportOptions).toHaveBeenCalledOnce();
     expect(openSummaryPrintWindow).not.toHaveBeenCalled();
     name.resolve(null);
     await first;
@@ -153,16 +153,16 @@ describe('named Markdown and JSONL downloads', () => {
   });
 
   it.each(['summaryExporting', 'threadDataExporting'] as const)('checks %s before naming and again before fetching', async (flag) => {
-    const { actions, client, requestFilename } = setup();
+    const { actions, client, requestExportOptions } = setup();
     client[flag].value = true;
     await actions.exportThreadData('one');
-    expect(requestFilename).not.toHaveBeenCalled();
+    expect(requestExportOptions).not.toHaveBeenCalled();
     client[flag].value = false;
-    const name = deferred<string | null>();
-    requestFilename.mockReturnValue(name.promise);
+    const name = deferred<ExportOptionsChoice | null>();
+    requestExportOptions.mockReturnValue(name.promise);
     const exporting = actions.exportThreadData('one');
     client[flag].value = true;
-    name.resolve('file');
+    name.resolve({ filename: 'file' });
     await exporting;
     expect(client.exportThreadData).not.toHaveBeenCalled();
   });

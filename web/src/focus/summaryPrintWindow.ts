@@ -1,11 +1,13 @@
 /** Ephemeral, same-origin handoff to the standalone Q&A print document. */
+import { DEFAULT_SUMMARY_TITLE } from './summaryDocumentTitle';
+
 const CHANNEL = 'focus-summary-print';
 const HANDOFF_TIMEOUT_MS = 90_000;
 
-type PrintPayload = { markdown: string; suggestedFilename: string } | { error: true };
+type PrintPayload = { markdown: string; suggestedFilename: string; documentTitle: string } | { error: true };
 
 export function openSummaryPrintWindow(): {
-  deliver(markdown: string, suggestedFilename: string): void;
+  deliver(markdown: string, suggestedFilename: string, documentTitle: string): void;
   fail(): void;
 } | null {
   const token = [...crypto.getRandomValues(new Uint8Array(16))]
@@ -45,13 +47,13 @@ export function openSummaryPrintWindow(): {
   }, 1000);
   window.addEventListener('message', receive);
   return {
-    deliver(markdown, suggestedFilename) { if (!finished) { payload = { markdown, suggestedFilename }; send(); } },
+    deliver(markdown, suggestedFilename, documentTitle) { if (!finished) { payload = { markdown, suggestedFilename, documentTitle }; send(); } },
     fail() { if (!finished) { payload = { error: true }; send(); } },
   };
 }
 
 export function receiveSummaryPrint(
-  onContent: (markdown: string, suggestedFilename: string) => void,
+  onContent: (markdown: string, suggestedFilename: string, documentTitle: string) => void,
   onError: () => void,
 ): () => void {
   const token = window.location.hash.slice(1);
@@ -75,7 +77,8 @@ export function receiveSummaryPrint(
     if (typeof event.data.markdown === 'string') {
       cleanup();
       onContent(event.data.markdown, typeof event.data.suggestedFilename === 'string'
-        ? event.data.suggestedFilename : 'codex-conversation-summary.pdf');
+        ? event.data.suggestedFilename : 'codex-conversation-summary.pdf',
+      typeof event.data.documentTitle === 'string' ? event.data.documentTitle : DEFAULT_SUMMARY_TITLE);
     } else if (event.data.error === true) {
       cleanup();
       onError();

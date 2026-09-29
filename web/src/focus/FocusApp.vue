@@ -271,12 +271,6 @@ function visibleTool(
   return tools.find((tool) => tool.id === toolId) ?? null;
 }
 
-function inspectableToolDetailLocator(tool: ToolCall): FocusToolInspectionLocator | null {
-  const locator = tool.inspectionLocator;
-  if (!locator || tool.status === 'running') return null;
-  return locator;
-}
-
 const selectedToolDetail = computed<FocusThreadToolDetailPayload | null>(() => {
   const selection = detailSelection.value;
   const locator = client.toolDetailLocator.value;
@@ -541,7 +535,7 @@ function openToolDiff(tool: ToolCall): void {
     closeDetail();
     return;
   }
-  const inspectionLocator = inspectableToolDetailLocator(current);
+  const inspectionLocator = current.status === 'running' ? null : current.inspectionLocator;
   const opened = selectDetail({
     kind: 'toolDiff',
     toolId: current.id,
@@ -1047,6 +1041,7 @@ onUnmounted(() => {
           :allow-workspace-create="false"
           :tool-diff-panel="true"
           :tool-detail-available="client.toolDetailAvailable.value"
+          :tool-detail-target="toolDetailTool"
           @select-workspace="openWorkspaceDraft($event)"
           @submit="handleSubmit"
           @approval="(requestId, response) => client.respondApproval(requestId, response)"

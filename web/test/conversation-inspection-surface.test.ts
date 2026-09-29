@@ -306,7 +306,7 @@ describe('bounded conversation inspection surface', () => {
 
     const unavailableApp = createSSRApp({
       render: () => h(GenericTool, {
-        tool: command,
+        tool: { ...command, outputDeferred: true },
         toolDiffPanel: true,
         toolDetailAvailable: false,
       }),
@@ -317,7 +317,7 @@ describe('bounded conversation inspection surface', () => {
     expect(unavailableHtml).toContain('More detail unavailable');
 
     const focusApp = source('../src/focus/FocusApp.vue');
-    expect(focusApp).toContain('const inspectionLocator = inspectableToolDetailLocator(current);');
+    expect(focusApp).toContain('if (inspectionLocator && client.toolDetailAvailable.value)');
     expect(focusApp).toContain('void client.readToolDetail(inspectionLocator);');
   });
 });

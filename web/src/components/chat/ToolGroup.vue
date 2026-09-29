@@ -14,6 +14,7 @@ const props = withDefaults(
     tools: ToolStackItem[];
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
+    toolDetailTarget?: ToolCallData | null;
   }>(),
   { toolDiffPanel: false },
 );
@@ -77,7 +78,7 @@ function onHeadClick(): void {
           :tool="item.tool"
           :stack-position="toolStackPosition(si, tools.length)"
           :tool-diff-panel="toolDiffPanel"
-          :tool-detail-available="toolDetailAvailable"
+          :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
           @open-media="emit('openMedia', $event)"
           @open-file="emit('openFile', $event)"
           @open-tool-diff="emit('openToolDiff', $event)"

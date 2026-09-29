@@ -92,6 +92,7 @@ const props = withDefaults(
     toolDiffPanel?: boolean;
     /** Exact per-thread admission for re-fetching omitted tool detail. */
     toolDetailAvailable?: boolean;
+    toolDetailTarget?: ToolCallData | null;
     downloadFile?: (fileId: string) => Promise<Blob>;
     /**
      * Pending user messages queued while the session is busy. Rendered inline
@@ -536,13 +537,13 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
             :tool-diff-panel="toolDiffPanel"
-            :tool-detail-available="toolDetailAvailable"
+            :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
             @open-media="emit('openMedia', $event)"
             @open-file="emit('openFile', $event)"
             @open-tool-diff="emit('openToolDiff', $event)"
             @open-agent="emit('openAgent', $event)"
           />
-          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
+          <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
         </template>
         <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.durationMs !== undefined)" class="a-msg-ft">
           <Tooltip :text="`${turn.durationMs} ms`">

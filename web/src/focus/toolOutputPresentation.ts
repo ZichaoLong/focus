@@ -212,6 +212,7 @@ function toolOutputPresentationsMatch(left: ToolCall, right: ToolCall): boolean 
     && left.outputOmittedChars === right.outputOmittedChars
     && left.outputHeadLineCount === right.outputHeadLineCount
     && left.outputTruncated === right.outputTruncated
+    && left.outputDeferred === right.outputDeferred
     && diffsMatch;
 }
 

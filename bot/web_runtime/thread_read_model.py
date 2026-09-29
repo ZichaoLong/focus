@@ -89,6 +89,7 @@ class PreparedWebThreadTurns:
 
     thread_id: str
     projection_turns: tuple[dict[str, Any], ...]
+    history_mode: str
     _cache_turns: tuple[dict[str, Any], ...] = field(repr=False, compare=False)
     _authority_token: object = field(repr=False, compare=False)
 
@@ -107,6 +108,7 @@ class WebThreadReadModel:
         )
         self._turns_by_thread: dict[str, dict[str, dict[str, Any]]] = {}
         self._cwd_by_thread: dict[str, str] = {}
+        self._history_mode_by_thread: dict[str, str] = {}
         self._token_usage_by_thread: dict[str, dict[str, Any]] = {}
         self._pending_token_usage_replay_by_thread: dict[
             str,
@@ -173,6 +175,7 @@ class WebThreadReadModel:
         thread_ids = (
             set(self._turns_by_thread)
             | set(self._cwd_by_thread)
+            | set(self._history_mode_by_thread)
             | set(self._token_usage_by_thread)
         )
         return tuple(self.snapshot(thread_id) for thread_id in sorted(thread_ids))
@@ -294,6 +297,9 @@ class WebThreadReadModel:
     def cwd(self, thread_id: str) -> str:
         return self._cwd_by_thread.get(self._thread_id(thread_id), "")
 
+    def history_mode(self, thread_id: str) -> str:
+        return self._history_mode_by_thread.get(self._thread_id(thread_id), "")
+
     def remember_cwd(self, thread_id: str, cwd: str) -> None:
         normalized_thread_id = self._thread_id(thread_id)
         normalized_cwd = str(cwd or "").strip()
@@ -313,6 +319,8 @@ class WebThreadReadModel:
         self,
         thread_id: str,
         turns: Iterable[dict[str, Any]],
+        *,
+        history_mode: str = "",
     ) -> PreparedWebThreadTurns:
         """Bound one replacement outside RuntimeLoop without mutating the cache."""
 
@@ -329,6 +337,7 @@ class WebThreadReadModel:
         return PreparedWebThreadTurns(
             thread_id=normalized_thread_id,
             projection_turns=tuple(copy.deepcopy(turn) for turn in cache_turns),
+            history_mode=history_mode,
             _cache_turns=cache_turns,
             _authority_token=self._prepared_turns_token,
         )
@@ -341,6 +350,7 @@ class WebThreadReadModel:
         if prepared._authority_token is not self._prepared_turns_token:
             raise ValueError("prepared Web thread turns belong to another read model")
         self._advance_observation(prepared.thread_id)
+        self._history_mode_by_thread[prepared.thread_id] = prepared.history_mode
         self._turns_by_thread[prepared.thread_id] = {
             str(turn.get("id", "") or "").strip(): turn
             for turn in prepared._cache_turns
@@ -383,6 +393,7 @@ class WebThreadReadModel:
         normalized_thread_id = self._thread_id(thread_id)
         self._advance_observation(normalized_thread_id)
         self._turns_by_thread.pop(normalized_thread_id, None)
+        self._history_mode_by_thread.pop(normalized_thread_id, None)
         self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
 
     def forget_closed_thread(self, thread_id: str) -> None:
@@ -395,6 +406,7 @@ class WebThreadReadModel:
         normalized_thread_id = self._thread_id(thread_id)
         self._advance_observation(normalized_thread_id)
         self._turns_by_thread.pop(normalized_thread_id, None)
+        self._history_mode_by_thread.pop(normalized_thread_id, None)
         self._cwd_by_thread.pop(normalized_thread_id, None)
         self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
 
@@ -402,6 +414,7 @@ class WebThreadReadModel:
         normalized_thread_id = self._thread_id(thread_id)
         self._advance_observation(normalized_thread_id)
         self._turns_by_thread.pop(normalized_thread_id, None)
+        self._history_mode_by_thread.pop(normalized_thread_id, None)
         self._cwd_by_thread.pop(normalized_thread_id, None)
         self._token_usage_by_thread.pop(normalized_thread_id, None)
         self._pending_token_usage_replay_by_thread.pop(normalized_thread_id, None)
@@ -411,12 +424,14 @@ class WebThreadReadModel:
 
         for thread_id in tuple(
             set(self._turns_by_thread)
+            | set(self._history_mode_by_thread)
             | set(self._token_usage_by_thread)
             | set(self._pending_token_usage_replay_by_thread)
             | set(self._observation_revision_by_thread)
         ):
             self._advance_observation(thread_id)
         self._turns_by_thread.clear()
+        self._history_mode_by_thread.clear()
         self._token_usage_by_thread.clear()
         self._pending_token_usage_replay_by_thread.clear()
 

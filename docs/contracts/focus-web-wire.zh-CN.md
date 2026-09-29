@@ -113,6 +113,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v21 为 prompt result receipt 增加必填的 `observed_thread_status`、`diagnostic_stage` 与 `recorded_at`，
   用于失败诊断与复制；诊断不授予当前状态或重发 authority。v20 browser 不保留兼容 decoder，服务与静态资源
   仍必须同版本部署。
+- v22 为工具 transcript 增加 `outputDeferred=true`，表示可按 exact locator 读取的已完成工具输出
+  尚未随对话加载；这与裁剪或空输出不同，详情响应不允许使用此 shape。
 - Focus 服务与其静态浏览器资源按同一仓库版本部署。内部兼容 shim、第二套旧 decoder 或 legacy alias 不是默认目标；
   改合同时同步更新 producer、catalog、generated projection、decoder、测试与本文。
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
@@ -375,6 +377,17 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   assistant occurrence；每条 snippet 最多 1,024 个 Unicode code points，并携 UTF-16 character-boundary
   match range 与 opaque turn cursor。tool、diff、reasoning、plan、MCP 与 subagent 内容不进入搜索；序列化
   response 的 Focus 硬上限为 64 KiB。该 endpoint 不承诺完整全文索引，也不承担 Prompt outline。
+- 已确认非 ephemeral 的 `paginated` 会话中，snapshot、full history page 和已知 history-mode 的 live
+  projection 对有 exact inspection locator 的 terminal commandExecution/fileChange 使用 `outputDeferred=true`：
+  保留名称、参数、状态、执行事实与 locator，但 `output=[]`，不携带 diff 或 omission 字段，也不解析输出/diff
+  或消耗 transcript 的输出预算。history-mode 只由成功 open 安装到现有 read-model，按 unload/close/forget/epoch
+  生命周期清除；未知、legacy、运行中和无 exact locator 的工具保留原有有界输出。详情 preview/full 仍 fresh-read
+  原有源，preview 不允许 deferred shape。browser 在 completion 到达时释放旧 stream output（包括 fileChange 的
+  原始 item 占位），忽略同源后到的 output delta；tools/blocks mirror 必须共享 deferred 状态。
+- 支持读取详情的已完成工具显示紧凑行与独立的“查看／收起详情”按钮，不再显示重复 inline body 或折叠箭头。
+  行内展开只对运行中或没有可用详情且仍有本地信息的工具生效，支持键盘；手动收起不因内容更新而撤销。
+  运行中展开的工具获得可用详情后自动收起。无法读取已 deferred 的内容时如实提示详情不可用，不虚构空输出
+  或声称无改动。详情面板关闭/替换仍取消请求并释放唯一 browser-local detail slot。
 - tool-output 字符预算与省略计数统一使用 JSON 解码后字符串的 Unicode code point，不使用 UTF-16 code unit 或编码
   字节数；line array 相邻元素之间概念上的 LF 计一个 code point。
 - full snapshot/page 中每个 tool-card output 先应用单项展示边界：最多保留 65,536 个原始 code point，其中 head 16,384、
@@ -390,7 +403,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   也不声称限制 user/assistant 正文、tool metadata、媒体字节、thread 数或整个进程内存。
 - browser presentation 只消费已准入的 omission 坐标，不改变或重新发现 marker 协议。非空的单项裁剪 shape
   把 exact trusted marker 行本地化为中段省略提示，并如实说明仍保留有界 head/tail；empty/zero-index aggregate
-  shape 则说明当前 16 项 output / 262,144 code-point 预算已省略全部正文，绝不再声称显示 head/tail。没有 matching
+  shape 使用简短的“输出未随对话加载”与精确省略字符数提示，不声称显示 head/tail。没有 matching
   admitted 坐标的 marker-like 工具正文仍只是普通 output，不能成为 omission authority。
 - live tool-output delta 的 `delta` 是原始字符串 chunk；browser 必须按收到顺序直接拼接，不能自行插入换行或按 chunk
   猜 line boundary，并对结果继续应用同一单项和当前 page aggregate budget。已进入全省略 shape 的 output 继续保持为空，

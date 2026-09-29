@@ -90,6 +90,7 @@ function commandActionLine(action: CommandExecutionAction): string {
       <p v-else-if="error" class="tdp-error" role="alert">
         {{ t('tools.detail.failed') }}
       </p>
+      <pre v-if="tool.arg" class="tdp-arguments">{{ tool.arg }}</pre>
       <div v-if="hasCommandFacts" class="tdp-command-facts">
         <div v-if="tool.commandExecution?.cwd">cwd: {{ tool.commandExecution.cwd }}</div>
         <div v-if="tool.commandExecution?.source">source: {{ tool.commandExecution.source }}</div>
@@ -116,7 +117,7 @@ function commandActionLine(action: CommandExecutionAction): string {
         :omitted-chars="tool.outputOmittedChars"
         :head-line-count="tool.outputHeadLineCount"
       />
-      <div v-else-if="!hasCommandFacts && !loading" class="tdp-empty">
+      <div v-else-if="!hasCommandFacts && !loading && !tool.outputDeferred" class="tdp-empty">
         {{ t('diff.noDiff') }}
       </div>
     </div>
@@ -137,6 +138,7 @@ function commandActionLine(action: CommandExecutionAction): string {
   overflow: auto;
   font-family: var(--mono);
 }
+.tdp-arguments { margin: var(--space-3); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--text-sm)/1.6 var(--font-mono); }
 .tdp-empty {
   padding: 32px 20px;
   color: var(--muted, #9098a0);

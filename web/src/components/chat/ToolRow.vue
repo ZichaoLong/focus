@@ -53,14 +53,18 @@ function onHeadClick(): void {
       'stack-last': stackPosition === 'last',
     }"
   >
-    <div class="bh" ref="bhEl" @click="onHeadClick">
-      <span v-if="icon" class="gl" v-html="icon" aria-hidden="true" />
-      <span class="bh-text">
-        <span class="a">{{ name }}</span>
-        <Tooltip :text="arg">
-          <span v-if="arg" class="p">{{ arg }}</span>
-        </Tooltip>
-      </span>
+    <div class="bh" ref="bhEl">
+      <component :is="expandable ? 'button' : 'div'" class="bh-main" :type="expandable ? 'button' : undefined"
+        :aria-expanded="expandable ? open : undefined" @click="expandable && onHeadClick()">
+        <span v-if="icon" class="gl" v-html="icon" aria-hidden="true" />
+        <span class="bh-text">
+          <span class="a">{{ name }}</span>
+          <Tooltip :text="arg">
+            <span v-if="arg" class="p">{{ arg }}</span>
+          </Tooltip>
+        </span>
+        <Icon v-if="expandable" class="car" :name="open ? 'chevron-down' : 'chevron-right'" size="sm" />
+      </component>
       <span class="rt">
         <span class="status" :class="status" role="status" :aria-label="status">
           <Icon v-if="status === 'ok'" name="check" size="sm" />
@@ -71,7 +75,6 @@ function onHeadClick(): void {
         <slot name="trailing" />
         <span v-if="time" class="tm">{{ time }}</span>
       </span>
-      <Icon v-if="expandable" class="car" :name="open ? 'chevron-down' : 'chevron-right'" size="sm" />
     </div>
     <div v-if="open" class="bb">
       <div class="bb-pad">
@@ -114,10 +117,25 @@ function onHeadClick(): void {
   gap: 8px;
   min-height: 30px;
   padding: 0 11px;
-  cursor: pointer;
   font: var(--text-sm) var(--font-mono);
   color: var(--color-text);
 }
+.bh-main {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+button.bh-main { cursor: pointer; }
+button.bh-main:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 .box.open .bh,
 .bh:hover {
   background: var(--color-surface-sunken);

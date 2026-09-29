@@ -187,6 +187,7 @@ function mergeLiveStreamBlock(previous: TurnBlock, incoming: TurnBlock): TurnBlo
     return incoming;
   }
   if (incoming.kind === 'tool' && previous.kind === 'tool') {
+    if (incoming.tool.outputDeferred) return incoming;
     const incomingOutput = incoming.tool.output ?? [];
     const previousOutput = previous.tool.output ?? [];
     const incomingIsFullyOmitted = incomingOutput.length === 0
@@ -243,6 +244,9 @@ function mergeLiveAssistantTurn(previous: ChatTurn, incoming: ChatTurn): ChatTur
     const itemId = blockStreamItemId(block);
     if (!itemId) return block;
     incomingItemIds.add(itemId);
+    if (block.kind === 'tool' && block.tool.outputDeferred && block.tool.inspectionLocator) {
+      incomingItemIds.add(block.tool.inspectionLocator.item_id);
+    }
     const locallyStreamed = previousByItemId.get(itemId);
     return locallyStreamed ? mergeLiveStreamBlock(locallyStreamed, block) : block;
   });
@@ -626,6 +630,11 @@ export function createFocusProjectionSync(
   function appendStreamDelta(detail: FocusThreadDeltaDetail): boolean {
     if (!snapshot.value || !detail.stream_delta) return false;
     const stream = detail.stream_delta;
+    if (stream.kind === 'tool_output' && snapshot.value.turns.some((turn) => (
+      (turn.tools ?? []).some((tool) => tool.outputDeferred
+        && tool.inspectionLocator?.turn_id === stream.turn_id
+        && tool.inspectionLocator.item_id === stream.item_id)
+    ))) return true;
     const nextTurns = [...snapshot.value.turns];
     let turnIndex = nextTurns.findIndex((turn) => (
       isAssistantSegmentForRawTurn(turn, stream.turn_id)
@@ -678,6 +687,7 @@ export function createFocusProjectionSync(
         toolIndex = tools.length - 1;
       }
       const tool = tools[toolIndex]!;
+      if (tool.outputDeferred) return true;
       const boundedOutput = appendBoundedToolOutput(
         tool.output ?? [],
         stream.delta,

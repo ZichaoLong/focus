@@ -130,6 +130,8 @@ export interface ToolCall {
   status: ToolStatus;
   timing?: string; // e.g. '12ms'
   output?: string[]; // shown line by line when expanded
+  /** Terminal saved output is omitted from the transcript and fetched via its exact locator. */
+  outputDeferred?: true;
   /** Exact source characters omitted from the middle, or from the whole output at aggregate exhaustion. */
   outputOmittedChars?: number;
   /** Trusted marker index, or zero only when aggregate exhaustion leaves `output` empty. */

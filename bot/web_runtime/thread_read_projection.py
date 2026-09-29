@@ -121,12 +121,14 @@ class WebThreadHistoryProjection:
     items_view: str
     page: ThreadTurnsPage
     receipt: WebThreadProjectionReceipt
+    defer_tool_output: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class WebThreadHistoryEffect:
     profile: WebWriterProfile | None
     page: ThreadTurnsPage
+    defer_tool_output: bool = False
 
 
 def project_thread_action_capabilities(
@@ -380,6 +382,7 @@ def project_older_turns(
 
     return project_turn_page(
         projection.page.turns,
+        defer_tool_output=projection.defer_tool_output,
         items_view=projection.items_view,
         page_cursor=projection.page.backwards_cursor,
         next_cursor=projection.page.next_cursor,

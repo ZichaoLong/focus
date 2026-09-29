@@ -10,6 +10,7 @@ const props = withDefaults(
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
+    toolDetailTarget?: ToolCall | null;
   }>(),
   { stackPosition: 'single', toolDiffPanel: false },
 );
@@ -37,6 +38,7 @@ const rendererToolDetailAvailable = computed(() => (
     :stack-position="stackPosition"
     :tool-diff-panel="toolDiffPanel"
     :tool-detail-available="rendererToolDetailAvailable"
+    :tool-detail-target="toolDetailTarget"
     :data-scroll-anchor-id="tool.id"
     @open-media="emit('openMedia', $event)"
     @open-file="emit('openFile', $event)"

@@ -30,6 +30,12 @@ The native print layout hides controls and instructions.
 CJK punctuation emphasis and bold font fallback follow the shared
 [prose rendering contract](focus-web-markdown-rendering.md).
 
+The document title is independent of the filename. A preview input replaces only
+the exporter-generated first heading and displays user input as plain text. Edits
+update the printed H1 without re-rendering Q&A or reloading images, math or diagrams;
+the input is hidden in print. Top-level rendering failure retains the normalized
+title and complete Q&A source.
+
 - Math reuses the exact grammar from `markdownMath.ts`: same-line `\(...\)` and
   block-position `\[...\]` or `$$...$$`. Do not guess single-dollar, unclosed or
   prose-position block math. Unrecognized content remains text; KaTeX failures
