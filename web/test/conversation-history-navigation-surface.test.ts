@@ -560,7 +560,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     const review = between(
       app,
       'async function submitReview(target: Record<string, unknown>): Promise<void> {',
-      'let appHeightRaf',
+      '\n}\n',
     );
 
     expect(pane).toContain('prepareTimelineMutation: followAfterUserAction,');

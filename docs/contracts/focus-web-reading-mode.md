@@ -32,6 +32,49 @@ consume it when the selected conversation becomes eligible for reading mode.
 initial connection intent. Existing client owners retain session selection and
 loading responsibility.
 
+## Viewport reconciliation, compositing, and diagnostics
+
+`web/src/focus/focusViewport.ts` owns the fixed shell's visible height and top
+offset. Each reading-mode entry or exit rereads and synchronizes viewport sizing
+after the DOM update, on the next animation frame, and once after a short delay.
+This covers hidden chrome/composer changes and mobile browser UI animations.
+Reconciliation does not remount conversation components, write transcript scroll
+positions or drafts, or poll continuously. Rapid transitions and disposal cancel
+stale callbacks. Zero, negative, and non-finite viewport heights fall back to
+window and document height, retaining the previous size if none is valid. Visible
+document and page-cache restoration also resynchronize the viewport.
+
+Narrow reading mode uses a separate composited surface so entering the mode
+updates the fixed page's compositing state; exiting or switching to a wide layout
+removes it. This addresses the ArkWeb device report of a second-entry blank page
+despite correct dimensions, positions, and visibility styles, recovering after
+rotation. It does not depend on user-agent detection, change layout dimensions,
+remount the transcript, or write scroll positions.
+
+“Runtime details → Page layout diagnostics” defaults to recording off; expanding
+the panel does not start it. “Start recording” begins layout measurements and
+diagnostics, continuing after the details panel closes so the issue can be
+reproduced. “Stop recording” immediately stops further sampling and retains the
+results for copying; starting again clears the old records. The toggle belongs
+only to this document and resets to off with empty records on reload. While off,
+no diagnostic layout nodes, styles, or hit positions are read and no diagnostic
+snapshots are built. Necessary viewport synchronization and reading-mode
+compositing remain independent.
+
+The diagnostic copies the browser identifier, measurements at recording start,
+the last six mode transitions, and the last six viewport changes.
+Separate limits keep rotation from evicting transition evidence. Records contain
+only known layout nodes' dimensions (including document and mount roots), scroll
+offsets, visibility and compositing styles, focused tag name, and timestamps.
+Toolbar and transcript center-point hit tests record the hit tag, whether it is
+inside the expected region, and whether a dialog covers it. They never record hit
+nodes' text, attributes, or selectors, conversation text, drafts, URLs, or credentials.
+They remain in this document's memory, clear on reload, and are never uploaded
+automatically. Measurements distinguish sizing and layout failures but do not
+prove that pixels were painted correctly. Mobile blank-page regression checks
+require normal → reading → normal → reading on the affected device; desktop
+emulation alone cannot establish success.
+
 ## Export
 
 `ReadingModeControls.vue` offers the current session's export menu in wide and

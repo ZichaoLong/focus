@@ -6,6 +6,7 @@ import PanelHeader from '../components/ui/PanelHeader.vue';
 import type { FocusActiveTurnSetting } from './types';
 import FocusOperatorWarnings from './FocusOperatorWarnings.vue';
 import FocusRuntimeNotices from './FocusRuntimeNotices.vue';
+import FocusViewportDiagnostic from './FocusViewportDiagnostic.vue';
 import type { RuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 
 const props = defineProps<{ presentation: RuntimeDetailsPresentation }>();
@@ -128,6 +129,7 @@ function activeTurnSettingSource(setting: FocusActiveTurnSetting): string {
       >
         {{ t('focus.runtimeDetailsNoAdditionalEvents') }}
       </p>
+      <FocusViewportDiagnostic />
     </div>
   </div>
 </template>

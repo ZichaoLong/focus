@@ -42,6 +42,7 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
+import { createFocusViewport, focusViewportDiagnosticKey } from './focusViewport';
 import FocusThreadActions from './FocusThreadActions.vue';
 import FocusTransientNotice from './FocusTransientNotice.vue';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
@@ -736,26 +737,13 @@ async function submitReview(target: Record<string, unknown>): Promise<void> {
   } catch { /* Keep the dialog open so the target can be corrected and retried. */ }
 }
 
-let appHeightRaf = 0;
-function setAppHeight(): void {
-  const viewport = window.visualViewport;
-  document.documentElement.style.setProperty('--app-height', `${viewport?.height ?? window.innerHeight}px`);
-  document.documentElement.style.setProperty('--app-top', `${viewport?.offsetTop ?? 0}px`);
-}
-function syncAppHeight(): void {
-  if (appHeightRaf) return;
-  appHeightRaf = requestAnimationFrame(() => {
-    appHeightRaf = 0;
-    setAppHeight();
-  });
-}
+const focusShell = ref<HTMLElement | null>(null);
+const viewport = shallowRef<ReturnType<typeof createFocusViewport> | null>(null);
+provide(focusViewportDiagnosticKey, computed(() => viewport.value?.diagnostics ?? null));
 
 onMounted(() => {
   loadSidebarCollapsed();
-  setAppHeight();
-  window.visualViewport?.addEventListener('resize', syncAppHeight);
-  window.visualViewport?.addEventListener('scroll', syncAppHeight);
-  window.addEventListener('resize', syncAppHeight);
+  if (focusShell.value) viewport.value = createFocusViewport(focusShell.value, readingMode);
   void client.load();
 });
 
@@ -781,17 +769,12 @@ watch(detailOpen, (open) => {
 
 onUnmounted(() => {
   client.dispose();
-  window.visualViewport?.removeEventListener('resize', syncAppHeight);
-  window.visualViewport?.removeEventListener('scroll', syncAppHeight);
-  window.removeEventListener('resize', syncAppHeight);
-  if (appHeightRaf) cancelAnimationFrame(appHeightRaf);
-  document.documentElement.style.removeProperty('--app-height');
-  document.documentElement.style.removeProperty('--app-top');
+  viewport.value?.dispose();
 });
 </script>
 
 <template>
-  <div class="focus-shell">
+  <div ref="focusShell" class="focus-shell">
     <section v-if="client.authRequired.value" class="auth-page">
       <div class="auth-page-inner">
         <div class="focus-lockup"><span>F</span><strong>Focus Web</strong></div>
@@ -1460,6 +1443,12 @@ onUnmounted(() => {
 .focus-app.narrow-viewport .focus-main {
   flex: 1;
   min-height: 0;
+}
+.focus-app.narrow-viewport.reading-mode {
+  /* Give mobile reading its own composited surface on entry. ArkWeb can leave
+     the fixed/flex page blank while all layout boxes remain visible and sized;
+     changing the surface does not remount the transcript or reset its scroll. */
+  transform: translateZ(0);
 }
 @media (min-width: 641px) {
   .focus-app.reading-mode :deep(.sheet-panel) {
