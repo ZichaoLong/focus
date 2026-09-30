@@ -30,6 +30,15 @@ not introduce line breaks or paragraph gaps. Paragraph spacing does not apply
 to inline cell fragments. Cells may still wrap naturally to their available
 width, and wide tables continue to scroll horizontally within their own wrapper.
 
+Table splitting must protect complete, same-line `\(...\)` formulas: their
+internal pipes must not separate columns or discard following cells. This
+applies to headers, body rows, nested tables and closed streaming content in
+both chat and print. Recognition follows the existing math syntax owner; code,
+escaped delimiters, unclosed content and unsupported math forms do not become
+formulas. Preserve the original pipes, backslashes and whitespace for source
+fallback and formula copy; do not repair tables by replacing LaTeX commands or
+rewriting stored content.
+
 Chat Markdown and print prose allow browser weight synthesis when a real bold
 font face is unavailable, keeping CJK emphasis visible. Do not enable synthetic
 italics or change font policy elsewhere in the application. Font appearance
@@ -45,4 +54,6 @@ print. Browser checks use the actual Markdown component at wide and narrow
 viewports to verify emphasis, font fallback, paragraphs and code lines, plus
 mixed inline table content and horizontal scrolling with long-reply rendering
 optimizations active.
+Also check complete cells around pipe-containing formulas, copied source,
+streaming closure and print fallback.
 A narrow viewport does not establish compatibility with every device's fonts.

@@ -77,6 +77,17 @@ describe('Markdown source copy controls', () => {
     expect(copySources).toEqual([]);
   });
 
+  it('copies original pipes and backslashes from table formulas, including source fallback', async () => {
+    const formulas = [String.raw`|A|\le K_j`, String.raw` \left\|x\right\| + \t y `, String.raw`\unsupportedcommand{|C|}`];
+    const html = await render([
+      '| Formula | Notes |', '| --- | --- |',
+      ...formulas.map((formula, index) => `| \\(${formula}\\) | note-${index} |`),
+    ].join('\n'));
+    expect(copySources).toEqual(formulas);
+    for (let index = 0; index < formulas.length; index += 1) expect(html).toContain(`note-${index}`);
+    expect(html).not.toContain('\0');
+  });
+
   it('waits for closed delimiters while streaming', async () => {
     await render(String.raw`before \(x + y`, true);
     await render('$$\nx + y', true);

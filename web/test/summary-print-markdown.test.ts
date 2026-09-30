@@ -46,6 +46,29 @@ $$ y^2 $$
     expect(fallback).toBe(true);
   });
 
+  it('renders formulas containing pipes without losing table columns or their original source', () => {
+    const { html, fallback } = render([
+      String.raw`| Constraint \(|A|\) | Explanation |`,
+      '| --- | --- |',
+      String.raw`| \(|A|\le K_j\) | capacity bound |`,
+      String.raw`| \(|A|=\min(K_j,|C|)\) | fill capacity |`,
+      String.raw`| \(\left\|x\right\|\) | norm |`,
+    ].join('\n'));
+    expect((html.match(/class="summary-math"/g) ?? [])).toHaveLength(4);
+    expect(html).toContain(String.raw`data-source="\(|A|=\min(K_j,|C|)\)"`);
+    expect(html).toContain(String.raw`data-source="\(\left\|x\right\|\)"`);
+    expect(html).toContain('<td>capacity bound</td>');
+    expect(html).toContain('<td>fill capacity</td>');
+    expect(html).toContain('<td>norm</td>');
+    expect(html).not.toContain('\0');
+    expect(fallback).toBe(false);
+
+    const broken = render('| Formula | Notes |\n| --- | --- |\n' + String.raw`| \(\unknowncommand{|x|}\) | still visible |`);
+    expect(broken.fallback).toBe(true);
+    expect(broken.html).toContain(String.raw`\(\unknowncommand{|x|}\)`);
+    expect(broken.html).toContain('<td>still visible</td>');
+  });
+
   it('escapes untrusted HTML and rejects active URLs, including in formulas', () => {
     const { html } = render(String.raw`<script>alert(1)</script>
 
