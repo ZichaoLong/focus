@@ -706,6 +706,7 @@ function reportTranscriptViewport(): void {
   const pane = panesRef.value;
   if (!props.continuousTranscript || !pane) return;
   const anchor = captureTranscriptScrollAnchor(pane);
+  transcriptAnchor = !following.value && !promptNavigation.ownsScroll() && !isPinned() ? anchor : null;
   props.updateTranscriptViewport?.(anchor?.id ?? null, following.value && !props.hasNewerMessages);
 }
 function armNewerHistory(): void {
@@ -723,7 +724,9 @@ watch(() => props.turns, async () => {
   await nextTick();
   if (!anchor || !scrollWriteFenceIsCurrent(fence)) return;
   transcriptAnchor = anchor;
-  restoreTranscriptScrollAnchor(pane, anchor);
+  // This Vue DOM transaction can clamp scrollTop when it evicts an edge page.
+  // That synchronous clamp is layout movement, not touch or inertial motion.
+  restoreTranscriptScrollAnchor(pane, anchor, { preserveScrollMotion: false });
   lastScrollTop = pane.scrollTop;
   reportTranscriptViewport();
 });
@@ -1719,7 +1722,8 @@ function rebindScrollObservers(): void {
 
 function restoreReadingAnchor(): void {
   const pane = panesRef.value;
-  if (!pane || !transcriptAnchor || following.value || promptNavigation.ownsScroll() || isPinned()) return;
+  if (following.value || promptNavigation.ownsScroll() || isPinned()) { transcriptAnchor = null; return; }
+  if (!pane || !transcriptAnchor) return;
   restoreTranscriptScrollAnchor(pane, transcriptAnchor);
   lastScrollTop = pane.scrollTop;
 }
@@ -1948,6 +1952,7 @@ defineExpose({
         :class="{
           'is-following': following,
           'history-loading': historyLoadInProgress,
+          'continuous-transcript': continuousTranscript,
           'prompt-navigation-active': promptNavigationActive,
           'prompt-navigation-resolving': promptNavigationResolving,
         }"
@@ -2263,14 +2268,15 @@ defineExpose({
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  /* Keep the visible message stable while the user browses history. Bottom
-     following and history replacement use explicit scroll writes, so they opt out. */
+  /* Legacy history uses native anchoring. Continuous transcripts and explicit
+     navigation use their own layout corrections, with only one scroll owner. */
   overflow-anchor: auto;
   scrollbar-gutter: stable;
 }
 
 .panes.is-following,
 .panes.history-loading,
+.panes.continuous-transcript,
 .panes.prompt-navigation-active {
   overflow-anchor: none;
 }

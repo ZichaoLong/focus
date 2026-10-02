@@ -46,7 +46,7 @@
     "src/components/chat/ChatHeader.vue": "86065eab608a0a41130f0c1423ab6f43a393c8169b75ce206a554b9a6cf42760",
     "src/components/chat/ChatPane.vue": "f5215365651eb8a3b4ac4d43b881c1bf6212ff42619fafbceb9840e4130104aa",
     "src/components/chat/Composer.vue": "b2fbdc8e9f2f71bbf85c6cb325f375f42e89103eff589f29cb5b2b1ba7f306c7",
-    "src/components/chat/ConversationPane.vue": "85f5f5d4eeac392f92d122869adfac9c4a4e6d58beb24f417d3c41a387723308",
+    "src/components/chat/ConversationPane.vue": "f7b4ccc9c08ac907f1bd7006934a7bd904f70221cc7b7b8c0cf37dce139db1ec",
     "src/components/chat/ConversationToc.vue": "8527af747bda99e1e063792a75554ab2fa09efa6a4bbf7ed09dc7c1c34c831fb",
     "src/components/chat/CronNotice.vue": null,
     "src/components/chat/DiffLines.vue": "1e7aa51f6de9181fd23c36d8873e26b266cc3d2591039d742ddcd09929391ba3",

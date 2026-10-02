@@ -109,7 +109,11 @@ scroll intent on admission, without chaining reads from observers, layout change
 navigation or pages shorter than the viewport; input during loading cannot queue another
 automatic read. Errors retain content and block automatic retries; edge buttons allow manual
 retry. Preserve the first visible item's ID and pixel offset during prepend, append and
-remote-edge eviction, including virtual-row measurement changes. New input, Prompt navigation
+remote-edge eviction, including virtual-row measurement changes. The application anchor is the
+sole layout correction owner for continuous transcripts; disable native anchoring on that
+container. Compensate only movement in content coordinates, preserving touch and subsequent
+inertial scrolling. Refresh the visible anchor on scroll rather than repeatedly restoring the
+old paging position. New input, Prompt navigation
 and thread switches supersede older scroll intents. Resume following only at the real thread
 tail, never at a historical page bottom; downward loading catches up unseen live items.
 Lifecycle and epoch changes clear comparison caches. The comparison cache retains at most

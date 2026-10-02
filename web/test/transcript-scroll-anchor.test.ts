@@ -33,7 +33,7 @@ describe('continuous transcript scroll anchors', () => {
   it('preserves a partially visible row through prepend and delayed height measurements', () => {
     const { pane, insert } = viewport();
     const anchor = captureTranscriptScrollAnchor(pane)!;
-    expect(anchor).toEqual({ id: 'row-0', offset: -150 });
+    expect(anchor).toEqual({ id: 'row-0', offset: -150, scrollTop: 150 });
     insert(3000); expect(restoreTranscriptScrollAnchor(pane, anchor)).toBe(true);
     expect(pane.scrollTop).toBe(3150);
     insert(-600); restoreTranscriptScrollAnchor(pane, anchor);
@@ -46,7 +46,36 @@ describe('continuous transcript scroll anchors', () => {
     const anchor = captureTranscriptScrollAnchor(pane)!;
     insert(-200); restoreTranscriptScrollAnchor(pane, anchor);
     expect(pane.scrollTop).toBe(250);
-    expect(restoreTranscriptScrollAnchor(pane, { id: 'another-thread', offset: 0 })).toBe(false);
+    expect(restoreTranscriptScrollAnchor(pane, { id: 'another-thread', offset: 0, scrollTop: 250 })).toBe(false);
     expect(pane.scrollTop).toBe(250);
+  });
+
+  it.each([-80, 80])('preserves ongoing scroll motion (%i px) across late layout changes', (motion) => {
+    const { pane, insert } = viewport();
+    const anchor = captureTranscriptScrollAnchor(pane)!;
+    insert(3000); restoreTranscriptScrollAnchor(pane, anchor);
+    pane.scrollTop += motion;
+    // An observer notification without layout movement must not undo touch or inertia.
+    restoreTranscriptScrollAnchor(pane, anchor);
+    expect(pane.scrollTop).toBe(3150 + motion);
+    insert(-600); restoreTranscriptScrollAnchor(pane, anchor);
+    expect(pane.scrollTop).toBe(2550 + motion);
+    pane.scrollTop += motion;
+    insert(200); restoreTranscriptScrollAnchor(pane, anchor);
+    expect(pane.scrollTop).toBe(2750 + 2 * motion);
+    for (let i = 0; i < 5; i++) restoreTranscriptScrollAnchor(pane, anchor);
+    expect(pane.scrollTop).toBe(2750 + 2 * motion);
+  });
+
+  it('does not preserve a browser clamp inside a synchronous page eviction', () => {
+    const { pane, insert } = viewport(); pane.scrollTop = 450;
+    const anchor = captureTranscriptScrollAnchor(pane)!;
+    insert(-200);
+    pane.scrollTop = 100; // The intermediate, shorter DOM clamps the old scroll position.
+    restoreTranscriptScrollAnchor(pane, anchor, { preserveScrollMotion: false });
+    expect(pane.scrollTop).toBe(250);
+    pane.scrollTop -= 40; // Inertia resumes after the DOM transaction.
+    restoreTranscriptScrollAnchor(pane, anchor);
+    expect(pane.scrollTop).toBe(210);
   });
 });
