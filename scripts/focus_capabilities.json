@@ -948,6 +948,14 @@
         {
           "path": "bot/web_runtime/transcript_source.py",
           "symbol": "decode_transcript_source"
+        },
+        {
+          "path": "web/src/focus/transcriptPageWindow.ts",
+          "symbol": "TranscriptPageWindow"
+        },
+        {
+          "path": "web/src/components/chat/transcriptScrollAnchor.ts",
+          "symbol": "captureTranscriptScrollAnchor"
         }
       ],
       "contract": [
@@ -989,7 +997,9 @@
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/focus_client/owners/focus-transcript.test.ts",
             "web/test/focus-performance.test.ts",
-            "web/test/focus_client/owners/focus-prompt-history.test.ts"
+            "web/test/focus_client/owners/focus-prompt-history.test.ts",
+            "web/test/focus_client/owners/transcript-page-window.test.ts",
+            "web/test/transcript-scroll-anchor.test.ts"
           ]
         }
       ],

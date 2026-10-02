@@ -10,7 +10,7 @@ Ephemeral subagent threads retain their existing detail projection.
 
 `WebThreadOpenCoordinator` owns selection and control state. `WebThreadInspectionService`
 owns document, selection, backend generation and observation admission. `transcript_window.py`
-reads frozen inputs and projects items. `createFocusTranscript` owns the sole browser body
+reads frozen inputs and projects items. `createFocusTranscript`, through `TranscriptPageWindow`, owns the sole browser body
 window; `createFocusPromptHistory` owns the paginated Prompt directory, while
 `createFocusHistoryNavigation` retains legacy summary navigation. `TranscriptRow.vue`
 owns visibility and measured heights, never history or sending authority.
@@ -31,7 +31,10 @@ nonempty, trimmed and at most 4096 characters. An item requires a turn; full req
 item. Source cursors require full and exclude cursor. Default reads return the latest
 40 thread items chronologically. Paging uses upstream cursors, never synthetic offsets.
 Prompt and search navigation target the exact item, including additional messages in the
-same turn. Subsequent targeted paging stays within that turn.
+same turn. Subsequent paging covers the entire thread. A target request's `turn_id` verifies and
+echoes target identity; continuation requests omit the turn filter. Indexed navigation
+reads the target's inclusive string cursor, then uses it for a thread-wide page, without
+decoding or synthesizing upstream cursors.
 
 Responses contain `{runtime_epoch, revision, thread_id, turn_id, view, target_pending,
 turns, older_cursor, newer_cursor, full_text}`. Rows carry stable `rawTurnId`, `itemId`,
@@ -64,7 +67,8 @@ original turn scope, direction and page size. It grants no authority and never s
 an upstream cursor. Full reads prefer rereading that exact source page and checking item/turn
 identity. Without a locator, positioning uses the upstream item anchor to read a predecessor
 and the target. Only an explicit old-server object-cursor rejection (`expected a string`)
-falls back to bounded string-cursor pages within the turn. `target_pending=true` requests
+falls back to bounded string-cursor pages (within the turn for full reads, across the thread
+for body navigation). `target_pending=true` requests
 cancellable continuation; unrelated errors never trigger compatibility fallback. Missing
 items fail rather than substituting nearby content.
 
@@ -90,8 +94,24 @@ cached active-turn identity without deep-copying the transcript.
 The worker projects bounded items; the coordinator emits only changed `item_turns` plus
 bounded `item_order`. Each thread has one projection flight and one latest successor.
 Settlement checks observation/epoch, and successors freeze fresh cache inputs when admitted.
-Stream deltas update their matching item. The browser retains at most 80 live rows; paging
-replaces the history window, and newly arriving live items do not pull it to the tail.
+Stream deltas update their matching item. The browser accumulates up to 10 adjacent source pages on demand, with an 8 MiB data
+budget estimated as twice each presentation row's serialized JSON length. Evict whole
+pages from the distant edge when either limit is reached. Do not prefetch ten pages or
+retain a separate full-thread cache. Reversing within cached content makes no request.
+Deduplicate and refresh inclusive cursor anchors by stable ID; retain actual edge cursors
+without gaps. A late page must not evict the reader's visible anchor page; discard the
+new distant page instead when necessary. The live tail page retains at most 80 rows before
+bounded head resynchronization. New live items never pull a historical viewport to the tail.
+
+Both automatic directions require actual user movement toward the respective edge, within
+about 300px of the scroll container boundary. Allow only one body request at a time. Consume
+scroll intent on admission, without chaining reads from observers, layout changes, Prompt
+navigation or pages shorter than the viewport; input during loading cannot queue another
+automatic read. Errors retain content and block automatic retries; edge buttons allow manual
+retry. Preserve the first visible item's ID and pixel offset during prepend, append and
+remote-edge eviction, including virtual-row measurement changes. New input, Prompt navigation
+and thread switches supersede older scroll intents. Resume following only at the real thread
+tail, never at a historical page bottom; downward loading catches up unseen live items.
 Lifecycle and epoch changes clear comparison caches. The comparison cache retains at most
 16 recently published threads; eviction only repeats bounded rows on the next publication.
 Control refreshes preserve observed collaboration tasks in the bounded cache; cold opens

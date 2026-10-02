@@ -137,6 +137,15 @@ def read_transcript_window(
         direction = "asc"
     elif prepared.item_id:
         direction = "asc"
+    # A navigation locator identifies one message, not a turn-sized browsing
+    # boundary. Old string-only servers scan the thread in cancellable batches.
+    # Indexed anchors first resolve exactly one scoped item, then reuse its
+    # inclusive opaque cursor across the thread. Never fabricate a cursor.
+    navigation_target = not prepared.full and bool(prepared.turn_id)
+    if navigation_target and not exact_page and prepared.item_id:
+        kwargs["turn_id"] = None
+    if navigation_target and exact_page:
+        limit = 1
     for _ in range(4 if prepared.view == "prompts" else 1):
         page = list_thread_items(
             prepared.thread_id, **kwargs, cursor=cursor, sort_direction=direction,
@@ -156,6 +165,20 @@ def read_transcript_window(
         raise WebRuntimeError("Invalid transcript page.", code="transcript_protocol_error", status=502)
     if kwargs["turn_id"] and any(entry.turn_id != kwargs["turn_id"] for entry in page.items):
         raise WebRuntimeError("Mismatched transcript turn.", code="transcript_protocol_error", status=502)
+    if navigation_target and kwargs["turn_id"] and page.items:
+        if prepared.item_id and not any(entry.turn_id == prepared.turn_id
+                and entry.item.get("id") == prepared.item_id for entry in page.items):
+            raise WebRuntimeError("This message is no longer available.", code="transcript_item_missing", status=404)
+        if not page.backwards_cursor:
+            raise WebRuntimeError("Missing transcript anchor cursor.", code="transcript_protocol_error", status=502)
+        cursor = page.backwards_cursor
+        kwargs = {"turn_id": None, "expected_connection_generation": prepared.connection_generation}
+        direction, limit = "asc", TRANSCRIPT_PAGE_ITEMS
+        page = list_thread_items(prepared.thread_id, **kwargs, cursor=cursor,
+            sort_direction=direction, limit=limit, timeout=remaining())
+        if not isinstance(page, ThreadItemsPage) or len(page.items) > limit:
+            raise WebRuntimeError("Invalid transcript page.", code="transcript_protocol_error", status=502)
+        remaining()
     entries = list(reversed(page.items)) if direction == "desc" else page.items
     target = next((entry for entry in entries if entry.turn_id == prepared.turn_id
                    and entry.item.get("id") == prepared.item_id), None) if prepared.item_id else None

@@ -123,6 +123,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v23 新增有界正文 `/transcript` endpoint、`FocusTranscriptPage` 与逐条目 `item_turns` / `item_order`；paginated thread 的打开 snapshot 改为控制状态与 Prompt 摘要。具体预算、定位、缓冲、复制和虚拟渲染遵循[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)。v22 浏览器不保留兼容路径，服务与静态资源必须同版本部署。
 
 - v24 为 `/transcript` 增加按需 Prompt 目录、exact item 定位的字符串 cursor 回退和来源页 locator；响应增加 `view`、`target_pending`，snapshot Prompt 使用 item identity。服务与浏览器资源仍须同版本部署。
+- v25 将正文 exact item 定位后的分页扩展到全线程，并让浏览器按需缓存相邻页、双向自动加载。定位响应的 `turn_id` 回显目标身份，后续正文 cursor 不携轮次筛选；服务与浏览器资源须同版本部署。
 
 ## 4. Endpoint 与 event admission
 

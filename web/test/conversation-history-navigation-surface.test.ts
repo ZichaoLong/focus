@@ -219,10 +219,10 @@ describe('ConversationPane bounded history navigation surface', () => {
       'onMounted(observeTopSentinel);',
     );
 
-    expect(pane).toContain('const historyAutoLoadArmed = ref(false);');
+    expect(pane).toContain("const historyAutoLoadDirection = ref<'older' | 'newer' | null>(null);");
     expect(pane).toContain(':history-auto-load-armed="historyAutoLoadArmed"');
     expect(navigation).toContain('historyAutoLoadArmed.value = false;');
-    expect(userIntent).toContain('historyAutoLoadArmed.value = true;');
+    expect(userIntent).toContain('historyAutoLoadArmed.value = !props.loadingMore && !historyLoadInProgress.value;');
     expect(chat).toContain('historyAutoLoadArmed?: boolean;');
     expect(sentinel).toContain('props.historyAutoLoadArmed');
     expect(sentinel).toContain("emit('loadOlderMessages', 'sentinel');");
@@ -369,7 +369,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(fences).toContain('function claimOrdinaryScrollAuthority(): ScrollWriteFence {');
     expect(fences).toContain('promptNavigation.cancel();\n  scrollWriteGeneration += 1;');
     expect(userScrollAuthority).toContain(
-      'if (historyLoadInProgress.value && !promptNavigation.ownsScroll()) {',
+      'if (!props.continuousTranscript && historyLoadInProgress.value && !promptNavigation.ownsScroll()) {',
     );
     expect(userScrollAuthority).toContain('cancelOrdinaryScrollWrites();\n    return;');
     expect(userScrollAuthority).toContain('claimOrdinaryScrollAuthority();');

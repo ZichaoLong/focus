@@ -10,7 +10,7 @@
 `WebThreadOpenCoordinator` 持有打开/选择与控制状态；`WebThreadInspectionService`
 持有正文读取的 document、selection、backend generation 与 observation 校验；
 `transcript_window.py` 只读取冻结的请求并投影条目。浏览器的 `createFocusTranscript`
-持有唯一正文窗口，`createFocusPromptHistory` 持有 paginated Prompt 目录，
+通过 `TranscriptPageWindow` 持有唯一正文窗口，`createFocusPromptHistory` 持有 paginated Prompt 目录，
 `createFocusHistoryNavigation` 保留旧格式的摘要导航。
 `TranscriptRow.vue` 只持有可视区域与测量高度，不持有历史或发送权限。
 
@@ -28,7 +28,9 @@ receipt。正文通过独立的 `GET /api/threads/{thread_id}/transcript` 加载
 重复或超过 4096 字符。`item_id` 必须指定 `turn_id`；`full=true` 必须指定 item；
 `source_cursor` 只用于 full 且排斥 cursor。缺省读取全线程最新 40 个条目，以时间正序
 呈现；前后页使用上游 cursor，不合成 offset。Prompt 与搜索都定位 exact item，不能将
-同轮追加消息映射到首条 Prompt；定位后的翻页范围是该轮次。
+同轮追加消息映射到首条 Prompt；定位后继续在全线程范围翻页。定位请求的 `turn_id` 仅校验和回显目标身份；后续
+cursor 请求不携 turn filter。索引定位先读取目标的 inclusive 字符串 cursor，再以此读取
+全线程页，不解码或合成上游 cursor。
 
 返回 `{runtime_epoch, revision, thread_id, turn_id, view, target_pending, turns, older_cursor,
 newer_cursor, full_text}`。行携带稳定的 `rawTurnId`、`itemId` 与
@@ -55,7 +57,7 @@ Prompt 目录打开或侧栏被使用时，`view=prompts` 从最新条目分批�
 原 turn scope、direction 和页大小；不是授权凭据，不合成上游 cursor。“查看完整内容”
 优先按原参数重读一页，并核对 exact item/turn。没有页面 locator 的定位使用上游 item
 anchor 读前驱再读目标。仅当旧服务明确拒绝对象 cursor（expected a string）时，回退到
-该轮的有界字符串 cursor 分页；未找到但可继续时返回 `target_pending=true`，浏览器可取消
+有界字符串 cursor 分页（全文读取限于该轮，正文定位扫描全线程）；未找到但可继续时返回 `target_pending=true`，浏览器可取消
 地继续读取。其他上游错误不作为兼容信号。目标丢失则报告错误，不能用附近条目代替。
 
 `full=true` 找到目标后返回空 `turns` 与完整 `full_text`，不应用预览字符上限。用户消息/
@@ -79,8 +81,20 @@ active-turn identity，不能为了得到 turn id 深拷贝正文。
 notification worker 对有界条目投影，coordinator 仅发布变化的 `item_turns` 与有界
 `item_order`。每线程保持一个投影 flight 和一个最新 successor；worker 结算仍服从
 observation/epoch 校验，successor 执行前冻结最新缓存，不能让旧流文本回退。
-stream delta 只更新对应条目。浏览器实时窗口最多 80 行；历史翻页替换窗口，期间的新
-实时条目不把历史页面拉回尾部。生命周期与 epoch 变化清理比较缓存；比较缓存最多保留
+stream delta 只更新对应条目。浏览器正文窗口按需累积至多 10 个相邻源页，并按每条展示行 JSON 字符串长度乘二估算，
+施加 8 MiB 总数据预算；先达到任一上限就淘汰远离浏览方向的整页。不预取十页，不另存
+整线程正文。反向翻阅仍在窗口内的内容不发请求。反向 cursor 的 inclusive anchor 按稳定
+ID 去重并更新；保留窗口两端的真实 cursor，淘汰不能制造缺口。迟到页面不得淘汰用户
+当前可见锚点所在页；必要时放弃新到达的远端页。实时尾页至多 80 行，超出后执行有界
+head 重同步；历史窗口不因实时条目到达而跳到最新。
+
+上下自动加载都要求真实用户向该方向浏览，并进入滚动容器边缘约 300px 的区域。
+一次只允许一个正文请求，消费滚动意图后不因 observer/布局变化、Prompt 定位或页面
+仍然不足一屏而连续请求；请求进行中不累积下一次自动加载意图。错误保留已有窗口并
+阻止自动重试，边界按钮允许显式重试。向上插入、向下追加和远端淘汰时，以首个可见
+条目的 ID 与像素偏移保持阅读位置，虚拟行测量更新也遵循同一锚点。新用户输入、Prompt
+定位和线程切换取代旧滚动意图。只有到达全线程真正最新端才恢复实时跟随；历史页底部
+不能被当作最新端，未展示的新实时条目通过向下加载补齐。生命周期与 epoch 变化清理比较缓存；比较缓存最多保留
 最近 16 个线程，淘汰只导致下一次重发有界条目，不改变线程事实。控制刷新保留缓存中
 已经观测到的子代理任务；冷打开不为了重建全部旧任务扫描历史正文。
 

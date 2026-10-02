@@ -31,7 +31,7 @@ onMounted(() => {
       if (visible.value) height.value = el.getBoundingClientRect().height;
       visible.value = false;
     }
-  }, { root: el.closest('.panes'), rootMargin: '900px 0px' });
+  }, { root: el.closest('.chat-scroll, .panes'), rootMargin: '900px 0px' });
   intersection.observe(el);
   if (typeof ResizeObserver !== 'undefined') {
     resize = new ResizeObserver(() => {

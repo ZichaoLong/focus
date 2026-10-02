@@ -63,6 +63,8 @@ const props = withDefaults(
     sessionLoading?: boolean;
     transcriptError?: string;
     hasNewerMessages?: boolean;
+    newerAutoLoadArmed?: boolean;
+    loadingNewer?: boolean;
     /**
      * Live compaction state of the session: non-null while the daemon rewrites
      * history, rendered as a body-sized "Compacting context…" activity notice.
@@ -126,6 +128,8 @@ const props = withDefaults(
 // messages or while a page is loading; the IntersectionObserver fires as soon
 // as the user scrolls (or pans) near the top of the transcript.
 const topSentinelRef = ref<HTMLElement | null>(null);
+const bottomSentinelRef = ref<HTMLElement | null>(null);
+let bottomSentinelObserver: IntersectionObserver | null = null;
 let topSentinelObserver: IntersectionObserver | null = null;
 
 function observeTopSentinel(): void {
@@ -147,15 +151,29 @@ function observeTopSentinel(): void {
         emit('loadOlderMessages', 'sentinel');
       }
     },
-    { root: null, rootMargin: '200px 0px 0px 0px', threshold: 0 },
+    { root: topSentinelRef.value.closest('.chat-scroll, .panes'), rootMargin: '300px 0px 0px 0px', threshold: 0 },
   );
   topSentinelObserver.observe(topSentinelRef.value);
 }
 
+function observeBottomSentinel(): void {
+  bottomSentinelObserver?.disconnect();
+  if (!bottomSentinelRef.value || typeof IntersectionObserver === 'undefined') return;
+  bottomSentinelObserver = new IntersectionObserver((entries) => {
+    if (entries[0]?.isIntersecting && props.hasNewerMessages && props.newerAutoLoadArmed
+      && !props.loadingMore && !props.loadingMoreError && !props.sessionLoading) {
+      emit('loadNewerMessages', 'sentinel');
+    }
+  }, { root: bottomSentinelRef.value.closest('.chat-scroll, .panes'), rootMargin: '0px 0px 300px 0px' });
+  bottomSentinelObserver.observe(bottomSentinelRef.value);
+}
 onMounted(observeTopSentinel);
+onMounted(observeBottomSentinel);
 onUnmounted(() => {
   topSentinelObserver?.disconnect();
   topSentinelObserver = null;
+  bottomSentinelObserver?.disconnect();
+  bottomSentinelObserver = null;
 });
 watch(
   () => [
@@ -163,13 +181,15 @@ watch(
     props.loadingMore,
     props.loadingMoreError,
     props.historyAutoLoadArmed,
+    props.hasNewerMessages,
+    props.newerAutoLoadArmed,
   ],
   () => {
     // Re-attach the observer after a load so that a still-visible sentinel
     // (e.g. the page was not tall enough to scroll) triggers another page.
     // Wait for the next render tick because the sentinel is rendered by v-if
     // and may not exist when this watcher first fires.
-    void nextTick().then(observeTopSentinel);
+    void nextTick().then(() => { observeTopSentinel(); observeBottomSentinel(); });
   },
 );
 
@@ -191,7 +211,7 @@ const showWorking = computed(() => props.working);
 
 const emit = defineEmits<{
   openFullContent: [turn: ChatTurn];
-  loadNewerMessages: [];
+  loadNewerMessages: [source: 'sentinel' | 'button'];
   retryTranscript: [];
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
@@ -429,8 +449,9 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       :class="{ 'top-sentinel-loading': loadingMore }"
     >
       <button
-        v-if="!loadingMore"
+        v-if="!loadingMore || loadingNewer"
         type="button"
+        :disabled="loadingMore"
         class="top-sentinel-btn"
         @click="emit('loadOlderMessages', 'button')"
       >
@@ -582,8 +603,9 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </div>
     </TranscriptRow>
 
-    <div v-if="hasNewerMessages" class="transcript-notice">
-      <button type="button" :disabled="loadingMore" @click="emit('loadNewerMessages')">{{ t('conversation.loadNewer') }}</button>
+    <div v-if="hasNewerMessages" ref="bottomSentinelRef" class="transcript-notice">
+      <span v-if="loadingNewer"><Spinner size="sm" /> {{ t('conversation.loadingNewer') }}</span>
+      <button v-else type="button" :disabled="loadingMore" @click="emit('loadNewerMessages', 'button')">{{ t('conversation.loadNewer') }}</button>
     </div>
 
     <!-- Pending approvals are rendered in the bottom dock (ConversationPane),

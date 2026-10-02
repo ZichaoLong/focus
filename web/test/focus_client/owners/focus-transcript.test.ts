@@ -50,14 +50,14 @@ describe('bounded transcript owner', () => {
     await settle();
     expect(h.read).toHaveBeenCalledOnce();
   });
-  it('loads body independently and pages within the same giant turn without accumulating history', async () => {
+  it('loads body independently and retains adjacent pages while browsing a giant turn', async () => {
     const h = harness(page(Array.from({ length: 40 }, (_, i) => row(i + 100))));
     await settle();
     expect(h.owner.turns.value).toHaveLength(40);
     h.read.mockResolvedValue(page(Array.from({ length: 40 }, (_, i) => row(i + 60)), { older_cursor: 'older-2' }));
     expect(await h.owner.older()).toBe(true);
     expect(h.owner.turns.value[0]?.itemId).toBe('item-60');
-    expect(h.owner.turns.value).toHaveLength(40);
+    expect(h.owner.turns.value).toHaveLength(80);
     expect(h.owner.historical.value).toBe(true);
     expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'older', direction: 'desc' }, expect.any(AbortSignal));
     h.event(2, { method: 'item/started', item_turns: [row(999)] });
@@ -146,5 +146,62 @@ describe('bounded transcript owner', () => {
     });
     expect(result?.contentDeferred).toBe(true);
     expect(result?.text).toBe('x'.repeat(16_383));
+  });
+
+  it('continues globally after locating a steer and reuses cached pages on reversal', async () => {
+    const h = harness(); await settle();
+    const nextTurn = { ...row(100), rawTurnId: 'turn-2', id: 'turn-2:item:item-100:0' };
+    h.read.mockResolvedValueOnce(page([row(99), nextTurn], { turn_id: 'turn-1', newer_cursor: 'forward' }));
+    expect(await h.owner.locate('turn-1', 'item-99')).toBe(row(99).id);
+    h.read.mockResolvedValueOnce(page([row(59), row(98)], { older_cursor: 'back' }));
+    expect(await h.owner.older()).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'older', direction: 'desc' }, expect.any(AbortSignal));
+    h.owner.updateViewport(row(99).id, false);
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-59', 'item-98', 'item-99', 'item-100']);
+    expect(h.read).toHaveBeenCalledTimes(3);
+    h.read.mockResolvedValueOnce(page([nextTurn, row(101)], { newer_cursor: null }));
+    expect(await h.owner.newer()).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'forward', direction: 'asc' }, expect.any(AbortSignal));
+    expect(h.owner.hasNewer.value).toBe(false);
+    h.owner.updateViewport(row(101).id, true);
+    expect(h.owner.historical.value).toBe(false);
+  });
+
+  it('keeps a single page flight, retains content on failure, and only retries on request', async () => {
+    const h = harness(); await settle();
+    const pending = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(pending.promise);
+    const loading = h.owner.older();
+    expect(await h.owner.older()).toBe(false);
+    expect(await h.owner.newer()).toBe(false);
+    expect(h.read).toHaveBeenCalledTimes(2);
+    pending.resolve(page([row(0)], { older_cursor: 'next' })); await loading;
+    h.read.mockRejectedValueOnce(new Error('slow network'));
+    expect(await h.owner.older()).toBe(false);
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-0', 'item-1']);
+    await settle(); expect(h.read).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not pull history to the live tail, and fetches unseen live rows before following', async () => {
+    const h = harness(); await settle();
+    h.owner.updateViewport(row(1).id, false);
+    h.event(2, { method: 'item/started', item_turns: [row(2)] });
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
+    expect(h.owner.hasNewer.value).toBe(true);
+    h.owner.updateViewport(row(1).id, true);
+    expect(h.owner.historical.value).toBe(true);
+    h.read.mockResolvedValueOnce(page([row(1), row(2)], { newer_cursor: null, revision: 2 }));
+    await h.owner.newer();
+    h.owner.updateViewport(row(2).id, true);
+    h.event(3, { method: 'item/started', item_turns: [row(3)] });
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1', 'item-2', 'item-3']);
+  });
+
+  it('ignores a delayed head refresh when the user starts browsing', async () => {
+    const h = harness(); await settle();
+    const pending = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(pending.promise);
+    const loading = h.owner.load();
+    h.owner.updateViewport(row(1).id, false);
+    pending.resolve(page([row(99)])); expect(await loading).toBe(false);
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
   });
 });

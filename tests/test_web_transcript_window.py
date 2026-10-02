@@ -237,6 +237,42 @@ def test_string_cursor_target_keeps_surrounding_page_for_gapless_navigation(insp
     result = read(inspection, turn_id="turn-1", item_id="item-20", cursor="scan-here")
     assert [row["itemId"] for row in result["turns"]] == [f"item-{n}" for n in range(40)]
     assert result["older_cursor"] == "before" and result["newer_cursor"] == "after"
+    assert inspection.list_items.call_args.kwargs["turn_id"] is None
+
+
+def test_prompt_anchor_reopens_a_thread_wide_page_and_crosses_the_turn_boundary(inspection):
+    target = entries(1)[0]
+    following = ThreadItemEntry(turn_id="turn-2", item={
+        "id": "next-prompt", "type": "userMessage", "content": [{"type": "text", "text": "下一轮"}],
+    })
+    inspection.list_items.side_effect = [ThreadItemsPage(),
+        ThreadItemsPage(items=[target], backwards_cursor="target-inclusive"),
+        ThreadItemsPage(items=[target, following], backwards_cursor="global-before", next_cursor="global-after")]
+    result = read(inspection, turn_id="turn-1", item_id="item-0")
+    assert result["turn_id"] == "turn-1"  # Echo the locator identity, not a browsing filter.
+    assert [row["rawTurnId"] for row in result["turns"]] == ["turn-1", "turn-2"]
+    assert result["older_cursor"] == "global-before" and result["newer_cursor"] == "global-after"
+    calls = inspection.list_items.call_args_list
+    assert len(calls) == 3
+    assert calls[-1].kwargs["turn_id"] is None
+    assert calls[-1].kwargs["cursor"] == "target-inclusive"
+    assert calls[-1].kwargs["limit"] == 40
+
+
+def test_navigation_anchor_rejects_a_missing_inclusive_cursor(inspection):
+    inspection.list_items.side_effect = [ThreadItemsPage(), ThreadItemsPage(items=entries(1))]
+    with pytest.raises(WebRuntimeError, match="anchor cursor"):
+        read(inspection, turn_id="turn-1", item_id="item-0")
+    assert inspection.list_items.call_count == 2
+
+
+def test_old_server_navigation_scans_globally_and_can_continue_across_turns(inspection):
+    rejection = CodexRpcError("thread/items/list", {"code": -32600,
+        "message": "Invalid request: invalid type: map, expected a string"})
+    inspection.list_items.side_effect = [rejection, ThreadItemsPage(items=entries(40), next_cursor="global-next")]
+    result = read(inspection, turn_id="turn-2", item_id="target")
+    assert result["target_pending"] and result["newer_cursor"] == "global-next"
+    assert inspection.list_items.call_args.kwargs["turn_id"] is None
 
 
 def test_prompt_directory_finds_all_steers_and_never_returns_tool_bodies(inspection):

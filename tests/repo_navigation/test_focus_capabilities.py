@@ -127,6 +127,14 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/focus/transcriptRead.ts",
                     "readTranscriptTarget",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/focus/transcriptPageWindow.ts",
+                    "TranscriptPageWindow",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/chat/transcriptScrollAnchor.ts",
+                    "captureTranscriptScrollAnchor",
+                ),
             ),
         )
 

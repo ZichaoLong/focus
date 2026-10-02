@@ -173,6 +173,7 @@ guards and may not retain parallel key or enum inventories.
   The current version field alone is not a version-negotiation protocol.
 
 - Version 24 adds on-demand Prompt directories, string-cursor fallback for exact item positioning, and source-page locators to `/transcript`. Responses add `view` and `target_pending`; snapshot prompts use item identities. Service and browser assets still deploy together.
+- Version 25 makes exact-item body navigation continue across the thread, with bounded adjacent-page caching and automatic scrolling in both directions. Target response `turn_id` echoes locator identity; subsequent body cursors omit turn filtering. Service and browser assets deploy together.
 
 ## 4. Endpoint and Event Admission
 

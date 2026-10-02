@@ -23,6 +23,7 @@ export default {
   yesterday: 'Yesterday',
   loadOlder: 'Load earlier messages',
   loadNewer: 'Load newer messages',
+  loadingNewer: 'Loading newer messages…',
   transcriptError: 'Messages could not be loaded. Visible content and your draft are retained.',
   retryTranscript: 'Reload recent messages',
   fullContent: 'View full content',

@@ -2,10 +2,11 @@ import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import type { ChatTurn } from '../types';
 import type { FocusWebApiPort } from './api';
 import { type FocusProjectionEvent, type FocusThreadDeltaDetail,
-  type FocusThreadSnapshot, type FocusTranscriptPage, type FocusTranscriptQuery } from './types';
-import { appendTranscriptDelta, TRANSCRIPT_WINDOW_ITEMS } from './transcriptItems';
+  type FocusThreadSnapshot, type FocusTranscriptQuery } from './types';
+import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
+import { TranscriptPageWindow } from './transcriptPageWindow';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -18,7 +19,15 @@ export function createFocusTranscript(options: {
   reportFatalError?(error: unknown): boolean;
 }) {
   const turns = shallowRef<ChatTurn[]>([]);
-  const page = shallowRef<FocusTranscriptPage | null>(null);
+  const cache = new TranscriptPageWindow();
+  const edges = shallowRef({ older: null as string | null, newer: null as string | null, atTail: false });
+  const unseenNewer = ref(false);
+  let protectedRow: string | null = null;
+  let lastDirection: 'older' | 'newer' = 'newer';
+  function publishWindow() {
+    turns.value = cache.rows;
+    edges.value = { older: cache.older, newer: cache.newer, atTail: cache.atTail };
+  }
   const loading = ref(false);
   const error = ref('');
   const historical = ref(false);
@@ -40,8 +49,8 @@ export function createFocusTranscript(options: {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let activeMode = 'head';
-  const hasOlder = computed(() => !needsHead.value && !!page.value?.older_cursor);
-  const hasNewer = computed(() => historical.value && !!page.value?.newer_cursor);
+  const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
+  const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
 
   function identity() {
     return `${options.activeThreadId.value}\n${options.snapshot.value?.runtime_epoch ?? ''}\n${options.isDisposed()}`;
@@ -74,7 +83,7 @@ export function createFocusTranscript(options: {
     cancel();
     closeFull();
     turns.value = [];
-    page.value = null;
+    cache.clear(); publishWindow(); unseenNewer.value = false; protectedRow = null;
     historical.value = false;
     error.value = '';
     needsHead.value = false;
@@ -88,6 +97,7 @@ export function createFocusTranscript(options: {
     refreshTimer = setTimeout(() => {
       refreshTimer = null;
       pendingHead = false;
+      if (historical.value || disposed || options.isDisposed()) return;
       automaticAttempts += 1;
       void load({}, 'head', true);
     }, 1000 * 2 ** automaticAttempts);
@@ -107,6 +117,7 @@ export function createFocusTranscript(options: {
       } else if (!historical.value && (detail.method === 'item/started' || detail.method === 'item/completed')) {
         next = [...next, incoming];
       } else if (!historical.value) scheduleHead();
+      else unseenNewer.value = true;
     }
     const stream = detail.stream_delta;
     if (detail.item_order && !historical.value) {
@@ -124,17 +135,16 @@ export function createFocusTranscript(options: {
           if (index < 0) next.push(updated);
           else next[index] = updated;
         } else scheduleHead();
-      }
+      } else unseenNewer.value = true;
     }
     if (detail.method === 'turn/completed' && detail.turn_id) {
       next = next.map((turn) => turn.rawTurnId === detail.turn_id ? { ...turn, status: 'completed' } : turn);
     }
-    if (next.length > TRANSCRIPT_WINDOW_ITEMS) {
-      next = next.slice(-TRANSCRIPT_WINDOW_ITEMS);
+    if (cache.update(next, lastDirection, protectedRow)) {
       needsHead.value = true;
       scheduleHead();
     }
-    turns.value = next;
+    publishWindow();
     void event;
   }
 
@@ -167,6 +177,7 @@ export function createFocusTranscript(options: {
     const startedAt = Date.now();
     const scope = identity();
     const threadId = options.activeThreadId.value;
+    const browsingAtStart = historical.value;
     loading.value = true;
     error.value = '';
     buffer = [];
@@ -177,6 +188,10 @@ export function createFocusTranscript(options: {
       const result = await readTranscriptTarget(options.api, threadId,
         options.snapshot.value?.runtime_epoch ?? '', query, requestController.signal, current);
       if (!current()) return false;
+      if (mode === 'head' && !browsingAtStart && historical.value && turns.value.length) {
+        for (const pending of buffer) applyDelta(pending.event, pending.detail);
+        return false;
+      }
       if (result.thread_id !== threadId || result.runtime_epoch !== options.snapshot.value?.runtime_epoch
         || result.turn_id !== (query.turn_id ?? null)) throw new Error('Transcript identity changed.');
       if (overflowed) {
@@ -187,9 +202,20 @@ export function createFocusTranscript(options: {
       if (query.cursor && (mode === 'older' ? result.older_cursor : result.newer_cursor) === query.cursor) {
         throw new Error('Transcript cursor did not advance.');
       }
-      page.value = result;
+      if (mode === 'target' && query.item_id && !result.turns.some(turn =>
+        turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
+        throw new Error('Transcript target was not found.');
+      }
+      if (mode === 'older' || mode === 'newer') {
+        lastDirection = mode;
+        cache.extend(result, mode, protectedRow);
+      } else {
+        lastDirection = 'newer';
+        cache.replace(result, mode === 'head' || !result.newer_cursor);
+      }
       focusPerformance.record('transcript', { durationMs: Date.now() - startedAt });
-      turns.value = result.turns;
+      publishWindow();
+      if (cache.atTail && mode !== 'older') unseenNewer.value = false;
       historical.value = mode !== 'head';
       needsHead.value = false;
       for (const pending of buffer) {
@@ -221,15 +247,23 @@ export function createFocusTranscript(options: {
   }
 
   function older() {
-    const first = page.value;
-    if (!first?.older_cursor || loading.value || needsHead.value) return Promise.resolve(false);
-    return load({ cursor: first.older_cursor, direction: 'desc', ...(first.turn_id ? { turn_id: first.turn_id } : {}) }, 'older');
+    if (!hasOlder.value || loading.value) return Promise.resolve(false);
+    return load({ cursor: edges.value.older!, direction: 'desc' }, 'older');
   }
 
   function newer() {
-    const last = page.value;
-    if (!last?.newer_cursor || loading.value) return Promise.resolve(false);
-    return load({ cursor: last.newer_cursor, direction: 'asc', ...(last.turn_id ? { turn_id: last.turn_id } : {}) }, 'newer');
+    if (!hasNewer.value || loading.value) return Promise.resolve(false);
+    const last = turns.value.at(-1);
+    const query: FocusTranscriptQuery = edges.value.newer
+      ? { cursor: edges.value.newer, direction: 'asc' }
+      : { turn_id: last?.rawTurnId, item_id: last?.itemId, direction: 'asc' };
+    return load(query, 'newer');
+  }
+
+  function updateViewport(anchorId: string | null, following: boolean) {
+    protectedRow = anchorId;
+    if (!following) historical.value = true;
+    else if (!hasNewer.value) historical.value = false;
   }
 
   async function locate(turnId: string, itemId?: string): Promise<string | null> {
@@ -274,5 +308,5 @@ export function createFocusTranscript(options: {
 
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
     fullText, fullLoading, fullError, openFull, closeFull,
-    handleDelta, load, older, newer, locate, cancelTarget, reset, dispose };
+    handleDelta, load, older, newer, locate, updateViewport, cancelTarget, reset, dispose };
 }
