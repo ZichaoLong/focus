@@ -8,15 +8,15 @@ interface ToolPresentationProps {
   toolDetailTarget?: ToolCall | null;
 }
 
-/** Keep inline folding separate from the exact, externally owned detail target. */
-export function useToolPresentation(
+/** Shared routing and selection for saved tool detail, including small headers. */
+export function useToolDetail(
   props: ToolPresentationProps,
-  kind: 'commandExecution' | 'fileChange',
-  inlineAvailable: ComputedRef<boolean>,
+  kind?: 'commandExecution' | 'fileChange',
 ) {
   const canLoadDetail = computed(() => Boolean(
     props.toolDiffPanel && props.toolDetailAvailable
-    && props.tool.status !== 'running' && props.tool.inspectionLocator?.kind === kind,
+    && props.tool.status !== 'running' && props.tool.inspectionLocator
+    && (!kind || props.tool.inspectionLocator.kind === kind),
   ));
   const detailOpen = computed(() => {
     const target = props.toolDetailTarget;
@@ -26,6 +26,16 @@ export function useToolPresentation(
       && left.turn_id === right.turn_id && left.item_id === right.item_id
       && left.kind === right.kind && left.change_index === right.change_index);
   });
+  return { canLoadDetail, detailOpen };
+}
+
+/** Keep inline folding separate from the exact, externally owned detail target. */
+export function useToolPresentation(
+  props: ToolPresentationProps,
+  kind: 'commandExecution' | 'fileChange',
+  inlineAvailable: ComputedRef<boolean>,
+) {
+  const { canLoadDetail, detailOpen } = useToolDetail(props, kind);
   const canExpand = computed(() => inlineAvailable.value && !canLoadDetail.value && !props.tool.outputDeferred);
   const open = ref(props.tool.defaultExpanded === true && canExpand.value);
   let manuallyToggled = false;

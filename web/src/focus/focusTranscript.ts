@@ -1,5 +1,5 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue';
-import type { ChatTurn } from '../types';
+import type { ChatTurn, ToolCall } from '../types';
 import type { FocusWebApiPort } from './api';
 import { type FocusProjectionEvent, type FocusThreadDeltaDetail,
   type FocusThreadSnapshot, type FocusTranscriptQuery } from './types';
@@ -32,6 +32,7 @@ export function createFocusTranscript(options: {
   const error = ref('');
   const historical = ref(false);
   const fullText = shallowRef<string | null>(null);
+  const fullTool = shallowRef<Pick<ToolCall, 'name' | 'arg'> | null>(null);
   const fullLoading = ref(false);
   const fullError = ref('');
   const enabled = computed(() => options.snapshot.value?.thread.id === options.activeThreadId.value
@@ -73,6 +74,7 @@ export function createFocusTranscript(options: {
     fullController?.abort();
     fullController = null;
     fullText.value = null;
+    fullTool.value = null;
     fullLoading.value = false;
     fullError.value = '';
   }
@@ -278,6 +280,8 @@ export function createFocusTranscript(options: {
     const scope = identity();
     const threadId = options.activeThreadId.value;
     fullController = new AbortController();
+    const tool = turn.tools?.[0];
+    fullTool.value = tool ? { name: tool.name, arg: tool.arg } : null;
     fullLoading.value = true;
     try {
       const result = await readTranscriptTarget(options.api, threadId, options.snapshot.value?.runtime_epoch ?? '', {
@@ -307,6 +311,6 @@ export function createFocusTranscript(options: {
   function dispose() { disposed = true; reset(); stopIdentity(); stopSnapshot(); }
 
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
-    fullText, fullLoading, fullError, openFull, closeFull,
+    fullText, fullTool, fullLoading, fullError, openFull, closeFull,
     handleDelta, load, older, newer, locate, updateViewport, cancelTarget, reset, dispose };
 }

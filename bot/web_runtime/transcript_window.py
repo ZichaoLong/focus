@@ -46,6 +46,53 @@ class WebThreadTranscriptPreparation:
     source_cursor: str | None = None
 
 
+def _tool_preview(
+    projected: list[dict[str, Any]], item: dict[str, Any], metadata: TranscriptPreview,
+) -> dict[str, Any] | None:
+    """Keep one bounded invocation card; the exact reader owns its content."""
+
+    tool = next((tool for turn in projected for tool in turn.get("tools", [])), None)
+    if tool is None:
+        return None
+
+    def summary(value: str, limit: int = 512) -> str:
+        return value if len(value) <= limit else value[:limit - 1] + "…"
+
+    header = {key: tool[key] for key in ("id", "name", "arg", "status")}
+    header["name"] = summary(header["name"])
+    if len(header["arg"]) > 512:
+        try:
+            arguments = json.loads(header["arg"])
+        except (TypeError, ValueError):
+            arguments = None
+        if isinstance(arguments, dict):
+            # Keep ordinary scalar arguments readable by the existing card
+            # summary helpers. A large nested payload must not hide a short
+            # command/path/query or turn the header into broken JSON.
+            compact: dict[str, Any] = {}
+            for key, value in arguments.items():
+                if isinstance(value, (dict, list)):
+                    continue
+                candidate = {**compact, key: summary(value, 160) if isinstance(value, str) else value}
+                if len(json.dumps(candidate, ensure_ascii=False)) <= 480:
+                    compact = candidate
+            if compact:
+                header["arg"] = json.dumps({**compact, "…": "…"}, ensure_ascii=False)
+    header["arg"] = summary(header["arg"])
+    header["output"] = []
+    if item.get("type") == "fileChange" and metadata.file_change_count != 1:
+        # A clipped multi-file record is one whole-item read, never a link
+        # which silently shows only the first change retained in the preview.
+        header.update(id=str(item["id"]), name="File change", arg=json.dumps({
+            "file_count": metadata.file_change_count,
+        }))
+    elif tool.get("inspectionLocator"):
+        header["inspectionLocator"] = tool["inspectionLocator"]
+        if tool.get("outputDeferred"):
+            header["outputDeferred"] = True
+    return header
+
+
 def project_transcript_item(
     turn_id: str,
     item: dict[str, Any],
@@ -80,15 +127,19 @@ def project_transcript_item(
         turn["itemId"] = item_id
         if isinstance(metadata, TranscriptPreview) and metadata.truncated:
             turn["contentDeferred"] = True
-    if not full and len(json.dumps(projected, ensure_ascii=False).encode("utf-8")) > (TRANSCRIPT_PAGE_BYTES - 64 * 1024) // TRANSCRIPT_PAGE_ITEMS:
-        # Multi-file tools and duplicated presentation fields can exceed the
-        # source character budget. Keep one explicit plain-text preview.
+    oversized = not full and len(json.dumps(projected, ensure_ascii=False).encode("utf-8")) > (TRANSCRIPT_PAGE_BYTES - 64 * 1024) // TRANSCRIPT_PAGE_ITEMS
+    clipped = not full and isinstance(metadata, TranscriptPreview) and metadata.truncated
+    header = _tool_preview(projected, source, metadata) if (clipped or oversized) and isinstance(metadata, TranscriptPreview) else None
+    if oversized or header is not None:
+        # Duplicated presentation fields can also exceed the byte budget.
+        # Tools keep a semantic header; prose keeps an explicit text preview.
         first = projected[0] if projected else {}
         projected = [{
             "id": f"{turn_id}:item:{item_id}:0", "rawTurnId": turn_id,
             "itemId": item_id, "role": first.get("role", "assistant"),
-            "no": 0, "text": str(first.get("text") or item.get("type", ""))[:4096],
+            "no": 0, "text": "" if header else str(first.get("text") or first.get("thinking") or item.get("type", ""))[:4096],
             "contentDeferred": True,
+            **({"tools": [header], "blocks": [{"kind": "tool", "tool": header}]} if header else {}),
         }]
     return projected
 

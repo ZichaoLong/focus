@@ -15,6 +15,7 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   bash: 'tools.label.bash',
   edit: 'tools.label.edit',
   multi_edit: 'tools.label.edit',
+  file_change: 'tools.label.file_change',
   write: 'tools.label.write',
   grep: 'tools.label.grep',
   glob: 'tools.label.glob',
@@ -91,6 +92,7 @@ const TOOL_GLYPH: Record<string, IconName> = {
   bash: 'terminal',
   edit: 'pencil',
   multi_edit: 'pencil',
+  file_change: 'pencil',
   write: 'file-plus',
   grep: 'search',
   search: 'search',
@@ -249,6 +251,10 @@ export function toolSummary(name: string, arg: string, full = false): string {
     if (!d) return fallback();
 
     switch (normalizeToolName(name)) {
+      case 'file_change': {
+        const count = num(d.file_count);
+        return count !== undefined ? c(t('tools.chip.files', { count })) : fallback();
+      }
       case 'read': {
         const path = filePath(d);
         if (!path) return fallback();

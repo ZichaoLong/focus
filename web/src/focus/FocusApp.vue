@@ -1206,6 +1206,7 @@ onUnmounted(() => {
       />
 
       <FocusFullContentDialog :text="client.transcript.fullText.value"
+        :tool="client.transcript.fullTool.value"
         :loading="client.transcript.fullLoading.value" :error="client.transcript.fullError.value"
         @close="client.transcript.closeFull()" />
       <FocusGoalDialog

@@ -123,6 +123,37 @@ describe('bounded transcript owner', () => {
     }, expect.any(AbortSignal));
   });
 
+  it('keeps the selected tool identity through loading and failure without accepting stale detail', async () => {
+    const h = harness(); await settle();
+    const tool = { id: 'tool', name: 'MCP · research/search', arg: '{"query":"needle"}', status: 'ok' as const };
+    const first = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(first.promise);
+    const pending = h.owner.openFull({ ...row(1), tools: [tool], contentDeferred: true });
+    expect(h.owner.fullTool.value).toEqual({ name: tool.name, arg: tool.arg });
+    expect(h.owner.fullLoading.value).toBe(true);
+    const signal = h.read.mock.calls.at(-1)?.[2];
+    h.read.mockRejectedValueOnce(new Error('offline'));
+    await h.owner.openFull({ ...row(2), tools: [{ ...tool, name: 'Another tool' }] });
+    expect(signal?.aborted).toBe(true);
+    first.resolve(page([], { turn_id: 'turn-1', full_text: 'wrong tool' })); await pending;
+    expect(h.owner.fullText.value).toBeNull();
+    expect(h.owner.fullTool.value?.name).toBe('Another tool');
+    expect(h.owner.fullError.value).toBe('offline');
+    h.owner.closeFull();
+    expect(h.owner.fullTool.value).toBeNull();
+    expect(h.owner.fullError.value).toBe('');
+
+    h.read.mockResolvedValue(page([], { turn_id: 'turn-1', full_text: 'source' }));
+    await h.owner.openFull({ ...row(1), tools: [tool] });
+    await h.owner.openFull(row(2));
+    expect(h.owner.fullTool.value).toBeNull();
+    expect(h.owner.fullText.value).toBe('source');
+    await h.owner.openFull({ ...row(1), tools: [tool] });
+    h.threadId.value = 'thread-2';
+    expect(h.owner.fullTool.value).toBeNull();
+    expect(h.owner.fullText.value).toBeNull();
+  });
+
   it('follows bounded string-only target pages to the additional prompt, not the turn start', async () => {
     const h = harness(); await settle();
     h.read.mockResolvedValueOnce(page([], { turn_id: 'turn-1', target_pending: true, newer_cursor: 'scan-next' }))

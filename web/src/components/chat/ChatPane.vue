@@ -561,7 +561,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
-        <div v-if="turn.contentDeferred" class="transcript-preview">
+        <template v-if="turn.contentDeferred && turn.tools?.length">
+          <ToolCall v-for="tool in turn.tools" :key="tool.id" :tool="tool" preview-only
+            :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
+            @open-tool-diff="emit('openToolDiff', $event)" @open-full-content="emit('openFullContent', turn)" />
+        </template>
+        <div v-else-if="turn.contentDeferred" class="transcript-preview">
           <pre>{{ turn.text || turn.thinking || turn.blocks?.filter(b => b.kind === 'thinking').map(b => b.thinking).join('\n\n') }}</pre>
           <span>{{ t('conversation.contentPreview') }}</span>
           <button type="button" class="transcript-full" @click="emit('openFullContent', turn)">{{ t('conversation.fullContent') }}</button>

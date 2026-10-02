@@ -41,13 +41,24 @@ turns, older_cursor, newer_cursor, full_text}`. Rows carry stable `rawTurnId`, `
 and `id=<turn>:item:<item>:<segment>`. Ordinary reads project at most 40 source items and
 2 MiB encoded data. Source trees retain up to 16384 text characters, 1024 nodes and depth
 12. Per-item byte allowance is the page budget minus 64 KiB, divided by 40; oversized
-projections become shorter plain-text previews. Clipped content carries `contentDeferred=true`,
+projections become shorter text previews or tool summary cards. Clipped content carries `contentDeferred=true`,
 never parsing incomplete Markdown as full content. Terminal command/file outputs with an
 exact detail locator are excluded before generic clipping: deferred output/diffs must not
 consume the command, path or semantic card budget. Detailed commandActions are
 also deferred to exact inspection, so repeated/quoted scripts cannot exhaust the card
 budget. Full details retain the original action DTO.
 Other content remains bounded.
+
+Clipped tool items retain their name, status and invocation summary, with one frameless
+“View detail” entry instead of the generic long-content preview. Name and argument summaries
+each retain at most 512 characters, with no partial output, diff or media. The source tree
+prioritizes tool identity and invocation fields within its budget, so earlier output fields
+cannot erase the name. Existing projection remains the tool-naming owner. Terminal commands
+and single-file changes use their exact inspection locator when specialized detail is
+available; other tools or unavailable specialized readers use the whole-item full read.
+A collapsed multi-file change retains the original file count and reads the entire source
+item, never silently linking only to its first file. Text/reasoning previews use “View full
+text”. These entries change neither source history nor window budgets.
 
 First opening/using the Prompt directory reads `view=prompts` backwards through userMessage
 items, including additional/steer messages. Responses contain only titles of at most 160
@@ -82,6 +93,9 @@ Successful full reads return empty `turns` and uncropped `full_text`: user/assis
 complete visible reasoning, or source JSON for other items. A separate selectable text view
 copies the source string. Closing, identity, epoch/access changes and disposal clear content
 and intent. Stale reads retry the same request once; other errors display their reason.
+Tool source-JSON detail also displays the selected tool's name and invocation summary. This
+context is captured with the request, retained during loading/errors and cleared with the
+content. Old requests cannot replace a newer tool's content or title.
 Explicit full-read transfer/memory costs depend on the chosen item and its bounded source page.
 
 Reads use the staged document boundary, without holding the document lock over upstream

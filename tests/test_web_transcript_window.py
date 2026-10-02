@@ -190,6 +190,78 @@ def test_deferred_file_diffs_do_not_hide_later_paths_or_card_identity():
     assert all(tool["outputDeferred"] for tool in row["tools"])
 
 
+@pytest.mark.parametrize("item_type, name", [
+    ("mcpToolCall", "MCP · research/search"), ("dynamicToolCall", "search"),
+])
+@pytest.mark.parametrize("prebounded", [False, True])
+def test_clipped_tool_keeps_invocation_identity_before_output_and_arguments(item_type, name, prebounded):
+    # Both output and deeply nested arguments can exhaust the source budget
+    # before a later tool/server field in the upstream object.
+    item = {"result": {"content": [{"type": "text", "text": "output" * 100_000}]},
+            "arguments": {"query": "needle", "context": ["x" for _ in range(2000)]},
+            "id": "search-1", "type": item_type, "status": "completed", "success": True,
+            "server": "research", "tool": "search"}
+    source = bounded_transcript_item(item) if prebounded else item
+    row = project_transcript_item("turn-1", source)[0]
+    assert row["contentDeferred"] and row["text"] == ""
+    assert len(row["tools"]) == 1
+    tool = row["tools"][0]
+    assert tool["name"] == name and tool["status"] == "ok"
+    assert '"query": "needle"' in tool["arg"]
+    assert tool["output"] == [] and "inspectionLocator" not in tool
+    assert row["blocks"] == [{"kind": "tool", "tool": tool}]
+    assert len(json.dumps(row).encode()) < 4096
+    assert len(item["result"]["content"][0]["text"]) == 600_000
+
+
+@pytest.mark.parametrize("item, kind, index", [
+    ({"id": "command", "type": "commandExecution", "status": "completed",
+      "command": "python " + "script" * 10_000, "aggregatedOutput": "finished"}, "commandExecution", None),
+    (support._file_change(changes=[{"path": "路径" * 6000, "kind": {"type": "add"}, "diff": "+x"}]), "fileChange", 0),
+])
+def test_clipped_command_and_single_file_keep_exact_specialized_reader(item, kind, index):
+    row = project_transcript_item("turn-1", bounded_transcript_item(item))[0]
+    assert row["contentDeferred"]
+    tool = row["tools"][0]
+    assert tool["output"] == [] and tool["outputDeferred"]
+    assert tool["inspectionLocator"] == {
+        "turn_id": "turn-1", "item_id": item["id"], "kind": kind, "change_index": index,
+    }
+    assert len(json.dumps(row).encode()) < 8192
+
+
+def test_clipped_multifile_card_reads_the_entire_source_record(inspection):
+    item = support._file_change(changes=[{
+        "path": f"file-{i}-" + "x" * 1000, "kind": {"type": "add"}, "diff": f"+line {i}\n" * 100,
+    } for i in range(100)])
+    # Live cache rebounding must retain the original count, not the number of
+    # paths that fit. No native locator may narrow the group to its first file.
+    live = project_transcript_item("turn-1", bounded_transcript_item(item))[0]
+    header = live["tools"][0]
+    assert header["name"] == "File change"
+    assert json.loads(header["arg"])["file_count"] == 100
+    assert "inspectionLocator" not in header and "outputDeferred" not in header
+    inspection.list_items.return_value = ThreadItemsPage(items=[ThreadItemEntry(
+        turn_id="turn-1", item=item,
+    )], backwards_cursor="original-page")
+    preview = read(inspection)["turns"][0]
+    assert preview["tools"] == live["tools"]
+    detail = read(inspection, turn_id="turn-1", item_id=item["id"], full=True,
+                  source_cursor=preview["sourceCursor"])
+    assert json.loads(detail["full_text"]) == item
+
+
+def test_running_tool_preview_has_a_full_record_entry_without_terminal_locator():
+    row = project_transcript_item("turn-1", {
+        "aggregatedOutput": "x" * 100_000, "command": "long-running job",
+        "type": "commandExecution", "id": "live", "status": "inProgress",
+    })[0]
+    assert row["contentDeferred"]
+    tool = row["tools"][0]
+    assert tool["name"] == "Shell" and tool["arg"] == "long-running job"
+    assert tool["status"] == "running" and "inspectionLocator" not in tool
+
+
 def test_normal_chinese_reply_preserves_markdown_instead_of_size_fallback():
     text = "**正常回复**\n" + "内容" * 3000
     row = project_transcript_item("turn-1", {"id": "reply", "type": "agentMessage", "text": text})[0]

@@ -3,6 +3,7 @@ export default {
     read: 'Read',
     bash: 'Run',
     edit: 'Edit',
+    file_change: 'File change',
     write: 'Write',
     grep: 'Search',
     glob: 'Find',
@@ -32,6 +33,7 @@ export default {
   },
   chip: {
     lines: '{count} lines',
+    files: '{count} files',
     results: '{count} results',
     edited: 'edited',
     created: 'created',

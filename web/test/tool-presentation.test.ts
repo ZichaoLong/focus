@@ -1,9 +1,32 @@
 import { computed, effectScope, nextTick, reactive } from 'vue';
 import { describe, expect, it } from 'vitest';
 import type { ToolCall } from '../src/types';
-import { useToolPresentation } from '../src/components/chat/tool-calls/useToolPresentation';
+import { useToolDetail, useToolPresentation } from '../src/components/chat/tool-calls/useToolPresentation';
 
 describe('tool inline and saved detail presentation', () => {
+  it('routes small headers by exact native capability and otherwise leaves full-record reading available', () => {
+    const props = reactive({
+      tool: { id: 'tool', name: 'Shell', arg: 'command…', status: 'ok' } as ToolCall,
+      toolDiffPanel: true, toolDetailAvailable: true, toolDetailTarget: null as ToolCall | null,
+    });
+    const state = useToolDetail(props);
+    expect(state.canLoadDetail.value).toBe(false);
+    for (const kind of ['commandExecution', 'fileChange'] as const) {
+      props.tool.inspectionLocator = { turn_id: 't', item_id: 'i', kind, change_index: kind === 'fileChange' ? 0 : null };
+      expect(state.canLoadDetail.value).toBe(true);
+      props.toolDetailTarget = { ...props.tool };
+      expect(state.detailOpen.value).toBe(true);
+      props.toolDetailTarget = null;
+    }
+    props.toolDetailAvailable = false;
+    expect(state.canLoadDetail.value).toBe(false);
+    props.toolDetailAvailable = true;
+    props.tool.status = 'running';
+    expect(state.canLoadDetail.value).toBe(false);
+    props.tool = { id: 'tool', name: 'File change', arg: '{"file_count":100}', status: 'ok' };
+    expect(state.canLoadDetail.value).toBe(false);
+  });
+
   it.each(['commandExecution', 'fileChange'] as const)('closes an expanded %s on completion and keeps detail separate', async (kind) => {
     const scope = effectScope();
     const props = reactive({

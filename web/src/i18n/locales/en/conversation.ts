@@ -27,7 +27,7 @@ export default {
   loadingNewer: 'Loading newer messages…',
   transcriptError: 'Messages could not be loaded. Visible content and your draft are retained.',
   retryTranscript: 'Reload recent messages',
-  fullContent: 'View full content',
+  fullContent: 'View full text',
   contentPreview: 'Long content preview',
   loadingOlder: 'Loading earlier messages…',
   cron: {

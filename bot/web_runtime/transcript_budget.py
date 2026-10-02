@@ -20,6 +20,7 @@ PREVIEW_METADATA_KEY = "_focus_transcript_preview"
 @dataclass(frozen=True, slots=True)
 class TranscriptPreview:
     truncated: bool
+    file_change_count: int | None = None
 
 
 def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -29,6 +30,11 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
     nodes = 1024
     previous = item.get(PREVIEW_METADATA_KEY)
     truncated = isinstance(previous, TranscriptPreview) and previous.truncated
+    file_change_count = (
+        previous.file_change_count if isinstance(previous, TranscriptPreview)
+        else len(item.get("changes", [])) if item.get("type") == "fileChange" and isinstance(item.get("changes"), list)
+        else None
+    )
     # Terminal command/file outputs have their own exact detail reader. They
     # must not consume the budget for the card that links to that reader.
     deferred = bool(item.get("id")) and item.get("status") in {"completed", "failed", "declined"}
@@ -65,6 +71,16 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
                         if isinstance(field, str) and len(field) > 4096:
                             raise ValueError("Invalid transcript routing field")
                         result[key] = field if isinstance(field, str) else copy_value(field, depth + 1)
+                # Keep the invocation identifiable even when output arrived
+                # first in the source object. These are ordinary budgeted
+                # fields, not additional routing authority.
+                for key in (
+                    "tool", "server", "success", "durationMs", "model", "command",
+                    "arguments", "prompt", "query", "searchQuery", "path",
+                    "revisedPrompt", "changes", "receiverThreadIds", "agentThreadId",
+                ):
+                    if key in value:
+                        result[key] = copy_value(value[key], depth + 1)
             for key, entry in value.items():
                 if key in result or key == PREVIEW_METADATA_KEY:
                     continue
@@ -90,5 +106,5 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
         return value
 
     result = copy_value(item)
-    result[PREVIEW_METADATA_KEY] = TranscriptPreview(truncated)
+    result[PREVIEW_METADATA_KEY] = TranscriptPreview(truncated, file_change_count)
     return result

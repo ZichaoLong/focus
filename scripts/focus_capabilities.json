@@ -930,6 +930,10 @@
           "symbol": "read_transcript_window"
         },
         {
+          "path": "bot/web_runtime/transcript_window.py",
+          "symbol": "project_transcript_item"
+        },
+        {
           "path": "bot/web_runtime/transcript_budget.py",
           "symbol": "bounded_transcript_item"
         },
@@ -1278,6 +1282,10 @@
         {
           "path": "web/src/components/chat/tool-calls/useToolPresentation.ts",
           "symbol": "useToolPresentation"
+        },
+        {
+          "path": "web/src/components/chat/tool-calls/useToolPresentation.ts",
+          "symbol": "useToolDetail"
         },
         {
           "path": "bot/web_runtime/notification_projection.py",

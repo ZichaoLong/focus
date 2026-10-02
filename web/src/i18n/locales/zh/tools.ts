@@ -3,6 +3,7 @@ export default {
     read: '读取',
     bash: '运行',
     edit: '编辑',
+    file_change: '文件变更',
     write: '写入',
     grep: '搜索',
     glob: '查找',
@@ -32,6 +33,7 @@ export default {
   },
   chip: {
     lines: '{count} 行',
+    files: '{count} 个文件',
     results: '{count} 结果',
     edited: '已编辑',
     created: '已创建',

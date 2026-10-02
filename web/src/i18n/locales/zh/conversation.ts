@@ -27,7 +27,7 @@ export default {
   loadingNewer: '正在加载较新的消息…',
   transcriptError: '正文加载失败，已显示的内容和输入框会保留。',
   retryTranscript: '重新加载近期消息',
-  fullContent: '查看完整内容',
+  fullContent: '查看全文',
   contentPreview: '超长内容预览',
   loadingOlder: '正在加载更早的消息…',
   cron: {

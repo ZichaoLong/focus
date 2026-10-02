@@ -14,6 +14,7 @@ import zhFocus from '../src/i18n/locales/zh/focus';
 import zhTools from '../src/i18n/locales/zh/tools';
 import EditTool from '../src/components/chat/tool-calls/EditTool.vue';
 import GenericTool from '../src/components/chat/tool-calls/GenericTool.vue';
+import ToolCallCard from '../src/components/chat/ToolCall.vue';
 import { resolveToolRenderer } from '../src/components/chat/tool-calls/toolRegistry';
 import type {
   FocusConversationSearchOccurrence,
@@ -89,6 +90,23 @@ function i18n() {
 }
 
 describe('bounded conversation inspection surface', () => {
+  it('renders clipped tools as identifiable cards with one detail entry and no partial output', async () => {
+    const tool: ToolCall = { id: 'search', name: 'MCP · research/search', arg: '{"query":"needle"}',
+      status: 'ok', output: ['incomplete output must not appear'], defaultExpanded: true };
+    const app = createSSRApp({
+      render: () => h(ToolCallCard, { tool, previewOnly: true, toolDiffPanel: true, toolDetailAvailable: true }),
+    });
+    app.use(i18n());
+    const html = await renderToString(app);
+    expect(html).toContain('MCP · research/search');
+    expect(html).toContain('needle');
+    expect(html.match(/class="tool-detail-button"/g)).toHaveLength(1);
+    expect(html.match(/<button\b/g)).toHaveLength(1);
+    expect(html).toContain('Load detail');
+    expect(html).not.toContain('incomplete output');
+    expect(html).not.toContain('aria-expanded');
+  });
+
   it('uses admitted UTF-16 offsets and Vue text escaping for search highlights', async () => {
     expect(splitConversationSearchSnippet(occurrence)).toEqual({
       before: '😀 ',
