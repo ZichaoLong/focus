@@ -23,6 +23,7 @@ import { createFocusProjectionSync } from './focusProjectionSync';
 import type { FocusProjectionSync } from './focusProjectionSync';
 import { createFocusHistoryNavigation } from './focusHistoryNavigation';
 import { createFocusTranscript } from './focusTranscript';
+import { createFocusPromptHistory } from './focusPromptHistory';
 import {
   createFocusNavigationProfile,
 } from './focusNavigationProfile';
@@ -97,6 +98,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const turnWindow = createBrowserTurnWindow();
   let projection!: FocusProjectionSync;
   let transcript: ReturnType<typeof createFocusTranscript>;
+  let promptHistory: ReturnType<typeof createFocusPromptHistory>;
   let mutationActions!: FocusMutationActions;
   let clearHistoryView = (): void => {};
   const settings = createWebNextTurnSettings({
@@ -159,7 +161,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     turnWindowLimit: turnWindow.limit,
     navigation,
     settings,
-    onTranscriptDelta: (event, detail) => transcript?.handleDelta(event, detail),
+    onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail); promptHistory?.handleDelta(detail); },
     transport: {
       hasOpenedEventSocket: () => transportSession.snapshot.value.hasOpenedEventSocket,
       requestProjectionReload: () => transportSession.requestProjectionReload(),
@@ -228,9 +230,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       && snapshot.value?.thread.id !== activeThreadId.value
     )
   ));
+  promptHistory = createFocusPromptHistory({ api, snapshot, enabled: transcript.enabled, reportError,
+    isDisposed: () => navigation.isDisposed || authRequired.value || documentReloadRequired.value });
   const historyNavigation = createFocusHistoryNavigation({
     api,
-    snapshot,
+    snapshot: computed(() => transcript.enabled.value ? null : snapshot.value),
     activeThreadId,
     turnLimit: turnWindow.limit,
     reportError,
@@ -846,8 +850,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function resolveHistoryPromptTarget(turnId: string): Promise<boolean> {
     if (!transcript.enabled.value) return historyNavigation.resolvePromptTarget(turnId);
-    if (!historyNavigation.outline.value.some((prompt) => prompt.id === turnId)) return false;
-    return !!await transcript.locate(turnId.endsWith(':user') ? turnId.slice(0, -5) : turnId);
+    const prompt = promptHistory.outline.value.find((entry) => entry.id === turnId);
+    return prompt ? !!await transcript.locate(prompt.rawTurnId, prompt.itemId) : false;
   }
 
   let turnWindowChangeGeneration = 0;
@@ -930,6 +934,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     settings.dispose();
     threadInspection.dispose();
     historyNavigation.dispose();
+    promptHistory.dispose();
     transcript.dispose();
     runtimeNotices.reset();
     navigation.dispose();
@@ -983,11 +988,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     historyHasMore: computed(() => transcript.enabled.value ? transcript.hasOlder.value : historyNavigation.hasMore.value),
     transcript,
     viewingHistory,
-    historyOutline: historyNavigation.outline,
-    historyOutlineTruncated: historyNavigation.outlineTruncated,
-    historyOutlineLoading: historyNavigation.outlineLoading,
-    historyOutlineError: historyNavigation.outlineError,
-    historyOutlineHasMore: historyNavigation.outlineHasMore,
+    historyOutline: computed(() => transcript.enabled.value ? promptHistory.outline.value : historyNavigation.outline.value),
+    historyOutlineTruncated: computed(() => transcript.enabled.value ? promptHistory.truncated.value : historyNavigation.outlineTruncated.value),
+    historyOutlineLoading: computed(() => transcript.enabled.value ? promptHistory.loading.value : historyNavigation.outlineLoading.value),
+    historyOutlineError: computed(() => transcript.enabled.value ? promptHistory.error.value : historyNavigation.outlineError.value),
+    historyOutlineHasMore: computed(() => transcript.enabled.value ? promptHistory.hasMore.value : historyNavigation.outlineHasMore.value),
     toolDetail: threadInspection.toolDetail,
     toolDetailLocator: threadInspection.toolDetailLocator,
     toolDetailLoading: threadInspection.toolDetailLoading,
@@ -1093,7 +1098,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     returnToLiveTail,
     resolveHistoryPromptTarget,
     cancelHistoryPromptTarget: () => { transcript.cancelTarget(); historyNavigation.cancelDetailIntent(); },
-    loadMoreHistoryOutline: historyNavigation.loadMoreOutline,
+    setHistoryOutlineVisible: promptHistory.setVisible,
+    loadMoreHistoryOutline: () => transcript.enabled.value ? promptHistory.loadMore() : historyNavigation.loadMoreOutline(),
     readToolDetail: threadInspection.readToolDetail,
     readFullToolDetail: threadInspection.readFullToolDetail,
     clearToolDetail: threadInspection.clearToolDetail,

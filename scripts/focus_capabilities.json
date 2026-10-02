@@ -936,6 +936,18 @@
         {
           "path": "web/src/focus/focusTranscript.ts",
           "symbol": "createFocusTranscript"
+        },
+        {
+          "path": "web/src/focus/focusPromptHistory.ts",
+          "symbol": "createFocusPromptHistory"
+        },
+        {
+          "path": "web/src/focus/transcriptRead.ts",
+          "symbol": "readTranscriptTarget"
+        },
+        {
+          "path": "bot/web_runtime/transcript_source.py",
+          "symbol": "decode_transcript_source"
         }
       ],
       "contract": [
@@ -976,7 +988,8 @@
             "web/test/focus_client/owners/focus-history-navigation.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/focus_client/owners/focus-transcript.test.ts",
-            "web/test/focus-performance.test.ts"
+            "web/test/focus-performance.test.ts",
+            "web/test/focus_client/owners/focus-prompt-history.test.ts"
           ]
         }
       ],

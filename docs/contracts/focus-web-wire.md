@@ -172,6 +172,8 @@ guards and may not retain parallel key or enum inventories.
   supported later, a separate negotiation and deployment contract must come first.
   The current version field alone is not a version-negotiation protocol.
 
+- Version 24 adds on-demand Prompt directories, string-cursor fallback for exact item positioning, and source-page locators to `/transcript`. Responses add `view` and `target_pending`; snapshot prompts use item identities. Service and browser assets still deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

@@ -333,7 +333,7 @@ function testApi(intentGenerationFloor = 0) {
     listThreads: vi.fn(async () => threadList(0, 'Initial')),
     readThread: vi.fn(async () => snapshot(0, 'Initial')),
     readTranscriptWindow: vi.fn(async (threadId: string) => ({
-      runtime_epoch: EPOCH, revision: 0, thread_id: threadId, turn_id: null,
+      runtime_epoch: EPOCH, revision: 0, thread_id: threadId, turn_id: null, view: 'transcript', target_pending: false,
       turns: [], older_cursor: null, newer_cursor: null, full_text: null,
     })),
     readToolDetail: vi.fn(async (
@@ -629,7 +629,7 @@ describe('useFocusWebClient Q&A Markdown export', () => {
 describe('useFocusWebClient turn-window preference', () => {
   function turns(count: number) {
     return Array.from({ length: count }, (_, index) => ({
-      id: `raw-${index}:user`,
+      id: `raw-${index}:item:prompt-${index}:0`, rawTurnId: `raw-${index}`, itemId: `prompt-${index}`,
       role: 'user' as const,
       no: index + 1,
       text: `prompt-${index}`,
@@ -691,7 +691,7 @@ describe('useFocusWebClient turn-window preference', () => {
 
     expect(client.snapshot.value?.turns).toHaveLength(5);
     expect(client.historyOutline.value.map((prompt) => prompt.id)).toEqual(
-      Array.from({ length: 5 }, (_, index) => `raw-${index + 15}:user`),
+      Array.from({ length: 5 }, (_, index) => `raw-${index + 15}:item:prompt-${index + 15}:0`),
     );
     expect(client.errorMessage.value).toBe('turn window refresh failed');
     client.dispose();

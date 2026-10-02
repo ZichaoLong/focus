@@ -103,7 +103,7 @@ export interface FocusHistoryNavigationOptions {
   isDisposed(): boolean;
 }
 
-function normalizedPromptTitle(text: string): { title: string; truncated: boolean } {
+export function normalizedPromptTitle(text: string): { title: string; truncated: boolean } {
   let title = '';
   let length = 0;
   let pendingSpace = false;

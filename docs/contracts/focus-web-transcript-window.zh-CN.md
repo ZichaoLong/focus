@@ -10,7 +10,8 @@
 `WebThreadOpenCoordinator` 持有打开/选择与控制状态；`WebThreadInspectionService`
 持有正文读取的 document、selection、backend generation 与 observation 校验；
 `transcript_window.py` 只读取冻结的请求并投影条目。浏览器的 `createFocusTranscript`
-持有唯一正文窗口，`createFocusHistoryNavigation` 继续持有 Prompt 摘要目录。
+持有唯一正文窗口，`createFocusPromptHistory` 持有 paginated Prompt 目录，
+`createFocusHistoryNavigation` 保留旧格式的摘要导航。
 `TranscriptRow.vue` 只持有可视区域与测量高度，不持有历史或发送权限。
 
 ## 控制状态与正文读取
@@ -22,26 +23,46 @@ receipt。正文通过独立的 `GET /api/threads/{thread_id}/transcript` 加载
 `open` 代替连接确认。已确认的发送前 `web_writer_disconnected` 拒绝会重连并保留输入，
 不自动重放 prompt。其他未知结果仍遵循 prompt mutation 恢复合同。
 
-正文 query 是封闭集合：可选 `turn_id`、opaque `cursor`、`direction=asc|desc`、`item_id`
-与 `full=true|false`。值不得为空、带首尾空白、重复或超过 4096 字符。
-`item_id` 必须同时指定 `turn_id` 且不得与 cursor 共用；`full=true` 必须指定 item。
-缺省读取全线程最新 40 个条目，以时间正序呈现；前后页使用上游 cursor，不合成 offset。
-Prompt 定位读取指定轮次的开头，搜索定位读取指定 item；定位后的翻页范围是该轮次，
-可以通过 Prompt 目录转到其他轮次或返回近期消息。
+正文 query 是封闭集合：可选 `turn_id`、opaque `cursor`、`direction=asc|desc`、`item_id`、
+`full=true|false`、`view=transcript|prompts` 与 `source_cursor`。值不得为空、带首尾空白、
+重复或超过 4096 字符。`item_id` 必须指定 `turn_id`；`full=true` 必须指定 item；
+`source_cursor` 只用于 full 且排斥 cursor。缺省读取全线程最新 40 个条目，以时间正序
+呈现；前后页使用上游 cursor，不合成 offset。Prompt 与搜索都定位 exact item，不能将
+同轮追加消息映射到首条 Prompt；定位后的翻页范围是该轮次。
 
-返回 `{runtime_epoch, revision, thread_id, turn_id, turns, older_cursor, newer_cursor, full_text}`。
-行携带稳定的 `rawTurnId`、`itemId` 与 `id=<turn>:item:<item>:<segment>`。
-普通页只投影请求中的最多 40 个条目，响应上限 2 MiB；单条源展示树最多保留 16384
-个文本字符、1024 个节点、12 层深度，投影超过 32 KiB 时退为较短的纯文本预览。
-被裁剪的内容必须携 `contentDeferred=true`，不能渲染不完整 Markdown 或伪装成全文。
-已有 tool-output omission/deferral 元数据继续受其独立预算约束。
+返回 `{runtime_epoch, revision, thread_id, turn_id, view, target_pending, turns, older_cursor,
+newer_cursor, full_text}`。行携带稳定的 `rawTurnId`、`itemId` 与
+`id=<turn>:item:<item>:<segment>`。普通页最多投影 40 个源条目，响应上限 2 MiB；单条
+源展示树最多保留 16384 个文本字符、1024 个节点、12 层深度。每条投影的字节预算从
+页预算预留 64 KiB 后除以 40 得到，超出时退为较短的纯文本预览。被裁剪的内容必须携
+`contentDeferred=true`，不能渲染不完整 Markdown 或伪装成全文。可按 exact locator 查看
+详情的已完成 command/file 工具，在通用裁剪前排除延迟读取的 output/diff；这些输出
+不能耗尽命令、路径和普通工具卡片的预算。commandActions 也随工具详情读取，
+避免重复或包装后的整段脚本耗尽普通卡片预算；完整详情保留原始 action DTO。其他展示内容仍受预算约束。
 
-“查看完整内容”使用上游 item anchor 读取一个前驱，再向前读取目标 item，共两次
-有界定位请求。必须核对 exact item/turn；目标丢失则报告错误，不能用附近条目代替。
-`full=true` 返回空 `turns` 与完整 `full_text`，不应用预览字符上限。用户消息/回复为文本，
-reasoning 为完整可见 reasoning，其他条目为源 JSON。完整内容单独显示为可选择文本并
-从源字符串复制；关闭、换线程、epoch/access 改变或 dispose 会清除该内容及请求。
-这是显式的大内容读取，内存与传输成本取决于用户所选条目。
+Prompt 目录打开或侧栏被使用时，`view=prompts` 从最新条目分批向前读取所有 userMessage，
+包括同轮追加/steer 消息，每条只返回至多 160 字符的短标题及裁剪提示。此 view 只接受
+全线程、desc 的 cursor 分页。每个 HTTP 请求最多顺序读取四页、每页 100 个源条目；
+遇到含用户消息的页即返回，空页仍返回推进后的 cursor。浏览器保留至多 200 条，达到
+上限明确提示；扫描中显示加载状态，关闭目录暂停，再次打开从原 cursor 继续。失败保留
+已有标题并支持重试；换线程、epoch/access 变化和 dispose 取消请求。完整目录读取不阻塞
+初始打开/发送，也不向浏览器传输工具、推理和回复正文，不使用 SQLite 或 rollout 旁路。
+目录扫描与目标定位的 cursor 记录均至多保留最近 256 个，避免超大线程放大浏览器内存。
+控制 snapshot 保留已观测的 userMessage 短标题与 item identity；实时追加消息按 ID 去重，
+不随正文窗口淘汰而消失。旧格式仍用原有摘要目录，不加入此扫描。
+
+普通页可携 `sourceCursor`，其 envelope 只封装上游返回的 inclusive backwards cursor、
+原 turn scope、direction 和页大小；不是授权凭据，不合成上游 cursor。“查看完整内容”
+优先按原参数重读一页，并核对 exact item/turn。没有页面 locator 的定位使用上游 item
+anchor 读前驱再读目标。仅当旧服务明确拒绝对象 cursor（expected a string）时，回退到
+该轮的有界字符串 cursor 分页；未找到但可继续时返回 `target_pending=true`，浏览器可取消
+地继续读取。其他上游错误不作为兼容信号。目标丢失则报告错误，不能用附近条目代替。
+
+`full=true` 找到目标后返回空 `turns` 与完整 `full_text`，不应用预览字符上限。用户消息/
+回复为文本，reasoning 为完整可见 reasoning，其他条目为源 JSON。完整内容单独显示为
+可选择文本并从源字符串复制；关闭、换线程、epoch/access 改变或 dispose 清除内容及请求。
+陈旧读取至多原请求重试一次，其他错误显示具体原因。显式全文读取的内存与传输成本取决于
+所选条目及其有界来源页。
 
 所有正文读取使用现有 staged boundary；持锁阶段只做准备，不跨上游 I/O。
 结算要求同一 document、selection、backend generation、runtime epoch 和本线程 read
@@ -92,4 +113,7 @@ cookie 或任意断开原因字符串。
 `codex-rs/app-server-protocol/src/protocol/v2/thread.rs` 中 `ThreadTurnsListParams`、
 `ThreadItemsListParams`、`ThreadItemsListAnchor` 及 `ThreadResumeParams`，以及
 `codex-rs/app-server/src/request_processors/thread_processor.rs` 中 indexed item anchor
-到 thread-store 的映射。不修改上游存储或旧线程格式。
+到 thread-store 的映射，以及 `codex-rs/thread-store/src/local/thread_history/segment_paging.rs`
+中的 inclusive backwards cursor。对象 anchor 来自 commit
+`de9e78e3e7caed0fdd75d20ae617faa646dfef3c`；实际 npm 0.156.1 只接受字符串，0.160.0
+已验证接受对象 anchor。不得由开发分支源码推断已部署版本的能力。不修改上游存储或旧线程格式。

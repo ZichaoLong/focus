@@ -47,7 +47,7 @@ onBeforeUnmount(() => { intersection?.disconnect(); resize?.disconnect(); });
     :class="{ 'transcript-assistant': turn.role === 'assistant' }"
     :data-turn-id="turn.id"
     :data-raw-turn-id="turn.rawTurnId"
-    :data-prompt-id="turn.role === 'user' && turn.rawTurnId ? `${turn.rawTurnId}:user` : undefined"
+    :data-prompt-id="turn.role === 'user' ? turn.id : undefined"
     :style="visible ? undefined : { height: `${height ?? estimate}px` }">
     <slot v-if="visible" />
   </div>

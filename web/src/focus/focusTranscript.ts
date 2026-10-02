@@ -1,10 +1,11 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import type { ChatTurn } from '../types';
 import type { FocusWebApiPort } from './api';
-import { isStaleWebReadError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
+import { type FocusProjectionEvent, type FocusThreadDeltaDetail,
   type FocusThreadSnapshot, type FocusTranscriptPage, type FocusTranscriptQuery } from './types';
 import { appendTranscriptDelta, TRANSCRIPT_WINDOW_ITEMS } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
+import { readTranscriptTarget } from './transcriptRead';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -173,13 +174,8 @@ export function createFocusTranscript(options: {
     overflowed = false;
     const current = () => request === generation && scope === identity() && !disposed && !options.isDisposed();
     try {
-      let result: FocusTranscriptPage;
-      try {
-        result = await options.api.readTranscriptWindow(threadId, query, requestController.signal);
-      } catch (failure) {
-        if (!isStaleWebReadError(failure) || !current()) throw failure;
-        result = await options.api.readTranscriptWindow(threadId, query, requestController.signal);
-      }
+      const result = await readTranscriptTarget(options.api, threadId,
+        options.snapshot.value?.runtime_epoch ?? '', query, requestController.signal, current);
       if (!current()) return false;
       if (result.thread_id !== threadId || result.runtime_epoch !== options.snapshot.value?.runtime_epoch
         || result.turn_id !== (query.turn_id ?? null)) throw new Error('Transcript identity changed.');
@@ -250,9 +246,10 @@ export function createFocusTranscript(options: {
     fullController = new AbortController();
     fullLoading.value = true;
     try {
-      const result = await options.api.readTranscriptWindow(threadId, {
+      const result = await readTranscriptTarget(options.api, threadId, options.snapshot.value?.runtime_epoch ?? '', {
         turn_id: turn.rawTurnId, item_id: turn.itemId, full: true,
-      }, fullController.signal);
+        ...(turn.sourceCursor ? { source_cursor: turn.sourceCursor } : {}),
+      }, fullController.signal, () => request === detailGeneration && scope === identity() && !disposed);
       if (request !== detailGeneration || scope !== identity() || disposed) return;
       if (result.thread_id !== threadId || result.turn_id !== turn.rawTurnId
         || result.runtime_epoch !== options.snapshot.value?.runtime_epoch || result.full_text === null) {

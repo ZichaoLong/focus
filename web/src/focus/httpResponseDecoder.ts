@@ -766,12 +766,18 @@ export const decodeFocusTranscriptPage: FocusHttpDecoder<FocusTranscriptPage> = 
   if (!isRequiredRecord('transcript_page', value)
     || !hasExactRequiredFields('transcript_page', value) || !hasCoordinates(value)
     || !isNonEmptyTrimmedString(value.thread_id)
-    || !isFocusTranscriptWindow(value.turns)) return null;
+    || !isFocusWebWireEnum('transcript_view', value.view)
+    || typeof value.target_pending !== 'boolean'
+    || !isFocusTranscriptWindow(value.turns, value.view === 'prompts' ? 100 : 80)) return null;
   for (const key of ['turn_id', 'older_cursor', 'newer_cursor']) {
     if (value[key] !== null && !isNonEmptyTrimmedString(value[key])) return null;
   }
   if (value.full_text !== null && typeof value.full_text !== 'string') return null;
-  if (value.turns.length > 80 || (value.full_text !== null && value.turns.length !== 0)) return null;
+  if (value.turns.length > (value.view === 'prompts' ? 100 : 80)
+    || (value.full_text !== null && value.turns.length !== 0)
+    || (value.target_pending && (value.turns.length !== 0 || value.full_text !== null || !value.newer_cursor))
+    || (value.view === 'prompts' && (value.turn_id !== null || value.full_text !== null
+      || value.target_pending || !value.turns.every((turn) => turn.role === 'user')))) return null;
   if (!value.turns.every((turn) => isNonEmptyTrimmedString(turn.rawTurnId)
     && isNonEmptyTrimmedString(turn.itemId))) return null;
   return { ...(value as unknown as FocusTranscriptPage), turns: canonicalizeTurns(value.turns) };

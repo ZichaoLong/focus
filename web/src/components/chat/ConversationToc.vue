@@ -44,6 +44,7 @@ const emit = defineEmits<{
   select: [turnId: string];
   loadMore: [];
   search: [];
+  visibility: [visible: boolean];
 }>();
 
 const { t } = useI18n();
@@ -165,6 +166,7 @@ watch(
   compactOpen,
   (isOpen, wasOpen) => {
     if (wasOpen && !isOpen) selectionGeneration += 1;
+    emit('visibility', isOpen);
   },
   { flush: 'sync' },
 );
@@ -172,6 +174,7 @@ watch(
 defineExpose({ openCompactDialog });
 
 onBeforeUnmount(() => {
+  emit('visibility', false);
   observer?.disconnect();
   observer = null;
 });
@@ -188,6 +191,9 @@ onBeforeUnmount(() => {
     :class="{ 'toc-clipped': !fits || occluded }"
     :aria-label="t('conversation.toc')"
     :aria-hidden="fits && !occluded ? undefined : true"
+    @pointerenter="emit('visibility', true)"
+    @pointerleave="emit('visibility', compactOpen)"
+    @focusin="emit('visibility', true)"
   >
     <div class="toc-scroll">
       <button

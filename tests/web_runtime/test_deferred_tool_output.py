@@ -93,9 +93,10 @@ def test_missing_source_identity_and_unsupported_tools_keep_inline_output():
     assert tools[-1]["output"] == ["plugin output"]
 
 
-def test_history_pages_and_live_receipts_share_deferral_and_do_not_erase_read_cache():
+def test_history_pages_and_live_receipts_share_deferral_without_mutating_source():
     model = WebThreadReadModel()
-    prepared = model.prepare_turn_replacement("thread", [raw_turn()], history_mode="paginated")
+    source = raw_turn()
+    prepared = model.prepare_turn_replacement("thread", [source], history_mode="paginated")
     assert model.history_mode("thread") == ""
     model.install_prepared_turns(prepared)
     observation = model.capture_observation("thread")
@@ -112,7 +113,8 @@ def test_history_pages_and_live_receipts_share_deferral_and_do_not_erase_read_ca
         defer_tool_output=model.history_mode("thread") == "paginated",
     )
     assert_deferred(project_notification(receipt, **urls)["item_turns"])
-    assert prepared.projection_turns[0]["items"][0]["aggregatedOutput"]
+    assert prepared.projection_turns[0]["items"][0]["aggregatedOutput"] == ""
+    assert source["items"][0]["aggregatedOutput"]
 
 
 @pytest.mark.parametrize("forget", ["forget_runtime", "forget_closed_thread", "forget_thread", "backend_disconnected"])

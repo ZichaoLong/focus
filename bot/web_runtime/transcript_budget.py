@@ -29,6 +29,11 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
     nodes = 1024
     previous = item.get(PREVIEW_METADATA_KEY)
     truncated = isinstance(previous, TranscriptPreview) and previous.truncated
+    # Terminal command/file outputs have their own exact detail reader. They
+    # must not consume the budget for the card that links to that reader.
+    deferred = bool(item.get("id")) and item.get("status") in {"completed", "failed", "declined"}
+    command = deferred and item.get("type") == "commandExecution"
+    files = deferred and item.get("type") == "fileChange"
 
     def copy_value(value: Any, depth: int = 0) -> Any:
         nonlocal remaining, nodes, truncated
@@ -62,6 +67,17 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
                         result[key] = field if isinstance(field, str) else copy_value(field, depth + 1)
             for key, entry in value.items():
                 if key in result or key == PREVIEW_METADATA_KEY:
+                    continue
+                if (command and depth == 0 and key == "aggregatedOutput") or (
+                    files and depth == 2 and key == "diff"
+                ):
+                    result[key] = ""
+                    continue
+                # Detailed actions can repeat a quoted/normalized version of
+                # the entire script. They are read with the exact tool detail;
+                # the collapsed card only needs the primary command.
+                if command and depth == 0 and key == "commandActions":
+                    result[key] = []
                     continue
                 if len(key) > 256:
                     truncated = True

@@ -11,7 +11,8 @@ Ephemeral subagent threads retain their existing detail projection.
 `WebThreadOpenCoordinator` owns selection and control state. `WebThreadInspectionService`
 owns document, selection, backend generation and observation admission. `transcript_window.py`
 reads frozen inputs and projects items. `createFocusTranscript` owns the sole browser body
-window; `createFocusHistoryNavigation` retains the Prompt outline. `TranscriptRow.vue`
+window; `createFocusPromptHistory` owns the paginated Prompt directory, while
+`createFocusHistoryNavigation` retains legacy summary navigation. `TranscriptRow.vue`
 owns visibility and measured heights, never history or sending authority.
 
 ## Control state and body reads
@@ -24,30 +25,54 @@ revoke confirmed Composer scope. Sending requires server `hello`, not WebSocket 
 A proven pre-effect `web_writer_disconnected` refusal reconnects while retaining the
 draft, without replaying the prompt. Unknown outcomes follow the prompt recovery contract.
 
-The closed query permits optional `turn_id`, opaque `cursor`, `direction=asc|desc`,
-`item_id` and `full=true|false`. Values must be unique, nonempty, trimmed and at most
-4096 characters. An item requires a turn and excludes cursor; full requires an item.
-Default reads return the latest 40 thread items in chronological display order.
-Paging uses upstream cursors, never synthetic offsets. Prompt navigation reads a turn's
-start; search navigation reads the exact item. Subsequent targeted paging stays within
-that turn; the outline and recent-message action provide navigation beyond it.
+The closed query permits `turn_id`, opaque `cursor`, `direction=asc|desc`, `item_id`,
+`full=true|false`, `view=transcript|prompts`, and `source_cursor`. Values must be unique,
+nonempty, trimmed and at most 4096 characters. An item requires a turn; full requires an
+item. Source cursors require full and exclude cursor. Default reads return the latest
+40 thread items chronologically. Paging uses upstream cursors, never synthetic offsets.
+Prompt and search navigation target the exact item, including additional messages in the
+same turn. Subsequent targeted paging stays within that turn.
 
-The response is `{runtime_epoch, revision, thread_id, turn_id, turns, older_cursor,
-newer_cursor, full_text}`. Rows carry stable `rawTurnId`, `itemId`, and
-`id=<turn>:item:<item>:<segment>`. Ordinary reads contain at most 40 source items and
-2 MiB encoded data. Source presentation trees retain up to 16384 text characters,
-1024 nodes and depth 12. Projections above 32 KiB become shorter plain-text previews.
-Clipped content must carry `contentDeferred=true`, never parse incomplete Markdown or
-pretend to be full text. Existing trusted tool omission/deferral metadata retains its
-separate output budget.
+Responses contain `{runtime_epoch, revision, thread_id, turn_id, view, target_pending,
+turns, older_cursor, newer_cursor, full_text}`. Rows carry stable `rawTurnId`, `itemId`,
+and `id=<turn>:item:<item>:<segment>`. Ordinary reads project at most 40 source items and
+2 MiB encoded data. Source trees retain up to 16384 text characters, 1024 nodes and depth
+12. Per-item byte allowance is the page budget minus 64 KiB, divided by 40; oversized
+projections become shorter plain-text previews. Clipped content carries `contentDeferred=true`,
+never parsing incomplete Markdown as full content. Terminal command/file outputs with an
+exact detail locator are excluded before generic clipping: deferred output/diffs must not
+consume the command, path or semantic card budget. Detailed commandActions are
+also deferred to exact inspection, so repeated/quoted scripts cannot exhaust the card
+budget. Full details retain the original action DTO.
+Other content remains bounded.
 
-“View full content” uses the upstream item anchor to read one predecessor and then the
-exact target: two bounded positioning requests. A missing/mismatched item fails rather
-than substituting a neighbor. Full reads return empty `turns` and uncropped `full_text`:
-user/assistant text, complete visible reasoning, or source JSON for other items.
-The separate selectable text view copies from the source string. Closing, identity,
-epoch/access changes and disposal clear its content and request intent. This explicit
-large read has transfer and memory costs proportional to the selected item.
+Opening/using the Prompt directory reads `view=prompts` backwards through all userMessage
+items, including additional/steer messages. Responses contain only titles of at most 160
+characters plus a truncation marker. This view allows only descending, whole-thread cursor
+paging. Each HTTP request reads at most four sequential pages of 100 items, returning as
+soon as a page has user messages; empty pages still advance the cursor. The browser keeps
+at most 200 prompts and explicitly marks this limit. Loading is visible; closing pauses,
+reopening resumes. Errors preserve partial results and allow retry. Thread, epoch/access
+changes and disposal cancel reads. Directory scanning never blocks opening/sending or
+transfers tool/reasoning/assistant bodies to the browser; it uses no SQLite/rollout bypass.
+Directory and target-scan cursor guards retain only the latest 256 cursors.
+Control snapshots retain observed user titles with exact item identities. Live additions
+are deduplicated by ID and survive body eviction. Legacy summary navigation is unchanged.
+
+Rows may carry `sourceCursor`, an envelope around the upstream inclusive backwards cursor,
+original turn scope, direction and page size. It grants no authority and never synthesizes
+an upstream cursor. Full reads prefer rereading that exact source page and checking item/turn
+identity. Without a locator, positioning uses the upstream item anchor to read a predecessor
+and the target. Only an explicit old-server object-cursor rejection (`expected a string`)
+falls back to bounded string-cursor pages within the turn. `target_pending=true` requests
+cancellable continuation; unrelated errors never trigger compatibility fallback. Missing
+items fail rather than substituting nearby content.
+
+Successful full reads return empty `turns` and uncropped `full_text`: user/assistant text,
+complete visible reasoning, or source JSON for other items. A separate selectable text view
+copies the source string. Closing, identity, epoch/access changes and disposal clear content
+and intent. Stale reads retry the same request once; other errors display their reason.
+Explicit full-read transfer/memory costs depend on the chosen item and its bounded source page.
 
 Reads use the staged document boundary, without holding the document lock over upstream
 I/O. Settlement requires matching document, selection, backend generation, runtime epoch
@@ -105,5 +130,8 @@ responses, thread IDs, URLs, cookies or arbitrary close-reason strings are recor
 The implementation uses Codex commit `c248f6d48b97eb4a2aa56147a0b11b7d763278b9`:
 `ThreadTurnsListParams`, `ThreadItemsListParams`, `ThreadItemsListAnchor` and `ThreadResumeParams`
 in `codex-rs/app-server-protocol/src/protocol/v2/thread.rs`, and the indexed anchor mapping in
-`codex-rs/app-server/src/request_processors/thread_processor.rs`. Upstream storage and legacy
-formats are unchanged.
+`codex-rs/app-server/src/request_processors/thread_processor.rs`, plus inclusive backwards
+cursors in `codex-rs/thread-store/src/local/thread_history/segment_paging.rs`. Item anchors
+were introduced by `de9e78e3e7caed0fdd75d20ae617faa646dfef3c`. Deployed npm 0.156.1 accepts
+only strings; 0.160.0 has been verified to accept item anchors. Development source does not
+prove deployed capabilities. Upstream storage and legacy formats are unchanged.

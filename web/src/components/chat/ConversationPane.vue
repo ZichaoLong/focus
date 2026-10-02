@@ -141,6 +141,7 @@ const props = withDefaults(defineProps<{
   conversationTocHasMore?: boolean;
   conversationTocLoadingMore?: boolean;
   loadMoreConversationToc?: () => Promise<void>;
+  setConversationTocVisible?: (visible: boolean) => void;
   /** Resolve one outline target that is outside the current detail window.
    *  The resolver owns loading/replacing data; this pane only retries its DOM
    *  anchor after the resulting Vue render. */
@@ -1846,6 +1847,7 @@ defineExpose({
       :select-target="scrollToTurn"
       @select="scrollToTurn"
       @load-more="loadMoreConversationToc?.()"
+      @visibility="setConversationTocVisible?.($event)"
       @search="handleConversationSearch"
     />
 

@@ -38,6 +38,7 @@ from bot.web_runtime.transcript_window import (
     WebThreadTranscriptPreparation,
     read_transcript_window,
 )
+from bot.web_runtime.transcript_source import decode_transcript_source
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.tool_detail_source import project_tool_detail_source
 from bot.web_runtime.writer_workspace_coordinator import (
@@ -218,14 +219,22 @@ class WebThreadInspectionService:
         direction: str = "desc",
         item_id: str | None = None,
         full: bool = False,
+        view: str = "transcript",
+        source_cursor: str | None = None,
     ) -> WebThreadTranscriptPreparation:
         if direction not in {"asc", "desc"} or type(full) is not bool:
             raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
-        if (item_id and (not turn_id or cursor)) or (full and not item_id):
+        if ((item_id and not turn_id) or (full and not item_id)
+                or view not in {"transcript", "prompts"}
+                or (view == "prompts" and (turn_id or item_id or full or source_cursor or direction != "desc"))
+                or (source_cursor and (not full or cursor))):
             raise WebRuntimeError("Invalid transcript locator.", code="invalid_transcript_query", status=400)
         turn_id = self._require_locator(turn_id, field="turn_id") if turn_id is not None else None
         item_id = self._require_locator(item_id, field="item_id") if item_id is not None else None
         cursor = self._require_tool_cursor(cursor)
+        if source_cursor is not None:
+            source_cursor = self._require_tool_cursor(source_cursor)
+            decode_transcript_source(source_cursor)
         client_id, thread_id, document, observation, generation, coordinates = (
             self._prepare_selected_thread(client_id, thread_id, operation="read_transcript")
         )
@@ -235,6 +244,7 @@ class WebThreadInspectionService:
             document=document, observation=observation,
             connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
             runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
+            view=view, source_cursor=source_cursor,
         )
 
     def prepare_tool_detail(

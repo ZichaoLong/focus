@@ -1030,6 +1030,7 @@ onUnmounted(() => {
           :conversation-toc-has-more="client.historyOutlineHasMore.value"
           :conversation-toc-loading-more="client.historyOutlineLoading.value"
           :load-more-conversation-toc="client.loadMoreHistoryOutline"
+          :set-conversation-toc-visible="client.setHistoryOutlineVisible"
           :resolve-conversation-toc-target="resolveConversationTocTarget"
           :cancel-conversation-toc-target="client.cancelHistoryPromptTarget"
           :conversation-search-visible="conversationSearchVisible"

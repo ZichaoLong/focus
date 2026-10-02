@@ -738,11 +738,15 @@ export interface FocusTranscriptQuery {
   direction?: 'asc' | 'desc';
   item_id?: string;
   full?: boolean;
+  view?: FocusWebWireEnum<'transcript_view'>;
+  source_cursor?: string;
 }
 
 export interface FocusTranscriptPage extends FocusCoordinates {
   thread_id: string;
   turn_id: string | null;
+  view: FocusWebWireEnum<'transcript_view'>;
+  target_pending: boolean;
   turns: ChatTurn[];
   older_cursor: string | null;
   newer_cursor: string | null;

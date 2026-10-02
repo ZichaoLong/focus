@@ -318,7 +318,7 @@ def project_thread_snapshot(
     action_capabilities: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     requests = [project_pending_request(item) for item in pending_requests]
-    projected_turns = _project_summary_user_prompts(snapshot.turns) if snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral else project_turns(
+    projected_turns = _project_summary_user_prompts(snapshot.turns, item_locators=True) if snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral else project_turns(
         snapshot.turns,
         defer_tool_output=snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral,
         attachment_url_for_path=attachment_url_for_path,
@@ -457,8 +457,10 @@ def project_thread_inspection_tool(
 
 def _project_summary_user_prompts(
     turns: Iterable[dict[str, Any]],
+    *,
+    item_locators: bool = False,
 ) -> list[dict[str, Any]]:
-    """Project only bounded first-user prompt locators from summary turns."""
+    """Project bounded user titles; paginated snapshots retain exact item IDs."""
 
     projected: list[dict[str, Any]] = []
     for raw_turn in turns:
@@ -468,28 +470,17 @@ def _project_summary_user_prompts(
         if not turn_id:
             continue
         items = raw_turn.get("items") if isinstance(raw_turn.get("items"), list) else []
-        first_user = next(
-            (
-                item
-                for item in items
-                if isinstance(item, dict)
-                and str(item.get("type", "") or "").strip() == "userMessage"
-            ),
-            None,
-        )
-        if first_user is None:
-            continue
-        text_parts, _attachments = _project_user_content(first_user.get("content"))
-        text, title_truncated = bounded_summary_prompt_text("\n\n".join(text_parts))
-        projected.append(
-            {
-                "id": f"{turn_id}:user",
-                "role": "user",
-                "no": len(projected) + 1,
-                "text": text,
+        users = [item for item in items if isinstance(item, dict) and item.get("type") == "userMessage"]
+        for user in users if item_locators else users[:1]:
+            text_parts, _attachments = _project_user_content(user.get("content"))
+            text, title_truncated = bounded_summary_prompt_text("\n\n".join(text_parts))
+            item_id = str(user.get("id", "") or "").strip()
+            projected.append({
+                "id": f"{turn_id}:item:{item_id}:0" if item_locators and item_id else f"{turn_id}:user",
+                "role": "user", "no": len(projected) + 1, "text": text,
                 "title_truncated": title_truncated,
-            }
-        )
+                **({"rawTurnId": turn_id, "itemId": item_id} if item_locators and item_id else {}),
+            })
     return projected
 
 

@@ -7,12 +7,14 @@ import pytest
 from multidict import MultiDict
 
 from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
+from bot.codex_protocol.connection import CodexRpcError
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.gateway_request_decoder import decode_transcript_query
 from bot.web_runtime.transcript_budget import (
     PREVIEW_METADATA_KEY, TRANSCRIPT_ITEM_CHARS, bounded_transcript_item,
 )
 from bot.web_runtime.transcript_window import project_transcript_item
+from bot.web_runtime.transcript_source import encode_transcript_source
 from tests import test_web_thread_inspection as support
 
 
@@ -149,3 +151,123 @@ def test_single_live_user_item_does_not_invent_an_empty_assistant_row():
         "id": "prompt", "type": "userMessage", "content": [{"type": "text", "text": "steer"}],
     }, status="inProgress")
     assert [turn["role"] for turn in rows] == ["user"]
+
+
+def test_deferred_command_output_keeps_semantic_card_and_detail_locator():
+    item = {"id": "command", "type": "commandExecution", "status": "completed",
+            "aggregatedOutput": "large output\n" * 100_000, "command": "pytest", "cwd": "/work"}
+    rows = project_transcript_item("turn-1", bounded_transcript_item(item))
+    assert "contentDeferred" not in rows[0]
+    tool = rows[0]["tools"][0]
+    assert tool["arg"] == "pytest" and tool["outputDeferred"]
+    assert tool["inspectionLocator"]["item_id"] == "command"
+    assert tool["output"] == []
+    assert len(item["aggregatedOutput"]) > 1_000_000
+
+
+def test_repeated_command_action_does_not_double_charge_the_card_budget():
+    command = "python script.py " + "x" * 10_000
+    action_command = "bash -lc '" + command + "'"
+    item = {"id": "command", "type": "commandExecution", "status": "completed",
+            "command": command, "commandActions": [{"type": "unknown", "command": action_command}],
+            "aggregatedOutput": "done"}
+    row = project_transcript_item("turn-1", item)[0]
+    assert "contentDeferred" not in row
+    assert row["tools"][0]["arg"] == command
+    assert row["tools"][0]["inspectionLocator"]["item_id"] == "command"
+    assert row["tools"][0]["commandExecution"]["commandActions"] == []
+    assert item["commandActions"][0]["command"] == action_command
+    full = project_transcript_item("turn-1", item, full=True)[0]
+    assert full["tools"][0]["commandExecution"]["commandActions"][0]["command"] == action_command
+
+
+def test_deferred_file_diffs_do_not_hide_later_paths_or_card_identity():
+    item = support._file_change(changes=[{"path": path, "kind": {"type": "add"}, "diff": "+large\n" * 100_000}
+                                        for path in ("one.py", "two.py")])
+    row = project_transcript_item("turn-1", item)[0]
+    assert "contentDeferred" not in row
+    assert [tool["inspectionLocator"]["change_index"] for tool in row["tools"]] == [0, 1]
+    assert all(tool["outputDeferred"] for tool in row["tools"])
+
+
+def test_normal_chinese_reply_preserves_markdown_instead_of_size_fallback():
+    text = "**正常回复**\n" + "内容" * 3000
+    row = project_transcript_item("turn-1", {"id": "reply", "type": "agentMessage", "text": text})[0]
+    assert row["text"] == text
+    assert "contentDeferred" not in row
+    assert row["blocks"][0]["text"] == text
+
+
+def test_source_reread_uses_only_original_string_cursor_scope_and_exact_item(inspection):
+    page = ThreadItemsPage(items=list(reversed(entries(40))), backwards_cursor="original-opaque", next_cursor="older")
+    inspection.list_items.return_value = page
+    preview = read(inspection)
+    source = preview["turns"][5]["sourceCursor"]
+    inspection.list_items.reset_mock()
+    result = read(inspection, turn_id="turn-1", item_id="item-5", full=True, source_cursor=source)
+    assert result["full_text"] == "content"
+    inspection.list_items.assert_called_once()
+    kwargs = inspection.list_items.call_args.kwargs
+    assert kwargs["cursor"] == "original-opaque" and kwargs["turn_id"] is None
+    assert kwargs["limit"] == 40 and kwargs["sort_direction"] == "desc"
+    assert "anchor_item_id" not in kwargs
+    with pytest.raises(WebRuntimeError, match="no longer available"):
+        read(inspection, turn_id="wrong-turn", item_id="item-5", full=True, source_cursor=source)
+
+
+def test_string_only_upstream_returns_cancellable_target_scan_pages(inspection):
+    rejection = CodexRpcError("thread/items/list", {"code": -32600,
+        "message": "Invalid request: invalid type: map, expected a string"})
+    inspection.list_items.side_effect = [rejection, ThreadItemsPage(items=entries(40), next_cursor="continue")]
+    page = read(inspection, turn_id="turn-1", item_id="item-99", full=True)
+    assert page["target_pending"] and page["newer_cursor"] == "continue"
+    assert page["turns"] == [] and page["full_text"] is None
+    inspection.list_items.side_effect = None
+    inspection.list_items.return_value = ThreadItemsPage(items=[ThreadItemEntry(turn_id="turn-1", item={
+        "id": "item-99", "type": "agentMessage", "text": "exact target",
+    })])
+    result = read(inspection, turn_id="turn-1", item_id="item-99", cursor="continue", full=True)
+    assert result["full_text"] == "exact target" and not result["target_pending"]
+    assert inspection.list_items.call_args.kwargs["cursor"] == "continue"
+    assert "anchor_item_id" not in inspection.list_items.call_args.kwargs
+
+
+def test_string_cursor_target_keeps_surrounding_page_for_gapless_navigation(inspection):
+    inspection.list_items.return_value = ThreadItemsPage(items=entries(40), next_cursor="after", backwards_cursor="before")
+    result = read(inspection, turn_id="turn-1", item_id="item-20", cursor="scan-here")
+    assert [row["itemId"] for row in result["turns"]] == [f"item-{n}" for n in range(40)]
+    assert result["older_cursor"] == "before" and result["newer_cursor"] == "after"
+
+
+def test_prompt_directory_finds_all_steers_and_never_returns_tool_bodies(inspection):
+    def user(n):
+        return ThreadItemEntry(turn_id="turn-1", item={"id": f"user-{n}", "type": "userMessage",
+            "content": [{"type": "text", "text": f"追加{n}" + "内容" * 10_000}]})
+    inspection.list_items.side_effect = [ThreadItemsPage(items=entries(100), next_cursor="skip-tools"),
+        ThreadItemsPage(items=[user(2), user(1)], next_cursor="older")]
+    result = read(inspection, view="prompts")
+    assert [row["itemId"] for row in result["turns"]] == ["user-1", "user-2"]
+    assert all(row["role"] == "user" and len(row["text"]) <= 161 for row in result["turns"])
+    assert result["older_cursor"] == "older"
+    assert inspection.list_items.call_count == 2
+    assert inspection.list_items.call_args.kwargs["limit"] == 100
+    assert inspection.list_items.call_args.kwargs["cursor"] == "skip-tools"
+
+
+def test_empty_prompt_scan_returns_progress_after_four_pages(inspection):
+    inspection.list_items.side_effect = [ThreadItemsPage(items=entries(100), next_cursor=f"next-{n}") for n in range(4)]
+    result = read(inspection, view="prompts")
+    assert result["turns"] == [] and result["older_cursor"] == "next-3"
+    assert inspection.list_items.call_count == 4
+
+
+@pytest.mark.parametrize("query", [
+    {"view": "prompts", "item_id": "x", "turn_id": "turn-1"},
+    {"view": "prompts", "direction": "asc"},
+    {"source_cursor": "{}", "full": True, "item_id": "x", "turn_id": "turn-1"},
+    {"source_cursor": encode_transcript_source("opaque", None, "desc", 40)},
+])
+def test_invalid_query_combinations_fail_before_upstream_io(inspection, query):
+    with pytest.raises(WebRuntimeError):
+        read(inspection, **query)
+    inspection.list_items.assert_not_called()

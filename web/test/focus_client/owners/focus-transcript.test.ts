@@ -5,6 +5,7 @@ import { appendTranscriptDelta } from '../../../src/focus/transcriptItems';
 import { decodeFocusTranscriptPage } from '../../../src/focus/httpResponseDecoder';
 import type { FocusThreadSnapshot, FocusTranscriptPage, FocusTranscriptQuery, FocusThreadDeltaDetail } from '../../../src/focus/types';
 import type { ChatTurn } from '../../../src/types';
+import { FocusApiError } from '../../../src/focus/types';
 import { snapshot as controlSnapshot } from './mutation-actions-test-support';
 
 function snapshot(): FocusThreadSnapshot {
@@ -19,7 +20,7 @@ const row = (n: number, text = String(n)): ChatTurn => ({
   role: 'assistant', no: 0, text, blocks: [{ kind: 'text', text, itemId: `item-${n}` }],
 });
 const page = (turns = [row(1)], options: Partial<FocusTranscriptPage> = {}): FocusTranscriptPage => ({
-  thread_id: 'thread-1', turn_id: null, runtime_epoch: 'epoch-1', revision: 1,
+  view: 'transcript', target_pending: false, thread_id: 'thread-1', turn_id: null, runtime_epoch: 'epoch-1', revision: 1,
   turns, older_cursor: 'older', newer_cursor: 'newer', full_text: null, ...options,
 });
 function deferred<T>() {
@@ -109,6 +110,28 @@ describe('bounded transcript owner', () => {
     expect(h.read).toHaveBeenLastCalledWith('thread-1', { turn_id: 'turn-1', item_id: 'item-1', full: true }, expect.any(AbortSignal));
     h.state.value = { ...snapshot(), runtime_epoch: 'epoch-2' }; await settle();
     expect(h.owner.fullText.value).toBeNull();
+  });
+
+  it('rereads a source page with its string locator and retries a stale full read once', async () => {
+    const h = harness(); await settle();
+    h.read.mockRejectedValueOnce(new FocusApiError('retry', { status: 409, code: 'stale_thread_read' }))
+      .mockResolvedValueOnce(page([], { turn_id: 'turn-1', full_text: '**complete**' }));
+    await h.owner.openFull({ ...row(1), sourceCursor: 'opaque source page' });
+    expect(h.owner.fullText.value).toBe('**complete**');
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', {
+      turn_id: 'turn-1', item_id: 'item-1', full: true, source_cursor: 'opaque source page',
+    }, expect.any(AbortSignal));
+  });
+
+  it('follows bounded string-only target pages to the additional prompt, not the turn start', async () => {
+    const h = harness(); await settle();
+    h.read.mockResolvedValueOnce(page([], { turn_id: 'turn-1', target_pending: true, newer_cursor: 'scan-next' }))
+      .mockResolvedValueOnce(page([row(99)], { turn_id: 'turn-1' }));
+    expect(await h.owner.locate('turn-1', 'item-99')).toBe(row(99).id);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', {
+      turn_id: 'turn-1', item_id: 'item-99', direction: 'asc', cursor: 'scan-next',
+    }, expect.any(AbortSignal));
+    expect(h.owner.turns.value.map(turn => turn.itemId)).toEqual(['item-99']);
   });
 
   it('rejects mismatched or duplicate wire row identities and clips streams at a safe Unicode boundary', () => {

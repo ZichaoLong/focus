@@ -450,6 +450,7 @@ export class FakeApi implements FocusWebApiPort {
     return {
       runtime_epoch: this.currentSnapshot.runtime_epoch, revision: this.currentSnapshot.revision,
       thread_id: threadId, turn_id: query.turn_id ?? null, turns: this.currentSnapshot.turns,
+      view: query.view ?? 'transcript', target_pending: false,
       older_cursor: null, newer_cursor: null, full_text: null,
     };
   }

@@ -12,9 +12,11 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from bot.adapters.base import ThreadItemsPage
+from bot.codex_protocol.connection import CodexRpcError
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
-from bot.web_runtime.projection import project_turns
+from bot.web_runtime.projection import bounded_summary_prompt_text, project_turns
+from bot.web_runtime.transcript_source import decode_transcript_source, encode_transcript_source
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.transcript_budget import (
     PREVIEW_METADATA_KEY,
@@ -40,6 +42,8 @@ class WebThreadTranscriptPreparation:
     deadline: float
     runtime_epoch: str
     revision: int
+    view: str = "transcript"
+    source_cursor: str | None = None
 
 
 def project_transcript_item(
@@ -76,7 +80,7 @@ def project_transcript_item(
         turn["itemId"] = item_id
         if isinstance(metadata, TranscriptPreview) and metadata.truncated:
             turn["contentDeferred"] = True
-    if not full and len(json.dumps(projected, ensure_ascii=False).encode("utf-8")) > 32 * 1024:
+    if not full and len(json.dumps(projected, ensure_ascii=False).encode("utf-8")) > (TRANSCRIPT_PAGE_BYTES - 64 * 1024) // TRANSCRIPT_PAGE_ITEMS:
         # Multi-file tools and duplicated presentation fields can exceed the
         # source character budget. Keep one explicit plain-text preview.
         first = projected[0] if projected else {}
@@ -101,66 +105,95 @@ def read_transcript_window(
         "turn_id": prepared.turn_id,
         "expected_connection_generation": prepared.connection_generation,
     }
-    cursor = prepared.cursor
-    direction = prepared.direction
-    if prepared.item_id:
-        # A reviewed upstream item anchor is exclusive. Read one predecessor,
-        # then read forward after it to include the exact target.
-        predecessor = list_thread_items(
-            prepared.thread_id,
-            **kwargs,
-            anchor_item_id=prepared.item_id,
-            sort_direction="desc",
-            limit=1,
-            timeout=remaining(),
-        )
-        if (not isinstance(predecessor, ThreadItemsPage) or len(predecessor.items) > 1
-                or any(entry.turn_id != prepared.turn_id or not entry.item.get("id")
-                       for entry in predecessor.items)):
-            raise WebRuntimeError("Invalid transcript anchor.", code="transcript_protocol_error", status=502)
-        cursor = None
-        kwargs["anchor_item_id"] = (
-            str(predecessor.items[0].item.get("id", ""))
-            if predecessor.items else None
-        )
+    cursor, direction = prepared.cursor, prepared.direction
+    limit = 100 if prepared.view == "prompts" else TRANSCRIPT_PAGE_ITEMS
+    exact_page = False
+    if prepared.source_cursor:
+        source = decode_transcript_source(prepared.source_cursor)
+        cursor, direction, limit = source["cursor"], source["sort_direction"], source["limit"]
+        kwargs["turn_id"] = source["turn_id"]
+        exact_page = True
+    elif prepared.item_id and not cursor:
+        try:
+            # New servers provide an exclusive item anchor. Older releases
+            # accept only opaque strings; those continue in bounded pages.
+            predecessor = list_thread_items(
+                prepared.thread_id, **kwargs, anchor_item_id=prepared.item_id,
+                sort_direction="desc", limit=1, timeout=remaining(),
+            )
+        except CodexRpcError as exc:
+            if exc.error.get("code") != -32600 or "expected a string" not in str(exc):
+                raise
+        else:
+            if (not isinstance(predecessor, ThreadItemsPage) or len(predecessor.items) > 1
+                    or any(entry.turn_id != prepared.turn_id or not entry.item.get("id")
+                           for entry in predecessor.items)):
+                raise WebRuntimeError("Invalid transcript anchor.", code="transcript_protocol_error", status=502)
+            kwargs["anchor_item_id"] = (
+                str(predecessor.items[0].item["id"]) if predecessor.items else None
+            )
+            exact_page = True
+            limit = 1 if prepared.full else TRANSCRIPT_PAGE_ITEMS
         direction = "asc"
-    page = list_thread_items(
-        prepared.thread_id,
-        **kwargs,
-        cursor=cursor,
-        sort_direction=direction,
-        limit=1 if prepared.full else TRANSCRIPT_PAGE_ITEMS,
-        timeout=remaining(),
-    )
+    elif prepared.item_id:
+        direction = "asc"
+    for _ in range(4 if prepared.view == "prompts" else 1):
+        page = list_thread_items(
+            prepared.thread_id, **kwargs, cursor=cursor, sort_direction=direction,
+            limit=limit, timeout=remaining(),
+        )
+        if not isinstance(page, ThreadItemsPage) or len(page.items) > limit:
+            raise WebRuntimeError("Invalid transcript page.", code="transcript_protocol_error", status=502)
+        if prepared.view != "prompts" or not page.next_cursor or any(
+            entry.item.get("type") == "userMessage" for entry in page.items
+        ):
+            break
+        if page.next_cursor == cursor:
+            raise WebRuntimeError("Transcript cursor did not advance.", code="transcript_protocol_error", status=502)
+        cursor = page.next_cursor
     remaining()
-    if not isinstance(page, ThreadItemsPage) or len(page.items) > (1 if prepared.full else TRANSCRIPT_PAGE_ITEMS):
+    if not isinstance(page, ThreadItemsPage) or len(page.items) > limit:
         raise WebRuntimeError("Invalid transcript page.", code="transcript_protocol_error", status=502)
-    if prepared.item_id and (
-        not page.items or page.items[0].item.get("id") != prepared.item_id
-    ):
-        raise WebRuntimeError("This message is no longer available.", code="transcript_item_missing", status=404)
+    if kwargs["turn_id"] and any(entry.turn_id != kwargs["turn_id"] for entry in page.items):
+        raise WebRuntimeError("Mismatched transcript turn.", code="transcript_protocol_error", status=502)
     entries = list(reversed(page.items)) if direction == "desc" else page.items
+    target = next((entry for entry in entries if entry.turn_id == prepared.turn_id
+                   and entry.item.get("id") == prepared.item_id), None) if prepared.item_id else None
+    pending = bool(prepared.item_id and target is None and not exact_page and page.next_cursor)
+    if prepared.item_id and target is None and not pending:
+        raise WebRuntimeError("This message is no longer available.", code="transcript_item_missing", status=404)
+    if prepared.item_id:
+        # Retain the entire scan page around a located item. Its cursors bound
+        # that page; trimming the prefix would skip context when paging back.
+        entries = [] if target is None else ([target] if prepared.full else entries)
+    source_cursor = encode_transcript_source(page.backwards_cursor, kwargs["turn_id"], direction, limit)
     turns: list[dict[str, Any]] = []
     for entry in entries:
-        if prepared.turn_id and entry.turn_id != prepared.turn_id:
-            raise WebRuntimeError("Mismatched transcript turn.", code="transcript_protocol_error", status=502)
-        turns.extend(project_transcript_item(
+        if prepared.view == "prompts" and entry.item.get("type") != "userMessage":
+            continue
+        rows = project_transcript_item(
             entry.turn_id, entry.item, full=prepared.full,
-            attachment_url_for_path=attachment_url_for_path,
-            attachment_url_for_id=attachment_url_for_id,
-        ))
+            attachment_url_for_path=attachment_url_for_path if prepared.view == "transcript" else None,
+            attachment_url_for_id=attachment_url_for_id if prepared.view == "transcript" else None,
+        )
+        for row in rows:
+            if source_cursor:
+                row["sourceCursor"] = source_cursor
+            if prepared.view == "prompts":
+                title, clipped = bounded_summary_prompt_text(row.get("text", ""))
+                row = {key: row[key] for key in ("id", "role", "no", "rawTurnId", "itemId")}
+                row["text"] = title + ("…" if clipped else "")
+            turns.append(row)
     payload = {
-        "runtime_epoch": prepared.runtime_epoch,
-        "revision": prepared.revision,
-        "thread_id": prepared.thread_id,
-        "turn_id": prepared.turn_id,
-        "turns": turns,
+        "runtime_epoch": prepared.runtime_epoch, "revision": prepared.revision,
+        "thread_id": prepared.thread_id, "turn_id": prepared.turn_id,
+        "view": prepared.view, "target_pending": pending, "turns": turns,
         "older_cursor": page.next_cursor if direction == "desc" else page.backwards_cursor,
         "newer_cursor": page.backwards_cursor if direction == "desc" else page.next_cursor,
         "full_text": None,
     }
-    if prepared.full:
-        item = page.items[0].item
+    if prepared.full and target is not None:
+        item = target.item
         item_type = item.get("type")
         if item_type == "agentMessage":
             text = item.get("text", "")

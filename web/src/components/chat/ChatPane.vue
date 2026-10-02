@@ -447,7 +447,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
            below the bubble, in the meta row). -->
       <template v-if="turn.role === 'user'">
         <div v-if="userTurnHasPresentation(turn)" class="u-turn">
-          <div class="u-bub turn-anchor" :data-turn-id="turn.id" :data-prompt-id="turn.rawTurnId ? `${turn.rawTurnId}:user` : undefined">
+          <div class="u-bub" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
             <!-- Images may open a controlled preview; all other attachments
                  remain inert metadata chips. -->
             <div v-if="turn.attachments && turn.attachments.length > 0" class="u-atts">
@@ -539,7 +539,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       <CronNotice v-else-if="turn.role === 'cron'" :text="turn.text" :cron="turn.cron" :turn-id="turn.id" :created-at="turn.createdAt" />
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
-      <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
+      <div v-else class="a-msg" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
         <div v-if="turn.contentDeferred" class="transcript-preview">
           <pre>{{ turn.text || turn.thinking || turn.blocks?.filter(b => b.kind === 'thinking').map(b => b.thinking).join('\n\n') }}</pre>
           <span>{{ t('conversation.contentPreview') }}</span>

@@ -14,7 +14,7 @@ async function copy() { if (props.text !== null) copied.value = await copyTextTo
 <template>
   <Dialog :open="loading || !!error || text !== null" :title="t('conversation.fullContent')" size="xl" height="fixed" @close="emit('close')">
     <p v-if="loading" role="status">{{ t('conversation.loading') }}</p>
-    <p v-else-if="error" role="alert">{{ t('conversation.transcriptError') }}</p>
+    <p v-else-if="error" role="alert">{{ t('conversation.transcriptError') }} {{ error }}</p>
     <textarea v-else class="full-content-text" :value="text ?? ''" readonly :aria-label="t('conversation.fullContent')" />
     <template #foot>
       <Button :disabled="text === null" @click="copy">{{ copied ? t('filePreview.copied') : t('filePreview.copy') }}</Button>

@@ -119,6 +119,14 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/focus/focusTranscript.ts",
                     "createFocusTranscript",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/focus/focusPromptHistory.ts",
+                    "createFocusPromptHistory",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/focus/transcriptRead.ts",
+                    "readTranscriptTarget",
+                ),
             ),
         )
 

@@ -286,6 +286,8 @@ export interface ChatTurn {
   rawTurnId?: string;
   itemId?: string;
   contentDeferred?: boolean;
+  /** Opaque source-page receipt for an exact full-content reread. */
+  sourceCursor?: string;
   role: TurnRole;
   no: number; // terminal line number
   text: string;

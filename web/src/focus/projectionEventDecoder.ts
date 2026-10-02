@@ -359,6 +359,7 @@ export function isFocusWireChatTurn(value: unknown): value is Record<string, unk
   if (!optionalProperty(value, 'rawTurnId', (item) => isTrimmedString(item, false))) return false;
   if (!optionalProperty(value, 'itemId', (item) => isTrimmedString(item, false))) return false;
   if (!optionalProperty(value, 'contentDeferred', (item) => item === true)) return false;
+  if (!optionalProperty(value, 'sourceCursor', (item) => isTrimmedString(item, false))) return false;
   if (!['user', 'assistant', 'compaction', 'cron'].includes(String(value.role))) return false;
   if (!isNonNegativeSafeInteger(value.no) || typeof value.text !== 'string') return false;
   if (!optionalProperty(value, 'thinking', (item) => typeof item === 'string')) return false;
@@ -404,8 +405,8 @@ export function isFocusWireChatTurnWindow(value: unknown): value is Record<strin
   return toolOutputWindowFitsAggregate(value as unknown as ChatTurn[]);
 }
 
-export function isFocusTranscriptWindow(value: unknown): value is Record<string, unknown>[] {
-  if (!Array.isArray(value) || value.length > 80 || !value.every(isFocusWireChatTurn)) return false;
+export function isFocusTranscriptWindow(value: unknown, limit = 80): value is Record<string, unknown>[] {
+  if (!Array.isArray(value) || value.length > limit || !value.every(isFocusWireChatTurn)) return false;
   const ids = new Set<string>();
   return value.every((turn) => {
     if (!isTrimmedString(turn.rawTurnId, false) || !isTrimmedString(turn.itemId, false)
