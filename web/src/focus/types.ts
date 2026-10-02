@@ -725,9 +725,28 @@ export interface FocusThreadDeltaDetail {
   stream_delta?: FocusStreamDelta;
   thread_status?: { type: string; activeFlags?: string[] };
   turns?: ChatTurn[];
+  item_turns?: ChatTurn[];
+  item_order?: string[];
   tasks?: TaskItem[];
   goal?: FocusGoal | null;
   token_usage?: FocusTokenUsage;
+}
+
+export interface FocusTranscriptQuery {
+  turn_id?: string;
+  cursor?: string;
+  direction?: 'asc' | 'desc';
+  item_id?: string;
+  full?: boolean;
+}
+
+export interface FocusTranscriptPage extends FocusCoordinates {
+  thread_id: string;
+  turn_id: string | null;
+  turns: ChatTurn[];
+  older_cursor: string | null;
+  newer_cursor: string | null;
+  full_text: string | null;
 }
 
 export interface FocusGatewayErrorBody {

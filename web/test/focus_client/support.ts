@@ -14,6 +14,8 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusTranscriptPage,
+  FocusTranscriptQuery,
 } from '../../src/focus/types';
 import type { FocusApiError } from '../../src/focus/types';
 
@@ -441,6 +443,14 @@ export class FakeApi implements FocusWebApiPort {
         current_scope_generation: this.metaValue.writer_profile.scope_generation,
         attachment_scope_disposition: scopeChanged ? 'isolated' : 'unchanged',
       },
+    };
+  }
+
+  async readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}): Promise<FocusTranscriptPage> {
+    return {
+      runtime_epoch: this.currentSnapshot.runtime_epoch, revision: this.currentSnapshot.revision,
+      thread_id: threadId, turn_id: query.turn_id ?? null, turns: this.currentSnapshot.turns,
+      older_cursor: null, newer_cursor: null, full_text: null,
     };
   }
 

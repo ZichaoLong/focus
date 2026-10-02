@@ -129,6 +129,7 @@ export interface FocusMutationActionsOptions {
     | 'invalidateWireProjection'
   >;
   connection: Readonly<Ref<string>>;
+  reconnectEventTransport(): void;
   activeThread: Readonly<Ref<FocusThreadSummary | null>>;
   canCompact: Readonly<Ref<boolean>>;
   attachmentsAreAvailable(): boolean;
@@ -725,7 +726,14 @@ export function createFocusMutationActions(
           } else {
             void reconcilePromptResultsForThread(submissionThreadId, false);
           }
-          convergePromptProjection(receipt, intent);
+          if (knownNoEffect && error.code === 'web_writer_disconnected') {
+            // Repair delivery first. The next hello owns resynchronization;
+            // another full read here would compete with reconnection on a
+            // slow link. Retain the original Composer without replaying POST.
+            options.reconnectEventTransport();
+          } else {
+            convergePromptProjection(receipt, intent);
+          }
           if (!options.reportFatalError(error)
             && options.intentClock.intentIsCurrent(intent)) {
             const reason = error instanceof FocusApiError ? error.code : 'transport_error';

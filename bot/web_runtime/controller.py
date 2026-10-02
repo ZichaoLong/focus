@@ -58,6 +58,7 @@ from bot.web_runtime.projection import (
 )
 from bot.web_runtime.interest import WebRuntimeInterestRegistry
 from bot.web_runtime.thread_read_model import WebThreadReadModel
+from bot.web_runtime.transcript_window import WebThreadTranscriptPreparation
 from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.interaction_inbox import (
     WebInteractionBackendEpochRetirement,
@@ -511,6 +512,8 @@ class WebRuntimeController:
             selection=self._selection,
             direct_targets=self._direct_targets,
             ports=WebThreadInspectionPorts(
+                attachment_url_for_path=self._workspace.materialize_attachment_url_for_path,
+                attachment_url_for_id=self._workspace.attachment_url,
                 read_thread=ports.read_thread,
                 list_thread_items=ports.list_thread_items,
                 search_thread_occurrences=ports.search_thread_occurrences,
@@ -948,6 +951,7 @@ class WebRuntimeController:
             (
                 WebThreadToolDetailPreparation,
                 WebThreadConversationSearchPreparation,
+                WebThreadTranscriptPreparation,
             ),
         ):
             effect = self._thread_inspection.execute_inspection(prepared)
@@ -1166,6 +1170,11 @@ class WebRuntimeController:
                 release.claim.preparation.thread_id[:12],
                 exc_info=True,
             )
+
+    def prepare_transcript_window(
+        self, client_id: str, thread_id: str, **kwargs: Any,
+    ) -> WebThreadTranscriptPreparation:
+        return self._thread_inspection.prepare_transcript_window(client_id, thread_id, **kwargs)
 
     def prepare_tool_detail(
         self,

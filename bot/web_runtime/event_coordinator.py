@@ -10,7 +10,7 @@ only from collaboration items recorded in the parent thread.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Protocol
 
 from bot.runtime_loop import RuntimeContextGuard
@@ -191,6 +191,8 @@ class WebRuntimeEventCoordinator:
         self._ports = ports
         self._runtime_context_guard = runtime_context_guard
         self._next_projection_sequence = 0
+        self._transcript_epoch = ""
+        self._transcript_items: dict[str, dict[str, dict[str, Any]]] = {}
         self._projection_flights: dict[
             str,
             WebNotificationProjectionReceipt,
@@ -365,6 +367,7 @@ class WebRuntimeEventCoordinator:
             "thread/deleted",
         }:
             self._projection_successors.pop(thread_id, None)
+            self._transcript_items.pop(thread_id, None)
 
         detail: dict[str, Any] | None = None
         if update is not None:
@@ -409,6 +412,8 @@ class WebRuntimeEventCoordinator:
         self._drop_thread_after_lifecycle(thread_id)
 
     def _drop_thread_after_lifecycle(self, thread_id: str) -> None:
+        self._transcript_items.pop(thread_id, None)
+        self._projection_successors.pop(thread_id, None)
         ports = self._ports
         ports.clear_thread_selection_facts(
             thread_id,
@@ -477,6 +482,13 @@ class WebRuntimeEventCoordinator:
         if current is not receipt:
             return None
         successor = self._projection_successors.pop(thread_id, None)
+        if successor is not None and successor.defer_tool_output:
+            successor = self._freeze_projection(replace(
+                successor.update,
+                raw_turn=self._ports.read_model.cached_turn(
+                    thread_id, str(successor.update.detail.get("turn_id", "")),
+                ),
+            ))
         if successor is None:
             self._projection_flights.pop(thread_id, None)
         else:
@@ -492,6 +504,20 @@ class WebRuntimeEventCoordinator:
             and ports.read_model.observation_is_current(receipt.observation)
         )
         if receipt_is_current:
+            if current_epoch != self._transcript_epoch:
+                self._transcript_epoch = current_epoch
+                self._transcript_items.clear()
+            if detail is not None and "item_turns" in detail:
+                items = {item["id"]: item for item in detail["item_turns"]}
+                previous = self._transcript_items.pop(thread_id, {})
+                self._transcript_items[thread_id] = items
+                # This is an optional comparison cache, not thread authority.
+                # Eviction only makes the next publication repeat bounded rows.
+                while len(self._transcript_items) > 16:
+                    self._transcript_items.pop(next(iter(self._transcript_items)))
+                detail = {**detail, "item_order": list(items), "item_turns": [
+                    item for key, item in items.items() if previous.get(key) != item
+                ]}
             ports.publish_projection(
                 "thread_delta",
                 thread_id=thread_id,
@@ -583,8 +609,10 @@ class WebRuntimeEventCoordinator:
             basis = self._projection_flights.get(thread_id)
         if basis is None:
             return
-        self._projection_successors[thread_id] = self._freeze_projection(
-            basis.update
+        # Paginated successors take one fresh bounded cache copy only when a
+        # worker is admitted, rather than copying the transcript on each token.
+        self._projection_successors[thread_id] = (
+            basis if basis.defer_tool_output else self._freeze_projection(basis.update)
         )
 
     def _freeze_projection(

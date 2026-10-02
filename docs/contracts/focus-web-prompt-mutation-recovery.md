@@ -116,6 +116,13 @@ Gateway validates the exact closed body, connected document, and materialized
 direct-root target before entering one staged transaction through the service-ingress
 barrier:
 
+The browser admits sends only after the current socket's `hello`; the HTTP upgrade
+`open` is not connection authority. An explicit `web_writer_disconnected` pre-effect
+refusal retains the Composer and reconnects the event transport without replaying
+POST or starting competing large transcript reads. Normal post-handshake
+resynchronization restores presentation. Prepare reads the exact active-turn
+coordinate directly from the read model without deep-copying the transcript.
+
 1. **Prepare (inside RuntimeLoop):** validate and freeze only the Composer receipt's
    shape/identity, exact document/target, mutation identity, server-derived
    client-message id, backend connection generation, read observation, and current

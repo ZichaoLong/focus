@@ -87,6 +87,11 @@ epoch retirement 或 Focus service restart 会删除唯一的 seen-identity evid
 Gateway 先验证 exact closed body、connected document 与 materialized direct-root target，再经 service ingress barrier
 进入一笔 staged transaction：
 
+浏览器只有收到当前 socket 的 `hello` 才将连接标记为可发送；HTTP upgrade 的 `open` 不建立该事实。
+明确的 `web_writer_disconnected` pre-effect refusal 保留原输入并重新建立事件连接，不重发 POST，
+也不立即并发启动大线程读取；握手成功后的正常重同步负责恢复展示。prepare 读取 exact active turn id
+直接访问 read-model 的轻量坐标，不为取得该 id 深拷贝 transcript。
+
 1. **prepare（RuntimeLoop 内）**：只校验并冻结 Composer receipt 的 shape/identity、exact document/target、mutation
    identity、server-derived client message id、backend connection generation、read observation，以及当时的 exact
    active turn A；这里不读取 `WebWriterProfileStore`。存在 A 就冻结 `mode=steer` 与 A；不存在 exact id 就冻结

@@ -525,6 +525,7 @@ class CodexAppServerAdapter(AgentAdapter):
         thread_id: str,
         *,
         limit: int,
+        items_view: str = "full",
         config_overrides: dict[str, Any] | None = None,
         model: str | None = None,
         model_provider: str | None = None,
@@ -532,6 +533,8 @@ class CodexAppServerAdapter(AgentAdapter):
         permissions_profile_id: str | None = None,
         expected_connection_generation: int | None = None,
     ) -> ThreadResumePage:
+        if items_view not in {"full", "summary"}:
+            raise ValueError("items_view must be summary or full")
         result = self._resume_thread_result(
             thread_id,
             config_overrides=config_overrides,
@@ -543,7 +546,7 @@ class CodexAppServerAdapter(AgentAdapter):
             initial_turns_page={
                 "limit": max(int(limit), 1),
                 "sortDirection": "desc",
-                "itemsView": "full",
+                "itemsView": items_view,
             },
             expected_connection_generation=expected_connection_generation,
         )
@@ -747,6 +750,7 @@ class CodexAppServerAdapter(AgentAdapter):
         *,
         turn_id: str | None = None,
         cursor: str | None = None,
+        anchor_item_id: str | None = None,
         limit: int | None = None,
         sort_direction: str | None = None,
         timeout: float | None = None,
@@ -760,6 +764,10 @@ class CodexAppServerAdapter(AgentAdapter):
             else require_request_identity(turn_id, field="turn_id")
         )
         normalized_cursor = require_optional_request_cursor(cursor)
+        if anchor_item_id is not None:
+            if normalized_turn_id is None or normalized_cursor is not None:
+                raise ValueError("item anchors require turn_id and exclude an opaque cursor")
+            normalized_cursor = {"type": "item", "itemId": require_request_identity(anchor_item_id, field="item_id")}
         normalized_limit = require_optional_u32(limit)
         if sort_direction is not None and sort_direction not in {"asc", "desc"}:
             raise ValueError("sort_direction must be asc, desc, or None")

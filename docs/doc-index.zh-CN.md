@@ -83,6 +83,7 @@
 - [`server-request-lifecycle.zh-CN.md`](./contracts/server-request-lifecycle.zh-CN.md)
 - [`codex-app-server-schema-drift.zh-CN.md`](./contracts/codex-app-server-schema-drift.zh-CN.md)
 - [`focus-web-wire.zh-CN.md`](./contracts/focus-web-wire.zh-CN.md)
+- [`focus-web-transcript-window.zh-CN.md`](./contracts/focus-web-transcript-window.zh-CN.md)
 - [`focus-web-markdown-copy.zh-CN.md`](./contracts/focus-web-markdown-copy.zh-CN.md)
 - [`focus-web-markdown-rendering.zh-CN.md`](./contracts/focus-web-markdown-rendering.zh-CN.md)
 - [`focus-web-export-filenames.zh-CN.md`](./contracts/focus-web-export-filenames.zh-CN.md)
@@ -224,6 +225,7 @@
   - [`codex-permissions-model.zh-CN.md`](./contracts/codex-permissions-model.zh-CN.md)
 - 设计浏览器前端、完整 Markdown、远程 Web 访问或 kimi-web 复用时：
   - [`focus-web-wire.zh-CN.md`](./contracts/focus-web-wire.zh-CN.md)
+  - [`focus-web-transcript-window.zh-CN.md`](./contracts/focus-web-transcript-window.zh-CN.md)
   - [`focus-web-prompt-mutation-recovery.zh-CN.md`](./contracts/focus-web-prompt-mutation-recovery.zh-CN.md)
   - [`focus-web-ui-and-kimi-web-reuse.zh-CN.md`](./decisions/focus-web-ui-and-kimi-web-reuse.zh-CN.md)
   - [`focus-web-external-access.zh-CN.md`](./decisions/focus-web-external-access.zh-CN.md)

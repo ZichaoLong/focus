@@ -34,6 +34,10 @@ from bot.web_runtime.selection_coordinator import (
     WebSelectionNotReady,
 )
 from bot.web_runtime.thread_inspection_wire import encode_thread_inspection_json
+from bot.web_runtime.transcript_window import (
+    WebThreadTranscriptPreparation,
+    read_transcript_window,
+)
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.tool_detail_source import project_tool_detail_source
 from bot.web_runtime.writer_workspace_coordinator import (
@@ -69,6 +73,8 @@ class WebThreadInspectionPorts:
     observation_is_current: Callable[[WebThreadReadObservationReceipt], bool]
     capture_connection_generation: Callable[[], int]
     run_if_connection_generation: Callable[[int, Callable[[], Any]], Any]
+    attachment_url_for_path: Callable[..., str] | None = None
+    attachment_url_for_id: Callable[[str], str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +110,7 @@ class WebThreadConversationSearchPreparation:
 
 WebThreadInspectionPreparation = (
     WebThreadToolDetailPreparation | WebThreadConversationSearchPreparation
+    | WebThreadTranscriptPreparation
 )
 
 
@@ -201,6 +208,35 @@ class WebThreadInspectionService:
         self._monotonic = monotonic
         self._timeout_seconds = float(timeout_seconds)
 
+    def prepare_transcript_window(
+        self,
+        client_id: str,
+        thread_id: str,
+        *,
+        turn_id: str | None = None,
+        cursor: str | None = None,
+        direction: str = "desc",
+        item_id: str | None = None,
+        full: bool = False,
+    ) -> WebThreadTranscriptPreparation:
+        if direction not in {"asc", "desc"} or type(full) is not bool:
+            raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
+        if (item_id and (not turn_id or cursor)) or (full and not item_id):
+            raise WebRuntimeError("Invalid transcript locator.", code="invalid_transcript_query", status=400)
+        turn_id = self._require_locator(turn_id, field="turn_id") if turn_id is not None else None
+        item_id = self._require_locator(item_id, field="item_id") if item_id is not None else None
+        cursor = self._require_tool_cursor(cursor)
+        client_id, thread_id, document, observation, generation, coordinates = (
+            self._prepare_selected_thread(client_id, thread_id, operation="read_transcript")
+        )
+        return WebThreadTranscriptPreparation(
+            client_id=client_id, thread_id=thread_id, turn_id=turn_id,
+            cursor=cursor, direction=direction, item_id=item_id, full=full,
+            document=document, observation=observation,
+            connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
+            runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
+        )
+
     def prepare_tool_detail(
         self,
         client_id: str,
@@ -255,7 +291,7 @@ class WebThreadInspectionService:
 
         if not isinstance(
             prepared,
-            (WebThreadToolDetailPreparation, WebThreadConversationSearchPreparation),
+            (WebThreadToolDetailPreparation, WebThreadConversationSearchPreparation, WebThreadTranscriptPreparation),
         ):
             raise TypeError("prepared Web thread inspection is required")
         profile: WebWriterProfile | None = None
@@ -267,7 +303,21 @@ class WebThreadInspectionService:
                     code="thread_not_selected",
                     status=409,
                 )
-            if isinstance(prepared, WebThreadToolDetailPreparation):
+            if isinstance(prepared, WebThreadTranscriptPreparation):
+                snapshot = self._read_paginated_thread(prepared, operation="read transcript")
+                effect = WebThreadInspectionEffect(
+                    snapshot=snapshot,
+                    payload=read_transcript_window(
+                        prepared,
+                        list_thread_items=self._ports.list_thread_items,
+                        remaining=lambda: self._remaining(prepared.deadline, operation="read transcript"),
+                        attachment_url_for_path=(
+                            lambda path: self._ports.attachment_url_for_path(path, cwd=snapshot.summary.cwd)
+                        ) if self._ports.attachment_url_for_path else None,
+                        attachment_url_for_id=self._ports.attachment_url_for_id,
+                    ),
+                )
+            elif isinstance(prepared, WebThreadToolDetailPreparation):
                 effect = self._execute_tool_detail(prepared)
             else:
                 effect = self._execute_conversation_search(prepared)
@@ -548,7 +598,7 @@ class WebThreadInspectionService:
                     reason="web_direct_target_selection_cleared",
                 )
             operation = (
-                "tool_detail"
+                "transcript" if isinstance(prepared, WebThreadTranscriptPreparation) else "tool_detail"
                 if isinstance(prepared, WebThreadToolDetailPreparation)
                 else "conversation_search"
             )
@@ -571,7 +621,8 @@ class WebThreadInspectionService:
         coordinates = self._coordinates()
         if (
             coordinates.get("runtime_epoch") == prepared.runtime_epoch
-            and coordinates.get("revision") == prepared.revision
+            and (isinstance(prepared, WebThreadTranscriptPreparation)
+                 or coordinates.get("revision") == prepared.revision)
         ):
             return
         raise WebRuntimeError(

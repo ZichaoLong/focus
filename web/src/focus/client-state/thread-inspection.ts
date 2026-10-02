@@ -25,7 +25,7 @@ export interface ThreadInspectionOptions {
   accessAvailable: Readonly<Ref<boolean>>;
   snapshot: Readonly<Ref<FocusThreadSnapshot | null>>;
   activeThreadId: Readonly<Ref<string>>;
-  resolveTurnCursorTarget(turnCursor: string, rawTurnId: string): Promise<string | null>;
+  resolveTurnCursorTarget(turnCursor: string, rawTurnId: string, itemId?: string): Promise<string | null>;
   cancelTurnCursorTarget(): void;
   reportError(error: unknown): void;
   /** Must read the navigation owner's reactive disposal source. */
@@ -348,6 +348,7 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
       const anchorId = await options.resolveTurnCursorTarget(
         occurrence.turn_cursor,
         occurrence.turn_id,
+        occurrence.item_id,
       );
       return generation === searchNavigationGeneration
         && identityIsCurrent(identity)

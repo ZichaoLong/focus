@@ -22,6 +22,7 @@ export type {
 import { createFocusProjectionSync } from './focusProjectionSync';
 import type { FocusProjectionSync } from './focusProjectionSync';
 import { createFocusHistoryNavigation } from './focusHistoryNavigation';
+import { createFocusTranscript } from './focusTranscript';
 import {
   createFocusNavigationProfile,
 } from './focusNavigationProfile';
@@ -95,6 +96,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const intentClock = new ClientIntentClock();
   const turnWindow = createBrowserTurnWindow();
   let projection!: FocusProjectionSync;
+  let transcript: ReturnType<typeof createFocusTranscript>;
   let mutationActions!: FocusMutationActions;
   let clearHistoryView = (): void => {};
   const settings = createWebNextTurnSettings({
@@ -157,6 +159,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     turnWindowLimit: turnWindow.limit,
     navigation,
     settings,
+    onTranscriptDelta: (event, detail) => transcript?.handleDelta(event, detail),
     transport: {
       hasOpenedEventSocket: () => transportSession.snapshot.value.hasOpenedEventSocket,
       requestProjectionReload: () => transportSession.requestProjectionReload(),
@@ -208,12 +211,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     archivedLimit,
     reloadInFlight,
   } = projection;
+  transcript = createFocusTranscript({
+    api, snapshot, activeThreadId,
+    reportFatalError,
+    isDisposed: () => navigation.isDisposed || authRequired.value || documentReloadRequired.value,
+  });
   // Request loading can finish before a covering snapshot is installed when
   // navigation converges through fresh metadata and projection recovery stays
   // in the background. Keep that selected target in an honest loading state;
   // only an authoritative targetless profile may expose the new-chat surface.
   const conversationLoading = computed(() => (
     loading.value
+    || (transcript.enabled.value && transcript.loading.value && transcript.turns.value.length === 0)
     || (
       activeThreadId.value !== ''
       && snapshot.value?.thread.id !== activeThreadId.value
@@ -227,7 +236,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     reportError,
     isDisposed: () => navigation.isDisposed,
   });
-  clearHistoryView = historyNavigation.clearHistoryWindow;
+  clearHistoryView = () => { historyNavigation.clearHistoryWindow(); transcript.reset(); };
   const meta = computed<FocusMeta | null>(() => {
     const envelope = metaEnvelope.value;
     const writerProfile = navigation.writerProfile.value;
@@ -256,8 +265,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     )),
     snapshot,
     activeThreadId,
-    resolveTurnCursorTarget: historyNavigation.resolveTurnCursorTarget,
-    cancelTurnCursorTarget: historyNavigation.cancelDetailIntent,
+    resolveTurnCursorTarget: (cursor, turnId, itemId) => transcript.enabled.value
+      ? transcript.locate(turnId, itemId)
+      : historyNavigation.resolveTurnCursorTarget(cursor, turnId),
+    cancelTurnCursorTarget: () => { transcript.cancelTarget(); historyNavigation.cancelDetailIntent(); },
     reportError,
     isDisposed: () => navigation.isDisposed,
   });
@@ -432,8 +443,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // snapshot. Presentation alone may replace that snapshot's recent tail with
   // one bounded historical detail page.
   void snapshotTurns;
-  const turns = historyNavigation.visibleTurns;
-  const viewingHistory = computed(() => historyNavigation.historyWindow.value !== null);
+  const turns = computed(() => transcript.enabled.value ? transcript.turns.value : historyNavigation.visibleTurns.value);
+  const viewingHistory = computed(() => transcript.enabled.value
+    ? transcript.historical.value : historyNavigation.historyWindow.value !== null);
   const composerScopeId = navigation.composerScopeId;
   mutationActions = createFocusMutationActions({
     api,
@@ -441,6 +453,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     navigation,
     projection,
     connection,
+    reconnectEventTransport: () => transportSession.connect(),
     activeThread,
     canCompact,
     attachmentsAreAvailable: () => (
@@ -502,6 +515,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     ...parameters: Parameters<FocusMutationActions['submit']>
   ): ReturnType<FocusMutationActions['submit']> {
     historyNavigation.clearHistoryWindow();
+    if (transcript.enabled.value && transcript.historical.value) void transcript.load();
     return submitMutation(...parameters);
   }
 
@@ -822,11 +836,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function loadOlderMessages(sessionId: string): Promise<boolean> {
     if (sessionId !== activeThreadId.value) return false;
-    return historyNavigation.loadOlderPage();
+    return transcript.enabled.value ? transcript.older() : historyNavigation.loadOlderPage();
   }
 
   function returnToLiveTail(): void {
     historyNavigation.clearHistoryWindow();
+    if (transcript.enabled.value) void transcript.load();
+  }
+
+  async function resolveHistoryPromptTarget(turnId: string): Promise<boolean> {
+    if (!transcript.enabled.value) return historyNavigation.resolvePromptTarget(turnId);
+    if (!historyNavigation.outline.value.some((prompt) => prompt.id === turnId)) return false;
+    return !!await transcript.locate(turnId.endsWith(':user') ? turnId.slice(0, -5) : turnId);
   }
 
   let turnWindowChangeGeneration = 0;
@@ -909,6 +930,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     settings.dispose();
     threadInspection.dispose();
     historyNavigation.dispose();
+    transcript.dispose();
     runtimeNotices.reset();
     navigation.dispose();
     loading.value = false;
@@ -956,9 +978,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     updateObservedAt,
     conversationLoading,
     starting,
-    loadingMore: historyNavigation.loading,
-    loadingMoreError: historyNavigation.error,
-    historyHasMore: historyNavigation.hasMore,
+    loadingMore: computed(() => transcript.enabled.value ? transcript.loading.value : historyNavigation.loading.value),
+    loadingMoreError: computed(() => transcript.enabled.value ? !!transcript.error.value : historyNavigation.error.value),
+    historyHasMore: computed(() => transcript.enabled.value ? transcript.hasOlder.value : historyNavigation.hasMore.value),
+    transcript,
     viewingHistory,
     historyOutline: historyNavigation.outline,
     historyOutlineTruncated: historyNavigation.outlineTruncated,
@@ -1068,8 +1091,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     discardUnknownProcessLocalMutation,
     loadOlderMessages,
     returnToLiveTail,
-    resolveHistoryPromptTarget: historyNavigation.resolvePromptTarget,
-    cancelHistoryPromptTarget: historyNavigation.cancelDetailIntent,
+    resolveHistoryPromptTarget,
+    cancelHistoryPromptTarget: () => { transcript.cancelTarget(); historyNavigation.cancelDetailIntent(); },
     loadMoreHistoryOutline: historyNavigation.loadMoreOutline,
     readToolDetail: threadInspection.readToolDetail,
     readFullToolDetail: threadInspection.readFullToolDetail,

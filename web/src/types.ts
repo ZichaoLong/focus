@@ -282,6 +282,10 @@ export interface TurnAttachment {
 
 export interface ChatTurn {
   id: string;
+  /** Exact upstream coordinates for an independently paged transcript item. */
+  rawTurnId?: string;
+  itemId?: string;
+  contentDeferred?: boolean;
   role: TurnRole;
   no: number; // terminal line number
   text: string;

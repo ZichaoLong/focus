@@ -153,9 +153,7 @@ export function createFocusTransportSession(
         open: () => {
           if (socket !== nextSocket || generation !== socketGeneration) return;
           socketOpened = true;
-          reconnectAttempt = 0;
           updateSnapshot({
-            connection: 'connected',
             hasOpenedEventSocket: true,
           });
           callbacks.onSocketOpened();
@@ -178,6 +176,8 @@ export function createFocusTransportSession(
           if (socket === nextSocket && generation === socketGeneration) {
             if (event.type === 'hello' && !socketHandshakeReady) {
               socketHandshakeReady = true;
+              reconnectAttempt = 0;
+              updateSnapshot({ connection: 'connected' });
               const reconnected = hasCompletedHandshake;
               hasCompletedHandshake = true;
               // Gateway sends hello only after its document-connection

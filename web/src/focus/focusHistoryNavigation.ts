@@ -16,6 +16,7 @@ export const FOCUS_HISTORY_OUTLINE_PAGE_LIMIT = 20;
 
 /** Recover the exact upstream raw-turn identity from a projected stable anchor. */
 export function projectedRawTurnKey(turn: ChatTurn): string | null {
+  if (turn.rawTurnId) return turn.rawTurnId;
   if (turn.role !== 'user' && turn.role !== 'assistant' && turn.role !== 'compaction') return null;
   const parts = turn.id.split(':');
   let roleIndex = parts.length - 1;

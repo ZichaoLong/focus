@@ -28,6 +28,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     const writerProfile = JSON.parse(JSON.stringify(client.meta.value?.writer_profile));
     const activeTurnDisclosure = JSON.parse(JSON.stringify(
@@ -67,6 +68,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     expect(client.canSubmit.value).toBe(true);
     api.handlers?.close?.();
@@ -79,6 +81,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     api.emit({
       type: 'thread_delta',
@@ -123,6 +126,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     api.emit({
       type: 'thread_delta',

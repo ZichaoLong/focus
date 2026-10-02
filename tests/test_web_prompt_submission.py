@@ -5,6 +5,7 @@ import threading
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 from dataclasses import dataclass
 from typing import Any
 
@@ -361,6 +362,24 @@ class WebPromptSubmissionTests(unittest.TestCase):
         self.assertEqual(len(self.harness.backend.start_calls), 1)
         self.assertEqual(self.harness.backend.steer_calls, [])
         self.assertEqual(self.harness.settings_calls, [])
+
+    def test_steer_admission_never_materializes_a_transcript_snapshot(self) -> None:
+        self.harness.read_model.replace_turns(
+            self.thread_id,
+            [{"id": "turn-A", "status": "inProgress", "items": [
+                {"id": f"item-{index}", "type": "agentMessage", "text": "history"}
+                for index in range(2_000)
+            ]}],
+        )
+        with patch.object(
+            self.harness.read_model, "snapshot",
+            side_effect=AssertionError("prompt admission copied the transcript"),
+        ):
+            prepared = self._prepare()
+        self.assertEqual(prepared.mode, "steer")
+        self.assertEqual(prepared.turn_id, "turn-A")
+        self.assertEqual(self._result(prepared)["status"], "succeeded")
+        self.assertEqual(len(self.harness.backend.steer_calls), 1)
 
     def test_system_error_allows_one_ordinary_input_after_goal_and_settings_checks(self) -> None:
         self.harness.backend.status = "systemError"

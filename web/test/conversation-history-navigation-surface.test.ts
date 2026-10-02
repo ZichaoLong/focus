@@ -197,7 +197,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(handlers).toContain('return promptNavigation.navigate(turnId);');
     expect(handlers).toContain('return promptNavigation.navigateRendered(turnId);');
     expect(app).toContain(':cancel-conversation-toc-target="client.cancelHistoryPromptTarget"');
-    expect(client).toContain('cancelHistoryPromptTarget: historyNavigation.cancelDetailIntent');
+    expect(client).toContain('cancelHistoryPromptTarget: () => { transcript.cancelTarget(); historyNavigation.cancelDetailIntent(); }');
   });
 
   it('does not treat programmatic Prompt navigation as permission to replace the page', () => {

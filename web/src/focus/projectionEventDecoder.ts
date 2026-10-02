@@ -356,6 +356,9 @@ function isCronTurnData(value: unknown): boolean {
 export function isFocusWireChatTurn(value: unknown): value is Record<string, unknown> {
   if (!isFocusWireRecord(value)) return false;
   if (!isTrimmedString(value.id, false)) return false;
+  if (!optionalProperty(value, 'rawTurnId', (item) => isTrimmedString(item, false))) return false;
+  if (!optionalProperty(value, 'itemId', (item) => isTrimmedString(item, false))) return false;
+  if (!optionalProperty(value, 'contentDeferred', (item) => item === true)) return false;
   if (!['user', 'assistant', 'compaction', 'cron'].includes(String(value.role))) return false;
   if (!isNonNegativeSafeInteger(value.no) || typeof value.text !== 'string') return false;
   if (!optionalProperty(value, 'thinking', (item) => typeof item === 'string')) return false;
@@ -399,6 +402,18 @@ export function isFocusWireChatTurn(value: unknown): value is Record<string, unk
 export function isFocusWireChatTurnWindow(value: unknown): value is Record<string, unknown>[] {
   if (!Array.isArray(value) || !value.every(isFocusWireChatTurn)) return false;
   return toolOutputWindowFitsAggregate(value as unknown as ChatTurn[]);
+}
+
+export function isFocusTranscriptWindow(value: unknown): value is Record<string, unknown>[] {
+  if (!Array.isArray(value) || value.length > 80 || !value.every(isFocusWireChatTurn)) return false;
+  const ids = new Set<string>();
+  return value.every((turn) => {
+    if (!isTrimmedString(turn.rawTurnId, false) || !isTrimmedString(turn.itemId, false)
+      || ids.has(turn.id as string) || JSON.stringify(turn).length > 65_536
+      || !toolOutputWindowFitsAggregate([turn as unknown as ChatTurn])) return false;
+    ids.add(turn.id as string);
+    return true;
+  });
 }
 
 export function isFocusWireTaskItem(value: unknown): value is TaskItem {
@@ -503,6 +518,9 @@ function isThreadDeltaDetail(value: unknown): value is Record<string, unknown> {
   if (!optionalProperty(value, 'token_usage_durable', (item) => typeof item === 'boolean')) return false;
   if (!optionalProperty(value, 'plan_replay', (item) => typeof item === 'string')) return false;
   if (!optionalProperty(value, 'stream_delta', isStreamDelta)) return false;
+  if (!optionalProperty(value, 'item_turns', isFocusTranscriptWindow)) return false;
+  if (!optionalProperty(value, 'item_order', (items) => Array.isArray(items)
+    && items.length <= 80 && items.every((item) => isTrimmedString(item, false)))) return false;
   if (!optionalProperty(value, 'thread_status', isThreadStatus)) return false;
   if (!optionalProperty(
     value,
@@ -529,6 +547,9 @@ function canonicalizeThreadDeltaDetail(
   value: Record<string, unknown>,
 ): Record<string, unknown> {
   const detail = { ...value };
+  if (Array.isArray(value.item_turns)) {
+    detail.item_turns = value.item_turns.map((turn) => canonicalizeFocusWireChatTurn(turn as Record<string, unknown>));
+  }
   if (Array.isArray(value.turns)) {
     detail.turns = value.turns.map((turn) => (
       canonicalizeFocusWireChatTurn(turn as Record<string, unknown>)

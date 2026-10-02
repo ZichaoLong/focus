@@ -19,6 +19,7 @@ from bot.web_runtime.thread_read_model import (
     WebThreadNotificationUpdate,
     WebThreadReadObservationReceipt,
 )
+from bot.web_runtime.transcript_window import project_transcript_item
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,16 +55,25 @@ def project_notification(
         detail["goal"] = project_goal_payload(update.goal)
     if update.raw_turn is None:
         return detail
-    projected = project_turns(
+    projected = [] if receipt.defer_tool_output else project_turns(
         [update.raw_turn],
         defer_tool_output=receipt.defer_tool_output,
         attachment_url_for_path=attachment_url_for_path,
         attachment_url_for_id=attachment_url_for_id,
     )
-    turn_id = str(detail.get("turn_id", "") or "").strip()
+    turn_id = str(detail.get("turn_id") or update.raw_turn.get("id") or "").strip()
+    if receipt.defer_tool_output:
+        projected = [
+            turn for item in (update.raw_turn.get("items") or [])
+            for turn in project_transcript_item(
+                turn_id, item, status=str(update.raw_turn.get("status", "") or ""),
+                attachment_url_for_path=attachment_url_for_path,
+                attachment_url_for_id=attachment_url_for_id,
+            )
+        ]
     detail.update(
         {
-            "turns": projected,
+            "item_turns" if receipt.defer_tool_output else "turns": projected,
             "tasks": project_subagent_tasks(receipt.collaboration_turns),
             "active_turn_id": turn_id
             if str(update.raw_turn.get("status", "") or "") == "inProgress"

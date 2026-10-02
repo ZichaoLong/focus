@@ -1,0 +1,78 @@
+"""Finite presentation copies for paginated transcript items.
+
+The item store remains the full source. These copies are never mutation or
+history authority; a clipped item carries an explicit full-content locator.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+
+TRANSCRIPT_PAGE_ITEMS = 40
+TRANSCRIPT_WINDOW_ITEMS = 80
+TRANSCRIPT_ITEM_CHARS = 16_384
+TRANSCRIPT_PAGE_BYTES = 2 * 1024 * 1024
+PREVIEW_METADATA_KEY = "_focus_transcript_preview"
+
+
+@dataclass(frozen=True, slots=True)
+class TranscriptPreview:
+    truncated: bool
+
+
+def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
+    """Copy a bounded tree, preserving routing identity before presentation."""
+
+    remaining = TRANSCRIPT_ITEM_CHARS
+    nodes = 1024
+    previous = item.get(PREVIEW_METADATA_KEY)
+    truncated = isinstance(previous, TranscriptPreview) and previous.truncated
+
+    def copy_value(value: Any, depth: int = 0) -> Any:
+        nonlocal remaining, nodes, truncated
+        nodes -= 1
+        if nodes < 0 or depth > 12:
+            truncated = True
+            return None
+        if isinstance(value, str):
+            length = min(len(value), max(remaining, 0))
+            remaining -= length
+            truncated |= length < len(value)
+            return value[:length]
+        if isinstance(value, list):
+            result = []
+            for entry in value:
+                if remaining <= 0 or nodes <= 0:
+                    truncated = True
+                    break
+                result.append(copy_value(entry, depth + 1))
+            return result
+        if isinstance(value, dict):
+            result = {}
+            # Reserve only the item's own routing fields. Nested tool arguments
+            # named id/type/status are ordinary content and share the budget.
+            if depth == 0:
+                for key in ("id", "type", "status", "phase", "role"):
+                    if key in value:
+                        field = value[key]
+                        if isinstance(field, str) and len(field) > 4096:
+                            raise ValueError("Invalid transcript routing field")
+                        result[key] = field if isinstance(field, str) else copy_value(field, depth + 1)
+            for key, entry in value.items():
+                if key in result or key == PREVIEW_METADATA_KEY:
+                    continue
+                if len(key) > 256:
+                    truncated = True
+                    continue
+                if nodes <= 0:
+                    truncated = True
+                    break
+                result[key] = copy_value(entry, depth + 1)
+            return result
+        return value
+
+    result = copy_value(item)
+    result[PREVIEW_METADATA_KEY] = TranscriptPreview(truncated)
+    return result

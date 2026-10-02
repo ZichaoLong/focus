@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import hashlib
 import logging
 import math
@@ -110,6 +111,7 @@ class _SocketSenderState:
     queue: asyncio.Queue[dict[str, Any]]
     task: asyncio.Task[None] | None = None
     overflowed: bool = False
+    queued_bytes: int = 0
 
 
 @dataclass(slots=True, frozen=True)
@@ -153,6 +155,7 @@ class WebGatewayPorts:
     run_prepared_thread_data_export: Callable[[Any], bytes]
     prepare_tool_detail: Callable[..., Any]
     prepare_conversation_search: Callable[..., Any]
+    prepare_transcript_window: Callable[..., Any]
     start_thread: Callable[..., dict[str, Any]]
     prepare_prompt: Callable[..., Any]
     run_prepared_prompt: Callable[[Any], dict[str, Any]]
@@ -1774,11 +1777,17 @@ class WebGateway(WebGatewayThreadInspectionMixin):
             self._client_operation_locks.pop(client_id, None)
 
     def _enqueue_projection_event(self, event: dict[str, Any]) -> None:
+        if not self._socket_senders:
+            return
+        size = len(json.dumps(event, ensure_ascii=False).encode("utf-8"))
         for socket, state in tuple(self._socket_senders.items()):
             if socket.closed or state.overflowed:
                 continue
             try:
+                if state.queued_bytes + size > 2 * 1024 * 1024:
+                    raise asyncio.QueueFull
                 state.queue.put_nowait(dict(event))
+                state.queued_bytes += size
             except asyncio.QueueFull:
                 while True:
                     try:
@@ -1786,6 +1795,7 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                     except asyncio.QueueEmpty:
                         break
                 state.overflowed = True
+                state.queued_bytes = 0
                 invalidation = {
                     **event,
                     "type": require_focus_web_event_type("projection_invalidated"),
@@ -1794,6 +1804,7 @@ class WebGateway(WebGatewayThreadInspectionMixin):
                     "detail": {"reload": True},
                 }
                 state.queue.put_nowait(invalidation)
+                state.queued_bytes = len(json.dumps(invalidation, ensure_ascii=False).encode("utf-8"))
 
     async def _run_socket_sender(
         self,
@@ -1803,7 +1814,8 @@ class WebGateway(WebGatewayThreadInspectionMixin):
         try:
             while not socket.closed:
                 event = await state.queue.get()
-                await socket.send_json(event)
+                state.queued_bytes = max(0, state.queued_bytes - len(json.dumps(event, ensure_ascii=False).encode("utf-8")))
+                await socket.send_json(event, dumps=lambda value: json.dumps(value, ensure_ascii=False))
                 if event.get("type") == "projection_invalidated":
                     state.overflowed = False
         except asyncio.CancelledError:

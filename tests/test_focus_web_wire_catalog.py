@@ -120,7 +120,7 @@ def _assert_catalog_record(
 
 class FocusWebWireCatalogTests(unittest.TestCase):
     def test_internal_interaction_scope_does_not_cross_v19_wire(self) -> None:
-        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 22)
+        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 23)
         pending = project_pending_request(
             {
                 "request_key": "request-1",
@@ -175,7 +175,7 @@ class FocusWebWireCatalogTests(unittest.TestCase):
         )
 
     def test_every_endpoint_resolves_one_gateway_handler(self) -> None:
-        self.assertEqual(len(FOCUS_WEB_ENDPOINTS), 40)
+        self.assertEqual(len(FOCUS_WEB_ENDPOINTS), 41)
         for endpoint in FOCUS_WEB_ENDPOINTS:
             with self.subTest(endpoint=endpoint.name):
                 self.assertTrue(callable(getattr(WebGateway, endpoint.handler, None)))

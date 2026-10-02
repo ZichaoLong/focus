@@ -332,6 +332,10 @@ function testApi(intentGenerationFloor = 0) {
     }),
     listThreads: vi.fn(async () => threadList(0, 'Initial')),
     readThread: vi.fn(async () => snapshot(0, 'Initial')),
+    readTranscriptWindow: vi.fn(async (threadId: string) => ({
+      runtime_epoch: EPOCH, revision: 0, thread_id: threadId, turn_id: null,
+      turns: [], older_cursor: null, newer_cursor: null, full_text: null,
+    })),
     readToolDetail: vi.fn(async (
       threadId: string,
       locator: FocusToolInspectionLocator,
@@ -462,6 +466,7 @@ describe('useFocusWebClient runtime notice routing', () => {
     try {
       await client.load();
       fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
       await expect(client.submit('private input')).resolves.toBe(false);
       expect(client.errorMessage.value).toContain('futureStatus');
       expect(JSON.parse(client.errorPresentation.value.diagnostic)).toMatchObject({
@@ -631,7 +636,7 @@ describe('useFocusWebClient turn-window preference', () => {
     }));
   }
 
-  it('shrinks immediately and lets a newer 20-width generation supersede stale 5', async () => {
+  it('shrinks summary metadata immediately and lets a newer 20-width generation supersede stale 5', async () => {
     stubBrowser();
     localStorage.setItem('focus-web.turn-window-limit', '20');
     const fake = testApi();
@@ -642,7 +647,7 @@ describe('useFocusWebClient turn-window preference', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     expect(client.turnWindowLimit.value).toBe(20);
-    expect(client.turns.value).toHaveLength(20);
+    expect(client.snapshot.value?.turns).toHaveLength(20);
 
     const shrinkResponse = deferred<FocusThreadSnapshot>();
     const expandResponse = deferred<FocusThreadSnapshot>();
@@ -650,7 +655,7 @@ describe('useFocusWebClient turn-window preference', () => {
       .mockReturnValueOnce(shrinkResponse.promise)
       .mockReturnValueOnce(expandResponse.promise);
     const shrinking = client.setTurnWindowLimit(5);
-    expect(client.turns.value).toHaveLength(5);
+    expect(client.snapshot.value?.turns).toHaveLength(5);
     expect(fake.api.readThread).toHaveBeenLastCalledWith('thread-1', expect.any(Number), 5);
 
     const expanding = client.setTurnWindowLimit(20);
@@ -663,7 +668,7 @@ describe('useFocusWebClient turn-window preference', () => {
     shrinkResponse.resolve({ ...snapshot(1, 'Initial'), turns: turns(5) });
     await shrinking;
 
-    expect(client.turns.value).toHaveLength(20);
+    expect(client.snapshot.value?.turns).toHaveLength(20);
     expect(localStorage.getItem('focus-web.turn-window-limit')).toBe('20');
     client.dispose();
   });
@@ -684,7 +689,7 @@ describe('useFocusWebClient turn-window preference', () => {
 
     await expect(client.setTurnWindowLimit(5)).resolves.toBeUndefined();
 
-    expect(client.turns.value).toHaveLength(5);
+    expect(client.snapshot.value?.turns).toHaveLength(5);
     expect(client.historyOutline.value.map((prompt) => prompt.id)).toEqual(
       Array.from({ length: 5 }, (_, index) => `raw-${index + 15}:user`),
     );
@@ -805,7 +810,7 @@ describe('useFocusWebClient initial writer authority', () => {
       });
 
       fake.handlers.open?.();
-      expect(client.connection.value).toBe('connected');
+      expect(client.connection.value).toBe('connecting');
       expect(client.sessions.value[0]?.actionCapabilities?.archive).toBe(false);
 
       // A browser WebSocket can open before the server finishes its document
@@ -1060,6 +1065,7 @@ describe('useFocusWebClient initial writer authority', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const lateSelection = deferred<FocusThreadSnapshot>();
     vi.mocked(fake.api.readThread).mockReturnValueOnce(lateSelection.promise);
 
@@ -1088,6 +1094,7 @@ describe('useFocusWebClient initial writer authority', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const lateSettings = deferred<FocusNextTurnSettingsResult>();
     vi.mocked(fake.api.updateNextTurnSettings).mockReturnValueOnce(lateSettings.promise);
 
@@ -1124,6 +1131,7 @@ describe('useFocusWebClient initial writer authority', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const lateSettings = deferred<FocusNextTurnSettingsResult>();
     vi.mocked(fake.api.updateNextTurnSettings).mockReturnValueOnce(lateSettings.promise);
 
@@ -1167,6 +1175,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
 
     await expect(client.submit('hello')).resolves.toBe(false);
 
@@ -1191,6 +1200,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     expect(client.activeThreadId.value).toBe('thread-1');
     expect(client.composerScopeId.value).toBe(
       'client-1:generation:1:thread:thread-1',
@@ -1241,6 +1251,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     vi.mocked(fake.api.meta).mockRejectedValueOnce(new Error('meta unavailable'));
 
     fake.handlers.event({
@@ -1268,6 +1279,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const secondThread = {
       ...thread('Second thread'),
       id: 'thread-2',
@@ -1362,6 +1374,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     expect(client.revision.value).toBe(0);
     expect(client.canSubmit.value).toBe(true);
 
@@ -1433,6 +1446,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
 
     vi.mocked(fake.api.meta).mockResolvedValueOnce(meta(2));
     vi.mocked(fake.api.listThreads).mockResolvedValueOnce(threadList(2, 'First list'));
@@ -1478,6 +1492,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
 
     let resolveSettings!: (value: FocusNextTurnSettingsResult) => void;
     let markSettingsStarted!: () => void;
@@ -1542,6 +1557,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
 
     await expect(client.deleteThread('thread-1', 'thread-1')).resolves.toBe(true);
 
@@ -1558,6 +1574,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const deleteResult = deferred<Awaited<ReturnType<FocusWebApiPort['deleteThread']>>>();
     vi.mocked(fake.api.deleteThread).mockReturnValueOnce(deleteResult.promise);
     const deleting = client.deleteThread('thread-1', 'thread-1');
@@ -1626,6 +1643,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     const archiveResult = deferred<Awaited<ReturnType<FocusWebApiPort['archiveThread']>>>();
     vi.mocked(fake.api.archiveThread).mockReturnValueOnce(archiveResult.promise);
     const archiving = client.archiveThread('thread-1');
@@ -1700,6 +1718,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     const client = useFocusWebClient(fake.api);
     await client.load();
     fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     let settleDelete!: (value: Awaited<ReturnType<FocusWebApiPort['deleteThread']>>) => void;
     vi.mocked(fake.api.deleteThread).mockReturnValueOnce(new Promise((resolve) => {
       settleDelete = resolve;

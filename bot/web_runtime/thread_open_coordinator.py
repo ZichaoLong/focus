@@ -741,7 +741,7 @@ class WebThreadOpenCoordinator:
                     initial.thread_id,
                     limit=initial.turn_limit,
                     sort_direction="desc",
-                    items_view="full",
+                    items_view=("summary" if prepared.observed.metadata.history_mode == "paginated" else "full"),
                     expected_connection_generation=generation,
                 )
                 return self._prepare_read_thread_projection_effect(
@@ -878,6 +878,7 @@ class WebThreadOpenCoordinator:
                 prepared.initial.thread_id,
                 turns_page.turns,
                 history_mode=(summary.history_mode or "") if not summary.ephemeral else "",
+                summary_only=summary.history_mode == "paginated" and not summary.ephemeral,
             ),
             interaction_lease=interaction_lease,
             interaction_lease_error=interaction_lease_error,
@@ -913,6 +914,7 @@ class WebThreadOpenCoordinator:
         resume = self._ports.complete_claimed_resume_thread_page(
             lease_receipt,
             limit=initial.turn_limit,
+            items_view=("summary" if prepared.observed.metadata.history_mode == "paginated" else "full"),
             model=(settings.model or None) if settings else None,
             config_overrides=(
                 {"model_reasoning_effort": settings.reasoning_effort}
@@ -1620,6 +1622,8 @@ class WebThreadOpenCoordinator:
             final_observation=self._read_model.capture_observation(
                 prepared.thread_id
             ),
+            collaboration_turns=(self._read_model.collaboration_turns(prepared.thread_id)
+                                 if prepared_turns.summary_only else None),
         )
 
     def project_read_thread(

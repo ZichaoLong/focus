@@ -94,6 +94,9 @@ const props = withDefaults(defineProps<{
   readingModeEnabled?: boolean;
   /** True while switching sessions and the turns array is not yet loaded. */
   sessionLoading?: boolean;
+  transcriptError?: string;
+  hasNewerMessages?: boolean;
+  loadNewerMessages?: () => Promise<boolean>;
   /** Live compaction state of the active session (non-null while running). */
   compaction?: { status: 'running' } | null;
   /** Whether there are older messages available to load when scrolling up. */
@@ -164,6 +167,8 @@ const props = withDefaults(defineProps<{
 });
 
 const emit = defineEmits<{
+  openFullContent: [turn: ChatTurn];
+  retryTranscript: [];
   submit: [payload: ComposerSubmission];
   approval: [approvalId: string, response: { decision: 'approved' | 'rejected' | 'cancelled'; scope?: 'session'; feedback?: string }];
   cancelTask: [taskId: string];
@@ -485,7 +490,7 @@ function updateActiveTocQuery(): void {
   if (items.length === 0) return;
   const userIds = new Set(items.map((item) => item.id));
   const loadedUserIds = Array.from(anchors).flatMap((anchor) => {
-    const id = anchor.dataset.turnId;
+    const id = anchor.dataset.promptId ?? (anchor.dataset.rawTurnId ? `${anchor.dataset.rawTurnId}:user` : anchor.dataset.turnId);
     return id && userIds.has(id) ? [id] : [];
   });
   if (loadedUserIds.length === 0) return;
@@ -505,7 +510,7 @@ function updateActiveTocQuery(): void {
   // viewport: the last user-turn anchor at or above the middle.
   let bestId: string | null = null;
   anchors.forEach((el) => {
-    const id = el.dataset.turnId;
+    const id = el.dataset.promptId ?? (el.dataset.rawTurnId ? `${el.dataset.rawTurnId}:user` : el.dataset.turnId);
     if (!id || !userIds.has(id)) return;
     const top = el.getBoundingClientRect().top - paneRect.top;
     if (top <= paneMiddle) bestId = id;
@@ -885,6 +890,16 @@ async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<v
   }
 }
 
+async function handleLoadNewerMessages(): Promise<void> {
+  if (!props.loadNewerMessages || props.loadingMore) return;
+  const fence = claimOrdinaryScrollAuthority();
+  historyAutoLoadArmed.value = false;
+  following.value = false;
+  if (!await props.loadNewerMessages()) return;
+  await nextTick();
+  if (scrollWriteFenceIsCurrent(fence) && panesRef.value) panesRef.value.scrollTop = 0;
+}
+
 function attrEscape(value: string): string {
   if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') return CSS.escape(value);
   return value.replaceAll(/["\\]/g, '\\$&');
@@ -892,7 +907,7 @@ function attrEscape(value: string): string {
 
 function findTurnTarget(container: HTMLElement, turnId: string): HTMLElement | null {
   return container.querySelector<HTMLElement>(
-    `.turn-anchor[data-turn-id="${attrEscape(turnId)}"]`,
+    `.turn-anchor[data-turn-id="${attrEscape(turnId)}"], .turn-anchor[data-prompt-id="${attrEscape(turnId)}"]`,
   );
 }
 
@@ -2007,6 +2022,8 @@ defineExpose({
               :working="working"
               :fast-moon="fastMoon"
               :session-loading="sessionLoading"
+              :transcript-error="transcriptError"
+              :has-newer-messages="hasNewerMessages"
               :compaction="compaction"
               :has-more-messages="hasMoreMessages"
               :loading-more="loadingMore"
@@ -2024,6 +2041,9 @@ defineExpose({
               @open-tool-diff="emit('openToolDiff', $event)"
               @copy-message-to-composer="handleCopyMessageToComposer"
               @load-older-messages="handleLoadOlderMessages"
+              @load-newer-messages="handleLoadNewerMessages"
+              @retry-transcript="emit('retryTranscript')"
+              @open-full-content="emit('openFullContent', $event)"
               @unqueue="emit('unqueue', $event)"
               @edit-queued="handleEditQueued"
               @reorder-queue="handleReorderQueue"

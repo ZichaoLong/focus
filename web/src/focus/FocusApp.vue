@@ -25,6 +25,7 @@ import { STORAGE_KEYS } from '../lib/storage';
 import FocusGoalDialog from './FocusGoalDialog.vue';
 import FocusPrimaryNotices from './FocusPrimaryNotices.vue';
 import FocusReviewDialog from './FocusReviewDialog.vue';
+import FocusFullContentDialog from './FocusFullContentDialog.vue';
 import FocusSettingsSurface from './FocusSettingsSurface.vue';
 import { executeCdCommand, parseCdCommand } from './cdCommand';
 import { createFocusDocumentActivityFaviconPreference, syncFocusDocumentActivityFavicon } from './documentActivityFavicon';
@@ -1007,6 +1008,11 @@ onUnmounted(() => {
           :draft-create-outcome-unknown="client.unknownThreadCreateDraftExists.value"
           :file-reload-key="client.activeThreadId.value || 'draft'"
           :session-loading="client.conversationLoading.value"
+          :transcript-error="client.transcript.error.value"
+          :has-newer-messages="client.transcript.hasNewer.value"
+          :load-newer-messages="client.transcript.newer"
+          @open-full-content="client.transcript.openFull($event)"
+          @retry-transcript="client.transcript.load()"
           :has-more-messages="client.historyHasMore.value"
           :loading-more="client.loadingMore.value"
           :loading-more-error="client.loadingMoreError.value"
@@ -1196,6 +1202,9 @@ onUnmounted(() => {
         :confirm-focus-update="confirmFocusUpdate"
       />
 
+      <FocusFullContentDialog :text="client.transcript.fullText.value"
+        :loading="client.transcript.fullLoading.value" :error="client.transcript.fullError.value"
+        @close="client.transcript.closeFull()" />
       <FocusGoalDialog
         v-model:open="showGoalDialog"
         :objective="client.goal.value?.objective"

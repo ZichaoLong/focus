@@ -1,4 +1,5 @@
 import { computed, nextTick, shallowRef, watch, type InjectionKey, type Ref } from 'vue';
+import { focusPerformance } from './focusPerformance';
 
 export interface FocusViewportDiagnostics {
   readonly enabled: Readonly<Ref<boolean>>;
@@ -195,6 +196,7 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
     report: computed(() => initial.value === null ? '' : JSON.stringify({
       schema: 'focus-viewport-v2', userAgent: view.navigator.userAgent.slice(0, 512),
       initial: initial.value, transitions: transitions.value, viewportChanges: viewportChanges.value,
+      performance: focusPerformance.samples.value,
     }, null, 2)),
     start(): void {
       if (disposed || diagnosticEnabled.value) return;
@@ -203,9 +205,11 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
       initial.value = capture('recording-start');
       lastViewport = JSON.stringify(initial.value.viewport);
       diagnosticEnabled.value = true;
+      focusPerformance.start();
     },
     stop(): void {
       diagnosticEnabled.value = false;
+      focusPerformance.stop();
     },
   };
 

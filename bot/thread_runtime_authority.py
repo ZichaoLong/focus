@@ -197,6 +197,7 @@ class PreparedThreadResumePage:
     expected_connection_generation: int | None
     _config_overrides_json: str | None = field(repr=False, compare=False)
     _authority_token: object = field(repr=False, compare=False)
+    items_view: str = "full"
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +548,7 @@ class ThreadRuntimeAuthority:
         receipt: ThreadResumeLeaseReceipt,
         *,
         limit: int,
+        items_view: str = "full",
         model: str | None = None,
         model_provider: str | None = None,
         config_overrides: dict[str, Any] | None = None,
@@ -555,6 +557,9 @@ class ThreadRuntimeAuthority:
         expected_connection_generation: int | None = None,
     ) -> PreparedThreadResumePage:
         """Complete in-memory settings intent for one acquired exact claim."""
+
+        if items_view not in {"full", "summary"}:
+            raise ValueError("items_view must be summary or full")
 
         normalized_limit, normalized_config = self._normalize_resume_page_request(
             limit,
@@ -587,6 +592,7 @@ class ThreadRuntimeAuthority:
         return PreparedThreadResumePage(
             lease_receipt=receipt,
             limit=normalized_limit,
+            items_view=items_view,
             model=model or None,
             model_provider=model_provider or None,
             approval_policy=approval_policy or None,
@@ -762,6 +768,8 @@ class ThreadRuntimeAuthority:
             kwargs["expected_connection_generation"] = (
                 prepared.expected_connection_generation
             )
+        if prepared.items_view != "full":
+            kwargs["items_view"] = prepared.items_view
         return self._adapter.resume_thread_page(
             prepared.lease_receipt.thread_id,
             **kwargs,

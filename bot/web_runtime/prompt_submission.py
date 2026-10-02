@@ -643,9 +643,7 @@ class WebPromptSubmissionCoordinator:
             operation="start_prompt",
             mutation_id=mutation_id,
         )
-        active_turn_id = self._read_model.active_turn_id_from_turns(
-            self._read_model.turns(normalized_thread_id)
-        )
+        active_turn_id = self._read_model.cached_active_turn_id(normalized_thread_id)
         mode: WebPromptMode = "steer" if active_turn_id else "start"
         connection_generation = self._ports.capture_connection_generation()
         # Installing the pending result is deliberately the final fallible

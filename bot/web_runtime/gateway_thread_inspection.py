@@ -23,6 +23,14 @@ class WebGatewayThreadInspectionMixin:
 
     _ports: Any
 
+    async def _handle_thread_transcript(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        query = request_decoder.decode_transcript_query(request.query)
+        return self._json_response(await self._staged_document_request_to_thread(
+            self._ports.prepare_transcript_window, request, client_id,
+            request.match_info["thread_id"], **query,
+        ))
+
     async def _handle_thread_tool_detail(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         view, change_index, cursor = request_decoder.decode_tool_detail_query(

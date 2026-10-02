@@ -100,6 +100,7 @@ Status guidance:
 - [`server-request-lifecycle.md`](./contracts/server-request-lifecycle.md)
 - [`codex-app-server-schema-drift.md`](./contracts/codex-app-server-schema-drift.md)
 - [`focus-web-wire.md`](./contracts/focus-web-wire.md)
+- [`focus-web-transcript-window.md`](./contracts/focus-web-transcript-window.md)
 - [`focus-web-markdown-copy.md`](./contracts/focus-web-markdown-copy.md)
 - [`focus-web-markdown-rendering.md`](./contracts/focus-web-markdown-rendering.md)
 - [`focus-web-export-filenames.md`](./contracts/focus-web-export-filenames.md)
@@ -244,6 +245,7 @@ Status guidance:
   - [`codex-permissions-model.md`](./contracts/codex-permissions-model.md)
 - For a browser frontend, rich Markdown, remote Web access, or kimi-web reuse:
   - [`focus-web-wire.md`](./contracts/focus-web-wire.md)
+  - [`focus-web-transcript-window.md`](./contracts/focus-web-transcript-window.md)
   - [`focus-web-prompt-mutation-recovery.md`](./contracts/focus-web-prompt-mutation-recovery.md)
   - [`focus-web-ui-and-kimi-web-reuse.md`](./decisions/focus-web-ui-and-kimi-web-reuse.md)
   - [`focus-web-external-access.md`](./decisions/focus-web-external-access.md)

@@ -28,6 +28,7 @@ from bot.web_runtime.turn_window import (
     DEFAULT_TURN_WINDOW_LIMIT,
     MAX_TURN_WINDOW_LIMIT,
 )
+from bot.web_runtime.transcript_budget import TRANSCRIPT_WINDOW_ITEMS, bounded_transcript_item
 
 DEFAULT_RECENT_TURN_LIMIT = DEFAULT_TURN_WINDOW_LIMIT
 
@@ -92,6 +93,7 @@ class PreparedWebThreadTurns:
     history_mode: str
     _cache_turns: tuple[dict[str, Any], ...] = field(repr=False, compare=False)
     _authority_token: object = field(repr=False, compare=False)
+    summary_only: bool = False
 
 
 class WebThreadReadModel:
@@ -182,6 +184,24 @@ class WebThreadReadModel:
 
     def turns(self, thread_id: str) -> tuple[dict[str, Any], ...]:
         return self.snapshot(thread_id).turns
+
+    def cached_active_turn_id(self, thread_id: str) -> str:
+        """Read the exact live turn coordinate without copying its transcript."""
+
+        return self.active_turn_id_from_turns(
+            self._turns_by_thread.get(self._thread_id(thread_id), {}).values()
+        )
+
+    def cached_turn(self, thread_id: str, turn_id: str) -> dict[str, Any] | None:
+        turn = self._turns_by_thread.get(self._thread_id(thread_id), {}).get(turn_id)
+        return copy.deepcopy(turn) if turn is not None else None
+
+    def _bound_live_transcript(self, thread_id: str, turn: dict[str, Any]) -> None:
+        if self.history_mode(thread_id) != "paginated":
+            return
+        items = turn.get("items")
+        if isinstance(items, list):
+            turn["items"] = [bounded_transcript_item(item) for item in items[-TRANSCRIPT_WINDOW_ITEMS:]]
 
     def turn_thread_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._turns_by_thread))
@@ -321,6 +341,7 @@ class WebThreadReadModel:
         turns: Iterable[dict[str, Any]],
         *,
         history_mode: str = "",
+        summary_only: bool = False,
     ) -> PreparedWebThreadTurns:
         """Bound one replacement outside RuntimeLoop without mutating the cache."""
 
@@ -331,7 +352,13 @@ class WebThreadReadModel:
                 continue
             turn_id = str(turn.get("id", "") or "").strip()
             if turn_id:
-                remembered[turn_id] = self._bounded_turn_copy(turn)
+                source = turn
+                if history_mode == "paginated":
+                    source = {**turn, "items": [
+                        bounded_transcript_item(item)
+                        for item in (turn.get("items") or [])[-TRANSCRIPT_WINDOW_ITEMS:]
+                    ]}
+                remembered[turn_id] = self._bounded_turn_copy(source)
         self._bound_turns(remembered)
         cache_turns = tuple(remembered.values())
         return PreparedWebThreadTurns(
@@ -340,6 +367,7 @@ class WebThreadReadModel:
             history_mode=history_mode,
             _cache_turns=cache_turns,
             _authority_token=self._prepared_turns_token,
+            summary_only=summary_only,
         )
 
     def install_prepared_turns(self, prepared: PreparedWebThreadTurns) -> None:
@@ -351,11 +379,22 @@ class WebThreadReadModel:
             raise ValueError("prepared Web thread turns belong to another read model")
         self._advance_observation(prepared.thread_id)
         self._history_mode_by_thread[prepared.thread_id] = prepared.history_mode
-        self._turns_by_thread[prepared.thread_id] = {
+        previous = self._turns_by_thread.get(prepared.thread_id, {})
+        installed = {
             str(turn.get("id", "") or "").strip(): turn
             for turn in prepared._cache_turns
             if str(turn.get("id", "") or "").strip()
         }
+        if prepared.summary_only:
+            for turn_id, turn in installed.items():
+                old = previous.get(turn_id)
+                if old is not None:
+                    # A summary read is control/outline evidence, not a new
+                    # complete item snapshot. Preserve already observed items.
+                    known = {item.get("id") for item in old.get("items", [])}
+                    turn["items"] = ([item for item in turn.get("items", []) if item.get("id") not in known]
+                                     + old.get("items", []))[-TRANSCRIPT_WINDOW_ITEMS:]
+        self._turns_by_thread[prepared.thread_id] = installed
 
     def merge_turns(self, thread_id: str, turns: Iterable[dict[str, Any]]) -> None:
         normalized_thread_id = self._thread_id(thread_id)
@@ -369,9 +408,7 @@ class WebThreadReadModel:
         load_turns: Callable[[], Iterable[dict[str, Any]]],
     ) -> str:
         normalized_thread_id = self._thread_id(thread_id)
-        active_turn_id = self.active_turn_id_from_turns(
-            self._turns_by_thread.get(normalized_thread_id, {}).values()
-        )
+        active_turn_id = self.cached_active_turn_id(normalized_thread_id)
         if active_turn_id:
             return active_turn_id
         loaded_turns = list(load_turns())
@@ -487,6 +524,11 @@ class WebThreadReadModel:
             turn_id = str(raw_turn.get("id", "") or "").strip()
             if not turn_id:
                 return None
+            if self.history_mode(thread_id) == "paginated":
+                raw_turn = {**raw_turn, "items": [
+                    bounded_transcript_item(item)
+                    for item in (raw_turn.get("items") or [])[-TRANSCRIPT_WINDOW_ITEMS:]
+                ]}
             turns[turn_id] = self._merge_turn(
                 turns.get(turn_id),
                 self._bounded_turn_copy(raw_turn),
@@ -496,7 +538,8 @@ class WebThreadReadModel:
             if not turn_id or not isinstance(item, dict):
                 return None
             turn = self._live_turn(turns, turn_id)
-            self._upsert_turn_item(turn, self._bounded_item_copy(item))
+            source = bounded_transcript_item(item) if self.history_mode(thread_id) == "paginated" else item
+            self._upsert_turn_item(turn, self._bounded_item_copy(source))
         elif normalized_method == "turn/diff/updated":
             if not turn_id:
                 return None
@@ -596,6 +639,11 @@ class WebThreadReadModel:
                     item_id,
                     delta,
                 )
+                if self.history_mode(thread_id) == "paginated":
+                    item = self._find_turn_item(turn, item_id)
+                    if item is not None:
+                        self._upsert_turn_item(turn, bounded_transcript_item(item))
+                    turn["items"] = turn["items"][-TRANSCRIPT_WINDOW_ITEMS:]
             detail.update(
                 {
                     "turn_id": turn_id,
@@ -627,6 +675,7 @@ class WebThreadReadModel:
             return None
 
         if turn_id and turn_id in turns:
+            self._bound_live_transcript(thread_id, turns[turn_id])
             self._rebudget_turn(turns[turn_id])
         self._bound_turns(turns)
         raw_turn = turns.get(turn_id)

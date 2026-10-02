@@ -10,6 +10,32 @@ from tests.web_runtime.gateway_harness import WebGatewayHarness
 
 
 class ThreadInspectionGatewayTests(WebGatewayHarness):
+    async def test_transcript_read_is_authenticated_staged_and_closed_query(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="transcript-client", incarnation_id="transcript-document",
+        )
+        headers = self._client_headers(document)
+        calls = []
+
+        def prepare(client_id, thread_id, **kwargs):
+            self.assertTrue(self.gateway._client_operation_locks[client_id].locked())
+            calls.append((thread_id, kwargs))
+            return ("transcript", {"ok": True})
+
+        self.gateway._ports.prepare_transcript_window = prepare
+        path = f"{self.endpoint}/api/threads/thread-1/transcript"
+        async with self.session.get(path + "?turn_id=turn-1&item_id=item-1&full=true", headers=headers) as response:
+            self.assertEqual(response.status, 200)
+        self.assertEqual(calls, [("thread-1", {"turn_id": "turn-1", "item_id": "item-1", "full": True})])
+        for query in ("?direction=asc&direction=desc", "?full=1", "?cursor=", "?all=true"):
+            async with self.session.get(path + query, headers=headers) as response:
+                self.assertEqual(response.status, 400)
+        async with self.session.get(path) as response:
+            self.assertEqual(response.status, 400)
+            self.assertEqual((await response.json())["error"]["code"], "invalid_client")
+        self.assertEqual(len(calls), 1)
+
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()
         self.tool_detail_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []

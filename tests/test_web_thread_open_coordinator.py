@@ -2030,10 +2030,10 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         opened = self.open.read_thread("tab-1", "thread-1")
         self.assertEqual(self.controller._thread_read_model.history_mode("thread-1"), "paginated")
         older = self.open.list_older_turns("tab-1", "thread-1", cursor="older")
-        for result in (opened, older):
-            tool = result["turns"][0]["tools"][0]
-            self.assertTrue(tool["outputDeferred"])
-            self.assertEqual(tool["output"], [])
+        self.assertEqual(opened["turns"], [])
+        tool = older["turns"][0]["tools"][0]
+        self.assertTrue(tool["outputDeferred"])
+        self.assertEqual(tool["output"], [])
 
     def test_older_history_requires_materialization_and_uses_bounded_page(self) -> None:
         with self.assertRaises(WebRuntimeError) as caught:

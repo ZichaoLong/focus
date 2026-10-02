@@ -1,3 +1,4 @@
+import { focusPerformance } from './focusPerformance';
 import type {
   FocusAttachmentUpload,
   FocusBackendResetPreview,
@@ -23,6 +24,8 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusTranscriptPage,
+  FocusTranscriptQuery,
   FocusUpdateStatus,
   FocusUpdateTarget,
   FocusWriterProfile,
@@ -58,6 +61,7 @@ import {
   decodeFocusThreadSnapshot,
   decodeFocusThreadToolDetailScanPage,
   decodeFocusTurnPage,
+  decodeFocusTranscriptPage,
   decodeFocusWriterProfileResult,
   type FocusHttpDecoder,
 } from './httpResponseDecoder';
@@ -240,6 +244,7 @@ export interface FocusWebApiPort {
     turnLimit?: number,
   ): Promise<FocusTurnPage>;
   exportThreadSummary(threadId: string): Promise<Blob>;
+  readTranscriptWindow(threadId: string, query?: FocusTranscriptQuery, signal?: AbortSignal): Promise<FocusTranscriptPage>;
   exportThreadData(threadId: string): Promise<Blob>;
   readToolDetail(
     threadId: string,
@@ -581,6 +586,16 @@ export class FocusWebApi implements FocusWebApiPort {
     );
   }
 
+  readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}, signal?: AbortSignal): Promise<FocusTranscriptPage> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined) params.set(key, String(value));
+    }
+    return this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
+      parameters: { thread_id: threadId }, query: params, signal,
+    });
+  }
+
   async exportThreadSummary(threadId: string): Promise<Blob> {
     const response = await fetch(focusWebEndpointPath(
       'thread_summary_export',
@@ -916,8 +931,8 @@ export class FocusWebApi implements FocusWebApiPort {
     const socket = new WebSocket(
       `${protocol}//${window.location.host}${focusWebEndpointPath('events')}?${params.toString()}`,
     );
-    socket.addEventListener('open', () => handlers.open?.());
-    socket.addEventListener('close', () => handlers.close?.());
+    socket.addEventListener('open', () => { focusPerformance.record('socket_open'); handlers.open?.(); });
+    socket.addEventListener('close', (event) => { focusPerformance.record('socket_close', { code: event.code }); handlers.close?.(); });
     socket.addEventListener('message', (message) => {
       if (message.data === 'pong') return;
       if (typeof message.data !== 'string') {
@@ -925,7 +940,9 @@ export class FocusWebApi implements FocusWebApiPort {
         return;
       }
       try {
+        if (focusPerformance.enabled) focusPerformance.record('event', { bytes: new TextEncoder().encode(message.data).byteLength });
         const event = decodeFocusProjectionEvent(JSON.parse(message.data) as unknown);
+        if (event?.reason === 'socket_backpressure') focusPerformance.record('socket_backpressure');
         if (event) handlers.event(event);
         else handlers.invalid?.();
       } catch {

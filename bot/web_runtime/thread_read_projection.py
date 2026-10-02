@@ -25,6 +25,7 @@ from bot.thread_runtime_coordination import ManagedLoadedThreadInventorySnapshot
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
 from bot.web_runtime.projection import (
     project_owner,
+    project_subagent_tasks,
     project_thread_snapshot,
     project_thread_summary,
     project_turn_page,
@@ -88,6 +89,7 @@ class WebThreadOpenProjection:
     mutation_unknown: dict[str, Any] | None
     selection_scope: dict[str, Any]
     final_observation: WebThreadReadObservationReceipt
+    collaboration_turns: tuple[dict[str, Any], ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -368,6 +370,8 @@ def project_open_thread(
         ),
     )
     result["mutation_unknown"] = projection.mutation_unknown
+    if projection.collaboration_turns is not None:
+        result["tasks"] = project_subagent_tasks(projection.collaboration_turns)
     result["selection_scope"] = projection.selection_scope
     return result
 

@@ -719,6 +719,10 @@
         {
           "path": "web/src/focus/documentTitle.ts",
           "symbol": "syncFocusDocumentTitle"
+        },
+        {
+          "path": "web/src/focus/focusTranscript.ts",
+          "symbol": "createFocusTranscript"
         }
       ],
       "contract": [
@@ -737,6 +741,10 @@
         {
           "path": "docs/contracts/focus-web-prompt-mutation-recovery.zh-CN.md",
           "heading": "2. Identity、receipt 与唯一 owner"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "实时更新、预算与重同步"
         }
       ],
       "focused-test": [
@@ -878,6 +886,10 @@
         {
           "path": "web/src/focus/useFocusWebClient.ts",
           "symbol": "useFocusWebClient"
+        },
+        {
+          "path": "bot/web_runtime/gateway_thread_inspection.py",
+          "symbol": "WebGatewayThreadInspectionMixin._handle_thread_transcript"
         }
       ],
       "owner": [
@@ -908,6 +920,22 @@
         {
           "path": "web/src/focus/client-state/browser-turn-window.ts",
           "symbol": "createBrowserTurnWindow"
+        },
+        {
+          "path": "bot/web_runtime/thread_inspection.py",
+          "symbol": "WebThreadInspectionService.prepare_transcript_window"
+        },
+        {
+          "path": "bot/web_runtime/transcript_window.py",
+          "symbol": "read_transcript_window"
+        },
+        {
+          "path": "bot/web_runtime/transcript_budget.py",
+          "symbol": "bounded_transcript_item"
+        },
+        {
+          "path": "web/src/focus/focusTranscript.ts",
+          "symbol": "createFocusTranscript"
         }
       ],
       "contract": [
@@ -918,6 +946,10 @@
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "控制状态与正文读取"
         }
       ],
       "focused-test": [
@@ -927,7 +959,11 @@
             "tests/test_web_projection.py",
             "tests/test_web_thread_open_coordinator.py",
             "tests/test_web_thread_read_model.py",
-            "tests/web_runtime/test_thread_history_gateway.py"
+            "tests/web_runtime/test_thread_history_gateway.py",
+            "tests/test_web_transcript_window.py",
+            "tests/test_web_transcript_updates.py",
+            "tests/test_codex_transcript_protocol.py",
+            "tests/web_runtime/test_thread_inspection_gateway.py"
           ]
         },
         {
@@ -938,7 +974,9 @@
             "web/test/focus-turn-window-settings-surface.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",
             "web/test/focus_client/owners/focus-history-navigation.test.ts",
-            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+            "web/test/focus_client/owners/use-focus-web-client.test.ts",
+            "web/test/focus_client/owners/focus-transcript.test.ts",
+            "web/test/focus-performance.test.ts"
           ]
         }
       ],
@@ -1474,6 +1512,10 @@
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "实时更新、预算与重同步"
         }
       ],
       "focused-test": [

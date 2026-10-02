@@ -38,7 +38,7 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | 不可信 event admission 与 nested decode | `web/src/focus/projectionEventDecoder.ts` |
 | 完整 snapshot 的 staging 与原子安装 | `web/src/focus/focusProjectionSync.ts` |
 | browser next-turn settings snapshot 安装 | `web/src/focus/client-state/web-next-turn-settings.ts` 的 `WebNextTurnSettingsOwner` |
-| browser-local full-turn window preference | `web/src/focus/client-state/browser-turn-window.ts` 的 `BrowserTurnWindowOwner` |
+| browser-local 近期轮次摘要窗口 preference | `web/src/focus/client-state/browser-turn-window.ts` 的 `BrowserTurnWindowOwner` |
 | browser document title presentation | `web/src/focus/documentTitle.ts` 的 `syncFocusDocumentTitle` |
 | browser-local document activity favicon preference 与 presentation | `web/src/focus/documentActivityFavicon.ts` 的 `createFocusDocumentActivityFaviconPreference` 与 `syncFocusDocumentActivityFavicon` |
 | app-server typed runtime notice 投影 | `bot/web_runtime/runtime_notice.py` 的 `project_runtime_notice`；有序发布由 `WebRuntimeEventCoordinator` 持有 |
@@ -120,6 +120,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - 如果未来允许前后端独立部署或滚动版本共存，必须先建立新的 negotiation/deployment 合同；当前 version 字段本身
   不构成版本协商协议。
 
+- v23 新增有界正文 `/transcript` endpoint、`FocusTranscriptPage` 与逐条目 `item_turns` / `item_order`；paginated thread 的打开 snapshot 改为控制状态与 Prompt 摘要。具体预算、定位、缓冲、复制和虚拟渲染遵循[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)。v22 浏览器不保留兼容路径，服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
@@ -151,8 +153,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   Web reset preview 的 status 是封闭的 `available / force-only / unavailable`；只有前两者携 positive safe
   generation，`unavailable` 必须携 generation `0` 且不授予 execute authority。
 - `GET /api/threads/{thread_id}` 与 `GET /api/threads/{thread_id}/turns` 的可选 `turn_limit` 只接受 exact
-  `5 / 10 / 20`；缺失时为 `10`，空值、重复参数、带空白或其他整数一律 fail closed。后者是 summary outline 与 full
-  detail 的唯一历史 endpoint；`full` 请求必须携非空 opaque `cursor`，只有 `summary` 可以省略 cursor。一个 browser
+  `5 / 10 / 20`；缺失时为 `10`，空值、重复参数、带空白或其他整数一律 fail closed。后者承载 summary outline 与兼容 full
+  detail；paginated 正文改用 `/transcript`；`full` 请求必须携非空 opaque `cursor`，只有 `summary` 可以省略 cursor。对于旧的 turn-page 路径，一个 browser
   preference generation 内 recent、summary 与 full 必须使用同一个 page width，保证 summary locator 可直接复用于
   同页 full 请求，而不建立 range/offset 语义。width 改变会废弃旧 locator/detail intent，并以新 width 重建。
 - thread directory、thread snapshot 与 history page 的大型 JSON success response 在序列化后达到 16 KiB 时，按请求的
@@ -480,6 +482,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 其 wire admission 与 browser decode。
 
 - HTTP response 只有完整 decode 成功后才可交给 view/projection owner；失败结果不得通过 TypeScript cast 安装。
+- paginated 正文窗口、`item_turns`、item-cache 和传输缓冲遵循[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)；以下 full-turn page 规则只约束仍使用该路径的兼容读取。
 - 历史 summary/full page 是 request-local 的有界展示数据，不得 merge 到 process-local live thread read model。浏览器
   只保留 live recent window、一个有界 Prompt outline 与至多一个 full-detail page；替换历史页不能让服务端 live cache
   或浏览器 full-turn DOM 单调累积。process-local live cache 的硬上限为 20 个 raw turns；它不按 browser document
@@ -492,8 +495,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   presentation 都不得套用该行窗口或字符裁剪；同一时刻只挂载一种，切回 source text 必须卸载完整 diff DOM。新的
   full target 默认回到
   source text。关闭、active thread 或 runtime epoch 改变、document replacement 与 client dispose 必须清理相应
-  request intent、presentation mode 和内容；这清除浏览器引用，不承诺物理 GC 时刻。搜索结果的 turn cursor 只可替换
-  上述唯一 full-detail history window，不得创建第二份 turns cache。
+  request intent、presentation mode 和内容；这清除浏览器引用，不承诺物理 GC 时刻。paginated 搜索结果的 exact item 定位替换唯一正文窗口，不得创建第二份 turns cache；旧的 turn cursor 路径仍只替换上述 full-detail window。
 - browser inspection owner 为 detail/search 各自公开一个封闭的 browser-local unavailable reason。按优先级，它从
   当前 document access、selected/snapshot identity、build capability 与已准入 `history_mode` 推导
   `document_unavailable`、`no_active_thread`、`thread_not_materialized`、exact `legacy_history`、

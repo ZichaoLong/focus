@@ -127,3 +127,5 @@ limited to reading navigation.
 feedback from user actions, including in reading mode. A failed export read must
 show failure feedback. Notices appear below the reading toolbar without
 intercepting pointer actions or restoring the normal mode's persistent alerts.
+
+Performance and connection diagnostics share the default-off recorder. Manual recording retains at most 64 numeric samples of body-load duration, event bytes, close codes, buffer overflows and supported long tasks. Stop freezes samples and restart clears them. Content, thread identities, URLs and raw close reasons are excluded; see the [bounded transcript contract](./focus-web-transcript-window.md).

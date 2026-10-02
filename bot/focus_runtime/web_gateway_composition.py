@@ -145,6 +145,9 @@ def compose_web_gateway(
                 thread_id,
                 **kwargs,
             ),
+            prepare_transcript_window=lambda client_id, thread_id, **kwargs: ingress().prepare_external_transaction(
+                web_runtime.prepare_transcript_window, client_id, thread_id, **kwargs,
+            ),
             start_thread=lambda client_id, **kwargs: runtime_call(
                 web_runtime.start_thread,
                 client_id,

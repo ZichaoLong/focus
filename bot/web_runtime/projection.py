@@ -318,7 +318,7 @@ def project_thread_snapshot(
     action_capabilities: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     requests = [project_pending_request(item) for item in pending_requests]
-    projected_turns = project_turns(
+    projected_turns = _project_summary_user_prompts(snapshot.turns) if snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral else project_turns(
         snapshot.turns,
         defer_tool_output=snapshot.history_mode == "paginated" and not snapshot.summary.ephemeral,
         attachment_url_for_path=attachment_url_for_path,

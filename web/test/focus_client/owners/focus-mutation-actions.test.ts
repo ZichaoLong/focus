@@ -248,6 +248,25 @@ describe('FocusMutationActions single-POST settlement', () => {
     expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
   });
 
+  it('repairs a refused connection without replaying the prompt or competing snapshot reads', async () => {
+    const h = harness();
+    h.api.submitPrompt.mockRejectedValueOnce(new FocusApiError('disconnected', {
+      status: 409,
+      code: 'web_writer_disconnected',
+      effectEvidence: 'pre_effect',
+    }));
+    await expect(h.actions.submit('keep this input')).resolves.toBe(false);
+    expect(h.reconnectEventTransport).toHaveBeenCalledOnce();
+    expect(h.actions.canSubmit.value).toBe(false);
+    expect(h.refreshThreads).not.toHaveBeenCalled();
+    expect(h.refreshActiveThread).not.toHaveBeenCalled();
+    expect(h.api.readPromptResult).not.toHaveBeenCalled();
+    h.connection.value = 'connected';
+    expect(h.actions.canSubmit.value).toBe(true);
+    expect(h.api.submitPrompt).toHaveBeenCalledOnce();
+    expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
+  });
+
   it('keeps text but retires unsafe chips after attachment rollback fails', async () => {
     const h = harness();
     h.api.submitPrompt.mockResolvedValueOnce(promptReceipt('known_no_effect', {

@@ -115,6 +115,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/focus/client-state/browser-turn-window.ts",
                     "createBrowserTurnWindow",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/focus/focusTranscript.ts",
+                    "createFocusTranscript",
+                ),
             ),
         )
 

@@ -303,7 +303,7 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
         coordinator.handle_notification("item/completed", {"threadId": "root-1", "turnId": "turn-1"})
         owners.read_model.history_mode.return_value = "legacy"
         detail = coordinator.project_notification(scheduled[0])
-        tool = detail["turns"][0]["tools"][0]
+        tool = detail["item_turns"][0]["tools"][0]
         self.assertTrue(tool["outputDeferred"])
         self.assertEqual(tool["output"], [])
         callbacks.publish_projection.assert_not_called()

@@ -136,6 +136,10 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                     "inspection",
                     {"args": args, "kwargs": kwargs},
                 ),
+                prepare_transcript_window=lambda *args, **kwargs: (
+                    "transcript",
+                    {"args": args, "kwargs": kwargs},
+                ),
                 prepare_conversation_search=lambda *args, **kwargs: (
                     "inspection",
                     {"args": args, "kwargs": kwargs},

@@ -1521,7 +1521,7 @@ class WebGatewayTests(WebGatewayHarness):
                 self.closed = False
                 self.sent: list[dict] = []
 
-            async def send_json(self, event):
+            async def send_json(self, event, **_kwargs):
                 self.sent.append(dict(event))
 
             async def close(self, **_kwargs):
@@ -1532,6 +1532,7 @@ class WebGatewayTests(WebGatewayHarness):
             queue=asyncio.Queue(maxsize=4),
             task=None,
             overflowed=False,
+            queued_bytes=0,
         )
         self.gateway._socket_senders[socket] = state
         state.task = asyncio.create_task(self.gateway._run_socket_sender(socket, state))
@@ -1559,6 +1560,7 @@ class WebGatewayTests(WebGatewayHarness):
             queue=asyncio.Queue(maxsize=2),
             task=None,
             overflowed=False,
+            queued_bytes=0,
         )
         self.gateway._socket_senders[socket] = state
         self.addCleanup(self.gateway._socket_senders.pop, socket, None)
@@ -1575,6 +1577,25 @@ class WebGatewayTests(WebGatewayHarness):
         self.assertEqual(invalidation["reason"], "socket_backpressure")
         self.gateway._enqueue_projection_event({"type": "fourth", "revision": 4})
         self.assertTrue(state.queue.empty())
+
+    async def test_socket_byte_budget_invalidates_before_event_count_limit(self):
+        class Socket:
+            closed = False
+        socket = Socket()
+        state = SimpleNamespace(queue=asyncio.Queue(maxsize=128), task=None,
+                                overflowed=False, queued_bytes=0)
+        self.gateway._socket_senders[socket] = state
+        self.addCleanup(self.gateway._socket_senders.pop, socket, None)
+        for revision in range(3):
+            self.gateway._enqueue_projection_event({
+                "type": "thread_delta", "runtime_epoch": "epoch", "revision": revision,
+                "thread_id": "thread", "detail": {"text": "中文" * 180000},
+            })
+        self.assertTrue(state.overflowed)
+        self.assertEqual(state.queue.qsize(), 1)
+        invalidation = state.queue.get_nowait()
+        self.assertEqual(invalidation["reason"], "socket_backpressure")
+        self.assertLess(state.queued_bytes, 512)
 
     async def _cleanup_fake_socket(self, socket, state) -> None:
         socket.closed = True
@@ -1834,6 +1855,7 @@ class WebGatewayStartupTests(unittest.TestCase):
                     prepare_export_thread_data=lambda *_args, **_kwargs: None,
                     run_prepared_thread_data_export=lambda _prepared: b"",
                     prepare_tool_detail=lambda *_args, **_kwargs: {},
+                    prepare_transcript_window=lambda *_args, **_kwargs: {},
                     prepare_conversation_search=lambda *_args, **_kwargs: {},
                     start_thread=lambda *_args, **_kwargs: {},
                     prepare_prompt=lambda *_args, **_kwargs: {},

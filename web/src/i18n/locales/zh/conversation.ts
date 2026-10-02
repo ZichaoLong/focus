@@ -22,6 +22,11 @@ export default {
   copyToComposerTooltip: '复制到输入框，作为新的后续消息（历史不会改变）',
   yesterday: '昨天',
   loadOlder: '加载更早的消息',
+  loadNewer: '加载较新的消息',
+  transcriptError: '正文加载失败，已显示的内容和输入框会保留。',
+  retryTranscript: '重新加载近期消息',
+  fullContent: '查看完整内容',
+  contentPreview: '超长内容预览',
   loadingOlder: '正在加载更早的消息…',
   cron: {
     fired: '定时任务已触发',

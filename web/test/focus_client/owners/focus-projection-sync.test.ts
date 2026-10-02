@@ -1900,6 +1900,26 @@ describe('FocusProjectionSync', () => {
     expect(h.projection.snapshot.value?.active_turn_id).toBe('turn-buffered');
   });
 
+  it('discards overflowing control buffers and preserves recovery backoff', async () => {
+    const h = harness();
+    await primeActive(h);
+    const pending = deferred<FocusThreadSnapshot>();
+    vi.mocked(h.api.readThread).mockReturnValueOnce(pending.promise);
+    const reload = h.projection.reloadAll();
+    await vi.waitFor(() => expect(h.api.readThread).toHaveBeenCalledTimes(2));
+    h.transport.resetProjectionReloadBackoff.mockClear();
+    for (let i = 1; i <= 400; i++) h.projection.handleEvent(threadDelta(i, 'thread-a', {
+      method: 'turn/started', active_turn_id: `buffered-${i}`, active_turn_status: 'inProgress',
+    }));
+    pending.resolve(snapshot('thread-a'));
+    await reload;
+    expect(h.projection.snapshotInvalidated.value).toBe(true);
+    expect(h.projection.snapshot.value?.active_turn_id).not.toContain('buffered');
+    expect(h.transport.scheduleProjectionReloadRetry).toHaveBeenCalledOnce();
+    expect(h.transport.resetProjectionReloadBackoff).not.toHaveBeenCalled();
+    h.projection.dispose();
+  });
+
   it('does not replay events already covered by a newer composite thread snapshot', async () => {
     const h = harness(9);
     const stagedThread = deferred<FocusThreadSnapshot>();

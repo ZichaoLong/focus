@@ -44,7 +44,7 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Untrusted event admission and nested decoding | `web/src/focus/projectionEventDecoder.ts` |
 | Complete-snapshot staging and atomic installation | `web/src/focus/focusProjectionSync.ts` |
 | Browser next-turn-settings snapshot installation | `WebNextTurnSettingsOwner` in `web/src/focus/client-state/web-next-turn-settings.ts` |
-| Browser-local full-turn window preference | `BrowserTurnWindowOwner` in `web/src/focus/client-state/browser-turn-window.ts` |
+| Browser-local recent-turn summary window preference | `BrowserTurnWindowOwner` in `web/src/focus/client-state/browser-turn-window.ts` |
 | Browser document-title presentation | `syncFocusDocumentTitle` in `web/src/focus/documentTitle.ts` |
 | Browser-local document-activity favicon preference and presentation | `createFocusDocumentActivityFaviconPreference` and `syncFocusDocumentActivityFavicon` in `web/src/focus/documentActivityFavicon.ts` |
 | Typed app-server runtime-notice projection | `project_runtime_notice` in `bot/web_runtime/runtime_notice.py`; ordered publication remains with `WebRuntimeEventCoordinator` |
@@ -163,6 +163,7 @@ guards and may not retain parallel key or enum inventories.
 - Version 22 adds `outputDeferred=true` to transcript tools: saved terminal output
   is awaiting an exact-locator read. This differs from truncation or empty output;
   detail responses cannot use this shape.
+- Version 23 adds bounded `/transcript` reads, `FocusTranscriptPage`, and per-item `item_turns` / `item_order`. Paginated opens return control state and Prompt summaries. Budgets, positioning, buffers, copying and virtual rendering follow the [bounded transcript contract](./focus-web-transcript-window.md). No v22 browser compatibility path remains; service and assets deploy together.
 - The Focus service and its static browser assets deploy from the same repository
   version. Internal compatibility shims, a second legacy decoder, and legacy aliases
   are not default goals. A contract change updates the producer, catalog, generated
@@ -222,9 +223,10 @@ guards and may not retain parallel key or enum inventories.
 - The optional `turn_limit` on `GET /api/threads/{thread_id}` and
   `GET /api/threads/{thread_id}/turns` accepts exactly `5 / 10 / 20`; omission
   means `10`, while empty, repeated, whitespace-padded, or other integer values
-  fail closed. The latter endpoint is the sole summary/full history path. `full`
-  requires a non-empty opaque cursor; only `summary` may omit it. Recent,
-  summary, and full use one page width within a browser preference generation,
+  fail closed. The latter endpoint carries summary outlines and compatible full
+  turn pages; paginated message bodies use `/transcript`. `full` requires a
+  non-empty opaque cursor; only `summary` may omit it. For the compatible turn-page
+  path, recent, summary, and full use one page width within a browser preference generation,
   so its summary locator is reusable for that full page. A width change retires
   old locators/detail intent and rebuilds them at the new width.
 - After serialization, large JSON success responses for the thread directory,
@@ -780,6 +782,7 @@ decode only.
 
 - An HTTP response reaches a view or projection owner only after a complete decode.
   A failed result cannot be installed through a TypeScript cast.
+- Paginated body windows, item events, caches and transport buffers follow the [bounded transcript contract](./focus-web-transcript-window.md). The full-turn page rules below apply to compatibility reads still using that path.
 - A historical summary or full page is request-local bounded presentation data and
   is never merged into the process-local live thread read model. The browser retains
   only its recent live window, one bounded Prompt outline, and at most one full-detail
@@ -802,7 +805,7 @@ decode only.
   full target defaults to source text. Close, active-thread or runtime-epoch
   change, document replacement, and client dispose clear the associated
   request intent, presentation mode, and content. This clears browser
-  references, not a physical-GC time. A search result's turn cursor may only
+  references, not a physical-GC time. Paginated search uses exact item positioning in the sole transcript window. A compatibility search result's turn cursor may only
   replace the sole full-detail history window; it creates no second turns cache.
 - The browser inspection owner exposes one closed, browser-local unavailable
   reason for each detail/search surface. In precedence order it derives

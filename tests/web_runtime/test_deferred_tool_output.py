@@ -35,7 +35,7 @@ def raw_turn(status="completed"):
 
 
 def assert_deferred(turns):
-    tools = turns[0]["tools"]
+    tools = [tool for turn in turns for tool in turn.get("tools", [])]
     assert len(tools) == 3
     assert [tool["inspectionLocator"]["change_index"] for tool in tools] == [None, 0, 1]
     for tool in tools:
@@ -55,7 +55,7 @@ def test_snapshot_requires_known_persisted_history(mode, ephemeral, deferred):
     result = project_thread_snapshot(ThreadSnapshot(summary, [raw_turn()]), owner={},
                                      pending_requests=[], coordinates={})
     if deferred:
-        assert_deferred(result["turns"])
+        assert result["turns"] == []  # paginated open carries prompt summaries only
     else:
         assert result["turns"][0]["tools"][0]["output"]
         assert "outputDeferred" not in result["turns"][0]["tools"][0]
@@ -111,7 +111,7 @@ def test_history_pages_and_live_receipts_share_deferral_and_do_not_erase_read_ca
         update=WebThreadNotificationUpdate(method="item/completed", thread_id="thread", raw_turn=prepared.projection_turns[0]),
         defer_tool_output=model.history_mode("thread") == "paginated",
     )
-    assert_deferred(project_notification(receipt, **urls)["turns"])
+    assert_deferred(project_notification(receipt, **urls)["item_turns"])
     assert prepared.projection_turns[0]["items"][0]["aggregatedOutput"]
 
 

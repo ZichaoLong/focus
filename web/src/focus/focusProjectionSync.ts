@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { focusPerformance } from './focusPerformance';
 import type { Ref } from 'vue';
 import type { ChatTurn, ToolCall, TurnBlock } from '../types';
 import type { FocusWebApiPort } from './api';
@@ -93,6 +94,7 @@ export interface FocusProjectionTransportPort {
 }
 
 export interface FocusProjectionSyncOptions {
+  onTranscriptDelta?(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail): void;
   api: FocusWebApiPort;
   intentClock: ClientIntentClock;
   turnWindowLimit: Readonly<Ref<number>>;
@@ -435,9 +437,12 @@ export function createFocusProjectionSync(
   let installingSnapshot = false;
   let snapshotInstallFloor: FocusCoordinates | null = null;
   let bufferedEvents: FocusProjectionEvent[] = [];
+  let bufferedBytes = 0;
+  let bufferOverflowed = false;
   let reloadAfterInstall = false;
   let globalActiveTurnDisclosureRevision: FocusCoordinates | null = null;
   let pendingStreamEvents: FocusProjectionEvent[] = [];
+  let pendingStreamBytes = 0;
   let pendingStreamTimer: ReturnType<typeof setTimeout> | null = null;
   const disposedResult = Symbol('disposed projection result');
 
@@ -458,6 +463,7 @@ export function createFocusProjectionSync(
     if (pendingStreamEvents.length === 0) return;
     const queued = pendingStreamEvents;
     pendingStreamEvents = [];
+    pendingStreamBytes = 0;
     if (options.navigation.isDisposed) return;
     // Preserve every wire coordinate and event ordering. Vue coalesces these
     // synchronous ref writes into one render, which removes the expensive
@@ -468,6 +474,9 @@ export function createFocusProjectionSync(
   function dispose(): void {
     cancelPendingStreamFlush();
     pendingStreamEvents = [];
+    pendingStreamBytes = 0;
+    bufferedEvents = [];
+    bufferedBytes = 0;
   }
 
   function schedulePendingStreamFlush(): void {
@@ -816,7 +825,9 @@ export function createFocusProjectionSync(
   function applyThreadDelta(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail): boolean {
     if (!snapshot.value || event.thread_id !== options.navigation.activeThreadId.value) return false;
     if (threadSnapshotCoversEvent(event)) return true;
-    const streamChanged = appendStreamDelta(detail);
+    const paginated = snapshot.value.thread.history_mode === 'paginated' && !!options.onTranscriptDelta;
+    if (paginated) options.onTranscriptDelta?.(event, detail);
+    const streamChanged = paginated ? !!detail.stream_delta || detail.item_turns !== undefined : appendStreamDelta(detail);
     const incomingTurns = detail.turns ?? [];
     if (incomingTurns.length > 0) mergeTurns(incomingTurns);
     const statusChanged = detail.thread_status !== undefined;
@@ -1273,10 +1284,20 @@ export function createFocusProjectionSync(
     if (options.navigation.isDisposed) return;
     if (installingSnapshot && event.type !== 'session_expired') {
       flushPendingStreamEvents();
-      bufferedEvents.push(event);
+      if (bufferOverflowed) return;
+      bufferedBytes += JSON.stringify(event).length * 2;
+      if (bufferedEvents.length >= 256 || bufferedBytes > 1024 * 1024) {
+        bufferedEvents = [];
+        bufferOverflowed = true;
+        focusPerformance.record('projection_overflow', { bytes: bufferedBytes });
+        reloadAfterInstall = true;
+      } else bufferedEvents.push(event);
       return;
     }
     if (isStreamPresentationEvent(event)) {
+      const bytes = JSON.stringify(event).length * 2;
+      if (pendingStreamEvents.length >= 256 || pendingStreamBytes + bytes > 512 * 1024) flushPendingStreamEvents();
+      pendingStreamBytes += bytes;
       pendingStreamEvents.push(event);
       schedulePendingStreamFlush();
       return;
@@ -1310,6 +1331,8 @@ export function createFocusProjectionSync(
     reloadInFlight.value = true;
     reloadPromise = (async () => {
       installingSnapshot = true;
+      bufferOverflowed = false;
+      bufferedBytes = 0;
       snapshotInstallFloor = null;
       let installSucceeded = false;
       let stagedMeta: FocusMetaEnvelope | null = null;
@@ -1434,6 +1457,7 @@ export function createFocusProjectionSync(
         }
         const queued = bufferedEvents;
         bufferedEvents = [];
+        bufferedBytes = 0;
         let installedBase: FocusCoordinates;
         if (
           installSucceeded
@@ -1473,8 +1497,8 @@ export function createFocusProjectionSync(
             );
           }
           installedBase = commitSnapshotInstallFloor(replayBase);
-          snapshotInvalidated.value = false;
-          options.transport.resetProjectionReloadBackoff();
+          snapshotInvalidated.value = bufferOverflowed;
+          if (!bufferOverflowed) options.transport.resetProjectionReloadBackoff();
           options.clearErrorMessageIf(snapshotReloadErrorMessage);
           snapshotReloadErrorMessage = '';
         } else {
@@ -1484,7 +1508,7 @@ export function createFocusProjectionSync(
         replayBufferedEvents(queued, installedBase);
         if (reloadAfterInstall) {
           reloadAfterInstall = false;
-          if (installSucceeded) options.transport.requestProjectionReload();
+          if (installSucceeded && !bufferOverflowed) options.transport.requestProjectionReload();
           else options.transport.scheduleProjectionReloadRetry();
         } else if (!installSucceeded) {
           options.transport.scheduleProjectionReloadRetry();

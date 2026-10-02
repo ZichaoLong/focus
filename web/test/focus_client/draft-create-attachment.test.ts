@@ -15,6 +15,7 @@ describe('Focus Web draft creation and attachments', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     expect(client.selectedModelId.value).toBe(AUTO_MODEL_ID);
     await client.submit('hello');
@@ -48,6 +49,7 @@ describe('Focus Web draft creation and attachments', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     await expect(client.submit('hello')).resolves.toBe(true);
     await vi.waitFor(() => expect(listAttempt).toBeGreaterThanOrEqual(2));
@@ -70,6 +72,7 @@ describe('Focus Web draft creation and attachments', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     const uploaded = await client.uploadAttachment(
       new Blob(['png'], { type: 'image/png' }),
@@ -104,6 +107,7 @@ describe('Focus Web draft creation and attachments', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     await expect(client.submit('inspect before retry', [{
       fileId: 'attachment-1',
@@ -159,6 +163,7 @@ describe('Focus Web draft creation and attachments', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     await expect(client.submit('restore me')).resolves.toBe(false);
 

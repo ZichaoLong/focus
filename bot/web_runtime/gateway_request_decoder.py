@@ -38,6 +38,20 @@ def decode_turn_window_limit(query: object) -> int:
         ) from exc
 
 
+def decode_transcript_query(query: object) -> dict[str, Any]:
+    message = "Transcript queries require exact cursor/turn/item fields and asc/desc direction."
+    values = _decode_exact_query(
+        query, required=frozenset(),
+        optional=frozenset({"turn_id", "cursor", "direction", "item_id", "full"}),
+        code="invalid_transcript_query", message=message,
+    )
+    if any(not value or value.strip() != value or len(value) > 4096 for value in values.values()):
+        raise WebRuntimeError(message, code="invalid_transcript_query", status=400)
+    if values.get("direction", "desc") not in {"asc", "desc"} or values.get("full", "false") not in {"true", "false"}:
+        raise WebRuntimeError(message, code="invalid_transcript_query", status=400)
+    return {**values, "full": values.get("full", "false") == "true"}
+
+
 def decode_tool_detail_query(query: object) -> tuple[str, int | None, str | None]:
     """Decode the explicit view plus exact locator/cursor query fields."""
 

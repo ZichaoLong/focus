@@ -37,6 +37,7 @@ import type {
   FocusToolDetailView,
   FocusToolInspectionLocator,
   FocusTurnPage,
+  FocusTranscriptPage,
   FocusUpdateProgress,
   FocusUpdateStatus,
   FocusUnknownLifecycleMutation,
@@ -53,6 +54,7 @@ import {
   canonicalizeFocusWireChatTurn,
   decodeFocusOperatorStatus,
   isFocusWireChatTurnWindow,
+  isFocusTranscriptWindow,
   isFocusWireGoal,
   isFocusWireRecord,
   isFocusWireTaskItem,
@@ -758,6 +760,21 @@ export const decodeFocusThreadSnapshot: FocusHttpDecoder<FocusThreadSnapshot> = 
     ...(value as unknown as FocusThreadSnapshot),
     turns: canonicalizeTurns(value.turns),
   };
+};
+
+export const decodeFocusTranscriptPage: FocusHttpDecoder<FocusTranscriptPage> = (value) => {
+  if (!isRequiredRecord('transcript_page', value)
+    || !hasExactRequiredFields('transcript_page', value) || !hasCoordinates(value)
+    || !isNonEmptyTrimmedString(value.thread_id)
+    || !isFocusTranscriptWindow(value.turns)) return null;
+  for (const key of ['turn_id', 'older_cursor', 'newer_cursor']) {
+    if (value[key] !== null && !isNonEmptyTrimmedString(value[key])) return null;
+  }
+  if (value.full_text !== null && typeof value.full_text !== 'string') return null;
+  if (value.turns.length > 80 || (value.full_text !== null && value.turns.length !== 0)) return null;
+  if (!value.turns.every((turn) => isNonEmptyTrimmedString(turn.rawTurnId)
+    && isNonEmptyTrimmedString(turn.itemId))) return null;
+  return { ...(value as unknown as FocusTranscriptPage), turns: canonicalizeTurns(value.turns) };
 };
 
 export const decodeFocusTurnPage: FocusHttpDecoder<FocusTurnPage> = (value) => {

@@ -16,6 +16,7 @@ import MoonSpinner from '../ui/MoonSpinner.vue';
 import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import TranscriptRow from './TranscriptRow.vue';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import {
   assistantRenderBlocks,
@@ -60,6 +61,8 @@ const props = withDefaults(
      * the empty-conversation state.
      */
     sessionLoading?: boolean;
+    transcriptError?: string;
+    hasNewerMessages?: boolean;
     /**
      * Live compaction state of the session: non-null while the daemon rewrites
      * history, rendered as a body-sized "Compacting context…" activity notice.
@@ -187,6 +190,9 @@ const streamingTurnId = computed<string | null>(() => {
 const showWorking = computed(() => props.working);
 
 const emit = defineEmits<{
+  openFullContent: [turn: ChatTurn];
+  loadNewerMessages: [];
+  retryTranscript: [];
   openFile: [target: FilePreviewRequest];
   openMedia: [media: ToolMedia];
   /** Show a thinking block's full text in the right-side panel. */
@@ -280,6 +286,7 @@ const lastUserTurnId = computed<string | null>(() => {
 function canCopyMessageToComposer(turn: ChatTurn): boolean {
   return (
     turn.role === 'user' &&
+    !turn.contentDeferred &&
     turn.id === lastUserTurnId.value &&
     !props.working &&
     !turn.skillActivation &&
@@ -329,6 +336,8 @@ function assistantRunEndingAt(index: number): ChatTurn[] {
 }
 
 function assistantRunFinalText(index: number): string {
+  const turn = props.turns[index];
+  if (turn?.itemId) return turn.contentDeferred ? '' : turnFinalText(turn);
   return assistantRunEndingAt(index)
     .map((t) => turnFinalText(t))
     .filter(Boolean)
@@ -338,6 +347,7 @@ function assistantRunFinalText(index: number): string {
 function isAssistantRunEnd(index: number): boolean {
   const turn = props.turns[index];
   if (!turn || turn.role !== 'assistant') return false;
+  if (turn.itemId) return true;
   const next = props.turns[index + 1];
   return !next || next.role !== 'assistant';
 }
@@ -402,6 +412,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
        turns are left-aligned ordered semantic blocks with no role/name label.
        A derived thin line marks only a local work-to-reply transition. -->
   <div class="chat">
+    <div v-if="transcriptError" role="status" class="transcript-notice">
+      <span>{{ t('conversation.transcriptError') }}</span>
+      <button type="button" @click="emit('retryTranscript')">{{ t('conversation.retryTranscript') }}</button>
+    </div>
     <div v-if="sessionLoading" class="chat-loading">
       <Spinner size="sm" />
       <span class="chat-loading-text">{{ t('conversation.loading') }}</span>
@@ -428,12 +442,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </span>
     </div>
 
-    <template v-for="(turn, ti) in turns" :key="turn.id">
+    <TranscriptRow v-for="(turn, ti) in turns" :key="turn.id" :turn="turn">
       <!-- User turn → right-aligned soft-blue bubble (copy-to-composer lives
            below the bubble, in the meta row). -->
       <template v-if="turn.role === 'user'">
         <div v-if="userTurnHasPresentation(turn)" class="u-turn">
-          <div class="u-bub turn-anchor" :data-turn-id="turn.id">
+          <div class="u-bub turn-anchor" :data-turn-id="turn.id" :data-prompt-id="turn.rawTurnId ? `${turn.rawTurnId}:user` : undefined">
             <!-- Images may open a controlled preview; all other attachments
                  remain inert metadata chips. -->
             <div v-if="turn.attachments && turn.attachments.length > 0" class="u-atts">
@@ -469,8 +483,9 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             </div>
             <!-- User input renders verbatim (pre-wrap), never through Markdown -->
             <div v-else class="u-text">{{ turn.text }}</div>
+            <button v-if="turn.contentDeferred" type="button" class="transcript-full" @click="emit('openFullContent', turn)">{{ t('conversation.fullContent') }}</button>
           </div>
-          <div v-if="turn.createdAt || canCopyMessageToComposer(turn)" class="u-meta">
+          <div v-if="turn.createdAt || canCopyMessageToComposer(turn) || (turn.itemId && !turn.contentDeferred)" class="u-meta">
             <div v-if="canCopyMessageToComposer(turn)" class="u-edit-wrap">
               <button
                 type="button"
@@ -482,7 +497,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
               </button>
             </div>
             <button
-              v-if="turn.text.trim().length > 0"
+              v-if="turn.text.trim().length > 0 && !turn.contentDeferred"
               type="button"
               class="u-copy"
               :aria-label="t('filePreview.copy')"
@@ -525,7 +540,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg turn-anchor" :data-turn-id="turn.id">
-        <template v-for="(blk, bi) in assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
+        <div v-if="turn.contentDeferred" class="transcript-preview">
+          <pre>{{ turn.text || turn.thinking || turn.blocks?.filter(b => b.kind === 'thinking').map(b => b.thinking).join('\n\n') }}</pre>
+          <span>{{ t('conversation.contentPreview') }}</span>
+          <button type="button" class="transcript-full" @click="emit('openFullContent', turn)">{{ t('conversation.fullContent') }}</button>
+        </div>
+        <template v-for="(blk, bi) in turn.contentDeferred ? [] : assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
           <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
           <div
             v-else-if="blk.kind === 'reply-separator'"
@@ -560,7 +580,11 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           </button>
         </div>
       </div>
-    </template>
+    </TranscriptRow>
+
+    <div v-if="hasNewerMessages" class="transcript-notice">
+      <button type="button" :disabled="loadingMore" @click="emit('loadNewerMessages')">{{ t('conversation.loadNewer') }}</button>
+    </div>
 
     <!-- Pending approvals are rendered in the bottom dock (ConversationPane),
          alongside questions, so both blocking prompts share one position. -->
@@ -755,6 +779,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.transcript-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.transcript-preview > span { color: var(--color-text-muted); }
+.transcript-full, .transcript-notice button { color: var(--color-accent); background: none; border: none; cursor: pointer; font: inherit; }
+.transcript-notice { padding: 12px 0; display: flex; gap: 12px; flex-wrap: wrap; }
 
 /* Copy-to-composer affordance on the most recent user message. It creates only
    an unsent draft; Focus never rewrites app-server history from this control. */

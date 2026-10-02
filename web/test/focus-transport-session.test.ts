@@ -71,7 +71,7 @@ describe('Focus transport session', () => {
     expect(fixture.session.snapshot.value.connection).toBe('connecting');
 
     fixture.sockets[0]?.handlers.open?.();
-    expect(fixture.session.snapshot.value.connection).toBe('connected');
+    expect(fixture.session.snapshot.value.connection).toBe('connecting');
     expect(fixture.connected).toHaveBeenCalledOnce();
     expect(fixture.handshakeReady).not.toHaveBeenCalled();
     fixture.sockets[0]?.handlers.event({
@@ -82,6 +82,7 @@ describe('Focus transport session', () => {
     });
     expect(fixture.handshakeReady).toHaveBeenCalledOnce();
     expect(fixture.handshakeReady).toHaveBeenLastCalledWith(false);
+    expect(fixture.session.snapshot.value.connection).toBe('connected');
 
     fixture.sockets[0]?.handlers.close?.();
     expect(fixture.session.snapshot.value.connection).toBe('disconnected');
@@ -167,7 +168,7 @@ describe('Focus transport session', () => {
     });
     staleSocket?.handlers.close?.();
 
-    expect(fixture.session.snapshot.value.connection).toBe('connected');
+    expect(fixture.session.snapshot.value.connection).toBe('connecting');
     expect(fixture.session.snapshot.value.reconnectScheduled).toBe(false);
     expect(fixture.connected).toHaveBeenCalledOnce();
     expect(fixture.handshakeReady).not.toHaveBeenCalled();
@@ -195,7 +196,7 @@ describe('Focus transport session', () => {
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(fixture.sockets).toHaveLength(2);
-    expect(fixture.session.snapshot.value.connection).toBe('connected');
+    expect(fixture.session.snapshot.value.connection).toBe('connecting');
     expect(fixture.session.snapshot.value.reconnectScheduled).toBe(false);
   });
 

@@ -597,9 +597,9 @@ describe('Focus Web client', () => {
   it('writes stream deltas to the assistant segment on the correct side of a steer', async () => {
     const api = new FakeApi();
     const liveTurns: ChatTurn[] = [
-      { id: 'turn-live:user', role: 'user', no: 1, text: 'A' },
+      { id: 'turn-live:item:user-a:0', rawTurnId: 'turn-live', itemId: 'user-a', role: 'user', no: 1, text: 'A' },
       {
-        id: 'turn-live:assistant',
+        id: 'turn-live:item:agent-before:0', rawTurnId: 'turn-live', itemId: 'agent-before',
         role: 'assistant',
         no: 2,
         text: 'partial',
@@ -607,7 +607,7 @@ describe('Focus Web client', () => {
         tools: [],
         status: 'inProgress',
       },
-      { id: 'turn-live:user:2', role: 'user', no: 3, text: 'B / steer' },
+      { id: 'turn-live:item:user-b:0', rawTurnId: 'turn-live', itemId: 'user-b', role: 'user', no: 3, text: 'B / steer' },
     ];
     api.currentSnapshot = {
       ...snapshot('self'),
@@ -644,9 +644,9 @@ describe('Focus Web client', () => {
       },
     });
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(client.snapshot.value?.turns[1]?.text).toBe('partial (late)');
-    expect(client.snapshot.value?.turns[3]?.id).toBe('turn-live:assistant:2');
-    expect(client.snapshot.value?.turns[3]?.text).toBe('continued');
+    expect(client.turns.value[1]?.text).toBe('partial (late)');
+    expect(client.turns.value[3]?.id).toBe('turn-live:item:agent-after:0');
+    expect(client.turns.value[3]?.text).toBe('continued');
 
     // A still-live item projection may lag the deltas already rendered in
     // this document.  Its empty skeleton must not erase either side of the
@@ -658,7 +658,7 @@ describe('Focus Web client', () => {
       thread_id: 'thread-1',
       detail: {
         method: 'item/started',
-        turns: [
+        item_turns: [
           { ...liveTurns[0]! },
           {
             ...liveTurns[1]!, text: '',
@@ -666,7 +666,7 @@ describe('Focus Web client', () => {
           },
           { ...liveTurns[2]! },
           {
-            id: 'turn-live:assistant:2',
+            id: 'turn-live:item:agent-after:0', rawTurnId: 'turn-live', itemId: 'agent-after',
             role: 'assistant',
             no: 4,
             text: '',
@@ -677,8 +677,8 @@ describe('Focus Web client', () => {
         ],
       },
     });
-    expect(client.snapshot.value?.turns[1]?.text).toBe('partial (late)');
-    expect(client.snapshot.value?.turns[3]?.text).toBe('continued');
+    expect(client.turns.value[1]?.text).toBe('partial (late)');
+    expect(client.turns.value[3]?.text).toBe('continued');
   });
 
   it('refreshes only the directory when another thread lifecycle changes', async () => {
@@ -992,6 +992,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     let releaseRead = () => {};
     api.currentSnapshot = {
@@ -1239,6 +1240,7 @@ describe('Focus Web client', () => {
     const client = useFocusWebClient(api);
     await client.load();
     api.handlers?.open?.();
+    api.emit({ type: 'hello', runtime_epoch: 'epoch-1', revision: client.revision.value });
 
     let releaseRead = () => {};
     api.readGate = new Promise<void>((resolve) => { releaseRead = resolve; });

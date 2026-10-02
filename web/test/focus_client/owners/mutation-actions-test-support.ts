@@ -205,6 +205,7 @@ export interface Harness {
   requireNavigationRepair: ReturnType<typeof vi.fn>;
   clearToRepairDraft: ReturnType<typeof vi.fn>;
   refreshThreads: ReturnType<typeof vi.fn>;
+  reconnectEventTransport: ReturnType<typeof vi.fn>;
   refreshArchivedThreads: ReturnType<typeof vi.fn>;
   refreshActiveThread: ReturnType<typeof vi.fn>;
   settleUnarchivedThread: ReturnType<typeof vi.fn>;
@@ -323,6 +324,7 @@ export function harness(clientId = 'client-1'): Harness {
   ));
   const reportError = vi.fn();
   const reportFatalError = vi.fn(() => false);
+  const reconnectEventTransport = vi.fn(() => { connection.value = 'connecting'; });
   const intentClock = new ClientIntentClock();
   const navigation = {
     activeThreadId,
@@ -359,6 +361,7 @@ export function harness(clientId = 'client-1'): Harness {
       invalidateWireProjection,
     },
     connection,
+    reconnectEventTransport,
     activeThread,
     canCompact,
     attachmentsAreAvailable: () => true,
@@ -373,6 +376,7 @@ export function harness(clientId = 'client-1'): Harness {
     actions,
     api,
     connection,
+    reconnectEventTransport,
     activeThread,
     activeThreadId,
     scope,
