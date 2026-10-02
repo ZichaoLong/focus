@@ -5,6 +5,7 @@ export default {
   searchConversation: 'Search conversation',
   tocTruncated: 'Only the latest 200 prompts are shown',
   loadMoreOutline: 'Load more prompts',
+  locatingPrompt: 'Locating prompt…',
   newMessages: 'Latest messages',
   loading: 'Loading…',
   starting: 'Starting conversation…',

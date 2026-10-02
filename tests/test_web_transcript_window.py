@@ -266,13 +266,43 @@ def test_navigation_anchor_rejects_a_missing_inclusive_cursor(inspection):
     assert inspection.list_items.call_count == 2
 
 
-def test_old_server_navigation_scans_globally_and_can_continue_across_turns(inspection):
+def test_old_server_navigation_scans_only_known_turn_then_reopens_globally(inspection):
     rejection = CodexRpcError("thread/items/list", {"code": -32600,
         "message": "Invalid request: invalid type: map, expected a string"})
-    inspection.list_items.side_effect = [rejection, ThreadItemsPage(items=entries(40), next_cursor="global-next")]
-    result = read(inspection, turn_id="turn-2", item_id="target")
-    assert result["target_pending"] and result["newer_cursor"] == "global-next"
+    inspection.list_items.side_effect = [rejection, ThreadItemsPage(items=entries(40), next_cursor="scoped-next")]
+    result = read(inspection, turn_id="turn-1", item_id="steer")
+    assert result["target_pending"] and result["newer_cursor"] == "scoped-next"
+    assert result["turns"] == []
+    assert all(call.kwargs["turn_id"] == "turn-1" for call in inspection.list_items.call_args_list)
+    target = ThreadItemEntry(turn_id="turn-1", item={"id": "steer", "type": "userMessage",
+        "content": [{"type": "text", "text": "追加消息"}]})
+    following = ThreadItemEntry(turn_id="turn-2", item={"id": "reply", "type": "agentMessage", "text": "next turn"})
+    inspection.list_items.reset_mock()
+    inspection.list_items.side_effect = [
+        ThreadItemsPage(items=[target], backwards_cursor="scoped-inclusive"),
+        ThreadItemsPage(items=[target, following], backwards_cursor="global-before", next_cursor="global-after"),
+    ]
+    result = read(inspection, turn_id="turn-1", item_id="steer", cursor="scoped-next")
+    assert not result["target_pending"]
+    assert [row["itemId"] for row in result["turns"]] == ["steer", "reply"]
+    assert result["older_cursor"] == "global-before" and result["newer_cursor"] == "global-after"
+    first, second = inspection.list_items.call_args_list
+    assert first.kwargs["turn_id"] == "turn-1" and first.kwargs["cursor"] == "scoped-next"
+    assert "anchor_item_id" not in first.kwargs
+    assert second.kwargs["cursor"] == "scoped-inclusive"
     assert inspection.list_items.call_args.kwargs["turn_id"] is None
+
+
+@pytest.mark.parametrize("indexed", [False, True])
+def test_missing_target_does_not_reopen_or_scan_unrelated_turns(inspection, indexed):
+    start = ThreadItemsPage() if indexed else CodexRpcError("thread/items/list", {
+        "code": -32600, "message": "Invalid request: expected a string"})
+    inspection.list_items.side_effect = [start, ThreadItemsPage(items=entries(1),
+        next_cursor="unrelated" if indexed else None, backwards_cursor="inclusive")]
+    with pytest.raises(WebRuntimeError, match="no longer available"):
+        read(inspection, turn_id="turn-1", item_id="missing")
+    assert inspection.list_items.call_count == 2
+    assert all(call.kwargs["turn_id"] == "turn-1" for call in inspection.list_items.call_args_list)
 
 
 def test_prompt_directory_finds_all_steers_and_never_returns_tool_bodies(inspection):

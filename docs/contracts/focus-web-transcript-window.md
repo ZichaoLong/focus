@@ -31,8 +31,8 @@ nonempty, trimmed and at most 4096 characters. An item requires a turn; full req
 item. Source cursors require full and exclude cursor. Default reads return the latest
 40 thread items chronologically. Paging uses upstream cursors, never synthetic offsets.
 Prompt and search navigation target the exact item, including additional messages in the
-same turn. Subsequent paging covers the entire thread. A target request's `turn_id` verifies and
-echoes target identity; continuation requests omit the turn filter. Indexed navigation
+same turn. Locating scans only the known `turn_id`; subsequent browsing covers the entire
+thread and omits the turn filter. Indexed navigation
 reads the target's inclusive string cursor, then uses it for a thread-wide page, without
 decoding or synthesizing upstream cursors.
 
@@ -49,13 +49,18 @@ also deferred to exact inspection, so repeated/quoted scripts cannot exhaust the
 budget. Full details retain the original action DTO.
 Other content remains bounded.
 
-Opening/using the Prompt directory reads `view=prompts` backwards through all userMessage
+First opening/using the Prompt directory reads `view=prompts` backwards through userMessage
 items, including additional/steer messages. Responses contain only titles of at most 160
 characters plus a truncation marker. This view allows only descending, whole-thread cursor
 paging. Each HTTP request reads at most four sequential pages of 100 items, returning as
 soon as a page has user messages; empty pages still advance the cursor. The browser keeps
-at most 200 prompts and explicitly marks this limit. Loading is visible; closing pauses,
-reopening resumes. Errors preserve partial results and allow retry. Thread, epoch/access
+at most 200 prompts and explicitly marks this limit. First use automatically reads one batch;
+each batch stops after about 20 new titles (without splitting a server page) or eight requests.
+Further reading uses “Load more prompts” from the saved cursor; reopening or refocusing does
+not restart scanning. Displayed entries stay in place within a batch, publishing collected
+titles once on completion, failure or pause. Loading is visible; closing or selecting pauses
+the scan. Target selection shows progress, and existing titles remain selectable.
+Errors preserve partial results and allow retry. Thread, epoch/access
 changes and disposal cancel reads. Directory scanning never blocks opening/sending or
 transfers tool/reasoning/assistant bodies to the browser; it uses no SQLite/rollout bypass.
 Directory and target-scan cursor guards retain only the latest 256 cursors.
@@ -67,9 +72,10 @@ original turn scope, direction and page size. It grants no authority and never s
 an upstream cursor. Full reads prefer rereading that exact source page and checking item/turn
 identity. Without a locator, positioning uses the upstream item anchor to read a predecessor
 and the target. Only an explicit old-server object-cursor rejection (`expected a string`)
-falls back to bounded string-cursor pages (within the turn for full reads, across the thread
-for body navigation). `target_pending=true` requests
-cancellable continuation; unrelated errors never trigger compatibility fallback. Missing
+falls back to bounded string-cursor pages within the target turn for both full reads and
+body navigation. `target_pending=true` requests cancellable continuation. Once found, body
+navigation reopens a thread-wide page from the scoped page's inclusive cursor for cross-turn
+browsing. Unrelated errors never trigger compatibility fallback. Missing
 items fail rather than substituting nearby content.
 
 Successful full reads return empty `turns` and uncropped `full_text`: user/assistant text,
@@ -137,6 +143,9 @@ placeholders elsewhere. Rows holding focus or selection endpoints stay mounted. 
 without IntersectionObserver render the bounded window. No root `content-visibility` workaround
 or whole reading-mode remount is used. Verify repeated mode switches, resizing, delayed Markdown/
 image layout, follow scrolling and Prompt/search navigation.
+Markdown renderers inside these rows disable their own `content-visibility:auto` and intrinsic
+placeholder sizes, avoiding duplicate height estimation. A remounted short message must not
+become a 600px placeholder and repeatedly unmount/remount as intersection changes.
 
 Paginated copy actions copy a single complete message; previews cannot masquerade as full
 copy or Composer refill. Native browser find and cross-offscreen selection cover only mounted

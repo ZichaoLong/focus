@@ -62,6 +62,7 @@ const compactOpen = ref(false);
 // than showing a panel that gets clipped by the container edge.
 const fits = ref(true);
 let selectionGeneration = 0;
+const selecting = ref<string | null>(null);
 
 let observer: ResizeObserver | null = null;
 
@@ -100,14 +101,20 @@ function openCompactDialog(): void {
 
 async function selectItem(turnId: string): Promise<void> {
   const generation = ++selectionGeneration;
-  let installed = true;
-  if (props.selectTarget) installed = await props.selectTarget(turnId);
-  else emit('select', turnId);
-  if (installed && generation === selectionGeneration) compactOpen.value = false;
+  selecting.value = turnId;
+  try {
+    let installed = true;
+    if (props.selectTarget) installed = await props.selectTarget(turnId);
+    else emit('select', turnId);
+    if (installed && generation === selectionGeneration) compactOpen.value = false;
+  } finally {
+    if (generation === selectionGeneration) selecting.value = null;
+  }
 }
 
 function openSearch(): void {
   selectionGeneration += 1;
+  selecting.value = null;
   compactOpen.value = false;
   emit('search');
 }
@@ -165,7 +172,10 @@ watch(() => props.inlineVisible !== false, () => {
 watch(
   compactOpen,
   (isOpen, wasOpen) => {
-    if (wasOpen && !isOpen) selectionGeneration += 1;
+    if (wasOpen && !isOpen) {
+      selectionGeneration += 1;
+      selecting.value = null;
+    }
     emit('visibility', isOpen);
   },
   { flush: 'sync' },
@@ -202,12 +212,14 @@ onBeforeUnmount(() => {
         type="button"
         class="toc-row"
         :class="{ active: activeTurnId === item.id }"
+        :aria-busy="selecting === item.id"
         @click="selectItem(item.id)"
       >
         <span class="toc-bar" />
         <span class="toc-label">{{ item.title }}</span>
       </button>
     </div>
+    <p v-if="selecting" class="toc-truncated" role="status">{{ t('conversation.locatingPrompt') }}</p>
     <p v-if="truncated" class="toc-truncated">
       {{ t('conversation.tocTruncated') }}
     </p>
@@ -215,7 +227,7 @@ onBeforeUnmount(() => {
       v-else-if="hasMore"
       type="button"
       class="toc-more"
-      :disabled="loadingMore"
+      :disabled="loadingMore || !!selecting"
       @click="emit('loadMore')"
     >
       {{ loadingMore ? t('conversation.loadingOlder') : t('conversation.loadMoreOutline') }}
@@ -265,6 +277,7 @@ onBeforeUnmount(() => {
         v-for="item in items"
         :key="item.id"
         :active="activeTurnId === item.id"
+        :aria-busy="selecting === item.id"
         :size="narrowViewport ? 'lg' : 'md'"
         @click="selectItem(item.id)"
       >
@@ -272,8 +285,9 @@ onBeforeUnmount(() => {
         <span class="toc-compact-title">{{ item.title }}</span>
       </MenuItem>
     </Menu>
-    <div v-if="truncated || hasMore" class="toc-compact-footer">
-      <p v-if="truncated" class="toc-compact-truncated">
+    <div v-if="selecting || truncated || hasMore" class="toc-compact-footer">
+      <p v-if="selecting" class="toc-compact-truncated" role="status">{{ t('conversation.locatingPrompt') }}</p>
+      <p v-else-if="truncated" class="toc-compact-truncated">
         {{ t('conversation.tocTruncated') }}
       </p>
       <Button

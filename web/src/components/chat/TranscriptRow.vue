@@ -57,4 +57,12 @@ onBeforeUnmount(() => { intersection?.disconnect(); resize?.disconnect(); });
 .transcript-row { display: flow-root; width: 100%; margin-top: var(--chat-turn-gap); }
 .transcript-assistant { margin-top: 10px; }
 .transcript-row:first-child { margin-top: 0; }
+/* This row already owns offscreen mounting and measured placeholders.
+   markstream's content-visibility:auto otherwise replaces even a short reply
+   with a 600px intrinsic estimate after remount, changing intersection and
+   repeatedly triggering unmount/remount plus scroll-anchor corrections. */
+.transcript-row :deep(.markdown-renderer) {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
 </style>

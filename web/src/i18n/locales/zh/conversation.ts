@@ -5,6 +5,7 @@ export default {
   searchConversation: '搜索对话',
   tocTruncated: '仅显示最近 200 条 Prompt',
   loadMoreOutline: '加载更多 Prompt',
+  locatingPrompt: '正在定位 Prompt…',
   newMessages: '最新消息',
   loading: '加载中…',
   starting: '正在创建对话…',

@@ -30,7 +30,7 @@ function harness(seed: ChatTurn[] = [user(1, 1), user(2, 3)]) {
 }
 
 describe('paginated Prompt history', () => {
-  it('does no body scanning until requested, then restores every steer in chronological order across empty pages', async () => {
+  it('does no scanning until requested, then collects steers in chronological order across empty pages', async () => {
     const h = harness();
     expect(h.read).not.toHaveBeenCalled();
     expect(h.owner.outline.value.map(p => p.itemId)).toEqual(['user-1', 'user-3']);
@@ -46,24 +46,62 @@ describe('paginated Prompt history', () => {
     ]);
   });
 
-  it('pauses on close, resumes the same cursor, and rejects late results after a thread change', async () => {
+  it('pauses on close, continues on demand from the same cursor, and rejects late results', async () => {
     const h = harness();
     let resolve!: (value: FocusTranscriptPage) => void;
     h.read.mockResolvedValueOnce(page([user(2, 4)], 'one'))
       .mockImplementationOnce(() => new Promise(done => { resolve = done; }));
     h.owner.setVisible(true); await vi.runAllTimersAsync();
     const signal = h.read.mock.calls[1]?.[2];
+    // Intermediate pages do not move the displayed click targets.
+    expect(h.owner.outline.value.map(p => p.itemId)).toEqual(['user-1', 'user-3']);
     h.owner.setVisible(false);
     expect(signal?.aborted).toBe(true);
+    expect(h.owner.outline.value.some(p => p.itemId === 'user-4')).toBe(true);
     resolve(page([user(1, 99)])); await vi.runAllTimersAsync();
     expect(h.owner.outline.value.some(p => p.itemId === 'user-99')).toBe(false);
     h.read.mockResolvedValueOnce(page([user(1, 2)]));
     h.owner.setVisible(true); await vi.runAllTimersAsync();
+    expect(h.read).toHaveBeenCalledTimes(2);
+    const continuation = h.owner.loadMore(); await vi.runAllTimersAsync(); await continuation;
     expect(h.read.mock.calls[2]?.[1]).toEqual({ view: 'prompts', cursor: 'one' });
     h.owner.setVisible(false);
     h.enabled.value = false;
     h.state.value = { ...h.state.value, turns: [], thread: { ...h.state.value.thread, id: 'thread-2' } };
     expect(h.owner.outline.value).toEqual([]);
+  });
+
+  it('stops after a title batch and keeps reopening or refocusing from starting another scan', async () => {
+    const h = harness([]);
+    h.read.mockResolvedValueOnce(page(Array.from({ length: 20 }, (_, n) => user(2, n + 20)), 'older'))
+      .mockResolvedValueOnce(page([user(1, 1)]));
+    h.owner.setVisible(true); await vi.runAllTimersAsync();
+    expect(h.owner.outline.value).toHaveLength(20);
+    expect(h.owner.hasMore.value).toBe(true);
+    expect(h.read).toHaveBeenCalledTimes(1);
+    h.owner.setVisible(false); h.owner.setVisible(true); h.owner.setVisible(true);
+    await vi.runAllTimersAsync();
+    expect(h.read).toHaveBeenCalledTimes(1);
+    const more = h.owner.loadMore(); await vi.runAllTimersAsync(); await more;
+    expect(h.owner.outline.value[0]?.itemId).toBe('user-1');
+    expect(h.owner.hasMore.value).toBe(false);
+  });
+
+  it('bounds empty-page scans and can prioritize selection without losing completed scan progress', async () => {
+    const h = harness();
+    h.read.mockImplementation(async () => page([], `page-${h.read.mock.calls.length}`));
+    h.owner.setVisible(true); await vi.runAllTimersAsync();
+    expect(h.read).toHaveBeenCalledTimes(8);
+    expect(h.owner.hasMore.value).toBe(true);
+    expect(h.owner.loading.value).toBe(false);
+    let resolve!: (value: FocusTranscriptPage) => void;
+    h.read.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const more = h.owner.loadMore();
+    expect(h.read.mock.lastCall?.[1]).toEqual({ view: 'prompts', cursor: 'page-8' });
+    h.owner.pause();
+    expect(h.read.mock.lastCall?.[2]?.aborted).toBe(true);
+    resolve(page([user(9, 99)])); await more;
+    expect(h.owner.outline.value.map(p => p.itemId)).toEqual(['user-1', 'user-3']);
   });
 
   it('retains live additional messages after body eviction and deduplicates scanned copies', async () => {
@@ -96,6 +134,8 @@ describe('paginated Prompt history', () => {
     h.read.mockResolvedValueOnce(page(titles.map((_p, n) => user(1, n + 100)), 'one'))
       .mockResolvedValueOnce(page(titles, 'two'));
     const loading = h.owner.loadMore(); await vi.runAllTimersAsync(); await loading;
+    expect(h.owner.outline.value).toHaveLength(100);
+    const more = h.owner.loadMore(); await vi.runAllTimersAsync(); await more;
     expect(h.owner.outline.value).toHaveLength(200);
     expect(h.owner.truncated.value).toBe(true);
     expect(h.read).toHaveBeenCalledTimes(2);

@@ -141,7 +141,9 @@ describe('ConversationPane bounded history navigation surface', () => {
     );
     expect(dismissalFence).toContain('watch(');
     expect(dismissalFence).toContain('compactOpen,');
-    expect(dismissalFence).toContain('if (wasOpen && !isOpen) selectionGeneration += 1;');
+    const onClose = between(dismissalFence, 'if (wasOpen && !isOpen) {', '\n    }');
+    expect(onClose).toContain('selectionGeneration += 1;');
+    expect(onClose).toContain('selecting.value = null;');
     expect(dismissalFence).toContain("{ flush: 'sync' }");
   });
 

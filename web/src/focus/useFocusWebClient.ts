@@ -851,6 +851,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   async function resolveHistoryPromptTarget(turnId: string): Promise<boolean> {
     if (!transcript.enabled.value) return historyNavigation.resolvePromptTarget(turnId);
     const prompt = promptHistory.outline.value.find((entry) => entry.id === turnId);
+    promptHistory.pause();
     return prompt ? !!await transcript.locate(prompt.rawTurnId, prompt.itemId) : false;
   }
 

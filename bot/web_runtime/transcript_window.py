@@ -138,12 +138,10 @@ def read_transcript_window(
     elif prepared.item_id:
         direction = "asc"
     # A navigation locator identifies one message, not a turn-sized browsing
-    # boundary. Old string-only servers scan the thread in cancellable batches.
-    # Indexed anchors first resolve exactly one scoped item, then reuse its
-    # inclusive opaque cursor across the thread. Never fabricate a cursor.
+    # boundary. Old string-only servers scan only the known turn in cancellable
+    # batches. Once located, reuse the scoped page's inclusive opaque cursor
+    # across the thread. Never fabricate a cursor.
     navigation_target = not prepared.full and bool(prepared.turn_id)
-    if navigation_target and not exact_page and prepared.item_id:
-        kwargs["turn_id"] = None
     if navigation_target and exact_page:
         limit = 1
     for _ in range(4 if prepared.view == "prompts" else 1):
@@ -165,10 +163,10 @@ def read_transcript_window(
         raise WebRuntimeError("Invalid transcript page.", code="transcript_protocol_error", status=502)
     if kwargs["turn_id"] and any(entry.turn_id != kwargs["turn_id"] for entry in page.items):
         raise WebRuntimeError("Mismatched transcript turn.", code="transcript_protocol_error", status=502)
-    if navigation_target and kwargs["turn_id"] and page.items:
-        if prepared.item_id and not any(entry.turn_id == prepared.turn_id
-                and entry.item.get("id") == prepared.item_id for entry in page.items):
-            raise WebRuntimeError("This message is no longer available.", code="transcript_item_missing", status=404)
+    scoped_target_found = not prepared.item_id or any(
+        entry.item.get("id") == prepared.item_id for entry in page.items
+    )
+    if navigation_target and kwargs["turn_id"] and page.items and scoped_target_found:
         if not page.backwards_cursor:
             raise WebRuntimeError("Missing transcript anchor cursor.", code="transcript_protocol_error", status=502)
         cursor = page.backwards_cursor

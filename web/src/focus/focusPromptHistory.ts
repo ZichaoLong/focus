@@ -7,6 +7,9 @@ import { readTranscriptTarget } from './transcriptRead';
 
 interface Prompt extends FocusHistoryPrompt { rawTurnId: string; itemId: string }
 
+const PROMPTS_PER_BATCH = 20;
+const READS_PER_BATCH = 8;
+
 function prompt(turn: ChatTurn): Prompt | null {
   if (turn.role !== 'user' || !turn.rawTurnId || !turn.itemId) return null;
   const normalized = normalizedPromptTitle(turn.text);
@@ -34,6 +37,8 @@ export function createFocusPromptHistory(options: {
   let visible = false;
   let disposed = false;
   let controller: AbortController | null = null;
+  let scanStarted = false;
+  let buffered: Prompt[] = [];
   const seen = new Set<string>();
   const seed = computed(() => (options.snapshot.value?.turns ?? []).flatMap((turn) => {
     const entry = prompt(turn); return entry ? [entry] : [];
@@ -59,10 +64,12 @@ export function createFocusPromptHistory(options: {
   function pause() {
     generation += 1;
     controller?.abort(); controller = null; loading.value = false;
+    scanned.value = buffered;
   }
   function reset() {
     pause(); scanned.value = []; live.value = []; seen.clear(); cursor = undefined;
     complete.value = false; scanTruncated.value = false; error.value = false;
+    buffered = []; scanStarted = false;
   }
   async function loadMore() {
     if (!hasMore.value || loading.value || disposed || options.isDisposed()) return;
@@ -70,9 +77,12 @@ export function createFocusPromptHistory(options: {
     const request = ++generation;
     const requestController = new AbortController(); controller = requestController;
     const current = () => request === generation && scope === identity() && !disposed && !options.isDisposed();
+    const initialCount = buffered.length;
+    scanStarted = true;
     loading.value = true; error.value = false;
     try {
-      while (current() && hasMore.value) {
+      for (let reads = 0; reads < READS_PER_BATCH && current() && hasMore.value
+        && buffered.length - initialCount < PROMPTS_PER_BATCH; reads += 1) {
         const snapshot = options.snapshot.value!;
         const page = await readTranscriptTarget(options.api, snapshot.thread.id, snapshot.runtime_epoch,
           { view: 'prompts', ...(cursor ? { cursor } : {}) }, requestController.signal, current);
@@ -83,26 +93,27 @@ export function createFocusPromptHistory(options: {
         if (page.older_cursor) seen.add(page.older_cursor);
         if (seen.size > 256) seen.delete(seen.values().next().value!);
         const entries = page.turns.flatMap((turn) => { const entry = prompt(turn); return entry ? [entry] : []; });
-        const byId = new Map([...entries, ...scanned.value].map((entry) => [entry.id, entry]));
+        const byId = new Map([...entries, ...buffered].map((entry) => [entry.id, entry]));
         const all = [...byId.values()];
-        scanned.value = all.slice(-FOCUS_HISTORY_PROMPT_LIMIT);
+        buffered = all.slice(-FOCUS_HISTORY_PROMPT_LIMIT);
         scanTruncated.value = all.length > FOCUS_HISTORY_PROMPT_LIMIT
           || (all.length === FOCUS_HISTORY_PROMPT_LIMIT && !!page.older_cursor);
         complete.value = !page.older_cursor;
         cursor = page.older_cursor ?? undefined;
-        // Each request scans a bounded upstream batch and transfers titles
-        // only. Yield to input and rendering between pages, including empties.
+        // Keep displayed entries still while collecting a bounded batch, even
+        // when a large turn needs several empty scans. Continue on demand.
         await new Promise<void>((resolve) => setTimeout(resolve, 0));
       }
     } catch (failure) {
       if (current()) { error.value = true; options.reportError(failure); }
     } finally {
-      if (current()) { loading.value = false; controller = null; }
+      if (current()) { scanned.value = buffered; loading.value = false; controller = null; }
     }
   }
   function setVisible(value: boolean) {
     visible = value;
-    if (value) void loadMore(); else pause();
+    if (!value) pause();
+    else if (!scanStarted) void loadMore();
   }
   function handleDelta(detail: FocusThreadDeltaDetail) {
     if (!options.enabled.value) return;
@@ -112,5 +123,5 @@ export function createFocusPromptHistory(options: {
   }
   const stop = watch(identity, () => { reset(); if (visible) void loadMore(); }, { flush: 'sync' });
   function dispose() { disposed = true; reset(); stop(); }
-  return { outline, loading, error, truncated, hasMore, setVisible, loadMore, handleDelta, dispose };
+  return { outline, loading, error, truncated, hasMore, setVisible, pause, loadMore, handleDelta, dispose };
 }
