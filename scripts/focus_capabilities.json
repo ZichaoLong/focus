@@ -962,16 +962,24 @@
           "symbol": "captureTranscriptScrollAnchor"
         },
         {
-          "path": "web/src/focus/focusReplyContent.ts",
-          "symbol": "createFocusReplyContent"
-        },
-        {
           "path": "bot/web_runtime/reply_metadata.py",
           "symbol": "project_reply_metadata"
         },
         {
           "path": "web/src/lib/markdownChunks.ts",
           "symbol": "markdownChunks"
+        },
+        {
+          "path": "bot/web_runtime/transcript_budget.py",
+          "symbol": "bound_transcript_items"
+        },
+        {
+          "path": "bot/web_runtime/transcript_source.py",
+          "symbol": "exact_item_anchor"
+        },
+        {
+          "path": "web/src/focus/projectionEventDecoder.ts",
+          "symbol": "isFocusTranscriptWindow"
         }
       ],
       "contract": [
@@ -1024,7 +1032,6 @@
             "web/test/focus_client/owners/focus-prompt-history.test.ts",
             "web/test/focus_client/owners/transcript-page-window.test.ts",
             "web/test/transcript-scroll-anchor.test.ts",
-            "web/test/focus_client/owners/focus-reply-content.test.ts",
             "web/test/markdown-chunks.test.ts",
             "web/test/reply-time.test.ts"
           ]
@@ -1399,6 +1406,14 @@
         {
           "path": "web/src/focus/client-state/thread-inspection.ts",
           "symbol": "createThreadInspection"
+        },
+        {
+          "path": "bot/web_runtime/transcript_source.py",
+          "symbol": "exact_item_anchor"
+        },
+        {
+          "path": "bot/web_runtime/thread_read_model.py",
+          "symbol": "WebThreadReadModel.live_transcript_item"
         }
       ],
       "contract": [

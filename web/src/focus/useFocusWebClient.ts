@@ -1102,7 +1102,6 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     setHistoryOutlineVisible: promptHistory.setVisible,
     loadMoreHistoryOutline: () => transcript.enabled.value ? promptHistory.loadMore() : historyNavigation.loadMoreOutline(),
     readToolDetail: threadInspection.readToolDetail,
-    readFullToolDetail: threadInspection.readFullToolDetail,
     clearToolDetail: threadInspection.clearToolDetail,
     cancelToolDetail: threadInspection.cancelToolDetail,
     searchConversation: threadInspection.searchConversation,

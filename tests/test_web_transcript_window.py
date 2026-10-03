@@ -11,7 +11,7 @@ from bot.codex_protocol.connection import CodexRpcError
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.gateway_request_decoder import decode_transcript_query
 from bot.web_runtime.transcript_budget import (
-    PREVIEW_METADATA_KEY, TRANSCRIPT_ITEM_CHARS, bounded_transcript_item,
+    TOOL_SUMMARY_CHARS, bounded_transcript_item,
 )
 from bot.web_runtime.transcript_window import project_transcript_item
 from bot.web_runtime.transcript_source import encode_transcript_source
@@ -40,30 +40,38 @@ def read(case, **query):
     return case.service.settle_inspection(prepared, effect)
 
 
-def test_page_is_bounded_and_chronological_with_opaque_direction_cursors(inspection):
-    inspection.list_items.return_value = ThreadItemsPage(
-        items=list(reversed(entries(40, text="中文😀" * 100_000))),
-        next_cursor="older", backwards_cursor="newer",
-    )
-    result = read(inspection)
-    assert result["turns"][0]["itemId"] == "item-0"
-    assert result["turns"][-1]["itemId"] == "item-39"
-    assert all(turn["contentDeferred"] for turn in result["turns"])
-    assert len(json.dumps(result).encode()) < 2 * 1024 * 1024
-    assert result["older_cursor"] == "older"
-    assert result["newer_cursor"] == "newer"
-    assert inspection.list_items.call_args.kwargs["limit"] == 40
+@pytest.mark.parametrize("direction", ["asc", "desc"])
+def test_page_is_bounded_and_chronological_with_opaque_direction_cursors(inspection, direction):
+    text = "中文😀" * 10_000
+    def page(_thread, **kwargs):
+        count = kwargs["limit"]
+        items = entries(40, text=text)
+        if direction == "desc":
+            items.reverse()
+        return ThreadItemsPage(items=items[:count],
+            next_cursor=f"next-{count}", backwards_cursor="backwards")
+    inspection.list_items.side_effect = page
+    result = read(inspection, direction=direction, cursor="original-edge")
+    assert result["turns"][0]["itemId"] == ("item-30" if direction == "desc" else "item-0")
+    assert result["turns"][-1]["itemId"] == ("item-39" if direction == "desc" else "item-9")
+    assert all(turn["text"] == text and "contentDeferred" not in turn for turn in result["turns"])
+    assert len(json.dumps(result, ensure_ascii=False).encode()) < 2 * 1024 * 1024
+    assert result["older_cursor"] == ("next-10" if direction == "desc" else "backwards")
+    assert result["newer_cursor"] == ("backwards" if direction == "desc" else "next-10")
+    assert [call.kwargs["limit"] for call in inspection.list_items.call_args_list] == [40, 20, 10]
+    assert all(call.kwargs["cursor"] == "original-edge" for call in inspection.list_items.call_args_list)
     assert inspection.read_thread.call_args.args == ("thread-1", False)
 
 
-def test_reply_times_survive_source_and_projection_clipping_without_turn_time_fallback(inspection):
+def test_complete_long_reply_preserves_source_and_precise_times(inspection):
     inspection.list_items.return_value = ThreadItemsPage(items=[
         ThreadItemEntry("turn-1", {"type": "agentMessage", "id": "long", "text": "中文" * 30_000},
             started_at_ms=123_000, completed_at_ms=127_500),
         ThreadItemEntry("turn-1", {"type": "agentMessage", "id": "old", "text": "old"}),
     ])
     rows = {row["itemId"]: row for row in read(inspection)["turns"]}
-    assert rows["long"]["contentDeferred"] is True
+    assert rows["long"]["text"] == "中文" * 30_000
+    assert "contentDeferred" not in rows["long"]
     assert rows["long"]["reply"] == {"state": "complete", "startedAtMs": 123_000, "completedAtMs": 127_500}
     assert rows["old"]["reply"] == {"state": "unknown"}
     assert rows["old"]["blocks"][0]["reply"] == {"state": "unknown"}
@@ -100,6 +108,22 @@ def test_first_item_and_missing_target_do_not_scan_the_turn(inspection):
     inspection.list_items.side_effect = [ThreadItemsPage(), ThreadItemsPage(items=entries(1))]
     with pytest.raises(WebRuntimeError, match="no longer available"):
         read(inspection, turn_id="turn-1", item_id="different", full=True)
+
+
+def test_first_click_specialized_tool_detail_uses_exact_item_reads(inspection):
+    tool = support._command("target")
+    tool["aggregatedOutput"] = "complete output\n" * 8000 + "last line"
+    inspection.list_items.side_effect = [
+        ThreadItemsPage(items=entries(1)),
+        ThreadItemsPage(items=[ThreadItemEntry("turn-1", tool)], next_cursor="unrelated"),
+    ]
+    result = inspection._read_tool_detail("tab-1", "thread-1", "turn-1", "target", view="full")
+    assert result["status"] == "found" and result["next_cursor"] is None
+    assert result["detail"]["source"]["aggregatedOutput"] == tool["aggregatedOutput"]
+    first, second = inspection.list_items.call_args_list
+    assert first.kwargs["anchor_item_id"] == "target" and first.kwargs["sort_direction"] == "desc"
+    assert second.kwargs["anchor_item_id"] == "item-0" and second.kwargs["sort_direction"] == "asc"
+    assert first.kwargs["limit"] == second.kwargs["limit"] == 1
 
 
 def test_mismatched_predecessor_fails_before_reading_a_different_turn(inspection):
@@ -146,15 +170,14 @@ def test_closed_query_rejects_ambiguous_inputs(query):
 def test_budget_preserves_source_and_identity_and_bounds_nested_tool_projection():
     source = {"text": "x" * 1_000_000, "id": "stable", "type": "agentMessage"}
     bounded = bounded_transcript_item(source)
-    assert len(bounded["text"]) == TRANSCRIPT_ITEM_CHARS
+    assert bounded["text"] == source["text"]
     nested = bounded_transcript_item({"id": "tool", "type": "dynamicToolCall",
         "arguments": {"id": "x" * 1_000_000, "k" * 1_000_000: "value"}})
-    assert len(nested["arguments"]["id"]) <= TRANSCRIPT_ITEM_CHARS
+    assert len(nested["arguments"]["id"]) <= TOOL_SUMMARY_CHARS
     assert all(len(key) <= 256 for key in nested["arguments"])
     assert bounded["id"] == "stable"
-    assert bounded[PREVIEW_METADATA_KEY].truncated
     assert len(source["text"]) == 1_000_000
-    assert bounded_transcript_item(bounded)[PREVIEW_METADATA_KEY].truncated
+    assert bounded_transcript_item(bounded) == bounded
     tool = support._file_change(changes=[{
         "path": "a" * 1000, "kind": {"type": "add"}, "diff": "+x" * 1000,
     } for _ in range(5000)])
@@ -174,7 +197,7 @@ def test_deferred_command_output_keeps_semantic_card_and_detail_locator():
     item = {"id": "command", "type": "commandExecution", "status": "completed",
             "aggregatedOutput": "large output\n" * 100_000, "command": "pytest", "cwd": "/work"}
     rows = project_transcript_item("turn-1", bounded_transcript_item(item))
-    assert "contentDeferred" not in rows[0]
+    assert rows[0]["contentDeferred"]
     tool = rows[0]["tools"][0]
     assert tool["arg"] == "pytest" and tool["outputDeferred"]
     assert tool["inspectionLocator"]["item_id"] == "command"
@@ -189,10 +212,10 @@ def test_repeated_command_action_does_not_double_charge_the_card_budget():
             "command": command, "commandActions": [{"type": "unknown", "command": action_command}],
             "aggregatedOutput": "done"}
     row = project_transcript_item("turn-1", item)[0]
-    assert "contentDeferred" not in row
-    assert row["tools"][0]["arg"] == command
+    assert row["contentDeferred"]
+    assert len(row["tools"][0]["arg"]) <= 512
     assert row["tools"][0]["inspectionLocator"]["item_id"] == "command"
-    assert row["tools"][0]["commandExecution"]["commandActions"] == []
+    assert "commandExecution" not in row["tools"][0]
     assert item["commandActions"][0]["command"] == action_command
     full = project_transcript_item("turn-1", item, full=True)[0]
     assert full["tools"][0]["commandExecution"]["commandActions"][0]["command"] == action_command
@@ -202,9 +225,10 @@ def test_deferred_file_diffs_do_not_hide_later_paths_or_card_identity():
     item = support._file_change(changes=[{"path": path, "kind": {"type": "add"}, "diff": "+large\n" * 100_000}
                                         for path in ("one.py", "two.py")])
     row = project_transcript_item("turn-1", item)[0]
-    assert "contentDeferred" not in row
-    assert [tool["inspectionLocator"]["change_index"] for tool in row["tools"]] == [0, 1]
-    assert all(tool["outputDeferred"] for tool in row["tools"])
+    assert row["contentDeferred"]
+    assert len(row["tools"]) == 1
+    assert json.loads(row["tools"][0]["arg"])["file_count"] == 2
+    assert "inspectionLocator" not in row["tools"][0]
 
 
 @pytest.mark.parametrize("item_type, name", [
@@ -285,6 +309,59 @@ def test_normal_chinese_reply_preserves_markdown_instead_of_size_fallback():
     assert row["text"] == text
     assert "contentDeferred" not in row
     assert row["blocks"][0]["text"] == text
+
+
+@pytest.mark.parametrize("kind", ["userMessage", "reasoning", "agentMessage"])
+def test_prose_is_complete_across_fragments_and_former_character_and_byte_caps(kind):
+    first, last = "中文😀" * 9000, "**最后一段**\n" * 2000
+    fields = {"userMessage": {"content": [{"type": "text", "text": first}, {"type": "text", "text": last}]},
+              "reasoning": {"summary": [first], "content": [last]},
+              "agentMessage": {"text": first + last}}[kind]
+    source = {"id": "prose", "type": kind, **fields}
+    row = project_transcript_item("turn-1", bounded_transcript_item(source))[0]
+    text = row["text"] if kind != "reasoning" else row["blocks"][0]["thinking"]
+    assert first in text and last.strip() in text
+    assert "contentDeferred" not in row
+
+
+def test_single_item_above_page_target_still_loads_whole_without_retry_loop(inspection):
+    text = "body\n" * 230_000
+    inspection.list_items.return_value = ThreadItemsPage(items=entries(1, text=text), next_cursor="older")
+    page = read(inspection)
+    assert page["turns"][0]["text"] == text
+    assert page["older_cursor"] == "older"
+    assert inspection.list_items.call_count == 1
+
+
+@pytest.mark.parametrize("item", [
+    {"type": "commandExecution", "command": "pytest", "aggregatedOutput": "small output", "status": "inProgress"},
+    {"type": "mcpToolCall", "tool": "search", "server": "docs", "result": {"content": [{"text": "small output"}]}},
+    {"type": "dynamicToolCall", "tool": "lookup", "arguments": {"query": "request"},
+     "contentItems": [{"type": "inputText", "text": "small output"}]},
+    {"type": "plan", "text": "small output"},
+    {"type": "imageView", "path": "/work/plot.png"},
+])
+def test_every_tool_is_one_header_without_output_even_when_small(item):
+    rows = project_transcript_item("turn-1", {"id": "tool", **item})
+    assert len(rows) == 1 and rows[0]["contentDeferred"]
+    tool = rows[0]["tools"][0]
+    assert tool["output"] == []
+    assert not {"diff", "media", "commandExecution"} & tool.keys()
+    assert "small output" not in json.dumps(rows)
+
+
+@pytest.mark.parametrize("method, fields, item_id, content_field", [
+    ("turn/plan/updated", {"explanation": "complete plan" * 3000}, "turn-1:live-plan", "text"),
+    ("turn/diff/updated", {"diff": "+complete change\n" * 3000}, "turn-1:turn-diff", "diff"),
+])
+def test_live_only_details_are_frozen_and_do_not_search_persisted_history(inspection, method, fields, item_id, content_field):
+    inspection.read_model.install_prepared_turns(inspection.read_model.prepare_turn_replacement(
+        "thread-1", [], history_mode="paginated"))
+    inspection.read_model.apply_notification(method, {"threadId": "thread-1", "turnId": "turn-1", **fields})
+    detail = read(inspection, turn_id="turn-1", item_id=item_id, full=True)
+    source = json.loads(detail["full_text"])
+    assert source[content_field] == next(iter(fields.values()))
+    inspection.list_items.assert_not_called()
 
 
 def test_source_reread_uses_only_original_string_cursor_scope_and_exact_item(inspection):

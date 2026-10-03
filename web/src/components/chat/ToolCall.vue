@@ -11,7 +11,7 @@ import { useToolDetail } from './tool-calls/useToolPresentation';
 const props = withDefaults(
   defineProps<{
     tool: ToolCall;
-    previewOnly?: boolean;
+    summaryOnly?: boolean;
     stackPosition?: 'single' | 'first' | 'middle' | 'last';
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
@@ -40,7 +40,7 @@ const rendererToolDetailAvailable = computed(() => (
 
 <template>
   <ToolRow
-    v-if="previewOnly"
+    v-if="summaryOnly"
     :status="tool.status"
     :icon="toolGlyph(tool.name)"
     :name="toolLabel(tool.name)"

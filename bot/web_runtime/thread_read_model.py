@@ -28,7 +28,7 @@ from bot.web_runtime.turn_window import (
     DEFAULT_TURN_WINDOW_LIMIT,
     MAX_TURN_WINDOW_LIMIT,
 )
-from bot.web_runtime.transcript_budget import TRANSCRIPT_WINDOW_ITEMS, bounded_transcript_item
+from bot.web_runtime.transcript_budget import TRANSCRIPT_WINDOW_ITEMS, bound_transcript_items, bounded_transcript_item
 from bot.web_runtime.reply_metadata import (
     REPLY_METADATA_KEY, merge_reply_metadata, notification_reply_metadata,
 )
@@ -199,12 +199,21 @@ class WebThreadReadModel:
         turn = self._turns_by_thread.get(self._thread_id(thread_id), {}).get(turn_id)
         return copy.deepcopy(turn) if turn is not None else None
 
+    def live_transcript_item(self, thread_id: str, turn_id: str, item_id: str) -> dict[str, Any] | None:
+        """Freeze an exact non-persisted plan/diff from the existing owner."""
+
+        turn = self._turns_by_thread.get(self._thread_id(thread_id), {}).get(turn_id)
+        item = self._find_turn_item(turn, item_id) if turn else None
+        if item is None or item.get("_focus_live_content") is not True:
+            return None
+        return {key: copy.deepcopy(value) for key, value in item.items() if not key.startswith("_focus_")}
+
     def _bound_live_transcript(self, thread_id: str, turn: dict[str, Any]) -> None:
         if self.history_mode(thread_id) != "paginated":
             return
         items = turn.get("items")
         if isinstance(items, list):
-            turn["items"] = [bounded_transcript_item(item) for item in items[-TRANSCRIPT_WINDOW_ITEMS:]]
+            turn["items"] = bound_transcript_items([bounded_transcript_item(item) for item in items[-TRANSCRIPT_WINDOW_ITEMS:]])
 
     def turn_thread_ids(self) -> tuple[str, ...]:
         return tuple(sorted(self._turns_by_thread))
@@ -357,10 +366,10 @@ class WebThreadReadModel:
             if turn_id:
                 source = turn
                 if history_mode == "paginated":
-                    source = {**turn, "items": [
+                    source = {**turn, "items": bound_transcript_items([
                         bounded_transcript_item(item)
                         for item in (turn.get("items") or [])[-TRANSCRIPT_WINDOW_ITEMS:]
-                    ]}
+                    ])}
                 remembered[turn_id] = self._bounded_turn_copy(source)
         self._bound_turns(remembered)
         cache_turns = tuple(remembered.values())
@@ -519,6 +528,13 @@ class WebThreadReadModel:
             return self._update(normalized_method, thread_id, detail)
 
         turn_id = str(params.get("turnId", "") or "").strip()
+        if self.history_mode(thread_id) == "paginated" and normalized_method in {
+            "item/commandExecution/outputDelta", "item/fileChange/outputDelta",
+            "item/mcpToolCall/progress", "item/plan/delta",
+        }:
+            # The transcript carries invocation headers, never unopened logs.
+            # Exact details are read from the source only on user request.
+            return None
         turns = self._turns_by_thread.setdefault(thread_id, {})
         if normalized_method in {"turn/started", "turn/completed"}:
             raw_turn = params.get("turn")
@@ -557,6 +573,8 @@ class WebThreadReadModel:
                         "type": "turnDiff",
                         "diff": str(params.get("diff", "") or ""),
                         "status": "completed",
+                        "liveOnly": True,
+                        "_focus_live_content": self.history_mode(thread_id) == "paginated",
                     }
                 ),
             )
@@ -583,6 +601,7 @@ class WebThreadReadModel:
                     "type": "plan",
                     "text": "\n".join(lines),
                     "liveOnly": True,
+                    "_focus_live_content": self.history_mode(thread_id) == "paginated",
                 },
             )
             detail["plan_replay"] = "live_only"
@@ -648,7 +667,7 @@ class WebThreadReadModel:
                     item = self._find_turn_item(turn, item_id)
                     if item is not None:
                         self._upsert_turn_item(turn, bounded_transcript_item(item))
-                    turn["items"] = turn["items"][-TRANSCRIPT_WINDOW_ITEMS:]
+                    turn["items"] = bound_transcript_items(turn["items"])
             detail.update(
                 {
                     "turn_id": turn_id,
@@ -765,6 +784,8 @@ class WebThreadReadModel:
         """Strip untrusted cache metadata and bound retained tool payloads."""
 
         remembered = copy.deepcopy(item)
+        if remembered.get("_focus_live_content") is True:
+            return remembered
         trusted_metadata = remembered.pop(INTERNAL_PRESENTATION_METADATA_KEY, None)
         if not isinstance(trusted_metadata, CachedToolOutputPresentation):
             trusted_metadata = None

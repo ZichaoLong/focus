@@ -419,8 +419,21 @@ export function isFocusTranscriptWindow(value: unknown, limit = 80): value is Re
   const ids = new Set<string>();
   return value.every((turn) => {
     if (!isTrimmedString(turn.rawTurnId, false) || !isTrimmedString(turn.itemId, false)
-      || ids.has(turn.id as string) || JSON.stringify(turn).length > 65_536
+      || ids.has(turn.id as string)
       || !toolOutputWindowFitsAggregate([turn as unknown as ChatTurn])) return false;
+    const tools = (turn as unknown as ChatTurn).tools ?? [];
+    const blocks = (turn as unknown as ChatTurn).blocks ?? [];
+    if (turn.contentDeferred || tools.length || blocks.some(block => block.kind === 'tool')) {
+      // v27 defers tools only. Prose is complete regardless of its size, and
+      // normal pages must never smuggle a tool body through either mirror.
+      const tool = tools[0];
+      const block = blocks[0];
+      if (turn.contentDeferred !== true || turn.role !== 'assistant' || turn.text !== '' || turn.thinking
+        || tools.length !== 1 || !tool || tool.output?.length || tool.diff || tool.media
+        || blocks.length !== 1 || !block || block.kind !== 'tool') return false;
+      if (block.tool.id !== tool.id
+        || block.tool.output?.length || block.tool.diff || block.tool.media) return false;
+    }
     ids.add(turn.id as string);
     return true;
   });

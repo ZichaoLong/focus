@@ -357,7 +357,7 @@ def project_thread_snapshot(
         "active_turn_status": active_turn_status,
         "active_turn_context": projected_active_turn_context,
         "pending_requests": requests,
-        "tasks": project_subagent_tasks(snapshot.turns),
+        "tasks": project_subagent_tasks(snapshot.turns, include_content=snapshot.history_mode != "paginated"),
         "older_turn_cursor": older_turn_cursor or "",
         "has_more_turns": bool(older_turn_cursor),
         "goal": project_goal(goal),
@@ -836,6 +836,8 @@ def project_turns(
 
 def project_subagent_tasks(
     turns: Iterable[dict[str, Any]],
+    *,
+    include_content: bool = True,
 ) -> list[dict[str, Any]]:
     tasks: dict[str, dict[str, Any]] = {}
     for raw_turn in turns:
@@ -925,6 +927,11 @@ def project_subagent_tasks(
                     else str(previous.get("executionState") or "active")
                 ),
             }
+    if not include_content:
+        for task in tasks.values():
+            for field in ("progress", "result", "output"):
+                task[field] = []
+            task["prompt"] = ""
     return list(tasks.values())
 
 

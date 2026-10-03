@@ -12,6 +12,7 @@ const props = withDefaults(
     text: string;
     streaming?: boolean;
     foldable?: boolean;
+    full?: boolean;
   }>(),
   { streaming: false, foldable: true },
 );
@@ -30,7 +31,7 @@ const paragraphs = computed(() =>
 );
 
 /** Single-paragraph thinking has nothing to fold — show it straight. */
-const isFoldable = computed(() => props.foldable && paragraphs.value.length > 1);
+const isFoldable = computed(() => !props.full && props.foldable && paragraphs.value.length > 1);
 const open = computed(() => props.streaming || !isFoldable.value);
 
 /** Last non-empty paragraph, shown as the collapsed teaser. */
@@ -43,7 +44,7 @@ const bodyEl = ref<HTMLElement | null>(null);
 // "already at bottom?" check below would otherwise leave the live window parked
 // at the top. A static/historical block is left at its start (we don't pin it).
 onMounted(() => {
-  if (!props.streaming) return;
+  if (!props.streaming || props.full) return;
   const el = bodyEl.value;
   if (el) el.scrollTop = el.scrollHeight;
 });
@@ -52,7 +53,7 @@ watch(
   () => props.text,
   () => {
     const el = bodyEl.value;
-    if (!el) return;
+    if (!el || props.full) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
     if (!atBottom) return;
     void nextTick(() => {
@@ -78,7 +79,7 @@ watch(
       </div>
     </template>
     <!-- Single-paragraph or explicitly non-foldable: always show full content -->
-    <pre v-else ref="bodyEl" class="tc">{{ text }}</pre>
+    <pre v-else ref="bodyEl" class="tc" :class="{ 'tc-full': full }">{{ text }}</pre>
   </div>
 </template>
 
@@ -134,5 +135,6 @@ watch(
   max-height: calc(var(--leading-normal) * 1em * 5);
   overflow-y: auto;
 }
+.tc-full { max-height: none; overflow: visible; }
 
 </style>

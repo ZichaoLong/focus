@@ -7,7 +7,6 @@ import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
 import { TranscriptPageWindow } from './transcriptPageWindow';
-import { createFocusReplyContent } from './focusReplyContent';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -33,7 +32,8 @@ export function createFocusTranscript(options: {
   const error = ref('');
   const historical = ref(false);
   const fullText = shallowRef<string | null>(null);
-  const fullTool = shallowRef<Pick<ToolCall, 'name' | 'arg'> | null>(null);
+  const fullTool = shallowRef<Pick<ToolCall, 'name' | 'arg' | 'status'> | null>(null);
+  let fullTarget: ChatTurn | null = null;
   const fullLoading = ref(false);
   const fullError = ref('');
   const enabled = computed(() => options.snapshot.value?.thread.id === options.activeThreadId.value
@@ -58,22 +58,6 @@ export function createFocusTranscript(options: {
     return `${options.activeThreadId.value}\n${options.snapshot.value?.runtime_epoch ?? ''}\n${options.isDisposed()}`;
   }
 
-  const replies = createFocusReplyContent({
-    reportFatalError: options.reportFatalError,
-    async read(turn, signal) {
-      const scope = identity();
-      const threadId = options.activeThreadId.value;
-      const epoch = options.snapshot.value?.runtime_epoch ?? '';
-      const current = () => scope === identity() && !disposed && !options.isDisposed() && !signal.aborted;
-      const result = await readTranscriptTarget(options.api, threadId, epoch, {
-        turn_id: turn.rawTurnId, item_id: turn.itemId, full: true,
-      }, signal, current);
-      if (!current() || result.thread_id !== threadId || result.turn_id !== turn.rawTurnId
-        || result.runtime_epoch !== epoch || result.full_text === null) throw new Error('Reply content is no longer current.');
-      return result.full_text;
-    },
-  });
-
   function cancel() {
     generation += 1;
     controller?.abort();
@@ -92,6 +76,7 @@ export function createFocusTranscript(options: {
     fullController = null;
     fullText.value = null;
     fullTool.value = null;
+    fullTarget = null;
     fullLoading.value = false;
     fullError.value = '';
   }
@@ -101,7 +86,6 @@ export function createFocusTranscript(options: {
   function reset() {
     cancel();
     closeFull();
-    replies.reset();
     turns.value = [];
     cache.clear(); publishWindow(); unseenNewer.value = false; protectedRow = null;
     historical.value = false;
@@ -175,6 +159,9 @@ export function createFocusTranscript(options: {
       scheduleHead();
     }
     publishWindow();
+    const completedDetail = (detail.item_turns ?? []).find(turn => turn.id === fullTarget?.id
+      && fullTool.value?.status === 'running' && turn.tools?.[0]?.status !== 'running');
+    if (completedDetail) void openFull(completedDetail);
     void event;
   }
 
@@ -308,13 +295,13 @@ export function createFocusTranscript(options: {
     const scope = identity();
     const threadId = options.activeThreadId.value;
     fullController = new AbortController();
+    fullTarget = turn;
     const tool = turn.tools?.[0];
-    fullTool.value = tool ? { name: tool.name, arg: tool.arg } : null;
+    fullTool.value = tool ? { name: tool.name, arg: tool.arg, status: tool.status } : null;
     fullLoading.value = true;
     try {
       const result = await readTranscriptTarget(options.api, threadId, options.snapshot.value?.runtime_epoch ?? '', {
         turn_id: turn.rawTurnId, item_id: turn.itemId, full: true,
-        ...(turn.sourceCursor ? { source_cursor: turn.sourceCursor } : {}),
       }, fullController.signal, () => request === detailGeneration && scope === identity() && !disposed);
       if (request !== detailGeneration || scope !== identity() || disposed) return;
       if (result.thread_id !== threadId || result.turn_id !== turn.rawTurnId
@@ -339,6 +326,7 @@ export function createFocusTranscript(options: {
   function dispose() { disposed = true; reset(); stopIdentity(); stopSnapshot(); }
 
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
-    fullText, fullTool, fullLoading, fullError, openFull, closeFull, replies,
+    fullText, fullTool, fullLoading, fullError, openFull, closeFull,
+    refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, older, newer, locate, updateViewport, cancelTarget, reset, dispose };
 }

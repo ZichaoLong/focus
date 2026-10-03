@@ -94,7 +94,7 @@ describe('bounded conversation inspection surface', () => {
     const tool: ToolCall = { id: 'search', name: 'MCP · research/search', arg: '{"query":"needle"}',
       status: 'ok', output: ['incomplete output must not appear'], defaultExpanded: true };
     const app = createSSRApp({
-      render: () => h(ToolCallCard, { tool, previewOnly: true, toolDiffPanel: true, toolDetailAvailable: true }),
+      render: () => h(ToolCallCard, { tool, summaryOnly: true, toolDiffPanel: true, toolDetailAvailable: true }),
     });
     app.use(i18n());
     const html = await renderToString(app);

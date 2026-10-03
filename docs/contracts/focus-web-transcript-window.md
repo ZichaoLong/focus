@@ -38,27 +38,29 @@ decoding or synthesizing upstream cursors.
 
 Responses contain `{runtime_epoch, revision, thread_id, turn_id, view, target_pending,
 turns, older_cursor, newer_cursor, full_text}`. Rows carry stable `rawTurnId`, `itemId`,
-and `id=<turn>:item:<item>:<segment>`. Ordinary reads project at most 40 source items and
-2 MiB encoded data. Source trees retain up to 16384 text characters, 1024 nodes and depth
-12. Per-item byte allowance is the page budget minus 64 KiB, divided by 40; oversized
-projections become shorter text previews or tool summary cards. Clipped content carries `contentDeferred=true`,
-never parsing incomplete Markdown as full content. Terminal command/file outputs with an
-exact detail locator are excluded before generic clipping: deferred output/diffs must not
-consume the command, path or semantic card budget. Detailed commandActions are
-also deferred to exact inspection, so repeated/quoted scripts cannot exhaust the card
-budget. Full details retain the original action DTO.
-Other content remains bounded.
+and `id=<turn>:item:<item>:<segment>`. Ordinary reads start at 40 source items. Prompt,
+steer, assistant commentary/final replies and visible reasoning retain complete text;
+characters, nodes, paragraphs and combined fields never turn prose into a preview.
+The 2 MiB serialized page target controls how many complete items to load: reread the same
+upstream anchor/cursor with a smaller limit and use its real returned edge cursors.
+Admit a single oversized item intact, without clipping, skipping, retry loops or cursor gaps.
+Its transfer/parse cost remains proportional to its size. These budgets are not model limits.
 
-Clipped tool items retain their name, status and invocation summary, with one frameless
-“View detail” entry instead of the generic long-content preview. Name and argument summaries
-each retain at most 512 characters, with no partial output, diff or media. The source tree
-prioritizes tool identity and invocation fields within its budget, so earlier output fields
-cannot erase the name. Existing projection remains the tool-naming owner. Terminal commands
-and single-file changes use their exact inspection locator when specialized detail is
-available; other tools or unavailable specialized readers use the whole-item full read.
-A collapsed multi-file change retains the original file count and reads the entire source
-item, never silently linking only to its first file. User text/reasoning previews use “View full
-text”; assistant replies follow automatic reading below. These entries change neither source history nor window budgets.
+Every tool, including a running one, projects a single name/status/invocation summary row
+with `contentDeferred=true` and one frameless “View detail” action. Name and argument summaries
+are at most 512 characters each; output, diffs, media bodies and detailed commandActions are
+absent. The source-tree 16384-character, 1024-node and depth-12 budgets apply only to tool
+summaries, prioritizing identity/invocation fields, never prose. A multi-file source item has
+one file-count row and reads the whole record. Existing projection still owns tool naming.
+Prose has no `contentDeferred` or long-preview/manual-full-text intermediate state.
+
+Terminal commands and single-file changes use specialized detail, requesting `view=full` on
+the first click without a preview read. Other and running tools use exact-item `full=true`
+source JSON. Both prefer item anchors over whole source-page rereads. Failures offer explicit
+rereading; close, replacement, thread/epoch/access changes cancel reads and clear the sole
+selected slot. Running generic detail explicitly represents this read, allows manual rereading,
+and refreshes once on that tool's completion only while open. Unopened tools are not polled.
+Unsaved upstream data cannot be represented as complete persisted output.
 
 First opening/using the Prompt directory reads `view=prompts` backwards through userMessage
 items, including additional/steer messages. Responses contain only titles of at most 160
@@ -78,11 +80,11 @@ Directory and target-scan cursor guards retain only the latest 256 cursors.
 Control snapshots retain observed user titles with exact item identities. Live additions
 are deduplicated by ID and survive body eviction. Legacy summary navigation is unchanged.
 
-Rows may carry `sourceCursor`, an envelope around the upstream inclusive backwards cursor,
-original turn scope, direction and page size. It grants no authority and never synthesizes
-an upstream cursor. Full reads prefer rereading that exact source page and checking item/turn
-identity. Without a locator, positioning uses the upstream item anchor to read a predecessor
-and the target. Only an explicit old-server object-cursor rejection (`expected a string`)
+Rows may carry `sourceCursor`, wrapping the upstream inclusive backwards cursor, original
+turn scope, direction and actual page size (1..100). It grants no authority and never synthesizes
+cursors. Explicit requests carrying it reread that page and check exact item/turn identity.
+The official browser prefers predecessor/target item anchors; specialized full-tool reads
+reuse the same anchor owner. Only an explicit old-server object-cursor rejection (`expected a string`)
 falls back to bounded string-cursor pages within the target turn for both full reads and
 body navigation. `target_pending=true` requests cancellable continuation. Once found, body
 navigation reopens a thread-wide page from the scoped page's inclusive cursor for cross-turn
@@ -92,7 +94,10 @@ items fail rather than substituting nearby content.
 Successful full reads return empty `turns` and uncropped `full_text`: user/assistant text,
 complete visible reasoning, or source JSON for other items. A separate selectable text view
 copies the source string. Closing, identity, epoch/access changes and disposal clear content
-and intent. Stale reads retry the same request once; other errors display their reason.
+and intent. Focus-generated live-only plan/turn-diff records are frozen by exact turn/item
+from the existing live read model, with the same document/epoch/observation settlement and no
+persisted-history scan or parallel durable cache. They leave with the live cache lifecycle.
+Stale reads retry the same request once; other errors display their reason.
 Tool source-JSON detail also displays the selected tool's name and invocation summary. This
 context is captured with the request, retained during loading/errors and cleared with the
 content. Old requests cannot replace a newer tool's content or title.
@@ -113,19 +118,11 @@ If only the start is known, display it; explicitly observed generation adds a ge
 Clicking expands the full date, available start/completion times and their ordered duration.
 This is separate from whole-turn duration. Untimed historical replies have no invented label.
 
-Clipped assistant replies entering the mounted transcript range automatically read their exact
-item through `createFocusReplyContent`, without a “View full text” action. This uses existing
-`full=true` and item anchors, avoiding automatic whole-source-page rereads, while retaining
-staged fences, the old-server cursor fallback and one stale retry. Only one automatic full
-read runs at a time. Leaving the range cancels unreferenced reads; errors persist with explicit
-retry. Explicitly generating previews wait for item completion. Completion invalidates prior
-unfinished full text. Tools, user messages and reasoning do not auto-read.
-
-Full text never enters the ordinary page cache. The inactive LRU retains at most four replies
-and 4 MiB (UTF-16 length times two). Currently mounted source strings and parse trees, and each
-transfer, still cost memory proportional to that reply; an oversized item is not retained on
-leaving. Thread, epoch/access changes and disposal clear the cache and cancel reads. Copy uses
-the complete source, never a clipped preview masquerading as full content.
+Prose loads whole with its page, without a separate reply-full request or reply LRU. Live text
+continues appending to the same item past 16384 characters, without waiting for item completion.
+Visible reasoning is fully expanded in the main scroll container, without a five-line inner
+window or automatic folding. Legacy presentation is unchanged. Copy/refill use complete loaded
+prose, while timestamps continue to follow actual per-item lifecycle metadata.
 
 Complete Markdown of at least 16384 characters is parsed once with shared configuration, then grouped by whole top-level
 structures (target 12000 characters, at most 24 top-level nodes) for viewport mounting. One
@@ -144,20 +141,26 @@ overwrite newer navigation. Pages never populate the server live cache or grant 
 
 ## Live updates, budgets and resynchronization
 
-The live model retains at most 20 raw turns, with at most 80 bounded items per paginated
-turn. Control-summary refreshes preserve already observed items. Prompt preparation reads
+The live model retains at most 20 raw turns and 80 items per paginated turn, with an 8 MiB
+residency target estimated from twice source string length plus structure overhead. Evict
+whole old items; admit the latest item even above the target, without clipping prose. Control-summary refreshes preserve already observed items. Prompt preparation reads
 cached active-turn identity without deep-copying the transcript.
 
 The worker projects bounded items; the coordinator emits only changed `item_turns` plus
 bounded `item_order`. Each thread has one projection flight and one latest successor.
 Settlement checks observation/epoch, and successors freeze fresh cache inputs when admitted.
-Stream deltas update their matching item. The browser accumulates up to 10 adjacent source pages on demand, with an 8 MiB data
+Prose deltas update their matching item. Command/file output, MCP progress and plan text
+deltas are not published into the ordinary transcript; tool start/completion and status remain
+live. Subagent task overviews carry identity/status, without duplicating prompt/progress/result/output. The browser accumulates up to 10 adjacent source pages on demand, with an 8 MiB data
 budget estimated as twice each presentation row's serialized JSON length. Evict whole
-pages from the distant edge when either limit is reached. Do not prefetch ten pages or
+pages from the distant edge when either limit is reached. A single current page may exceed
+the byte target: oversized prose stays readable and leaves with its page, without repeated resync. Do not prefetch ten pages or
 retain a separate full-thread cache. Reversing within cached content makes no request.
 Deduplicate and refresh inclusive cursor anchors by stable ID; retain actual edge cursors
 without gaps. A late page must not evict the reader's visible anchor page; discard the
-new distant page instead when necessary. The live tail page retains at most 80 rows before
+new distant page instead when necessary. When only the anchor page and one adjacent page
+remain, temporarily allow their combined bytes above the target so the reader can scroll
+out of a large item; moving the anchor permits eviction. The live tail page retains at most 80 rows before
 bounded head resynchronization. New live items never pull a historical viewport to the tail.
 
 Both automatic directions require actual user movement toward the respective edge, within
@@ -198,8 +201,7 @@ Markdown renderers inside these rows disable their own `content-visibility:auto`
 placeholder sizes, avoiding duplicate height estimation. A remounted short message must not
 become a 600px placeholder and repeatedly unmount/remount as intersection changes.
 
-Paginated copy actions copy a single complete message; previews cannot masquerade as full
-copy or Composer refill. Native browser find and cross-offscreen selection cover only mounted
+Paginated copy actions copy a single complete message. Native browser find and cross-offscreen selection cover only mounted
 content. Application Prompt/final-response search, explicit full text and Markdown/PDF exports
 use source data. Exports never concatenate virtual DOM or previews; their existing scope and
 completeness limits remain unchanged.

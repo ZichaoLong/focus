@@ -53,8 +53,6 @@ export class TranscriptPageWindow {
 
   /** Streaming changes reuse page boundaries; only the live tail may grow. */
   update(rows: ChatTurn[], direction: 'older' | 'newer', protectedRow: string | null = null): boolean {
-    const previous = this.pages;
-    const previousTail = this.atTail;
     const incoming = new Map(rows.map(row => [row.id, row]));
     const existing = new Set(this.rows.map(row => row.id));
     this.pages = this.pages.map(page => ({ ...page,
@@ -73,13 +71,11 @@ export class TranscriptPageWindow {
     const overflow = !!tail && tail.rows.length > TRANSCRIPT_WINDOW_ITEMS;
     if (overflow) tail!.rows = tail!.rows.slice(-TRANSCRIPT_WINDOW_ITEMS);
     this.bound(direction, protectedRow);
-    if (this.bytes > TRANSCRIPT_CACHE_BYTES) {
-      // A single growing live page cannot be evicted without losing its source
-      // cursor. Keep the last bounded view until the owner resynchronizes it.
-      this.pages = previous; this.atTail = previousTail; this.measure();
-      return true;
-    }
-    return overflow;
+    // A complete current item can exceed the cache target. Keep its new text;
+    // shrinking pages on the next source read retires older whole items.
+    const currentTail = this.pages.at(-1);
+    return overflow || (!!currentTail && currentTail.rows.length > 1
+      && this.pageBytes(currentTail) > TRANSCRIPT_CACHE_BYTES);
   }
 
   private measure(): void {
@@ -99,9 +95,17 @@ export class TranscriptPageWindow {
       const evictTail = direction === 'older';
       const candidate = evictTail ? this.pages.at(-1)! : this.pages[0]!;
       const protectedEdge = candidate.rows.some(row => row.id === protectedRow);
+      // Keep one adjacent page reachable while the reader is inside a large
+      // page. Otherwise every next page would be discarded before they can
+      // scroll into it. The exception ends as soon as the anchor moves away.
+      if (protectedEdge && this.pages.length === 2) break;
       if (evictTail !== protectedEdge) { this.pages.pop(); this.atTail = false; }
       else this.pages.shift();
       this.measure();
     }
+  }
+
+  private pageBytes(page: CachedPage): number {
+    return page.rows.reduce((sum, row) => sum + (this.sizes.get(row.id)?.bytes ?? 0), 0);
   }
 }

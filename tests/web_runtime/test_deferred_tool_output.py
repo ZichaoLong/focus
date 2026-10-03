@@ -112,7 +112,10 @@ def test_history_pages_and_live_receipts_share_deferral_without_mutating_source(
         update=WebThreadNotificationUpdate(method="item/completed", thread_id="thread", raw_turn=prepared.projection_turns[0]),
         defer_tool_output=model.history_mode("thread") == "paginated",
     )
-    assert_deferred(project_notification(receipt, **urls)["item_turns"])
+    rows = project_notification(receipt, **urls)["item_turns"]
+    assert len(rows) == 2
+    assert all(row["contentDeferred"] and len(row["tools"]) == 1 for row in rows)
+    assert all(row["tools"][0]["output"] == [] for row in rows)
     assert prepared.projection_turns[0]["items"][0]["aggregatedOutput"] == ""
     assert source["items"][0]["aggregatedOutput"]
 

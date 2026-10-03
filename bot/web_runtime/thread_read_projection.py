@@ -371,7 +371,7 @@ def project_open_thread(
     )
     result["mutation_unknown"] = projection.mutation_unknown
     if projection.collaboration_turns is not None:
-        result["tasks"] = project_subagent_tasks(projection.collaboration_turns)
+        result["tasks"] = project_subagent_tasks(projection.collaboration_turns, include_content=snapshot.history_mode != "paginated")
     result["selection_scope"] = projection.selection_scope
     return result
 

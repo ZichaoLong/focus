@@ -89,7 +89,8 @@ def test_reply_timing_survives_completion_coalescing_and_turn_snapshot_replaceme
     owner.settle_notification_projection(fresh, owner.project_notification(fresh))
     row = callbacks.publish_projection.call_args.kwargs["detail"]["item_turns"][0]
     assert row["reply"] == {"state": "complete", "startedAtMs": 123_000, "completedAtMs": 126_000}
-    assert row["contentDeferred"] is True
+    assert row["text"] == "answer" * 10_000
+    assert "contentDeferred" not in row
     cache.apply_notification("turn/completed", {"threadId": "root-1", "turn": {
         "id": "turn-1", "status": "completed", "startedAt": 1,
         "items": [item(1, "answer" * 10_000)],
@@ -109,6 +110,34 @@ def test_partial_live_timing_does_not_borrow_the_turn_or_arrival_time():
         "completedAtMs": 15_000, "item": item(1)})
     stored = cache.cached_turn("root-1", "turn-1")["items"][0]
     assert project_transcript_item("turn-1", stored)[0]["reply"] == {"state": "complete", "completedAtMs": 15_000}
+
+
+def test_live_prose_stays_complete_and_unopened_tool_logs_are_not_published():
+    owner, cache, scheduled, callbacks = coordinator()
+    text = "正文😀" * 10_000
+    owner.handle_notification("item/started", {"threadId": "root-1", "turnId": "turn-1", "item": item(1, text)})
+    first = scheduled.pop()
+    owner.settle_notification_projection(first, owner.project_notification(first))
+    cache.apply_notification("item/agentMessage/delta", {"threadId": "root-1", "turnId": "turn-1",
+        "itemId": "item-1", "delta": "最后追加"})
+    assert cache.cached_turn("root-1", "turn-1")["items"][0]["text"] == text + "最后追加"
+    callbacks.publish_projection.reset_mock()
+    for method in ("item/commandExecution/outputDelta", "item/fileChange/outputDelta", "item/mcpToolCall/progress"):
+        owner.handle_notification(method, {"threadId": "root-1", "turnId": "turn-1", "itemId": "tool",
+            "delta": "unopened log" * 10_000, "message": "unopened progress"})
+    callbacks.publish_projection.assert_not_called()
+
+
+def test_live_cache_evicts_whole_older_items_instead_of_clipping_the_current_one():
+    cache = model()
+    text = "content" * 100_000
+    cache.apply_notification("turn/started", {"threadId": "root-1", "turn": {
+        "id": "turn-1", "status": "inProgress", "items": [item(i, text) for i in range(10)],
+    }})
+    stored = cache.cached_turn("root-1", "turn-1")["items"]
+    assert 1 < len(stored) < 10
+    assert stored[-1]["id"] == "item-9"
+    assert all(entry["text"] == text for entry in stored)
 
 
 def test_control_summary_refresh_keeps_observed_collaboration_tasks():

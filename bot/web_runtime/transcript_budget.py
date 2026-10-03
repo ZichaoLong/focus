@@ -1,11 +1,12 @@
-"""Finite presentation copies for paginated transcript items.
+"""Whole-prose residency and tool-summary budgets for paginated items.
 
-The item store remains the full source. These copies are never mutation or
-history authority; a clipped item carries an explicit full-content locator.
+See docs/contracts/focus-web-transcript-window.zh-CN.md. The upstream item
+store remains history authority; these copies only serve presentation.
 """
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,9 +15,11 @@ from bot.web_runtime.reply_metadata import REPLY_METADATA_KEY, ReplyMetadata
 
 TRANSCRIPT_PAGE_ITEMS = 40
 TRANSCRIPT_WINDOW_ITEMS = 80
-TRANSCRIPT_ITEM_CHARS = 16_384
+TOOL_SUMMARY_CHARS = 16_384
 TRANSCRIPT_PAGE_BYTES = 2 * 1024 * 1024
+TRANSCRIPT_CACHE_BYTES = 8 * 1024 * 1024
 PREVIEW_METADATA_KEY = "_focus_transcript_preview"
+PROSE_ITEM_TYPES = frozenset({"agentMessage", "userMessage", "reasoning", "hookPrompt", "contextCompaction"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,9 +29,13 @@ class TranscriptPreview:
 
 
 def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
-    """Copy a bounded tree, preserving routing identity before presentation."""
+    """Keep prose whole; bound only the tree used to summarize a tool."""
 
-    remaining = TRANSCRIPT_ITEM_CHARS
+    if item.get("type") in PROSE_ITEM_TYPES or item.get("liveOnly") is True:
+        result = copy.deepcopy(item)
+        result.pop(PREVIEW_METADATA_KEY, None)
+        return result
+    remaining = TOOL_SUMMARY_CHARS
     nodes = 1024
     previous = item.get(PREVIEW_METADATA_KEY)
     truncated = isinstance(previous, TranscriptPreview) and previous.truncated
@@ -112,3 +119,29 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
     if isinstance(item.get(REPLY_METADATA_KEY), ReplyMetadata):
         result[REPLY_METADATA_KEY] = item[REPLY_METADATA_KEY]
     return result
+
+
+def transcript_item_bytes(value: Any) -> int:
+    """Cheap residency estimate; never encode all live prose on every delta."""
+
+    if isinstance(value, str):
+        return len(value) * 2
+    if isinstance(value, dict):
+        return sum(len(key) * 2 + transcript_item_bytes(entry) for key, entry in value.items())
+    if isinstance(value, (list, tuple)):
+        return sum(transcript_item_bytes(entry) for entry in value)
+    return 16
+
+
+def bound_transcript_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Evict complete older items, admitting the latest even if oversized."""
+
+    kept: list[dict[str, Any]] = []
+    size = 0
+    for item in reversed(items[-TRANSCRIPT_WINDOW_ITEMS:]):
+        cost = transcript_item_bytes(item)
+        if kept and size + cost > TRANSCRIPT_CACHE_BYTES:
+            break
+        kept.append(item)
+        size += cost
+    return list(reversed(kept))

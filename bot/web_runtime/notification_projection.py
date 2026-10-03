@@ -74,7 +74,7 @@ def project_notification(
     detail.update(
         {
             "item_turns" if receipt.defer_tool_output else "turns": projected,
-            "tasks": project_subagent_tasks(receipt.collaboration_turns),
+            "tasks": project_subagent_tasks(receipt.collaboration_turns, include_content=not receipt.defer_tool_output),
             "active_turn_id": turn_id
             if str(update.raw_turn.get("status", "") or "") == "inProgress"
             else "",

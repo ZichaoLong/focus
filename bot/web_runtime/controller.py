@@ -512,6 +512,7 @@ class WebRuntimeController:
             selection=self._selection,
             direct_targets=self._direct_targets,
             ports=WebThreadInspectionPorts(
+                live_transcript_item=self._thread_read_model.live_transcript_item,
                 attachment_url_for_path=self._workspace.materialize_attachment_url_for_path,
                 attachment_url_for_id=self._workspace.attachment_url,
                 read_thread=ports.read_thread,

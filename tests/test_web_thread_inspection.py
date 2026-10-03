@@ -175,6 +175,7 @@ class WebThreadInspectionServiceTests(unittest.TestCase):
             selection=self.selection,
             direct_targets=self.direct_targets,
             ports=WebThreadInspectionPorts(
+                live_transcript_item=self.read_model.live_transcript_item,
                 read_thread=self.read_thread,
                 list_thread_items=self.list_items,
                 search_thread_occurrences=self.search,
@@ -882,6 +883,7 @@ class WebThreadInspectionServiceTests(unittest.TestCase):
             selection=self.selection,
             direct_targets=self.direct_targets,
             ports=WebThreadInspectionPorts(
+                live_transcript_item=self.read_model.live_transcript_item,
                 read_thread=self.read_thread,
                 list_thread_items=self.list_items,
                 search_thread_occurrences=self.search,

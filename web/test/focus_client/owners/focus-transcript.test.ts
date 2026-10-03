@@ -63,16 +63,6 @@ describe('bounded transcript owner', () => {
     }
   });
 
-  it('fences automatic full reply reads by thread and epoch', async () => {
-    const h = harness(); await settle();
-    const response = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(response.promise);
-    const lease = h.owner.replies.acquire({ ...row(1), contentDeferred: true, reply: { state: 'complete' } });
-    const signal = h.read.mock.calls.at(-1)?.[2];
-    h.threadId.value = 'different'; await settle();
-    expect(signal?.aborted).toBe(true);
-    response.resolve(page([], { turn_id: 'turn-1', full_text: 'stale' })); await settle();
-    expect(lease.state.value.text).toBeNull(); lease.release();
-  });
   it('does not restart body reads when control-only events replace the same snapshot revision', async () => {
     const h = harness(); await settle();
     h.state.value = { ...h.state.value!, active_turn_status: 'inProgress' };
@@ -141,14 +131,14 @@ describe('bounded transcript owner', () => {
     expect(h.owner.fullText.value).toBeNull();
   });
 
-  it('rereads a source page with its string locator and retries a stale full read once', async () => {
+  it('reads only the selected item and retries a stale detail read once', async () => {
     const h = harness(); await settle();
     h.read.mockRejectedValueOnce(new FocusApiError('retry', { status: 409, code: 'stale_thread_read' }))
       .mockResolvedValueOnce(page([], { turn_id: 'turn-1', full_text: '**complete**' }));
     await h.owner.openFull({ ...row(1), sourceCursor: 'opaque source page' });
     expect(h.owner.fullText.value).toBe('**complete**');
     expect(h.read).toHaveBeenLastCalledWith('thread-1', {
-      turn_id: 'turn-1', item_id: 'item-1', full: true, source_cursor: 'opaque source page',
+      turn_id: 'turn-1', item_id: 'item-1', full: true,
     }, expect.any(AbortSignal));
   });
 
@@ -158,7 +148,7 @@ describe('bounded transcript owner', () => {
     const first = deferred<FocusTranscriptPage>();
     h.read.mockReturnValueOnce(first.promise);
     const pending = h.owner.openFull({ ...row(1), tools: [tool], contentDeferred: true });
-    expect(h.owner.fullTool.value).toEqual({ name: tool.name, arg: tool.arg });
+    expect(h.owner.fullTool.value).toEqual({ name: tool.name, arg: tool.arg, status: tool.status });
     expect(h.owner.fullLoading.value).toBe(true);
     const signal = h.read.mock.calls.at(-1)?.[2];
     h.read.mockRejectedValueOnce(new Error('offline'));
@@ -183,6 +173,34 @@ describe('bounded transcript owner', () => {
     expect(h.owner.fullText.value).toBeNull();
   });
 
+  it('reads tool details only on request and refreshes an opened running tool once it completes', async () => {
+    const h = harness(); await settle();
+    const tool = { id: 'tool', name: 'Shell', arg: 'job', status: 'running' as const, output: [] };
+    const running = { ...row(2, ''), contentDeferred: true, tools: [tool] };
+    h.event(2, { method: 'item/started', item_turns: [running] });
+    expect(h.read).toHaveBeenCalledTimes(1);
+    h.read.mockResolvedValue(page([], { turn_id: 'turn-1', full_text: 'running record' }));
+    await h.owner.openFull(running);
+    expect(h.owner.fullText.value).toBe('running record');
+    h.read.mockResolvedValue(page([], { turn_id: 'turn-1', full_text: 'complete record' }));
+    h.event(3, { method: 'item/completed', item_turns: [{ ...running, tools: [{ ...tool, status: 'ok' }] }] });
+    await settle();
+    expect(h.owner.fullText.value).toBe('complete record');
+    expect(h.read).toHaveBeenCalledTimes(3);
+    h.owner.closeFull();
+    h.owner.refreshFull();
+    expect(h.read).toHaveBeenCalledTimes(3);
+  });
+
+  it('appends complete reasoning fragments past the old limit independently from other items', () => {
+    const text = '思考😀'.repeat(10_000);
+    let current = appendTranscriptDelta(undefined, { kind: 'thinking', turn_id: 'turn-1', item_id: 'reason', delta: text });
+    current = appendTranscriptDelta(current!, { kind: 'thinking_separator', turn_id: 'turn-1', item_id: 'reason', delta: '' });
+    current = appendTranscriptDelta(current!, { kind: 'thinking', turn_id: 'turn-1', item_id: 'reason', delta: '最后一段' });
+    expect(current?.blocks).toEqual([{ kind: 'thinking', itemId: 'reason', thinking: text + '\n\n最后一段' }]);
+    expect(current?.contentDeferred).toBeUndefined();
+  });
+
   it('follows bounded string-only target pages to the additional prompt, not the turn start', async () => {
     const h = harness(); await settle();
     h.read.mockResolvedValueOnce(page([], { turn_id: 'turn-1', target_pending: true, newer_cursor: 'scan-next' }))
@@ -194,18 +212,33 @@ describe('bounded transcript owner', () => {
     expect(h.owner.turns.value.map(turn => turn.itemId)).toEqual(['item-99']);
   });
 
-  it('rejects mismatched or duplicate wire row identities and clips streams at a safe Unicode boundary', () => {
+  it('rejects mismatched or duplicate wire row identities and keeps every streamed character', () => {
     expect(decodeFocusTranscriptPage(page())).not.toBeNull();
     expect(decodeFocusTranscriptPage(page([{ ...row(1), itemId: '' }]))).toBeNull();
     expect(decodeFocusTranscriptPage(page([row(1), row(1)]))).toBeNull();
-    const tools: ChatTurn[] = Array.from({ length: 40 }, (_, i) => ({ ...row(i), blocks: [],
-      tools: [{ id: `tool-${i}`, name: 'Tool', arg: '', status: 'ok', output: ['one'] }] }));
+    const tools: ChatTurn[] = Array.from({ length: 40 }, (_, i) => {
+      const tool = { id: `tool-${i}`, name: 'Tool', arg: '', status: 'ok' as const, output: [] };
+      return { ...row(i, ''), contentDeferred: true, tools: [tool], blocks: [{ kind: 'tool', tool }] };
+    });
     expect(decodeFocusTranscriptPage(page(tools))?.turns).toHaveLength(40);
+    expect(decodeFocusTranscriptPage(page([{ ...row(1), contentDeferred: true }]))).toBeNull();
+    expect(decodeFocusTranscriptPage(page([{ ...tools[0]!, tools: [{ ...tools[0]!.tools![0]!, output: ['leak'] }] }]))).toBeNull();
     const result = appendTranscriptDelta(row(1, 'x'.repeat(16_383)), {
       kind: 'text', turn_id: 'turn-1', item_id: 'item-1', delta: '😀tail',
     });
-    expect(result?.contentDeferred).toBe(true);
-    expect(result?.text).toBe('x'.repeat(16_383));
+    expect(result?.contentDeferred).toBeUndefined();
+    expect(result?.text).toBe('x'.repeat(16_383) + '😀tail');
+  });
+
+  it('admits complete long prose through the shared HTTP and live wire boundary', () => {
+    const text = '完整正文😀\n'.repeat(12_000) + '最后一行';
+    const reply = row(1, text);
+    const prompt = { ...row(2, text), role: 'user' as const, blocks: [] };
+    const reasoning: ChatTurn = { ...row(3, ''), blocks: [{ kind: 'thinking', itemId: 'item-3', thinking: text }] };
+    const decoded = decodeFocusTranscriptPage(page([prompt, reasoning, reply]));
+    expect(decoded).not.toBeNull();
+    expect(decoded?.turns.map(turn => turn.text)).toEqual([text, '', text]);
+    expect(decoded?.turns[1]?.blocks).toEqual(reasoning.blocks);
   });
 
   it('continues globally after locating a steer and reuses cached pages on reversal', async () => {

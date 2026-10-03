@@ -292,6 +292,7 @@ export interface ChatTurn {
   /** Exact upstream coordinates for an independently paged transcript item. */
   rawTurnId?: string;
   itemId?: string;
+  /** A tool header whose complete detail is fetched explicitly; never prose. */
   contentDeferred?: boolean;
   reply?: ReplyMetadata;
   /** Opaque source-page receipt for an exact full-content reread. */

@@ -45,7 +45,7 @@ italics or change font policy elsewhere in the application. Font appearance
 need not be pixel-identical across devices. These presentation rules do not
 modify stored messages, copied source or exported Markdown.
 
-Automatic full long-reply display follows the [bounded transcript contract](focus-web-transcript-window.md#reply-times-and-long-replies).
+Whole prose loading and long-reply display follow the [bounded transcript contract](focus-web-transcript-window.md#reply-times-and-long-replies).
 `markdownChunks` parses the complete document with shared configuration before grouping,
 preserving document-wide references and whole tables, lists, formulas and code blocks.
 Long-reply diff fences retain every original addition/deletion for scrolling, without

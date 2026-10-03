@@ -11,7 +11,6 @@ import ActivityNotice from './ActivityNotice.vue';
 import CronNotice from './CronNotice.vue';
 import MessageTime from './MessageTime.vue';
 import ReplyTime from './ReplyTime.vue';
-import AssistantReply from './AssistantReply.vue';
 import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
@@ -508,7 +507,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             </div>
             <!-- User input renders verbatim (pre-wrap), never through Markdown -->
             <div v-else class="u-text">{{ turn.text }}</div>
-            <button v-if="turn.contentDeferred" type="button" class="transcript-full" @click="emit('openFullContent', turn)">{{ t('conversation.fullContent') }}</button>
           </div>
           <div v-if="turn.createdAt || canCopyMessageToComposer(turn) || (turn.itemId && !turn.contentDeferred)" class="u-meta">
             <div v-if="canCopyMessageToComposer(turn)" class="u-edit-wrap">
@@ -566,18 +564,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
         <template v-if="turn.contentDeferred && turn.tools?.length">
-          <ToolCall v-for="tool in turn.tools" :key="tool.id" :tool="tool" preview-only
+          <ToolCall v-for="tool in turn.tools" :key="tool.id" :tool="tool" summary-only
             :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
             @open-tool-diff="emit('openToolDiff', $event)" @open-full-content="emit('openFullContent', turn)" />
         </template>
-        <AssistantReply v-else-if="turn.contentDeferred && turn.reply" :turn="turn" :open-file="(target) => emit('openFile', target)" />
-        <div v-else-if="turn.contentDeferred" class="transcript-preview">
-          <pre>{{ turn.text || turn.thinking || turn.blocks?.filter(b => b.kind === 'thinking').map(b => b.thinking).join('\n\n') }}</pre>
-          <span>{{ t('conversation.contentPreview') }}</span>
-          <button type="button" class="transcript-full" @click="emit('openFullContent', turn)">{{ t('conversation.fullContent') }}</button>
-        </div>
         <template v-for="(blk, bi) in turn.contentDeferred ? [] : assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
-          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
+          <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :full="!!turn.itemId" :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
           <div
             v-else-if="blk.kind === 'reply-separator'"
             class="assistant-reply-separator"
@@ -814,9 +806,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.transcript-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
-.transcript-preview > span { color: var(--color-text-muted); }
-.transcript-full, .transcript-notice button { color: var(--color-accent); background: none; border: none; cursor: pointer; font: inherit; }
+.transcript-notice button { color: var(--color-accent); background: none; border: none; cursor: pointer; font: inherit; }
 .transcript-notice { padding: 12px 0; display: flex; gap: 12px; flex-wrap: wrap; }
 
 /* Copy-to-composer affordance on the most recent user message. It creates only

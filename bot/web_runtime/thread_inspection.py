@@ -38,7 +38,7 @@ from bot.web_runtime.transcript_window import (
     WebThreadTranscriptPreparation,
     read_transcript_window,
 )
-from bot.web_runtime.transcript_source import decode_transcript_source
+from bot.web_runtime.transcript_source import decode_transcript_source, exact_item_anchor
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.tool_detail_source import project_tool_detail_source
 from bot.web_runtime.writer_workspace_coordinator import (
@@ -74,6 +74,7 @@ class WebThreadInspectionPorts:
     observation_is_current: Callable[[WebThreadReadObservationReceipt], bool]
     capture_connection_generation: Callable[[], int]
     run_if_connection_generation: Callable[[int, Callable[[], Any]], Any]
+    live_transcript_item: Callable[[str, str, str], dict[str, Any] | None]
     attachment_url_for_path: Callable[..., str] | None = None
     attachment_url_for_id: Callable[[str], str] | None = None
 
@@ -245,6 +246,8 @@ class WebThreadInspectionService:
             connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
             runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
             view=view, source_cursor=source_cursor,
+            live_item=self._ports.live_transcript_item(thread_id, turn_id, item_id)
+            if full and turn_id and item_id else None,
         )
 
     def prepare_tool_detail(
@@ -343,11 +346,18 @@ class WebThreadInspectionService:
             prepared,
             operation="inspect tool details",
         )
+        anchor = None
+        if prepared.view == "full" and prepared.cursor is None:
+            anchor = exact_item_anchor(self._ports.list_thread_items, prepared.thread_id,
+                prepared.turn_id, prepared.item_id, connection_generation=prepared.connection_generation,
+                timeout=self._remaining(prepared.deadline, operation="tool detail"))
+        page_limit = 1 if anchor is not None else _TOOL_PAGE_LIMIT
         page = self._ports.list_thread_items(
             prepared.thread_id,
             turn_id=prepared.turn_id,
             cursor=prepared.cursor,
-            limit=_TOOL_PAGE_LIMIT,
+            **(anchor or {}),
+            limit=page_limit,
             sort_direction="asc",
             timeout=self._remaining(
                 prepared.deadline,
@@ -361,12 +371,12 @@ class WebThreadInspectionService:
                 "thread/items/list",
                 "Codex thread/items/list returned an invalid page",
             )
-        if len(page.items) > _TOOL_PAGE_LIMIT:
+        if len(page.items) > page_limit:
             raise CodexRpcProtocolError(
                 "thread/items/list",
                 "Codex thread/items/list exceeded the requested page limit",
             )
-        next_cursor = page.next_cursor
+        next_cursor = page.next_cursor if anchor is None else None
         if next_cursor is not None:
             if not page.items:
                 raise CodexRpcProtocolError(

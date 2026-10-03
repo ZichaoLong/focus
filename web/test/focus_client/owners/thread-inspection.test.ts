@@ -91,20 +91,6 @@ function snapshot(): FocusThreadSnapshot {
   };
 }
 
-function previewToolDetail(output = 'detail'): FocusThreadToolDetailPayload {
-  return {
-    view: 'preview',
-    tool: {
-      id: 'command-1',
-      name: 'exec_command',
-      arg: 'printf detail',
-      status: 'ok',
-      output: [output],
-      inspectionLocator: LOCATOR,
-    },
-  };
-}
-
 function fullCommandDetail(output = 'detail'): FocusThreadToolDetailPayload {
   return {
     view: 'full',
@@ -127,7 +113,7 @@ function fullCommandDetail(output = 'detail'): FocusThreadToolDetailPayload {
 }
 
 function toolDetailScanPage(
-  detail: FocusThreadToolDetailPayload = previewToolDetail(),
+  detail: FocusThreadToolDetailPayload = fullCommandDetail(),
   options: {
     status?: 'scanning' | 'found' | 'not_found';
     cursor?: string | null;
@@ -384,15 +370,15 @@ describe('thread inspection browser owner', () => {
     expect(toolSignals[1]?.aborted).toBe(false);
     expect(searchSignals[0]?.aborted).toBe(false);
 
-    firstTool.resolve(toolDetailScanPage(previewToolDetail('old')));
-    secondTool.resolve(toolDetailScanPage(previewToolDetail('new')));
+    firstTool.resolve(toolDetailScanPage(fullCommandDetail('old')));
+    secondTool.resolve(toolDetailScanPage(fullCommandDetail('new')));
     firstSearch.resolve(searchPage('needle'));
     await expect(oldTool).resolves.toBe(false);
     await expect(newTool).resolves.toBe(true);
     await expect(search).resolves.toBe(true);
     expect(h.owner.toolDetail.value).toMatchObject({
-      view: 'preview',
-      tool: { output: ['new'] },
+      view: 'full',
+      source: { aggregatedOutput: 'new' },
     });
     expect(h.owner.searchPage.value?.query).toBe('needle');
   });
@@ -400,13 +386,13 @@ describe('thread inspection browser owner', () => {
   it('follows opaque tool cursors and reports page progress separately from display output', async () => {
     const h = harness();
     const pages: FocusThreadToolDetailScanPage[] = [
-      toolDetailScanPage(previewToolDetail(), {
+      toolDetailScanPage(fullCommandDetail(), {
         status: 'scanning',
         cursor: null,
         next_cursor: 'next-page',
         scanned_items: 100,
       }),
-      toolDetailScanPage(previewToolDetail('complete'), {
+      toolDetailScanPage(fullCommandDetail('complete'), {
         cursor: 'next-page',
         scanned_items: 2,
       }),
@@ -422,60 +408,39 @@ describe('thread inspection browser owner', () => {
     expect(h.owner.toolDetailScannedItems.value).toBe(102);
     expect(h.owner.toolDetailScanStatus.value).toBe('found');
     expect(h.owner.toolDetail.value).toMatchObject({
-      view: 'preview',
-      tool: { output: ['complete'] },
+      view: 'full',
+      source: { aggregatedOutput: 'complete' },
     });
   });
 
-  it('requires the same found preview before a fresh full read and clears the sole slot', async () => {
+  it('reads the full selected tool on the first click and clears the sole slot', async () => {
     const h = harness();
-    h.readToolDetail.mockImplementation(async (_thread, _locator, view) => (
-      view === 'preview'
-        ? toolDetailScanPage(previewToolDetail('bounded preview'))
-        : toolDetailScanPage(fullCommandDetail('complete persisted output'))
-    ));
-
-    await expect(h.owner.readFullToolDetail(LOCATOR)).resolves.toBe(false);
-    expect(h.readToolDetail).not.toHaveBeenCalled();
-
+    h.readToolDetail.mockResolvedValue(toolDetailScanPage(fullCommandDetail('complete persisted output')));
     await expect(h.owner.readToolDetail(LOCATOR)).resolves.toBe(true);
-    await expect(h.owner.readFullToolDetail({ ...LOCATOR, item_id: 'other-command' })).resolves.toBe(false);
-    expect(h.readToolDetail.mock.calls.map((call) => call[2])).toEqual(['preview']);
-    await expect(h.owner.readFullToolDetail(LOCATOR)).resolves.toBe(true);
-
-    expect(h.readToolDetail.mock.calls.map((call) => call[2])).toEqual(['preview', 'full']);
+    expect(h.readToolDetail.mock.calls.map(call => call[2])).toEqual(['full']);
     expect(h.owner.toolDetail.value).toMatchObject({
-      view: 'full',
-      source: { aggregatedOutput: 'complete persisted output' },
+      view: 'full', source: { aggregatedOutput: 'complete persisted output' },
     });
     expect(h.owner.toolDetailLocator.value).toEqual(LOCATOR);
-
     h.owner.clearToolDetail();
     expect(h.owner.toolDetail.value).toBeNull();
     expect(h.owner.toolDetailLocator.value).toBeNull();
   });
 
-  it('keeps the found preview in the sole slot if its full re-read fails', async () => {
+  it('releases a previous detail and exposes a failed full read for retry', async () => {
     const h = harness();
-    h.readToolDetail.mockImplementation(async (_thread, _locator, view) => {
-      if (view === 'preview') return toolDetailScanPage(previewToolDetail('bounded preview'));
-      throw new Error('full source read failed');
-    });
-
+    h.readToolDetail.mockResolvedValueOnce(toolDetailScanPage(fullCommandDetail('first')))
+      .mockRejectedValueOnce(new Error('full source read failed'));
     await expect(h.owner.readToolDetail(LOCATOR)).resolves.toBe(true);
-    await expect(h.owner.readFullToolDetail(LOCATOR)).resolves.toBe(false);
-
-    expect(h.owner.toolDetail.value).toMatchObject({
-      view: 'preview',
-      tool: { output: ['bounded preview'] },
-    });
-    expect(h.owner.toolDetailLocator.value).toEqual(LOCATOR);
+    await expect(h.owner.readToolDetail(LOCATOR)).resolves.toBe(false);
+    expect(h.owner.toolDetail.value).toBeNull();
+    expect(h.owner.toolDetailLocator.value).toBeNull();
     expect(h.owner.toolDetailError.value).toBe(true);
   });
 
   it('keeps a complete scan miss distinct from a transport error', async () => {
     const h = harness();
-    h.readToolDetail.mockResolvedValue(toolDetailScanPage(previewToolDetail(), {
+    h.readToolDetail.mockResolvedValue(toolDetailScanPage(fullCommandDetail(), {
       status: 'not_found',
       scanned_items: 37,
     }));

@@ -176,6 +176,8 @@ guards and may not retain parallel key or enum inventories.
 - Version 25 makes exact-item body navigation continue across the thread, with bounded adjacent-page caching and automatic scrolling in both directions. Target response `turn_id` echoes locator identity; subsequent body cursors omit turn filtering. Service and browser assets deploy together.
 - Version 26 adds `reply` metadata to assistant text items and text blocks for source item times and generation state. Long replies automatically use existing exact full reads for continuous display. Service and browser assets deploy together.
 
+- Version 27 uses complete prose items and summary-only tools in paginated transcripts. Page byte targets reduce item limits instead of clipping text. Tool clicks read full details directly; the separate reply-content cache and default tool-output streaming are removed. Service and browser assets deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,
@@ -585,8 +587,9 @@ guards and may not retain parallel key or enum inventories.
   stale anchor, Focus reports the failure and requires an explicit user refresh.
 - A tool-detail response admits only a Focus typed detail for a terminal
   `commandExecution` or `fileChange`; a raw upstream item never reaches the
-  browser. Each request reads one upstream page (Focus uses page width 100),
-  with continuation through the opaque cursor; `scanning` means another page
+  browser through this typed endpoint. Initial full reads prefer predecessor/target item anchors
+  (one item each). Explicit cursor reads and old servers explicitly rejecting object cursors
+  use pages of 100 with opaque continuation; `scanning` means another page
   remains, and only `next_cursor=null` yields complete `not_found`. Focus does
   not impose another total page or item ceiling; the browser can show its
   scanned-item count and let the user cancel. A missing exact turn/item, an
@@ -597,10 +600,9 @@ guards and may not retain parallel key or enum inventories.
   termination of a synchronous service RPC already inside `to_thread`.
   `preview` is the existing bounded semantic projection, retaining its
   per-output presentation boundary and 1 MiB serialized-response ceiling.
-  The official browser exposes and sends `full` only after a found preview for
-  the same exact locator. That is a browser interaction rule: the endpoint
-  retains no preview-history state and independently admits a `view=full`
-  exact-item read. A full read fresh-re-reads the item rather than
+  The official browser requests `full` on the first click and permits explicit retry.
+  The endpoint retains no preview-history and independently admits every exact full read.
+  A full read fresh-re-reads the item rather than
   reconstructing from preview/cache and does not apply
   `ToolOutputPresentationBudget`, a Focus detail-response character ceiling, or
   browser line crop. Command full detail projects app-server-persisted
@@ -620,24 +622,17 @@ guards and may not retain parallel key or enum inventories.
 - Tool-output character budgets and omission counts use Unicode code points in
   decoded strings, not UTF-16 code units or encoded bytes. A conceptual LF
   between adjacent line-array entries counts as one code point.
-- For confirmed non-ephemeral `paginated` conversations, snapshots, full history
-  pages and live projections with known history mode defer terminal commandExecution/
-  fileChange outputs with exact inspection locators. `outputDeferred=true` retains
-  name, arguments, status, execution facts and locator, with `output=[]`, no diff
-  or omission fields, no output/diff parsing and no transcript output budget use.
-  Successful open installs history mode into the existing read-model; unload,
-  close, forget and epoch changes clear it. Unknown/legacy history, running tools
-  and tools without exact locators keep bounded inline output. Detail preview/full
-  still fresh-read their source; preview cannot be deferred. Completion releases
-  previous browser stream output, including fileChange's original item placeholder,
-  and later output deltas for that source are ignored. Tool/block mirrors must agree.
-- Completed tools with available saved details use a compact row and an independent
-  View/Close detail button, without duplicate inline output or fold chevron. Inline
-  folding remains keyboard-accessible for running/local fallback information;
-  updates respect manual collapse. A running tool's open inline body closes when
-  saved detail becomes available. If deferred content becomes unavailable, say so
-  without claiming an empty result or no changes. Closing/replacing detail still
-  cancels requests and releases the sole browser-local detail slot.
+- Every tool in a paginated transcript follows the [transcript contract](./focus-web-transcript-window.md):
+  one invocation-summary row, with no default output/diff/media body. `contentDeferred=true`
+  applies only to tools, never Prompt, replies or visible reasoning. Running logs do not enter
+  the ordinary transcript stream. Detail reads the source on click; an open generic running
+  detail refreshes on completion. Specialized detail requests `full` immediately, without a
+  second preview-to-full action.
+- Existing compatibility full-turn projection may retain `outputDeferred=true` for terminal
+  command/file items with exact locators. The following output-presentation budgets apply to
+  older projection and explicit API `preview`, not paginated prose or full detail. Unknown/
+  legacy inline output is outside this performance work. Close/replacement continues to
+  cancel requests and release the sole detail slot.
 - Each tool-card output in a full snapshot/page first receives a per-output
   presentation bound: at most 65,536 source code points remain, split into a
   16,384-character head and 49,152-character tail. On middle omission,

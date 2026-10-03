@@ -6,8 +6,8 @@ import { toolSummary } from '../lib/toolMeta';
 import Dialog from '../components/ui/Dialog.vue';
 import Button from '../components/ui/Button.vue';
 import { copyTextToClipboard } from '../lib/clipboard';
-const props = defineProps<{ text: string | null; loading: boolean; error: string; tool: Pick<ToolCall, 'name' | 'arg'> | null }>();
-const emit = defineEmits<{ close: [] }>();
+const props = defineProps<{ text: string | null; loading: boolean; error: string; tool: Pick<ToolCall, 'name' | 'arg' | 'status'> | null }>();
+const emit = defineEmits<{ close: []; refresh: [] }>();
 const { t } = useI18n();
 const title = computed(() => props.tool ? `${t('tools.detail.load')} · ${props.tool.name}` : t('conversation.fullContent'));
 const copied = ref(false);
@@ -17,10 +17,12 @@ async function copy() { if (props.text !== null) copied.value = await copyTextTo
 <template>
   <Dialog :open="loading || !!error || text !== null" :title="title" size="xl" height="fixed" @close="emit('close')">
     <p v-if="tool?.arg" class="full-content-summary">{{ toolSummary(tool.name, tool.arg) }}</p>
+    <p v-if="tool?.status === 'running'" class="full-content-summary">{{ t('tools.detail.runningSnapshot') }}</p>
     <p v-if="loading" role="status">{{ t('conversation.loading') }}</p>
     <p v-else-if="error" role="alert">{{ t('conversation.transcriptError') }} {{ error }}</p>
     <textarea v-else class="full-content-text" :value="text ?? ''" readonly :aria-label="title" />
     <template #foot>
+      <Button :disabled="loading" @click="emit('refresh')">{{ t('tools.detail.refresh') }}</Button>
       <Button :disabled="text === null" @click="copy">{{ copied ? t('filePreview.copied') : t('filePreview.copy') }}</Button>
     </template>
   </Dialog>

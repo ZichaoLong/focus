@@ -14,11 +14,10 @@ import Icon from '../components/ui/Icon.vue';
 import IconButton from '../components/ui/IconButton.vue';
 import SegmentedControl from '../components/ui/SegmentedControl.vue';
 import ConfirmDialogHost from '../components/dialogs/ConfirmDialogHost.vue';
-import type { AgentMember, ComposerCapabilities, PromptAttachment, ToolCall, ToolMedia, TurnAttachment } from '../types';
+import type { AgentMember, ChatTurn, ComposerCapabilities, PromptAttachment, ToolCall, ToolMedia, TurnAttachment } from '../types';
 import type { ComposerSubmission } from '../components/chat/composerSubmission';
 import { useAppearance } from '../composables/client/useAppearance';
 import { useNarrowViewport } from '../composables/useNarrowViewport';
-import { replyContentReaderKey } from '../composables/replyContent';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { clampPanelWidth, useViewportWidth } from '../composables/useViewportWidth';
@@ -135,7 +134,6 @@ async function ensureDetailPanelLoaded(): Promise<void> {
 // explicit refusal understood by Markdown.vue: local image syntax becomes an
 // honest unavailable notice instead of a same-origin request for a server path.
 provide('resolveImage', async () => null);
-provide(replyContentReaderKey, client.transcript.replies);
 const activeSessionTitle = computed(() => {
   if (!client.activeThreadId.value) return t('focus.newConversation');
   return client.activeThread.value?.title ?? '';
@@ -546,6 +544,7 @@ function openThinking(target: { turnId: string; blockIndex: number }): void {
 }
 
 function openToolDiff(tool: ToolCall): void {
+  client.transcript.closeFull();
   const current = visibleTool(tool.id, tool.inspectionLocator);
   if (!current) {
     closeDetail();
@@ -564,14 +563,16 @@ function openToolDiff(tool: ToolCall): void {
   else client.clearToolDetail();
 }
 
-function loadFullToolDetail(): void {
+function openTranscriptTool(turn: ChatTurn): void {
+  closeDetail();
+  void client.transcript.openFull(turn);
+}
+
+function retryToolDetail(): void {
   const selection = detailSelection.value;
-  if (
-    selection?.kind !== 'toolDiff'
-    || !selection.inspectionLocator
-    || selectedToolDetail.value?.view !== 'preview'
-  ) return;
-  void client.readFullToolDetail(selection.inspectionLocator);
+  if (selection?.kind === 'toolDiff' && selection.inspectionLocator) {
+    void client.readToolDetail(selection.inspectionLocator);
+  }
 }
 
 function openConversationSearch(): void {
@@ -1015,7 +1016,7 @@ onUnmounted(() => {
           :continuous-transcript="client.transcript.enabled.value"
           :update-transcript-viewport="client.transcript.updateViewport"
           :load-newer-messages="client.transcript.newer"
-          @open-full-content="client.transcript.openFull($event)"
+          @open-full-content="openTranscriptTool"
           @retry-transcript="client.transcript.load()"
           :has-more-messages="client.historyHasMore.value"
           :loading-more="client.loadingMore.value"
@@ -1173,7 +1174,7 @@ onUnmounted(() => {
           :agent-member="agentMember"
           @close="closeDetail"
           @cancel-tool-detail="client.cancelToolDetail"
-          @load-full-tool-detail="loadFullToolDetail"
+          @retry-tool-detail="retryToolDetail"
           @search-conversation="searchConversation"
           @next-conversation-search-page="loadNextConversationSearchPage"
           @select-conversation-search-occurrence="selectConversationSearchOccurrence"
@@ -1210,7 +1211,7 @@ onUnmounted(() => {
       <FocusFullContentDialog :text="client.transcript.fullText.value"
         :tool="client.transcript.fullTool.value"
         :loading="client.transcript.fullLoading.value" :error="client.transcript.fullError.value"
-        @close="client.transcript.closeFull()" />
+        @close="client.transcript.closeFull()" @refresh="client.transcript.refreshFull()" />
       <FocusGoalDialog
         v-model:open="showGoalDialog"
         :objective="client.goal.value?.objective"

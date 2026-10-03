@@ -7,7 +7,6 @@ import type {
   FocusThreadConversationSearchPage,
   FocusThreadSnapshot,
   FocusThreadToolDetailPayload,
-  FocusToolDetailView,
   FocusToolInspectionLocator,
 } from '../types';
 
@@ -54,16 +53,6 @@ function requestUnavailableReason(
   if (error.code === 'thread_not_selected') return 'thread_not_materialized';
   if (error.code === 'thread_inspection_unavailable') return 'unknown_history';
   return null;
-}
-
-function sameToolInspectionLocator(
-  left: FocusToolInspectionLocator,
-  right: FocusToolInspectionLocator,
-): boolean {
-  return left.turn_id === right.turn_id
-    && left.item_id === right.item_id
-    && left.kind === right.kind
-    && left.change_index === right.change_index;
 }
 
 export function createThreadInspection(options: ThreadInspectionOptions) {
@@ -181,17 +170,13 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
     searchError.value = false;
   }
 
-  function beginToolDetailRead(
-    retainPreview: boolean,
-  ): { generation: number; controller: AbortController } {
+  function beginToolDetailRead(): { generation: number; controller: AbortController } {
     toolGeneration += 1;
     toolController?.abort();
     const controller = new AbortController();
     toolController = controller;
-    if (!retainPreview) {
-      toolDetail.value = null;
-      toolDetailLocator.value = null;
-    }
+    toolDetail.value = null;
+    toolDetailLocator.value = null;
     toolDetailLoading.value = true;
     toolDetailError.value = false;
     toolDetailScanStatus.value = 'scanning';
@@ -199,14 +184,12 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
     return { generation: toolGeneration, controller };
   }
 
-  async function readToolDetailView(
+  async function readToolDetail(
     locator: FocusToolInspectionLocator,
-    view: FocusToolDetailView,
-    requestOptions: { retainPreview: boolean },
   ): Promise<boolean> {
     const identity = activeIdentity();
     if (!identity || !toolDetailAvailable.value) return false;
-    const { generation, controller } = beginToolDetailRead(requestOptions.retainPreview);
+    const { generation, controller } = beginToolDetailRead();
     let cursor: string | null = null;
     const seenCursors = new Set<string>();
     try {
@@ -214,7 +197,7 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
         const page = await options.api.readToolDetail(
           identity.threadId,
           locator,
-          view,
+          'full',
           controller.signal,
           cursor,
         );
@@ -262,23 +245,6 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
         toolDetailLoading.value = false;
       }
     }
-  }
-
-  async function readToolDetail(
-    locator: FocusToolInspectionLocator,
-  ): Promise<boolean> {
-    return readToolDetailView(locator, 'preview', { retainPreview: false });
-  }
-
-  async function readFullToolDetail(
-    locator: FocusToolInspectionLocator,
-  ): Promise<boolean> {
-    if (
-      toolDetail.value?.view !== 'preview'
-      || toolDetailLocator.value === null
-      || !sameToolInspectionLocator(toolDetailLocator.value, locator)
-    ) return false;
-    return readToolDetailView(locator, 'full', { retainPreview: true });
   }
 
   async function searchConversation(input: ConversationSearchInput): Promise<boolean> {
@@ -413,7 +379,6 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
     historySearchAvailable,
     historySearchUnavailableReason,
     readToolDetail,
-    readFullToolDetail,
     searchConversation,
     resolveSearchOccurrence,
     clearToolDetail,

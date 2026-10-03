@@ -3,7 +3,6 @@ import type { FocusStreamDelta } from './types';
 import { appendBoundedToolOutput } from './toolOutputPresentation';
 
 export const TRANSCRIPT_WINDOW_ITEMS = 80;
-export const TRANSCRIPT_ITEM_CHARS = 16_384;
 
 /** Apply one ordered delta to one bounded item, without scanning a whole turn. */
 export function appendTranscriptDelta(previous: ChatTurn | undefined, stream: FocusStreamDelta): ChatTurn | null {
@@ -19,7 +18,6 @@ export function appendTranscriptDelta(previous: ChatTurn | undefined, stream: Fo
   };
   const blocks = [...(turn.blocks ?? [])];
   const tools = [...(turn.tools ?? [])];
-  let deferred = false;
   if (stream.kind === 'tool_output') {
     const index = tools.findIndex((tool) => tool.id === stream.item_id);
     const tool = tools[index];
@@ -42,19 +40,14 @@ export function appendTranscriptDelta(previous: ChatTurn | undefined, stream: Fo
     const old = blocks[index];
     const text = (old?.kind === 'text' ? old.text : old?.kind === 'thinking' ? old.thinking : '')
       + (stream.kind === 'thinking_separator' ? '\n\n' : stream.delta);
-    deferred = text.length > TRANSCRIPT_ITEM_CHARS;
-    const end = /[\uD800-\uDBFF]/.test(text[TRANSCRIPT_ITEM_CHARS - 1] ?? '')
-      ? TRANSCRIPT_ITEM_CHARS - 1 : TRANSCRIPT_ITEM_CHARS;
-    const bounded = text.slice(0, end);
     const block: TurnBlock = thinking
-      ? { kind: 'thinking', itemId: stream.item_id, thinking: bounded }
-      : { kind: 'text', itemId: stream.item_id, text: bounded, reply };
+      ? { kind: 'thinking', itemId: stream.item_id, thinking: text }
+      : { kind: 'text', itemId: stream.item_id, text, reply };
     if (index < 0) blocks.push(block);
     else blocks[index] = block;
   }
   return { ...turn, blocks, tools, status: 'inProgress',
     ...(reply ? { reply } : {}),
     text: blocks.flatMap((block) => block.kind === 'text' ? [block.text] : []).join('\n\n'),
-    ...(deferred ? { contentDeferred: true } : {}),
   };
 }

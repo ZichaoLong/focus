@@ -126,6 +126,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v25 将正文 exact item 定位后的分页扩展到全线程，并让浏览器按需缓存相邻页、双向自动加载。定位响应的 `turn_id` 回显目标身份，后续正文 cursor 不携轮次筛选；服务与浏览器资源须同版本部署。
 - v26 为 assistant 文本条目与 text block 增加 `reply` 元数据，承载逐条源时间与生成状态；长回复使用既有 exact full read 自动连续展示。服务与浏览器资源须同版本部署。
 
+- v27 将 paginated 正文改为完整条目分页：正文不裁剪，所有工具默认仅摘要，点击直接读取全文；页字节目标通过减小 limit 管理。移除独立回复全文缓存，工具输出不再默认流向浏览器。服务与浏览器资源须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
@@ -365,16 +367,16 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - legacy rollout 的每次 `thread/turns/list` 仍可能在上游重放完整 rollout；这是当前上游成本边界，不通过 Focus durable
   history index/cache 或 cursor 状态机掩盖。上游拒绝失效 anchor 时，Focus 向浏览器报告失败，由用户显式刷新。
 - tool-detail response 只允许 terminal `commandExecution` 或 `fileChange` 的 Focus typed detail，不能把 raw
-  upstream item 透传到浏览器。每次请求只读取上游允许的一个 page（Focus 使用 page width 100），通过 opaque
+  upstream item 透传到浏览器。首次 full 请求优先使用 item anchor 读取前驱与目标（各 1 项）；
+  明确不支持对象 cursor 的旧服务及显式 cursor 请求，每次按 page width 100 读取，通过 opaque
   cursor 继续请求；`scanning` 表示仍有下一页，`next_cursor=null` 时才表示完整扫描后的 `not_found`。Focus 不对
   总页数或总 item 数设置另一层硬上限；浏览器可显示已扫描 item 数并由用户取消。exact turn/item 不存在、item status
   不属于 `completed / failed / declined`、类型或 `change_index` 不匹配、cursor 异常、未知 variant、known source
   field malformed 与超时都只让当前请求失败。HTTP cancel 只停止浏览器当前等待和后续请求，不承诺已经进入
   `to_thread` 的服务端同步 RPC 立即终止。
   `preview` 是 existing bounded semantic projection，继续应用单项 tool-output presentation boundary 与 1 MiB
-  serialized-response ceiling。官方浏览器只会在同一 exact locator 的 preview 已找到后展示并发送 `full`；这是 browser
-  interaction rule，而非 endpoint 可持久化证明的前置条件：endpoint 不保留 preview-history，仍独立准入一个
-  `view=full` exact-item read。full fresh re-read exact item，绝不从 preview/cache 重建，且不应用
+  serialized-response ceiling。官方浏览器首次点击直接发送 `full`，失败可显式重新读取；
+  endpoint 不保留 preview-history，独立准入每个 `view=full` exact-item read。full fresh re-read exact item，绝不从 preview/cache 重建，且不应用
   `ToolOutputPresentationBudget`、Focus detail response character ceiling 或 browser line crop。command full 原样投影
   app-server 已持久化的 `aggregatedOutput`，不能恢复其约 1 MiB head/tail persistence boundary 已丢失的中段；FileChange
   full 原样投影 whole `changes[]`，`change_index` 只用于 initial focus。上游单个 FileChange item 在到达 Focus 前的
@@ -383,17 +385,13 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   assistant occurrence；每条 snippet 最多 1,024 个 Unicode code points，并携 UTF-16 character-boundary
   match range 与 opaque turn cursor。tool、diff、reasoning、plan、MCP 与 subagent 内容不进入搜索；序列化
   response 的 Focus 硬上限为 64 KiB。该 endpoint 不承诺完整全文索引，也不承担 Prompt outline。
-- 已确认非 ephemeral 的 `paginated` 会话中，snapshot、full history page 和已知 history-mode 的 live
-  projection 对有 exact inspection locator 的 terminal commandExecution/fileChange 使用 `outputDeferred=true`：
-  保留名称、参数、状态、执行事实与 locator，但 `output=[]`，不携带 diff 或 omission 字段，也不解析输出/diff
-  或消耗 transcript 的输出预算。history-mode 只由成功 open 安装到现有 read-model，按 unload/close/forget/epoch
-  生命周期清除；未知、legacy、运行中和无 exact locator 的工具保留原有有界输出。详情 preview/full 仍 fresh-read
-  原有源，preview 不允许 deferred shape。browser 在 completion 到达时释放旧 stream output（包括 fileChange 的
-  原始 item 占位），忽略同源后到的 output delta；tools/blocks mirror 必须共享 deferred 状态。
-- 支持读取详情的已完成工具显示紧凑行与独立的“查看／收起详情”按钮，不再显示重复 inline body 或折叠箭头。
-  行内展开只对运行中或没有可用详情且仍有本地信息的工具生效，支持键盘；手动收起不因内容更新而撤销。
-  运行中展开的工具获得可用详情后自动收起。无法读取已 deferred 的内容时如实提示详情不可用，不虚构空输出
-  或声称无改动。详情面板关闭/替换仍取消请求并释放唯一 browser-local detail slot。
+- paginated 正文的所有工具均遵循[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)：仅加载一行调用摘要，
+  无默认 output/diff/媒体正文。`contentDeferred=true` 只用于工具，不用于 Prompt、回复或可见推理。
+  运行中日志不进入普通正文 stream；点击时读取记录，已打开的运行中通用详情在完成时刷新。
+  首次点击专用详情直接使用 `full`，不存在 preview 再 full 的二次点击要求。
+- 既有兼容 full-turn projection 仍可为有 exact locator 的 terminal command/file 生成 `outputDeferred=true`；
+  以下工具输出展示预算只约束旧式投影及显式 API `preview`，不约束 paginated 正文或 `full` 详情。
+  未知/legacy 线程的有界行内展示不纳入本次性能治理。详情关闭/替换继续取消请求并释放唯一详情槽。
 - tool-output 字符预算与省略计数统一使用 JSON 解码后字符串的 Unicode code point，不使用 UTF-16 code unit 或编码
   字节数；line array 相邻元素之间概念上的 LF 计一个 code point。
 - full snapshot/page 中每个 tool-card output 先应用单项展示边界：最多保留 65,536 个原始 code point，其中 head 16,384、

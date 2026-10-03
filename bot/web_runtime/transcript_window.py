@@ -8,21 +8,21 @@ projects its frozen inputs.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable
 
 from bot.adapters.base import ThreadItemsPage
-from bot.codex_protocol.connection import CodexRpcError
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
 from bot.web_runtime.projection import bounded_summary_prompt_text, project_turns
 from bot.web_runtime.reply_metadata import project_reply_metadata
-from bot.web_runtime.transcript_source import decode_transcript_source, encode_transcript_source
+from bot.web_runtime.transcript_source import decode_transcript_source, encode_transcript_source, exact_item_anchor
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.transcript_budget import (
     PREVIEW_METADATA_KEY,
     TRANSCRIPT_PAGE_BYTES,
     TRANSCRIPT_PAGE_ITEMS,
+    PROSE_ITEM_TYPES,
     TranscriptPreview,
     bounded_transcript_item,
 )
@@ -45,12 +45,14 @@ class WebThreadTranscriptPreparation:
     revision: int
     view: str = "transcript"
     source_cursor: str | None = None
+    page_limit: int = TRANSCRIPT_PAGE_ITEMS
+    live_item: dict[str, Any] | None = None
 
 
-def _tool_preview(
+def _tool_summary(
     projected: list[dict[str, Any]], item: dict[str, Any], metadata: TranscriptPreview,
 ) -> dict[str, Any] | None:
-    """Keep one bounded invocation card; the exact reader owns its content."""
+    """Keep one invocation row; every output is read only on request."""
 
     tool = next((tool for turn in projected for tool in turn.get("tools", [])), None)
     if tool is None:
@@ -128,21 +130,18 @@ def project_transcript_item(
         turn["id"] = f"{turn_id}:item:{item_id}:{index}"
         turn["rawTurnId"] = turn_id
         turn["itemId"] = item_id
-        if isinstance(metadata, TranscriptPreview) and metadata.truncated:
-            turn["contentDeferred"] = True
-    oversized = not full and len(json.dumps(projected, ensure_ascii=False).encode("utf-8")) > (TRANSCRIPT_PAGE_BYTES - 64 * 1024) // TRANSCRIPT_PAGE_ITEMS
-    clipped = not full and isinstance(metadata, TranscriptPreview) and metadata.truncated
-    header = _tool_preview(projected, source, metadata) if (clipped or oversized) and isinstance(metadata, TranscriptPreview) else None
-    if oversized or header is not None:
-        # Duplicated presentation fields can also exceed the byte budget.
-        # Tools keep a semantic header; prose keeps an explicit text preview.
+    header = None
+    if not full and item.get("type") not in PROSE_ITEM_TYPES:
+        header = _tool_summary(projected, source,
+            metadata if isinstance(metadata, TranscriptPreview) else TranscriptPreview(False))
+    if header is not None:
         first = projected[0] if projected else {}
         projected = [{
             "id": f"{turn_id}:item:{item_id}:0", "rawTurnId": turn_id,
             "itemId": item_id, "role": first.get("role", "assistant"),
-            "no": 0, "text": "" if header else str(first.get("text") or first.get("thinking") or item.get("type", ""))[:4096],
+            "no": 0, "text": "",
             "contentDeferred": True,
-            **({"tools": [header], "blocks": [{"kind": "tool", "tool": header}]} if header else {}),
+            "tools": [header], "blocks": [{"kind": "tool", "tool": header}],
         }]
     if item.get("type") == "agentMessage":
         reply = project_reply_metadata(item, started_at_ms=started_at_ms, completed_at_ms=completed_at_ms, turn_status=status)
@@ -162,12 +161,20 @@ def read_transcript_window(
     attachment_url_for_path: Callable[[str], str] | None = None,
     attachment_url_for_id: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
+    if prepared.live_item is not None:
+        return {
+            "runtime_epoch": prepared.runtime_epoch, "revision": prepared.revision,
+            "thread_id": prepared.thread_id, "turn_id": prepared.turn_id,
+            "view": prepared.view, "target_pending": False, "turns": [],
+            "older_cursor": None, "newer_cursor": None,
+            "full_text": json.dumps(prepared.live_item, ensure_ascii=False, indent=2),
+        }
     kwargs: dict[str, Any] = {
         "turn_id": prepared.turn_id,
         "expected_connection_generation": prepared.connection_generation,
     }
     cursor, direction = prepared.cursor, prepared.direction
-    limit = 100 if prepared.view == "prompts" else TRANSCRIPT_PAGE_ITEMS
+    limit = 100 if prepared.view == "prompts" else prepared.page_limit
     exact_page = False
     if prepared.source_cursor:
         source = decode_transcript_source(prepared.source_cursor)
@@ -175,26 +182,12 @@ def read_transcript_window(
         kwargs["turn_id"] = source["turn_id"]
         exact_page = True
     elif prepared.item_id and not cursor:
-        try:
-            # New servers provide an exclusive item anchor. Older releases
-            # accept only opaque strings; those continue in bounded pages.
-            predecessor = list_thread_items(
-                prepared.thread_id, **kwargs, anchor_item_id=prepared.item_id,
-                sort_direction="desc", limit=1, timeout=remaining(),
-            )
-        except CodexRpcError as exc:
-            if exc.error.get("code") != -32600 or "expected a string" not in str(exc):
-                raise
-        else:
-            if (not isinstance(predecessor, ThreadItemsPage) or len(predecessor.items) > 1
-                    or any(entry.turn_id != prepared.turn_id or not entry.item.get("id")
-                           for entry in predecessor.items)):
-                raise WebRuntimeError("Invalid transcript anchor.", code="transcript_protocol_error", status=502)
-            kwargs["anchor_item_id"] = (
-                str(predecessor.items[0].item["id"]) if predecessor.items else None
-            )
+        anchor = exact_item_anchor(list_thread_items, prepared.thread_id, prepared.turn_id or "",
+            prepared.item_id, connection_generation=prepared.connection_generation, timeout=remaining())
+        if anchor is not None:
+            kwargs.update(anchor)
             exact_page = True
-            limit = 1 if prepared.full else TRANSCRIPT_PAGE_ITEMS
+            limit = 1 if prepared.full else prepared.page_limit
         direction = "asc"
     elif prepared.item_id:
         direction = "asc"
@@ -232,7 +225,7 @@ def read_transcript_window(
             raise WebRuntimeError("Missing transcript anchor cursor.", code="transcript_protocol_error", status=502)
         cursor = page.backwards_cursor
         kwargs = {"turn_id": None, "expected_connection_generation": prepared.connection_generation}
-        direction, limit = "asc", TRANSCRIPT_PAGE_ITEMS
+        direction, limit = "asc", prepared.page_limit
         page = list_thread_items(prepared.thread_id, **kwargs, cursor=cursor,
             sort_direction=direction, limit=limit, timeout=remaining())
         if not isinstance(page, ThreadItemsPage) or len(page.items) > limit:
@@ -292,6 +285,14 @@ def read_transcript_window(
             text = json.dumps(item, ensure_ascii=False, indent=2)
         payload["full_text"] = str(text)
         payload["turns"] = []
-    elif len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > TRANSCRIPT_PAGE_BYTES:
-        raise WebRuntimeError("Transcript page is too large.", code="transcript_page_too_large", status=502)
+    elif (prepared.view == "transcript" and len(entries) > 1
+          and len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > TRANSCRIPT_PAGE_BYTES):
+        # Re-read fewer complete source items from the same authoritative
+        # anchor. Never truncate a message or fabricate continuation cursors.
+        return read_transcript_window(
+            replace(prepared, page_limit=max(1, min(limit, len(entries)) // 2)),
+            list_thread_items=list_thread_items, remaining=remaining,
+            attachment_url_for_path=attachment_url_for_path,
+            attachment_url_for_id=attachment_url_for_id,
+        )
     return payload

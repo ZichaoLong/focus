@@ -56,4 +56,28 @@ describe('contiguous transcript cache', () => {
     expect(cache.older).toBe('before-0');
     expect(cache.atTail).toBe(true);
   });
+
+  it('admits an oversized current item intact and retires it when browsing to another page', () => {
+    const cache = new TranscriptPageWindow();
+    const text = '正文'.repeat(TRANSCRIPT_CACHE_BYTES / 4);
+    cache.replace(page(0, 1, text), true);
+    expect(cache.rows[0]?.text).toBe(text);
+    expect(cache.update([row(0, text + '追加')], 'newer')).toBe(false);
+    expect(cache.rows[0]?.text).toBe(text + '追加');
+    cache.extend(page(1, 1), 'newer');
+    expect(cache.rows.map(row => row.id)).toEqual(['row-1']);
+    expect(cache.bytes).toBeLessThan(TRANSCRIPT_CACHE_BYTES);
+  });
+
+  it.each(['older', 'newer'] as const)('keeps an adjacent %s page reachable beside an oversized reader anchor', direction => {
+    const cache = new TranscriptPageWindow();
+    cache.replace(page(40, 1, '正文'.repeat(TRANSCRIPT_CACHE_BYTES / 4)), false);
+    cache.extend(page(direction === 'older' ? 0 : 41, 1), direction, 'row-40');
+    expect(cache.pageCount).toBe(2);
+    expect(cache.rows).toHaveLength(2);
+    expect(cache.update(cache.rows, direction, 'row-40')).toBe(false);
+    cache.update(cache.rows, direction, direction === 'older' ? 'row-0' : 'row-41');
+    expect(cache.pageCount).toBe(1);
+    expect(cache.rows[0]?.id).toBe(direction === 'older' ? 'row-0' : 'row-41');
+  });
 });

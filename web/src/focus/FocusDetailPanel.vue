@@ -56,12 +56,11 @@ const toolDetailUnavailableMessage = computed(() => {
 const fullToolDetailSource = computed(() => (
   props.toolDetail?.view === 'full' ? props.toolDetail.source : null
 ));
-const previewReady = computed(() => props.toolDetail?.view === 'preview');
 
 const emit = defineEmits<{
   close: [];
   cancelToolDetail: [];
-  loadFullToolDetail: [];
+  retryToolDetail: [];
   searchConversation: [query: string];
   nextConversationSearchPage: [];
   selectConversationSearchOccurrence: [occurrence: FocusConversationSearchOccurrence];
@@ -96,17 +95,8 @@ const emit = defineEmits<{
       @close="emit('close')"
       @cancel-tool-detail="emit('cancelToolDetail')"
     />
-    <div v-if="previewReady" class="focus-tool-detail-preview-actions">
-      <p>{{ t('tools.detail.preview') }}</p>
-      <Button
-        size="sm"
-        variant="secondary"
-        :loading="toolDetailLoading"
-        @click="emit('loadFullToolDetail')"
-      >
-        {{ t(toolDetailLoading ? 'tools.detail.fullLoading' : 'tools.detail.viewFull') }}
-      </Button>
-    </div>
+    <Button v-if="!toolDetailLoading && !toolDetailUnavailableReason && ['error', 'cancelled', 'not_found'].includes(toolDetailScanStatus)"
+      @click="emit('retryToolDetail')">{{ t('tools.detail.refresh') }}</Button>
   </div>
   <FocusConversationSearchPanel
     v-else-if="target === 'conversationSearch'"
@@ -142,21 +132,5 @@ const emit = defineEmits<{
   flex: 1;
   min-height: 0;
   height: auto;
-}
-.focus-tool-detail-preview-actions {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3) var(--space-3);
-  border-top: 1px solid var(--color-line);
-  background: var(--color-surface);
-}
-.focus-tool-detail-preview-actions p {
-  min-width: 0;
-  margin: 0;
-  color: var(--color-text-muted);
-  font: var(--text-xs) / var(--leading-relaxed) var(--font-ui);
 }
 </style>
