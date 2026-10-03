@@ -370,7 +370,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   upstream item 透传到浏览器。首次 full 请求优先使用 item anchor 读取前驱与目标（各 1 项）；
   明确不支持对象 cursor 的旧服务及显式 cursor 请求，每次按 page width 100 读取，通过 opaque
   cursor 继续请求；`scanning` 表示仍有下一页，`next_cursor=null` 时才表示完整扫描后的 `not_found`。Focus 不对
-  总页数或总 item 数设置另一层硬上限；浏览器可显示已扫描 item 数并由用户取消。exact turn/item 不存在、item status
+  总页数或总 item 数设置另一层硬上限。浏览器首次等待响应时只显示正在加载工具详情；收到有效的 `scanning`
+  continuation 后才显示正在查找及累计检查 item 数，两阶段均可取消，失败后可重新读取。exact turn/item 不存在、item status
   不属于 `completed / failed / declined`、类型或 `change_index` 不匹配、cursor 异常、未知 variant、known source
   field malformed 与超时都只让当前请求失败。HTTP cancel 只停止浏览器当前等待和后续请求，不承诺已经进入
   `to_thread` 的服务端同步 RPC 立即终止。

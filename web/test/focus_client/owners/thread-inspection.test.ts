@@ -383,28 +383,35 @@ describe('thread inspection browser owner', () => {
     expect(h.owner.searchPage.value?.query).toBe('needle');
   });
 
-  it('follows opaque tool cursors and reports page progress separately from display output', async () => {
+  it('shows scan progress only after the server confirms an opaque continuation', async () => {
     const h = harness();
-    const pages: FocusThreadToolDetailScanPage[] = [
-      toolDetailScanPage(fullCommandDetail(), {
-        status: 'scanning',
-        cursor: null,
-        next_cursor: 'next-page',
-        scanned_items: 100,
-      }),
-      toolDetailScanPage(fullCommandDetail('complete'), {
-        cursor: 'next-page',
-        scanned_items: 2,
-      }),
-    ];
+    const firstPage = deferred<FocusThreadToolDetailScanPage>();
+    const nextPage = deferred<FocusThreadToolDetailScanPage>();
     h.readToolDetail.mockImplementation(async (_thread, _locator, _view, _signal, cursor) => {
-      const page = cursor === null ? pages[0] : pages[1];
-      if (!page) throw new Error('missing test page');
-      return page;
+      return cursor === null ? firstPage.promise : nextPage.promise;
     });
 
-    await expect(h.owner.readToolDetail(LOCATOR)).resolves.toBe(true);
+    const request = h.owner.readToolDetail(LOCATOR);
+    expect(h.owner.toolDetailLoading.value).toBe(true);
+    expect(h.owner.toolDetailScanStatus.value).toBe('loading');
+    expect(h.owner.toolDetailScannedItems.value).toBe(0);
+    firstPage.resolve(toolDetailScanPage(fullCommandDetail(), {
+      status: 'scanning',
+      next_cursor: 'next-page',
+      scanned_items: 100,
+    }));
+    await vi.waitFor(() => expect(h.owner.toolDetailScanStatus.value).toBe('scanning'));
+    expect(h.owner.toolDetailLoading.value).toBe(true);
+    expect(h.owner.toolDetailScannedItems.value).toBe(100);
+    expect(h.owner.toolDetail.value).toBeNull();
     expect(h.readToolDetail.mock.calls.map((call) => call[4])).toEqual([null, 'next-page']);
+
+    nextPage.resolve(toolDetailScanPage(fullCommandDetail('complete'), {
+      cursor: 'next-page',
+      scanned_items: 2,
+    }));
+    await expect(request).resolves.toBe(true);
+    expect(h.owner.toolDetailLoading.value).toBe(false);
     expect(h.owner.toolDetailScannedItems.value).toBe(102);
     expect(h.owner.toolDetailScanStatus.value).toBe('found');
     expect(h.owner.toolDetail.value).toMatchObject({
@@ -415,8 +422,13 @@ describe('thread inspection browser owner', () => {
 
   it('reads the full selected tool on the first click and clears the sole slot', async () => {
     const h = harness();
-    h.readToolDetail.mockResolvedValue(toolDetailScanPage(fullCommandDetail('complete persisted output')));
-    await expect(h.owner.readToolDetail(LOCATOR)).resolves.toBe(true);
+    const pending = deferred<FocusThreadToolDetailScanPage>();
+    h.readToolDetail.mockReturnValue(pending.promise);
+    const request = h.owner.readToolDetail(LOCATOR);
+    expect(h.owner.toolDetailScanStatus.value).toBe('loading');
+    pending.resolve(toolDetailScanPage(fullCommandDetail('complete persisted output')));
+    await expect(request).resolves.toBe(true);
+    expect(h.owner.toolDetailScanStatus.value).toBe('found');
     expect(h.readToolDetail.mock.calls.map(call => call[2])).toEqual(['full']);
     expect(h.owner.toolDetail.value).toMatchObject({
       view: 'full', source: { aggregatedOutput: 'complete persisted output' },
@@ -436,6 +448,16 @@ describe('thread inspection browser owner', () => {
     expect(h.owner.toolDetail.value).toBeNull();
     expect(h.owner.toolDetailLocator.value).toBeNull();
     expect(h.owner.toolDetailError.value).toBe(true);
+    expect(h.owner.toolDetailScanStatus.value).toBe('error');
+
+    const retry = deferred<FocusThreadToolDetailScanPage>();
+    h.readToolDetail.mockReturnValueOnce(retry.promise);
+    const request = h.owner.readToolDetail(LOCATOR);
+    expect(h.owner.toolDetailScanStatus.value).toBe('loading');
+    expect(h.owner.toolDetailError.value).toBe(false);
+    retry.resolve(toolDetailScanPage(fullCommandDetail('retry succeeded')));
+    await expect(request).resolves.toBe(true);
+    expect(h.owner.toolDetailScanStatus.value).toBe('found');
   });
 
   it('keeps a complete scan miss distinct from a transport error', async () => {
@@ -452,17 +474,22 @@ describe('thread inspection browser owner', () => {
     expect(h.reportError).not.toHaveBeenCalled();
   });
 
-  it('cancels a pending scan and aborts the current HTTP request', async () => {
+  it.each(['loading', 'scanning'] as const)('cancels a pending %s request and ignores its late response', async (phase) => {
     const h = harness();
     const pending = deferred<FocusThreadToolDetailScanPage>();
     let signal: AbortSignal | undefined;
-    h.readToolDetail.mockImplementation(async (_thread, _locator, _view, requestSignal) => {
+    h.readToolDetail.mockImplementation(async (_thread, _locator, _view, requestSignal, cursor) => {
       signal = requestSignal;
+      if (phase === 'scanning' && cursor === null) {
+        return toolDetailScanPage(fullCommandDetail(), {
+          status: 'scanning', next_cursor: 'next-page', scanned_items: 100,
+        });
+      }
       return pending.promise;
     });
 
     const request = h.owner.readToolDetail(LOCATOR);
-    await Promise.resolve();
+    await vi.waitFor(() => expect(h.owner.toolDetailScanStatus.value).toBe(phase));
     h.owner.cancelToolDetail();
 
     expect(signal?.aborted).toBe(true);

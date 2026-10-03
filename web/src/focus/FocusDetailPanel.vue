@@ -27,7 +27,7 @@ const props = defineProps<{
   toolDetailChangeIndex: number | null;
   toolDetailLoading: boolean;
   toolDetailError: boolean;
-  toolDetailScanStatus: 'idle' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error';
+  toolDetailScanStatus: 'idle' | 'loading' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error';
   toolDetailScannedItems: number;
   toolDetailUnavailableReason: FocusThreadInspectionUnavailableReason | null;
   conversationSearchUnavailableReason: FocusThreadInspectionUnavailableReason | null;

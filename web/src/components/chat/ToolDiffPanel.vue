@@ -14,7 +14,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean;
   error?: boolean;
   unavailableMessage?: string;
-  scanStatus?: 'idle' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error';
+  scanStatus?: 'idle' | 'loading' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error';
   scannedItems?: number;
 }>(), { loading: false, scanStatus: 'idle', scannedItems: 0 });
 
@@ -75,8 +75,8 @@ function commandActionLine(action: CommandExecutionAction): string {
       >
         {{ unavailableMessage }}
       </p>
-      <p v-else-if="loading && scanStatus === 'scanning'" class="tdp-loading" role="status">
-        {{ t('tools.detail.scanning', { count: scannedItems }) }}
+      <p v-else-if="loading" class="tdp-loading" role="status">
+        {{ scanStatus === 'scanning' ? t('tools.detail.scanning', { count: scannedItems }) : t('tools.detail.loading') }}
         <button type="button" class="tdp-cancel" @click="emit('cancelToolDetail')">
           {{ t('tools.detail.cancel') }}
         </button>

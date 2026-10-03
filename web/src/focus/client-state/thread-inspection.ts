@@ -63,7 +63,7 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
   const toolDetailLocator = ref<FocusToolInspectionLocator | null>(null);
   const toolDetailLoading = ref(false);
   const toolDetailError = ref(false);
-  const toolDetailScanStatus = ref<'idle' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error'>('idle');
+  const toolDetailScanStatus = ref<'idle' | 'loading' | 'scanning' | 'not_found' | 'found' | 'cancelled' | 'error'>('idle');
   const toolDetailScannedItems = ref(0);
   const searchPage = ref<FocusThreadConversationSearchPage | null>(null);
   const searchLoading = ref(false);
@@ -179,7 +179,7 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
     toolDetailLocator.value = null;
     toolDetailLoading.value = true;
     toolDetailError.value = false;
-    toolDetailScanStatus.value = 'scanning';
+    toolDetailScanStatus.value = 'loading';
     toolDetailScannedItems.value = 0;
     return { generation: toolGeneration, controller };
   }
@@ -229,6 +229,7 @@ export function createThreadInspection(options: ThreadInspectionOptions) {
         }
         seenCursors.add(nextCursor);
         cursor = nextCursor;
+        toolDetailScanStatus.value = 'scanning';
       }
     } catch (error) {
       if (generation === toolGeneration && !abortError(error)) {

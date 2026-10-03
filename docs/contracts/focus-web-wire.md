@@ -591,8 +591,10 @@ guards and may not retain parallel key or enum inventories.
   (one item each). Explicit cursor reads and old servers explicitly rejecting object cursors
   use pages of 100 with opaque continuation; `scanning` means another page
   remains, and only `next_cursor=null` yields complete `not_found`. Focus does
-  not impose another total page or item ceiling; the browser can show its
-  scanned-item count and let the user cancel. A missing exact turn/item, an
+  not impose another total page or item ceiling. While waiting for the initial response,
+  the browser shows only that tool detail is loading; a valid `scanning` continuation
+  enables the lookup status and cumulative checked-item count. Both phases allow cancellation,
+  and failures allow an explicit retry. A missing exact turn/item, an
   item whose status is not `completed / failed / declined`, a type or
   `change_index` mismatch, an invalid cursor, unknown variant, malformed known
   source field, or timeout fails only that request. HTTP cancellation stops the
