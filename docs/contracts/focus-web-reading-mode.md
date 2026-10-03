@@ -46,6 +46,18 @@ Opening either closes the export menu, session switcher and the other panel.
 Opening or closing these panels does not exit reading mode, remount the transcript
 or explicitly change the reading position; closing returns to reading.
 
+Normal and reading modes share “Runtime details → Current goal”, without an
+extra toolbar button or a persistent goal strip above the composer. The details
+panel opens on “Runtime info” and offers a “Current goal” tab. The goal is fully
+expanded, with independently scrollable text and visible status, usage, budget
+and actions; an empty state is shown when no goal exists. Desktop uses the side
+panel and narrow layouts use fullscreen details. Existing client projections
+still supply goal state and control permissions. Actions reuse pause, resume
+and cancel, preserving cancel confirmation, disabling controls while busy, and
+showing failures inside the panel. Only resume retains the existing return to
+latest and follow behavior; viewing, pausing or cancelling does not explicitly
+change the reading position.
+
 ## Viewport reconciliation, compositing, and diagnostics
 
 `web/src/focus/focusViewport.ts` owns the fixed shell's visible height and top
@@ -65,7 +77,7 @@ despite correct dimensions, positions, and visibility styles, recovering after
 rotation. It does not depend on user-agent detection, change layout dimensions,
 remount the transcript, or write scroll positions.
 
-“Runtime details → Page layout diagnostics” defaults to recording off; expanding
+“Runtime details → Runtime info → Page layout diagnostics” defaults to recording off; expanding
 the panel does not start it. “Start recording” begins layout measurements and
 diagnostics, continuing after the details panel closes so the issue can be
 reproduced. “Stop recording” immediately stops further sampling and retains the

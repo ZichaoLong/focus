@@ -1,17 +1,30 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import GoalStrip from '../components/chat/GoalStrip.vue';
 import Banner from '../components/ui/Banner.vue';
 import PanelHeader from '../components/ui/PanelHeader.vue';
+import SegmentedControl from '../components/ui/SegmentedControl.vue';
+import type { AppGoal } from '../types';
 import type { FocusActiveTurnSetting } from './types';
 import FocusOperatorWarnings from './FocusOperatorWarnings.vue';
 import FocusRuntimeNotices from './FocusRuntimeNotices.vue';
 import FocusViewportDiagnostic from './FocusViewportDiagnostic.vue';
 import type { RuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 
-const props = defineProps<{ presentation: RuntimeDetailsPresentation }>();
-const emit = defineEmits<{ close: [] }>();
+const props = defineProps<{
+  presentation: RuntimeDetailsPresentation;
+  goal: AppGoal | null;
+  canControlGoal: boolean;
+  actionBusy: boolean;
+  errorMessage: string;
+}>();
+const emit = defineEmits<{
+  close: [];
+  controlGoal: [action: 'pause' | 'resume' | 'cancel'];
+}>();
 const { t } = useI18n();
+const activeTab = ref('runtime');
 
 const activeTurn = computed(() => props.presentation.activeTurnContext);
 const hasRuntimeNotices = computed(() => Boolean(
@@ -62,7 +75,21 @@ function activeTurnSettingSource(setting: FocusActiveTurnSetting): string {
       @close="emit('close')"
     />
 
-    <div class="runtime-details-body">
+    <div class="runtime-details-tabs">
+      <SegmentedControl
+        v-model="activeTab"
+        :aria-label="t('focus.runtimeDetailsTitle')"
+        :options="[
+          { value: 'runtime', label: t('focus.runtimeDetailsInfoTab') },
+          { value: 'goal', label: t('focus.runtimeDetailsGoalTab') },
+        ]"
+      />
+    </div>
+    <Banner v-if="errorMessage" variant="danger" class="runtime-details-error">
+      {{ errorMessage }}
+    </Banner>
+
+    <div v-show="activeTab === 'runtime'" class="runtime-details-body" role="tabpanel" :aria-label="t('focus.runtimeDetailsInfoTab')">
       <section class="runtime-details-section">
         <h3>{{ t('focus.runtimeDetailsConnection') }}</h3>
         <Banner v-if="presentation.connection === 'disconnected'" variant="warning">
@@ -131,6 +158,17 @@ function activeTurnSettingSource(setting: FocusActiveTurnSetting): string {
       </p>
       <FocusViewportDiagnostic />
     </div>
+    <div v-if="activeTab === 'goal'" class="runtime-details-goal" role="tabpanel" :aria-label="t('focus.runtimeDetailsGoalTab')">
+      <GoalStrip
+        v-if="goal"
+        :goal="goal"
+        layout="panel"
+        :can-control="canControlGoal"
+        :busy="actionBusy"
+        @control-goal="emit('controlGoal', $event)"
+      />
+      <p v-else class="runtime-details-empty">{{ t('focus.runtimeDetailsNoGoal') }}</p>
+    </div>
   </div>
 </template>
 
@@ -147,6 +185,28 @@ function activeTurnSettingSource(setting: FocusActiveTurnSetting): string {
   min-height: 0;
   overflow: auto;
   padding: var(--space-3);
+}
+.runtime-details-tabs {
+  flex: none;
+  padding: var(--space-3);
+}
+.runtime-details-tabs :deep(.ui-seg) { display: flex; }
+.runtime-details-tabs :deep(.ui-seg__item) {
+  flex: 1;
+  min-height: 36px;
+}
+.runtime-details-error {
+  flex: none;
+  margin: 0 var(--space-3) var(--space-3);
+  max-height: 20%;
+  overflow: auto;
+}
+.runtime-details-goal {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0 var(--space-3) var(--space-3);
 }
 .runtime-details-section {
   display: flex;

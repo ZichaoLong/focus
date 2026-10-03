@@ -5,7 +5,7 @@ import AgentDetailPanel from '../components/chat/AgentDetailPanel.vue';
 import ThinkingPanel from '../components/chat/ThinkingPanel.vue';
 import ToolDiffPanel from '../components/chat/ToolDiffPanel.vue';
 import Button from '../components/ui/Button.vue';
-import type { AgentMember, ToolCall, ToolMedia } from '../types';
+import type { AgentMember, AppGoal, ToolCall, ToolMedia } from '../types';
 import FocusConversationSearchPanel from './FocusConversationSearchPanel.vue';
 import FocusMediaPanel from './FocusMediaPanel.vue';
 import FocusRuntimeDetailsPanel from './FocusRuntimeDetailsPanel.vue';
@@ -21,6 +21,10 @@ import type {
 const props = defineProps<{
   target: 'runtimeDetails' | 'thinking' | 'toolDiff' | 'conversationSearch' | 'media' | 'agent';
   runtimeDetailsPresentation: RuntimeDetailsPresentation;
+  goal: AppGoal | null;
+  canControlGoal: boolean;
+  actionBusy: boolean;
+  errorMessage: string;
   thinkingText: string;
   tool: ToolCall | null;
   toolDetail: FocusThreadToolDetailPayload | null;
@@ -59,6 +63,7 @@ const fullToolDetailSource = computed(() => (
 
 const emit = defineEmits<{
   close: [];
+  controlGoal: [action: 'pause' | 'resume' | 'cancel'];
   cancelToolDetail: [];
   retryToolDetail: [];
   searchConversation: [query: string];
@@ -71,7 +76,12 @@ const emit = defineEmits<{
   <FocusRuntimeDetailsPanel
     v-if="target === 'runtimeDetails'"
     :presentation="runtimeDetailsPresentation"
+    :goal="goal"
+    :can-control-goal="canControlGoal"
+    :action-busy="actionBusy"
+    :error-message="errorMessage"
     @close="emit('close')"
+    @control-goal="emit('controlGoal', $event)"
   />
   <ThinkingPanel
     v-else-if="target === 'thinking'"

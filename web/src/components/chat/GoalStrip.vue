@@ -12,24 +12,28 @@ import Icon from '../ui/Icon.vue';
 const props = withDefaults(defineProps<{
   goal: AppGoal;
   forceExpanded?: number;
+  layout?: 'strip' | 'panel';
+  busy?: boolean;
   /** The parent still renders goal state when false, but no controls may act. */
   canControl?: boolean;
 }>(), {
   // Preserve the generic Kimi renderer's historical default. Focus always
   // passes a server-projected value, where missing/malformed means false.
   canControl: true,
+  layout: 'strip',
 });
 const emit = defineEmits<{ controlGoal: [action: 'pause' | 'resume' | 'cancel'] }>();
 
 const { t } = useI18n();
 const { confirm } = useConfirmDialog();
 
-const expanded = ref(false);
+const expandedByUser = ref(false);
+const expanded = computed(() => props.layout === 'panel' || expandedByUser.value);
 
 watch(
   () => props.forceExpanded,
   () => {
-    if (props.forceExpanded !== undefined) expanded.value = true;
+    if (props.forceExpanded !== undefined) expandedByUser.value = true;
   },
 );
 
@@ -61,7 +65,7 @@ function formatMs(ms: number): string {
 }
 
 async function onCancel(): Promise<void> {
-  if (!props.canControl) return;
+  if (!props.canControl || props.busy) return;
   const confirmed = await confirm({
     title: t('status.goalCancel'),
     message: t('status.goalCancelConfirm'),
@@ -69,17 +73,22 @@ async function onCancel(): Promise<void> {
     cancelLabel: t('status.goalCancelConfirmNo'),
     variant: 'danger',
   });
-  if (confirmed) emit('controlGoal', 'cancel');
+  if (confirmed && props.canControl && !props.busy) emit('controlGoal', 'cancel');
 }
 </script>
 
 <template>
-  <Card class="goal-strip" :class="{ expanded }">
+  <Card class="goal-strip" :class="{ expanded, 'goal-strip--panel': layout === 'panel' }">
     <template #head>
-      <button class="goal-row" type="button" @click="expanded = !expanded">
+      <component
+        :is="layout === 'panel' ? 'div' : 'button'"
+        class="goal-row"
+        :type="layout === 'panel' ? undefined : 'button'"
+        @click="layout === 'strip' && (expandedByUser = !expandedByUser)"
+      >
         <Icon class="goal-icon" name="target" size="md" />
         <span class="goal-kicker">{{ t('status.goalLabel') }}</span>
-        <span class="goal-objective" :class="{ 'expanded-hidden': expanded }">{{ goal.objective }}</span>
+        <span v-if="layout === 'strip'" class="goal-objective" :class="{ 'expanded-hidden': expanded }">{{ goal.objective }}</span>
         <Badge
           :variant="goal.status === 'active' ? 'success' : goal.status === 'blocked' || goal.status === 'budgetLimited' ? 'danger' : goal.status === 'paused' || goal.status === 'usageLimited' ? 'warning' : 'neutral'"
           size="sm"
@@ -88,8 +97,8 @@ async function onCancel(): Promise<void> {
         <span v-if="goal.budget.tokenBudget !== null" class="goal-progress" aria-hidden="true">
           <span class="goal-progress-fill" :style="{ width: `${tokenPct}%` }"></span>
         </span>
-        <Icon class="goal-chevron" :class="{ open: expanded }" name="chevron-right" size="md" />
-      </button>
+        <Icon v-if="layout === 'strip'" class="goal-chevron" :class="{ open: expanded }" name="chevron-right" size="md" />
+      </component>
     </template>
 
     <template #default>
@@ -108,7 +117,9 @@ async function onCancel(): Promise<void> {
       >
         <div class="goal-meta">
           <span>{{ goal.turnsUsed }} turns</span>
-          <span>{{ formatTokens(goal.tokensUsed) }} tokens</span>
+          <span>
+            {{ formatTokens(goal.tokensUsed) }}<template v-if="layout === 'panel' && goal.budget.tokenBudget !== null"> / {{ formatTokens(goal.budget.tokenBudget) }}</template> tokens
+          </span>
           <span>{{ formatMs(goal.wallClockMs) }}</span>
           <span v-if="goal.budget.tokenBudget !== null">{{ tokenPct }}% token budget</span>
         </div>
@@ -118,16 +129,18 @@ async function onCancel(): Promise<void> {
             size="sm"
             variant="secondary"
             class="goal-action"
+            :disabled="busy"
             @click.stop="emit('controlGoal', 'pause')"
           >
             <Icon name="pause" size="md" />
             <span>{{ t('status.goalPause') }}</span>
           </Button>
           <Button
-          v-if="canControl && (goal.status === 'paused' || goal.status === 'blocked' || goal.status === 'usageLimited')"
+            v-if="canControl && (goal.status === 'paused' || goal.status === 'blocked' || goal.status === 'usageLimited')"
             size="sm"
             variant="primary"
             class="goal-action"
+            :disabled="busy"
             @click.stop="emit('controlGoal', 'resume')"
           >
             <Icon name="play" size="md" />
@@ -138,6 +151,7 @@ async function onCancel(): Promise<void> {
             size="sm"
             variant="danger-soft"
             class="goal-action"
+            :disabled="busy"
             @click.stop="onCancel"
           >
             <Icon name="close" size="md" />
@@ -344,8 +358,31 @@ async function onCancel(): Promise<void> {
 .goal-action :deep(.ui-button__content) {
   gap: var(--space-1);
 }
+.goal-strip--panel.ui-card {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+}
+.goal-strip--panel .goal-row { cursor: default; }
+.goal-strip--panel .goal-kicker { flex: 1; }
+.goal-strip--panel :deep(.ui-card__body) {
+  flex: 1;
+  max-height: none;
+  transition: none;
+}
+.goal-strip--panel :deep(.ui-card__foot) {
+  max-height: none;
+  transition: none;
+}
+.goal-strip--panel .goal-footer {
+  flex-direction: column;
+  align-items: stretch;
+}
 @media (max-width: 640px) {
-  .goal-strip {
+  .goal-strip:not(.goal-strip--panel) {
     --composer-send-size: 36px;
     margin: var(--space-2) var(--space-3) 0;
   }
