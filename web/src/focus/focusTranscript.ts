@@ -7,6 +7,7 @@ import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
 import { TranscriptPageWindow } from './transcriptPageWindow';
+import { createFocusReplyContent } from './focusReplyContent';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -57,6 +58,22 @@ export function createFocusTranscript(options: {
     return `${options.activeThreadId.value}\n${options.snapshot.value?.runtime_epoch ?? ''}\n${options.isDisposed()}`;
   }
 
+  const replies = createFocusReplyContent({
+    reportFatalError: options.reportFatalError,
+    async read(turn, signal) {
+      const scope = identity();
+      const threadId = options.activeThreadId.value;
+      const epoch = options.snapshot.value?.runtime_epoch ?? '';
+      const current = () => scope === identity() && !disposed && !options.isDisposed() && !signal.aborted;
+      const result = await readTranscriptTarget(options.api, threadId, epoch, {
+        turn_id: turn.rawTurnId, item_id: turn.itemId, full: true,
+      }, signal, current);
+      if (!current() || result.thread_id !== threadId || result.turn_id !== turn.rawTurnId
+        || result.runtime_epoch !== epoch || result.full_text === null) throw new Error('Reply content is no longer current.');
+      return result.full_text;
+    },
+  });
+
   function cancel() {
     generation += 1;
     controller?.abort();
@@ -84,6 +101,7 @@ export function createFocusTranscript(options: {
   function reset() {
     cancel();
     closeFull();
+    replies.reset();
     turns.value = [];
     cache.clear(); publishWindow(); unseenNewer.value = false; protectedRow = null;
     historical.value = false;
@@ -114,8 +132,11 @@ export function createFocusTranscript(options: {
         const previous = next[index]!;
         // A delayed start skeleton cannot erase text already streamed for the
         // same item. Completed snapshots remain authoritative, including edits.
+        const reply = previous.reply?.state === 'complete' ? previous.reply : incoming.reply ?? previous.reply;
         next[index] = detail.method === 'item/started' && previous.text.length > incoming.text.length
-          && previous.text.startsWith(incoming.text) ? previous : incoming;
+          && previous.text.startsWith(incoming.text) ? { ...previous, reply,
+            blocks: previous.blocks?.map(block => block.kind === 'text' ? { ...block, reply } : block),
+          } : incoming;
       } else if (!historical.value && (detail.method === 'item/started' || detail.method === 'item/completed')) {
         next = [...next, incoming];
       } else if (!historical.value) scheduleHead();
@@ -140,7 +161,14 @@ export function createFocusTranscript(options: {
       } else unseenNewer.value = true;
     }
     if (detail.method === 'turn/completed' && detail.turn_id) {
-      next = next.map((turn) => turn.rawTurnId === detail.turn_id ? { ...turn, status: 'completed' } : turn);
+      next = next.map((turn) => {
+        if (turn.rawTurnId !== detail.turn_id) return turn;
+        const reply = turn.reply?.state === 'generating' ? { ...turn.reply, state: 'unknown' as const } : turn.reply;
+        return { ...turn, status: 'completed', ...(reply ? { reply } : {}),
+          blocks: turn.blocks?.map(block => block.kind === 'text' && block.reply?.state === 'generating'
+            ? { ...block, reply: { ...block.reply, state: 'unknown' as const } } : block),
+        };
+      });
     }
     if (cache.update(next, lastDirection, protectedRow)) {
       needsHead.value = true;
@@ -311,6 +339,6 @@ export function createFocusTranscript(options: {
   function dispose() { disposed = true; reset(); stopIdentity(); stopSnapshot(); }
 
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
-    fullText, fullTool, fullLoading, fullError, openFull, closeFull,
+    fullText, fullTool, fullLoading, fullError, openFull, closeFull, replies,
     handleDelta, load, older, newer, locate, updateViewport, cancelTarget, reset, dispose };
 }

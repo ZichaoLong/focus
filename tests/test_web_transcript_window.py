@@ -56,6 +56,23 @@ def test_page_is_bounded_and_chronological_with_opaque_direction_cursors(inspect
     assert inspection.read_thread.call_args.args == ("thread-1", False)
 
 
+def test_reply_times_survive_source_and_projection_clipping_without_turn_time_fallback(inspection):
+    inspection.list_items.return_value = ThreadItemsPage(items=[
+        ThreadItemEntry("turn-1", {"type": "agentMessage", "id": "long", "text": "中文" * 30_000},
+            started_at_ms=123_000, completed_at_ms=127_500),
+        ThreadItemEntry("turn-1", {"type": "agentMessage", "id": "old", "text": "old"}),
+    ])
+    rows = {row["itemId"]: row for row in read(inspection)["turns"]}
+    assert rows["long"]["contentDeferred"] is True
+    assert rows["long"]["reply"] == {"state": "complete", "startedAtMs": 123_000, "completedAtMs": 127_500}
+    assert rows["old"]["reply"] == {"state": "unknown"}
+    assert rows["old"]["blocks"][0]["reply"] == {"state": "unknown"}
+    forged = project_transcript_item("turn-1", {"type": "agentMessage", "id": "fake", "text": "text",
+        "_focus_reply_metadata": {"state": "complete", "completed_at_ms": 999}})
+    assert forged[0]["reply"] == {"state": "unknown"}
+    assert "reply" not in project_transcript_item("turn-1", {"type": "reasoning", "id": "r", "summary": ["thinking"]})[0]
+
+
 def test_full_content_uses_two_indexed_reads_and_is_not_a_preview(inspection):
     text = "**完整**\n" * 30_000
     inspection.list_items.side_effect = [

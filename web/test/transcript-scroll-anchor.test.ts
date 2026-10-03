@@ -8,6 +8,7 @@ function viewport() {
   const pane = { scrollTop: 150, getBoundingClientRect: () => ({ top: 50, bottom: 550 }),
     querySelectorAll: () => rows };
   const rows = Array.from({ length: 5 }, (_, index) => ({ dataset: { turnId: `row-${index}` },
+    querySelectorAll: () => [],
     getBoundingClientRect: () => ({ top: 50 + index * 200 + insertedHeight - pane.scrollTop,
       bottom: 250 + index * 200 + insertedHeight - pane.scrollTop }),
   }));
@@ -15,6 +16,22 @@ function viewport() {
 }
 
 describe('continuous transcript scroll anchors', () => {
+  it('anchors within a long reply when earlier Markdown groups change height', () => {
+    let growth = 0;
+    const pane = { scrollTop: 700, getBoundingClientRect: () => ({ top: 0, bottom: 500 }), querySelectorAll: () => [row] };
+    const chunks = Array.from({ length: 3 }, (_, i) => ({ dataset: { transcriptChunk: String(i) },
+      getBoundingClientRect: () => ({ top: i * 600 + (i ? growth : 0) - pane.scrollTop,
+        bottom: (i + 1) * 600 + growth - pane.scrollTop }) }));
+    const row = { dataset: { turnId: 'long' }, querySelectorAll: () => chunks,
+      getBoundingClientRect: () => ({ top: -pane.scrollTop, bottom: 1800 + growth - pane.scrollTop }) };
+    const element = pane as unknown as HTMLElement;
+    const anchor = captureTranscriptScrollAnchor(element)!;
+    expect(anchor.chunk).toBe('1');
+    growth = 300; pane.scrollTop += 20;
+    restoreTranscriptScrollAnchor(element, anchor); expect(pane.scrollTop).toBe(1020);
+    for (let i = 0; i < 5; i += 1) restoreTranscriptScrollAnchor(element, anchor);
+    expect(pane.scrollTop).toBe(1020);
+  });
   it('lets gestures over overflowing text reach the transcript but respects scrollable code blocks', () => {
     const element = { scrollTop: 0, clientHeight: 255, scrollHeight: 259 } as HTMLElement;
     let overflowY = 'visible';

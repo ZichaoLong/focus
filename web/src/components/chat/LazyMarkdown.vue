@@ -35,6 +35,7 @@ defineProps<{
   text: string;
   openFile?: (target: FilePreviewRequest) => void;
   streaming?: boolean;
+  progressive?: boolean;
 }>();
 
 const { t } = useI18n();
@@ -67,6 +68,7 @@ function reloadPage(): void {
     :text="text"
     :open-file="openFile"
     :streaming="streaming"
+    :progressive="progressive"
   />
   <div v-else class="markdown-source-fallback" :aria-busy="loadState === 'loading'">
     <div

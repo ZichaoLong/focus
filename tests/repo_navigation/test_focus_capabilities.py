@@ -135,6 +135,14 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/components/chat/transcriptScrollAnchor.ts",
                     "captureTranscriptScrollAnchor",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/focus/focusReplyContent.ts",
+                    "createFocusReplyContent",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/lib/markdownChunks.ts",
+                    "markdownChunks",
+                ),
             ),
         )
 

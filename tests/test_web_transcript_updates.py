@@ -2,6 +2,7 @@
 from dataclasses import replace
 
 from bot.web_runtime.thread_read_model import WebThreadReadModel
+from bot.web_runtime.transcript_window import project_transcript_item
 from tests import test_web_runtime_event_coordinator as support
 from tests import test_web_thread_open_coordinator as open_support
 
@@ -75,6 +76,39 @@ def test_successor_uses_latest_cache_after_streams_instead_of_rolling_back_text(
     owner.settle_notification_projection(fresh, owner.project_notification(fresh))
     payload = callbacks.publish_projection.call_args.kwargs["detail"]
     assert payload["item_turns"][0]["text"] == "start" + "!" * 20
+
+
+def test_reply_timing_survives_completion_coalescing_and_turn_snapshot_replacement():
+    owner, cache, scheduled, callbacks = coordinator()
+    params = {"threadId": "root-1", "turnId": "turn-1", "item": item(1, "start")}
+    owner.handle_notification("item/started", {**params, "startedAtMs": 123_000})
+    old = scheduled.pop()
+    owner.handle_notification("item/completed", {**params, "completedAtMs": 126_000, "item": item(1, "answer" * 10_000)})
+    owner.settle_notification_projection(old, owner.project_notification(old))
+    fresh = scheduled.pop()
+    owner.settle_notification_projection(fresh, owner.project_notification(fresh))
+    row = callbacks.publish_projection.call_args.kwargs["detail"]["item_turns"][0]
+    assert row["reply"] == {"state": "complete", "startedAtMs": 123_000, "completedAtMs": 126_000}
+    assert row["contentDeferred"] is True
+    cache.apply_notification("turn/completed", {"threadId": "root-1", "turn": {
+        "id": "turn-1", "status": "completed", "startedAt": 1,
+        "items": [item(1, "answer" * 10_000)],
+    }})
+    stored = cache.cached_turn("root-1", "turn-1")["items"][0]
+    assert project_transcript_item("turn-1", stored)[0]["reply"] == row["reply"]
+
+
+def test_partial_live_timing_does_not_borrow_the_turn_or_arrival_time():
+    cache = model()
+    cache.apply_notification("item/started", {"threadId": "root-1", "turnId": "turn-1",
+        "startedAtMs": "invalid", "item": item(1)})
+    stored = cache.cached_turn("root-1", "turn-1")["items"][0]
+    assert project_transcript_item("turn-1", stored)[0]["reply"] == {"state": "generating"}
+    assert project_transcript_item("turn-1", stored, status="completed")[0]["reply"] == {"state": "unknown"}
+    cache.apply_notification("item/completed", {"threadId": "root-1", "turnId": "turn-1",
+        "completedAtMs": 15_000, "item": item(1)})
+    stored = cache.cached_turn("root-1", "turn-1")["items"][0]
+    assert project_transcript_item("turn-1", stored)[0]["reply"] == {"state": "complete", "completedAtMs": 15_000}
 
 
 def test_control_summary_refresh_keeps_observed_collaboration_tasks():

@@ -2,7 +2,7 @@
 // Pure turn-rendering helpers: pure functions of their arguments (no Vue
 // reactivity, no component state). Shared by ChatPane.vue's template and its
 // stateful copy/edit helpers.
-import type { ChatTurn, TurnBlock } from '../types';
+import type { ChatTurn, ReplyMetadata, TurnBlock } from '../types';
 
 // Shared 1024-based token formatter (lib/formatTokens); re-exported so the
 // existing ChatPane import keeps working.
@@ -37,7 +37,7 @@ export type ToolStackItem = {
 
 export type AssistantRenderBlock =
   | { kind: 'thinking'; thinking: string; sourceIndex: number }
-  | { kind: 'text'; text: string; sourceIndex: number }
+  | { kind: 'text'; text: string; sourceIndex: number; reply?: ReplyMetadata }
   | { kind: 'reply-separator'; sourceIndex: number }
   | { kind: 'tool'; tool: ToolStackItem['tool']; sourceIndex: number }
   | { kind: 'tool-stack'; tools: ToolStackItem[] };
@@ -92,7 +92,7 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
         rendered.push({ kind: 'reply-separator', sourceIndex });
         hasPendingWorkActivity = false;
       }
-      rendered.push({ kind: 'text', text: block.text, sourceIndex });
+      rendered.push({ kind: 'text', text: block.text, sourceIndex, ...(block.reply ? { reply: block.reply } : {}) });
     }
   });
 

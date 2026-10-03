@@ -124,6 +124,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 
 - v24 为 `/transcript` 增加按需 Prompt 目录、exact item 定位的字符串 cursor 回退和来源页 locator；响应增加 `view`、`target_pending`，snapshot Prompt 使用 item identity。服务与浏览器资源仍须同版本部署。
 - v25 将正文 exact item 定位后的分页扩展到全线程，并让浏览器按需缓存相邻页、双向自动加载。定位响应的 `turn_id` 回显目标身份，后续正文 cursor 不携轮次筛选；服务与浏览器资源须同版本部署。
+- v26 为 assistant 文本条目与 text block 增加 `reply` 元数据，承载逐条源时间与生成状态；长回复使用既有 exact full read 自动连续展示。服务与浏览器资源须同版本部署。
 
 ## 4. Endpoint 与 event admission
 

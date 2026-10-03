@@ -29,6 +29,9 @@ from bot.web_runtime.turn_window import (
     MAX_TURN_WINDOW_LIMIT,
 )
 from bot.web_runtime.transcript_budget import TRANSCRIPT_WINDOW_ITEMS, bounded_transcript_item
+from bot.web_runtime.reply_metadata import (
+    REPLY_METADATA_KEY, merge_reply_metadata, notification_reply_metadata,
+)
 
 DEFAULT_RECENT_TURN_LIMIT = DEFAULT_TURN_WINDOW_LIMIT
 
@@ -539,6 +542,8 @@ class WebThreadReadModel:
                 return None
             turn = self._live_turn(turns, turn_id)
             source = bounded_transcript_item(item) if self.history_mode(thread_id) == "paginated" else item
+            if item.get("type") == "agentMessage":
+                source = {**source, REPLY_METADATA_KEY: notification_reply_metadata(normalized_method, params)}
             self._upsert_turn_item(turn, self._bounded_item_copy(source))
         elif normalized_method == "turn/diff/updated":
             if not turn_id:
@@ -1193,7 +1198,9 @@ class WebThreadReadModel:
                     isinstance(current, dict)
                     and str(current.get("id", "") or "").strip() == item_id
                 ):
-                    items[index] = copy.deepcopy(item)
+                    replacement = copy.deepcopy(item)
+                    merge_reply_metadata(current, replacement)
+                    items[index] = replacement
                     return
         items.append(copy.deepcopy(item))
 

@@ -18,6 +18,7 @@ import type { AgentMember, ComposerCapabilities, PromptAttachment, ToolCall, Too
 import type { ComposerSubmission } from '../components/chat/composerSubmission';
 import { useAppearance } from '../composables/client/useAppearance';
 import { useNarrowViewport } from '../composables/useNarrowViewport';
+import { replyContentReaderKey } from '../composables/replyContent';
 import { useSidebarLayout } from '../composables/useSidebarLayout';
 import { useConfirmDialog } from '../composables/useConfirmDialog';
 import { clampPanelWidth, useViewportWidth } from '../composables/useViewportWidth';
@@ -134,6 +135,7 @@ async function ensureDetailPanelLoaded(): Promise<void> {
 // explicit refusal understood by Markdown.vue: local image syntax becomes an
 // honest unavailable notice instead of a same-origin request for a server path.
 provide('resolveImage', async () => null);
+provide(replyContentReaderKey, client.transcript.replies);
 const activeSessionTitle = computed(() => {
   if (!client.activeThreadId.value) return t('focus.newConversation');
   return client.activeThread.value?.title ?? '';

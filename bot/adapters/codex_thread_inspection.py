@@ -74,7 +74,16 @@ def thread_items_page_from_result(result: Any) -> ThreadItemsPage:
             "type",
             location=f"data[{index}].item",
         )
-        entries.append(ThreadItemEntry(turn_id=turn_id, item=dict(raw_item)))
+        times = []
+        for field in ("startedAtMs", "completedAtMs"):
+            value = raw_entry.get(field)
+            if value is not None and (type(value) is not int or not 0 <= value <= 8_640_000_000_000_000):
+                raise _protocol_error(method, f"data[{index}].{field} is invalid")
+            times.append(value)
+        entries.append(ThreadItemEntry(
+            turn_id=turn_id, item=dict(raw_item),
+            started_at_ms=times[0], completed_at_ms=times[1],
+        ))
 
     return ThreadItemsPage(
         items=entries,

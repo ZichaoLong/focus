@@ -232,10 +232,18 @@ export function isFocusWireToolCall(value: unknown): value is ToolCall {
   return isToolCall(value);
 }
 
+function isReplyMetadata(value: unknown): boolean {
+  if (!isFocusWireRecord(value) || !['unknown', 'generating', 'complete'].includes(String(value.state))) return false;
+  const time = (item: unknown) => isNonNegativeSafeInteger(item) && (item as number) <= 8_640_000_000_000_000;
+  return Object.keys(value).every(key => ['state', 'startedAtMs', 'completedAtMs'].includes(key))
+    && optionalProperty(value, 'startedAtMs', time) && optionalProperty(value, 'completedAtMs', time);
+}
+
 function isTurnBlock(value: unknown): value is TurnBlock {
   if (!isFocusWireRecord(value)) return false;
   if (value.kind === 'text') {
     return typeof value.text === 'string'
+      && optionalProperty(value, 'reply', isReplyMetadata)
       && optionalProperty(value, 'itemId', (item) => typeof item === 'string');
   }
   if (value.kind === 'thinking') {
@@ -359,6 +367,7 @@ export function isFocusWireChatTurn(value: unknown): value is Record<string, unk
   if (!optionalProperty(value, 'rawTurnId', (item) => isTrimmedString(item, false))) return false;
   if (!optionalProperty(value, 'itemId', (item) => isTrimmedString(item, false))) return false;
   if (!optionalProperty(value, 'contentDeferred', (item) => item === true)) return false;
+  if (!optionalProperty(value, 'reply', isReplyMetadata)) return false;
   if (!optionalProperty(value, 'sourceCursor', (item) => isTrimmedString(item, false))) return false;
   if (!['user', 'assistant', 'compaction', 'cron'].includes(String(value.role))) return false;
   if (!isNonNegativeSafeInteger(value.no) || typeof value.text !== 'string') return false;

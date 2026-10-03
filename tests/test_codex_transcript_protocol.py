@@ -3,7 +3,29 @@ from unittest.mock import Mock
 import pytest
 
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
+from bot.adapters.codex_thread_inspection import thread_items_page_from_result
+from bot.codex_protocol.client import CodexRpcProtocolError
 from tests.codex_app_server_test_support import _FakeRpc
+
+
+@pytest.mark.parametrize("fields, expected", [
+    ({}, (None, None)),
+    ({"startedAtMs": None, "completedAtMs": None}, (None, None)),
+    ({"startedAtMs": 1_790_999_123_456, "completedAtMs": 1_790_999_124_789}, (1_790_999_123_456, 1_790_999_124_789)),
+])
+def test_item_page_preserves_optional_source_timestamps(fields, expected):
+    entry = {"turnId": "turn-1", "item": {"type": "agentMessage", "id": "reply"}, **fields}
+    result = thread_items_page_from_result({"data": [entry], "nextCursor": None, "backwardsCursor": None})
+    assert (result.items[0].started_at_ms, result.items[0].completed_at_ms) == expected
+
+
+@pytest.mark.parametrize("bad", [True, "123", 1.5, -1, float("nan"), 8_640_000_000_000_001])
+@pytest.mark.parametrize("field", ["startedAtMs", "completedAtMs"])
+def test_item_page_rejects_invalid_source_timestamps(field, bad):
+    with pytest.raises(CodexRpcProtocolError):
+        thread_items_page_from_result({"data": [{"turnId": "turn-1",
+            "item": {"type": "agentMessage", "id": "reply"}, field: bad}],
+            "nextCursor": None, "backwardsCursor": None})
 
 
 def test_resume_can_request_summaries_without_changing_other_resume_consumers():

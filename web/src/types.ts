@@ -256,6 +256,13 @@ export interface CronTurnData {
   missedCount?: number;
 }
 
+/** Source item times in milliseconds; absence is not inferred from turn time. */
+export interface ReplyMetadata {
+  state: 'unknown' | 'generating' | 'complete';
+  startedAtMs?: number;
+  completedAtMs?: number;
+}
+
 /** One ordered piece of an assistant turn: a thinking segment, a text segment
  * OR a tool card. Built in call order so every piece renders inline where it
  * happened (a turn can think → act → think again — nothing is hoisted).
@@ -264,7 +271,7 @@ export interface CronTurnData {
  * streams in the right-side detail panel, sourced from the task rather than a
  * dedicated block. */
 export type TurnBlock =
-  | { kind: 'text'; itemId?: string; text: string }
+  | { kind: 'text'; itemId?: string; text: string; reply?: ReplyMetadata }
   | { kind: 'thinking'; itemId?: string; thinking: string }
   | { kind: 'tool'; tool: ToolCall };
 
@@ -286,6 +293,7 @@ export interface ChatTurn {
   rawTurnId?: string;
   itemId?: string;
   contentDeferred?: boolean;
+  reply?: ReplyMetadata;
   /** Opaque source-page receipt for an exact full-content reread. */
   sourceCursor?: string;
   role: TurnRole;

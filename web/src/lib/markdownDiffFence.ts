@@ -1,6 +1,6 @@
-// A fenced `diff` in assistant Markdown keeps its complete source for copying,
-// but mounts only a fixed presentation window. This is a DOM-cost boundary,
-// not a mutation of the transcript or of the copy payload.
+// Diff previews retain a fixed presentation window and complete copy source.
+// Continuous assistant replies request every row; long replies additionally
+// mount whole Markdown groups near the reading viewport.
 
 export const MARKDOWN_DIFF_HEAD_LINE_COUNT = 25;
 export const MARKDOWN_DIFF_TAIL_LINE_COUNT = 25;
@@ -33,10 +33,11 @@ function sourceRow(line: string): MarkdownDiffSourceRow {
 
 export function buildMarkdownDiffPresentationRows(
   source: string,
+  complete = false,
 ): readonly MarkdownDiffPresentationRow[] {
   const lines = source.split('\n');
   const visibleLineCount = MARKDOWN_DIFF_HEAD_LINE_COUNT + MARKDOWN_DIFF_TAIL_LINE_COUNT;
-  if (lines.length <= visibleLineCount) return lines.map(sourceRow);
+  if (complete || lines.length <= visibleLineCount) return lines.map(sourceRow);
 
   return [
     ...lines.slice(0, MARKDOWN_DIFF_HEAD_LINE_COUNT).map(sourceRow),

@@ -16,6 +16,7 @@ from bot.codex_protocol.connection import CodexRpcError
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
 from bot.web_runtime.projection import bounded_summary_prompt_text, project_turns
+from bot.web_runtime.reply_metadata import project_reply_metadata
 from bot.web_runtime.transcript_source import decode_transcript_source, encode_transcript_source
 from bot.web_runtime.thread_read_model import WebThreadReadObservationReceipt
 from bot.web_runtime.transcript_budget import (
@@ -98,6 +99,8 @@ def project_transcript_item(
     item: dict[str, Any],
     *,
     status: str = "",
+    started_at_ms: int | None = None,
+    completed_at_ms: int | None = None,
     full: bool = False,
     attachment_url_for_path: Callable[[str], str] | None = None,
     attachment_url_for_id: Callable[[str], str] | None = None,
@@ -141,6 +144,13 @@ def project_transcript_item(
             "contentDeferred": True,
             **({"tools": [header], "blocks": [{"kind": "tool", "tool": header}]} if header else {}),
         }]
+    if item.get("type") == "agentMessage":
+        reply = project_reply_metadata(item, started_at_ms=started_at_ms, completed_at_ms=completed_at_ms, turn_status=status)
+        for turn in projected:
+            turn["reply"] = reply
+            for block in turn.get("blocks", []):
+                if block.get("kind") == "text":
+                    block["reply"] = reply
     return projected
 
 
@@ -245,6 +255,7 @@ def read_transcript_window(
             continue
         rows = project_transcript_item(
             entry.turn_id, entry.item, full=prepared.full,
+            started_at_ms=entry.started_at_ms, completed_at_ms=entry.completed_at_ms,
             attachment_url_for_path=attachment_url_for_path if prepared.view == "transcript" else None,
             attachment_url_for_id=attachment_url_for_id if prepared.view == "transcript" else None,
         )

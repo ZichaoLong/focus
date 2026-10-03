@@ -7,12 +7,15 @@ export const TRANSCRIPT_ITEM_CHARS = 16_384;
 
 /** Apply one ordered delta to one bounded item, without scanning a whole turn. */
 export function appendTranscriptDelta(previous: ChatTurn | undefined, stream: FocusStreamDelta): ChatTurn | null {
-  if (previous?.contentDeferred) return previous;
+  const reply = stream.kind === 'text' ? { ...previous?.reply,
+    state: previous?.reply?.state === 'complete' ? 'complete' as const : 'generating' as const } : previous?.reply;
+  if (previous?.contentDeferred) return reply === previous.reply ? previous : { ...previous, reply };
   if (!previous && stream.kind === 'tool_output') return null;
   const turn: ChatTurn = previous ?? {
     id: `${stream.turn_id}:item:${stream.item_id}:0`,
     rawTurnId: stream.turn_id, itemId: stream.item_id,
     role: 'assistant', no: 0, text: '', blocks: [], status: 'inProgress',
+    ...(reply ? { reply } : {}),
   };
   const blocks = [...(turn.blocks ?? [])];
   const tools = [...(turn.tools ?? [])];
@@ -45,11 +48,12 @@ export function appendTranscriptDelta(previous: ChatTurn | undefined, stream: Fo
     const bounded = text.slice(0, end);
     const block: TurnBlock = thinking
       ? { kind: 'thinking', itemId: stream.item_id, thinking: bounded }
-      : { kind: 'text', itemId: stream.item_id, text: bounded };
+      : { kind: 'text', itemId: stream.item_id, text: bounded, reply };
     if (index < 0) blocks.push(block);
     else blocks[index] = block;
   }
   return { ...turn, blocks, tools, status: 'inProgress',
+    ...(reply ? { reply } : {}),
     text: blocks.flatMap((block) => block.kind === 'text' ? [block.text] : []).join('\n\n'),
     ...(deferred ? { contentDeferred: true } : {}),
   };

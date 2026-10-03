@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, provide, ref } from 'vue';
 import type { ChatTurn } from '../../types';
+import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights';
 
 const props = defineProps<{ turn: ChatTurn }>();
+provide(markdownChunkHeightsKey, new Map());
 const element = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === 'undefined');
 const height = ref<number | null>(null);

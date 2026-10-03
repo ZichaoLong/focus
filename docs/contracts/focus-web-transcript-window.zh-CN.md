@@ -47,8 +47,8 @@ newer_cursor, full_text}`。行携带稳定的 `rawTurnId`、`itemId` 与
 diff 或媒体。源展示树在预算内优先保留工具身份与调用字段，不能因输出字段在前而丢失名称。
 工具命名继续使用已有 projection。已完成命令与单文件修改在专用详情可用时使用 exact
 inspection locator；其他工具或专用详情不可用时，使用原条目的全文读取。被折叠的多文件修改
-保留原始文件数量，整批读取源条目，不得冒充仅指向第一个文件的专用详情。文本/推理预览
-使用“查看全文”。这些入口不改变源历史或正文窗口预算。
+保留原始文件数量，整批读取源条目，不得冒充仅指向第一个文件的专用详情。用户文本/推理预览
+使用“查看全文”；assistant 回复遵循下述自动正文读取。这些入口不改变源历史或正文窗口预算。
 
 Prompt 目录首次打开或侧栏被使用时，`view=prompts` 从最新条目分批向前读取 userMessage，
 包括同轮追加/steer 消息，每条只返回至多 160 字符的短标题及裁剪提示。此 view 只接受
@@ -79,6 +79,36 @@ cursor 重开全线程页，再提供跨轮次浏览。其他上游错误不作�
 错误状态中保留，与内容一同清除。旧请求不得覆盖新工具的内容或标题。
 陈旧读取至多原请求重试一次，其他错误显示具体原因。显式全文读取的内存与传输成本取决于
 所选条目及其有界来源页。
+
+## 回复时间与长回复
+
+`agentMessage` 展示行及其 text block 携 `reply={state, startedAtMs?, completedAtMs?}`。
+`state` 为 `unknown|generating|complete`；时间是 app-server 逐条 item 的 Unix 毫秒，
+非负整数且不超过 JavaScript Date 上限。历史页读取 `ThreadItemEntry` 的可空字段；实时
+`item/started`、`item/completed` 的 notification 顶层时间由 read model 保存，完成与
+同条目的后续 turn snapshot 合并保留开始时间。无完成时间的历史项为 unknown，不猜测仍在生成。
+时间缺失时不以轮次开始、浏览器接收或页面打开时间补值。工具卡不增加时间标签。
+
+每个中间/最终文本回复显示低强调的本地时间，优先完成时间；仅有开始时间则显示开始时间，
+明确观测到正在生成时附生成提示。点击展开完整日期、已有的开始/完成时间，以及两者有序
+时的逐条用时。此数据与原有整轮 duration 分开，缺时间的旧回复不显示虚构标签。
+
+被裁剪的 assistant 回复进入正文挂载范围后，由 `createFocusReplyContent` 自动按 exact
+item 读取全文，不要求点击“查看全文”。使用原 `full=true` 与 item anchor，避免自动读取
+整份源页；保留 staged fencing、旧服务 cursor fallback 和一次 stale retry。只允许一个
+自动全文 flight；离开范围取消无人使用的读取，错误保持并提供显式重试。明确生成中的
+预览等 item 完成后读取，完成事件使旧的未完成全文失效。工具、用户文本和推理不自动读取。
+
+全文不写回普通页缓存。未挂载回复的 LRU 缓存最多 4 条、4 MiB（源字符串 UTF-16 长度乘二）；
+当前挂载回复的源字符串和解析树内存、单次传输成本仍取决于该条回复大小，超预算单条
+离开后不保留。换线程、epoch/access 变化或 dispose 清空缓存并取消请求。复制使用完整
+源字符串，不能复制裁剪预览冒充全文。
+
+达到 16384 字符的完整 Markdown 使用共享配置一次解析，按顶层完整结构分组（目标 12000 字符、至多 24 个
+顶层节点），再按可视范围挂载；单个表格、列表、公式或代码块允许超出分组目标，不切断
+语法结构。解析保留全文引用上下文；diff fence 显示完整原始增删行。各组离屏使用实测
+高度，测量随有界正文行保存；可见组纳入既有滚动锚点，布局补偿仍由正文唯一 owner 执行，
+不得撤销触摸/惯性位移。没有 IntersectionObserver 时回退到完整回复渲染。
 
 所有正文读取使用现有 staged boundary；持锁阶段只做准备，不跨上游 I/O。
 结算要求同一 document、selection、backend generation、runtime epoch 和本线程 read
@@ -149,3 +179,8 @@ cookie 或任意断开原因字符串。
 中的 inclusive backwards cursor。对象 anchor 来自 commit
 `de9e78e3e7caed0fdd75d20ae617faa646dfef3c`；实际 npm 0.156.1 只接受字符串，0.160.0
 已验证接受对象 anchor。不得由开发分支源码推断已部署版本的能力。不修改上游存储或旧线程格式。
+
+逐条时间的协议证据为同一 pinned commit 的 `ThreadItemEntry`（`v2/thread.rs`）与
+`ItemStartedNotification`、`ItemCompletedNotification`（`v2/item.rs`）；引入提交为
+`772abc9425d4bf4c2802456365785378811e7d3d`。本机 npm 0.160.0 已验证返回该字段；
+旧 producer 没有记录的时间仍可为空。

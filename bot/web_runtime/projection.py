@@ -22,6 +22,7 @@ from bot.adapters.base import (
 )
 from bot.focus_web_wire_catalog import require_focus_web_event_type
 from bot.interaction_contract import normalize_interaction_request
+from bot.web_runtime.reply_metadata import project_reply_metadata
 from bot.stores.interaction_lease_store import InteractionLease
 from bot.web_runtime.tool_output_presentation import (
     CachedToolOutputPresentation,
@@ -768,7 +769,8 @@ def project_turns(
                 # app-server item id as a target.
                 if text or (turn_status == "inProgress" and item_id):
                     _append_assistant_block(
-                        {"kind": "text", "itemId": item_id, "text": text}
+                        {"kind": "text", "itemId": item_id, "text": text,
+                         "reply": project_reply_metadata(raw_item, turn_status=turn_status)}
                     )
                     last_semantic_kind = "assistant"
                 continue

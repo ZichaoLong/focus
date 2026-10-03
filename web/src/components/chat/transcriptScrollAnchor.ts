@@ -1,4 +1,4 @@
-export interface TranscriptScrollAnchor { id: string; offset: number; scrollTop: number }
+export interface TranscriptScrollAnchor { id: string; chunk?: string; offset: number; scrollTop: number }
 
 /** Visual overflow (for example a copy button) does not consume a scroll gesture. */
 export function canScrollVertically(element: HTMLElement, direction: 'up' | 'down'): boolean {
@@ -14,6 +14,13 @@ export function captureTranscriptScrollAnchor(pane: HTMLElement): TranscriptScro
   for (const row of pane.querySelectorAll<HTMLElement>('.transcript-row[data-turn-id]')) {
     const box = row.getBoundingClientRect();
     if (box.bottom > viewport.top && box.top < viewport.bottom) {
+      for (const chunk of row.querySelectorAll<HTMLElement>('[data-transcript-chunk]')) {
+        const chunkBox = chunk.getBoundingClientRect();
+        if (chunkBox.bottom > viewport.top && chunkBox.top < viewport.bottom) {
+          return { id: row.dataset.turnId!, chunk: chunk.dataset.transcriptChunk!,
+            offset: chunkBox.top - viewport.top, scrollTop: pane.scrollTop };
+        }
+      }
       return { id: row.dataset.turnId!, offset: box.top - viewport.top, scrollTop: pane.scrollTop };
     }
   }
@@ -25,8 +32,11 @@ export function restoreTranscriptScrollAnchor(pane: HTMLElement, anchor: Transcr
   const row = [...pane.querySelectorAll<HTMLElement>('.transcript-row[data-turn-id]')]
     .find(element => element.dataset.turnId === anchor.id);
   if (!row) return false;
+  const target = anchor.chunk === undefined ? row : [...row.querySelectorAll<HTMLElement>('[data-transcript-chunk]')]
+    .find(element => element.dataset.transcriptChunk === anchor.chunk);
+  if (!target) return false;
   const top = pane.scrollTop;
-  const offset = row.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  const offset = target.getBoundingClientRect().top - pane.getBoundingClientRect().top;
   // Compare content coordinates: viewport movement from touch/inertia is not
   // layout movement and must never be pulled back to an old screen offset.
   // The owning pane disables native anchoring while using this correction.

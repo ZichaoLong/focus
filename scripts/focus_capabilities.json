@@ -960,6 +960,18 @@
         {
           "path": "web/src/components/chat/transcriptScrollAnchor.ts",
           "symbol": "captureTranscriptScrollAnchor"
+        },
+        {
+          "path": "web/src/focus/focusReplyContent.ts",
+          "symbol": "createFocusReplyContent"
+        },
+        {
+          "path": "bot/web_runtime/reply_metadata.py",
+          "symbol": "project_reply_metadata"
+        },
+        {
+          "path": "web/src/lib/markdownChunks.ts",
+          "symbol": "markdownChunks"
         }
       ],
       "contract": [
@@ -974,6 +986,14 @@
         {
           "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
           "heading": "控制状态与正文读取"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "回复时间与长回复"
+        },
+        {
+          "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
+          "heading": "正文强调与换行"
         }
       ],
       "focused-test": [
@@ -1003,7 +1023,10 @@
             "web/test/focus-performance.test.ts",
             "web/test/focus_client/owners/focus-prompt-history.test.ts",
             "web/test/focus_client/owners/transcript-page-window.test.ts",
-            "web/test/transcript-scroll-anchor.test.ts"
+            "web/test/transcript-scroll-anchor.test.ts",
+            "web/test/focus_client/owners/focus-reply-content.test.ts",
+            "web/test/markdown-chunks.test.ts",
+            "web/test/reply-time.test.ts"
           ]
         }
       ],

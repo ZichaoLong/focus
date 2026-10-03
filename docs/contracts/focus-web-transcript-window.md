@@ -57,8 +57,8 @@ cannot erase the name. Existing projection remains the tool-naming owner. Termin
 and single-file changes use their exact inspection locator when specialized detail is
 available; other tools or unavailable specialized readers use the whole-item full read.
 A collapsed multi-file change retains the original file count and reads the entire source
-item, never silently linking only to its first file. Text/reasoning previews use “View full
-text”. These entries change neither source history nor window budgets.
+item, never silently linking only to its first file. User text/reasoning previews use “View full
+text”; assistant replies follow automatic reading below. These entries change neither source history nor window budgets.
 
 First opening/using the Prompt directory reads `view=prompts` backwards through userMessage
 items, including additional/steer messages. Responses contain only titles of at most 160
@@ -97,6 +97,43 @@ Tool source-JSON detail also displays the selected tool's name and invocation su
 context is captured with the request, retained during loading/errors and cleared with the
 content. Old requests cannot replace a newer tool's content or title.
 Explicit full-read transfer/memory costs depend on the chosen item and its bounded source page.
+
+## Reply times and long replies
+
+`agentMessage` rows and text blocks carry `reply={state, startedAtMs?, completedAtMs?}`.
+State is `unknown|generating|complete`. Times are source item Unix milliseconds: nonnegative
+integers within the JavaScript Date range. History uses nullable `ThreadItemEntry` fields.
+The read model retains top-level notification times from `item/started` and `item/completed`,
+preserving the start through completion and later snapshots of the same item. History without
+a completion time stays unknown. Never substitute turn, browser arrival or page-open time.
+Tool cards do not gain time labels.
+
+Each intermediate/final text reply displays a subtle local time, preferring completion.
+If only the start is known, display it; explicitly observed generation adds a generating label.
+Clicking expands the full date, available start/completion times and their ordered duration.
+This is separate from whole-turn duration. Untimed historical replies have no invented label.
+
+Clipped assistant replies entering the mounted transcript range automatically read their exact
+item through `createFocusReplyContent`, without a “View full text” action. This uses existing
+`full=true` and item anchors, avoiding automatic whole-source-page rereads, while retaining
+staged fences, the old-server cursor fallback and one stale retry. Only one automatic full
+read runs at a time. Leaving the range cancels unreferenced reads; errors persist with explicit
+retry. Explicitly generating previews wait for item completion. Completion invalidates prior
+unfinished full text. Tools, user messages and reasoning do not auto-read.
+
+Full text never enters the ordinary page cache. The inactive LRU retains at most four replies
+and 4 MiB (UTF-16 length times two). Currently mounted source strings and parse trees, and each
+transfer, still cost memory proportional to that reply; an oversized item is not retained on
+leaving. Thread, epoch/access changes and disposal clear the cache and cancel reads. Copy uses
+the complete source, never a clipped preview masquerading as full content.
+
+Complete Markdown of at least 16384 characters is parsed once with shared configuration, then grouped by whole top-level
+structures (target 12000 characters, at most 24 top-level nodes) for viewport mounting. One
+table, list, formula or code block may exceed this target rather than split its grammar.
+Document-wide references remain available; diff fences show every original addition/deletion.
+Offscreen groups use measured heights retained by the bounded transcript row. Visible groups
+participate in the existing scroll anchor, whose single owner preserves touch/inertia motion.
+Without IntersectionObserver, the complete reply renders.
 
 Reads use the staged document boundary, without holding the document lock over upstream
 I/O. Settlement requires matching document, selection, backend generation, runtime epoch
@@ -182,3 +219,8 @@ cursors in `codex-rs/thread-store/src/local/thread_history/segment_paging.rs`. I
 were introduced by `de9e78e3e7caed0fdd75d20ae617faa646dfef3c`. Deployed npm 0.156.1 accepts
 only strings; 0.160.0 has been verified to accept item anchors. Development source does not
 prove deployed capabilities. Upstream storage and legacy formats are unchanged.
+
+Per-item timing evidence is `ThreadItemEntry` (`v2/thread.rs`) and `ItemStartedNotification` /
+`ItemCompletedNotification` (`v2/item.rs`) at the same pinned commit, introduced by
+`772abc9425d4bf4c2802456365785378811e7d3d`. Local npm 0.160.0 has been verified to return
+these fields. Times not recorded by older producers may remain null.

@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from bot.web_runtime.reply_metadata import REPLY_METADATA_KEY, ReplyMetadata
+
 
 TRANSCRIPT_PAGE_ITEMS = 40
 TRANSCRIPT_WINDOW_ITEMS = 80
@@ -82,7 +84,7 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
                     if key in value:
                         result[key] = copy_value(value[key], depth + 1)
             for key, entry in value.items():
-                if key in result or key == PREVIEW_METADATA_KEY:
+                if key in result or key in {PREVIEW_METADATA_KEY, REPLY_METADATA_KEY}:
                     continue
                 if (command and depth == 0 and key == "aggregatedOutput") or (
                     files and depth == 2 and key == "diff"
@@ -107,4 +109,6 @@ def bounded_transcript_item(item: dict[str, Any]) -> dict[str, Any]:
 
     result = copy_value(item)
     result[PREVIEW_METADATA_KEY] = TranscriptPreview(truncated, file_change_count)
+    if isinstance(item.get(REPLY_METADATA_KEY), ReplyMetadata):
+        result[REPLY_METADATA_KEY] = item[REPLY_METADATA_KEY]
     return result

@@ -22,7 +22,7 @@ const { t } = useI18n();
       <span>{{ node.language || 'text' }}</span>
       <MarkdownCopyButton :source="node.code" :label="t('filePreview.copyCode')" />
     </div>
-    <PreCodeNode v-if="renderer === 'pre'" class="code-pre-fallback" :node="node" />
+    <PreCodeNode v-if="renderer === 'pre' || node.language === 'diff'" class="code-pre-fallback" :node="node" />
     <MarkdownCodeBlockNode
       v-else
       :node="node"

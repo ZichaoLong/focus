@@ -28,6 +28,8 @@ import {
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
 import { prepareMarkdownRuntime } from '../../lib/markdownRuntime';
 import { configureFocusMarkdown } from '../../lib/markdownParser';
+import { markdownChunks } from '../../lib/markdownChunks';
+import MarkdownChunk from './MarkdownChunk.vue';
 import {
   collectLocalImageSources,
   rewriteLocalImageSources,
@@ -59,6 +61,7 @@ const props = withDefaults(
      * it adds a second presentation queue after Focus has already paced deltas.
      */
     streaming?: boolean;
+    progressive?: boolean;
   }>(),
   { streaming: false },
 );
@@ -86,6 +89,8 @@ watch(
 );
 
 const final = computed(() => !props.streaming);
+const progressiveChunks = computed(() => props.progressive && !props.streaming && props.text.length >= 16_384
+  ? markdownChunks(rewriteImageSrcs(props.text ?? '')) : null);
 const filePathAliases = computed(() => collectFilePathAliases(props.text ?? ''));
 const renderPlan = computed(() => {
   // While a turn is actively streaming, never downgrade the code renderer:
@@ -102,6 +107,7 @@ provide('focusMarkdownCodeRenderer', computed(() => renderPlan.value.codeRendere
 const componentScope = computed(() => {
   // A custom registry disables markstream's stable-node parsing reuse. Keep
   // that fast path for ordinary prose; the parser still owns node admission.
+  if (progressiveChunks.value) return MARKDOWN_SCOPE;
   const text = props.text ?? '';
   return text.includes('\\(') || text.includes('\\[') || text.includes('$$')
     || text.includes('```') || text.includes('~~~') || text.includes('    ') || text.includes('\t')
@@ -375,7 +381,17 @@ function copyDiff(code: string, idx: number): void {
 
 <template>
   <div ref="mdRef" class="md">
-    <template v-for="(seg, i) in segments" :key="i">
+    <template v-if="progressiveChunks">
+      <MarkdownChunk v-for="(chunk, i) in progressiveChunks" :key="i" :index="i" :characters="chunk.characters" :lines="chunk.lines">
+        <MarkdownRender :nodes="chunk.nodes" :custom-id="componentScope" :key="markdownRuntimeRevision"
+          mode="chat" :code-renderer="renderPlan.codeRenderer" :is-dark="isDark"
+          :code-block-light-theme="CODE_LIGHT_THEME" :code-block-dark-theme="CODE_DARK_THEME"
+          :themes="[CODE_LIGHT_THEME, CODE_DARK_THEME]" :code-block-props="codeBlockProps"
+          :final="true" :smooth-streaming="false" :batch-rendering="false" :node-virtual="false"
+          :defer-nodes-until-visible="false" @copy="copyCodeBlockFallback" />
+      </MarkdownChunk>
+    </template>
+    <template v-for="(seg, i) in progressiveChunks ? [] : segments" :key="i">
       <!-- Non-diff markdown → markstream (Focus presentation cadence + shiki) -->
       <MarkdownRender
         v-if="seg.kind === 'md'"
@@ -408,7 +424,7 @@ function copyDiff(code: string, idx: number): void {
           </Tooltip>
         </div>
         <pre class="diff-pre"><code><span
-          v-for="(ln, j) in buildMarkdownDiffPresentationRows(seg.code)"
+          v-for="(ln, j) in buildMarkdownDiffPresentationRows(seg.code, progressive)"
           :key="j"
           class="diff-line"
           :class="`diff-${ln.type}`"

@@ -89,6 +89,8 @@ class ThreadItemEntry:
 
     turn_id: str
     item: dict[str, Any]
+    started_at_ms: int | None = None
+    completed_at_ms: int | None = None
 
 
 @dataclass(slots=True)

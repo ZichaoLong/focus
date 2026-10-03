@@ -44,6 +44,35 @@ function harness(initial = page()) {
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it('carries precise reply timing through deltas and a delayed start skeleton', async () => {
+    const h = harness(); await settle();
+    h.event(2, { method: 'item/agentMessage/delta', stream_delta: { kind: 'text', turn_id: 'turn-1', item_id: 'item-1', delta: 'stream' } });
+    const reply = { state: 'generating' as const, startedAtMs: 120_000 };
+    h.event(3, { method: 'item/started', item_turns: [{ ...row(1), reply }] });
+    expect(h.owner.turns.value[0]).toMatchObject({ text: '1stream', reply, blocks: [{ reply }] });
+    h.event(4, { method: 'item/agentMessage/delta', stream_delta: { kind: 'text', turn_id: 'turn-1', item_id: 'item-1', delta: 'more' } });
+    expect(h.owner.turns.value[0]?.blocks?.[0]).toMatchObject({ reply });
+    h.event(5, { method: 'turn/completed', turn_id: 'turn-1' });
+    expect(h.owner.turns.value[0]?.reply).toEqual({ state: 'unknown', startedAtMs: 120_000 });
+    expect(h.owner.turns.value[0]?.blocks?.[0]).toMatchObject({ reply: { state: 'unknown', startedAtMs: 120_000 } });
+    const complete = { state: 'complete' as const, startedAtMs: 120_000, completedAtMs: 123_000 };
+    const finished = { ...row(1), reply: complete };
+    expect(decodeFocusTranscriptPage(page([finished]))?.turns[0]?.reply).toEqual(complete);
+    for (const bad of [NaN, Infinity, -1, 1.2, '120', true, 8_640_000_000_000_001]) {
+      expect(decodeFocusTranscriptPage(page([{ ...finished, reply: { ...complete, startedAtMs: bad } } as ChatTurn]))).toBeNull();
+    }
+  });
+
+  it('fences automatic full reply reads by thread and epoch', async () => {
+    const h = harness(); await settle();
+    const response = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(response.promise);
+    const lease = h.owner.replies.acquire({ ...row(1), contentDeferred: true, reply: { state: 'complete' } });
+    const signal = h.read.mock.calls.at(-1)?.[2];
+    h.threadId.value = 'different'; await settle();
+    expect(signal?.aborted).toBe(true);
+    response.resolve(page([], { turn_id: 'turn-1', full_text: 'stale' })); await settle();
+    expect(lease.state.value.text).toBeNull(); lease.release();
+  });
   it('does not restart body reads when control-only events replace the same snapshot revision', async () => {
     const h = harness(); await settle();
     h.state.value = { ...h.state.value!, active_turn_status: 'inProgress' };

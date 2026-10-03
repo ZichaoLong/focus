@@ -10,6 +10,8 @@ import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
 import CronNotice from './CronNotice.vue';
 import MessageTime from './MessageTime.vue';
+import ReplyTime from './ReplyTime.vue';
+import AssistantReply from './AssistantReply.vue';
 import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
 import MoonSpinner from '../ui/MoonSpinner.vue';
@@ -418,6 +420,8 @@ function onAttachmentClick(att: TurnAttachment): void {
 }
 
 function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }): boolean {
+  const source = turnBlocks(turn)[block.sourceIndex];
+  if (source?.kind === 'text' && source.reply?.state === 'complete') return false;
   if (turn.id !== streamingTurnId.value) return false;
   return block.sourceIndex === turnBlocks(turn).length - 1;
 }
@@ -566,6 +570,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
             @open-tool-diff="emit('openToolDiff', $event)" @open-full-content="emit('openFullContent', turn)" />
         </template>
+        <AssistantReply v-else-if="turn.contentDeferred && turn.reply" :turn="turn" :open-file="(target) => emit('openFile', target)" />
         <div v-else-if="turn.contentDeferred" class="transcript-preview">
           <pre>{{ turn.text || turn.thinking || turn.blocks?.filter(b => b.kind === 'thinking').map(b => b.thinking).join('\n\n') }}</pre>
           <span>{{ t('conversation.contentPreview') }}</span>
@@ -578,7 +583,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             class="assistant-reply-separator"
             role="separator"
           />
-          <div v-else-if="blk.kind === 'text' && blk.text" class="msg"><Markdown :text="blk.text" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" /></div>
+          <div v-else-if="blk.kind === 'text' && blk.text" class="msg">
+            <Markdown :text="blk.text" :progressive="!!blk.reply" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" />
+            <ReplyTime v-if="blk.reply" :reply="blk.reply" />
+          </div>
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
