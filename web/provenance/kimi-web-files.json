@@ -50,7 +50,7 @@
     "src/components/chat/ConversationToc.vue": "8853b33d2040574c6e364dcd8f28cc8b6c3db169342c4c76a1f516060eb4da58",
     "src/components/chat/CronNotice.vue": null,
     "src/components/chat/DiffLines.vue": "1e7aa51f6de9181fd23c36d8873e26b266cc3d2591039d742ddcd09929391ba3",
-    "src/components/chat/GoalStrip.vue": "5bf3b702204b9f07be4fdd3705cc1e867646899a35e7322044445788852d9d4f",
+    "src/components/chat/GoalStrip.vue": "732fea62df85716972547d7b1230255d835d9c031a83289c5bcdf808a305ef4b",
     "src/components/chat/Markdown.vue": "6a6410c37595e79f7b23fb119bc6a5e1199f62805b58b3a476108a599cc2e227",
     "src/components/chat/MentionMenu.vue": null,
     "src/components/chat/MessageTime.vue": null,

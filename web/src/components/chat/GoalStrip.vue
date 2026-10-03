@@ -154,6 +154,9 @@ async function onCancel(): Promise<void> {
   --composer-send-size: 32px;
   --composer-send-inset: var(--space-2);
   --goal-corner-radius: calc((var(--composer-send-size) / 2) + var(--composer-send-inset) + var(--space-3));
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--app-height, 100dvh) * 0.45);
   margin: var(--space-2) var(--space-4) 0;
   box-shadow: var(--shadow-md);
 }
@@ -165,6 +168,10 @@ async function onCancel(): Promise<void> {
   border-radius: var(--radius-full);
   corner-shape: round;
 }
+.goal-strip :deep(.ui-card__head),
+.goal-strip :deep(.ui-card__foot) {
+  flex: none;
+}
 .goal-strip :deep(.ui-card__foot) {
   padding: var(--composer-send-inset);
 }
@@ -175,8 +182,10 @@ async function onCancel(): Promise<void> {
 }
 .goal-strip :deep(.ui-card__body) {
   background: var(--color-surface-raised);
+  min-height: 0;
   max-height: 480px;
-  overflow: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
   opacity: 1;
   transition: max-height var(--duration-slow) var(--ease-out),
     padding-top var(--duration-slow) var(--ease-out),
@@ -187,6 +196,7 @@ async function onCancel(): Promise<void> {
    padding can animate instead of jumping between two layouts. */
 .goal-strip:not(.expanded) :deep(.ui-card__body) {
   max-height: 0;
+  overflow: hidden;
   padding-top: 0;
   padding-bottom: 0;
   opacity: 0;
