@@ -44,7 +44,7 @@
     "src/components/chat/AuthMedia.vue": "daaf4cd5a8ffe93f86383f20e8abbc4e55e7b859ab2abc5f3c64a93cb3b52b45",
     "src/components/chat/ChatDock.vue": "5e52cca8de0bc3554583ff99b3edac3b87bd539b2a6cb20d98a1cc372f49f703",
     "src/components/chat/ChatHeader.vue": "86065eab608a0a41130f0c1423ab6f43a393c8169b75ce206a554b9a6cf42760",
-    "src/components/chat/ChatPane.vue": "a1ebd3000a2a2666c410c48397a0a1d8792fc9aa0a06636c31a14c077fc46db7",
+    "src/components/chat/ChatPane.vue": "309ac5610c9425f2b380ae2bb9d8ce71cbdd664cdbea15f50645d21b9233ae92",
     "src/components/chat/Composer.vue": "b2fbdc8e9f2f71bbf85c6cb325f375f42e89103eff589f29cb5b2b1ba7f306c7",
     "src/components/chat/ConversationPane.vue": "f7b4ccc9c08ac907f1bd7006934a7bd904f70221cc7b7b8c0cf37dce139db1ec",
     "src/components/chat/ConversationToc.vue": "8853b33d2040574c6e364dcd8f28cc8b6c3db169342c4c76a1f516060eb4da58",

@@ -117,6 +117,11 @@ Each intermediate/final text reply displays a subtle local time, preferring comp
 If only the start is known, display it; explicitly observed generation adds a generating label.
 Clicking expands the full date, available start/completion times and their ordered duration.
 This is separate from whole-turn duration. Untimed historical replies have no invented label.
+Intermediate and final replies share a left-aligned, borderless footer for the timestamp and
+whole-message copy icon, in normal/reading modes and desktop/mobile layouts. They appear side
+by side by default. Expanded time details occupy a separate row below, leaving the compact
+time label and copy control in place. Untimed replies retain only their existing copy action.
+Generating timestamps continue updating; copy availability follows its existing conditions.
 
 Prose loads whole with its page, without a separate reply-full request or reply LRU. Live text
 continues appending to the same item past 16384 characters, without waiting for item completion.

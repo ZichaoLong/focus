@@ -373,6 +373,16 @@ function isAssistantRunEnd(index: number): boolean {
   return !next || next.role !== 'assistant';
 }
 
+function hasReplyTime(turn: ChatTurn): boolean {
+  return turn.reply?.completedAtMs !== undefined || turn.reply?.startedAtMs !== undefined;
+}
+
+function showAssistantActions(index: number): boolean {
+  const turn = props.turns[index];
+  return !!turn && turn.id !== streamingTurnId.value && isAssistantRunEnd(index)
+    && (assistantRunFinalText(index).trim().length > 0 || turn.durationMs !== undefined);
+}
+
 // One shared timer: copying B within 1.4s of copying A must not let A's stale
 // timer hide B's checkmark early. Cleared on unmount.
 let copiedTimer: ReturnType<typeof setTimeout> | null = null;
@@ -577,7 +587,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           />
           <div v-else-if="blk.kind === 'text' && blk.text" class="msg">
             <Markdown :text="blk.text" :progressive="!!blk.reply" :streaming="isStreamingRenderBlock(turn, blk)" :open-file="(target) => emit('openFile', target)" />
-            <ReplyTime v-if="blk.reply" :reply="blk.reply" />
           </div>
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
@@ -591,19 +600,22 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           />
           <ToolCall v-else-if="blk.kind === 'tool'" :tool="blk.tool" :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget" @open-media="emit('openMedia', $event)" @open-file="emit('openFile', $event)" @open-tool-diff="emit('openToolDiff', $event)" @open-agent="emit('openAgent', $event)" />
         </template>
-        <div v-if="turn.id !== streamingTurnId && isAssistantRunEnd(ti) && (assistantRunFinalText(ti).trim().length > 0 || turn.durationMs !== undefined)" class="a-msg-ft">
-          <Tooltip :text="`${turn.durationMs} ms`">
-            <span v-if="turn.durationMs !== undefined" class="a-duration">{{ formatDuration(turn.durationMs) }}</span>
-          </Tooltip>
-          <button
-            v-if="assistantRunFinalText(ti).trim().length > 0"
-            class="a-cpbtn"
-            :aria-label="t('filePreview.copy')"
-            @click="copyAssistantRun(ti)"
-          >
-            <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
-            <Icon v-else name="check" size="sm" />
-          </button>
+        <div v-if="hasReplyTime(turn) || showAssistantActions(ti)" class="a-msg-ft">
+          <ReplyTime v-if="turn.reply" :reply="turn.reply" />
+          <template v-if="showAssistantActions(ti)">
+            <Tooltip :text="`${turn.durationMs} ms`">
+              <span v-if="turn.durationMs !== undefined" class="a-duration">{{ formatDuration(turn.durationMs) }}</span>
+            </Tooltip>
+            <button
+              v-if="assistantRunFinalText(ti).trim().length > 0"
+              class="a-cpbtn"
+              :aria-label="t('filePreview.copy')"
+              @click="copyAssistantRun(ti)"
+            >
+              <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
+              <Icon v-else name="check" size="sm" />
+            </button>
+          </template>
         </div>
       </div>
     </TranscriptRow>
@@ -907,9 +919,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 }
 .a-msg-ft {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
   height: auto;
   margin-top: var(--chat-block-gap);
   overflow: visible;
@@ -962,6 +975,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   }
   .a-cpbtn {
     font-size: var(--ui-font-size-sm);
+    min-height: 32px;
     padding: 8px 10px;
     margin: -4px -6px;
   }

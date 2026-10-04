@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, useId } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { ReplyMetadata } from '../../types';
 import { formatMessageTime } from '../../lib/formatMessageTime';
@@ -8,6 +8,7 @@ import { formatDuration } from '../chatTurnRendering';
 const props = defineProps<{ reply: ReplyMetadata }>();
 const { t } = useI18n();
 const expanded = ref(false);
+const detailsId = useId();
 const time = computed(() => props.reply.completedAtMs ?? props.reply.startedAtMs);
 const duration = computed(() => {
   const { startedAtMs: start, completedAtMs: end } = props.reply;
@@ -20,23 +21,27 @@ function full(value: number): string {
 }
 </script>
 <template>
-  <button v-if="time !== undefined" type="button" class="reply-time" :aria-expanded="expanded" @click.stop="expanded = !expanded">
-    <template v-if="expanded">
+  <template v-if="time !== undefined">
+    <button type="button" class="reply-time" :aria-expanded="expanded" :aria-controls="expanded ? detailsId : undefined" @click.stop="expanded = !expanded">
+      <span>{{ formatMessageTime(new Date(time).toISOString(), t('conversation.yesterday')) }}</span>
+      <span v-if="reply.state === 'generating' && reply.completedAtMs === undefined">{{ t('conversation.replyGenerating') }}</span>
+    </button>
+    <div v-if="expanded" :id="detailsId" class="reply-time-details">
       <span v-if="reply.startedAtMs !== undefined">{{ t('conversation.replyStarted') }} {{ full(reply.startedAtMs) }}</span>
       <span v-if="reply.completedAtMs !== undefined">{{ t('conversation.replyCompleted') }} {{ full(reply.completedAtMs) }}</span>
       <span v-if="duration !== null">{{ t('conversation.replyDuration') }} {{ duration }}</span>
-    </template>
-    <span v-else>{{ formatMessageTime(new Date(time).toISOString(), t('conversation.yesterday')) }}</span>
-    <span v-if="reply.state === 'generating' && reply.completedAtMs === undefined">{{ t('conversation.replyGenerating') }}</span>
-  </button>
+    </div>
+  </template>
 </template>
 <style scoped>
 .reply-time {
   display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
   padding: 2px 0;
-  margin-top: 4px;
+  box-sizing: border-box;
+  white-space: nowrap;
   border: 0;
   background: none;
   color: var(--muted);
@@ -47,4 +52,23 @@ function full(value: number): string {
   opacity: 0.7;
 }
 .reply-time:hover { opacity: 1; }
+.reply-time-details {
+  order: 1;
+  flex-basis: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  opacity: 0.7;
+}
+@media (hover: none) {
+  .reply-time {
+    min-height: 32px;
+    padding: 6px 0;
+    margin-block: -4px;
+  }
+}
 </style>
