@@ -159,3 +159,22 @@ def test_control_summary_refresh_keeps_observed_collaboration_tasks():
         assert result["turns"] == []
     finally:
         case.doCleanups()
+
+
+def test_final_item_can_be_published_only_with_the_coalesced_turn_completion():
+    owner, _, scheduled, callbacks = coordinator()
+    params = {"threadId": "root-1", "turnId": "turn-1"}
+    owner.handle_notification("item/started", {**params, "item": item(1, "")})
+    owner.handle_notification("item/completed", {**params, "item": item(1, "final answer")})
+    owner.handle_notification("turn/completed", {"threadId": "root-1", "turn": {
+        "id": "turn-1", "status": "completed", "items": [],
+    }})
+    callbacks.publish_projection.reset_mock()
+    while scheduled:
+        receipt = scheduled.pop(0)
+        owner.settle_notification_projection(receipt, owner.project_notification(receipt))
+    callbacks.publish_projection.assert_called_once()
+    payload = callbacks.publish_projection.call_args.kwargs["detail"]
+    assert payload["method"] == "turn/completed"
+    assert payload["item_turns"][0]["text"] == "final answer"
+    assert payload["item_order"] == ["turn-1:item:item-1:0"]

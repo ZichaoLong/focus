@@ -7,6 +7,7 @@ import {
   type ThreadMutationState,
 } from '../../../src/focus/client-state/thread-mutations';
 import { ClientIntentClock } from '../../../src/focus/clientIntentClock';
+import { createFocusTranscript } from '../../../src/focus/focusTranscript';
 import {
   createFocusNavigationProfile,
   type FocusNavigationProfile,
@@ -30,7 +31,9 @@ import {
   type FocusThreadList,
   type FocusThreadScope,
   type FocusThreadSnapshot,
+  type FocusThreadDeltaDetail,
   type FocusThreadSummary,
+  type FocusTranscriptPage,
   type FocusTurnPage,
   type FocusWriterProfile,
 } from '../../../src/focus/types';
@@ -267,7 +270,7 @@ interface Harness {
   };
 }
 
-function harness(initialRevision = 0): Harness {
+function harness(initialRevision = 0, onTranscriptDelta?: (event: FocusProjectionEvent, detail: FocusThreadDeltaDetail) => void): Harness {
   const intentClock = new ClientIntentClock();
   const api = {
     clientId: 'client-1',
@@ -332,6 +335,7 @@ function harness(initialRevision = 0): Harness {
   const settleUnknownMutationFromEvent = vi.fn();
   projection = createFocusProjectionSync({
     api,
+    onTranscriptDelta,
     intentClock,
     turnWindowLimit: ref(10),
     navigation,
@@ -2103,5 +2107,95 @@ describe('FocusProjectionSync', () => {
 
     h.projection.settleDeletedThread('thread-a', true);
     expect(h.projection.snapshot.value).toBeNull();
+  });
+});
+
+describe('paginated body and control synchronization', () => {
+  const row = (n: number, text = String(n)): ChatTurn => ({
+    id: `turn-1:item:item-${n}:0`, rawTurnId: 'turn-1', itemId: `item-${n}`,
+    role: 'assistant', no: 0, text, blocks: [{ kind: 'text', text, itemId: `item-${n}` }],
+  });
+  const page = (turns = [row(1)], revision = 0): FocusTranscriptPage => ({
+    view: 'transcript', target_pending: false, thread_id: 'thread-a', turn_id: null,
+    runtime_epoch: EPOCH, revision, turns, older_cursor: null, newer_cursor: null, full_text: null,
+  });
+  const tick = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
+  async function integrated() {
+    let transcript: ReturnType<typeof createFocusTranscript> | undefined;
+    const forwarded = vi.fn((event, detail) => transcript?.handleDelta(event, detail));
+    const h = harness(0, forwarded);
+    await primeActive(h);
+    const read = vi.fn(async () => page());
+    h.api.readTranscriptWindow = read;
+    transcript = createFocusTranscript({ api: h.api, snapshot: h.projection.snapshot,
+      activeThreadId: h.navigation.activeThreadId, isDisposed: () => false });
+    await tick();
+    return { ...h, transcript, read, forwarded,
+      dispose: () => { transcript?.dispose(); h.projection.dispose(); } };
+  }
+
+  it('delivers body events overtaken by a summary without rolling control state back', async () => {
+    const h = await integrated();
+    try {
+      h.transcript.updateViewport(row(1).id, false);
+      const pending = deferred<FocusTranscriptPage>();
+      h.read.mockReturnValueOnce(pending.promise);
+      const bodyRead = h.transcript.load({}, 'sync');
+      vi.mocked(h.api.readThread).mockResolvedValueOnce({
+        ...snapshot('thread-a', { revision: 2 }), active_turn_status: 'completed',
+      });
+      await h.projection.refreshActiveThread(); await tick();
+      h.projection.handleEvent(threadDelta(1, 'thread-a', {
+        method: 'item/completed', turn_id: 'turn-1', item_turns: [row(2, 'final answer')],
+        active_turn_id: 'turn-1', active_turn_status: 'inProgress',
+      }));
+      pending.resolve(page()); await bodyRead;
+      expect(h.forwarded).toHaveBeenCalledOnce();
+      expect(h.projection.snapshot.value?.active_turn_status).toBe('completed');
+      expect(h.transcript.turns.value.map(row => row.text)).toEqual(['1', 'final answer']);
+      expect(h.transcript.hasNewer.value).toBe(false);
+    } finally { h.dispose(); }
+  });
+
+  it('recovers missed completion after a socket gap without a prompt, scroll action or reload', async () => {
+    const h = await integrated();
+    try {
+      h.transcript.updateViewport(row(1).id, false);
+      h.read.mockResolvedValue(page([row(1), row(2, 'final answer')], 2));
+      h.projection.handleEvent({ type: 'hello', runtime_epoch: EPOCH, revision: 2 });
+      expect(h.projection.snapshotInvalidated.value).toBe(true);
+      vi.mocked(h.api.meta).mockResolvedValueOnce(meta(2));
+      vi.mocked(h.api.listThreads).mockResolvedValueOnce(threadList(['thread-a'], { revision: 2 }));
+      vi.mocked(h.api.readThread).mockResolvedValueOnce({
+        ...snapshot('thread-a', { revision: 2 }), active_turn_status: 'completed',
+      });
+      await h.projection.reloadAll(); await tick();
+      expect(h.projection.snapshotInvalidated.value).toBe(false);
+      expect(h.transcript.turns.value.map(row => row.text)).toEqual(['1', 'final answer']);
+      expect(h.transcript.hasNewer.value).toBe(false);
+      expect(h.read).toHaveBeenCalledTimes(2);
+    } finally { h.dispose(); }
+  });
+
+  it('flushes the presentation batch on completion and installs a coalesced new final item directly', async () => {
+    vi.useFakeTimers();
+    const h = await integrated();
+    try {
+      h.transcript.updateViewport(row(1).id, false);
+      h.projection.handleEvent(threadDelta(1, 'thread-a', {
+        method: 'item/agentMessage/delta', stream_delta: {
+          kind: 'text', turn_id: 'turn-1', item_id: 'item-2', delta: 'streamed',
+        },
+      }));
+      expect(h.transcript.turns.value).toHaveLength(1);
+      h.projection.handleEvent(threadDelta(2, 'thread-a', {
+        method: 'turn/completed', turn_id: 'turn-1', active_turn_id: '', active_turn_status: 'completed',
+        item_turns: [row(2, 'complete'), row(3, 'final answer')],
+        item_order: [row(1).id, row(2).id, row(3).id],
+      }));
+      expect(h.transcript.turns.value.map(row => row.text)).toEqual(['1', 'complete', 'final answer']);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(h.read).toHaveBeenCalledOnce();
+    } finally { h.dispose(); vi.useRealTimers(); }
   });
 });

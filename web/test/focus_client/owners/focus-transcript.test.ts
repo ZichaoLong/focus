@@ -77,10 +77,10 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older()).toBe(true);
     expect(h.owner.turns.value[0]?.itemId).toBe('item-60');
     expect(h.owner.turns.value).toHaveLength(80);
-    expect(h.owner.historical.value).toBe(true);
+    expect(h.owner.historical.value).toBe(false);
     expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'older', direction: 'desc' }, expect.any(AbortSignal));
     h.event(2, { method: 'item/started', item_turns: [row(999)] });
-    expect(h.owner.turns.value.some(turn => turn.itemId === 'item-999')).toBe(false);
+    expect(h.owner.turns.value.some(turn => turn.itemId === 'item-999')).toBe(true);
   });
 
   it('replays only post-response deltas and preserves coalesced item order', async () => {
@@ -276,6 +276,8 @@ describe('bounded transcript owner', () => {
 
   it('does not pull history to the live tail, and fetches unseen live rows before following', async () => {
     const h = harness(); await settle();
+    h.read.mockResolvedValueOnce(page([row(1)], { turn_id: 'turn-1', newer_cursor: 'forward' }));
+    await h.owner.locate('turn-1', 'item-1');
     h.owner.updateViewport(row(1).id, false);
     h.event(2, { method: 'item/started', item_turns: [row(2)] });
     expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
@@ -296,5 +298,89 @@ describe('bounded transcript owner', () => {
     h.owner.updateViewport(row(1).id, false);
     pending.resolve(page([row(99)])); expect(await loading).toBe(false);
     expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
+  });
+
+  it('receives new streamed and coalesced final replies while scrolled within the live window', async () => {
+    const h = harness(page([row(1)], { newer_cursor: null })); await settle();
+    h.owner.updateViewport(row(1).id, false);
+    h.event(2, { method: 'item/agentMessage/delta', stream_delta: {
+      kind: 'text', turn_id: 'turn-1', item_id: 'item-2', delta: 'streaming',
+    } });
+    h.event(3, { method: 'turn/completed', turn_id: 'turn-1',
+      item_turns: [row(2, 'complete'), row(3, 'final answer')],
+      item_order: [row(1).id, row(2).id, row(3).id] });
+    expect(h.owner.turns.value.map(row => row.text)).toEqual(['1', 'complete', 'final answer']);
+    expect(h.owner.hasNewer.value).toBe(false);
+    expect(h.owner.historical.value).toBe(false);
+    expect(h.read).toHaveBeenCalledOnce();
+  });
+
+  it('fences delayed deltas against body reads independently of control snapshots', async () => {
+    const h = harness(page([row(1, 'complete')], { newer_cursor: null, revision: 5 })); await settle();
+    h.event(3, { method: 'item/agentMessage/delta', stream_delta: {
+      kind: 'text', turn_id: 'turn-1', item_id: 'item-1', delta: 'duplicate',
+    } });
+    h.event(4, { method: 'item/started', item_turns: [row(0, 'old evicted row')] });
+    h.event(5, { method: 'item/completed', item_turns: [row(1, 'older text')] });
+    expect(h.owner.turns.value.map(row => row.text)).toEqual(['complete']);
+    h.event(6, { method: 'item/completed', item_turns: [row(2, 'new reply')] });
+    expect(h.owner.turns.value.map(row => row.text)).toEqual(['complete', 'new reply']);
+  });
+
+  it('does not let an older-page revision swallow buffered updates for the retained live tail', async () => {
+    const h = harness(page([row(100, 'tail')], { newer_cursor: null })); await settle();
+    const pending = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(pending.promise);
+    const loading = h.owner.older();
+    h.event(3, { method: 'item/agentMessage/delta', stream_delta: {
+      kind: 'text', turn_id: 'turn-1', item_id: 'item-100', delta: ' updated',
+    } });
+    h.event(4, { method: 'item/completed', item_turns: [row(101, 'final answer')] });
+    pending.resolve(page([row(99)], { revision: 5, older_cursor: 'older-2' })); await loading;
+    expect(h.owner.turns.value.map(row => row.text)).toEqual(['99', 'tail updated', 'final answer']);
+  });
+
+  it('refreshes the latest body without discarding the scrolled reader or adjacent pages', async () => {
+    const h = harness(page(Array.from({ length: 40 }, (_, n) => row(n + 40)), { newer_cursor: null }));
+    await settle();
+    h.owner.updateViewport(row(42).id, false);
+    h.read.mockResolvedValueOnce(page(Array.from({ length: 40 }, (_, n) => row(n + 70)), {
+      newer_cursor: 'inclusive-latest-anchor', revision: 3,
+    }));
+    h.state.value = { ...h.state.value!, revision: 3, active_turn_status: 'completed' };
+    await settle();
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(Array.from({ length: 70 }, (_, n) => `item-${n + 40}`));
+    expect(h.owner.hasNewer.value).toBe(false);
+    expect(h.owner.historical.value).toBe(false);
+    expect(h.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a real reconnect gap navigable instead of joining disjoint pages or moving the reader', async () => {
+    const h = harness(page([row(1)], { newer_cursor: null })); await settle();
+    h.owner.updateViewport(row(1).id, false);
+    h.read.mockResolvedValueOnce(page([row(100)], { newer_cursor: null, revision: 3 }));
+    h.state.value = { ...h.state.value!, revision: 3 };
+    await settle();
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
+    expect(h.owner.hasNewer.value).toBe(true);
+    h.read.mockResolvedValueOnce(page([row(1), row(2)], { turn_id: 'turn-1', newer_cursor: 'continue' }));
+    expect(await h.owner.newer()).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', {
+      turn_id: 'turn-1', item_id: 'item-1', direction: 'asc',
+    }, expect.any(AbortSignal));
+  });
+
+  it('retries a failed body resync with a bounded backoff while preserving the reader', async () => {
+    vi.useFakeTimers();
+    const h = harness(page([row(1)], { newer_cursor: null })); await settle();
+    h.owner.updateViewport(row(1).id, false);
+    h.read.mockRejectedValue(new Error('offline'));
+    h.state.value = { ...h.state.value!, revision: 3 };
+    await settle();
+    await vi.advanceTimersByTimeAsync(7000);
+    expect(h.read).toHaveBeenCalledTimes(5); // Initial page, refresh, three retries.
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-1']);
+    expect(h.owner.error.value).toBe('offline');
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(h.read).toHaveBeenCalledTimes(5);
   });
 });

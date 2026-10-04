@@ -824,9 +824,11 @@ export function createFocusProjectionSync(
 
   function applyThreadDelta(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail): boolean {
     if (!snapshot.value || event.thread_id !== options.navigation.activeThreadId.value) return false;
-    if (threadSnapshotCoversEvent(event)) return true;
     const paginated = snapshot.value.thread.history_mode === 'paginated' && !!options.onTranscriptDelta;
+    // A summary snapshot covers control state, not the separately read body.
+    // The transcript owner fences these events against its own source pages.
     if (paginated) options.onTranscriptDelta?.(event, detail);
+    if (threadSnapshotCoversEvent(event)) return true;
     const streamChanged = paginated ? !!detail.stream_delta || detail.item_turns !== undefined : appendStreamDelta(detail);
     const incomingTurns = detail.turns ?? [];
     if (incomingTurns.length > 0) mergeTurns(incomingTurns);

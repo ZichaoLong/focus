@@ -80,4 +80,28 @@ describe('contiguous transcript cache', () => {
     expect(cache.pageCount).toBe(1);
     expect(cache.rows[0]?.id).toBe(direction === 'older' ? 'row-0' : 'row-41');
   });
+
+  it('refreshes overlapping tail rows while retaining the protected earlier page', () => {
+    const cache = new TranscriptPageWindow(); cache.replace(page(40), true);
+    cache.extend(page(0), 'older');
+    cache.refreshTail(page(70, 40, 'refreshed'), 'row-10');
+    expect(cache.rows).toHaveLength(110);
+    expect(cache.rows[10]?.id).toBe('row-10');
+    expect(cache.rows[70]?.text).toBe('refreshed');
+    expect(cache.atTail).toBe(true);
+    expect(cache.newer).toBe('after-110');
+    cache.refreshTail({ ...page(200), newer_cursor: null }, 'row-10');
+    expect(cache.rows).toHaveLength(110);
+    expect(cache.atTail).toBe(false);
+  });
+
+  it('stops extending a full live page before evicting the reader inside it', () => {
+    const cache = new TranscriptPageWindow(); cache.replace({ ...page(0), newer_cursor: null }, true);
+    expect(cache.update(Array.from({ length: 81 }, (_, i) => row(i)), 'newer', 'row-0')).toBe(false);
+    expect(cache.rows).toHaveLength(80);
+    expect(cache.rows[0]?.id).toBe('row-0');
+    expect(cache.rows.at(-1)?.id).toBe('row-79');
+    expect(cache.atTail).toBe(false);
+    expect(cache.newer).toBeNull();
+  });
 });

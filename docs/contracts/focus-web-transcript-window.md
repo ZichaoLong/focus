@@ -136,7 +136,10 @@ Reads use the staged document boundary, without holding the document lock over u
 I/O. Settlement requires matching document, selection, backend generation, runtime epoch
 and this thread's read observation. Unrelated global revisions do not invalidate the page;
 concurrent same-thread changes still fence stale reads. The browser checks identity again
-and replays only ordered events strictly newer than the page revision. Old intents cannot
+and tracks revisions for the rows actually read, replaying only ordered events newer than
+each row's read. Reading an older page must not swallow pending deltas for other retained
+pages. A confirmed tail read also fences old additions already covered by that read but
+absent from the window. Row revisions leave with cache eviction and identity changes. Old intents cannot
 overwrite newer navigation. Pages never populate the server live cache or grant writer authority.
 
 ## Live updates, budgets and resynchronization
@@ -149,6 +152,11 @@ cached active-turn identity without deep-copying the transcript.
 The worker projects bounded items; the coordinator emits only changed `item_turns` plus
 bounded `item_order`. Each thread has one projection flight and one latest successor.
 Settlement checks observation/epoch, and successors freeze fresh cache inputs when admitted.
+Control snapshot revisions cover control state, not independently loaded body events.
+Apply complete `item_turns` by item, including new final replies carried by coalesced
+`turn/completed` notifications, without requiring another body request based on the method.
+Stream presentation batches about once per second; non-stream events such as completion
+flush pending presentation deltas first.
 Prose deltas update their matching item. Command/file output, MCP progress and plan text
 deltas are not published into the ordinary transcript; tool start/completion and status remain
 live. Subagent task overviews carry identity/status, without duplicating prompt/progress/result/output. The browser accumulates up to 10 adjacent source pages on demand, with an 8 MiB data
@@ -162,6 +170,13 @@ new distant page instead when necessary. When only the anchor page and one adjac
 remain, temporarily allow their combined bytes above the target so the reader can scroll
 out of a large item; moving the anchor permits eviction. The live tail page retains at most 80 rows before
 bounded head resynchronization. New live items never pull a historical viewport to the tail.
+Scrolling and body reception are independent: while the cache still includes the tail,
+slight upward scrolling or reading adjacent older pages does not stop new replies. Control
+refreshes and event-gap recovery reread the bounded latest body. While not following, merge
+overlapping rows, preserving the reader's anchor and adjacent pages. If the latest page has
+no overlap, retain the window and expose the real gap for contiguous boundary paging;
+never concatenate disjoint pages. If limiting the live tail would evict the visible anchor,
+stop extending that page and expose its newer boundary instead of displacing the reader.
 
 Both automatic directions require actual user movement toward the respective edge, within
 about 300px of the scroll container boundary. Allow only one body request at a time. Consume
@@ -175,7 +190,8 @@ container. Compensate only movement in content coordinates, preserving touch and
 inertial scrolling. Refresh the visible anchor on scroll rather than repeatedly restoring the
 old paging position. New input, Prompt navigation
 and thread switches supersede older scroll intents. Resume following only at the real thread
-tail, never at a historical page bottom; downward loading catches up unseen live items.
+tail, never at a historical page bottom; downward loading catches up unseen live items in
+an actual historical window.
 Lifecycle and epoch changes clear comparison caches. The comparison cache retains at most
 16 recently published threads; eviction only repeats bounded rows on the next publication.
 Control refreshes preserve observed collaboration tasks in the bounded cache; cold opens

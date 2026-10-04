@@ -32,7 +32,23 @@ export class TranscriptPageWindow {
     this.measure();
   }
 
-  extend(page: FocusTranscriptPage, direction: 'older' | 'newer', protectedRow: string | null = null): void {
+  /** Refresh the live edge without replacing a reader's earlier cached rows. */
+  refreshTail(page: FocusTranscriptPage, protectedRow: string): void {
+    const existing = new Set(this.rows.map(row => row.id));
+    const overlap = page.turns.findIndex(row => existing.has(row.id));
+    if (overlap < 0) {
+      // A long disconnect can leave a real gap. Keep the reading window and
+      // let its exact last item anchor bridge it, never join disjoint pages.
+      this.atTail = false;
+      return;
+    }
+    // A latest-first read can still carry an inclusive backwards cursor.
+    // Its query proves the tail; the presence of that cursor does not deny it.
+    this.extend({ ...page, turns: page.turns.slice(overlap) }, 'newer', protectedRow, true);
+  }
+
+  extend(page: FocusTranscriptPage, direction: 'older' | 'newer', protectedRow: string | null = null,
+    atTail = !page.newer_cursor): void {
     const incoming = new Map(page.turns.map(row => [row.id, row]));
     const existing = new Set(this.rows.map(row => row.id));
     // Reversing upstream cursors includes their anchor again. Refresh that row
@@ -47,7 +63,7 @@ export class TranscriptPageWindow {
       else this.pages.push(next);
     } else if (direction === 'older') this.pages[0]!.older = page.older_cursor;
     else this.pages.at(-1)!.newer = page.newer_cursor;
-    if (direction === 'newer') this.atTail = !page.newer_cursor;
+    if (direction === 'newer') this.atTail = atTail;
     this.bound(direction, protectedRow);
   }
 
@@ -69,7 +85,16 @@ export class TranscriptPageWindow {
     // Newly streamed rows do not have source cursors yet. Re-read the head
     // before allowing pagination after a live page has outgrown its budget.
     const overflow = !!tail && tail.rows.length > TRANSCRIPT_WINDOW_ITEMS;
-    if (overflow) tail!.rows = tail!.rows.slice(-TRANSCRIPT_WINDOW_ITEMS);
+    if (overflow) {
+      const anchorIndex = tail!.rows.findIndex(row => row.id === protectedRow);
+      if (anchorIndex >= 0 && anchorIndex < tail!.rows.length - TRANSCRIPT_WINDOW_ITEMS) {
+        tail!.rows = tail!.rows.slice(0, TRANSCRIPT_WINDOW_ITEMS);
+        this.atTail = false;
+        this.bound(direction, protectedRow);
+        return false;
+      }
+      tail!.rows = tail!.rows.slice(-TRANSCRIPT_WINDOW_ITEMS);
+    }
     this.bound(direction, protectedRow);
     // A complete current item can exceed the cache target. Keep its new text;
     // shrinking pages on the next source read retires older whole items.
