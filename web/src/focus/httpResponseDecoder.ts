@@ -1,4 +1,5 @@
 import type {
+  FocusFileInfo,
   FocusActiveTurnContext,
   FocusActiveTurnInitiator,
   FocusActiveTurnSetting,
@@ -681,6 +682,14 @@ FocusHttpDecoder<FocusNextTurnSettingsResult> = (value) => {
   if (!hasExactRequiredFields('next_turn_settings_result', value)) return null;
   if (!isNextTurnSettings(value.next_turn_settings)) return null;
   return value as unknown as FocusNextTurnSettingsResult;
+};
+
+export const decodeFocusFileInfo: FocusHttpDecoder<FocusFileInfo> = (value) => {
+  if (!isRequiredRecord('file_info', value) || !hasExactRequiredFields('file_info', value)
+    || typeof value.path !== 'string' || !value.path || value.path.indexOf('\0') !== -1
+    || typeof value.name !== 'string' || !value.name || value.name.indexOf('/') !== -1 || value.name.indexOf('\0') !== -1
+    || typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size < 0) return null;
+  return { path: value.path, name: value.name, size: value.size };
 };
 
 export const decodeFocusAttachmentUpload: FocusHttpDecoder<FocusAttachmentUpload> = (value) => {

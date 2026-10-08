@@ -3,6 +3,31 @@ export interface FilePathLink {
   line?: number;
 }
 
+/** Markdown destinations are file references, not routes on the Focus origin. */
+export function parseLocalFileHref(href: string): FilePathLink | null {
+  if (!href || /^(?:https?:|mailto:|tel:|data:|blob:|#|\/\/)/i.test(href)) return null;
+  let path = href;
+  if (/^file:/i.test(path)) {
+    try {
+      const url = new URL(path);
+      if (url.hostname && url.hostname !== 'localhost') return null;
+      path = `${url.pathname}${url.hash}`;
+      if (/^\/[a-z]:\//i.test(path)) path = path.slice(1);
+    } catch { return null; }
+  } else if (/^[a-z][a-z0-9+.-]*:/i.test(path) && !/^[a-z]:[\\/]/i.test(path) && !/:\d+(?::\d+)?(?:[?#]|$)/.test(path)) {
+    return null;
+  }
+  const fragment = path.indexOf('#');
+  const lineFragment = fragment < 0 ? undefined : path.slice(fragment + 1).match(/^L?(\d+)/i)?.[1];
+  path = path.split(/[?#]/, 1)[0] ?? '';
+  const suffix = path.match(/:(\d+)(?::\d+)?$/);
+  if (suffix) path = path.slice(0, -suffix[0].length);
+  try { path = decodeURIComponent(path); } catch { /* Literal percent paths remain usable. */ }
+  if (!path || path.indexOf('\0') !== -1) return null;
+  const line = Number(lineFragment ?? suffix?.[1]);
+  return { path, ...(Number.isSafeInteger(line) && line > 0 ? { line } : {}) };
+}
+
 export interface FilePathLinkMatch extends FilePathLink {
   start: number;
   end: number;

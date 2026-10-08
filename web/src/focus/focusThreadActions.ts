@@ -1,3 +1,4 @@
+import { chooseFileDestination, type FileDestination } from './browserFileSave';
 import type { SummaryExportRequest } from '../types';
 import { downloadBlob } from '../lib/download';
 import { normalizeExportFilename, suggestExportFilename } from './exportFilename';
@@ -38,40 +39,7 @@ export interface FocusThreadActionsOptions {
   translate(key: string): string;
 }
 
-type ExportDestination = { kind: 'download' } | { kind: 'file'; handle: FileSystemFileHandle };
-type SavePickerWindow = Window & {
-  showSaveFilePicker?: (options: {
-    suggestedName: string;
-    types: { description: string; accept: Record<string, string[]> }[];
-  }) => Promise<FileSystemFileHandle>;
-};
-
-async function chooseExportDestination(
-  filename: string, format: ExportOptionsRequest['format'],
-): Promise<ExportDestination | null> {
-  const browser = window as SavePickerWindow;
-  if (!browser.isSecureContext || typeof browser.showSaveFilePicker !== 'function') {
-    return { kind: 'download' };
-  }
-  try {
-    // Still in the naming dialog's confirmation gesture, before any export fetch.
-    const handle = await browser.showSaveFilePicker({
-      suggestedName: filename,
-      types: format === 'markdown'
-        ? [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
-        : [{ description: 'JSON Lines', accept: { 'application/x-ndjson': ['.jsonl'] } }],
-    });
-    return { kind: 'file', handle };
-  } catch (error) {
-    if (error instanceof DOMException) {
-      if (error.name === 'AbortError') return null;
-      if (error.name === 'SecurityError' || error.name === 'NotSupportedError') return { kind: 'download' };
-    }
-    throw error;
-  }
-}
-
-async function saveExportBlob(destination: ExportDestination, blob: Blob, filename: string): Promise<void> {
+async function saveExportBlob(destination: FileDestination, blob: Blob, filename: string): Promise<void> {
   if (destination.kind === 'download') {
     downloadBlob(blob, filename);
     return;
@@ -121,7 +89,9 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
         notify(translate(messageKeys.busy));
         return;
       }
-      const destination = await chooseExportDestination(filename, format);
+      const destination = await chooseFileDestination(filename, format === 'markdown'
+        ? [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+        : [{ description: 'JSON Lines', accept: { 'application/x-ndjson': ['.jsonl'] } }]);
       if (destination === null) return;
       if (client.summaryExporting.value || client.threadDataExporting.value) {
         notify(translate(messageKeys.busy));

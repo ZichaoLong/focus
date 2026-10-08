@@ -42,6 +42,7 @@ from bot.stores.web_gateway_runtime_store import WebGatewayRuntimeStore
 from bot.web_runtime.auth import WebAuthManager, WebAuthSession
 from bot.web_runtime.gateway_request_admission import WebGatewayRequestAdmission
 from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspectionMixin
+from bot.web_runtime.file_download import WebGatewayFileDownloadMixin
 from bot.web_runtime.gateway_external_transaction import (
     WebGatewayExternalTransactionRunner,
 )
@@ -186,7 +187,7 @@ class WebGatewayPorts:
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
-class WebGateway(WebGatewayThreadInspectionMixin):
+class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
     def __init__(
         self,
         *,

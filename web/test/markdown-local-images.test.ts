@@ -6,6 +6,14 @@ import {
 } from '../src/lib/markdownLocalImages';
 
 describe('Markdown local-image policy', () => {
+  it('offers an explicit file download without fetching or embedding a local image', () => {
+    const result = rewriteLocalImageSources('![plot](/work/plot.png)', {
+      enabled: true, resolvedImages: new Map([['/work/plot.png', null]]),
+      unavailableText: 'unavailable', downloadText: 'Download file',
+    });
+    expect(result).toBe('[Download file: plot.png](</work/plot.png>)');
+    expect(result).not.toContain('![');
+  });
   it('finds only browser-unaddressable image sources', () => {
     expect(collectLocalImageSources([
       '![relative](assets/chart.png)',

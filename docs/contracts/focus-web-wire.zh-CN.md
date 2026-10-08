@@ -128,6 +128,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 
 - v27 将 paginated 正文改为完整条目分页：正文不裁剪，所有工具默认仅摘要，点击直接读取全文；页字节目标通过减小 limit 管理。移除独立回复全文缓存，工具输出不再默认流向浏览器。服务与浏览器资源须同版本部署。
 
+- v28 新增已认证的单文件信息与下载 endpoint 和 `FocusFileInfo`。不启用目录树或文件预览；详见[单文件下载合同](focus-web-file-download.zh-CN.md)。服务与浏览器资源须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

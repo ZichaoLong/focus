@@ -21,7 +21,7 @@ import { useI18n } from 'vue-i18n';
 import { MarkdownRender } from 'markstream-vue';
 import { useIsDark } from '../../composables/useIsDark';
 import type { FilePreviewRequest } from '../../types';
-import { collectFilePathAliases, findFilePathLinks } from '../../lib/filePathLinks';
+import { collectFilePathAliases, findFilePathLinks, parseLocalFileHref } from '../../lib/filePathLinks';
 import { markdownRenderPlan } from '../../lib/markdownPerformance';
 import {
   buildMarkdownDiffPresentationRows,
@@ -180,6 +180,7 @@ function rewriteImageSrcs(text: string): string {
     enabled: !!resolveImage,
     resolvedImages,
     unavailableText: t('focus.fileUnavailable'),
+    downloadText: props.openFile ? t('focus.fileDownloadTitle') : undefined,
   });
 }
 
@@ -238,46 +239,20 @@ function processFileLinks(): void {
   }
 }
 
-function isLocalLink(href: string): boolean {
-  if (!href) return false;
-  if (/^(https?:|mailto:|tel:|data:|blob:|#)/i.test(href)) return false;
-  return true;
-}
-
-/** Strip `?query` and `#fragment` from a link path so it can be opened as a
-    workspace file. Pure `#anchor` links are skipped upstream by isLocalLink. */
-function stripFragmentAndQuery(href: string): string {
-  let cut = href.length;
-  for (const sep of ['#', '?']) {
-    const idx = href.indexOf(sep);
-    if (idx !== -1 && idx < cut) cut = idx;
-  }
-  return href.slice(0, cut);
-}
-
-function processMarkdownLinks(): void {
-  if (!mdRef.value || !props.openFile || props.streaming) return;
-  const links = mdRef.value.querySelectorAll<HTMLAnchorElement>('a[href]');
-  for (const link of links) {
-    if (link.dataset.mdLinkHandled === 'true') continue;
-    // Skip links inside Mermaid SVGs — their hrefs are diagram semantics, not
-    // workspace file paths.
-    if (link.closest('svg')) continue;
-    const href = link.getAttribute('href') ?? '';
-    if (!isLocalLink(href)) continue;
-    link.dataset.mdLinkHandled = 'true';
-    link.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      props.openFile?.({ path: stripFragmentAndQuery(href) });
-    });
-  }
+function onFileLinkClick(event: MouseEvent): void {
+  if (!props.openFile || !(event.target instanceof Element)) return;
+  const link = event.target.closest<HTMLAnchorElement>('a[href]');
+  if (!link || !mdRef.value?.contains(link) || link.closest('svg')) return;
+  const target = parseLocalFileHref(link.getAttribute('href') ?? '');
+  if (!target) return;
+  event.preventDefault();
+  event.stopPropagation();
+  props.openFile(target);
 }
 
 function scheduleFileLinkProcessing(): void {
   void nextTick().then(() => {
     processFileLinks();
-    processMarkdownLinks();
   });
 }
 
@@ -387,7 +362,7 @@ function copyDiff(code: string, idx: number): void {
 </script>
 
 <template>
-  <div ref="mdRef" class="md">
+  <div ref="mdRef" class="md" @click="onFileLinkClick">
     <template v-if="progressiveChunks">
       <MarkdownChunk v-for="(chunk, i) in progressiveChunks" :key="i" :index="i" :characters="chunk.characters" :lines="chunk.lines">
         <MarkdownRender :nodes="chunk.nodes" :custom-id="componentScope" :key="markdownRuntimeRevision"

@@ -38,6 +38,7 @@ export function rewriteLocalImageSources(
     enabled: boolean;
     resolvedImages: ReadonlyMap<string, LocalImageResolution>;
     unavailableText: string;
+    downloadText?: string;
   },
 ): string {
   if (!options.enabled) return text;
@@ -52,16 +53,23 @@ export function rewriteLocalImageSources(
     return resolved === '' ? undefined : resolved;
   };
   const unavailable = options.unavailableText;
+  const denied = (source: string): string => {
+    if (!options.downloadText) return unavailable;
+    const label = `${options.downloadText}: ${source.split(/[\\/]/).at(-1) ?? source}`
+      .replace(/[\\[\]`*_]/g, '\\$&');
+    const href = source.replace(/[\s<>\\]/g, character => encodeURIComponent(character));
+    return `[${label}](<${href}>)`;
+  };
   return text
     .replace(MD_IMG_RE, (full, prefix: string, source: string, suffix: string) => {
       const next = substitute(source);
       if (next === undefined) return full;
-      return next === null ? unavailable : `${prefix}${next}${suffix}`;
+      return next === null ? denied(source) : `${prefix}${next}${suffix}`;
     })
     .replace(HTML_IMG_RE, (full, prefix: string, quote: string, source: string, suffix: string) => {
       const next = substitute(source);
       if (next === undefined) return full;
-      return next === null ? unavailable : `${prefix}${quote}${next}${quote}${suffix}`;
+      return next === null ? denied(source) : `${prefix}${quote}${next}${quote}${suffix}`;
     });
 }
 

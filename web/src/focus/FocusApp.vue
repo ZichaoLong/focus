@@ -26,6 +26,7 @@ import FocusGoalDialog from './FocusGoalDialog.vue';
 import FocusPrimaryNotices from './FocusPrimaryNotices.vue';
 import FocusReviewDialog from './FocusReviewDialog.vue';
 import FocusFullContentDialog from './FocusFullContentDialog.vue';
+import FocusFileDownloadDialog from './FocusFileDownloadDialog.vue';
 import FocusSettingsSurface from './FocusSettingsSurface.vue';
 import { executeCdCommand, parseCdCommand } from './cdCommand';
 import { createFocusDocumentActivityFaviconPreference, syncFocusDocumentActivityFavicon } from './documentActivityFavicon';
@@ -130,9 +131,8 @@ async function ensureDetailPanelLoaded(): Promise<void> {
     });
   return detailPanelLoadPromise;
 }
-// Focus deliberately has no workspace-file read API.  Returning null is an
-// explicit refusal understood by Markdown.vue: local image syntax becomes an
-// honest unavailable notice instead of a same-origin request for a server path.
+// Local files are available through explicit downloads, not inline previews.
+// Refuse automatic image resolution so rendering a reply never fetches a file.
 provide('resolveImage', async () => null);
 const activeSessionTitle = computed(() => {
   if (!client.activeThreadId.value) return t('focus.newConversation');
@@ -655,9 +655,8 @@ function showTransientNotice(message: string): void {
 function showUnsupported(): void {
   showTransientNotice(t('focus.fileUnavailable'));
 }
-
 const threadActions = ref<InstanceType<typeof FocusThreadActions> | null>(null);
-
+const fileDownloadDialog = ref<InstanceType<typeof FocusFileDownloadDialog> | null>(null);
 async function confirmBackendReset(preview: FocusBackendResetPreview): Promise<void> {
   const force = preview.status === 'force-only';
   let refusedBeforePost = false;
@@ -1061,7 +1060,7 @@ onUnmounted(() => {
           @pick-model="showModelPicker = true"
           @select-model="client.selectModel($event)"
           @open-thinking="openThinking"
-          @open-file="showUnsupported"
+          @open-file="fileDownloadDialog?.open($event.path, client.activeThread.value?.cwd ?? '')"
           @open-media="openMedia"
           @open-tool-diff="openToolDiff"
           @open-agent="openAgent"
@@ -1270,6 +1269,7 @@ onUnmounted(() => {
       :confirm="confirm"
       :notify="showTransientNotice"
     />
+    <FocusFileDownloadDialog ref="fileDownloadDialog" :api="client.api" />
     <ConfirmDialogHost />
 
     <Transition name="gload-fade">

@@ -82,7 +82,10 @@ leases remain only for operations that explicitly require serialization.
 Prompt/steer, model and effort selection, approval and structured input, compact/review,
 goals, lifecycle controls, bounded history, attachments, and read-only Tasks
 from collaboration items in parent history are connected
-through Focus. File browsing, terminal, side chat, child-tree observation or
+through Focus. Links to individual server files support authenticated downloads
+with a native Save As dialog when supported. See the
+[single-file download contract](../docs/contracts/focus-web-file-download.md).
+File browsing, terminal, side chat, child-tree observation or
 recovery, and direct input to parent-owned Codex child threads remain disabled
 by contract.
 

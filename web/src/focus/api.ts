@@ -1,5 +1,6 @@
 import { focusPerformance } from './focusPerformance';
 import type {
+  FocusFileInfo,
   FocusAttachmentUpload,
   FocusBackendResetPreview,
   FocusBackendResetResult,
@@ -40,6 +41,7 @@ import {
 } from './focusWire.generated';
 import {
   decodeFocusAttachmentUpload,
+  decodeFocusFileInfo,
   decodeFocusBackendResetPreview,
   decodeFocusBackendResetResult,
   decodeFocusBootstrapResult,
@@ -197,6 +199,9 @@ export interface FocusEventHandlers {
 }
 
 export interface FocusWebApiPort {
+  fileInfo(path: string, cwd: string, signal?: AbortSignal): Promise<FocusFileInfo>;
+  fileDownloadUrl(path: string, filename: string): string;
+  fileContent(path: string, signal: AbortSignal): Promise<Response>;
   readonly clientId: string;
   readonly documentReceipt: string;
   readonly intentGenerationFloor: number;
@@ -594,6 +599,30 @@ export class FocusWebApi implements FocusWebApiPort {
     return this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
       parameters: { thread_id: threadId }, query: params, signal,
     });
+  }
+
+  fileInfo(path: string, cwd: string, signal?: AbortSignal): Promise<FocusFileInfo> {
+    return this.request('file_info', decodeFocusFileInfo, 'file info', {
+      query: new URLSearchParams({ path, cwd }), signal,
+    });
+  }
+
+  fileDownloadUrl(path: string, filename: string): string {
+    return `${focusWebEndpointPath('file_download')}?${new URLSearchParams({ path, filename })}`;
+  }
+
+  async fileContent(path: string, signal: AbortSignal): Promise<Response> {
+    const response = await fetch(this.fileDownloadUrl(path, ''), {
+      method: FOCUS_WEB_ENDPOINTS.file_download.method, credentials: 'same-origin', signal,
+    });
+    if (!response.ok) throw await errorFromResponse(response);
+    if (response.headers.get('Content-Type') !== 'application/octet-stream' || !response.body) {
+      await response.body?.cancel();
+      throw new FocusApiError('Focus returned an invalid file download.', {
+        status: 502, code: 'invalid_gateway_response',
+      });
+    }
+    return response;
   }
 
   async exportThreadSummary(threadId: string): Promise<Blob> {

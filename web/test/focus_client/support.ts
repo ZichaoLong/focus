@@ -133,6 +133,9 @@ export function snapshot(
 }
 
 export class FakeApi implements FocusWebApiPort {
+  async fileInfo(path: string) { return { path, name: 'file.txt', size: 0 }; }
+  fileDownloadUrl(path: string) { return path; }
+  async fileContent() { return new Response(''); }
   readonly clientId: string;
   readonly documentReceipt = 'a'.repeat(64);
   intentGenerationFloor = 0;

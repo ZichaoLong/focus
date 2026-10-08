@@ -1110,6 +1110,10 @@
         {
           "path": "web/src/focus/FocusThreadActions.vue",
           "symbol": "requestExportOptions"
+        },
+        {
+          "path": "web/src/focus/browserFileSave.ts",
+          "symbol": "chooseFileDestination"
         }
       ],
       "contract": [
@@ -1227,6 +1231,10 @@
         {
           "path": "web/src/focus/FocusThreadActions.vue",
           "symbol": "requestExportOptions"
+        },
+        {
+          "path": "web/src/focus/browserFileSave.ts",
+          "symbol": "chooseFileDestination"
         }
       ],
       "contract": [
@@ -2508,6 +2516,79 @@
       "guard": [
         "dependency-direction",
         "source-context"
+      ]
+    },
+    "focus-web-file-download": {
+      "entry": [
+        {
+          "path": "web/src/focus/api.ts",
+          "symbol": "FocusWebApi"
+        },
+        {
+          "path": "bot/web_runtime/file_download.py",
+          "symbol": "WebGatewayFileDownloadMixin"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/file_download.py",
+          "symbol": "inspect_file"
+        },
+        {
+          "path": "web/src/focus/browserFileSave.ts",
+          "symbol": "chooseFileDestination"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "访问与文件内容"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "链接与保存体验"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/web_runtime/test_file_download.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/file-download.test.ts",
+            "web/test/file-download-api.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_focus_web_wire_catalog.py",
+            "tests/test_web_gateway.py",
+            "tests/test_web_gateway_trusted_proxy.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-thread-actions.test.ts",
+            "web/test/export-filename.test.ts",
+            "web/test/markdown-local-images.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "import-cycles",
+        "dependency-direction",
+        "source-context",
+        "web-wire",
+        "web-dependency-direction",
+        "web-typecheck"
       ]
     }
   }

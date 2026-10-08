@@ -64,6 +64,8 @@ new backend or deployment dependencies:
   files; the system dialog may already have created a new empty file. Focus does
   not automatically delete the user's selected file.
 
+System save-picker selection is shared through `browserFileSave.ts`; export behavior is unchanged.
+
 ## PDF suggestion
 
 Printing adds no naming dialog and still opens the preview synchronously on click.

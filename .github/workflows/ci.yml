@@ -92,6 +92,7 @@ jobs:
           tests/test_service_manager.py
           tests/test_install.py
           tests/build_support/test_python_distribution.py
+          tests/web_runtime/test_file_download.py
           tests/manage_cli
 
   web-tests:

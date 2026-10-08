@@ -391,6 +391,12 @@ export interface FocusThreadActionCapabilities {
   goal: boolean;
 }
 
+export interface FocusFileInfo {
+  path: string;
+  name: string;
+  size: number;
+}
+
 export interface FocusThreadSummary {
   id: string;
   title: string;
