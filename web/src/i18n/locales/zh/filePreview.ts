@@ -4,4 +4,10 @@ export default {
   copyLatex: '复制 LaTeX',
   copied: '已复制',
   failed: '复制失败，请选中文字后复制',
+  diagramFit: '适应整图',
+  diagramActualSize: '100%',
+  diagramZoomIn: '放大示意图',
+  diagramZoomOut: '缩小示意图',
+  diagramControls: '拖动平移，滚轮或双指缩放；方向键平移，按 0 适应整图',
+  diagramFailed: '示意图加载失败，请关闭后重试，或导出 SVG 查看。',
 } as const;

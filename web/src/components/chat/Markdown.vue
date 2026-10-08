@@ -3,6 +3,7 @@
 import { setCustomComponents } from 'markstream-vue';
 import MarkdownMath from './MarkdownMath.vue';
 import MarkdownCodeBlock from './MarkdownCodeBlock.vue';
+import MarkdownMermaid from './MarkdownMermaid.vue';
 
 // Scope overrides to Focus renderers, including formulas nested inside prose,
 // lists and tables. Code copy headers survive highlighter loading/failure.
@@ -11,6 +12,7 @@ setCustomComponents(MARKDOWN_SCOPE, {
   math_inline: MarkdownMath,
   math_block: MarkdownMath,
   code_block: MarkdownCodeBlock,
+  mermaid: MarkdownMermaid,
 });
 </script>
 <script setup lang="ts">
@@ -30,6 +32,8 @@ import { prepareMarkdownRuntime } from '../../lib/markdownRuntime';
 import { configureFocusMarkdown } from '../../lib/markdownParser';
 import { markdownChunks } from '../../lib/markdownChunks';
 import MarkdownChunk from './MarkdownChunk.vue';
+import MermaidViewer from './MermaidViewer.vue';
+import type { MermaidDiagram } from '../../lib/diagramViewport';
 import {
   collectLocalImageSources,
   rewriteLocalImageSources,
@@ -49,6 +53,9 @@ const { t } = useI18n();
 // Focus Web uses that safe refusal; Kimi's daemon resolver returns a string.
 const resolveImage = inject<(src: string) => Promise<LocalImageResolution>>('resolveImage');
 const mdRef = ref<HTMLElement | null>(null);
+// Keep the viewer outside recyclable chunks and streaming renderer instances.
+const activeDiagram = ref<MermaidDiagram | null>(null);
+provide('focusMarkdownMermaidViewer', (diagram: MermaidDiagram) => { activeDiagram.value = diagram; });
 const props = withDefaults(
   defineProps<{
     text: string;
@@ -431,6 +438,7 @@ function copyDiff(code: string, idx: number): void {
         ><span v-if="ln.type !== 'hunk' && ln.type !== 'omission'" class="diff-sign">{{ ln.sign }}</span><span class="diff-text">{{ ln.type === 'omission' ? `… ${t('tools.output.linesOmitted', { count: ln.omittedLineCount })} …` : ln.text }}</span></span></code></pre>
       </div>
     </template>
+    <MermaidViewer v-if="activeDiagram" :diagram="activeDiagram" @close="activeDiagram = null" />
   </div>
 </template>
 

@@ -14,8 +14,8 @@ const props = withDefaults(defineProps<{
   description?: string;
   closeOnOverlay?: boolean;
   closeOnEsc?: boolean;
-  /** md 440 (default) · lg 640 · xl 760 (var(--p-content-max)). */
-  size?: 'md' | 'lg' | 'xl';
+  /** md 440 (default) · lg 640 · xl content width · full visual viewport. */
+  size?: 'md' | 'lg' | 'xl' | 'full';
   /** auto (default) = height tracks content up to max-height; fixed = constant
    *  height so the frame never resizes between tabs/content (body scrolls). */
   height?: 'auto' | 'fixed';
@@ -133,7 +133,7 @@ onBeforeUnmount(() => {
 
 <template>
   <Teleport to="body">
-    <div v-if="open" class="ui-dialog__overlay" @mousedown="onOverlayClick">
+    <div v-if="open" class="ui-dialog__overlay" :class="{ 'ui-dialog__overlay--full': size === 'full' }" @mousedown="onOverlayClick">
       <div
         ref="panel"
         class="ui-dialog"
@@ -191,6 +191,8 @@ onBeforeUnmount(() => {
 .ui-dialog--md { width: min(440px, 100%); }
 .ui-dialog--lg { width: min(640px, 100%); }
 .ui-dialog--xl { width: min(var(--p-content-max), 100%); }
+.ui-dialog__overlay--full { padding: 0; top: var(--app-top, 0px); bottom: auto; height: var(--app-height, 100dvh); box-sizing: border-box; }
+.ui-dialog--full { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
 .ui-dialog--fixed-height { height: min(680px, calc(100vh - var(--space-8) * 2)); }
 .ui-dialog--flush .ui-dialog__body { padding: 0; }
 .ui-dialog__head {
