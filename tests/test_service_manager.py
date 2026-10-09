@@ -96,7 +96,7 @@ class ServiceManagerTests(unittest.TestCase):
             self.assertEqual(
                 payload["ProgramArguments"],
                 [
-                    "/tmp/venv/bin/python",
+                    str(pathlib.Path("/tmp/venv/bin/python")),
                     "-I",
                     "-m",
                     "bot.service_log_capture",
