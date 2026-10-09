@@ -178,7 +178,7 @@ guards and may not retain parallel key or enum inventories.
 
 - Version 27 uses complete prose items and summary-only tools in paginated transcripts. Page byte targets reduce item limits instead of clipping text. Tool clicks read full details directly; the separate reply-content cache and default tool-output streaming are removed. Service and browser assets deploy together.
 
-- v28 adds authenticated single-file metadata/download endpoints and `FocusFileInfo`, without directory browsing or file preview. See the [single-file download contract](focus-web-file-download.md). Service and browser assets must be deployed together.
+- v28 adds authenticated single-file metadata/download endpoints and `FocusFileInfo`, without directory browsing. On-demand browser previews reuse this transport without a wire version change; see the [single-file download contract](focus-web-file-download.md). Service and browser assets must be deployed together.
 
 ## 4. Endpoint and Event Admission
 

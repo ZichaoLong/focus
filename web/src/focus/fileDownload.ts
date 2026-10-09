@@ -50,6 +50,11 @@ export function createFileDownload(api: FileDownloadApi) {
     loading.value = false;
     busy.value = false;
     info.value = null;
+    path.value = '';
+    name.value = '';
+    errorKey.value = '';
+    statusKey.value = '';
+    received.value = 0;
   }
 
   async function open(filePath: string, cwd: string): Promise<void> {
@@ -107,11 +112,17 @@ export function createFileDownload(api: FileDownloadApi) {
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
+        close();
         statusKey.value = 'focus.fileDownloadHandedOff';
       } else {
         const response = await api.fileContent(target.path, controller.signal);
-        await saveFileResponse(destination.handle, response, controller.signal, (bytes) => { received.value = bytes; });
-        if (!controller.signal.aborted) statusKey.value = 'focus.fileSaved';
+        await saveFileResponse(destination.handle, response, controller.signal, (bytes) => {
+          if (!controller.signal.aborted) received.value = bytes;
+        });
+        if (!controller.signal.aborted) {
+          close();
+          statusKey.value = 'focus.fileSaved';
+        }
       }
     } catch (error) {
       if (!controller.signal.aborted) errorKey.value = fileDownloadErrorKey(error);

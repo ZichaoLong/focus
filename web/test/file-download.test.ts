@@ -38,7 +38,9 @@ describe('single-file saving', () => {
     expect(stream.write).toHaveBeenCalledExactlyOnceWith(new TextEncoder().encode('hello'));
     expect(stream.close).toHaveBeenCalledOnce();
     expect(state.statusKey.value).toBe('focus.fileSaved');
-    expect(state.received.value).toBe(5);
+    expect(state.opened.value).toBe(false);
+    expect(state.info.value).toBeNull();
+    expect(state.path.value).toBe('');
   });
 
   it('cancelling the picker does not fetch or start an alternative download', async () => {
@@ -50,6 +52,7 @@ describe('single-file saving', () => {
     expect(anchor.click).not.toHaveBeenCalled();
     expect(state.errorKey.value).toBe('');
     expect(state.statusKey.value).toBe('');
+    expect(state.opened.value).toBe(true);
   });
 
   it('exposes browser fallback and requires another click if native saving is denied', async () => {
@@ -63,6 +66,7 @@ describe('single-file saving', () => {
     expect(anchor.click).toHaveBeenCalledOnce();
     expect(api.fileContent).not.toHaveBeenCalled();
     expect(state.statusKey.value).toBe('focus.fileDownloadHandedOff');
+    expect(state.opened.value).toBe(false);
   });
 
   it('rechecks a native browser download without buffering it in JavaScript', async () => {
@@ -85,6 +89,7 @@ describe('single-file saving', () => {
     expect(state.errorKey.value).toBe('focus.fileNotFound');
     expect(anchor.click).not.toHaveBeenCalled();
     expect(state.statusKey.value).toBe('');
+    expect(state.opened.value).toBe(true);
   });
 
   it('ignores a late metadata response after another link is opened', async () => {
@@ -132,6 +137,47 @@ describe('single-file saving', () => {
     await expect(saveFileResponse(handle as unknown as FileSystemFileHandle, new Response('hello'), controller.signal, () => {})).rejects.toThrow();
     expect(stream.abort).toHaveBeenCalledOnce();
     expect(stream.close).not.toHaveBeenCalled();
+  });
+
+  it('waits for successful disk close before dismissing the dialog', async () => {
+    const { state, stream } = setup();
+    let finish!: () => void;
+    stream.close.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await state.open('/a', '');
+    const saving = state.save();
+    await vi.waitFor(() => expect(stream.close).toHaveBeenCalledOnce());
+    expect(state.opened.value).toBe(true);
+    expect(state.received.value).toBe(5);
+    expect(state.statusKey.value).toBe('');
+    finish();
+    await saving;
+    expect(state.opened.value).toBe(false);
+    expect(state.statusKey.value).toBe('focus.fileSaved');
+  });
+
+  it('keeps failed disk-close attempts open for retry', async () => {
+    const { state, stream } = setup();
+    stream.close.mockRejectedValueOnce(new Error('close failed'));
+    await state.open('/a', '');
+    await state.save();
+    expect(state.opened.value).toBe(true);
+    expect(state.info.value).not.toBeNull();
+    expect(state.statusKey.value).toBe('');
+    expect(state.errorKey.value).toBe('focus.fileDownloadFailed');
+  });
+
+  it('does not close a new file dialog when an older disk close resolves', async () => {
+    const { state, stream } = setup();
+    let finish!: () => void;
+    stream.close.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    await state.open('/a', '');
+    const saving = state.save();
+    await vi.waitFor(() => expect(stream.close).toHaveBeenCalledOnce());
+    await state.open('/b', '');
+    finish();
+    await saving;
+    expect(state.opened.value).toBe(true);
+    expect(state.statusKey.value).toBe('');
   });
 });
 

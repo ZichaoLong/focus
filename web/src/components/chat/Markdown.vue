@@ -8,12 +8,15 @@ import MarkdownMermaid from './MarkdownMermaid.vue';
 // Scope overrides to Focus renderers, including formulas nested inside prose,
 // lists and tables. Code copy headers survive highlighter loading/failure.
 const MARKDOWN_SCOPE = 'focus-markdown';
-setCustomComponents(MARKDOWN_SCOPE, {
+const FILE_PREVIEW_SCOPE = 'focus-file-preview-markdown';
+const focusComponents = {
   math_inline: MarkdownMath,
   math_block: MarkdownMath,
   code_block: MarkdownCodeBlock,
   mermaid: MarkdownMermaid,
-});
+};
+setCustomComponents(MARKDOWN_SCOPE, focusComponents);
+setCustomComponents(FILE_PREVIEW_SCOPE, focusComponents);
 </script>
 <script setup lang="ts">
 import { computed, inject, nextTick, onMounted, onUnmounted, provide, reactive, ref, watch } from 'vue';
@@ -30,6 +33,7 @@ import {
 import { copyCodeBlockFallback, copyTextToClipboard } from '../../lib/clipboard';
 import { prepareMarkdownRuntime } from '../../lib/markdownRuntime';
 import { configureFocusMarkdown } from '../../lib/markdownParser';
+import { configureFilePreviewMarkdown } from '../../lib/markdownFilePreview';
 import { markdownChunks } from '../../lib/markdownChunks';
 import MarkdownChunk from './MarkdownChunk.vue';
 import MermaidViewer from './MermaidViewer.vue';
@@ -60,6 +64,7 @@ const props = withDefaults(
   defineProps<{
     text: string;
     openFile?: (target: FilePreviewRequest) => void;
+    deferImages?: boolean;
     /**
      * True only for the assistant turn that is actively streaming. It keeps
      * markstream's `final` lifecycle aligned with the authoritative turn while
@@ -96,7 +101,7 @@ watch(
 );
 
 const final = computed(() => !props.streaming);
-const progressiveChunks = computed(() => props.progressive && !props.streaming && props.text.length >= 16_384
+const progressiveChunks = computed(() => props.progressive && !props.deferImages && !props.streaming && props.text.length >= 16_384
   ? markdownChunks(rewriteImageSrcs(props.text ?? '')) : null);
 const filePathAliases = computed(() => collectFilePathAliases(props.text ?? ''));
 const renderPlan = computed(() => {
@@ -112,6 +117,7 @@ const renderPlan = computed(() => {
 
 provide('focusMarkdownCodeRenderer', computed(() => renderPlan.value.codeRenderer));
 const componentScope = computed(() => {
+  if (props.deferImages) return FILE_PREVIEW_SCOPE;
   // A custom registry disables markstream's stable-node parsing reuse. Keep
   // that fast path for ordinary prose; the parser still owns node admission.
   if (progressiveChunks.value) return MARKDOWN_SCOPE;
@@ -153,7 +159,7 @@ const resolvedImages = reactive(new Map<string, LocalImageResolution>());
 const pendingImages = new Set<string>();
 
 function queueImageResolution(text: string): void {
-  if (!resolveImage) return;
+  if (!resolveImage || props.deferImages) return;
   for (const src of collectLocalImageSources(text)) {
     if (resolvedImages.has(src) || pendingImages.has(src)) continue;
     pendingImages.add(src);
@@ -176,6 +182,7 @@ function queueImageResolution(text: string): void {
 
 /** Substitute local image srcs through the frontend's explicit access policy. */
 function rewriteImageSrcs(text: string): string {
+  if (props.deferImages) return text;
   return rewriteLocalImageSources(text, {
     enabled: !!resolveImage,
     resolvedImages,
@@ -380,7 +387,7 @@ function copyDiff(code: string, idx: number): void {
         :key="`${i}:${markdownRuntimeRevision}`"
         :content="seg.text"
         :custom-id="componentScope"
-        :custom-markdown-it="configureFocusMarkdown"
+        :custom-markdown-it="deferImages ? configureFilePreviewMarkdown : configureFocusMarkdown"
         mode="chat"
         :code-renderer="renderPlan.codeRenderer"
         :is-dark="isDark"

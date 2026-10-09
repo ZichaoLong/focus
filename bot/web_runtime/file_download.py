@@ -1,4 +1,4 @@
-"""Session-authenticated single-file reads; no directory or preview surface.
+"""Session-authenticated single-file reads for downloads and on-demand previews.
 
 See docs/contracts/focus-web-file-download.zh-CN.md for the download boundary.
 """

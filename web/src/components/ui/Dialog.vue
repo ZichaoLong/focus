@@ -50,7 +50,8 @@ function close() {
 }
 
 function focusables(): HTMLElement[] {
-  return panel.value ? Array.from(panel.value.querySelectorAll<HTMLElement>(FOCUSABLE)) : [];
+  return panel.value ? Array.from(panel.value.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter(element => element.getClientRects().length > 0) : [];
 }
 
 function resolveInitialFocus(): HTMLElement | null {
@@ -66,7 +67,9 @@ function resolveInitialFocus(): HTMLElement | null {
 }
 
 function onKeydown(event: KeyboardEvent) {
-  if (!props.open) return;
+  // A nested viewer owns its keyboard interaction; its Escape must not also
+  // close the file preview underneath it.
+  if (!props.open || event.defaultPrevented || !panel.value?.contains(document.activeElement)) return;
   if (event.key === 'Escape' && props.closeOnEsc) {
     event.preventDefault();
     close();

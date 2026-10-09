@@ -2537,6 +2537,10 @@
         {
           "path": "web/src/focus/browserFileSave.ts",
           "symbol": "chooseFileDestination"
+        },
+        {
+          "path": "web/src/focus/filePreviewImage.ts",
+          "symbol": "inspectPreviewImage"
         }
       ],
       "contract": [
@@ -2547,6 +2551,10 @@
         {
           "path": "docs/contracts/focus-web-file-download.zh-CN.md",
           "heading": "链接与保存体验"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "按需预览"
         }
       ],
       "focused-test": [
@@ -2560,7 +2568,9 @@
           "runner": "vitest",
           "targets": [
             "web/test/file-download.test.ts",
-            "web/test/file-download-api.test.ts"
+            "web/test/file-download-api.test.ts",
+            "web/test/file-preview.test.ts",
+            "web/test/markdown-file-preview.test.ts"
           ]
         }
       ],
@@ -2578,7 +2588,10 @@
           "targets": [
             "web/test/focus-thread-actions.test.ts",
             "web/test/export-filename.test.ts",
-            "web/test/markdown-local-images.test.ts"
+            "web/test/markdown-local-images.test.ts",
+            "web/test/diagram-viewport.test.ts",
+            "web/test/markdown-math-contract.test.ts",
+            "web/test/focus-code-splitting.test.ts"
           ]
         }
       ],

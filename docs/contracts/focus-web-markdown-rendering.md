@@ -62,6 +62,8 @@ The existing expand action opens `MermaidViewer.vue` in a full-size dialog, usin
 image snapshot of sanitized SVG without running Mermaid again. Subsequent streaming content
 does not replace that snapshot during interaction; reopening captures the current diagram.
 `Markdown.vue` owns the viewer lifetime, outside chunk recycling and regrouping when streaming ends.
+`ImageViewport.vue` owns the shared image canvas and gestures, also used by
+[on-demand file previews](focus-web-file-download.md#on-demand-previews).
 Opening fits the complete diagram. Controls offer fit, original size, zoom in and zoom out.
 The minimum scale depends on diagram and viewport dimensions and can fall below 50%; the
 maximum is four times the original size. Pan bounds keep the diagram reachable.

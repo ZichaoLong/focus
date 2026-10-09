@@ -1,4 +1,4 @@
-/** Geometry for the Mermaid viewer. Coordinates are CSS pixels in its canvas. */
+/** Shared image/Mermaid viewing geometry. Coordinates are CSS canvas pixels. */
 export interface DiagramSize { width: number; height: number }
 export interface MermaidDiagram extends DiagramSize { svg: string }
 export interface DiagramPoint { x: number; y: number }

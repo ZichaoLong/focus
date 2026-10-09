@@ -34,6 +34,7 @@ import type { FilePreviewRequest } from '../../types';
 defineProps<{
   text: string;
   openFile?: (target: FilePreviewRequest) => void;
+  deferImages?: boolean;
   streaming?: boolean;
   progressive?: boolean;
 }>();
@@ -67,6 +68,7 @@ function reloadPage(): void {
     v-if="richMarkdown"
     :text="text"
     :open-file="openFile"
+    :defer-images="deferImages"
     :streaming="streaming"
     :progressive="progressive"
   />
