@@ -88,6 +88,7 @@ It answers:
 - `config`
 - `instance`
 - `service`
+- `logs`
 - `binding`
 - `prompt`
 - `thread`
@@ -194,6 +195,42 @@ reconcile or prove the previous request outcome.
 
 `service list` is intentionally not a command. Use `focusctl instance list` for
 the machine-wide instance overview.
+
+### 4.3.1 `logs`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `focusctl [--instance <name>] logs status` | Show diagnostic directory, usage by file family and retention | read-only | none |
+| `focusctl [--instance <name>] logs prune [--dry-run] [--keep-days <n>]` | Prune diagnostic logs by age and capacity; keep 30 days by default, preview only with `--dry-run` | mutating / read-only preview | none |
+
+- Each invocation accepts one instance, using section 2's selection rules when
+  omitted, and works with a stopped instance. Status and dry-run create neither
+  log directories nor lock files.
+- Only fixed instance-local filenames and their numbered backups are managed:
+  `focus.log` (2 MiB × 4), `fcodex.log` (512 KiB × 32, 16 MiB total), and
+  `service.stdout.log`/`service.stderr.log` (2 MiB × 4 each). `fcodex.log` stores
+  JSON-lines failure summaries and also rotates on a UTC date change at write
+  time. An ordinary append keeps at most 64 KiB, marking excess text as truncated.
+- Writes rotate by capacity. Service startup and a 30-minute in-process timer
+  prune backups last written over 30 days ago, plus expired current `fcodex.log`.
+  fcodex recorder startup runs the same cleanup. Retention uses each file's last
+  write time, without rewriting individual entries; it is not an exact per-event TTL.
+- `--keep-days 0` clears all backups and the current fcodex diagnostic file.
+  Current service `focus.log`, `service.stdout.log`, and `service.stderr.log`
+  remain; their writers own bounded rotation. Negative ages are rejected.
+  Preview is a snapshot; execution checks again.
+- Append, rotation and pruning share a cross-process lock, waiting at most
+  50 ms for contention. Writes are best effort; manual cleanup failures return
+  errors rather than success. Writers close log descriptors after each operation.
+  Multiple fcodex terminals share the instance budget without unbounded per-process
+  files. Only exact regular files are handled; cleanup never recursively removes directories.
+- The same macOS launchd service uses an internal capture entry to start the
+  daemon and rotate stdout/stderr, preserving exit codes and stop signals.
+  Installation updates refresh this service definition. Linux journal remains
+  system-managed; Windows continues using Focus's log file.
+- Codex diagnostic databases, system journal, conversation/group-message history,
+  configuration, bindings, leases and runtime data are excluded. No cron or
+  separate cleanup service is required. Existing `service log` viewing remains.
 
 ### 4.4 `binding`
 

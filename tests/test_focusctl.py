@@ -100,6 +100,7 @@ class FocusctlEntrypointTests(unittest.TestCase):
             "config",
             "instance",
             "service",
+            "logs",
             "binding",
             "prompt",
             "thread",

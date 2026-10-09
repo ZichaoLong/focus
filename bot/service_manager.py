@@ -12,6 +12,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, InstancePaths
+from bot.managed_python import isolated_python_module_command
 from bot.platform_paths import (
     default_launch_agent_dir,
     default_systemd_user_dir,
@@ -344,12 +345,17 @@ class LaunchdUserServiceManager(ServiceManager):
         definition.stderr_log_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "Label": self._label(definition),
-            "ProgramArguments": list(definition.daemon_command),
+            "ProgramArguments": list(isolated_python_module_command(
+                definition.daemon_command[0], "bot.service_log_capture",
+                "--data-dir", str(definition.paths.data_dir), "--", *definition.daemon_command,
+            )),
             "WorkingDirectory": str(definition.paths.data_dir),
             "RunAtLoad": True,
             "KeepAlive": True,
-            "StandardOutPath": str(definition.stdout_log_path),
-            "StandardErrorPath": str(definition.stderr_log_path),
+            # The capture process rotates the child's streams. launchd must not
+            # retain an open descriptor into a renamed log indefinitely.
+            "StandardOutPath": "/dev/null",
+            "StandardErrorPath": "/dev/null",
         }
         plist_path.write_bytes(plistlib.dumps(payload))
 

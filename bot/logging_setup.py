@@ -5,9 +5,9 @@ Shared logging configuration.
 from __future__ import annotations
 
 import logging
-import logging.handlers
 import pathlib
 
+from bot.diagnostic_logs import DiagnosticLogHandler, start_log_maintenance
 from bot.platform_paths import default_log_file
 
 
@@ -24,12 +24,8 @@ def configure_logging(*, data_dir: pathlib.Path | str | None = None) -> pathlib.
     stream_handler.setFormatter(formatter)
     root_logger.addHandler(stream_handler)
 
-    file_handler = logging.handlers.RotatingFileHandler(
-        log_path,
-        maxBytes=2 * 1024 * 1024,
-        backupCount=3,
-        encoding="utf-8",
-    )
+    file_handler = DiagnosticLogHandler(log_path.parent)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
+    start_log_maintenance(log_path.parent)
     return log_path

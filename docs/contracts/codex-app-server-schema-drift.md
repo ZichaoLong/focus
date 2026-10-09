@@ -50,6 +50,7 @@ The client categories are deliberately explicit:
 - `observer_read`
 - `connection_local_request`
 - `explicit_admin_control_plane`
+- `native_user_config_mutation`
 - explicit deny/unsupported categories
 
 `thread/unsubscribe` is classified as connection-local, not as a global
@@ -66,7 +67,11 @@ through an administrator-style owner route. That is not a global-control
 escape hatch: `fcodex_unscoped_client_request_policy` is default-deny, and the
 guard statically verifies that the proxy's literal allowlist matches the
 reviewed policy. See the fcodex owner contract for the small permitted
-discovery/connection set and the optional-`threadId` rule.
+discovery/connection set, the native `config/batchWrite` persistence exception,
+and the optional-`threadId` rule. `config/batchWrite` is classified separately
+as `native_user_config_mutation`; its request and `ConfigWriteResponse` are
+fingerprinted. It neither acts as a thread writer nor expands
+`explicit_admin_control_plane`.
 
 Server requests distinguish interactive, owner-routed work from stateless
 protocol utilities. `currentTime/read` is the only automatic utility in this

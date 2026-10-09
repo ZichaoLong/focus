@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -33,12 +34,18 @@ from bot.version import __version__
 class FCodexTests(unittest.TestCase):
     def setUp(self) -> None:
         super().setUp()
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.test_root = Path(temporary.name)
         env_patcher = patch.dict(
             os.environ,
             {
                 "FOCUS_INSTANCE": "",
                 "FOCUS_DATA_DIR": "",
                 "FOCUS_GLOBAL_DATA_DIR": "",
+                "FOCUS_DATA_ROOT": str(self.test_root / "data"),
+                "FOCUS_CONFIG_ROOT": str(self.test_root / "config"),
+                "FOCUS_ENV_FILE": str(self.test_root / "focus.env"),
             },
             clear=False,
         )
@@ -422,7 +429,7 @@ class FCodexTests(unittest.TestCase):
         )
         resolved_target = CliRuntimeTarget(
             instance_name="corp-b",
-            data_dir=Path("/tmp/data-b"),
+            data_dir=self.test_root / "data-b",
             app_server_url="ws://127.0.0.1:9102",
             service_token="token-b",
             running_entry=InstanceRegistryEntry(
@@ -432,7 +439,7 @@ class FCodexTests(unittest.TestCase):
                 control_endpoint="tcp://127.0.0.1:9102",
                 app_server_url="ws://127.0.0.1:9102",
                 config_dir="/tmp/config-b",
-                data_dir="/tmp/data-b",
+                data_dir=str(self.test_root / "data-b"),
                 started_at=1.0,
                 updated_at=1.0,
             ),
@@ -472,7 +479,7 @@ class FCodexTests(unittest.TestCase):
         mock_proxy.assert_called_once_with(
             "ws://127.0.0.1:9102",
             os.getcwd(),
-            Path("/tmp/data-b"),
+            self.test_root / "data-b",
             instance_name="corp-b",
             service_token="token-b",
             proxy_auth_token=ANY,
@@ -540,7 +547,7 @@ class FCodexTests(unittest.TestCase):
     def test_runtime_target_rejects_running_instance_without_live_default_runtime(
         self,
     ) -> None:
-        data_dir = Path("/tmp/data-explorer")
+        data_dir = self.test_root / "data-explorer"
         running_entry = InstanceRegistryEntry(
             instance_name="explorer",
             owner_pid=os.getpid(),
@@ -575,7 +582,7 @@ class FCodexTests(unittest.TestCase):
     def test_runtime_target_rejects_stopped_instance_without_using_configured_port(
         self,
     ) -> None:
-        data_dir = Path("/tmp/data-explorer")
+        data_dir = self.test_root / "data-explorer"
         with patch(
             "bot.instance_resolution.resolve_cli_instance_target",
             return_value=CliInstanceTarget(
@@ -616,7 +623,7 @@ class FCodexTests(unittest.TestCase):
                     control_endpoint="tcp://127.0.0.1:9101",
                     app_server_url="ws://127.0.0.1:9101",
                     config_dir="/tmp/config-default",
-                    data_dir="/tmp/data-default",
+                    data_dir=str(self.test_root / "data-default"),
                     started_at=1.0,
                     updated_at=1.0,
                 ),
@@ -627,7 +634,7 @@ class FCodexTests(unittest.TestCase):
                     control_endpoint="tcp://127.0.0.1:9102",
                     app_server_url="ws://127.0.0.1:9102",
                     config_dir="/tmp/config-explorer",
-                    data_dir="/tmp/data-explorer",
+                    data_dir=str(self.test_root / "data-explorer"),
                     started_at=1.0,
                     updated_at=1.0,
                 ),
@@ -757,7 +764,7 @@ class FCodexTests(unittest.TestCase):
                 "bot.fcodex.cli.resolve_cli_runtime_target",
                 return_value=CliRuntimeTarget(
                     instance_name="explorer",
-                    data_dir=Path("/tmp/data-explorer"),
+                    data_dir=self.test_root / "data-explorer",
                     app_server_url="ws://127.0.0.1:8765",
                 ),
             ) as mock_resolve:
@@ -1017,14 +1024,14 @@ class FCodexTests(unittest.TestCase):
                 control_endpoint="tcp://127.0.0.1:9102",
                 app_server_url="ws://127.0.0.1:9102",
                 config_dir="/tmp/config-explorer",
-                data_dir="/tmp/data-explorer",
+                data_dir=str(self.test_root / "data-explorer"),
                 started_at=1.0,
                 updated_at=1.0,
             ),
         ]
         resolved_target = CliRuntimeTarget(
             instance_name="explorer",
-            data_dir=Path("/tmp/data-explorer"),
+            data_dir=self.test_root / "data-explorer",
             app_server_url="ws://127.0.0.1:9102",
             service_token="token-explorer",
             running_entry=running_instances[0],
@@ -1043,7 +1050,7 @@ class FCodexTests(unittest.TestCase):
                     "bot.fcodex.cli._resolve_resume_lookup_runtime_target",
                     return_value=CliRuntimeTarget(
                         instance_name="explorer",
-                        data_dir=Path("/tmp/data-explorer"),
+                        data_dir=self.test_root / "data-explorer",
                         app_server_url="ws://127.0.0.1:9102",
                     ),
                 ):
@@ -1111,7 +1118,7 @@ class FCodexTests(unittest.TestCase):
                 control_endpoint="tcp://127.0.0.1:9101",
                 app_server_url="ws://127.0.0.1:9101",
                 config_dir="/tmp/config-default",
-                data_dir="/tmp/data-default",
+                data_dir=str(self.test_root / "data-default"),
                 started_at=1.0,
                 updated_at=1.0,
             ),
@@ -1122,7 +1129,7 @@ class FCodexTests(unittest.TestCase):
                 control_endpoint="tcp://127.0.0.1:9102",
                 app_server_url="ws://127.0.0.1:9102",
                 config_dir="/tmp/config-explorer",
-                data_dir="/tmp/data-explorer",
+                data_dir=str(self.test_root / "data-explorer"),
                 started_at=1.0,
                 updated_at=1.0,
             ),
@@ -1146,7 +1153,7 @@ class FCodexTests(unittest.TestCase):
                         "bot.fcodex.cli._resolve_resume_lookup_runtime_target",
                         return_value=CliRuntimeTarget(
                             instance_name="default",
-                            data_dir=Path("/tmp/data-default"),
+                            data_dir=self.test_root / "data-default",
                             app_server_url="ws://127.0.0.1:9101",
                         ),
                     ):
@@ -1225,7 +1232,7 @@ class FCodexTests(unittest.TestCase):
                 "bot.fcodex.cli.resolve_cli_runtime_target",
                 return_value=CliRuntimeTarget(
                     instance_name="explorer",
-                    data_dir=Path("/tmp/data-explorer"),
+                    data_dir=self.test_root / "data-explorer",
                     app_server_url="ws://127.0.0.1:9102",
                     service_token="token-explorer",
                 ),
@@ -1276,7 +1283,7 @@ class FCodexTests(unittest.TestCase):
                 "bot.fcodex.cli._resolve_resume_lookup_runtime_target",
                 return_value=CliRuntimeTarget(
                     instance_name="default",
-                    data_dir=Path("/tmp/data-default"),
+                    data_dir=self.test_root / "data-default",
                     app_server_url="ws://127.0.0.1:9101",
                 ),
             ):
@@ -1440,6 +1447,12 @@ class FCodexTests(unittest.TestCase):
         )
         proxy_process.terminate.assert_called_once_with()
         proxy_process.wait.assert_called_once_with(timeout=1.0)
+
+        diagnostic_path = _default_data_dir() / "fcodex.log"
+        self.assertTrue(diagnostic_path.is_relative_to(self.test_root))
+        diagnostic = json.loads(diagnostic_path.read_text(encoding="utf-8"))
+        self.assertEqual(diagnostic["stage"], "tui_exit")
+        self.assertEqual(diagnostic["code"], "7")
 
     def test_fcodex_windows_interrupt_cleans_codex_and_proxy(self) -> None:
         proxy_process = Mock()

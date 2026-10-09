@@ -65,6 +65,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
             tuple(item.name for item in catalog.capabilities),
             (
                 "backend-reset",
+                "diagnostic-logs",
                 "fcodex-runtime",
                 "feishu-execution-presentation",
                 "feishu-interaction-approvals",

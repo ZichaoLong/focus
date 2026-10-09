@@ -86,6 +86,77 @@
         "web-wire"
       ]
     },
+    "diagnostic-logs": {
+      "entry": [
+        {
+          "path": "bot/logging_setup.py",
+          "symbol": "configure_logging"
+        },
+        {
+          "path": "bot/manage_cli/log_commands.py",
+          "symbol": "handle_logs"
+        },
+        {
+          "path": "bot/service_log_capture.py",
+          "symbol": "capture_service"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/diagnostic_logs.py",
+          "symbol": "append_log"
+        },
+        {
+          "path": "bot/diagnostic_logs.py",
+          "symbol": "prune_logs"
+        },
+        {
+          "path": "bot/diagnostic_logs.py",
+          "symbol": "start_log_maintenance"
+        },
+        {
+          "path": "bot/fcodex/diagnostics.py",
+          "symbol": "FcodexDiagnostics"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focusctl-command-matrix.zh-CN.md",
+          "heading": "4.3.1 `logs`"
+        },
+        {
+          "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
+          "heading": "没有 root target 的 client request"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_diagnostic_logs.py",
+            "tests/test_service_log_capture.py",
+            "tests/manage_cli/test_logs.py",
+            "tests/test_fcodex_config_write.py"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_focusctl.py",
+            "tests/test_shell_completion.py",
+            "tests/test_service_manager.py",
+            "tests/manage_cli",
+            "tests/test_fcodex_wrapper_integration.py"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "source-context"
+      ]
+    },
     "fcodex-runtime": {
       "entry": [
         {
@@ -139,6 +210,10 @@
         {
           "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
           "heading": "直接 thread target"
+        },
+        {
+          "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
+          "heading": "没有 root target 的 client request"
         }
       ],
       "focused-test": [
@@ -151,7 +226,8 @@
             "tests/test_fcodex_participant_runtime_registry.py",
             "tests/test_fcodex_proxy.py",
             "tests/test_fcodex_proxy_operation_receipts.py",
-            "tests/test_fcodex_proxy_server_request_resolution.py"
+            "tests/test_fcodex_proxy_server_request_resolution.py",
+            "tests/test_fcodex_config_write.py"
           ]
         }
       ],

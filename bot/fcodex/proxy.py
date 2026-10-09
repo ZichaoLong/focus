@@ -36,6 +36,7 @@ from bot.interaction_contract import (
     automatic_server_request_response,
 )
 from bot.jsonrpc_id import jsonrpc_id_key
+from bot.fcodex.diagnostics import FcodexDiagnostics
 from bot.local_websocket_auth import (
     AppServerWebsocketAuthTokenStore,
     FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR,
@@ -78,13 +79,13 @@ _COORDINATED_NOTIFICATION_METHODS = {
 # A request without a concrete ``params.threadId`` has no thread target for
 # the service-owned coordinator to classify. Do not treat the shared
 # app-server as a generic fcodex control plane in that case: this small list
-# is deliberately limited to reviewed connection bootstrap and trusted
-# discovery/read calls needed by the upstream remote TUI.  In Focus's explicit
+# covers reviewed connection bootstrap, trusted discovery/read calls, and
+# native user-config persistence needed by the upstream remote TUI. In Focus's explicit
 # shared-trust deployment, ``hooks/list`` and ``skills/list`` may enumerate
 # their requested CWDs; that exact discovery allowance is not a wildcard for
-# arbitrary host/process/file/configuration operations.  Every other such
-# request is rejected locally before it can reach state shared by the other
-# Focus surfaces.
+# arbitrary host/process/file operations. `config/batchWrite` preserves upstream
+# user-config validation and reload semantics; it does not create a turn writer.
+# Every other such request is rejected locally before reaching shared state.
 #
 # Keep this in sync with the reviewed policy in
 # docs/contracts/codex-app-server-schema-baseline.json.  The schema drift
@@ -94,6 +95,7 @@ _FCODEX_UNSCOPED_ALLOWED_CLIENT_REQUEST_METHODS = frozenset(
         "initialize",
         "account/read",
         "config/read",
+        "config/batchWrite",
         "configRequirements/read",
         "model/list",
         "hooks/list",
@@ -450,9 +452,10 @@ class _ProxyInteractionGate:
         enable_heartbeat: bool = False,
         heartbeat_interval_seconds: float = _OPERATION_HEARTBEAT_SECONDS,
     ) -> None:
-        del global_data_dir, instance_name, service_token, runtime_lease_keeper
+        del global_data_dir, service_token, runtime_lease_keeper
         self._cwd = cwd
         self._data_dir = pathlib.Path(data_dir)
+        self._diagnostics = FcodexDiagnostics(self._data_dir, instance_name=instance_name)
         pid = int(holder_pid or os.getpid())
         self._participant_id = str(
             participant_id or f"fcodex:{pid}:{secrets.token_urlsafe(12)}"
@@ -510,6 +513,14 @@ class _ProxyInteractionGate:
         }
         return self._control_request_fn(self._data_dir, method, payload)
 
+    def _reject_request(self, client_ws: Any, payload: dict[str, Any], message: str) -> None:
+        self._diagnostics.record(
+            "local_rejection", method=payload["method"],
+            thread_id=_payload_thread_id(payload), request_id=payload.get("id"),
+            code=-32002, message=message,
+        )
+        _send_local_error_response(client_ws, payload.get("id"), message)
+
     def _control_receipt(self, method: str, params: dict[str, Any]) -> tuple[_ControlReceipt, Any]:
         with self._interaction_attempt_lock:
             if self._is_closed():
@@ -537,6 +548,7 @@ class _ProxyInteractionGate:
         """Revoke this proxy connection after an unreceipted owner decision."""
 
         with self._interaction_attempt_lock:
+            self._diagnostics.record("transport_quarantine", message=reason)
             logger.error("Quarantining fcodex interaction transport: %s", reason)
             self.close()
             _close_quietly(client_ws)
@@ -652,6 +664,10 @@ class _ProxyInteractionGate:
         tracked: list[_PendingClientRequest] = []
         seen: set[int] = set()
         for request in requests:
+            self._diagnostics.record(
+                "response_unknown", method=request.method, thread_id=request.thread_id,
+                request_id=request.request_id, message="client response correlation was lost",
+            )
             if request.request_token is None or id(request) in seen:
                 continue
             seen.add(id(request))
@@ -674,7 +690,14 @@ class _ProxyInteractionGate:
                 self._closed = True
                 self._pending_server_request_ids.clear()
                 self._resolved_server_request_ids.clear()
+                for request in self._pending_client_request_by_id.values():
+                    self._diagnostics.record(
+                        "disconnected_with_pending_request", method=request.method,
+                        thread_id=request.thread_id, request_id=request.request_id,
+                        message="connection closed before a correlated response; outcome unknown",
+                    )
                 self._pending_client_request_by_id.clear()
+                self._diagnostics.close()
             self._heartbeat_stop.set()
             heartbeat_thread = self._heartbeat_thread
             if heartbeat_thread is not None and heartbeat_thread is not threading.current_thread():
@@ -711,6 +734,7 @@ class _ProxyInteractionGate:
             return
         payload, is_bytes = parsed
 
+        request_payload = payload
         method = payload.get("method")
         if isinstance(method, str):
             # Client notifications cannot receive a JSON-RPC error.  Accept
@@ -757,17 +781,15 @@ class _ProxyInteractionGate:
                 # are still requests by envelope shape, so reject locally
                 # instead of treating them as handshake notifications.
                 if request_id not in (None, ""):
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         "fcodex 请求携带了无效的 JSON-RPC id；已在本地拒绝。",
                     )
                 return
             with self._lock:
                 if request_key in self._pending_client_request_by_id:
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         "fcodex connection 复用了尚未完成的 JSON-RPC request id；已拒绝该请求。",
                     )
                     return
@@ -775,12 +797,16 @@ class _ProxyInteractionGate:
             if method == "thread/resume":
                 payload, resume_policy_error = _validate_thread_resume_payload(payload)
                 if payload is None:
-                    _send_local_error_response(client_ws, request_id, resume_policy_error)
+                    self._reject_request(
+                        client_ws, request_payload, resume_policy_error,
+                    )
                     return
             elif method == "review/start":
                 payload, review_policy_error = _canonicalize_review_start_payload(payload)
                 if payload is None:
-                    _send_local_error_response(client_ws, request_id, review_policy_error)
+                    self._reject_request(
+                        client_ws, request_payload, review_policy_error,
+                    )
                     return
 
             thread_id = _payload_thread_id(payload)
@@ -788,16 +814,15 @@ class _ProxyInteractionGate:
             # A missing/nullable optional threadId is materially different
             # from a root-scoped request: it has no operation owner to route
             # through RuntimeLoop.  The allowlist is intentionally a narrow
-            # bootstrap/read surface.  Default-deny also covers malformed
+            # reviewed native TUI surface. Default-deny also covers malformed
             # thread-scoped requests that omit their required threadId.
             if (
                 not thread_id
                 and method != "thread/start"
                 and method not in _FCODEX_UNSCOPED_ALLOWED_CLIENT_REQUEST_METHODS
             ):
-                _send_local_error_response(
-                    client_ws,
-                    request_id,
+                self._reject_request(
+                    client_ws, request_payload,
                     "FOCUS 不支持 fcodex 无 threadId 的 app-server RPC "
                     f"`{method}`；已在本地拒绝，未转发到共享 backend。",
                 )
@@ -842,24 +867,21 @@ class _ProxyInteractionGate:
                         },
                     )
                 except Exception as exc:
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         f"FOCUS operation control unavailable; request was not forwarded: {exc}",
                     )
                     return
                 if not isinstance(admission, dict) or not admission.get("allowed"):
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         str((admission or {}).get("reason", "当前操作被 Focus 拒绝。")),
                     )
                     return
                 child_read_only = admission.get("child_read_only") is True
                 if child_read_only and method != "thread/read":
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         "FOCUS service 返回了无效的 child read-only 准入；请求未转发。",
                     )
                     return
@@ -867,9 +889,8 @@ class _ProxyInteractionGate:
                     not isinstance(admission.get("tracks_response"), bool)
                     or "request_token" not in admission
                 ):
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         "FOCUS service 未返回明确的 client-response tracking contract。",
                     )
                     return
@@ -877,9 +898,8 @@ class _ProxyInteractionGate:
                 request_token = admission["request_token"]
                 if child_read_only:
                     if tracks_response or request_token is not None:
-                        _send_local_error_response(
-                            client_ws,
-                            request_id,
+                        self._reject_request(
+                            client_ws, request_payload,
                             "FOCUS service 返回了冲突的 child read-only response capability。",
                         )
                         return
@@ -889,16 +909,14 @@ class _ProxyInteractionGate:
                         or not isinstance(request_token, int)
                         or request_token <= 0
                     ):
-                        _send_local_error_response(
-                            client_ws,
-                            request_id,
+                        self._reject_request(
+                            client_ws, request_payload,
                             "FOCUS service 未返回合法的 exact client-response capability。",
                         )
                         return
                 elif request_token is not None:
-                    _send_local_error_response(
-                        client_ws,
-                        request_id,
+                    self._reject_request(
+                        client_ws, request_payload,
                         "FOCUS service 返回了未启用却非空的 client-response capability。",
                     )
                     return
@@ -923,7 +941,11 @@ class _ProxyInteractionGate:
                         turn_id=raw_turn_id if isinstance(raw_turn_id, str) else "",
                     )
                 backend_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
-            except Exception:
+            except Exception as exc:
+                self._diagnostics.record(
+                    "backend_send", method=method, thread_id=thread_id,
+                    request_id=request_id, message=exc,
+                )
                 request_context = self._take_pending_client_request(request_id)
                 if (
                     request_context is not None
@@ -1282,6 +1304,16 @@ class _ProxyInteractionGate:
             )
             return
 
+        if _is_usable_client_response(payload, request_context):
+            if request_context.method == "initialize" and isinstance(payload.get("result"), dict):
+                self._diagnostics.backend_version = payload["result"].get("userAgent", "")
+            error = payload.get("error")
+            if isinstance(error, dict):
+                self._diagnostics.record(
+                    "upstream_error", method=request_context.method,
+                    thread_id=request_context.thread_id, request_id=response_id,
+                    code=error.get("code"), message=error.get("message", ""),
+                )
         if request_context.request_token is None:
             if _is_usable_client_response(payload, request_context):
                 client_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
@@ -1394,7 +1426,8 @@ def run_proxy(
     # the service owns their reconnect grace rather than the proxy process.
     holder_pid = parent_pid or os.getpid()
     participant_id = f"fcodex:{holder_pid}:{secrets.token_urlsafe(12)}"
-    del global_data_dir, instance_name, service_token
+    del global_data_dir, service_token
+    diagnostics = FcodexDiagnostics(effective_data_dir, instance_name=instance_name)
 
     def _shutdown_server() -> None:
         if shutdown_once.is_set():
@@ -1462,6 +1495,7 @@ def run_proxy(
                     data_dir=effective_data_dir,
                     participant_id=participant_id,
                     holder_pid=holder_pid,
+                    instance_name=instance_name,
                     control_request_fn=control_request_fn,
                     enable_heartbeat=True,
                 )
@@ -1475,8 +1509,8 @@ def run_proxy(
                                     client_ws=client_ws,
                                     backend_ws=backend_ws,
                                 )
-                        except ConnectionClosed:
-                            pass
+                        except Exception as exc:
+                            diagnostics.record("backend_receive", message=exc)
                     finally:
                         _close_quietly(client_ws)
                         _close_quietly(backend_ws)
@@ -1494,6 +1528,9 @@ def run_proxy(
                     _close_quietly(backend_ws)
                     _close_quietly(client_ws)
                     thread.join(timeout=1)
+        except Exception as exc:
+            diagnostics.record("proxy_connection", message=exc)
+            _close_quietly(client_ws)
         finally:
             with state_lock:
                 active_connections = max(0, active_connections - 1)
@@ -1520,6 +1557,7 @@ def run_proxy(
         if parent_pid is not None:
             threading.Thread(target=_wait_until_parent_exit, daemon=True).start()
         server.serve_forever()
+    diagnostics.close()
 
 
 def main(argv: list[str] | None = None) -> None:

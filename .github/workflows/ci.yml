@@ -90,6 +90,8 @@ jobs:
           tests/test_codex_rpc_client_lifecycle.py
           tests/test_service_runtime_lifecycle.py
           tests/test_service_manager.py
+          tests/test_diagnostic_logs.py
+          tests/test_service_log_capture.py
           tests/test_install.py
           tests/build_support/test_python_distribution.py
           tests/web_runtime/test_file_download.py

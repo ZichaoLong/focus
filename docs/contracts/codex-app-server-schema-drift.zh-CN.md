@@ -43,6 +43,7 @@ client method 至少明确区分：
 - `observer_read`
 - `connection_local_request`
 - `explicit_admin_control_plane`
+- `native_user_config_mutation`
 - 明确拒绝或暂不支持的类别
 
 例如 `thread/unsubscribe` 是 connection-local，不是全局 operation mutation。
@@ -54,7 +55,9 @@ continuation，因而必须经过 main-turn lease/goal-preflight gate。`thread/
 “管理员式 owner 路由”开放额外 raw app-server control。这也不是 global-control
 逃生门：`fcodex_unscoped_client_request_policy` 是 default-deny，guard 会静态核对
 proxy 的 literal allowlist 与已审阅策略完全一致。允许的极小 discovery/connection
-集合与 optional `threadId` 规则见 fcodex owner 合同。
+集合、原生 `config/batchWrite` 配置保存例外与 optional `threadId` 规则见 fcodex owner 合同。
+`config/batchWrite` 单独归入 `native_user_config_mutation`，请求参数与 `ConfigWriteResponse`
+均纳入指纹；它不是 thread writer 操作，也不扩展 `explicit_admin_control_plane`。
 
 server request 还必须区分需要 owner 路由的交互与无状态 protocol utility。当前
 baseline 唯一自动处理的 utility 是 `currentTime/read`：Focus 严格验证其

@@ -4,6 +4,7 @@
       "initialize",
       "account/read",
       "config/read",
+      "config/batchWrite",
       "configRequirements/read",
       "model/list",
       "hooks/list",
@@ -87,6 +88,39 @@
           "type": "object"
         },
         "params_definition": "AppsListParams"
+      },
+      "config/batchWrite": {
+        "closure_sha256": "7deccf9d8fc576641c66638dcfee5d97c82beb859e6d53803e5f638d22a886bb",
+        "params": {
+          "properties": {
+            "edits": {
+              "items": {
+                "$ref": "#/definitions/ConfigEdit"
+              },
+              "type": "array"
+            },
+            "expectedVersion": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "filePath": {
+              "type": [
+                "null",
+                "string"
+              ]
+            },
+            "reloadUserConfig": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "edits"
+          ],
+          "type": "object"
+        },
+        "params_definition": "ConfigBatchWriteParams"
       },
       "config/read": {
         "closure_sha256": "5508cf688529597b8603bd6a3e0729a659b49afd70d605bcc4638c3c469c120c",
@@ -2223,6 +2257,43 @@
             },
             "required": [
               "requiresOpenaiAuth"
+            ],
+            "type": "object"
+          }
+        },
+        "config/batchWrite": {
+          "closure_sha256": "27cfba74e3d1211c522ff2d9b88a991c675434eaa201cc374a054d23d0a0964e",
+          "root_definition": "ConfigWriteResponse",
+          "schema": {
+            "properties": {
+              "filePath": {
+                "allOf": [
+                  {
+                    "$ref": "#/definitions/AbsolutePathBuf"
+                  }
+                ]
+              },
+              "overriddenMetadata": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/OverriddenMetadata"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "$ref": "#/definitions/WriteStatus"
+              },
+              "version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "filePath",
+              "status",
+              "version"
             ],
             "type": "object"
           }
@@ -4847,6 +4918,9 @@
         "mcpServer/tool/call",
         "feedback/upload"
       ],
+      "native_user_config_mutation": [
+        "config/batchWrite"
+      ],
       "observer_read": [
         "account/read",
         "account/rateLimits/read",
@@ -5172,6 +5246,7 @@
     "client_request": {
       "account/rateLimits/read": "GetAccountRateLimitsResponse",
       "account/read": "GetAccountResponse",
+      "config/batchWrite": "ConfigWriteResponse",
       "config/read": "ConfigReadResponse",
       "configRequirements/read": "ConfigRequirementsReadResponse",
       "hooks/list": "HooksListResponse",

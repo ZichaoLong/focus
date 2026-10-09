@@ -22,11 +22,12 @@ transport 问题：
 ## 没有 root target 的 client request
 
 没有非空 `params.threadId` 的 request 无法绑定到某个 thread writer，因此默认不转发。
-proxy 只允许已审阅的初始化/发现读取：
+proxy 允许下列已审阅的初始化/发现读取，以及原生用户配置保存：
 
 - `initialize`
 - `account/read`
 - `config/read`
+- `config/batchWrite`
 - `configRequirements/read`
 - `model/list`
 - `hooks/list`
@@ -38,6 +39,24 @@ proxy 只允许已审阅的初始化/发现读取：
 - `app/installed`
 - `experimentalFeature/list`
 - `mcpServerStatus/list`
+
+`config/batchWrite` 是原生 TUI 保存目录信任、默认模型等用户配置，以及请求配置
+重载的独立例外。它不需要 `threadId`，不取得 main-turn writer；仍须通过当前 backend
+generation 的 service admission。Focus 原样转发 edits、配置路径、版本前置条件与
+`reloadUserConfig`，由 app-server 校验、保存并决定热加载范围，原样返回成功或错误，
+不吞错、不伪造成功、不自动重试。写入目标是 backend 使用的用户配置，并非当前线程
+私有配置；共享该配置的其他实例可能在后续读取时采用新值。它不放开其他未审阅的
+无目标 RPC。上游固定证据：
+[配置保存与校验](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/config_manager_service.rs#L204)、
+[重载语义](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/config_processor.rs#L161)。
+
+wrapper/proxy 对本地拒绝、上游 RPC 错误、连接失败及断开时未完成的请求保存尽力而为的
+诊断摘要：时间、实例、Focus 版本、已知 backend user-agent、RPC 方法、线程/请求标识、
+错误码和限长且遮蔽常见凭据字段的错误信息。不记录 RPC params、error data、prompt
+正文或工具输出。相同阶段/方法/线程/错误码/错误摘要在 60 秒内合并计数，记录器最多保留 128 个
+内存计数项；下一次记录、淘汰或关闭时输出重复次数。诊断不决定 RPC 结果或 writer
+状态，日志写入失败不阻断请求。磁盘保留与清理见
+[诊断日志管理](./focusctl-command-matrix.zh-CN.md#431-logs)。
 
 `initialized` 是唯一允许的 connection-local client notification。未知 notification
 必须 suppress；畸形 frame、scalar 与 JSON-RPC batch 也不能绕过逐 method 分类。

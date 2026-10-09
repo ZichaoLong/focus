@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from bot.env_file import ensure_env_template
+from bot.diagnostic_logs import RETENTION_DAYS
 from bot.instance_layout import resolve_instance_paths, validate_instance_name
 from bot.platform_paths import default_config_root, default_log_file, is_windows
 from bot.service_manager import ServiceManagerError
@@ -20,6 +21,7 @@ from bot.managed_skills.workspace_lifecycle import (
 )
 
 from .errors import InstallLifecycleError
+from .log_commands import handle_logs
 from .install_surface import (
     _handle_bootstrap_install,
     _handle_migrate_from_feishu_codex,
@@ -244,6 +246,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--lines", type=int, default=40, help="启动时先输出的历史日志行数。"
     )
 
+    logs_parser = subparsers.add_parser("logs", help="查看诊断日志占用或清理旧日志。")
+    logs_actions = logs_parser.add_subparsers(dest="logs_action", required=True)
+    logs_actions.add_parser("status", help="只读查看各类诊断日志的位置、大小及保留策略。")
+    prune_parser = logs_actions.add_parser("prune", help="按保留策略清理旧诊断日志。")
+    prune_parser.add_argument("--dry-run", action="store_true", help="只列出候选文件，不修改文件。")
+    prune_parser.add_argument("--keep-days", type=int, default=RETENTION_DAYS,
+                              help="保留天数；0 清理备份及 fcodex 诊断，保留服务当前日志。")
+
     config_parser = subparsers.add_parser(
         "config",
         help="查看或打开当前实例相关配置文件。",
@@ -432,6 +442,16 @@ def main(argv: list[str] | None = None) -> None:
                     lines=args.lines,
                 )
             )
+        if args.command == "logs":
+            instance_name = (
+                _single_requested_instance(requested_instances, command_label="logs")
+                if requested_instances else ""
+            )
+            raise SystemExit(handle_logs(
+                instance_name, args.logs_action,
+                dry_run=getattr(args, "dry_run", False),
+                keep_days=getattr(args, "keep_days", RETENTION_DAYS),
+            ))
         if args.command == "config":
             raise SystemExit(
                 _handle_config(

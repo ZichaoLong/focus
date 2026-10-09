@@ -18,6 +18,7 @@ from bot.codex_command_resolver import resolve_managed_codex_command
 from bot.codex_config import CodexConfig
 from bot.config import load_config_file
 from bot.env_file import load_env_file
+from bot.fcodex.diagnostics import FcodexDiagnostics
 from bot.instance_layout import DEFAULT_INSTANCE_NAME, global_data_dir, validate_instance_name
 from bot.instance_resolution import (
     CliRuntimeTarget,
@@ -806,6 +807,7 @@ def main() -> None:
         allow_default_running_fallback=not bool(thread_target),
     )
     data_dir = resolved_target.data_dir
+    diagnostics = FcodexDiagnostics(data_dir, instance_name=resolved_target.instance_name)
     app_server_url = resolved_target.app_server_url
     if thread_target:
         try:
@@ -814,6 +816,7 @@ def main() -> None:
                 target_instance=resolved_target.instance_name,
             )
         except ValueError as exc:
+            diagnostics.record("resume_admission", thread_id=thread_target, message=exc)
             print(str(exc), file=sys.stderr)
             raise SystemExit(2)
 
@@ -844,6 +847,7 @@ def main() -> None:
             **proxy_kwargs,
         )
     except Exception as exc:
+        diagnostics.record("proxy_start", thread_id=thread_target, message=exc)
         print(f"启动 {_program_name()} 本地 cwd proxy 失败：{exc}", file=sys.stderr)
         raise SystemExit(2)
     argv.extend(["--remote", proxy_url, "--remote-auth-token-env", FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR])
@@ -854,7 +858,14 @@ def main() -> None:
     if proxy_auth_token:
         env[FOCUS_REMOTE_AUTH_TOKEN_ENV_VAR] = proxy_auth_token
         _prepend_no_proxy_hosts(env)
-    exit_code = _run_upstream_codex(argv, env, proxy_process=proxy_process)
+    try:
+        exit_code = _run_upstream_codex(argv, env, proxy_process=proxy_process)
+    except Exception as exc:
+        diagnostics.record("tui_launch", thread_id=thread_target, message=exc)
+        raise
+    if exit_code:
+        diagnostics.record("tui_exit", thread_id=thread_target, code=exit_code)
+    diagnostics.close()
     if exit_code is not None:
         raise SystemExit(exit_code)
     return

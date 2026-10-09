@@ -24,12 +24,13 @@ main-turn ownership.
 ## Client Requests Without a Root Target
 
 A request without a non-empty `params.threadId` cannot be tied to a thread
-writer and is denied by default. The proxy permits only these reviewed
-initialization/discovery reads:
+writer and is denied by default. The proxy permits these reviewed
+initialization/discovery reads and native user-configuration persistence:
 
 - `initialize`
 - `account/read`
 - `config/read`
+- `config/batchWrite`
 - `configRequirements/read`
 - `model/list`
 - `hooks/list`
@@ -41,6 +42,30 @@ initialization/discovery reads:
 - `app/installed`
 - `experimentalFeature/list`
 - `mcpServerStatus/list`
+
+`config/batchWrite` is a specific exception for native TUI directory trust,
+default model persistence, and configuration reloads. It needs no `threadId`
+and acquires no main-turn writer, but still crosses service admission for the
+current backend generation. Focus forwards edits, config path, version
+precondition, and `reloadUserConfig` unchanged. The app-server owns validation,
+persistence and reload scope; Focus returns the actual result/error without
+swallowing errors, inventing success, or automatically retrying. The target is
+the backend's user configuration, not private thread configuration. Other
+instances sharing that file may use the new values on subsequent reads. This
+does not allow other unreviewed targetless RPCs. Pinned upstream evidence:
+[configuration writes and validation](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/config_manager_service.rs#L204),
+[reload semantics](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/config_processor.rs#L161).
+
+The wrapper/proxy records best-effort summaries of local rejections, upstream
+RPC errors, connection failures, and requests still pending at disconnect:
+time, instance, Focus version, known backend user-agent, method, thread/request
+identifiers, error code, and a bounded error message with common credential
+fields redacted. RPC params, error data, prompt bodies and tool output are not
+recorded. The same stage/method/thread/error code/message is counted together for 60 seconds;
+the recorder holds at most 128 counter entries and flushes repeated counts on
+the next record, eviction, or close. Diagnostics decide neither RPC outcomes
+nor writer state; sink failures cannot block requests. See
+[diagnostic log management](./focusctl-command-matrix.md#431-logs) for retention.
 
 `initialized` is the only allowed connection-local client notification.
 Unknown notifications are suppressed. Malformed frames, scalars, and JSON-RPC

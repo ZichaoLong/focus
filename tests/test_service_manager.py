@@ -99,11 +99,20 @@ class ServiceManagerTests(unittest.TestCase):
                     "/tmp/venv/bin/python",
                     "-I",
                     "-m",
+                    "bot.service_log_capture",
+                    "--data-dir",
+                    str(definition.paths.data_dir),
+                    "--",
+                    "/tmp/venv/bin/python",
+                    "-I",
+                    "-m",
                     "bot.__main__",
                     "--instance",
                     "corp-a",
                 ],
             )
+            self.assertEqual(payload["StandardOutPath"], "/dev/null")
+            self.assertEqual(payload["StandardErrorPath"], "/dev/null")
 
     def test_windows_manager_writes_launcher_and_registers_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
