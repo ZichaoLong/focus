@@ -51,6 +51,7 @@ const emit = defineEmits<{
   createInWorkspace: [workspaceId: string];
   addWorkspace: [];
   rename: [id: string, title: string];
+  fork: [id: string];
   export: [request: SummaryExportRequest];
   archive: [id: string];
   /** The parent shell owns confirmation and the async delete mutation. */
@@ -154,7 +155,7 @@ function runtimeLabel(session: Session): string {
 }
 
 // ---------------------------------------------------------------------------
-// Per-row kebab menu (rename / export / archive) — opened from the ⋯ button.
+// Per-row kebab menu — opened from the ⋯ button.
 // Archive is confirmed via modal (consistent with remove-workspace).
 // ---------------------------------------------------------------------------
 const menuFor = ref<string | null>(null);
@@ -180,16 +181,23 @@ function onExport(id: string, format: SummaryExportRequest['format']): void {
   emit('export', { threadId: id, format });
 }
 
-function canSessionAction(session: Session, action: 'rename' | 'export' | 'archive'): boolean {
+function onFork(id: string): void {
+  menuFor.value = null;
+  emit('fork', id);
+  close();
+}
+
+function canSessionAction(session: Session, action: 'rename' | 'fork' | 'export' | 'archive'): boolean {
   const capability = session.actionCapabilities?.[action];
   if (capability !== undefined) return capability;
   // Generic Kimi-derived callers retain only their historical rename/archive
-  // controls. Export is a Focus capability and requires an explicit grant.
-  return action !== 'export';
+  // controls. Fork and export require an explicit capability grant.
+  return action === 'rename' || action === 'archive';
 }
 
 function hasSessionActions(session: Session): boolean {
   return canSessionAction(session, 'rename')
+    || canSessionAction(session, 'fork')
     || canSessionAction(session, 'export')
     || canSessionAction(session, 'archive');
 }
@@ -320,6 +328,10 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             <!-- Kebab menu -->
             <Menu v-if="allowSessionActions && menuFor === s.id && hasSessionActions(s)" class="kmenu" @click.stop>
               <MenuItem v-if="canSessionAction(s, 'rename')" size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
+              <MenuItem v-if="canSessionAction(s, 'fork')" size="lg" @click="onFork(s.id)">
+                <Icon name="git-fork" size="sm" />
+                {{ t('sidebar.fork') }}
+              </MenuItem>
               <MenuItem v-if="canSessionAction(s, 'export')" size="lg" @click="onExport(s.id, 'markdown')">
                 <Icon name="download" size="sm" />
                 {{ t('sidebar.export') }}

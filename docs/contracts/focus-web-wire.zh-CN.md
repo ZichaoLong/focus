@@ -130,6 +130,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 
 - v28 新增已认证的单文件信息与下载 endpoint 和 `FocusFileInfo`。不启用目录树；浏览器按需预览复用此接口，不增加 wire 版本，详见[单文件下载合同](focus-web-file-download.zh-CN.md)。服务与浏览器资源须同版本部署。
 
+- v29 新增持久分支 `POST /api/threads/{thread_id}/fork` 与 `FocusForkResult`，启用持久线程 fork 能力；
+  浏览器过滤并拒绝打开 ephemeral 线程。服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

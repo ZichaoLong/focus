@@ -213,7 +213,10 @@ class ThreadDataExportTests(unittest.TestCase):
             service.execute(service.prepare("client-1", "thread-1"))
         self.assertEqual(raised.exception.code, "thread_data_export_timeout")
 
-        for snapshot in (_snapshot(ephemeral=True), _snapshot(history_mode="legacy")):
+        for snapshot, code in (
+            (_snapshot(ephemeral=True), "ephemeral_thread_unavailable"),
+            (_snapshot(history_mode="legacy"), "thread_data_export_unavailable"),
+        ):
             with self.subTest(snapshot=snapshot):
                 service, _calls, _checks = self._service(
                     {},
@@ -221,9 +224,7 @@ class ThreadDataExportTests(unittest.TestCase):
                 )
                 with self.assertRaises(WebRuntimeError) as raised:
                     service.execute(service.prepare("client-1", "thread-1"))
-                self.assertEqual(
-                    raised.exception.code, "thread_data_export_unavailable"
-                )
+                self.assertEqual(raised.exception.code, code)
 
         service, calls, _checks = self._service(
             {},

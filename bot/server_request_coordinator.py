@@ -187,6 +187,55 @@ class ServerRequestCoordinator:
         self._remove_local_projections(identities)
         return None
 
+    def claim_proxy_response(
+        self, request_id: int | str, method: str, params: dict[str, Any],
+    ) -> tuple[ServerRequestIdentity | None, str]:
+        """Claim a proxy-observed callback without inventing adapter send authority.
+
+        The authenticated, attached proxy proves delivery on its own socket.
+        Register in the same epoch so a later service copy shares the response
+        phase and cannot create a second response opportunity.
+        """
+        self._runtime_context_guard()
+        generation = self._registry.connection_generation
+        if generation <= 0:
+            return None, "epoch_mismatch"
+        observed = ServerRequestIdentity(
+            request_id=request_id, connection_generation=generation,
+            method=method, params=params,
+        )
+        registration = self._registry.register(observed)
+        if registration.outcome not in {"new", "replay"}:
+            return None, registration.outcome
+        identity = registration.identity
+        assert identity is not None
+        return identity, self._registry.begin_response(identity).outcome
+
+    def finish_proxy_response(self, identity: ServerRequestIdentity, outcome: str) -> bool:
+        """Record a delegated socket write; resolution may already have won."""
+        self._runtime_context_guard()
+        if outcome not in {"submitted", "unknown"}:
+            raise ValueError("invalid proxy response outcome")
+        return self._registry.finish_response(identity, outcome=outcome)
+
+    def resolve_proxy_request(
+        self, request_id: int | str, method: str, params: dict[str, Any],
+    ) -> None:
+        """Remember a proxy-only resolution before a delayed service copy arrives."""
+        self._runtime_context_guard()
+        generation = self._registry.connection_generation
+        if generation <= 0:
+            return
+        observed = ServerRequestIdentity(
+            request_id=request_id, connection_generation=generation,
+            method=method, params=params,
+        )
+        registration = self._registry.register(observed)
+        if registration.outcome in {"new", "replay", "resolved"}:
+            self.handle_server_request_resolved({
+                "requestId": request_id, "threadId": observed.thread_id,
+            })
+
     def handle_server_request_resolved(
         self,
         params: dict[str, object],

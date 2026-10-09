@@ -139,3 +139,19 @@ operational warning 可以报告已知 thread id 与本地失败 stage；它只�
 - fcodex capability 一次性消费与 backend generation 失效；
 - fcodex 本地 ACK retry 不能 replay create 或 callback；
 - Web 与飞书在 thread id 已知时把它暴露给用户。
+
+
+## 持久分支创建
+
+浏览器 `POST /api/threads/{thread_id}/fork` 通过现有创建事务执行一次 `thread/fork`，显式
+`ephemeral=false`、`excludeTurns=true`；继承上游来源的 history mode，不强制转换为 paginated。
+来源必须是持久 direct root。分支独立登记，不迁移飞书绑定，不提交 prompt，也不复制 goal 后启动自动续跑。
+创建时不覆盖模型、权限或工作目录；浏览器下一轮继续使用现有 Web next-turn settings。
+
+成功返回新 thread id 与来源 id，前端刷新列表并通过正常打开路径选中新分支；若用户期间已导航，则不抢回页面。
+创建本身不改变浏览器 selection 或父线程 writer。新线程的 runtime lease、effective settings 与本地投影
+共用 `ThreadCreateTransaction`；临时订阅经现有 interest/cleanup 回收，不保留独立 fork owner。
+结果不明不自动重试、不封锁父线程；本地提交失败保留已知的新 id，提示从列表打开。
+
+所有浏览器独立列表（含 loaded 补充及归档）过滤 `ephemeral`；直接打开、fork 等 direct-target 操作也拒绝临时
+线程。此限制仅属于 Web，不能移入 fcodex 共用的 direct-root policy。

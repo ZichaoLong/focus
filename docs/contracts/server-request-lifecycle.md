@@ -141,8 +141,13 @@ Shared response authority comes from the exact canonical identity in the
 current `ServerRequestRegistry` connection generation plus each surface's
 direct-root, non-empty-turn, live-endpoint, and materialized-subscription
 checks. It does not come from the main-turn writer lease. A proxy-first
-projection may be displayed early, but it cannot submit an adapter response
-until the canonical identity binds. A non-approval desktop offer must prove at
+projection may be displayed early. A proxy-only request can register and claim
+in the same registry epoch, then send once through that exact proxy connection,
+without inventing adapter receiving authority. A later service copy shares the
+identity and response phase; proxy resolution can settle it. A resolution arriving
+before any answer still records the resolved identity so a delayed copy cannot
+recreate the interaction. See the native fork and side section of the fcodex contract.
+A non-approval desktop offer must prove at
 least one live recipient before that surface claims it; otherwise it declines
 so the dispatcher can preserve the Feishu fallback. A shared Web user-input
 auto-resolution is one system-owned transaction tied to the canonical request,

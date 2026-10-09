@@ -110,8 +110,11 @@ approval 与 permission `strictAutoReview`。Focus 不制造 upstream 协议没�
 
 shared response authority 来自 `ServerRequestRegistry` 当前 connection generation 中的 exact canonical
 identity，以及 surface 自己核对的 direct root、非空 turn、live endpoint 与 materialized subscription；
-它不来自 main-turn writer lease。proxy-first projection 可以先展示，但只有 canonical identity 绑定后才能
-向 adapter 提交 response。非审批 desktop surface 只有证明至少一个 live recipient 后才 claim；否则必须
+它不来自 main-turn writer lease。proxy-first projection 可以先展示；仅原 proxy 收到的请求可在同一 registry
+epoch 原子登记并 claim，再经该 exact proxy connection 一次发送，不为 adapter 伪造接收权限。后到服务副本
+复用相同 identity 与 response phase；原连接 resolution 可结算该请求，即使回答之前先收到 resolution，也须
+登记已完成 identity，阻止后到副本重建交互。详见 fcodex 合同的原生 fork 与 side。
+非审批 desktop surface 只有证明至少一个 live recipient 后才 claim；否则必须
 decline，让 dispatcher 保留飞书 fallback。shared Web user-input auto-resolution 是绑定 canonical request、
 backend epoch 与 exact timer generation 的一次 system-owned transaction；它不需要 document writer，也不会仅因
 某个 browser 断线而取消。

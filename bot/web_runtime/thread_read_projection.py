@@ -177,7 +177,7 @@ def project_thread_action_capabilities(
         "unarchive": mutable and inactive and archived,
         "delete": mutable and inactive and archived,
         "compact": mutable and inactive and not archived,
-        "fork": False,
+        "fork": bool(document_connected and direct_target and not summary.ephemeral and not archived),
         "export": exportable,
         "review": mutable and inactive and not archived,
         "goal": mutable
@@ -219,7 +219,7 @@ def project_thread_list(
     }
     projected: list[dict[str, Any]] = []
     for summary in summaries:
-        if summary.subagent_kind == "threadSpawn":
+        if summary.subagent_kind == "threadSpawn" or summary.ephemeral:
             continue
         runtime_lease = (
             None

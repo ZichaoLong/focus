@@ -1,8 +1,9 @@
-"""Web thread-create and first-turn transaction owner.
+"""Web thread creation and persistent fork transaction owner.
 
 This coordinator owns the complete product transaction from one browser draft
 through ``thread/start``, local projection, first-turn preparation,
-``turn/start``, and typed known/unknown results. State remains in its existing
+``turn/start``, and typed known/unknown results. Persistent forks share creation
+and local projection without a first turn. State remains in its existing
 owners; this module only fixes their ordering.
 """
 
@@ -25,6 +26,7 @@ from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.projection import FocusWebProjection
 from bot.web_runtime.contract import WebRuntimeError, new_web_client_user_message_id
 from bot.web_runtime.interest import WebRuntimeInterestRegistry
+from bot.web_runtime.direct_thread_target_coordinator import require_web_direct_thread_snapshot
 from bot.web_runtime.lifecycle_coordinator import WebRuntimeLifecycleCoordinator
 from bot.web_runtime.writer_workspace_coordinator import (
     WebWriterWorkspaceCoordinator,
@@ -46,9 +48,10 @@ class WebThreadCreatePorts:
         CommittedThreadCreate[ThreadSnapshot, str],
     ]
     start_turn: Callable[..., dict[str, Any]]
+    read_thread: Callable[[str, bool], ThreadSnapshot]
 
 class WebThreadCreateCoordinator:
-    """Run one exact Web create and first-turn transaction on RuntimeLoop."""
+    """Run Web creation and fork transactions on RuntimeLoop."""
 
     def __init__(
         self,
@@ -84,6 +87,42 @@ class WebThreadCreateCoordinator:
         self._projection = projection
         self._ports = ports
         self._runtime_context_guard = runtime_context_guard
+
+    def fork_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
+        """Create an independent persistent branch; selection is a normal Web open."""
+        self._runtime_context_guard()
+        require_connected_web_document(self._documents, client_id)
+        source_id = require_web_thread_id(thread_id)
+        source = self._ports.read_thread(source_id, False)
+        require_web_direct_thread_snapshot(source, thread_id=source_id, operation="fork")
+
+        def commit_fork(snapshot: ThreadSnapshot) -> str:
+            new_id = require_web_thread_id(snapshot.summary.thread_id)
+            self._remember_direct_thread_summary(snapshot.summary)
+            self._workspace.remember_thread_cwd(new_id, snapshot.summary.cwd)
+            self._runtime_interest.mark_confirmed(new_id)
+            self._lifecycle.settle_runtime_cleanup_candidates((new_id,))
+            self._projection.publish("thread_invalidated", thread_id=new_id, reason="web_thread_forked")
+            return new_id
+
+        try:
+            created = self._ports.create_and_commit_thread(
+                fork_from_thread_id=source_id,
+                local_commit=commit_fork,
+            )
+        except ThreadCreateOutcomeUnknown as exc:
+            raise WebRuntimeError(
+                "Fork result is unknown. Refresh the session list before creating another branch.",
+                code="thread_fork_unknown", status=409,
+                details={"attempt_id": exc.attempt_id, "source_thread_id": source_id},
+            ) from exc
+        except ThreadCreateLocalCommitFailed as exc:
+            raise WebRuntimeError(
+                "The branch was created, but local setup failed. Open it from the session list.",
+                code="thread_create_local_commit_failed", status=503,
+                details={"thread_id": exc.thread_id, "source_thread_id": source_id},
+            ) from exc
+        return {"accepted": True, "thread_id": created.local_result, "source_thread_id": source_id}
 
     def start_thread(
         self,

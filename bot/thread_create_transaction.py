@@ -29,6 +29,7 @@ _CreateResponseT = TypeVar("_CreateResponseT")
 
 class ThreadCreateAdapter(Protocol):
     def create_thread(self, **kwargs: Any) -> ThreadSnapshot: ...
+    def fork_thread(self, thread_id: str) -> ThreadSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +131,7 @@ class ThreadCreateTransaction:
         self,
         *,
         local_commit: Callable[[ThreadSnapshot], _LocalCommitT],
+        fork_from_thread_id: str = "",
         **kwargs: Any,
     ) -> CommittedThreadCreate[ThreadSnapshot, _LocalCommitT]:
         """Create once, then apply the response to the requesting surface."""
@@ -138,7 +140,10 @@ class ThreadCreateTransaction:
             raise TypeError("local_commit 必须可调用。")
         attempt_id = self._next_attempt_id()
         try:
-            snapshot = self._adapter.create_thread(**kwargs)
+            snapshot = (
+                self._adapter.fork_thread(fork_from_thread_id)
+                if fork_from_thread_id else self._adapter.create_thread(**kwargs)
+            )
         except Exception as exc:
             if self._failure_is_known_no_effect(exc):
                 raise

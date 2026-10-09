@@ -196,8 +196,9 @@ shared-interaction 资格不读取 `InteractionLeaseStore`：该 store 决定谁
 initiating `fcodex` 尚无 connection source 时，matching active-turn lease 可以为其提供一次 exact steer
 或 interrupt attach proof。lease 不是共享 effect authority，也不能否定 app-server 当前 epoch 中仍
 pending 的 canonical callback。active goal 的正常自动续跑即使没有 Focus
-writer，已 attach endpoint 仍可回答 callback；proxy-first projection 可以先展示，但用户 action 在
-canonical identity 绑定前只会得到 `not_sent` 并重新展示，不保留为待自动提交的 intent。
+writer，已 attach endpoint 仍可回答 callback。proxy-first projection 可以先展示；如果服务连接尚未收到副本，
+用户 action 在当前 registry epoch 中登记同一请求并原子取得一次回答权限，再由原 proxy socket 发送。
+后到的服务副本复用同一 identity 与 response phase，不能重新授予回答。
 非审批 canonical offer 只有在 exact root 至少存在一个具有 current connection source 的 live endpoint 时，
 fcodex 才 claim，避免不可见的 fcodex projection 吃掉飞书 fallback。
 
@@ -214,7 +215,7 @@ request。
 
 当前 request identity 只属于
 `server-request-lifecycle.zh-CN.md` 定义的进程内 `ServerRequestRegistry`；matching turn/lifecycle completion
-只清除这份 local projection，不能继续占用 main-turn lease。proxy-first local record/capability 只解决
+只清除这份 local projection，不能继续占用 main-turn lease。proxy-first local record/capability 记录原连接实际收到的请求，不提供 writer 或持久生命周期权限；它解决
 真实 proxy/service 到达竞争，不是 lifecycle 或 writer authority；只有 automatic fail-close 可在已证明
 pre-send failure 后保留 exact intent，等待 explicit upstream replay。
 
@@ -326,3 +327,29 @@ main-turn lifecycle 以及 running-resume/server-request 行为固定对标公�
 
 若旧文档仍声称 fcodex participant/socket state 会授予或延长 main-turn writer，以本文与共同
 main-turn 合同为准。
+
+
+## 原生 fork 与 side
+
+`thread/fork` 与 `thread/start` 共用外部创建事务及新 root 的 Registry 登记。fork 来源必须是权威 direct root，
+且原始 `threadId` 必须匹配；非空 `path` 会忽略上游 threadId，故拒绝这个替代来源。成功 response 必须返回
+不同于来源的新 direct root；其运行来源属于发起 fork 的 exact connection，不创建或转移 main-turn writer。
+创建结果不明不自动重试，断线/reset 沿用现有创建事务边界。
+
+fcodex 原样转发原生 TUI 的配置、权限、指令与 ephemeral 标志。`/fork` 的持久化选择与 `/side`、`/btw` 的
+临时分支、边界说明、实际问题、切换、interrupt 和 unsubscribe 都由上游 TUI 管理。Focus 不复制或解析 side
+提示词，不持有侧聊历史，也不增加 workspace 隔离；主次线程仍可访问同一工作目录。
+
+上游 fork 只自动订阅发起连接。因此持久 fork 与临时 side 都可能只有 fcodex 收到交互请求。此时服务为已投递的
+exact request/token 原子登记并 claim `ServerRequestRegistry`，返回 `proxy_send`；只有该原连接可以发送一次。
+这不为中央 adapter 伪造接收权限。发送完成记为 submitted，断线或发送结果不明记为 unknown，不自动重放。
+matching `serverRequest/resolved` 可从原 proxy 结算；后到副本、其他 endpoint、已撤权请求共享同一裁决。
+已由服务连接收到的请求继续沿用现有集中提交路径。已有 grant 是提交边界，后续撤权不能撤回已经授权的在途写入。
+
+浏览器只展示、打开及创建持久分支；临时线程按权威 `ephemeral` 属性过滤，飞书绑定不迁移。
+浏览器 fork 的创建合同见 [thread-create-local-commit](./thread-create-local-commit.zh-CN.md)。
+
+上游固定证据：
+[原生 side](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/tui/src/app/side.rs)、
+[fork 订阅](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/thread_processor.rs#L5504)、
+[原连接回答与 first-response 消费](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/outgoing_message.rs#L567)。

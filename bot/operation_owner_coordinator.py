@@ -40,6 +40,9 @@ class OperationOwnerCoordinator:
         server_request_response_authority_is_revoked: Callable[[str], bool],
         runtime_context_guard: RuntimeContextGuard,
         respond: Callable[..., None],
+        claim_proxy_response: Callable[..., tuple[ServerRequestIdentity | None, str]],
+        finish_proxy_response: Callable[[ServerRequestIdentity, str], bool],
+        resolve_proxy_request: Callable[[int | str, str, dict[str, Any]], None],
         schedule_proxy_delivery_expiry: Callable[[str, int, float], None],
         owner_changed: Callable[[str, str], None],
         proxy_delivery_timeout_seconds: float = 5.0,
@@ -70,6 +73,9 @@ class OperationOwnerCoordinator:
                     server_request_response_authority_is_revoked
                 ),
                 respond=respond,
+                claim_proxy_response=claim_proxy_response,
+                finish_proxy_response=finish_proxy_response,
+                resolve_proxy_request=resolve_proxy_request,
                 schedule_proxy_delivery_expiry=schedule_proxy_delivery_expiry,
             ),
             runtime_context_guard=runtime_context_guard,
@@ -262,6 +268,8 @@ class OperationOwnerCoordinator:
 
     def notification(self, method: str, params: dict[str, Any]) -> None:
         self._runtime_context_guard()
+        if method == "serverRequest/resolved":
+            self._interaction_inbox.observe_proxy_resolution(params)
         self._operation_service.notification(method, params)
 
     def retry_authoritative_cleanups(self) -> None:

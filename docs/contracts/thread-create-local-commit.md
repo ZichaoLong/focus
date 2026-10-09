@@ -184,3 +184,24 @@ Tests must lock down:
 - one-shot fcodex capability consumption and backend-generation invalidation;
 - a local fcodex acknowledgement retry cannot replay create or its callback;
 - Web and Feishu surface errors expose a known thread id when available.
+
+
+## Persistent fork creation
+
+Web `POST /api/threads/{thread_id}/fork` performs one `thread/fork` through the existing creation
+transaction with `ephemeral=false` and `excludeTurns=true`. It inherits the source history mode
+rather than forcing paginated storage. The source must be a persistent direct root. The new root
+is registered independently, without moving Feishu bindings, sending a prompt, or copying a goal
+and starting continuation. Creation does not override model, permissions, or cwd; the next Web turn
+uses existing Web next-turn settings.
+
+Success returns the new and source thread IDs. The browser refreshes the list and opens the branch
+through normal navigation, unless the user has navigated elsewhere meanwhile. Creation itself does
+not change selection or the parent writer. Runtime lease, effective settings, and local projection
+use `ThreadCreateTransaction`; existing interest/cleanup releases the temporary subscription.
+Unknown outcomes are not automatically retried and do not fence the parent. Local commit failures
+retain the known created ID and direct the user to open it from the list.
+
+All standalone Web lists, including loaded supplements and archives, filter `ephemeral`. Direct
+open/fork and other direct-target operations also reject temporary threads. This is a Web-only
+boundary, not a restriction on the shared direct-root policy used by fcodex.

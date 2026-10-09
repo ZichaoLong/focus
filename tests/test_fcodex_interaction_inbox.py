@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import Mock
 
 from bot.codex_protocol.client import CodexRpcPreSendError
 from bot.fcodex.interaction_inbox import (
@@ -92,6 +93,9 @@ class _Authority:
 class FcodexInteractionInboxTests(unittest.TestCase):
     def setUp(self) -> None:
         self.authority = _Authority()
+        self.proxy_registry = ServerRequestRegistry(resolved_limit=32)
+        self.proxy_registry.activate_connection_epoch(1)
+        self.proxy_coordinator = ServerRequestCoordinator(self.proxy_registry, Mock(), lambda: None)
         self.resolved: set[str] = set()
         self.responses: list[tuple[object, dict[str, object]]] = []
         self.respond_error: Exception | None = None
@@ -102,6 +106,9 @@ class FcodexInteractionInboxTests(unittest.TestCase):
                 server_request_is_resolved=lambda key: key in self.resolved,
                 server_request_response_authority_is_revoked=lambda _key: False,
                 respond=self._respond,
+                claim_proxy_response=self.proxy_coordinator.claim_proxy_response,
+                finish_proxy_response=self.proxy_coordinator.finish_proxy_response,
+                resolve_proxy_request=self.proxy_coordinator.resolve_proxy_request,
                 schedule_proxy_delivery_expiry=lambda key, generation, delay: (
                     self.expiries.append((key, generation, delay))
                 ),
@@ -282,6 +289,9 @@ class FcodexInteractionInboxTests(unittest.TestCase):
                     registry.request_response_authority_is_revoked
                 ),
                 respond=coordinator.submit_surface_response,
+                claim_proxy_response=coordinator.claim_proxy_response,
+                finish_proxy_response=coordinator.finish_proxy_response,
+                resolve_proxy_request=coordinator.resolve_proxy_request,
                 schedule_proxy_delivery_expiry=lambda *_args: None,
             ),
             runtime_context_guard=lambda: None,
@@ -589,6 +599,9 @@ class FcodexInteractionInboxTests(unittest.TestCase):
                 server_request_is_resolved=lambda key: key in self.resolved,
                 server_request_response_authority_is_revoked=lambda _key: False,
                 respond=self._respond,
+                claim_proxy_response=self.proxy_coordinator.claim_proxy_response,
+                finish_proxy_response=self.proxy_coordinator.finish_proxy_response,
+                resolve_proxy_request=self.proxy_coordinator.resolve_proxy_request,
                 schedule_proxy_delivery_expiry=lambda key, generation, delay: (
                     self.expiries.append((key, generation, delay))
                 ),
@@ -700,25 +713,21 @@ class FcodexInteractionInboxTests(unittest.TestCase):
         self.assertEqual(invalid["action"], "fail_closed")
         self.assertEqual(len(self.responses), 1)
 
-    def test_proxy_first_response_is_represented_until_canonical_generation_arrives(
-        self,
-    ) -> None:
+    def test_proxy_only_response_claims_original_connection_once(self) -> None:
         identity = self._identity("proxy-first")
         proxy = self._proxy(identity)
-
         receipt = self._submit(identity, proxy["response_token"])
-
-        self.assertFalse(receipt["allowed"])
-        self.assertEqual(receipt["response_disposition"], "not_sent")
+        self.assertTrue(receipt["allowed"])
+        self.assertEqual(receipt["response_disposition"], "proxy_send")
         self.assertEqual(self.responses, [])
-
-        service = self.inbox.service_request(identity)
-        retried = self._submit(identity, proxy["response_token"])
-
-        self.assertTrue(service["handled"])
-        self.assertEqual(retried["response_disposition"], "submitted")
-        self.assertEqual(len(self.responses), 1)
-        self.assertIs(self.responses[0][0], identity)
+        claimed = self.proxy_registry.active_identity(identity.request_key)
+        self.assertEqual(self.proxy_registry.response_phase(claimed), "processing")
+        self.assertEqual(self._submit(identity, proxy["response_token"])["response_disposition"], "superseded")
+        self.inbox.response_sent(
+            participant_id=PARTICIPANT, connection_id=CONNECTION,
+            request_id=identity.request_id, response_token=proxy["response_token"],
+        )
+        self.assertEqual(self.proxy_registry.response_phase(claimed), "submitted")
 
     def test_response_token_is_single_use(self) -> None:
         identity = self._identity("one-shot")

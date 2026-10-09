@@ -851,6 +851,7 @@ onUnmounted(() => {
           @select="client.selectThread($event)"
           @rename="(id, title) => client.renameThread(id, title)"
           @archive="threadActions?.confirmArchiveThread($event)"
+          @fork="client.forkThread($event)"
           @export="threadActions?.exportThreadSummary($event)"
           @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
           @create-in-workspace="openWorkspaceDraft($event)"
@@ -1068,6 +1069,7 @@ onUnmounted(() => {
           @copy-message-to-composer="handleCopyMessageToComposer"
           @rename-session="(id, title) => client.renameThread(id, title)"
           @archive-session="threadActions?.confirmArchiveThread($event)"
+          @fork-session="client.forkThread($event)"
           @export-session="threadActions?.exportThreadSummary($event)"
           @export-thread-data="threadActions?.exportThreadData($event)"
           @review-session="showReviewDialog = true"
@@ -1247,6 +1249,7 @@ onUnmounted(() => {
         @rename="(id, title) => client.renameThread(id, title)"
         @export="threadActions?.exportThreadSummary($event)"
         @archive="threadActions?.confirmArchiveThread($event)"
+        @fork="client.forkThread($event)"
       >
         <template #controls>
           <SegmentedControl

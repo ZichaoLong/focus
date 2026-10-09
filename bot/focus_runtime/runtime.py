@@ -562,6 +562,9 @@ class FocusRuntime:
             respond=lambda identity, **kwargs: self._server_request_coordinator.submit_surface_response(
                 identity, **kwargs
             ),
+            claim_proxy_response=lambda *args: self._server_request_coordinator.claim_proxy_response(*args),
+            finish_proxy_response=lambda *args: self._server_request_coordinator.finish_proxy_response(*args),
+            resolve_proxy_request=lambda *args: self._server_request_coordinator.resolve_proxy_request(*args),
             schedule_proxy_delivery_expiry=self._schedule_fcodex_proxy_delivery_expiry,
             owner_changed=lambda thread_id, reason: self._web_projection.publish(
                 "owner_changed",

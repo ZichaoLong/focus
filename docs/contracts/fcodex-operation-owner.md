@@ -258,8 +258,10 @@ shared effect authority and cannot disqualify a canonical callback still
 pending in the current app-server epoch. An attached endpoint
 may therefore answer a callback from ordinary active-goal continuation even
 when that autonomous turn has no Focus writer. A proxy-first projection may be
-shown early, but a user action before canonical identity binding receives
-`not_sent` and is shown again rather than being retained for automatic submit.
+shown early. When the service connection has no copy, the user action registers
+and atomically claims the same request in the current registry epoch, then the
+original proxy socket sends the response. A later service copy reuses that
+identity and response phase rather than granting another response.
 For a non-approval canonical offer, fcodex claims only while at least one live
 endpoint has a current connection source for the exact root; this prevents an
 invisible fcodex projection from consuming the Feishu fallback.
@@ -426,3 +428,36 @@ public upstream
 If an older document says that fcodex participant/socket state grants or
 extends a main-turn writer, this document and the shared main-turn contract
 govern.
+
+
+## Native fork and side
+
+`thread/fork` shares the external-create transaction and new-root Registry registration with
+`thread/start`. The source must be an authoritative direct root matching the raw `threadId`.
+A nonempty `path` is rejected because upstream ignores threadId when that alternative is supplied.
+A successful fork must return a different direct root. Its runtime source belongs to the exact
+initiating connection; it neither creates nor transfers a main-turn writer. Unknown create outcomes
+are not retried, and disconnect/reset follow the existing creation boundary.
+
+fcodex forwards native configuration, permissions, instructions, and ephemeral flags unchanged.
+The TUI owns persistent `/fork`, temporary `/side` and `/btw`, boundary instructions, actual questions,
+switching, interruption, and unsubscribe. Focus does not copy or parse side prompts, own side history,
+or add workspace isolation. Parent and branch can still access the same directory.
+
+Upstream subscribes only the forking connection, so both persistent and temporary forks may deliver
+interactive requests only to fcodex. The service registers and claims the exact delivered request/token
+in `ServerRequestRegistry`, then grants `proxy_send` to that original connection once. It does not
+manufacture receiving authority for the central adapter. A completed write records submitted;
+disconnect or ambiguous write records unknown, with no automatic replay. Matching proxy
+`serverRequest/resolved` can settle the request. Later service copies, other endpoints, and revoked
+requests share the same arbitration. Service-observed requests retain centralized submission.
+The grant is the submission boundary; later revocation cannot recall an already authorized in-flight write.
+
+Web lists, opens, and creates persistent branches only, filtering temporary threads by authoritative
+`ephemeral`. Feishu bindings do not move. Web creation is covered by
+[thread-create-local-commit](./thread-create-local-commit.md).
+
+Pinned upstream evidence:
+[native side](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/tui/src/app/side.rs),
+[fork subscription](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/thread_processor.rs#L5504),
+and [original-connection response consumption](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/outgoing_message.rs#L567).

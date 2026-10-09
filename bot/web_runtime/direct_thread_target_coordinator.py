@@ -30,6 +30,12 @@ def require_web_direct_thread_snapshot(
 
     normalized_thread_id = str(thread_id or "").strip()
     summary = snapshot.summary
+    if summary.ephemeral:
+        raise WebRuntimeError(
+            "Temporary conversations are available only in their original Codex terminal.",
+            code="ephemeral_thread_unavailable", status=409,
+            details={"thread_id": normalized_thread_id},
+        )
     returned_thread_id = str(summary.thread_id or "").strip()
     if returned_thread_id != normalized_thread_id:
         raise WebRuntimeError(

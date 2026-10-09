@@ -180,6 +180,9 @@ guards and may not retain parallel key or enum inventories.
 
 - v28 adds authenticated single-file metadata/download endpoints and `FocusFileInfo`, without directory browsing. On-demand browser previews reuse this transport without a wire version change; see the [single-file download contract](focus-web-file-download.md). Service and browser assets must be deployed together.
 
+- v29 adds persistent `POST /api/threads/{thread_id}/fork` and `FocusForkResult`, enabling persistent-thread fork.
+  Web filters and rejects ephemeral threads. Service and browser assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

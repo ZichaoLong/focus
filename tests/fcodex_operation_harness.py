@@ -29,6 +29,7 @@ from bot.process_utils import process_identity
 from bot.runtime_loop import RuntimeLoopContextError as RuntimeLoopContextError
 from bot.server_request_contract import ServerRequestIdentity
 from bot.server_request_registry import ServerRequestRegistry
+from bot.server_request_coordinator import ServerRequestCoordinator
 from bot.stores.interaction_lease_store import InteractionLeaseStore
 from bot.stores.interaction_lease_store import (
     make_fcodex_interaction_holder as make_fcodex_interaction_holder,
@@ -90,6 +91,7 @@ class FcodexOperationHarness(unittest.TestCase):
             release_runtime_lease=Mock(),
             resume_failure_known_no_effect=lambda _exc: False,
         )
+        self.proxy_responses = ServerRequestCoordinator(self.server_requests, Mock(), lambda: None)
         self.coordinator = OperationOwnerCoordinator(
             interaction_lease_store=self.interaction_leases,
             participant_runtime_registry=self.participant_runtime,
@@ -103,6 +105,9 @@ class FcodexOperationHarness(unittest.TestCase):
             ),
             runtime_context_guard=lambda: None,
             respond=self._respond,
+            claim_proxy_response=self.proxy_responses.claim_proxy_response,
+            finish_proxy_response=self.proxy_responses.finish_proxy_response,
+            resolve_proxy_request=self.proxy_responses.resolve_proxy_request,
             schedule_proxy_delivery_expiry=lambda request_key, generation, delay: self.proxy_delivery_expiries.append(
                 (request_key, generation, delay)
             ),

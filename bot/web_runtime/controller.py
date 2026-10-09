@@ -416,6 +416,7 @@ class WebRuntimeController:
             ports=WebThreadCreatePorts(
                 create_and_commit_thread=ports.create_and_commit_thread,
                 start_turn=ports.start_turn,
+                read_thread=ports.read_thread,
             ),
             runtime_context_guard=document_registry.assert_runtime_context,
         )
@@ -754,6 +755,9 @@ class WebRuntimeController:
             thread_id,
             **kwargs,
         )
+
+    def fork_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
+        return self._thread_create.fork_thread(client_id, thread_id)
 
     def rename_thread(
         self, client_id: str, thread_id: str, *, name: str

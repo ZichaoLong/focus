@@ -3,6 +3,9 @@
   "alignment_threshold_lines": 2000,
   "review_threshold_lines": 1500,
   "reviewed_sources": {
+    "bot/adapters/codex_app_server.py": {
+      "category": "focus_owned"
+    },
     "bot/focus_runtime/runtime.py": {
       "category": "focus_owned"
     },

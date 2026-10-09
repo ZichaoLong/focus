@@ -495,6 +495,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     pendingQuestionActions,
     reconcilePromptResultsForThread,
     renameThread,
+    forkThread: forkThreadMutation,
     compact,
     review,
     createGoal,
@@ -780,6 +781,14 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (!threadId || !scopeReady.value
       || snapshot.value?.thread.id !== threadId) return;
     void reconcilePromptResultsForThread(threadId);
+  }
+
+  async function forkThread(threadId: string): Promise<void> {
+    const floor = navigation.captureNavigationStateFloor();
+    const createdId = await forkThreadMutation(threadId);
+    if (createdId && navigation.navigationStateFloorIsCurrent(floor)) {
+      await selectThread(createdId);
+    }
   }
 
   async function selectThread(threadId: string): Promise<void> {
@@ -1073,6 +1082,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     applyUpdate,
     executeBackendReset,
     selectThread,
+    forkThread,
     setThreadScope,
     loadAllSessionsForSearch,
     openWorkspaceDraft,

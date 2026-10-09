@@ -17,7 +17,7 @@ from bot.fcodex.interaction_contract import (
 from bot.fcodex.interaction_inbox import FcodexInteractionWriter
 from bot.fcodex.main_turn_owner import FcodexMainTurnOwner
 from bot.fcodex.operation_contract import (
-    EXPLICITLY_DENIED_THREAD_MUTATION_METHODS,
+    THREAD_CREATE_METHODS,
     EXCLUSIVE_MAIN_TURN_START_METHODS,
     FcodexRequestEpochCloseReceipt,
     THREAD_MUTATION_METHODS,
@@ -86,7 +86,7 @@ class FcodexOperationService:
         if not isinstance(participant_runtime_registry, FcodexParticipantRuntimeRegistry):
             raise TypeError("FcodexOperationService 需要 participant runtime owner。")
         if not isinstance(thread_create_owner, FcodexThreadCreateOwner):
-            raise TypeError("FcodexOperationService 需要 targetless thread/create owner。")
+            raise TypeError("FcodexOperationService 需要 thread-create owner。")
         if not isinstance(effective_settings, ThreadEffectiveSettingsRegistry):
             raise TypeError("FcodexOperationService 需要 effective settings owner。")
         required = (
@@ -143,9 +143,17 @@ class FcodexOperationService:
                 "fcodex connection 复用了尚未完成的 JSON-RPC request id；已拒绝该请求。"
             )
 
-        if normalized_method == "thread/start":
-            if normalized_thread_id:
+        if normalized_method in THREAD_CREATE_METHODS:
+            if normalized_method == "thread/start" and normalized_thread_id:
                 return _deny("thread/start 不应携带 threadId。")
+            if normalized_method == "thread/fork" and (
+                not normalized_thread_id
+                or self._known_root(normalized_thread_id) != normalized_thread_id
+                or not isinstance(request_params, dict)
+                or request_params.get("threadId") != normalized_thread_id
+                or request_params.get("path") not in (None, "")
+            ):
+                return _deny("thread/fork 需要 exact root threadId，不能用 path 替换来源。")
             try:
                 attempt = self._thread_create_owner.begin(
                     participant_id=normalized_participant_id,
@@ -158,8 +166,8 @@ class FcodexOperationService:
                     participant_id=normalized_participant_id,
                     connection_id=normalized_connection_id,
                     method=normalized_method,
-                    thread_id="",
-                    root_thread_id="",
+                    thread_id=normalized_thread_id,
+                    root_thread_id=normalized_thread_id,
                     external_create_attempt=attempt,
                 ),
                 root_thread_id="",
@@ -249,11 +257,6 @@ class FcodexOperationService:
                 root_thread_id=request.root_thread_id,
             )
 
-        if normalized_method in EXPLICITLY_DENIED_THREAD_MUTATION_METHODS:
-            return _deny(
-                f"Focus v1 不支持 fcodex method `{normalized_method}`；"
-                "它会创建一个尚未定义独立 thread 合同的目标，已在本地拒绝。"
-            )
         if normalized_method in UNSUPPORTED_ASYNC_THREAD_MUTATION_METHODS:
             return _deny(
                 f"fcodex method `{normalized_method}` 尚未纳入共享 backend 的多前端合同；"
@@ -521,7 +524,7 @@ class FcodexOperationService:
         if normalized_outcome not in {"success", "error", "unknown"}:
             return pending
 
-        if request.method == "thread/start":
+        if request.method in THREAD_CREATE_METHODS:
             return self._thread_create_owner.settle_client_response(
                 request,
                 outcome=normalized_outcome,
@@ -626,7 +629,7 @@ class FcodexOperationService:
             self._participant_runtime_registry.clear_thread_sources(thread_id)
 
     def _remember_created_direct_root(self, root_thread_id: str) -> str:
-        """Remember identity proven by an exact successful thread/start."""
+        """Remember identity proven by an exact successful thread creation."""
 
         self._runtime_context_guard()
         normalized_root_id = str(root_thread_id or "").strip()
@@ -664,8 +667,8 @@ class FcodexOperationService:
                 or request.connection_id != normalized_connection_id
             ):
                 continue
-            if request.method == "thread/start":
-                unknown, settled = self._settle_targetless_connection_loss(request)
+            if request.method in THREAD_CREATE_METHODS:
+                unknown, settled = self._settle_create_connection_loss(request)
                 if unknown and settled:
                     settled_unknown += 1
                 continue
@@ -687,7 +690,7 @@ class FcodexOperationService:
     def backend_disconnected(self) -> None:
         self._runtime_context_guard()
         for request in self._client_requests.values():
-            if request.method == "thread/start":
+            if request.method in THREAD_CREATE_METHODS:
                 self._thread_create_owner.invalidate_backend_epoch(request)
         self._direct_root_ids.clear()
 
@@ -1035,7 +1038,7 @@ class FcodexOperationService:
             )
             return False
 
-    def _settle_targetless_connection_loss(
+    def _settle_create_connection_loss(
         self,
         request: _ClientRequest,
     ) -> tuple[bool, bool]:

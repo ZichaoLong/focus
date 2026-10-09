@@ -668,6 +668,12 @@ export interface FocusRenameResult {
   name: string;
 }
 
+export interface FocusForkResult {
+  accepted: boolean;
+  thread_id: string;
+  source_thread_id: string;
+}
+
 export interface FocusGoalResult extends FocusCoordinates {
   thread_id: string;
   goal: FocusGoal | null;

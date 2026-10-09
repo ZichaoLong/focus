@@ -347,12 +347,13 @@ def _classify_coordinated_client_response(
     if not isinstance(result, dict):
         return None
 
-    if request.method == "thread/start":
+    if request.method in {"thread/start", "thread/fork"}:
         thread = result.get("thread")
         if (
             not isinstance(thread, dict)
             or not isinstance(thread.get("id"), str)
             or not thread["id"].strip()
+            or (request.method == "thread/fork" and thread["id"] == request.thread_id)
         ):
             return None
     elif request.method == "thread/resume":
@@ -467,8 +468,8 @@ class _ProxyInteractionGate:
         # Once close wins this lock, no queued frame can start another attempt.
         self._interaction_attempt_lock = threading.RLock()
         # Keep the original envelope only to correlate a TUI answer with the
-        # service-owned pending request. All upstream responses are submitted
-        # by the RuntimeLoop service; this proxy has no fallback response path.
+        # service-owned pending request. Proxy-only requests can receive a
+        # one-shot service claim to answer on this exact upstream connection.
         self._pending_server_request_ids: dict[
             str, tuple[int | str, str, dict[str, Any], str]
         ] = {}
@@ -1058,6 +1059,23 @@ class _ProxyInteractionGate:
             return
         disposition = str(submission.get("response_disposition", "") or "")
         if submission.get("allowed") is True:
+            if disposition == "proxy_send":
+                outcome_method = "operation/request-response-sent"
+                try:
+                    backend_ws.send(_encode_jsonrpc_payload(payload, as_bytes=is_bytes))
+                except Exception:
+                    outcome_method = "operation/request-response-unknown"
+                self._retire_server_request_if_matches(request_key, pending_interaction)
+                receipt, outcome = self._control_receipt(
+                    outcome_method,
+                    {"request_id": response_id, "response_token": pending_interaction[3]},
+                )
+                if outcome_method.endswith("unknown") or receipt != "acknowledged" or not isinstance(outcome, dict) or outcome.get("ok") is not True:
+                    self._quarantine_interaction_transport(
+                        client_ws, backend_ws,
+                        reason="delegated response write or settlement was not confirmed",
+                    )
+                return
             if disposition in {"submitted", "superseded"}:
                 self._retire_server_request_if_matches(
                     request_key,
@@ -1251,6 +1269,15 @@ class _ProxyInteractionGate:
 
         if isinstance(method, str):
             params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+            if method == "serverRequest/resolved":
+                try:
+                    resolution_key = _jsonrpc_id_key(params.get("requestId"))
+                except ValueError:
+                    return
+                with self._lock:
+                    pending = self._pending_server_request_ids.get(resolution_key)
+                if pending is not None and params.get("threadId") != pending[2].get("threadId"):
+                    return
             if method in _COORDINATED_NOTIFICATION_METHODS:
                 self._best_effort_control(
                     "operation/notification",

@@ -186,6 +186,9 @@ def compose_web_gateway(
                 thread_id,
                 **kwargs,
             ),
+            fork_thread=lambda client_id, thread_id: runtime_call(
+                web_runtime.fork_thread, client_id, thread_id,
+            ),
             rename_thread=lambda client_id, thread_id, **kwargs: runtime_call(
                 web_runtime.rename_thread,
                 client_id,

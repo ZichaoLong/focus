@@ -83,6 +83,7 @@ type FocusMutationApiPort = Pick<
   FocusWebApiPort,
   | 'clientId'
   | 'renameThread'
+  | 'forkThread'
   | 'compactThread'
   | 'startReview'
   | 'setGoal'
@@ -170,6 +171,7 @@ export interface FocusMutationActions {
     disposition: FocusMutationDisposition,
   ): void;
   renameThread(threadId: string, name: string): Promise<void>;
+  forkThread(threadId: string): Promise<string | null>;
   compact(): Promise<void>;
   review(target: Record<string, unknown>): Promise<void>;
   createGoal(objective: string): Promise<void>;
@@ -389,6 +391,31 @@ export function createFocusMutationActions(
       operation,
       disposition,
     );
+  }
+
+  async function forkThread(threadId: string): Promise<string | null> {
+    if (isDisposed() || options.connection.value !== 'connected'
+      || projection.snapshotInvalidated.value || !threadId || actionBusy.value) return null;
+    actionBusy.value = true;
+    options.clearError();
+    try {
+      const result = await api.forkThread(threadId);
+      if (isDisposed()) return null;
+      if (!result.accepted || result.source_thread_id !== threadId || result.thread_id === threadId) {
+        throw new Error('Focus could not verify the created branch. Refresh the session list before retrying.');
+      }
+      try {
+        await projection.refreshThreads();
+      } catch (error) {
+        if (!isDisposed()) options.reportError(error);
+      }
+      return isDisposed() ? null : result.thread_id;
+    } catch (error) {
+      if (!isDisposed()) options.reportError(error);
+      return null;
+    } finally {
+      if (!isDisposed()) actionBusy.value = false;
+    }
   }
 
   async function renameThread(threadId: string, name: string): Promise<void> {
@@ -980,6 +1007,7 @@ export function createFocusMutationActions(
     reconcileUnknownMutation,
     settleUnknownMutationFromEvent,
     renameThread,
+    forkThread,
     compact,
     review,
     createGoal,

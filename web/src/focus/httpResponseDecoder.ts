@@ -24,6 +24,7 @@ import type {
   FocusPendingRequest,
   FocusPromptResultReceipt,
   FocusRenameResult,
+  FocusForkResult,
   FocusRequestResponseResult,
   FocusRuntimeIdentity,
   FocusThreadList,
@@ -1155,6 +1156,13 @@ export const decodeFocusRenameResult: FocusHttpDecoder<FocusRenameResult> = (val
   if (!isRequiredRecord('rename_result', value) || !hasBoolean(value, 'accepted')) return null;
   if (!isNonEmptyTrimmedString(value.thread_id) || !hasString(value, 'name')) return null;
   return value as unknown as FocusRenameResult;
+};
+
+export const decodeFocusForkResult: FocusHttpDecoder<FocusForkResult> = (value) => {
+  if (!isRequiredRecord('fork_result', value) || value.accepted !== true) return null;
+  if (!isNonEmptyTrimmedString(value.thread_id) || !isNonEmptyTrimmedString(value.source_thread_id)
+    || value.thread_id === value.source_thread_id) return null;
+  return value as unknown as FocusForkResult;
 };
 
 export const decodeFocusGoalResult: FocusHttpDecoder<FocusGoalResult> = (value) => {

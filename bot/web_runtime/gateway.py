@@ -165,6 +165,7 @@ class WebGatewayPorts:
     interrupt: Callable[..., dict[str, Any]]
     resolve_unknown_mutation: Callable[..., dict[str, Any]]
     rename_thread: Callable[..., dict[str, Any]]
+    fork_thread: Callable[[str, str], dict[str, Any]]
     compact_thread: Callable[[str, str], dict[str, Any]]
     start_review: Callable[..., dict[str, Any]]
     goal: Callable[[str, str], dict[str, Any]]
@@ -1275,6 +1276,14 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 request.match_info["thread_id"],
                 action=str(body.get("action", "") or ""),
                 mutation_id=mutation_id.strip(),
+            )
+        )
+
+    async def _handle_fork_thread(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        return web.json_response(
+            await self._document_request_to_thread(
+                self._ports.fork_thread, request, client_id, request.match_info["thread_id"],
             )
         )
 

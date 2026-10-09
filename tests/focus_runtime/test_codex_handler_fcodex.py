@@ -614,8 +614,7 @@ class CodexHandlerFcodexTests(CodexHandlerHarness):
         )
         self.assertIsNone(handler._interaction_lease_store.load("child-1"))
 
-    def test_fcodex_proxy_rejects_fork_before_backend_forward(self) -> None:
-        """Fork is a deliberate product non-goal, not a temporary root RPC."""
+    def test_fcodex_proxy_commits_native_fork_as_an_independent_root(self) -> None:
 
         handler, _ = self._make_handler()
         handler._adapter.thread_snapshots[("root-1", False)] = ThreadSnapshot(
@@ -644,7 +643,7 @@ class CodexHandlerFcodexTests(CodexHandlerHarness):
         gate = _ProxyInteractionGate(
             cwd="/tmp/project",
             data_dir=handler._data_dir,
-            participant_id="fcodex:test:fork-denied",
+            participant_id="fcodex:test:fork",
             connection_id="connection-1",
             control_request_fn=_control,
         )
@@ -652,25 +651,31 @@ class CodexHandlerFcodexTests(CodexHandlerHarness):
         client_ws = _Ws()
         backend_ws = _Ws()
 
+        request = {
+            "jsonrpc": "2.0", "id": 1, "method": "thread/fork",
+            "params": {"threadId": "root-1", "ephemeral": True,
+                       "developerInstructions": "native side instructions"},
+        }
         gate.handle_client_message(
-            json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "thread/fork",
-                    "params": {"threadId": "root-1"},
-                }
-            ),
+            json.dumps(request),
             client_ws=client_ws,
             backend_ws=backend_ws,
         )
 
-        self.assertEqual(backend_ws.sent, [])
-        self.assertEqual(len(client_ws.sent), 1)
-        response = json.loads(str(client_ws.sent[0]))
-        self.assertEqual(response["id"], 1)
-        self.assertIn("thread/fork", response["error"]["message"])
+        self.assertEqual([json.loads(payload) for payload in backend_ws.sent], [request])
+        self.assertEqual(client_ws.sent, [])
+        response = {
+            "jsonrpc": "2.0", "id": 1,
+            "result": {"thread": {"id": "side-1", "source": "appServer",
+                                   "ephemeral": True, "historyMode": "paginated"}},
+        }
+        gate.handle_backend_message(
+            json.dumps(response), client_ws=client_ws, backend_ws=backend_ws,
+        )
+        self.assertEqual([json.loads(payload) for payload in client_ws.sent], [response])
+        self.assertIn("side-1", self._fcodex_operation_service(handler)._direct_root_ids)
         self.assertIsNone(handler._interaction_lease_store.load("root-1"))
+        self.assertIsNone(handler._interaction_lease_store.load("side-1"))
 
     def test_fcodex_admission_fails_closed_when_authority_target_read_is_unusable(self) -> None:
         """A failed or mismatched point read cannot fall back to cache state."""

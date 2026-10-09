@@ -115,6 +115,9 @@ class SharedApprovalOwnerConvergenceTests(unittest.TestCase):
                 respond=lambda identity, **kwargs: self.coordinator.submit_surface_response(
                     identity, **kwargs
                 ),
+                claim_proxy_response=lambda *args: self.coordinator.claim_proxy_response(*args),
+                finish_proxy_response=lambda *args: self.coordinator.finish_proxy_response(*args),
+                resolve_proxy_request=lambda *args: self.coordinator.resolve_proxy_request(*args),
                 schedule_proxy_delivery_expiry=lambda *_args: None,
             ),
             runtime_context_guard=lambda: None,
@@ -452,3 +455,79 @@ class SharedApprovalOwnerConvergenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    def test_proxy_only_answer_fences_later_canonical_and_other_endpoints(self) -> None:
+        identity = ServerRequestIdentity(
+            request_id="proxy-only", connection_generation=1, method=APPROVAL,
+            params={"threadId": ROOT, "turnId": "turn-1", "command": "pwd"},
+        )
+        first = self._fcodex_projection(identity, ENDPOINT_A)
+        other = self._fcodex_projection(identity, ENDPOINT_B)
+        receipt = self.fcodex.response_submit(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_A,
+            request_id=identity.request_id, response_token=first["response_token"],
+            result={"decision": "accept"}, error=None,
+        )
+        self.assertEqual(receipt["response_disposition"], "proxy_send")
+        late_copy = self.coordinator.route_request(1, identity.request_id, identity.method, identity.params)
+        self.assertEqual(late_copy.outcome, "response_pending_resolution")
+        loser = self.fcodex.response_submit(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_B,
+            request_id=identity.request_id, response_token=other["response_token"],
+            result={"decision": "decline"}, error=None,
+        )
+        self.assertEqual(loser["response_disposition"], "superseded")
+        claimed = self.registry.active_identity(identity.request_key)
+        self.fcodex.response_sent(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_B,
+            request_id=identity.request_id, response_token=other["response_token"],
+        )
+        self.assertEqual(self.registry.response_phase(claimed), "processing")
+        self.fcodex.response_sent(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_A,
+            request_id=identity.request_id, response_token=first["response_token"],
+        )
+        self.assertEqual(self.registry.response_phase(claimed), "submitted")
+        self.assertEqual(self.wire_responses, [])
+        self.fcodex.observe_proxy_resolution({"requestId": identity.request_id, "threadId": "wrong"})
+        self.assertEqual(self.fcodex.pending_count(), 1)
+        self.fcodex.observe_proxy_resolution({"requestId": identity.request_id, "threadId": ROOT})
+        self.assertEqual(self.fcodex.pending_count(), 0)
+        self.assertEqual(self.registry.pending_count(), 0)
+
+    def test_proxy_resolution_before_response_suppresses_delayed_service_copy(self) -> None:
+        identity = ServerRequestIdentity(
+            request_id="resolved-before-response", connection_generation=1, method=QUESTION,
+            params={"threadId": ROOT, "turnId": "turn-1", "questions": []},
+        )
+        route = self._fcodex_projection(identity, ENDPOINT_A)
+        self.fcodex.observe_proxy_resolution({"requestId": identity.request_id, "threadId": ROOT})
+        self.assertEqual(self.fcodex.pending_count(), 0)
+        self.assertTrue(self.registry.request_is_resolved(identity.request_key))
+        self.assertEqual(
+            self.coordinator.route_request(1, identity.request_id, identity.method, identity.params).outcome,
+            "suppressed_resolved",
+        )
+        late_answer = self.fcodex.response_submit(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_A,
+            request_id=identity.request_id, response_token=route["response_token"],
+            result={"answers": {}}, error=None,
+        )
+        self.assertEqual(late_answer["response_disposition"], "superseded")
+        self.assertEqual(self.wire_responses, [])
+
+    def test_lost_delegated_sender_closes_claim_without_retry(self) -> None:
+        identity = ServerRequestIdentity(
+            request_id="lost-sender", connection_generation=1, method=QUESTION,
+            params={"threadId": ROOT, "turnId": "turn-1", "questions": []},
+        )
+        route = self._fcodex_projection(identity, ENDPOINT_A)
+        self.fcodex.response_submit(
+            participant_id=PARTICIPANT, connection_id=ENDPOINT_A,
+            request_id=identity.request_id, response_token=route["response_token"],
+            result={"answers": {}}, error=None,
+        )
+        self.fcodex.drop_delivered(PARTICIPANT, connection_id=ENDPOINT_A)
+        claimed = self.registry.active_identity(identity.request_key)
+        self.assertEqual(self.registry.response_phase(claimed), "unknown")
+        self.assertEqual(self.coordinator.route_request(1, identity.request_id, identity.method, identity.params).outcome, "response_pending_resolution")

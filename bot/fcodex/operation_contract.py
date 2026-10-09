@@ -29,7 +29,7 @@ EXCLUSIVE_MAIN_TURN_START_METHODS = frozenset(
     {"review/start", "thread/compact/start"}
 )
 
-EXPLICITLY_DENIED_THREAD_MUTATION_METHODS = frozenset({"thread/fork"})
+THREAD_CREATE_METHODS = frozenset({"thread/start", "thread/fork"})
 
 UNSUPPORTED_ASYNC_THREAD_MUTATION_METHODS = frozenset(
     {
@@ -233,14 +233,15 @@ def fcodex_successful_response_thread_identity(
     observed_thread_id: str,
     observed_root_thread_id: str,
 ) -> tuple[str, str] | None:
-    """Validate the exact identity carried by a successful start/resume."""
+    """Validate the exact identity carried by a successful create/resume."""
 
     observed_thread = str(observed_thread_id or "").strip()
     observed_root = str(observed_root_thread_id or "").strip()
-    if method == "thread/start":
+    if method in THREAD_CREATE_METHODS:
         return (
             (observed_thread, observed_root)
             if observed_thread and observed_root == observed_thread
+            and (method != "thread/fork" or observed_thread != admitted_thread_id)
             else None
         )
     admitted_thread = str(admitted_thread_id or "").strip()

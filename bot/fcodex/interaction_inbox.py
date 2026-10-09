@@ -92,6 +92,9 @@ class FcodexInteractionInboxPorts:
     server_request_response_authority_is_revoked: Callable[[str], bool]
     respond: Callable[..., None]
     schedule_proxy_delivery_expiry: Callable[[str, int, float], None]
+    claim_proxy_response: Callable[..., tuple[ServerRequestIdentity | None, str]]
+    finish_proxy_response: Callable[[ServerRequestIdentity, str], bool]
+    resolve_proxy_request: Callable[[int | str, str, dict[str, Any]], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +139,7 @@ class _PendingInteraction:
     response_token: str = ""
     shared_response_tokens: dict[tuple[str, str], str] = field(default_factory=dict)
     deferred_response_intent: _DeferredResponseIntent | None = None
+    proxy_response_owner: tuple[str, str, str] | None = None
 
     @classmethod
     def from_envelope(
@@ -913,6 +917,22 @@ class FcodexInteractionInbox:
             root_thread_id=root_thread_id,
         )
 
+    def observe_proxy_resolution(self, params: dict[str, Any]) -> None:
+        """Accept resolution only for an envelope actually routed here."""
+        self._runtime_context_guard()
+        try:
+            key = fcodex_server_request_key(params.get("requestId"))
+        except ValueError:
+            return
+        pending = self._pending_by_key.get(key)
+        if pending is None or params.get("threadId") != pending.thread_id:
+            return
+        self._ports.resolve_proxy_request(pending.request_id, pending.method, pending.params)
+        if self._pending_by_key.get(key) is pending:
+            self._pending_by_key.pop(key, None)
+            if pending.shared_interaction:
+                self._remember_resolved_shared_capability(pending)
+
     def response_admit(
         self,
         *,
@@ -943,7 +963,7 @@ class FcodexInteractionInbox:
         result: dict[str, Any] | None,
         error: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        """Atomically admit and submit through the service adapter."""
+        """Submit centrally or grant one send on the original proxy socket."""
 
         self._runtime_context_guard()
         if (result is None) == (error is None):
@@ -993,10 +1013,28 @@ class FcodexInteractionInbox:
         if pending is None:
             return fcodex_deny("当前 fcodex 不再有权回答该 server request。")
         if pending.canonical_identity is None:
+            identity, admission = self._ports.claim_proxy_response(
+                pending.request_id, pending.method, pending.params,
+            )
+            if admission == "admitted" and identity is not None:
+                pending.canonical_identity = identity
+                pending.canonical_binding_open = False
+                pending.proxy_response_owner = (participant_id, connection_id, response_token)
+                pending.state = "response_submitted_unknown"
+                return {
+                    **fcodex_allow(root_thread_id=pending.root_thread_id),
+                    "response_disposition": "proxy_send",
+                }
+            if admission in {"processing", "submitted", "revoked", "resolved"}:
+                pending.state = "response_superseded"
+                return {
+                    **fcodex_allow(root_thread_id=pending.root_thread_id),
+                    "response_disposition": "superseded",
+                }
             return {
                 "allowed": False,
-                "reason": "Focus 尚未取得 canonical response generation；请求会重新显示。",
-                "response_disposition": "not_sent",
+                "reason": "Focus 无法取得当前请求的原连接回答权限。",
+                "response_disposition": "unknown",
             }
         disposition = self._accept_response_intent(
             pending,
@@ -1084,6 +1122,8 @@ class FcodexInteractionInbox:
     ) -> None:
         self._runtime_context_guard()
         pending = self._pending_by_key.get(fcodex_server_request_key(request_id))
+        if self._finish_proxy_response(pending, participant_id, connection_id, response_token, "submitted"):
+            return
         if (
             pending is None
             or pending.state != "response_admitted"
@@ -1108,6 +1148,8 @@ class FcodexInteractionInbox:
     ) -> None:
         self._runtime_context_guard()
         pending = self._pending_by_key.get(fcodex_server_request_key(request_id))
+        if self._finish_proxy_response(pending, participant_id, connection_id, response_token, "unknown"):
+            return
         if (
             pending is None
             or pending.state != "response_admitted"
@@ -1121,6 +1163,19 @@ class FcodexInteractionInbox:
         ):
             return
         pending.state = "response_unknown"
+
+    def _finish_proxy_response(
+        self, pending: _PendingInteraction | None, participant_id: str,
+        connection_id: str, response_token: str, outcome: str,
+    ) -> bool:
+        if pending is None or pending.proxy_response_owner != (
+            participant_id, connection_id, response_token,
+        ) or pending.canonical_identity is None:
+            return False
+        self._ports.finish_proxy_response(pending.canonical_identity, outcome)
+        pending.proxy_response_owner = None
+        pending.state = "response_unknown" if outcome == "unknown" else "response_submitted_unknown"
+        return True
 
     def expire_proxy_delivery(self, request_key: str, expiry_generation: int) -> None:
         self._runtime_context_guard()
@@ -1154,6 +1209,11 @@ class FcodexInteractionInbox:
         self._runtime_context_guard()
         count = 0
         for request_key, pending in tuple(self._pending_by_key.items()):
+            owner = pending.proxy_response_owner
+            if owner and owner[0] == participant_id and (
+                connection_id is None or owner[1] == connection_id
+            ):
+                self._finish_proxy_response(pending, *owner, "unknown")
             if pending.shared_interaction:
                 if connection_id is not None and pending.drop_shared_response_token(
                     participant_id,

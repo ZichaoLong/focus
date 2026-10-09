@@ -59,6 +59,7 @@ class WebGatewayNextTurnSettingsTests(unittest.IsolatedAsyncioTestCase):
                 prompt_result=lambda *_args, **_kwargs: {},
                 interrupt=lambda *_args, **_kwargs: {},
                 resolve_unknown_mutation=lambda *_args, **_kwargs: {},
+                fork_thread=lambda *_args, **_kwargs: {},
                 rename_thread=lambda *_args, **_kwargs: {},
                 compact_thread=lambda *_args, **_kwargs: {},
                 start_review=lambda *_args, **_kwargs: {},

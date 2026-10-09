@@ -66,7 +66,7 @@ class WebGatewayTests(WebGatewayHarness):
 
         self.assertEqual(
             source.count("self._document_request_to_thread("),
-            22,
+            23,
         )
         self.assertEqual(
             source.count("self._staged_document_request_to_thread("),
@@ -75,6 +75,23 @@ class WebGatewayTests(WebGatewayHarness):
         self.assertNotIn("self._client_to_thread(", source)
         self.assertIn("self._required_client_id(request)", helper)
         self.assertIn("self._required_client_id(request)", staged_helper)
+
+    async def test_fork_dispatches_once_for_the_current_document(self):
+        await self._authenticate()
+        document = await self._register_document(
+            resume_client_id="tab-fork", incarnation_id="fork-document",
+        )
+        async with self.session.post(
+            f"{self.endpoint}/api/threads/thread-1/fork",
+            json={}, headers=self._client_headers(document),
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.json(), {
+                "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1",
+            })
+        self.assertEqual(self.calls, [
+            ("fork", (document["client_id"], "thread-1"), {}),
+        ])
 
     async def test_interrupt_body_is_exact_before_port_dispatch(self):
         await self._authenticate()
@@ -1864,6 +1881,7 @@ class WebGatewayStartupTests(unittest.TestCase):
                     prompt_result=lambda *_args, **_kwargs: {},
                     interrupt=lambda *_args, **_kwargs: {},
                     resolve_unknown_mutation=lambda *_args, **_kwargs: {},
+                    fork_thread=lambda *_args, **_kwargs: {},
                     rename_thread=lambda *_args, **_kwargs: {},
                     compact_thread=lambda *_args, **_kwargs: {},
                     start_review=lambda *_args, **_kwargs: {},

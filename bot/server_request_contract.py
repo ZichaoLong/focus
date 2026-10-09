@@ -18,7 +18,11 @@ ServerRequestRoutingMode = Literal[
 
 @dataclass(frozen=True, slots=True, init=False)
 class ServerRequestIdentity:
-    """Immutable request envelope and receiving-connection capability."""
+    """Immutable logical request identity in the shared backend epoch.
+
+    Observing an envelope through a proxy does not prove that the service
+    adapter received it; that adapter separately owns its socket send proof.
+    """
 
     request_id: int | float | str
     request_key: str

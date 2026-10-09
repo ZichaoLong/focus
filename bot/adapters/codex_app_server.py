@@ -491,6 +491,17 @@ class CodexAppServerAdapter(AgentAdapter):
         )
         return snapshot
 
+    def fork_thread(self, thread_id: str) -> ThreadSnapshot:
+        """Create a persistent branch without starting a turn or carrying a goal."""
+        result = self._rpc_request(
+            "thread/fork",
+            {"threadId": thread_id, "ephemeral": False, "excludeTurns": True},
+        )
+        _result, snapshot = self._require_thread_snapshot_result("thread/fork", result)
+        if snapshot.summary.ephemeral or snapshot.summary.thread_id == thread_id:
+            raise ValueError("thread/fork did not return a new persistent thread")
+        return snapshot
+
     def resume_thread(
         self,
         thread_id: str,
@@ -1264,7 +1275,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 )
             return value
 
-        if method in {"thread/start", "thread/resume"}:
+        if method in {"thread/start", "thread/resume", "thread/fork"}:
             snapshot.effective_model = require_string("model")
             if "approvalPolicy" in payload:
                 snapshot.effective_approval_policy = require_string("approvalPolicy")

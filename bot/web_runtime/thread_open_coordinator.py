@@ -434,6 +434,7 @@ class WebThreadOpenCoordinator:
                     )
                 except Exception:
                     continue
+        summaries = [summary for summary in summaries if not summary.ephemeral]
         runtime_leases = (
             tuple(self._ports.list_thread_runtime_leases())
             if not prepared.archived

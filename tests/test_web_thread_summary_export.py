@@ -352,7 +352,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
         prepared = unavailable.prepare("client-1", "thread-1")
         with self.assertRaises(WebRuntimeError) as raised:
             unavailable.execute(prepared)
-        self.assertEqual(raised.exception.code, "thread_summary_export_unavailable")
+        self.assertEqual(raised.exception.code, "ephemeral_thread_unavailable")
 
     def test_prepare_reports_backend_replacement_as_temporarily_unavailable(
         self,

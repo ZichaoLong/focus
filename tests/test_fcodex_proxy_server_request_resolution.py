@@ -190,3 +190,46 @@ class ProxyServerRequestResolutionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+    def test_delegated_response_uses_original_socket_once(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            control = self._FakeOperationControl()
+            control.response_submission = {"allowed": True, "response_disposition": "proxy_send"}
+            gate = self._gate(Path(tmpdir), control)
+            client, backend = self._FakeWs(), self._FakeWs()
+            gate.handle_backend_message(self._request(9, "item/tool/requestUserInput", {
+                "threadId": "side-1", "turnId": "turn-1", "questions": [],
+            }), client_ws=client, backend_ws=backend)
+            response = {"id": 9, "result": {"answers": {"q": {"answers": ["yes"]}}}}
+            gate.handle_client_message(json.dumps(response), client_ws=client, backend_ws=backend)
+            self.assertEqual(len(backend.sent), 1)
+            self.assertEqual(self._decode_payload(backend.sent[0])["result"], response["result"])
+            self.assertEqual(len(control.calls_for("operation/request-response-sent")), 1)
+            gate.handle_client_message(json.dumps(response), client_ws=client, backend_ws=backend)
+            self.assertEqual(len(backend.sent), 1)
+            self.assertFalse(client.closed)
+
+    def test_delegated_send_failure_reports_unknown_and_closes_wire(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            control = self._FakeOperationControl()
+            control.response_submission = {"allowed": True, "response_disposition": "proxy_send"}
+            gate = self._gate(Path(tmpdir), control)
+            client, backend = self._FakeWs(), self._FakeWs()
+            gate.handle_backend_message(self._request(9, "item/tool/requestUserInput", {
+                "threadId": "side-1", "turnId": "turn-1", "questions": [],
+            }), client_ws=client, backend_ws=backend)
+            backend.close()
+            gate.handle_client_message(json.dumps({"id": 9, "result": {"answers": {}}}), client_ws=client, backend_ws=backend)
+            self.assertEqual(len(control.calls_for("operation/request-response-unknown")), 1)
+            self.assertTrue(client.closed)
+
+    def test_native_fork_payload_and_new_thread_response_are_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            control = self._FakeOperationControl()
+            gate = self._gate(Path(tmpdir), control)
+            client, backend = self._FakeWs(), self._FakeWs()
+            params = {"threadId": "parent", "ephemeral": True, "developerInstructions": "native", "model": "model-x", "config": {"model_reasoning_effort": "high"}}
+            gate.handle_client_message(self._request(1, "thread/fork", params), client_ws=client, backend_ws=backend)
+            self.assertEqual(self._decode_payload(backend.sent[0])["params"], params)
+            gate.handle_backend_message(json.dumps({"id": 1, "result": {"thread": {"id": "side", "ephemeral": True}}}), client_ws=client, backend_ws=backend)
+            self.assertEqual(self._decode_payload(client.sent[-1])["result"]["thread"]["id"], "side")
+            self.assertFalse(client.closed)

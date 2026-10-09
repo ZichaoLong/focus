@@ -17,6 +17,7 @@ import type {
   FocusPromptRequest,
   FocusPromptResultReceipt,
   FocusRenameResult,
+  FocusForkResult,
   FocusThreadList,
   FocusThreadConversationSearchPage,
   FocusThreadScope,
@@ -56,6 +57,7 @@ import {
   decodeFocusOperatorStatusResponse,
   decodeFocusUpdateStatus,
   decodeFocusRenameResult,
+  decodeFocusForkResult,
   decodeFocusRequestResponseResult,
   decodeFocusPromptResultReceipt,
   decodeFocusThreadList,
@@ -289,6 +291,7 @@ export interface FocusWebApiPort {
     mutationId: string,
   ): Promise<FocusMutationResult>;
   renameThread(threadId: string, name: string): Promise<FocusRenameResult>;
+  forkThread(threadId: string): Promise<FocusForkResult>;
   compactThread(threadId: string): Promise<FocusMutationResult>;
   startReview(threadId: string, target: Record<string, unknown>): Promise<FocusMutationResult>;
   getGoal(threadId: string): Promise<FocusGoalResult>;
@@ -834,6 +837,12 @@ export class FocusWebApi implements FocusWebApiPort {
         },
       },
     );
+  }
+
+  forkThread(threadId: string): Promise<FocusForkResult> {
+    return this.request('thread_fork', decodeFocusForkResult, 'thread fork', {
+      parameters: { thread_id: threadId },
+    });
   }
 
   renameThread(threadId: string, name: string): Promise<FocusRenameResult> {

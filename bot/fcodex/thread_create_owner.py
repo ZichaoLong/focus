@@ -1,4 +1,4 @@
-"""External-transport ``thread/start`` ownership for one fcodex request.
+"""External-transport thread creation ownership for fcodex start and fork.
 
 The proxy owns websocket transport, the generic thread-create boundary owns a
 current-backend one-shot capability, and the participant Registry owns machine
@@ -51,13 +51,14 @@ class FcodexExternalThreadCreateAuthority(Protocol):
     ) -> CommittedThreadCreate[str, FcodexRequestTransitionReceipt]: ...
 
 
-class FcodexTargetlessCreateRequest(Protocol):
+class FcodexThreadCreateRequest(Protocol):
     """Mutable exact request capability owned by the operation service."""
 
     request_key: str
     participant_id: str
     connection_id: str
     request_token: int
+    method: str
     thread_id: str
     root_thread_id: str
     runtime_request_source: FcodexRequestSourceRef | None
@@ -110,7 +111,7 @@ class FcodexThreadCreateOwner:
         return self._authority.begin_external_thread_create()
 
     @staticmethod
-    def invalidate_backend_epoch(request: FcodexTargetlessCreateRequest) -> None:
+    def invalidate_backend_epoch(request: FcodexThreadCreateRequest) -> None:
         """Retire an in-flight transport capability after global invalidation.
 
         ``ThreadRuntimeAuthority.invalidate_connection`` has already revoked
@@ -134,7 +135,7 @@ class FcodexThreadCreateOwner:
 
         self._authority.mark_external_thread_create_outcome_unknown(
             attempt,
-            RuntimeError(str(reason or "fcodex thread/start outcome unknown")),
+            RuntimeError(str(reason or "fcodex thread create outcome unknown")),
         )
         return FcodexThreadCreateResolution(committed=False, retained=True)
 
@@ -145,13 +146,15 @@ class FcodexThreadCreateOwner:
         participant_id: str,
         connection_id: str,
         request_key: str,
+        method: str,
+        admitted_thread_id: str,
         outcome: str,
         observed_thread_id: str,
         observed_root_thread_id: str,
     ) -> FcodexThreadCreateResolution:
         """Consume one exact backend response without inferring no-effect.
 
-        Upstream can create the thread before a later ``thread/start`` step
+        Upstream can create the thread before a later start or fork step
         reports JSON-RPC error.  Therefore every non-success outcome after the
         proxy send boundary is unknown, not a retryable known rejection.
         """
@@ -159,9 +162,9 @@ class FcodexThreadCreateOwner:
         normalized_outcome = str(outcome or "").strip().lower()
         identity = (
             fcodex_successful_response_thread_identity(
-                "thread/start",
-                admitted_thread_id="",
-                admitted_root_thread_id="",
+                method,
+                admitted_thread_id=admitted_thread_id,
+                admitted_root_thread_id=admitted_thread_id,
                 observed_thread_id=observed_thread_id,
                 observed_root_thread_id=observed_root_thread_id,
             )
@@ -172,9 +175,9 @@ class FcodexThreadCreateOwner:
             return self.retain_unknown(
                 attempt,
                 reason=(
-                    "fcodex thread/start returned an untrusted success identity"
+                    "fcodex thread create returned an untrusted success identity"
                     if normalized_outcome == "success"
-                    else f"fcodex thread/start outcome={normalized_outcome or 'invalid'}"
+                    else f"fcodex thread create outcome={normalized_outcome or 'invalid'}"
                 ),
             )
 
@@ -198,12 +201,12 @@ class FcodexThreadCreateOwner:
                 thread_id=thread_id,
             ):
                 raise RuntimeError(
-                    "fcodex thread/start Registry returned a mismatched request source"
+                    "fcodex thread create Registry returned a mismatched request source"
                 )
             transition = self._registry.promote_request_to_connection(source)
             if not self._is_exact_connection_transition(source, transition):
                 raise RuntimeError(
-                    "fcodex thread/start Registry source promotion was not confirmed"
+                    "fcodex thread create Registry source promotion was not confirmed"
                 )
             return transition
 
@@ -260,7 +263,7 @@ class FcodexThreadCreateOwner:
 
     def settle_client_response(
         self,
-        request: FcodexTargetlessCreateRequest,
+        request: FcodexThreadCreateRequest,
         *,
         outcome: str,
         observed_thread_id: str,
@@ -290,13 +293,15 @@ class FcodexThreadCreateOwner:
             attempt = request.external_create_attempt
             if attempt is None:
                 raise RuntimeError(
-                    "targetless fcodex thread/start 缺少 external create capability。"
+                    "fcodex thread create 缺少 external create capability。"
                 )
             resolution = self.settle_response(
                 attempt,
                 participant_id=request.participant_id,
                 connection_id=request.connection_id,
                 request_key=request.request_key,
+                method=request.method,
+                admitted_thread_id=request.thread_id,
                 outcome=normalized_outcome,
                 observed_thread_id=observed_thread_id,
                 observed_root_thread_id=observed_root_thread_id,
@@ -327,7 +332,7 @@ class FcodexThreadCreateOwner:
 
     def settle_connection_lost(
         self,
-        request: FcodexTargetlessCreateRequest,
+        request: FcodexThreadCreateRequest,
         *,
         remember_direct_root: Callable[[str], object],
         settle_local_request: Callable[
@@ -349,13 +354,15 @@ class FcodexThreadCreateOwner:
             attempt = request.external_create_attempt
             if attempt is None:
                 raise RuntimeError(
-                    "targetless fcodex thread/start disconnect 缺少 create capability。"
+                    "fcodex thread create disconnect 缺少 create capability。"
                 )
             resolution = self.settle_response(
                 attempt,
                 participant_id=request.participant_id,
                 connection_id=request.connection_id,
                 request_key=request.request_key,
+                method=request.method,
+                admitted_thread_id=request.thread_id,
                 outcome="unknown",
                 observed_thread_id="",
                 observed_root_thread_id="",
@@ -373,19 +380,19 @@ class FcodexThreadCreateOwner:
 
     @staticmethod
     def _validate_resolution(
-        request: FcodexTargetlessCreateRequest,
+        request: FcodexThreadCreateRequest,
         resolution: FcodexThreadCreateResolution,
     ) -> None:
         if not isinstance(resolution, FcodexThreadCreateResolution):
-            raise TypeError("targetless thread/start 需要 typed create resolution。")
+            raise TypeError("thread create 需要 typed create resolution。")
         if resolution.committed == resolution.retained:
-            raise RuntimeError("targetless thread/start resolution 未提供唯一终态。")
+            raise RuntimeError("thread create resolution 未提供唯一终态。")
         if resolution.committed and (
             resolution.runtime_source is None
             or resolution.runtime_receipt is None
         ):
             raise RuntimeError(
-                "committed targetless thread/start 缺少 Registry source/receipt。"
+                "committed thread create 缺少 Registry source/receipt。"
             )
         if resolution.runtime_receipt is not None and not (
             FcodexThreadCreateOwner._is_exact_connection_transition(
@@ -394,7 +401,7 @@ class FcodexThreadCreateOwner:
             )
         ):
             raise RuntimeError(
-                "targetless thread/start Registry resolution capability 冲突。"
+                "thread create Registry resolution capability 冲突。"
             )
         source = resolution.runtime_source
         if source is not None and (
@@ -404,15 +411,15 @@ class FcodexThreadCreateOwner:
             or source.thread_id != resolution.thread_id
         ):
             raise RuntimeError(
-                "targetless thread/start Registry source 与 exact request 冲突。"
+                "thread create Registry source 与 exact request 冲突。"
             )
         if resolution.runtime_source is not None:
             if not resolution.thread_id:
                 raise RuntimeError(
-                    "targetless thread/start runtime source 缺少 durable thread identity。"
+                    "thread create runtime source 缺少 created thread identity。"
                 )
         if resolution.thread_id and resolution.root_thread_id != resolution.thread_id:
-            raise RuntimeError("targetless thread/start 只能提交 direct root identity。")
+            raise RuntimeError("thread create 只能提交 direct root identity。")
 
     @staticmethod
     def _source_matches(
@@ -447,7 +454,7 @@ class FcodexThreadCreateOwner:
 
     @staticmethod
     def _apply_resolution(
-        request: FcodexTargetlessCreateRequest,
+        request: FcodexThreadCreateRequest,
         resolution: FcodexThreadCreateResolution,
         *,
         remember_direct_root: Callable[[str], object],

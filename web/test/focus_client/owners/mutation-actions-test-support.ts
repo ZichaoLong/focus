@@ -178,6 +178,7 @@ export interface Harness {
   actions: FocusMutationActions;
   api: {
     renameThread: ReturnType<typeof vi.fn>;
+    forkThread: ReturnType<typeof vi.fn>;
     compactThread: ReturnType<typeof vi.fn>;
     startReview: ReturnType<typeof vi.fn>;
     setGoal: ReturnType<typeof vi.fn>;
@@ -234,6 +235,7 @@ export function harness(clientId = 'client-1'): Harness {
   let navigationDisposed = false;
 
   const api = {
+    forkThread: vi.fn(async () => ({ accepted: true, thread_id: 'fork-a', source_thread_id: 'thread-a' })),
     renameThread: vi.fn(async (): Promise<FocusRenameResult> => ({
       accepted: true, thread_id: 'thread-a', name: 'renamed',
     })),

@@ -249,6 +249,9 @@ class AgentAdapter(ABC):
     ) -> ThreadSnapshot:
         ...
 
+    def fork_thread(self, thread_id: str) -> ThreadSnapshot:
+        raise NotImplementedError("persistent thread fork is not supported")
+
     @abstractmethod
     def resume_thread(
         self,
