@@ -99,5 +99,14 @@ version. Only one preview is retained, with no persisted content or object URLs.
 - Desktop uses a large dialog and narrow screens use the full viewport. Closing restores conversation
   focus and scroll position. Download and refresh remain available; filename editing and native Save
   As keep their behavior. Closing a nested Mermaid viewer does not also close the file preview.
+- One toolbar contains close, a shrinkable filename, download, the Markdown source/render toggle,
+  content copy and refresh. Icon actions have text labels and 44px touch targets. Long names use middle
+  ellipsis, retaining both ends. Tapping the name opens an independently scrollable overlay with the
+  complete filename and server path, each separately copyable; desktop hover also reveals the full name.
+  Tapping the name again, tapping outside or pressing Escape dismisses the overlay without resizing or
+  scrolling the content; Escape closes only the current layer. Explanations such as no automatic refresh,
+  source line wrapping and image gesture help live in this overlay; image zoom controls remain directly
+  available. Large Markdown shown as source retains a compact source indicator with the reason in the
+  overlay. Line location and copy results use temporary notices.
 
 PDF, Office and audio/video have no embedded preview yet. Existing PDF export printing is unaffected.

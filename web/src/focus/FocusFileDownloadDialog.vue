@@ -69,7 +69,7 @@ defineExpose({ open });
 <template>
   <Dialog :open="download.opened.value || preview.opened.value" :title="t(download.opened.value ? 'focus.fileDownloadTitle' : 'focus.filePreviewTitle')"
     :size="download.opened.value ? 'md' : narrow ? 'full' : 'xl'" :height="download.opened.value || narrow ? 'auto' : 'fixed'"
-    :padded="download.opened.value" @update:open="!$event && close()">
+    :padded="download.opened.value" :show-header="download.opened.value" @update:open="!$event && close()">
     <form v-if="download.opened.value" class="file-download-form" @submit.prevent="download.save">
       <p class="file-download-path">{{ download.path.value }}</p>
       <p v-if="download.loading.value" role="status">{{ t('focus.fileInfoLoading') }}</p>
@@ -94,7 +94,7 @@ defineExpose({ open });
         </Button>
       </div>
     </form>
-    <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview" @download="showDownload" @open-file="openLinkedFile" />
+    <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview" @close="close" @download="showDownload" @open-file="openLinkedFile" />
   </Dialog>
   <Teleport to="body"><div v-if="notice" class="file-download-notice" role="status">{{ t(notice) }}</div></Teleport>
 </template>

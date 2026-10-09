@@ -7,7 +7,7 @@ import Button from './Button.vue';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
 
-const props = defineProps<{ source: string; width: number; height: number; alt: string; help: string; failedText: string; naturalSize?: boolean }>();
+const props = defineProps<{ source: string; width: number; height: number; alt: string; help: string; failedText: string; naturalSize?: boolean; hideHelp?: boolean }>();
 const emit = defineEmits<{ failed: [] }>();
 const { t } = useI18n();
 const canvas = ref<HTMLElement | null>(null);
@@ -123,7 +123,7 @@ onBeforeUnmount(() => {
         <img v-if="!failed" :src="source" :style="transform" :alt="alt" draggable="false" @load="loaded" @error="failed = true; emit('failed')" />
         <p v-else class="image-failed" role="alert">{{ failedText }}</p>
       </div>
-      <div class="image-help">{{ help }}</div>
+      <div v-if="!hideHelp" class="image-help">{{ help }}</div>
     </div>
 </template>
 

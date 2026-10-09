@@ -1,6 +1,12 @@
 export default {
   fileDownloadTitle: 'Download file',
   filePreviewTitle: 'File preview',
+  filePreviewClose: 'Close preview',
+  filePreviewInfo: 'File information',
+  filePreviewInfoLabel: 'File information: {name}',
+  filePreviewPath: 'Server path',
+  filePreviewCopyName: 'Copy filename',
+  filePreviewCopyPath: 'Copy path',
   filePreviewAction: 'Preview',
   filePreviewRefresh: 'Refresh content',
   filePreviewRendered: 'Rendered view',

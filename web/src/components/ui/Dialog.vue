@@ -12,6 +12,9 @@ const props = withDefaults(defineProps<{
   open: boolean;
   title?: string;
   description?: string;
+  /** Hide the standard header when the body provides its own toolbar. The
+   *  title still names the dialog for assistive technology. */
+  showHeader?: boolean;
   closeOnOverlay?: boolean;
   closeOnEsc?: boolean;
   /** md 440 (default) · lg 640 · xl content width · full visual viewport. */
@@ -31,6 +34,7 @@ const props = withDefaults(defineProps<{
   size: 'md',
   height: 'auto',
   padded: true,
+  showHeader: true,
 });
 
 const emit = defineEmits<{
@@ -143,9 +147,10 @@ onBeforeUnmount(() => {
         :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }]"
         role="dialog"
         aria-modal="true"
+        :aria-label="title"
         tabindex="-1"
       >
-        <div v-if="title || $slots.head" class="ui-dialog__head">
+        <div v-if="showHeader && (title || $slots.head)" class="ui-dialog__head">
           <slot name="head">
             <div class="ui-dialog__titles">
               <div v-if="title" class="ui-dialog__title">{{ title }}</div>

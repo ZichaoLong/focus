@@ -1,6 +1,12 @@
 export default {
   fileDownloadTitle: '下载文件',
   filePreviewTitle: '文件预览',
+  filePreviewClose: '关闭预览',
+  filePreviewInfo: '文件信息',
+  filePreviewInfoLabel: '文件信息：{name}',
+  filePreviewPath: '服务器路径',
+  filePreviewCopyName: '复制文件名',
+  filePreviewCopyPath: '复制路径',
   filePreviewAction: '预览',
   filePreviewRefresh: '刷新内容',
   filePreviewRendered: '渲染视图',
