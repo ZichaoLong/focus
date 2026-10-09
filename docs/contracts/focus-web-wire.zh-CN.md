@@ -133,6 +133,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v29 新增持久分支 `POST /api/threads/{thread_id}/fork` 与 `FocusForkResult`，启用持久线程 fork 能力；
   浏览器过滤并拒绝打开 ephemeral 线程。服务与静态资源必须同版本部署。
 
+- v30 为 `FocusForkResult` 新增必填字符串 `name_warning`：自动命名确认成功为空，否则为可展示的命名提示；
+  `accepted=true` 与新 thread id 仍表示分支已创建，提示不授予重试 fork 的依据。浏览器在打开分支后显示提示。
+  自动命名规则见[持久分支创建](thread-create-local-commit.zh-CN.md#持久分支创建)。服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

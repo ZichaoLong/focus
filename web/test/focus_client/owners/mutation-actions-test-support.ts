@@ -235,7 +235,7 @@ export function harness(clientId = 'client-1'): Harness {
   let navigationDisposed = false;
 
   const api = {
-    forkThread: vi.fn(async () => ({ accepted: true, thread_id: 'fork-a', source_thread_id: 'thread-a' })),
+    forkThread: vi.fn(async () => ({ accepted: true, thread_id: 'fork-a', source_thread_id: 'thread-a', name_warning: '' })),
     renameThread: vi.fn(async (): Promise<FocusRenameResult> => ({
       accepted: true, thread_id: 'thread-a', name: 'renamed',
     })),

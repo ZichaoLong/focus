@@ -183,6 +183,12 @@ guards and may not retain parallel key or enum inventories.
 - v29 adds persistent `POST /api/threads/{thread_id}/fork` and `FocusForkResult`, enabling persistent-thread fork.
   Web filters and rejects ephemeral threads. Service and browser assets must deploy together.
 
+- v30 adds the required string `name_warning` to `FocusForkResult`: empty when automatic naming is
+  confirmed, otherwise a displayable naming notice. `accepted=true` and the new thread ID still mean
+  the branch was created; the notice grants no authority to retry fork. The browser shows it after
+  opening the branch. Naming rules are in [persistent fork creation](thread-create-local-commit.md#persistent-fork-creation).
+  Service and browser assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

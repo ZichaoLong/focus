@@ -672,6 +672,7 @@ export interface FocusForkResult {
   accepted: boolean;
   thread_id: string;
   source_thread_id: string;
+  name_warning: string;
 }
 
 export interface FocusGoalResult extends FocusCoordinates {

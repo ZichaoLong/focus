@@ -163,7 +163,7 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                 },
                 fork_thread=lambda client_id, thread_id: (
                     self.calls.append(("fork", (client_id, thread_id), {}))
-                    or {"accepted": True, "thread_id": "fork-1", "source_thread_id": thread_id}
+                    or {"accepted": True, "thread_id": "fork-1", "source_thread_id": thread_id, "name_warning": ""}
                 ),
                 rename_thread=lambda *args, **kwargs: {
                     "accepted": True,

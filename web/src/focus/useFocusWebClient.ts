@@ -785,9 +785,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function forkThread(threadId: string): Promise<void> {
     const floor = navigation.captureNavigationStateFloor();
-    const createdId = await forkThreadMutation(threadId);
-    if (createdId && navigation.navigationStateFloorIsCurrent(floor)) {
-      await selectThread(createdId);
+    const result = await forkThreadMutation(threadId);
+    if (!result) return;
+    if (navigation.navigationStateFloorIsCurrent(floor)) {
+      await selectThread(result.thread_id);
+    }
+    // Normal navigation clears the banner; present naming warnings after opening.
+    if (result.name_warning && !navigation.isDisposed
+      && !authRequired.value && !documentReloadRequired.value) {
+      errorPresentation.value = {
+        ...errorPresentation.value,
+        message: [errorPresentation.value.message, result.name_warning].filter(Boolean).join('\n'),
+      };
     }
   }
 

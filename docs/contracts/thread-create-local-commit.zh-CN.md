@@ -148,6 +148,13 @@ operational warning 可以报告已知 thread id 与本地失败 stage；它只�
 来源必须是持久 direct root。分支独立登记，不迁移飞书绑定，不提交 prompt，也不复制 goal 后启动自动续跑。
 创建时不覆盖模型、权限或工作目录；浏览器下一轮继续使用现有 Web next-turn settings。
 
+浏览器创建成功后，在同一本地提交回调内执行一次 `thread/name/set`，将持久名称设为
+`<来源显示名称> · 分支 <新 thread id 的末 8 位>`；来源显示名称依次取显式名称、preview、`（无标题）`。
+不修改来源名称，也不为 fcodex 原生 fork 增加命名规则。仅在改名确认成功后更新本地 summary；
+改名被拒绝或结果不明时保留已创建的分支，不重试 fork 或 rename，不把改名失败升级为创建失败。
+成功响应始终携 `name_warning` 字符串：命名确认成功为空，否则提示分支短 ID 与可手动改名。
+浏览器在正常打开结束后显示该提示，保留同时出现的打开错误；若用户已切走，则保留用户选择并仍显示提示。
+
 成功返回新 thread id 与来源 id，前端刷新列表并通过正常打开路径选中新分支；若用户期间已导航，则不抢回页面。
 创建本身不改变浏览器 selection 或父线程 writer。新线程的 runtime lease、effective settings 与本地投影
 共用 `ThreadCreateTransaction`；临时订阅经现有 interest/cleanup 回收，不保留独立 fork owner。

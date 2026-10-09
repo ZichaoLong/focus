@@ -195,6 +195,16 @@ is registered independently, without moving Feishu bindings, sending a prompt, o
 and starting continuation. Creation does not override model, permissions, or cwd; the next Web turn
 uses existing Web next-turn settings.
 
+After Web creation succeeds, the same local commit callback calls `thread/name/set` once to persist
+`<source display title> · 分支 <last 8 characters of the new thread ID>`. The source display title is
+its explicit name, otherwise its preview, otherwise `（无标题）`. The source name is unchanged; native
+fcodex forks gain no naming rule. The local summary changes only after naming is confirmed.
+A rejected or uncertain rename preserves the created branch, retries neither fork nor rename, and
+does not turn a naming failure into a creation failure. Every successful response includes a string
+`name_warning`: empty after confirmed naming, otherwise a notice identifying the branch's short ID
+and the manual rename option. The browser presents it after normal opening completes, preserving
+any opening error. If the user navigated elsewhere, that selection and the warning are both retained.
+
 Success returns the new and source thread IDs. The browser refreshes the list and opens the branch
 through normal navigation, unless the user has navigated elsewhere meanwhile. Creation itself does
 not change selection or the parent writer. Runtime lease, effective settings, and local projection

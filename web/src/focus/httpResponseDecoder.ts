@@ -1162,6 +1162,7 @@ export const decodeFocusForkResult: FocusHttpDecoder<FocusForkResult> = (value) 
   if (!isRequiredRecord('fork_result', value) || value.accepted !== true) return null;
   if (!isNonEmptyTrimmedString(value.thread_id) || !isNonEmptyTrimmedString(value.source_thread_id)
     || value.thread_id === value.source_thread_id) return null;
+  if (!hasString(value, 'name_warning')) return null;
   return value as unknown as FocusForkResult;
 };
 

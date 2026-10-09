@@ -417,6 +417,7 @@ class WebRuntimeController:
                 create_and_commit_thread=ports.create_and_commit_thread,
                 start_turn=ports.start_turn,
                 read_thread=ports.read_thread,
+                rename_thread=ports.rename_thread,
             ),
             runtime_context_guard=document_registry.assert_runtime_context,
         )

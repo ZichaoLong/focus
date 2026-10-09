@@ -17,6 +17,7 @@ import type {
 import type { FocusProjectionSync } from '../focusProjectionSync';
 import {
   FocusApiError,
+  type FocusForkResult,
   type FocusMeta,
   type FocusMutationDisposition,
   type FocusPromptResultReceipt,
@@ -171,7 +172,7 @@ export interface FocusMutationActions {
     disposition: FocusMutationDisposition,
   ): void;
   renameThread(threadId: string, name: string): Promise<void>;
-  forkThread(threadId: string): Promise<string | null>;
+  forkThread(threadId: string): Promise<FocusForkResult | null>;
   compact(): Promise<void>;
   review(target: Record<string, unknown>): Promise<void>;
   createGoal(objective: string): Promise<void>;
@@ -393,7 +394,7 @@ export function createFocusMutationActions(
     );
   }
 
-  async function forkThread(threadId: string): Promise<string | null> {
+  async function forkThread(threadId: string): Promise<FocusForkResult | null> {
     if (isDisposed() || options.connection.value !== 'connected'
       || projection.snapshotInvalidated.value || !threadId || actionBusy.value) return null;
     actionBusy.value = true;
@@ -409,7 +410,7 @@ export function createFocusMutationActions(
       } catch (error) {
         if (!isDisposed()) options.reportError(error);
       }
-      return isDisposed() ? null : result.thread_id;
+      return isDisposed() ? null : result;
     } catch (error) {
       if (!isDisposed()) options.reportError(error);
       return null;

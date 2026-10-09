@@ -88,6 +88,7 @@ class WebGatewayTests(WebGatewayHarness):
             self.assertEqual(response.status, 200)
             self.assertEqual(await response.json(), {
                 "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1",
+                "name_warning": "",
             })
         self.assertEqual(self.calls, [
             ("fork", (document["client_id"], "thread-1"), {}),

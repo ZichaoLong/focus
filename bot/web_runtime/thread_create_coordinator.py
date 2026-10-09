@@ -49,6 +49,8 @@ class WebThreadCreatePorts:
     ]
     start_turn: Callable[..., dict[str, Any]]
     read_thread: Callable[[str, bool], ThreadSnapshot]
+    rename_thread: Callable[[str, str], None]
+
 
 class WebThreadCreateCoordinator:
     """Run Web creation and fork transactions on RuntimeLoop."""
@@ -95,9 +97,24 @@ class WebThreadCreateCoordinator:
         source_id = require_web_thread_id(thread_id)
         source = self._ports.read_thread(source_id, False)
         require_web_direct_thread_snapshot(source, thread_id=source_id, operation="fork")
+        name_warning = ""
 
         def commit_fork(snapshot: ThreadSnapshot) -> str:
+            nonlocal name_warning
             new_id = require_web_thread_id(snapshot.summary.thread_id)
+            name = f"{source.summary.title} · 分支 {new_id[-8:]}"
+            try:
+                self._ports.rename_thread(new_id, name)
+            except Exception:
+                logger.warning(
+                    "Could not confirm automatic fork name for %s", new_id, exc_info=True,
+                )
+                name_warning = (
+                    f"Branch {new_id[-8:]} was created, but its automatic name could not be confirmed. "
+                    "You can rename it manually."
+                )
+            else:
+                snapshot.summary.name = name
             self._remember_direct_thread_summary(snapshot.summary)
             self._workspace.remember_thread_cwd(new_id, snapshot.summary.cwd)
             self._runtime_interest.mark_confirmed(new_id)
@@ -122,7 +139,12 @@ class WebThreadCreateCoordinator:
                 code="thread_create_local_commit_failed", status=503,
                 details={"thread_id": exc.thread_id, "source_thread_id": source_id},
             ) from exc
-        return {"accepted": True, "thread_id": created.local_result, "source_thread_id": source_id}
+        return {
+            "accepted": True,
+            "thread_id": created.local_result,
+            "source_thread_id": source_id,
+            "name_warning": name_warning,
+        }
 
     def start_thread(
         self,
