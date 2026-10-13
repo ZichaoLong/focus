@@ -88,6 +88,7 @@
 - [`focus-web-markdown-rendering.zh-CN.md`](./contracts/focus-web-markdown-rendering.zh-CN.md)
 - [`focus-web-export-filenames.zh-CN.md`](./contracts/focus-web-export-filenames.zh-CN.md)
 - [Focus Web 单文件下载](./contracts/focus-web-file-download.zh-CN.md)
+- [`focus-web-summary-export.zh-CN.md`](./contracts/focus-web-summary-export.zh-CN.md)
 - [`focus-web-summary-print.zh-CN.md`](./contracts/focus-web-summary-print.zh-CN.md)
 - [`focus-web-reading-mode.zh-CN.md`](./contracts/focus-web-reading-mode.zh-CN.md)
 - [`focus-web-prompt-mutation-recovery.zh-CN.md`](./contracts/focus-web-prompt-mutation-recovery.zh-CN.md)

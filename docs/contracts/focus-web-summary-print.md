@@ -12,12 +12,13 @@ gate with Markdown and thread-data exports.
 Filename dialogs and PDF default suggestions follow the
 [export filename contract](focus-web-export-filenames.md).
 
-`createFocusThreadActions` obtains the complete Markdown through the existing
+`createFocusThreadActions` first asks for [export range](focus-web-summary-export.md) and title,
+then obtains the complete selected Markdown through the existing
 authenticated `exportThreadSummary` operation. Content and limits belong to
-`GET /api/threads/{thread_id}/export-summary` in the [Web wire contract](focus-web-wire.md).
+`POST /api/threads/{thread_id}/export-summary` in the [Web wire contract](focus-web-wire.md).
 Never export a subset from the chat DOM, loaded history window or reading mode.
 Keep the exclusions for tool activity, reasoning and non-text attachments.
-No PDF endpoint, server browser dependency, external conversion service or wire DTO is added.
+The PDF consumer adds no PDF endpoint, server browser dependency, external conversion service or PDF-specific wire DTO.
 
 ## Completeness and rendering
 
@@ -56,8 +57,8 @@ title and complete Q&A source.
 ## Printing and lifecycle
 
 `summaryPrintWindow.ts` synchronously opens the same-origin `?print=summary`
-page during the click, avoiding popup blocking caused by waiting for history
-first. A blocked popup prompts the user to allow popups and retry, without
+page during the range dialog's confirmation click, avoiding popup blocking caused by waiting for history
+first. A blocked popup retains the options and prompts the user to allow popups and retry, without
 starting an export. The preview accepts content only from the exact opener,
 origin and one-use rendezvous ID; the sender validates the exact child, origin
 and ID as well. Transfer content only in memory, never in URLs, localStorage or

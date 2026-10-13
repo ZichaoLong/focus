@@ -114,7 +114,7 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                 ),
                 run_prepared_thread_read=lambda prepared: prepared[1],
                 abandon_prepared_thread_read=lambda _prepared: True,
-                prepare_export_thread_summary=lambda client_id, thread_id: (
+                prepare_export_thread_summary=lambda client_id, thread_id, **kwargs: (
                     "summary-export",
                     {
                         "client_id": client_id,
@@ -124,6 +124,7 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                 run_prepared_thread_summary_export=lambda _prepared: (
                     b"# Codex conversation summary\n"
                 ),
+                run_prepared_thread_export_turns=lambda _prepared: {"thread_id": "thread-1", "turns": [], "next_cursor": None},
                 prepare_export_thread_data=lambda client_id, thread_id: (
                     "data-export",
                     {

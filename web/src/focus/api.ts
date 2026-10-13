@@ -1,5 +1,7 @@
 import { focusPerformance } from './focusPerformance';
 import type {
+  FocusExportTurnPage,
+  FocusSummaryExportSelection,
   FocusFileInfo,
   FocusAttachmentUpload,
   FocusBackendResetPreview,
@@ -42,6 +44,7 @@ import {
 } from './focusWire.generated';
 import {
   decodeFocusAttachmentUpload,
+  decodeFocusExportTurnPage,
   decodeFocusFileInfo,
   decodeFocusBackendResetPreview,
   decodeFocusBackendResetResult,
@@ -250,7 +253,8 @@ export interface FocusWebApiPort {
     itemsView?: FocusTurnPage['items_view'],
     turnLimit?: number,
   ): Promise<FocusTurnPage>;
-  exportThreadSummary(threadId: string): Promise<Blob>;
+  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, signal?: AbortSignal): Promise<Blob>;
+  listExportTurns(threadId: string, cursor?: string, signal?: AbortSignal): Promise<FocusExportTurnPage>;
   readTranscriptWindow(threadId: string, query?: FocusTranscriptQuery, signal?: AbortSignal): Promise<FocusTranscriptPage>;
   exportThreadData(threadId: string): Promise<Blob>;
   readToolDetail(
@@ -628,7 +632,19 @@ export class FocusWebApi implements FocusWebApiPort {
     return response;
   }
 
-  async exportThreadSummary(threadId: string): Promise<Blob> {
+  async listExportTurns(threadId: string, cursor?: string, signal?: AbortSignal): Promise<FocusExportTurnPage> {
+    const page = await this.request('thread_export_turns', decodeFocusExportTurnPage, 'export turn directory', {
+      parameters: { thread_id: threadId }, query: new URLSearchParams(cursor ? { cursor } : {}), signal,
+    });
+    if (page.thread_id !== threadId) throw new FocusApiError('The export directory belongs to another conversation.', {
+      status: 502, code: 'invalid_gateway_response',
+    });
+    return page;
+  }
+
+  async exportThreadSummary(
+    threadId: string, selection: FocusSummaryExportSelection = { scope: 'all', turn_ids: [] }, signal?: AbortSignal,
+  ): Promise<Blob> {
     const response = await fetch(focusWebEndpointPath(
       'thread_summary_export',
       { thread_id: threadId },
@@ -638,7 +654,11 @@ export class FocusWebApi implements FocusWebApiPort {
       headers: {
         'X-Focus-Web-Client': this.clientId,
         'X-Focus-Web-Document': this.requireDocumentToken(),
+        'Content-Type': 'application/json',
+        'X-Focus-Web-Csrf': this.csrfToken,
       },
+      body: JSON.stringify(selection),
+      signal,
     });
     if (!response.ok) throw await errorFromResponse(response);
     const mediaType = response.headers

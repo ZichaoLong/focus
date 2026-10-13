@@ -1,5 +1,6 @@
 import { chooseFileDestination, type FileDestination } from './browserFileSave';
 import type { SummaryExportRequest } from '../types';
+import type { FocusSummaryExportSelection } from './types';
 import { downloadBlob } from '../lib/download';
 import { normalizeExportFilename, suggestExportFilename } from './exportFilename';
 import { normalizeSummaryTitle, titleSummaryMarkdown } from './summaryDocumentTitle';
@@ -8,20 +9,25 @@ import { openSummaryPrintWindow } from './summaryPrintWindow';
 interface FocusThreadActionClient {
   readonly summaryExporting: { readonly value: boolean };
   readonly threadDataExporting: { readonly value: boolean };
-  exportThreadSummary(threadId: string): Promise<Blob | null>;
+  readonly errorMessage?: { readonly value: string };
+  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection): Promise<Blob | null>;
   exportThreadData(threadId: string): Promise<Blob | null>;
   archiveThread(threadId: string): Promise<boolean>;
 }
 
 export interface ExportOptionsRequest {
-  format: 'markdown' | 'jsonl';
+  format: 'markdown' | 'jsonl' | 'print';
+  threadId: string;
   suggestedFilename: string;
   suggestedDocumentTitle?: string;
+  /** Invoked synchronously by the dialog's submit gesture, before resolving. */
+  onConfirm?: () => boolean;
 }
 
 export interface ExportOptionsChoice {
   filename: string;
   documentTitle?: string;
+  selection?: FocusSummaryExportSelection;
 }
 
 export interface FocusThreadActionsOptions {
@@ -66,8 +72,8 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
 
   async function runExport(
     threadId: string,
-    load: (id: string) => Promise<Blob | null>,
-    format: ExportOptionsRequest['format'],
+    load: (id: string, selection?: FocusSummaryExportSelection) => Promise<Blob | null>,
+    format: 'markdown' | 'jsonl',
     messageKeys: { busy: string; preparing: string; complete: string },
   ): Promise<void> {
     if (exportBusy()) {
@@ -79,7 +85,7 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
       const title = options.getThreadTitle(threadId);
       const documentTitle = normalizeSummaryTitle(title);
       const chosen = await options.requestExportOptions({
-        format, suggestedFilename: suggestExportFilename(title, format),
+        format, threadId, suggestedFilename: suggestExportFilename(title, format),
         ...(format === 'markdown' ? { suggestedDocumentTitle: documentTitle } : {}),
       });
       if (chosen === null) return;
@@ -98,9 +104,9 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
         return;
       }
       notify(translate(messageKeys.preparing));
-      const blob = await load(threadId);
+      const blob = await load(threadId, chosen.selection);
       if (blob === null) {
-        notify(translate('focus.exportSaveFailed'));
+        notify(client.errorMessage?.value || translate('focus.exportSaveFailed'));
         return;
       }
       const download = format === 'markdown'
@@ -124,19 +130,31 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
       const title = options.getThreadTitle(threadId);
       const filename = suggestExportFilename(title, 'print');
       const documentTitle = normalizeSummaryTitle(title);
-      // Open within the click's user activation, before fetching any history.
-      const preview = openSummaryPrintWindow();
-      if (!preview) {
-        notify(translate('focus.printPopupBlocked'));
-        return;
-      }
       exportPending = true;
+      const print = { preview: null as ReturnType<typeof openSummaryPrintWindow> };
       try {
-        const blob = await client.exportThreadSummary(threadId);
-        if (blob === null) preview.fail();
-        else preview.deliver(await blob.text(), filename, documentTitle);
+        const chosen = await options.requestExportOptions({
+          format, threadId, suggestedFilename: filename, suggestedDocumentTitle: documentTitle,
+          onConfirm: () => {
+            print.preview = openSummaryPrintWindow();
+            if (!print.preview) notify(translate('focus.printPopupBlocked'));
+            return print.preview !== null;
+          },
+        });
+        if (!chosen || !print.preview) return;
+        if (client.summaryExporting.value || client.threadDataExporting.value) {
+          print.preview.fail();
+          notify(translate('focus.summaryExportBusy'));
+          return;
+        }
+        const blob = await client.exportThreadSummary(threadId, chosen.selection);
+        if (blob === null) {
+          print.preview.fail();
+          notify(client.errorMessage?.value || translate('focus.exportSaveFailed'));
+        }
+        else print.preview.deliver(await blob.text(), filename, normalizeSummaryTitle(chosen.documentTitle ?? documentTitle));
       } catch {
-        preview.fail();
+        print.preview?.fail();
       } finally {
         exportPending = false;
       }
@@ -144,7 +162,7 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
     }
     return runExport(
       threadId,
-      (id) => client.exportThreadSummary(id),
+      (id, selection) => client.exportThreadSummary(id, selection),
       'markdown',
       {
         busy: 'focus.summaryExportBusy',

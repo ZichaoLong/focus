@@ -189,6 +189,11 @@ guards and may not retain parallel key or enum inventories.
   opening the branch. Naming rules are in [persistent fork creation](thread-create-local-commit.md#persistent-fork-creation).
   Service and browser assets must deploy together.
 
+- v31 adds all/last/selected Q&A ranges, changes `export-summary` to a read-only POST carrying
+  the selection, and adds paged `export-turns` with `FocusExportTurn` / `FocusExportTurnPage`.
+  No former GET alias remains. See [Q&A export ranges](focus-web-summary-export.md).
+  Service and browser assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,
@@ -253,28 +258,14 @@ guards and may not retain parallel key or enum inventories.
   same identity JSON. Compression changes only the HTTP representation; it does
   not change DTOs, revisions, cursors, or stale-read semantics. Small JSON,
   error responses, and attachment downloads do not use this path.
-- `GET /api/threads/{thread_id}/export-summary` returns one complete UTF-8
-  Markdown attachment for the current authenticated document. Its owner first
-  verifies an exact direct, non-ephemeral thread with persisted history, then
-  walks `thread/turns/list` with `sortDirection=asc`, `itemsView=summary`, and
-  100 turns per page. Each turn contributes only `type=text` content from its
-  first `userMessage` and its non-commentary final `agentMessage`; tool results,
-  reasoning, plans, MCP data, commentary, hook prompts, and non-text attachment
-  content never enter the file. A Focus attachment envelope contributes only
-  its `focus.user_request`; manifest metadata, same-host paths, and internal
-  instructions are excluded, while a malformed reserved envelope fails the
-  whole export. Each turn with exportable content has one numbered level-two
-  heading using a whitespace-collapsed excerpt of its first User prompt when
-  visible, or a fixed role label otherwise, bounded to 80 characters with `…`
-  marking truncation. The complete prompt and final answer remain under
-  level-three `User` / `Assistant` headings. The scan has a 30-second total
-  deadline, at most 100 pages, a
-  32-MiB final UTF-8 Markdown limit, and rejects repeated or
-  non-progressing cursors. Crossing any boundary returns an explicit HTTP error
-  without `Content-Disposition`, a partial `.md`, or silent truncation. The
-  fcodex TUI `/export` remains the full-record export.
-  The same complete Markdown also feeds the browser [Q&A print preview](focus-web-summary-print.md)
-  for printing / saving as PDF, without a new endpoint, DTO or PDF capability.
+- `POST /api/threads/{thread_id}/export-summary` returns a complete UTF-8 Markdown attachment
+  for the selected range and current authenticated document. `GET /api/threads/{thread_id}/export-turns`
+  provides a separate bounded turn-selection directory. Exact request bodies, directory DTOs, all three
+  range semantics, follow-ups, legacy compatibility and scan/output limits belong to the
+  [Q&A export range contract](focus-web-summary-export.md). Return an attachment only on complete
+  success, never a partial file on failure. Each exported turn has a numbered H2 with a prompt excerpt
+  bounded to 80 characters and complete User/Assistant sections under H3 headings. The same selected
+  Markdown feeds the [print preview](focus-web-summary-print.md); fcodex `/export` retains full tool records.
 - `GET /api/threads/{thread_id}/export-data` returns one complete UTF-8 JSONL
   attachment for the current authenticated document. The owner first verifies
   the exact direct, non-ephemeral thread with `history_mode=paginated`, then

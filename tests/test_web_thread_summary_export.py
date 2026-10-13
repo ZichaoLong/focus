@@ -98,6 +98,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
             ports=WebThreadSummaryExportPorts(
                 read_thread=read_thread or (lambda *_args, **_kwargs: _snapshot()),
                 list_thread_turns=list_turns,
+                list_thread_items=lambda *_args, **_kwargs: None,
                 capture_connection_generation=capture_generation,
                 run_if_connection_generation=run_if_generation,
             ),

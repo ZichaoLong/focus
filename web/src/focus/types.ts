@@ -545,6 +545,24 @@ export interface FocusSummaryPrompt {
   title_truncated: boolean;
 }
 
+export interface FocusSummaryExportSelection {
+  scope: FocusWebWireEnum<'summary_export_scope'>;
+  turn_ids: string[];
+}
+
+export interface FocusExportTurn {
+  turn_id: string;
+  prompt: string;
+  answer: string;
+  status: FocusWebWireEnum<'export_turn_status'>;
+}
+
+export interface FocusExportTurnPage {
+  thread_id: string;
+  turns: FocusExportTurn[];
+  next_cursor: string | null;
+}
+
 export interface FocusTurnPage extends FocusCoordinates {
   items_view: FocusWebWireEnum<'turn_items_view'>;
   page_cursor: string;

@@ -1,4 +1,5 @@
 import type {
+  FocusExportTurnPage,
   FocusFileInfo,
   FocusActiveTurnContext,
   FocusActiveTurnInitiator,
@@ -818,6 +819,21 @@ export const decodeFocusTurnPage: FocusHttpDecoder<FocusTurnPage> = (value) => {
       ? value.turns as unknown as FocusSummaryPrompt[]
       : canonicalizeTurns(value.turns),
   };
+};
+
+export const decodeFocusExportTurnPage: FocusHttpDecoder<FocusExportTurnPage> = (value) => {
+  if (!isRequiredRecord('export_turn_page', value) || !hasExactRequiredFields('export_turn_page', value)
+    || !isNonEmptyTrimmedString(value.thread_id) || !Array.isArray(value.turns) || value.turns.length > 20
+    || !(value.next_cursor === null || isNonEmptyTrimmedString(value.next_cursor))) return null;
+  const ids = new Set<string>();
+  for (const turn of value.turns) {
+    if (!isRequiredRecord('export_turn', turn) || !hasExactRequiredFields('export_turn', turn)
+      || !isNonEmptyTrimmedString(turn.turn_id) || ids.has(turn.turn_id)
+      || typeof turn.prompt !== 'string' || typeof turn.answer !== 'string'
+      || !isFocusWebWireEnum('export_turn_status', turn.status)) return null;
+    ids.add(turn.turn_id);
+  }
+  return value as unknown as FocusExportTurnPage;
 };
 
 function sameToolInspectionLocator(

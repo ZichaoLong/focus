@@ -47,6 +47,7 @@ class WebGatewayNextTurnSettingsTests(unittest.IsolatedAsyncioTestCase):
                 abandon_prepared_thread_read=lambda _prepared: True,
                 prepare_export_thread_summary=lambda *_args, **_kwargs: {},
                 run_prepared_thread_summary_export=lambda _prepared: b"",
+                run_prepared_thread_export_turns=lambda _prepared: {"thread_id": "thread-1", "turns": [], "next_cursor": None},
                 prepare_export_thread_data=lambda *_args, **_kwargs: None,
                 run_prepared_thread_data_export=lambda _prepared: b"",
                 prepare_tool_detail=lambda *_args, **_kwargs: {},

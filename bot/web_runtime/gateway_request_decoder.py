@@ -38,6 +38,16 @@ def decode_turn_window_limit(query: object) -> int:
         ) from exc
 
 
+def decode_export_turns_cursor(query: object) -> str | None:
+    message = "The export directory accepts one exact cursor."
+    values = _decode_exact_query(query, required=frozenset(), optional=frozenset({"cursor"}),
+                                 code="invalid_export_cursor", message=message)
+    cursor = values.get("cursor")
+    if cursor is not None and (not cursor or cursor != cursor.strip() or len(cursor) > 4096):
+        raise WebRuntimeError(message, code="invalid_export_cursor", status=400)
+    return cursor
+
+
 def decode_transcript_query(query: object) -> dict[str, Any]:
     message = "Transcript queries require exact cursor/turn/item fields and asc/desc direction."
     values = _decode_exact_query(

@@ -9,11 +9,11 @@
 打印操作与 Markdown、线程数据导出共用正在导出的互斥状态。
 文件名输入框与 PDF 默认建议名遵循[导出文件名合同](focus-web-export-filenames.zh-CN.md)。
 
-`createFocusThreadActions` 通过现有 authenticated `exportThreadSummary` 取得完整
+`createFocusThreadActions` 先显示[导出范围](focus-web-summary-export.zh-CN.md)与标题选项，再通过 authenticated `exportThreadSummary` 取得选定范围的完整
 Markdown；内容与边界由 [Web wire 合同](focus-web-wire.zh-CN.md) 的
-`GET /api/threads/{thread_id}/export-summary` 定义。不得从聊天 DOM、已加载窗口或
+`POST /api/threads/{thread_id}/export-summary` 定义。不得从聊天 DOM、已加载窗口或
 阅读模式截取导出内容，也不得改变问答导出对工具过程、reasoning 和非文本附件的排除。
-不新增 PDF endpoint、服务端浏览器依赖、外部转换服务或 wire DTO。
+PDF 消费者不新增 PDF endpoint、服务端浏览器依赖、外部转换服务或 PDF 专用 wire DTO。
 
 ## 完整性与渲染
 
@@ -40,8 +40,8 @@ Markdown；内容与边界由 [Web wire 合同](focus-web-wire.zh-CN.md) 的
 
 ## 打印与生命周期
 
-`summaryPrintWindow.ts` 在点击事件内同步打开同源 `?print=summary` 页面，以避免
-异步读取后才打开窗口造成拦截。弹窗被拦截时提示允许本站弹窗再重试，并不启动导出。
+`summaryPrintWindow.ts` 在范围弹窗的确认点击内同步打开同源 `?print=summary` 页面，以避免
+异步读取后才打开窗口造成拦截。弹窗被拦截时提示允许本站弹窗再重试，保留范围选项，并不启动导出。
 预览只接收 exact opener、origin 和一次性 rendezvous ID 匹配的内容；发送方也校验
 exact child、origin 与 ID。内容只在内存传递，不写入 URL、localStorage 或服务端文件。
 页面 URL 不携带会话正文或认证参数。传递成功后移除监听并断开 opener；关闭、超时

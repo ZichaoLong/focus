@@ -440,6 +440,7 @@ class WebRuntimeController:
             ports=WebThreadSummaryExportPorts(
                 read_thread=ports.read_thread,
                 list_thread_turns=ports.list_thread_turns,
+                list_thread_items=ports.list_thread_items,
                 capture_connection_generation=ports.capture_connection_generation,
                 run_if_connection_generation=ports.run_if_connection_generation,
             ),
@@ -867,8 +868,21 @@ class WebRuntimeController:
         self,
         client_id: str,
         thread_id: str,
+        **kwargs: Any,
     ) -> WebThreadSummaryExportPreparation:
-        return self._thread_summary_export.prepare(client_id, thread_id)
+        return self._thread_summary_export.prepare(client_id, thread_id, **kwargs)
+
+    def run_prepared_thread_export_turns(
+        self, prepared: WebThreadSummaryExportPreparation,
+    ) -> dict[str, Any]:
+        try:
+            page = self._thread_summary_export.execute_turns(prepared)
+            return self._runtime_call(self._thread_summary_export.settle, prepared, page)
+        except Exception as exc:
+            error = classify_thread_summary_export_error(exc)
+            if error is exc:
+                raise
+            raise error from exc
 
     def run_prepared_thread_summary_export(
         self,

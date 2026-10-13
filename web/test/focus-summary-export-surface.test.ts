@@ -27,7 +27,7 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(narrowSwitcher).toContain("t('sidebar.export')");
     expect(narrowSwitcher).toContain("return action === 'rename' || action === 'archive';");
     expect(app).toContain('<FocusThreadActions');
-    expect(actions).toContain('(id) => client.exportThreadSummary(id)');
+    expect(actions).toContain('(id, selection) => client.exportThreadSummary(id, selection)');
     expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
     expect(actions).toContain("preparing: 'focus.summaryExportPreparing'");
     expect(actions).toContain("import { downloadBlob } from '../lib/download';");

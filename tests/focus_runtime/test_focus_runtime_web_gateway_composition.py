@@ -288,13 +288,14 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
         ingress.prepare_external_transaction.reset_mock()
 
         self.assertIs(
-            ports.prepare_export_thread_summary("tab", "thread-1"),
+            ports.prepare_export_thread_summary("tab", "thread-1", cursor="older"),
             prepared,
         )
         ingress.prepare_external_transaction.assert_called_once_with(
             web_runtime.prepare_export_thread_summary,
             "tab",
             "thread-1",
+            cursor="older",
         )
         ingress.prepare_external_transaction.reset_mock()
 
@@ -359,6 +360,12 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
         ingress.run_prepared_external_transaction.assert_called_once_with(
             prepared,
             web_runtime.run_prepared_thread_summary_export,
+        )
+        ingress.run_prepared_external_transaction.reset_mock()
+
+        self.assertIs(ports.run_prepared_thread_export_turns(prepared), effect)
+        ingress.run_prepared_external_transaction.assert_called_once_with(
+            prepared, web_runtime.run_prepared_thread_export_turns,
         )
         ingress.run_prepared_external_transaction.reset_mock()
 

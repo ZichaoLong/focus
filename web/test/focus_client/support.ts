@@ -486,6 +486,10 @@ export class FakeApi implements FocusWebApiPort {
     return this.olderTurns;
   }
 
+  async listExportTurns(threadId: string) {
+    return { thread_id: threadId, turns: [], next_cursor: null };
+  }
+
   async exportThreadSummary(threadId: string): Promise<Blob> {
     this.summaryExportCalls.push(threadId);
     if (this.summaryExportGate) await this.summaryExportGate;

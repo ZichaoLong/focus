@@ -19,7 +19,7 @@ non-active sidebar sessions. Unavailable names fall back to
   at most 200 UTF-8 bytes including the extension. Always preview the name sent to
   the browser below the input. Empty names cannot be confirmed.
 - Cancel, close, overlay click, Escape and host component unmount cancel the
-  pending naming request without reading or downloading export content. Never
+  pending final export without downloading. Cancel in-flight directory/preview reads explicitly requested in the dialog and clear them. Never
   persist the entered name, send it to the server or include it in URLs.
 - Markdown, JSONL and printing share a gate while the dialog or export is active.
   Check the client's export state again after confirmation. Capture the target
@@ -68,7 +68,7 @@ System save-picker selection is shared through `browserFileSave.ts`; export beha
 
 ## PDF suggestion
 
-Printing adds no naming dialog and still opens the preview synchronously on click.
+Printing shares the [range and document-title dialog](focus-web-summary-export.md) without a filename input. Confirmation opens the preview synchronously.
 The selected thread's `.pdf` suggestion travels with the full Markdown in memory.
 The print page sets `document.title` to the suggestion without the extension for
 browsers to use as a default save name. The preview has an editable document title,

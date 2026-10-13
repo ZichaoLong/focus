@@ -106,14 +106,18 @@ def compose_web_gateway(
                 prepared
             ),
             prepare_export_thread_summary=lambda client_id,
-            thread_id: ingress().prepare_external_transaction(
+            thread_id, **kwargs: ingress().prepare_external_transaction(
                 web_runtime.prepare_export_thread_summary,
                 client_id,
                 thread_id,
+                **kwargs,
             ),
             run_prepared_thread_summary_export=lambda prepared: ingress().run_prepared_external_transaction(
                 prepared,
                 web_runtime.run_prepared_thread_summary_export,
+            ),
+            run_prepared_thread_export_turns=lambda prepared: ingress().run_prepared_external_transaction(
+                prepared, web_runtime.run_prepared_thread_export_turns,
             ),
             prepare_export_thread_data=lambda client_id,
             thread_id: ingress().prepare_external_transaction(

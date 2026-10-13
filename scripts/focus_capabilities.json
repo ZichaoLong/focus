@@ -1159,6 +1159,14 @@
         {
           "path": "web/src/components/chat/ReadingModeControls.vue",
           "symbol": "exportSession"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_thread_export_turns"
+        },
+        {
+          "path": "bot/web_runtime/controller.py",
+          "symbol": "WebRuntimeController.run_prepared_thread_export_turns"
         }
       ],
       "owner": [
@@ -1201,6 +1209,18 @@
         {
           "path": "web/src/focus/browserFileSave.ts",
           "symbol": "chooseFileDestination"
+        },
+        {
+          "path": "bot/web_runtime/thread_export_selection.py",
+          "symbol": "decode_export_selection"
+        },
+        {
+          "path": "bot/web_runtime/thread_export_selection.py",
+          "symbol": "export_qa"
+        },
+        {
+          "path": "web/src/focus/exportTurnSelection.ts",
+          "symbol": "createExportTurnSelection"
         }
       ],
       "contract": [
@@ -1231,6 +1251,14 @@
         {
           "path": "docs/contracts/focus-web-reading-mode.zh-CN.md",
           "heading": "导出"
+        },
+        {
+          "path": "docs/contracts/focus-web-summary-export.zh-CN.md",
+          "heading": "范围与内容"
+        },
+        {
+          "path": "docs/contracts/focus-web-summary-export.zh-CN.md",
+          "heading": "接口、读取与完整性"
         }
       ],
       "focused-test": [
@@ -1239,7 +1267,8 @@
           "targets": [
             "tests/test_web_thread_summary_export.py",
             "tests/web_runtime/test_thread_history_gateway.py",
-            "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py"
+            "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py",
+            "tests/test_web_thread_export_selection.py"
           ]
         },
         {
@@ -1254,7 +1283,9 @@
             "web/test/focus-thread-actions.test.ts",
             "web/test/export-filename.test.ts",
             "web/test/summary-document-title.test.ts",
-            "web/test/focus-reading-mode-surface.test.ts"
+            "web/test/focus-reading-mode-surface.test.ts",
+            "web/test/export-turn-selection.test.ts",
+            "web/test/focus-summary-export-api.test.ts"
           ]
         }
       ],

@@ -97,3 +97,5 @@ capability 可用时显示问答 Markdown 与打印／另存为 PDF；当前会�
 普通模式的常驻告警栏。
 
 性能与连接诊断同样默认关闭；手动采集时追加最多 64 条数值记录，涵盖正文加载耗时、事件字节、断开 code、缓冲溢出和可用时的 long task。停止后冻结，重新开始清空；不采集正文、线程标识、URL 或原始断开原因。具体预算见[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)。
+
+问答 Markdown 与打印的范围选择统一遵循[问答导出范围合同](focus-web-summary-export.zh-CN.md)，包括最后一轮与跨页勾选轮次。

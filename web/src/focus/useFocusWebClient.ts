@@ -39,6 +39,7 @@ import {
   type FocusOperatorStatus,
   type FocusOperatorStatusFreshness,
   type FocusUpdateStatus,
+  type FocusSummaryExportSelection,
 } from './types';
 
 const THREAD_QUERY_KEY = 'thread';
@@ -816,7 +817,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     return api.attachmentBlob(fileId);
   }
 
-  async function exportThreadSummary(threadId: string): Promise<Blob | null> {
+  async function exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection): Promise<Blob | null> {
     const normalizedThreadId = threadId.trim();
     if (
       !normalizedThreadId
@@ -827,7 +828,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     summaryExporting.value = true;
     clearError();
     try {
-      return await api.exportThreadSummary(normalizedThreadId);
+      return await api.exportThreadSummary(normalizedThreadId, selection);
     } catch (error) {
       if (!navigation.isDisposed) reportError(error);
       return null;
@@ -1107,6 +1108,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     uploadAttachment,
     downloadAttachment,
     exportThreadSummary,
+    listExportTurns: (threadId: string, cursor?: string, signal?: AbortSignal) => api.listExportTurns(threadId, cursor, signal),
+    previewExportTurn: (threadId: string, turnId: string, signal?: AbortSignal) => api.exportThreadSummary(
+      threadId, { scope: 'selected', turn_ids: [turnId] }, signal,
+    ),
     exportThreadData,
     submit,
     discardUnknownSubmission,

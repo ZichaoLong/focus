@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Button from '../components/ui/Button.vue';
 import Dialog from '../components/ui/Dialog.vue';
 import Input from '../components/ui/Input.vue';
+import Select from '../components/ui/Select.vue';
+import ExportTurnPicker from './ExportTurnPicker.vue';
+import { createExportTurnSelection, MAX_SELECTED_EXPORT_TURNS } from './exportTurnSelection';
+import type { FocusSummaryExportSelection } from './types';
 import { normalizeExportFilename } from './exportFilename';
 import { DEFAULT_SUMMARY_TITLE } from './summaryDocumentTitle';
 import { createFocusThreadActions, type ExportOptionsChoice, type ExportOptionsRequest, type FocusThreadActionsOptions } from './focusThreadActions';
@@ -18,9 +22,25 @@ const { t } = useI18n();
 const request = shallowRef<(ExportOptionsRequest & { resolve: (value: ExportOptionsChoice | null) => void }) | null>(null);
 const value = ref('');
 const documentTitle = ref('');
+const scope = ref<FocusSummaryExportSelection['scope']>('all');
+const selection = reactive(createExportTurnSelection({
+  listExportTurns: (...args) => props.client.listExportTurns(...args),
+  previewExportTurn: (...args) => props.client.previewExportTurn(...args),
+}));
 const filename = computed(() => request.value ? normalizeExportFilename(value.value, request.value.format) : '');
+const canSubmit = computed(() => Boolean(filename.value) && (request.value?.format === 'jsonl'
+  || scope.value !== 'selected' || (selection.selected.length > 0 && !selection.loading)));
+watch(() => [request.value?.threadId, scope.value], () => {
+  if (request.value && scope.value === 'selected') selection.open(request.value.threadId);
+});
+
+function changeScope(value: string): void {
+  if (value === 'all' || value === 'last_turn' || value === 'selected') scope.value = value;
+}
 
 function requestExportOptions(options: ExportOptionsRequest): Promise<ExportOptionsChoice | null> {
+  scope.value = 'all';
+  selection.reset();
   value.value = options.suggestedFilename;
   documentTitle.value = options.suggestedDocumentTitle ?? '';
   return new Promise((resolve) => { request.value = { ...options, resolve }; });
@@ -28,12 +48,17 @@ function requestExportOptions(options: ExportOptionsRequest): Promise<ExportOpti
 function settle(choice: ExportOptionsChoice | null): void {
   const pending = request.value;
   request.value = null;
+  selection.reset();
   pending?.resolve(choice);
 }
 function submit(): void {
-  if (filename.value) settle({
+  if (!canSubmit.value || (request.value?.onConfirm && !request.value.onConfirm())) return;
+  settle({
     filename: filename.value,
-    ...(request.value?.format === 'markdown' ? { documentTitle: documentTitle.value } : {}),
+    ...(request.value?.format !== 'jsonl' ? {
+      documentTitle: documentTitle.value,
+      selection: { scope: scope.value, turn_ids: scope.value === 'selected' ? [...selection.selected] : [] },
+    } : {}),
   });
 }
 function selectStem(event: FocusEvent): void {
@@ -59,30 +84,46 @@ defineExpose(actions);
 <template>
   <Dialog
     :open="request !== null"
-    :title="t(request?.format === 'jsonl' ? 'header.exportThreadData' : 'header.exportSession')"
-    :description="t('focus.exportFilenameHelp')"
-    initial-focus="input"
+    :title="t(request?.format === 'jsonl' ? 'header.exportThreadData' : request?.format === 'print' ? 'focus.printSummary' : 'header.exportSession')"
+    :description="t(request?.format === 'jsonl' ? 'focus.exportFilenameHelp' : 'focus.exportScopeHelp')"
+    size="lg"
+    :initial-focus="request?.format === 'jsonl' ? 'input' : 'select'"
     @update:open="!$event && settle(null)"
   >
-    <form class="export-form" @submit.prevent="submit">
-      <label class="export-label">
+    <form id="focus-export-options" class="export-form" @submit.prevent="submit">
+      <label v-if="request?.format !== 'jsonl'" class="export-label">
+        <span>{{ t('focus.exportScope') }}</span>
+        <Select :model-value="scope" @update:model-value="changeScope">
+          <option value="all">{{ t('focus.exportAll') }}</option>
+          <option value="last_turn">{{ t('focus.exportLastTurn') }}</option>
+          <option value="selected">{{ t('focus.exportSelected') }}</option>
+        </Select>
+      </label>
+      <p v-if="request?.format !== 'jsonl' && scope === 'last_turn'" class="export-preview">{{ t('focus.exportLastTurnHelp') }}</p>
+      <ExportTurnPicker v-if="request?.format !== 'jsonl' && scope === 'selected'" :selection="selection" />
+      <label v-if="request?.format !== 'print'" class="export-label">
         <span>{{ t('focus.exportFilename') }}</span>
         <Input v-model="value" autocomplete="off" :spellcheck="false" aria-describedby="export-filename-preview" @focus="selectStem" />
       </label>
-      <p id="export-filename-preview" class="export-preview" aria-live="polite">
+      <p v-if="request?.format !== 'print'" id="export-filename-preview" class="export-preview" aria-live="polite">
         {{ filename ? t('focus.exportFilenamePreview', { filename }) : t('focus.exportFilenameRequired') }}
       </p>
-      <p class="export-preview">{{ t('focus.exportSaveLocationHelp') }}</p>
-      <label v-if="request?.format === 'markdown'" class="export-label">
+      <p v-if="request?.format !== 'print'" class="export-preview">{{ t('focus.exportSaveLocationHelp') }}</p>
+      <label v-if="request?.format !== 'jsonl'" class="export-label">
         <span>{{ t('focus.exportDocumentTitle') }}</span>
         <Input v-model="documentTitle" autocomplete="off" :placeholder="DEFAULT_SUMMARY_TITLE" aria-describedby="export-title-help" />
       </label>
-      <p v-if="request?.format === 'markdown'" id="export-title-help" class="export-preview">{{ t('focus.exportDocumentTitleHelp') }}</p>
-      <div class="export-actions">
-        <Button type="button" variant="secondary" @click="settle(null)">{{ t('focus.cancel') }}</Button>
-        <Button type="submit" variant="primary" :disabled="!filename">{{ t('focus.exportDownload') }}</Button>
-      </div>
+      <p v-if="request?.format !== 'jsonl'" id="export-title-help" class="export-preview">{{ t('focus.exportDocumentTitleHelp') }}</p>
     </form>
+    <template #foot>
+      <div class="export-actions">
+        <span v-if="request?.format !== 'jsonl' && scope === 'selected'" class="export-selected-count" role="status">
+          {{ t('focus.exportSelectedCount', { count: selection.selected.length, max: MAX_SELECTED_EXPORT_TURNS }) }}
+        </span>
+        <Button type="button" variant="secondary" @click="settle(null)">{{ t('focus.cancel') }}</Button>
+        <Button type="submit" form="focus-export-options" variant="primary" :disabled="!canSubmit">{{ t(request?.format === 'print' ? 'focus.exportOpenPrint' : 'focus.exportDownload') }}</Button>
+      </div>
+    </template>
   </Dialog>
 </template>
 
@@ -102,7 +143,10 @@ defineExpose(actions);
 }
 .export-actions {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--space-2);
 }
+.export-selected-count { margin-right: auto; color: var(--color-text-muted); font-size: var(--text-sm); }
 </style>

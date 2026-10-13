@@ -24,6 +24,52 @@ def _raise_thread_data_export_too_large() -> bytes:
 
 
 class ThreadHistoryGatewayTests(WebGatewayHarness):
+    async def test_selected_export_is_document_bound_and_validates_before_reading(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(resume_client_id="selection-client", incarnation_id="selection-document")
+        calls = []
+
+        def prepare(client_id, thread_id, **kwargs):
+            calls.append((client_id, thread_id, kwargs))
+            return object()
+
+        self.gateway._ports.prepare_export_thread_summary = prepare
+        body = {"scope": "selected", "turn_ids": ["later", "earlier"]}
+        async with self.session.post(f"{self.endpoint}/api/threads/thread-1/export-summary",
+                                     json=body, headers=self._client_headers(document)) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.content_type, "text/markdown")
+        self.assertEqual(calls[0][:2], (document["client_id"], "thread-1"))
+        self.assertEqual(calls[0][2]["selection"].turn_ids, ("later", "earlier"))
+        for bad in [{"scope": "selected", "turn_ids": []}, {"scope": "selected", "turn_ids": ["a", "a"]},
+                    {"scope": "all", "turn_ids": [], "extra": True}]:
+            async with self.session.post(f"{self.endpoint}/api/threads/thread-1/export-summary",
+                                         json=bad, headers=self._client_headers(document)) as response:
+                self.assertEqual(response.status, 400)
+                self.assertNotIn("Content-Disposition", response.headers)
+        self.assertEqual(len(calls), 1)
+        async with self.session.post(f"{self.endpoint}/api/threads/thread-1/export-summary", json=body,
+                                     headers=self._client_headers(document, include_csrf=False)) as response:
+            self.assertEqual(response.status, 403)
+        self.assertEqual(len(calls), 1)
+
+    async def test_export_directory_uses_staged_read_and_exact_cursor(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(resume_client_id="directory-client", incarnation_id="directory-document")
+        calls = []
+        self.gateway._ports.prepare_export_thread_summary = lambda client_id, thread_id, **kwargs: calls.append((client_id, thread_id, kwargs))
+        async with self.session.get(f"{self.endpoint}/api/threads/thread-1/export-turns?cursor=older",
+                                    headers=self._client_headers(document)) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())["thread_id"], "thread-1")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(calls, [(document["client_id"], "thread-1", {"cursor": "older"})])
+        for query in ["cursor=", "cursor=a&cursor=b", "scope=selected"]:
+            async with self.session.get(f"{self.endpoint}/api/threads/thread-1/export-turns?{query}",
+                                        headers=self._client_headers(document)) as response:
+                self.assertEqual(response.status, 400)
+        self.assertEqual(len(calls), 1)
+
     async def test_large_thread_snapshot_negotiates_gzip_without_changing_json(
         self,
     ) -> None:
@@ -156,7 +202,8 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
         )
         prepared_calls: list[tuple[str, str]] = []
 
-        def prepare(client_id: str, thread_id: str):
+        def prepare(client_id: str, thread_id: str, **kwargs):
+            self.assertEqual(kwargs["selection"].scope, "all")
             prepared_calls.append((client_id, thread_id))
             return object()
 
@@ -165,12 +212,11 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
         self.gateway._ports.run_prepared_thread_summary_export = (
             lambda _prepared: markdown
         )
-        async with self.session.get(
+        async with self.session.post(
             f"{self.endpoint}/api/threads/thread-1/export-summary",
+            json={"scope": "all", "turn_ids": []},
             headers=self._client_headers(
                 document,
-                include_origin=False,
-                include_csrf=False,
             ),
         ) as response:
             self.assertEqual(response.status, 200)
@@ -193,12 +239,11 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
         self.gateway._ports.run_prepared_thread_summary_export = lambda _prepared: (
             _raise_summary_export_too_large()
         )
-        async with self.session.get(
+        async with self.session.post(
             f"{self.endpoint}/api/threads/thread-1/export-summary",
+            json={"scope": "all", "turn_ids": []},
             headers=self._client_headers(
                 document,
-                include_origin=False,
-                include_csrf=False,
             ),
         ) as response:
             self.assertEqual(response.status, 413)

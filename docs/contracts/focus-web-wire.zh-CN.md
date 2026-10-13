@@ -137,6 +137,10 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `accepted=true` 与新 thread id 仍表示分支已创建，提示不授予重试 fork 的依据。浏览器在打开分支后显示提示。
   自动命名规则见[持久分支创建](thread-create-local-commit.zh-CN.md#持久分支创建)。服务与静态资源必须同版本部署。
 
+- v31 为问答导出新增全部／最后一轮／勾选轮次，`export-summary` 改用只读 POST 承载选择，
+  并新增分页 `export-turns` 与 `FocusExportTurn` / `FocusExportTurnPage`。旧 GET 不保留 alias；
+  详见[问答导出范围](focus-web-summary-export.zh-CN.md)。服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
@@ -176,19 +180,12 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   `Accept-Encoding` 协商 `gzip`/`deflate`，并发送 `Vary: Accept-Encoding`；不支持压缩的 client 继续收到完全相同的
   identity JSON。压缩只改变 HTTP representation，不改变 DTO、revision、cursor 或 stale-read 语义；小 JSON、错误响应与
   attachment download 不走这条压缩路径。
-- `GET /api/threads/{thread_id}/export-summary` 只为 current authenticated document 导出一个完整 UTF-8 Markdown
-  attachment。owner 先验证 exact direct、non-ephemeral、persisted-history thread，再按 `sortDirection=asc`、
-  `itemsView=summary`、每页 100 turns 遍历 `thread/turns/list`。每轮只读取首个 `userMessage` 中 `type=text` 的
-  content 与非 commentary 的最终 `agentMessage`；工具结果、reasoning、plan、MCP、commentary、hook prompt 和非文本
-  附件内容一律不进入文件。Focus attachment envelope 必须只投影其中的 `focus.user_request`，manifest、同机路径与内部
-  说明不得导出；reserved envelope malformed 时整次导出显式失败。每个有可导出内容的 turn 使用一个带序号的二级
-  标题；标题优先取首个 User prompt 的空白折叠摘录，无可见 prompt 文字时使用固定角色标签，最多 80 字符并以 `…`
-  标记截断。完整 prompt 与最终回答仍分别保留在 `User` / `Assistant` 三级标题正文中。扫描总 deadline 为 30 秒，
-  最多 100 页，最终 UTF-8 Markdown 最多 32 MiB，并拒绝重复或不前进的 cursor；任一边界触发时返回显式 HTTP error，不能发送
-  `Content-Disposition`、partial `.md` 或静默截断。
-  完整记录仍由 fcodex TUI `/export` 持有。
-  同一完整 Markdown 还可由浏览器[问答打印页](focus-web-summary-print.zh-CN.md)用于打印／另存为 PDF；
-  该消费者不新增 endpoint、DTO 或 PDF capability。
+- `POST /api/threads/{thread_id}/export-summary` 为当前已认证文档导出所选范围的完整 UTF-8 Markdown
+  attachment。`GET /api/threads/{thread_id}/export-turns` 提供独立的有界轮次选择目录。
+  exact body、目录 DTO、三种范围语义、同轮补充、legacy 兼容及扫描／输出边界由
+  [问答导出范围合同](focus-web-summary-export.zh-CN.md)拥有。只有完整结果才返回 attachment，失败不发送 partial 文件。
+  每个有可导出内容的轮次使用编号二级标题，提问摘录最多 80 字符；完整问答使用 User／Assistant 三级标题。
+  同一份选定 Markdown 供[打印页](focus-web-summary-print.zh-CN.md)使用；完整工具记录仍由 fcodex `/export` 持有。
 - `GET /api/threads/{thread_id}/export-data` 只为 current authenticated document 导出一个完整 UTF-8 JSONL
   attachment。owner 先验证 exact direct、non-ephemeral、`history_mode=paginated` thread，再按
   `sortDirection=asc`、每页 100 items 遍历 `thread/items/list`。每行是 exact

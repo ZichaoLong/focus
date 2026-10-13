@@ -48,6 +48,7 @@ from bot.web_runtime.gateway_external_transaction import (
 )
 from bot.web_runtime.thread_data_export import THREAD_DATA_EXPORT_FILENAME
 from bot.web_runtime.thread_summary_export import SUMMARY_EXPORT_FILENAME
+from bot.web_runtime.thread_export_selection import decode_export_selection
 from bot.web_runtime.mutation_recovery import (
     is_web_mutation_id,
 )
@@ -152,6 +153,7 @@ class WebGatewayPorts:
     abandon_prepared_thread_read: Callable[[Any], bool]
     prepare_export_thread_summary: Callable[..., Any]
     run_prepared_thread_summary_export: Callable[[Any], bytes]
+    run_prepared_thread_export_turns: Callable[[Any], dict[str, Any]]
     prepare_export_thread_data: Callable[..., Any]
     run_prepared_thread_data_export: Callable[[Any], bytes]
     prepare_tool_detail: Callable[..., Any]
@@ -1076,11 +1078,13 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
         request: web.Request,
     ) -> web.Response:
         client_id = self._required_client_id(request)
+        selection = decode_export_selection(await request_decoder.decode_json_object(request))
         markdown = await self._staged_document_request_to_thread(
             self._ports.prepare_export_thread_summary,
             request,
             client_id,
             request.match_info["thread_id"],
+            selection=selection,
             execute=self._ports.run_prepared_thread_summary_export,
         )
         if not isinstance(markdown, bytes):
@@ -1097,6 +1101,15 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 "Content-Type": "text/markdown; charset=utf-8",
             },
         )
+
+    async def _handle_thread_export_turns(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        return self._json_response(await self._staged_document_request_to_thread(
+            self._ports.prepare_export_thread_summary,
+            request, client_id, request.match_info["thread_id"],
+            cursor=request_decoder.decode_export_turns_cursor(request.query),
+            execute=self._ports.run_prepared_thread_export_turns,
+        ), headers={"Cache-Control": "no-store"})
 
     async def _handle_thread_data_export(
         self,

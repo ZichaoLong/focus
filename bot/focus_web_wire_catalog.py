@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 30
+FOCUS_WEB_WIRE_VERSION: Final = 31
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -233,9 +233,13 @@ FOCUS_WEB_ENDPOINTS: Final = (
     ),
     FocusWebEndpointSpec(
         "thread_summary_export",
-        "GET",
+        "POST",
         "/api/threads/{thread_id}/export-summary",
         "_handle_thread_summary_export",
+    ),
+    FocusWebEndpointSpec(
+        "thread_export_turns", "GET", "/api/threads/{thread_id}/export-turns",
+        "_handle_thread_export_turns",
     ),
     FocusWebEndpointSpec(
         "thread_data_export",
@@ -382,6 +386,7 @@ _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
         "auth_bootstrap",
         "auth_logout",
         "client_register",
+        "thread_summary_export",
     }
 )
 
@@ -418,6 +423,8 @@ FOCUS_WEB_ENUMS: Final = (
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
+    _enum("summary_export_scope", "all last_turn selected"),
+    _enum("export_turn_status", "completed interrupted failed inProgress"),
     _enum("transcript_view", "transcript prompts"),
     _enum("thread_tool_kind", "commandExecution fileChange"),
     _enum("tool_detail_view", "preview full"),
@@ -721,6 +728,9 @@ FOCUS_WEB_RECORDS: Final = (
         "FocusSummaryPrompt",
         "id role no text title_truncated",
     ),
+    _record("export_turn", "FocusExportTurn", "turn_id prompt answer status",
+            "status:export_turn_status"),
+    _record("export_turn_page", "FocusExportTurnPage", "thread_id turns next_cursor"),
     _record(
         "turn_page",
         "FocusTurnPage",
