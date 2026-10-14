@@ -78,7 +78,7 @@ export default {
   exportContentAnswers: '仅最终回复',
   exportContentPrompts: '仅 Prompt',
   exportPromptsHelp: '保留用户提问与同轮补充，可导出未完成轮次中已有的提问文本；不含回复与附件。',
-  exportAnswersHelp: '仅导出已完成轮次的最终回复。全部范围会跳过尚无最终回复的轮次；最后一轮或勾选轮次缺少回复时会提示。',
+  exportAnswersHelp: '回复须已完成且明确标记为终态。全部范围会跳过无法确认的回复；最后一轮或勾选轮次会提示失败，可改用仅 Prompt。',
   exportLastPromptsHelp: '导出最近一轮中的用户提问；运行中仅包含读取时已有的内容。',
   exportSelectedPromptsHelp: '按轮次选择用户提问，保留同轮补充与跨页勾选；未完成的轮次也可选择。',
   exportUnavailableSelected: '已选的 {count} 轮尚未完成。请取消这些轮次，或切换为仅 Prompt。',

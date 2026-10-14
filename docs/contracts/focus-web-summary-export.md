@@ -28,14 +28,20 @@ assistant text. `final_answers` must exclude prompt excerpts from headings too.
 Either single-role mode fails explicitly if no body content is exportable, rather
 than downloading an empty document.
 
-Prefer the last explicit `final_answer`. Completed legacy records without an
-explicit final may use the last phase-null agent message. Explicit `commentary`
-and `partial_answer`, and phase-null messages in unfinished turns, are never final
-replies. Missing historical phase metadata cannot be reconstructed; compatibility
-selection does not prove that an explicit final marker was emitted. Keep attachment
-envelope projection and failure rules. Exclude tools, reasoning, hooks and non-text
-attachments. Number exported turns from 1 without truncating bodies. Filename and
-document-title rules remain unchanged.
+Final replies require a completed turn and the last explicit `phase=final_answer`.
+Never promote `commentary`, `partial_answer`, missing or null phases to final replies.
+Completion status, message position or inclusion in the upstream summary cannot
+replace the final marker. An empty last explicit final never falls back to earlier text.
+
+Use the current explicit format semantics without legacy final-reply inference.
+Apply the same rule to legacy and paginated storage, including records from current
+models that omit phase. Unmarked records retain prompt export: all Q&A includes
+only their prompts, all final replies skips them, and last/selected Q&A or final
+replies fails explicitly and suggests prompts only. Directory excerpts exclude
+unconfirmed replies, and item hydration never retains those reply bodies.
+Keep attachment-envelope projection and failure rules. Exclude tools, reasoning,
+hooks and non-text attachments. Number exported turns from 1 without truncating
+bodies. Filename and document-title rules remain unchanged.
 
 ## Directory and browser state
 
@@ -44,7 +50,7 @@ shows one page of turns with on-demand content previews. Group by turn, page new
 first, and read at most 20 source turns per page independently of the body window
 and 200-prompt directory. System turns can yield an empty page with a continuation
 cursor; an empty page does not mean the history is exhausted. Directory rows carry
-only prompt/reply excerpts and status. Expansion reads the chosen content for the complete turn through
+only prompt/confirmed-final-reply excerpts and status. Expansion reads the chosen content for the complete turn through
 the same export rules.
 
 Keep selections across pages. Show the count, clear action and Select this page,
@@ -118,7 +124,7 @@ unsupported errors.
 
 Cover three scopes × three content modes × both storage modes, role isolation in
 bodies and headings, paged steer input, selection order, missing/unfinished turns,
-legacy phases, limits, connection replacement and rejection through the real adapter decoder. Browser
+missing/null-phase degradation, limits, connection replacement and rejection through the real adapter decoder. Browser
 checks cover wide/narrow selection, retained selection across pages, cancellation,
 download content, confirmation-time popup opening and standalone preview. Narrow
 desktop simulation does not replace device-level mobile saving checks.

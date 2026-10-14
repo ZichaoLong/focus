@@ -80,6 +80,68 @@ def test_all_qa_does_not_treat_an_unfinished_phase_null_message_as_a_final_reply
     assert b"Question" in result and b"SECRET" not in result and b"### Assistant" not in result
 
 
+@pytest.mark.parametrize("mode", ["paginated", "legacy"])
+@pytest.mark.parametrize("scope", ["all", "last_turn", "selected"])
+@pytest.mark.parametrize("content", ["qa", "final_answers", "prompts"])
+@pytest.mark.parametrize("phase_present", [False, True], ids=["missing-phase", "null-phase"])
+def test_unmarked_replies_never_become_final_but_prompts_remain_exportable(mode, scope, content, phase_present):
+    unmarked = answer("unmarked-a", "SECRET UNMARKED REPLY", None)
+    if not phase_present:
+        del unmarked["phase"]
+    full = turn("new", items=[user("u", "Unmarked question"), user("s", "Follow-up"), unmarked])
+    summary = turn("new", items=[full["items"][0], unmarked])
+    direction = "desc" if scope == "last_turn" else "asc"
+    pages = {(direction, None, "summary"): ThreadTurnsPage(turns=[turn("old"), summary]),
+             (direction, None, "full"): ThreadTurnsPage(turns=[turn("old"), full])}
+    exporter, _ports = service(pages, {(identity, None): (row["items"], None)
+                                     for identity, row in [("old", turn("old")), ("new", full)]}, mode=mode)
+    prepared = exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection(
+        scope, ("new",) if scope == "selected" else (), content))
+    if scope != "all" and content != "prompts":
+        with pytest.raises(WebRuntimeError, match="no confirmed final reply") as failure:
+            exporter.execute(prepared)
+        assert failure.value.code == "thread_summary_export_incomplete_turn"
+        return
+    result = exporter.execute(prepared)
+    assert b"SECRET" not in result
+    assert (b"Unmarked question" in result) == (content != "final_answers")
+    assert (b"Follow-up" in result) == (content == "prompts")
+    assert (b"Reply old" in result) == (scope == "all" and content != "prompts")
+
+
+def test_directory_shows_only_confirmed_final_replies_from_completed_turns():
+    rows = [turn("marked"), turn("running", status="inProgress"),
+            turn("unmarked", items=[user("u", "Question"), answer("a", "SECRET", None)])]
+    exporter, _ports = service({("desc", None, "summary"): ThreadTurnsPage(turns=rows)})
+    directory = exporter.execute_turns(exporter.prepare("client-1", "thread-1"))
+    assert {row["turn_id"]: row["answer"] for row in directory["turns"]} == {
+        "marked": "Reply marked", "running": "", "unmarked": "",
+    }
+
+
+def test_unmarked_item_bodies_do_not_consume_the_final_reply_export_budget():
+    exporter, _ports = service({("desc", None, "summary"): ThreadTurnsPage(turns=[turn("new")])},
+                              {("new", None): ([user("u", "Question"), answer("old", "SECRET" * 500, None),
+                                                answer("a", "Confirmed reply")], None)}, max_output_bytes=256)
+    result = exporter.execute(exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection(
+        "last_turn", content="final_answers")))
+    assert b"Confirmed reply" in result and b"SECRET" not in result
+
+
+@pytest.mark.parametrize("scope", ["all", "last_turn", "selected"])
+def test_empty_latest_final_does_not_reuse_earlier_marked_or_unmarked_text(scope):
+    row = turn("new", items=[user("u", "Question"), answer("a", "EARLIER FINAL"),
+                             answer("empty", " "), answer("unmarked", "UNMARKED", None)])
+    direction = "desc" if scope == "last_turn" else "asc"
+    exporter, _ports = service({(direction, None, "summary"): ThreadTurnsPage(turns=[row])},
+                              {("new", None): (row["items"], None)})
+    with pytest.raises(WebRuntimeError) as failure:
+        exporter.execute(exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection(
+            scope, ("new",) if scope == "selected" else (), "final_answers")))
+    assert failure.value.code == ("thread_summary_export_missing_content" if scope == "all"
+                                  else "thread_summary_export_incomplete_turn")
+
+
 def test_all_qa_rejects_repeated_turns_across_pages_instead_of_duplicating_content():
     pages = {("asc", None, "summary"): ThreadTurnsPage(turns=[turn("a")], next_cursor="again"),
              ("asc", "again", "summary"): ThreadTurnsPage(turns=[turn("a")])}

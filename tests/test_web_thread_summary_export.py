@@ -192,7 +192,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
                                     {"type": "text", "text": "paragraph"},
                                 ],
                             },
-                            {"type": "agentMessage", "text": "Legacy final"},
+                            {"type": "agentMessage", "text": "secret unmarked reply"},
                         ],
                     }
                 ]
@@ -222,8 +222,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
             "\n\n## 2. Still running"
             "\n\n### User\n\nStill running"
             "\n\n## 3. Second paragraph"
-            "\n\n### User\n\nSecond\n\nparagraph"
-            "\n\n### Assistant\n\nLegacy final\n",
+            "\n\n### User\n\nSecond\n\nparagraph\n",
         )
         self.assertNotIn(b"secret", markdown)
         self.assertEqual(len(read_calls), 1)

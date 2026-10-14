@@ -82,11 +82,11 @@ def test_latest_never_falls_back_past_an_unfinished_question(status):
 def test_completed_turn_without_final_does_not_export_partial_answer():
     exporter, _ports = service({("desc", None, "summary"): ThreadTurnsPage(turns=[turn("new")])},
                               {("new", None): ([user("u", "Question"), answer("p", "Partial", "partial_answer")], None)})
-    with pytest.raises(WebRuntimeError, match="no final reply"):
+    with pytest.raises(WebRuntimeError, match="no confirmed final reply"):
         exporter.execute(exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection("last_turn")))
 
 
-def test_phase_unknown_legacy_reply_is_compatible_but_explicit_final_wins():
+def test_explicit_final_ignores_later_unmarked_reply():
     exporter, _ports = service({("desc", None, "summary"): ThreadTurnsPage(turns=[turn("new")])},
                               {("new", None): ([user("u", "Question"), answer("a", "Final"), answer("legacy", "Unknown", None)], None)})
     result = exporter.execute(exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection("last_turn")))
@@ -102,12 +102,12 @@ def test_missing_selected_turn_fails_without_returning_other_selected_content():
 
 
 def test_legacy_hydrates_matching_bounded_page_and_keeps_followups():
-    full = turn("old", items=[user("u", "Original"), user("steer", "Follow-up"), answer("a", "Legacy reply", None)])
+    full = turn("old", items=[user("u", "Original"), user("steer", "Follow-up"), answer("a", "Marked reply")])
     pages = {("desc", None, "summary"): ThreadTurnsPage(turns=[turn("old")]),
              ("desc", None, "full"): ThreadTurnsPage(turns=[full])}
     exporter, ports = service(pages, mode="legacy")
     result = exporter.execute(exporter.prepare("client-1", "thread-1", selection=SummaryExportSelection("last_turn")))
-    assert b"Original\n\nFollow-up" in result and b"Legacy reply" in result
+    assert b"Original\n\nFollow-up" in result and b"Marked reply" in result
     ports.list_thread_items.assert_not_called()
 
 

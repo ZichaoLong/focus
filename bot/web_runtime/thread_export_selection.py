@@ -97,8 +97,6 @@ def export_user_text(item: dict[str, Any]) -> str:
 def export_qa(turn: object, *, include_followups: bool = False) -> tuple[list[str], str | None]:
     prompts: list[str] = []
     final: str | None = None
-    has_final = False
-    legacy: str | None = None
     for item in export_turn_items(turn):
         if item.get("type") == "userMessage" and (include_followups or not prompts):
             prompts.append(export_user_text(item))
@@ -106,16 +104,12 @@ def export_qa(turn: object, *, include_followups: bool = False) -> tuple[list[st
             phase = item.get("phase")
             if phase not in (None, "commentary", "partial_answer", "final_answer"):
                 raise malformed("unknown agent message phase")
-            if phase in (None, "final_answer"):
+            if phase == "final_answer":
                 text = item.get("text")
                 if not isinstance(text, str):
                     raise malformed("invalid final answer")
-                if phase == "final_answer":
-                    final = text.strip() or None
-                    has_final = True
-                else:
-                    legacy = text.strip() or None
-    return prompts, final if has_final else legacy
+                final = text.strip() or None
+    return prompts, final
 
 
 def require_exportable_turn(turn: dict[str, Any], content: str) -> None:
@@ -131,8 +125,8 @@ def require_exportable_turn(turn: dict[str, Any], content: str) -> None:
         )
     if status != "completed" or not prompts or not answer:
         raise WebRuntimeError(
-            "A chosen turn is unfinished or has no final reply. "
-            "Wait for completion or choose another turn; no partial file was downloaded.",
+            "A chosen turn is unfinished or has no confirmed final reply. "
+            "Wait for completion or export prompts only; no partial file was downloaded.",
             code="thread_summary_export_incomplete_turn", status=409,
             details={"turn_id": identity, "status": status},
         )

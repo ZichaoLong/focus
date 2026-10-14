@@ -298,7 +298,7 @@ class WebThreadSummaryExportService:
                 if not prompts:
                     continue
                 title, _ = bounded_summary_prompt_text(prompts[0] or "User prompt", limit=160)
-                reply, _ = bounded_summary_prompt_text(answer or "", limit=240)
+                reply, _ = bounded_summary_prompt_text((answer or "") if status == "completed" else "", limit=240)
                 rows.append({"turn_id": identity, "status": status,
                              "prompt": title, "answer": reply})
             self._next_cursor(page.next_cursor, prepared.cursor, set())
@@ -428,16 +428,17 @@ class WebThreadSummaryExportService:
                 seen_items.add(item_id)
                 if item.get("type") == "userMessage" or (
                     prepared.selection.content != "prompts" and item.get("type") == "agentMessage"
-                    and item.get("phase") not in {"commentary", "partial_answer"}
                 ):
                     export_qa({"items": [item]}, include_followups=True)
                     if item.get("type") == "userMessage":
                         texts = [part["text"] for part in item["content"] if part.get("type") == "text"]
                         retained = {"id": item_id, "type": "userMessage",
                                     "content": [{"type": "text", "text": text} for text in texts]}
-                    else:
+                    elif item.get("phase") == "final_answer":
                         texts = [item["text"]]
                         retained = {"id": item_id, "type": "agentMessage", "text": item["text"], "phase": item.get("phase")}
+                    else:
+                        continue
                     content_bytes += sum(len(text.encode("utf-8")) for text in texts)
                     if content_bytes > self._max_output_bytes:
                         raise WebRuntimeError("The chosen turn exceeds the export size limit. No partial file was downloaded.",

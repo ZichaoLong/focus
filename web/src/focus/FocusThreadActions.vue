@@ -111,7 +111,7 @@ defineExpose(actions);
           <option value="prompts">{{ t('focus.exportContentPrompts') }}</option>
         </Select>
       </label>
-      <p v-if="request?.format !== 'jsonl' && selection.content !== 'qa'" class="export-preview">
+      <p v-if="request?.format !== 'jsonl'" class="export-preview">
         {{ t(selection.content === 'prompts' ? 'focus.exportPromptsHelp' : 'focus.exportAnswersHelp') }}
       </p>
       <p v-if="request?.format !== 'jsonl' && scope === 'last_turn'" class="export-preview">{{ t(selection.content === 'prompts' ? 'focus.exportLastPromptsHelp' : 'focus.exportLastTurnHelp') }}</p>

@@ -78,7 +78,7 @@ export default {
   exportContentAnswers: 'Final replies only',
   exportContentPrompts: 'Prompts only',
   exportPromptsHelp: 'Includes user prompts and follow-ups, even in unfinished turns. Replies and attachments are excluded.',
-  exportAnswersHelp: 'Includes final replies from completed turns. All turns skips unavailable replies; the last turn or selected turns report missing replies.',
+  exportAnswersHelp: 'Replies require a completed turn and an explicit final marker. All turns skips unconfirmed replies; the last or selected turns report an error. You can export prompts only instead.',
   exportLastPromptsHelp: 'Includes user prompts in the latest turn. Running turns contain only the text available when read.',
   exportSelectedPromptsHelp: 'Select user prompts by turn, including follow-ups and unfinished turns. Selections survive page changes.',
   exportUnavailableSelected: '{count} selected turns are unfinished. Deselect them or switch to prompts only.',
