@@ -54,6 +54,7 @@ const emit = defineEmits<{
   fork: [id: string];
   export: [request: SummaryExportRequest];
   archive: [id: string];
+  setHidden: [id: string, hidden: boolean];
   /** The parent shell owns confirmation and the async delete mutation. */
   deleteWorkspace: [workspaceId: string];
   loadMore: [workspaceId: string];
@@ -196,7 +197,8 @@ function canSessionAction(session: Session, action: 'rename' | 'fork' | 'export'
 }
 
 function hasSessionActions(session: Session): boolean {
-  return canSessionAction(session, 'rename')
+  return session.hiddenFromCurrent !== undefined
+    || canSessionAction(session, 'rename')
     || canSessionAction(session, 'fork')
     || canSessionAction(session, 'export')
     || canSessionAction(session, 'archive');
@@ -302,7 +304,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
             v-for="s in visibleSessions(g)"
             :key="s.id"
             class="srow"
-            :class="{ cur: s.id === activeId, unavailable: s.selectable === false }"
+            :class="{ cur: s.id === activeId, unavailable: s.selectable === false, 'menu-open': menuFor === s.id }"
             :aria-disabled="s.selectable === false"
             :title="s.selectable === false ? s.unavailableReason : undefined"
             @click="s.selectable !== false && onSelectSession(s.id)"
@@ -312,11 +314,15 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
               <div class="s">
                 <span>{{ s.time }}</span>
                 <span v-if="runtimeLabel(s)"> · {{ runtimeLabel(s) }}</span>
+                <span v-if="s.pendingInteraction === 'approval'"> · {{ t('workspace.awaitingPermission') }}</span>
+                <span v-else-if="s.pendingInteraction === 'question'"> · {{ t('workspace.awaitingAnswer') }}</span>
+                <span v-if="s.hiddenFromCurrent"> · {{ t('focus.hiddenThread') }}</span>
               </div>
             </div>
             <span v-if="(attentionBySession[s.id] ?? 0) > 0" class="att">{{ attentionBySession[s.id] }}</span>
             <IconButton
-              v-if="allowSessionActions && s.selectable !== false && hasSessionActions(s)"
+              v-if="allowSessionActions && (s.selectable !== false || s.hiddenFromCurrent !== undefined) && hasSessionActions(s)"
+              aria-disabled="false"
               size="lg"
               class="kb"
               :label="t('sidebar.options')"
@@ -327,6 +333,9 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 
             <!-- Kebab menu -->
             <Menu v-if="allowSessionActions && menuFor === s.id && hasSessionActions(s)" class="kmenu" @click.stop>
+              <MenuItem v-if="s.hiddenFromCurrent !== undefined" size="lg" aria-disabled="false" @click="emit('setHidden', s.id, !s.hiddenFromCurrent); menuFor = null">
+                {{ t(s.hiddenFromCurrent ? 'focus.restoreThread' : 'focus.hideThread') }}
+              </MenuItem>
               <MenuItem v-if="canSessionAction(s, 'rename')" size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
               <MenuItem v-if="canSessionAction(s, 'fork')" size="lg" @click="onFork(s.id)">
                 <Icon name="git-fork" size="sm" />
@@ -478,6 +487,7 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 .srow:hover { background: var(--color-surface-sunken); }
 .srow:active { background: var(--color-surface-sunken); }
 .srow.unavailable { cursor: not-allowed; opacity: 0.68; }
+.srow.menu-open { z-index: var(--z-dropdown); }
 .srow.unavailable:hover,
 .srow.unavailable:active { background: transparent; }
 .srow.cur { background: var(--color-accent-soft); box-shadow: inset 0 0 0 1px var(--color-accent-bd); }

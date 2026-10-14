@@ -777,6 +777,10 @@
           "symbol": "createBrowserTurnWindow"
         },
         {
+          "path": "web/src/focus/client-state/thread-visibility.ts",
+          "symbol": "createThreadVisibility"
+        },
+        {
           "path": "web/src/focus/client-state/web-next-turn-settings.ts",
           "symbol": "createWebNextTurnSettings"
         },
@@ -845,6 +849,7 @@
           "targets": [
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",
+            "web/test/focus_client/owners/thread-visibility.test.ts",
             "web/test/focus_client/owners/client-intent-clock.test.ts",
             "web/test/focus_client/owners/pending-request-actions.test.ts",
             "web/test/focus_client/owners/thread-event-revisions.test.ts",

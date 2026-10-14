@@ -29,6 +29,7 @@ import {
 } from './focusNavigationProfile';
 import { createWebNextTurnSettings } from './client-state/web-next-turn-settings';
 import { createBrowserTurnWindow } from './client-state/browser-turn-window';
+import { createThreadVisibility } from './client-state/thread-visibility';
 import { createThreadInspection } from './client-state/thread-inspection';
 import { createRuntimeNoticeOwner } from './client-state/runtime-notices';
 import { FocusPromptError } from './webPromptDiagnostic';
@@ -410,6 +411,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     return operatorStatusRefreshPromise;
   }
 
+  const threadVisibility = createThreadVisibility(computed(() => meta.value?.instance ?? ''));
   const clientView = createFocusClientView({
     meta,
     threads,
@@ -422,6 +424,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     draftWorkspaceId,
     scopeReady,
     settingsModel: settings.model,
+    hiddenThreadIds: threadVisibility.hiddenIds,
+    showHiddenThreads: threadVisibility.showHidden,
   });
   const {
     reasoningEffortOptions,
@@ -958,6 +962,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     transcript.dispose();
     runtimeNotices.reset();
     navigation.dispose();
+    threadVisibility.dispose();
     loading.value = false;
     clearOperatorStatusTimer();
     clearUpdatePoll();
@@ -990,6 +995,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     activeThreadId,
     threadScope,
     initialized,
+    showHiddenThreads: threadVisibility.showHidden,
+    setShowHiddenThreads: threadVisibility.setShowHidden,
+    setThreadHidden: threadVisibility.setHidden,
     loading,
     summaryExporting,
     threadDataExporting,

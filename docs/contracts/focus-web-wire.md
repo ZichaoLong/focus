@@ -46,6 +46,7 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Browser next-turn-settings snapshot installation | `WebNextTurnSettingsOwner` in `web/src/focus/client-state/web-next-turn-settings.ts` |
 | Browser-local recent-turn summary window preference | `BrowserTurnWindowOwner` in `web/src/focus/client-state/browser-turn-window.ts` |
 | Browser document-title presentation | `syncFocusDocumentTitle` in `web/src/focus/documentTitle.ts` |
+| Browser-local current-instance thread visibility preference | `ThreadVisibilityOwner` in `web/src/focus/client-state/thread-visibility.ts`; directory derivation belongs to `focusClientView.ts` |
 | Browser-local document-activity favicon preference and presentation | `createFocusDocumentActivityFaviconPreference` and `syncFocusDocumentActivityFavicon` in `web/src/focus/documentActivityFavicon.ts` |
 | Typed app-server runtime-notice projection | `project_runtime_notice` in `bot/web_runtime/runtime_notice.py`; ordered publication remains with `WebRuntimeEventCoordinator` |
 | Bounded runtime-notice presentation for the current browser document | `RuntimeNoticeOwner` in `web/src/focus/client-state/runtime-notices.ts` |
@@ -784,6 +785,25 @@ guards and may not retain parallel key or enum inventories.
   turns, status, profile, mutation state, or any other response field. These floors
   and the event-triggered bounded refresh add no polling/retry loop and grant no
   writer, owner, lifecycle, settings, approval, FIFO, or mutation authority.
+
+### Browser Thread Hiding
+
+“Hide from current list” changes only current-instance directory presentation. It does not archive,
+delete, stop, unsubscribe, or change the selected conversation. Preferences persist across reloads
+within browser same-origin storage and `/meta.instance`; same-instance tabs synchronize through
+`storage` events, while devices remain independent. `ThreadVisibilityOwner` is the sole writer.
+Each exact thread id has a separate marker so edits to different threads cannot overwrite each
+other across tabs. New and forked threads do not inherit a marker.
+
+“Show hidden” is a temporary document-local view switch; hidden rows offer “Unhide”. Global and
+search results bypass hiding. Backend facts still determine directory membership; unhiding does
+not load a thread. Threads with an existing list-level approval/question or snapshot pending
+request retain a reachable row and reminder; the hidden preference applies again after resolution.
+
+Ignore malformed keys/values. If storage is unavailable, preferences fall back to document memory
+without blocking startup, new conversations, or continued chat. Explicit unhiding or clearing site
+storage removes markers; missing list entries, status changes, unloading, and archiving do not
+prune them. Markers contain no thread content and never enter backend DTOs or runtime ownership.
 
 ## 6. Installation and Failure Semantics
 

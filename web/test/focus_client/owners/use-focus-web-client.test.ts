@@ -446,6 +446,76 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('useFocusWebClient thread hiding', () => {
+  it('changes only the directory while retaining the active chat and searchable history', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    const activeSnapshot = client.snapshot.value;
+    const canSubmit = client.canSubmit.value;
+    vi.clearAllMocks();
+
+    client.setThreadHidden('thread-1', true);
+
+    expect(client.sessions.value).toEqual([]);
+    expect(client.workspaceGroups.value.every(group => group.sessions.length === 0)).toBe(true);
+    expect(client.searchSessions.value.map(session => session.id)).toEqual(['thread-1']);
+    expect(client.activeThreadId.value).toBe('thread-1');
+    expect(client.snapshot.value).toBe(activeSnapshot);
+    expect(client.canSubmit.value).toBe(canSubmit);
+    for (const method of Object.values(fake.api)) {
+      if (vi.isMockFunction(method)) expect(method).not.toHaveBeenCalled();
+    }
+    client.setShowHiddenThreads(true);
+    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(true);
+    client.setShowHiddenThreads(false);
+    await client.reloadAll();
+    expect(client.sessions.value).toEqual([]);
+    await client.setThreadScope('global');
+    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(true);
+    client.setThreadHidden('thread-1', false);
+    await client.setThreadScope('current');
+    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(false);
+    client.dispose();
+  });
+
+  it.each(['approval', 'question'] as const)('keeps a hidden thread with a received %s reachable', async pending => {
+    stubBrowser();
+    const fake = testApi();
+    const background = { ...thread('Background'), id: 'thread-2', status: 'active' };
+    vi.mocked(fake.api.listThreads).mockResolvedValue({
+      ...threadList(0, 'Initial'), threads: [thread('Initial'), background],
+    });
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    client.setThreadHidden('thread-2', true);
+    expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1']);
+    vi.mocked(fake.api.listThreads).mockResolvedValue({
+      ...threadList(0, 'Updated'),
+      threads: [
+        thread('Initial'),
+        { ...background, pending_interaction: pending },
+        { ...thread('Fork'), id: 'fork-1', parent_thread_id: 'thread-2' },
+      ],
+    });
+    await client.reloadAll();
+    expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1', 'thread-2', 'fork-1']);
+    expect(client.sessions.value[1]?.hiddenFromCurrent).toBe(true);
+    expect(client.sessions.value[2]?.hiddenFromCurrent).toBe(false);
+    expect(client.pendingBySession.value['thread-2']).toEqual({
+      approvals: pending === 'approval' ? 1 : 0,
+      questions: pending === 'question' ? 1 : 0,
+    });
+    vi.mocked(fake.api.listThreads).mockResolvedValue({
+      ...threadList(0, 'Updated'), threads: [thread('Initial'), background],
+    });
+    await client.reloadAll();
+    expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1']);
+    client.dispose();
+  });
+});
+
 describe('useFocusWebClient runtime notice routing', () => {
   it('exposes exact prompt diagnostics and clears them before a new attempt', async () => {
     stubBrowser();

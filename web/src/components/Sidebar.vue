@@ -87,6 +87,7 @@ const emit = defineEmits<{
   addWorkspace: [];
   rename: [id: string, title: string];
   archive: [id: string];
+  setHidden: [id: string, hidden: boolean];
   fork: [id: string];
   export: [request: SummaryExportRequest];
   renameWorkspace: [id: string, name: string];
@@ -637,6 +638,7 @@ function onLogoClick(): void {
               @select-session="onSelectSession"
               @rename-session="(id, title) => emit('rename', id, title)"
               @archive-session="(id) => emit('archive', id)"
+              @set-session-hidden="(id, hidden) => emit('setHidden', id, hidden)"
               @fork-session="(id) => emit('fork', id)"
               @export-session="(request) => emit('export', request)"
               @load-more="onLoadMore"

@@ -39,6 +39,7 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | 完整 snapshot 的 staging 与原子安装 | `web/src/focus/focusProjectionSync.ts` |
 | browser next-turn settings snapshot 安装 | `web/src/focus/client-state/web-next-turn-settings.ts` 的 `WebNextTurnSettingsOwner` |
 | browser-local 近期轮次摘要窗口 preference | `web/src/focus/client-state/browser-turn-window.ts` 的 `BrowserTurnWindowOwner` |
+| browser-local 当前实例线程隐藏 preference | `web/src/focus/client-state/thread-visibility.ts` 的 `ThreadVisibilityOwner`；列表派生由 `focusClientView.ts` 持有 |
 | browser document title presentation | `web/src/focus/documentTitle.ts` 的 `syncFocusDocumentTitle` |
 | browser-local document activity favicon preference 与 presentation | `web/src/focus/documentActivityFavicon.ts` 的 `createFocusDocumentActivityFaviconPreference` 与 `syncFocusDocumentActivityFavicon` |
 | app-server typed runtime notice 投影 | `bot/web_runtime/runtime_notice.py` 的 `project_runtime_notice`；有序发布由 `WebRuntimeEventCoordinator` 持有 |
@@ -489,6 +490,21 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   可以替换旧 context，不只用于填充 `null`；不得安装或回滚 coordinates、turns、status、profile、
   mutation state 或任何其他 response 字段。上述 floor 与 event-triggered 有界 refresh 不建立 polling/
   retry loop，也不授予 writer、owner、lifecycle、settings、approval、FIFO 或 mutation authority。
+
+### 浏览器线程隐藏
+
+“从当前列表隐藏”只改变当前实例目录的显示，不归档、删除、停止、取消订阅或改变当前选中
+对话。偏好按浏览器同源存储与 `/meta.instance` 隔离，跨刷新保留，同源同实例标签页通过
+`storage` event 同步；不同设备不共享。`ThreadVisibilityOwner` 是唯一写入入口，每个 exact
+thread id 单独保存隐藏标记，避免标签页对不同线程的修改互相覆盖。新建与分叉线程不继承标记。
+
+“显示已隐藏”是当前 document 的临时查看开关；隐藏行提供“取消隐藏”。全局列表与搜索始终
+不受隐藏过滤。后端仍决定目录成员，取消隐藏本身不加载线程。已有 list-level approval/question
+或 snapshot pending request 的线程保留可达行与提醒；交互结束后继续应用隐藏偏好。
+
+损坏的 key/value 被忽略；存储不可用时偏好退化为当前 document 内存状态，不阻断启动、新会话
+或继续对话。显式取消隐藏或清除站点存储删除标记，不因列表暂缺、状态更新、卸载或归档自动
+修剪。隐藏标记不保存 thread 内容，不进入 backend DTO 或 runtime ownership。
 
 ## 6. 安装与失败语义
 

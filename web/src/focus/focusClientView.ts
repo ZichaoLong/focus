@@ -57,6 +57,8 @@ export interface FocusClientViewOptions {
   draftWorkspaceId: Readonly<Ref<string>>;
   scopeReady: Readonly<Ref<boolean>>;
   settingsModel: Readonly<Ref<string>>;
+  hiddenThreadIds: Readonly<Ref<ReadonlySet<string>>>;
+  showHiddenThreads: Readonly<Ref<boolean>>;
 }
 
 function formatRelativeTime(timestampSeconds: number): string {
@@ -307,9 +309,17 @@ export function createFocusClientView(options: FocusClientViewOptions) {
         supportEfforts: [],
       }
   ));
+  const directoryThreads = computed(() => options.threads.value.filter((thread) => (
+    options.threadScope.value === 'global'
+    || options.showHiddenThreads.value
+    || !options.hiddenThreadIds.value.has(thread.id)
+    || thread.pending_interaction === 'approval'
+    || thread.pending_interaction === 'question'
+    || options.snapshot.value?.pending_requests.some((request) => request.thread_id === thread.id)
+  )));
   const workspacesView = computed<WorkspaceView[]>(() => {
     const byRoot = new Map<string, FocusThreadSummary[]>();
-    for (const thread of options.threads.value) {
+    for (const thread of directoryThreads.value) {
       const root = thread.cwd || options.meta.value?.default_working_dir || '';
       if (root) byRoot.set(root, [...(byRoot.get(root) ?? []), thread]);
     }
@@ -377,10 +387,11 @@ export function createFocusClientView(options: FocusClientViewOptions) {
       selectable: thread.selectable !== false,
       unavailableReason: thread.unavailable_reason || undefined,
       actionCapabilities: threadCapabilities(thread),
+      hiddenFromCurrent: options.hiddenThreadIds.value.has(thread.id),
     };
   }
 
-  const sessions = computed<Session[]>(() => options.threads.value.map(projectSession));
+  const sessions = computed<Session[]>(() => directoryThreads.value.map(projectSession));
   const searchSessions = computed<Session[]>(() => (
     options.searchThreads.value.length
       ? options.searchThreads.value
