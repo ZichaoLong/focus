@@ -1028,11 +1028,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 /* 760px corresponds to --p-content-max. Container-query conditions cannot
    reference CSS custom properties directly. */
 @container (min-width: 760px) {
-  /* markstream's content-visibility:auto implies paint containment, which can
-     clip a table that breaks out of the normal Markdown width. Disable it only
-     for renderers that actually contain a table. Keep contain:layout intact. */
+  /* markstream uses both content-visibility:auto and explicit contain:content
+     in nested lists. Remove paint containment only on table ancestors so wide
+     tables can escape the reading column, preserving layout containment. */
   .a-msg .msg :deep(.markstream-vue.markdown-renderer:has(.table-node-wrapper)) {
     content-visibility: visible;
+    contain: layout;
   }
 
   /* Let a table grow naturally beyond the reading column, centred within the

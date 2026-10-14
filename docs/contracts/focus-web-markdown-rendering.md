@@ -29,6 +29,10 @@ inline flow. Long-reply rendering optimizations and inline-node boundaries must
 not introduce line breaks or paragraph gaps. Paragraph spacing does not apply
 to inline cell fragments. Cells may still wrap naturally to their available
 width, and wide tables continue to scroll horizontally within their own wrapper.
+On wide screens, table-containing Markdown renderers must allow tables, including
+those nested in lists and blockquotes, to extend beyond the reading column without
+ancestor paint containment clipping them. Preserve layout containment and rendering
+optimizations for other content; narrow screens continue to scroll within each table wrapper.
 
 Table splitting must protect complete, same-line `\(...\)` formulas: their
 internal pipes must not separate columns or discard following cells. This
@@ -82,6 +86,8 @@ print. Browser checks use the actual Markdown component at wide and narrow
 viewports to verify emphasis, font fallback, paragraphs and code lines, plus
 mixed inline table content and horizontal scrolling with long-reply rendering
 optimizations active.
+Include wide tables nested in lists and blockquotes: both edges must be visible
+or reachable by scrolling, rather than merely present in the DOM.
 Also check complete cells around pipe-containing formulas, copied source,
 streaming closure and print fallback.
 A narrow viewport does not establish compatibility with every device's fonts.
