@@ -180,6 +180,11 @@ goal receipt、participant identity 或同一 connection 不能授权 exclusive 
 Registry 内用于 endpoint cleanup 的 connected/grace/orphaned vocabulary 只能解释 endpoint，
 不能投影成跨前端 main-turn ownership。
 
+runtime holder 的生成、持久化与释放比较使用一致的 service process identity；不能因
+持久化时补齐 identity 而把同一 holder 误判为 successor。最后一个 source 退出时释放
+其 exact holder，保留其他 participant 与 service holder。已有实例残留仍由正常启动时
+确认旧 backend 已停止后的 instance purge 回收。
+
 ## interaction 与 server request
 
 当前 backend epoch 中，带非空 `turnId` 且属于 exact direct root 的 canonical interactive callback

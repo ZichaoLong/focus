@@ -1545,6 +1545,9 @@ class WebThreadOpenCoordinator:
         )
         self._require_observation(commit.observation)
         selected = self._workspace.materialize_persisted_selection(selection)
+        self._lifecycle.settle_runtime_cleanup_candidates(
+            selected.runtime_cleanup_thread_ids
+        )
         if interaction_lease_error is not None:
             raise interaction_lease_error
         snapshot = ThreadSnapshot(

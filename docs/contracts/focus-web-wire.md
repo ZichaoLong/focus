@@ -335,6 +335,11 @@ guards and may not retain parallel key or enum inventories.
   connection replacement/disconnect, and backend reset discard the applicable
   temporary slot. The slot is not persisted or automatically retried and gains
   no subscription, lifecycle, or replay authority.
+- After a successful open commits a new selection, cleanup candidates produced
+  by removing browser desire from previous threads must reach the runtime
+  lifecycle owner. Cleanup still requires current backend-generation and
+  non-active status evidence, preserving other documents, surface subscribers,
+  and pending interactions. Unsubscribing does not immediately unload backend memory.
 - The prepared service-ingress receipt remains a shutdown barrier across
   RuntimeLoop prepare, document-lock release, the external worker, and final
   settlement. Handler cancellation, executor-admission failure, or another

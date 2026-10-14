@@ -10,7 +10,12 @@ from unittest.mock import patch
 
 import bot.focus_runtime.runtime as focus_runtime_module
 import bot.focus_runtime.service_authority as service_authority_module
+from bot.fcodex.participant_runtime_registry import (
+    FcodexParticipantRuntimeRegistry,
+    FcodexParticipantRuntimeRegistryPorts,
+)
 from bot.focus_runtime.service_authority import ServiceRuntimeAuthority
+from bot.reason_codes import ReasonedCheck
 from bot.service_control_plane import ServiceControlError
 from bot.stores.instance_registry_store import InstanceRegistryEntry
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
@@ -309,6 +314,44 @@ class ServiceRuntimeAuthorityEffectTests(unittest.TestCase):
         self.assertEqual(
             {holder.holder_id for holder in lease.holders},
             {"fcodex:participant-1"},
+        )
+
+    def test_real_process_fcodex_disconnect_releases_only_its_holder(self) -> None:
+        tempdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tempdir.cleanup)
+        store = ThreadRuntimeLeaseStore(pathlib.Path(tempdir.name))
+        authority, _service_lease, _store = self.make_authority(
+            [], runtime_lease_store=store,
+        )
+        store.acquire("thread-1", authority.service_thread_runtime_holder())
+        registry = FcodexParticipantRuntimeRegistry(
+            ports=FcodexParticipantRuntimeRegistryPorts(
+                thread_runtime_lease_store=store,
+                runtime_holder_for_participant=authority.fcodex_runtime_holder,
+                global_loaded_gate=lambda _thread_id: ReasonedCheck.allow(),
+                schedule_participant_expiry=lambda *_args: None,
+                schedule_connection_expiry=lambda *_args: None,
+            ),
+            runtime_context_guard=lambda: None,
+        )
+        for participant in ("fcodex:one:incarnation", "fcodex:two:incarnation"):
+            registry.connect(participant, "connection")
+            registry.retain_connection_source(participant, "connection", "thread-1")
+
+        registry.disconnect("fcodex:one:incarnation", "connection")
+
+        lease = store.load("thread-1")
+        assert lease is not None
+        self.assertEqual(
+            {holder.holder_id for holder in lease.holders},
+            {"service:service-token", "fcodex:two:incarnation"},
+        )
+        registry.disconnect("fcodex:two:incarnation", "connection")
+        lease = store.load("thread-1")
+        assert lease is not None
+        self.assertEqual(
+            {holder.holder_id for holder in lease.holders},
+            {"service:service-token"},
         )
 
     def test_prepared_service_release_rejects_refreshed_successor(self) -> None:

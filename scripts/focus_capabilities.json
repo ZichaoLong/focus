@@ -204,6 +204,10 @@
           "heading": "main turn owner"
         },
         {
+          "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
+          "heading": "participant 与 connection 生命周期"
+        },
+        {
           "path": "docs/contracts/root-operation-owner.zh-CN.md",
           "heading": "2. 核心规则"
         },
@@ -248,7 +252,8 @@
           "targets": [
             "tests/test_fcodex_shared_interrupt.py",
             "tests/test_fcodex_shared_steer.py",
-            "tests/test_fcodex_wrapper_integration.py"
+            "tests/test_fcodex_wrapper_integration.py",
+            "tests/focus_runtime/test_focus_runtime_service_authority.py::ServiceRuntimeAuthorityEffectTests::test_real_process_fcodex_disconnect_releases_only_its_holder"
           ]
         }
       ],

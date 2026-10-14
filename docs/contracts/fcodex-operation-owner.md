@@ -21,6 +21,13 @@ Socket lifetime, server requests, goal continuation, thread create, and
 backend reset remain separate facts. This contract does not combine them into
 main-turn ownership.
 
+Runtime holder creation, persistence, and release comparison use the same
+service process identity. Filling identity during persistence must not make the
+same holder look like a successor. Removing the last source releases its exact
+holder while preserving other participants and the service holder. Existing
+instance residue is reclaimed by the normal startup purge after proving that
+the previous backend has stopped.
+
 ## Client Requests Without a Root Target
 
 A request without a non-empty `params.threadId` cannot be tied to a thread

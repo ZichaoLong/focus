@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 from bot.adapter_ingress_gate import AdapterIngressGate
 from bot.adapters.codex_app_server import CodexAppServerAdapter
+from bot.process_utils import process_identity
 from bot.reason_codes import (
     LIFECYCLE_BLOCKED_BY_LOADED_THREAD,
     LIFECYCLE_BLOCKED_BY_RUNTIME_UNVERIFIED,
@@ -217,11 +218,13 @@ class ServiceRuntimeAuthority:
         self._service_instance_lease.release()
 
     def service_thread_runtime_holder(self) -> ThreadRuntimeLeaseHolder:
+        owner_pid = os.getpid()
         return ThreadRuntimeLeaseHolder(
             holder_id=f"service:{self._service_instance_lease.owner_token}",
             holder_type="service",
             instance_name=self._instance_name,
-            owner_pid=os.getpid(),
+            owner_pid=owner_pid,
+            owner_process_identity=process_identity(owner_pid),
             owner_service_token=self._service_instance_lease.owner_token,
             control_endpoint=self._service_control_plane.control_endpoint,
             backend_url=self._adapter.current_app_server_url(),
@@ -234,11 +237,13 @@ class ServiceRuntimeAuthority:
         normalized_participant_id = str(participant_id or "").strip()
         if not normalized_participant_id.startswith("fcodex:"):
             raise ValueError("fcodex runtime holder 缺少合法 participant id。")
+        owner_pid = os.getpid()
         return ThreadRuntimeLeaseHolder(
             holder_id=normalized_participant_id,
             holder_type="fcodex",
             instance_name=self._instance_name,
-            owner_pid=os.getpid(),
+            owner_pid=owner_pid,
+            owner_process_identity=process_identity(owner_pid),
             owner_service_token=self._service_instance_lease.owner_token,
             control_endpoint=self._service_control_plane.control_endpoint,
             backend_url=self._adapter.current_app_server_url(),

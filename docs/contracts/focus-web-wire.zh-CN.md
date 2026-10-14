@@ -224,6 +224,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   暂时 unavailable；它不得等待 replay、发额外 RPC、延迟或拒绝 resume、触发 compensation，或把已经 ACK 的 resume
   重分类。known failure、outcome unknown、attempt replacement、connection replacement/disconnect 与 backend reset
   都丢弃相应临时槽；该槽不持久化、不自动 retry，也不取得 subscription、lifecycle 或 replay authority。
+- 成功打开并提交新的 selection 后，旧线程移除 browser desire 所产生的 cleanup candidates 必须交给
+  runtime lifecycle owner。清理仍需当前 backend generation 与非 active 状态证据，并保留其他 document、
+  surface subscriber 与 pending interaction 的保护；取消订阅不等于立即从 backend 内存卸载。
 - prepared service-ingress receipt 从 RuntimeLoop prepare 跨越 document-lock release、external worker 与最终 settlement
   保持 shutdown barrier。handler cancellation、executor admission failure 或其它 handoff failure 只可 abandon 尚未
   claim 的 exact receipt；claim 后的 transaction 必须自行 settle，且 shutdown 等待其退出。abandon/settle 只结算

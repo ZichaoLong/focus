@@ -49,6 +49,52 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
     def _guard(self) -> None:
         self.guard_calls += 1
 
+    def _open_second_thread(self) -> None:
+        self.fake.extra_summaries.append(
+            replace(self.fake.summary(), thread_id="thread-2", status="idle")
+        )
+        self.controller._runtime_interest.mark_confirmed("thread-2")
+        self.service_runtime_leases.add("thread-2")
+        self.open.read_thread("tab-1", "thread-2", intent_generation=2)
+
+    def test_successful_switch_cleans_up_previous_idle_thread(self) -> None:
+        self.open.read_thread("tab-1", "thread-1", intent_generation=1)
+
+        self._open_second_thread()
+
+        self.assertEqual(self.fake.unsubscribed, ["thread-1"])
+        self.assertEqual(self.service_runtime_leases, {"thread-2"})
+
+    def test_successful_switch_retains_running_thread_until_completion(self) -> None:
+        self.open.read_thread("tab-1", "thread-1", intent_generation=1)
+        self.fake.status = "active"
+
+        self._open_second_thread()
+
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertIn("thread-1", self.service_runtime_leases)
+        self.fake.status = "idle"
+        self.controller._lifecycle.maybe_release_web_runtime("thread-1")
+        self.assertEqual(self.fake.unsubscribed, ["thread-1"])
+
+    def test_successful_switch_preserves_another_browser_subscription(self) -> None:
+        self.open.read_thread("tab-1", "thread-1", intent_generation=1)
+        self.open.read_thread("tab-2", "thread-1", intent_generation=1)
+
+        self._open_second_thread()
+
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertIn("thread-1", self.service_runtime_leases)
+
+    def test_successful_switch_preserves_pending_interaction(self) -> None:
+        self.open.read_thread("tab-1", "thread-1", intent_generation=1)
+        self.external_pending_roots.add("thread-1")
+
+        self._open_second_thread()
+
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertIn("thread-1", self.service_runtime_leases)
+
     def _make_open(
         self,
         *,
