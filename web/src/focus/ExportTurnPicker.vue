@@ -16,7 +16,10 @@ const { t } = useI18n();
       <Button type="button" size="sm" variant="ghost" :disabled="!selection.canSelectPage" @click="selection.selectPage()">{{ t('focus.exportSelectPage') }}</Button>
       <Button type="button" size="sm" variant="ghost" :disabled="!selection.selected.length" @click="selection.clear()">{{ t('focus.exportClear') }}</Button>
     </div>
-    <p class="export-picker-help">{{ t('focus.exportSelectedHelp') }}</p>
+    <p class="export-picker-help">{{ t(selection.content === 'prompts' ? 'focus.exportSelectedPromptsHelp' : 'focus.exportSelectedHelp') }}</p>
+    <p v-if="selection.unavailableSelectedCount" role="alert" class="export-picker-error">
+      {{ t('focus.exportUnavailableSelected', { count: selection.unavailableSelectedCount }) }}
+    </p>
     <p v-if="selection.error" role="alert" class="export-picker-error">
       {{ selection.error }}
       <Button type="button" size="sm" variant="ghost" @click="selection.load()">{{ t('focus.retry') }}</Button>
@@ -28,16 +31,16 @@ const { t } = useI18n();
         <label class="export-picker-choice">
           <input
             type="checkbox" :checked="selection.selected.includes(row.turn_id)"
-            :disabled="selection.loading || (!selection.selected.includes(row.turn_id) && (row.status !== 'completed' || selection.selected.length >= MAX_SELECTED_EXPORT_TURNS))"
+            :disabled="selection.loading || (!selection.selected.includes(row.turn_id) && (!selection.canSelect(row) || selection.selected.length >= MAX_SELECTED_EXPORT_TURNS))"
             @change="selection.toggle(row)"
           >
           <span>{{ row.prompt }}</span>
         </label>
-        <p v-if="row.answer" class="export-picker-answer">{{ row.answer }}</p>
+        <p v-if="row.answer && selection.content !== 'prompts'" class="export-picker-answer">{{ row.answer }}</p>
         <div class="export-picker-toolbar">
           <span v-if="row.status !== 'completed'" class="export-picker-help">{{ t(`focus.exportTurn_${row.status}`) }}</span>
           <Button
-            v-else type="button" size="sm" variant="ghost" :disabled="selection.loading"
+            v-if="selection.canSelect(row)" type="button" size="sm" variant="ghost" :disabled="selection.loading"
             :aria-expanded="selection.previewId === row.turn_id"
             :aria-label="t('focus.exportPreviewTurn', { prompt: row.prompt })" @click="selection.preview(row)"
           >{{ t(selection.previewId === row.turn_id ? 'focus.exportHidePreview' : 'focus.exportPreview') }}</Button>

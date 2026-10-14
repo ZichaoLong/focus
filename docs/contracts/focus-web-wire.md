@@ -194,6 +194,10 @@ guards and may not retain parallel key or enum inventories.
   No former GET alias remains. See [Q&A export ranges](focus-web-summary-export.md).
   Service and browser assets must deploy together.
 
+- v32 requires `content=qa|final_answers|prompts` independently of the three turn ranges. Prompts
+  allow unfinished turns; final replies exclude prompt headings. See [export ranges and content](focus-web-summary-export.md).
+  Service and browser assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

@@ -1109,8 +1109,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     downloadAttachment,
     exportThreadSummary,
     listExportTurns: (threadId: string, cursor?: string, signal?: AbortSignal) => api.listExportTurns(threadId, cursor, signal),
-    previewExportTurn: (threadId: string, turnId: string, signal?: AbortSignal) => api.exportThreadSummary(
-      threadId, { scope: 'selected', turn_ids: [turnId] }, signal,
+    previewExportTurn: (threadId: string, turnId: string, content: FocusSummaryExportSelection['content'], signal?: AbortSignal) => api.exportThreadSummary(
+      threadId, { scope: 'selected', turn_ids: [turnId], content }, signal,
     ),
     exportThreadData,
     submit,

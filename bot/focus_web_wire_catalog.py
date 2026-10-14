@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 31
+FOCUS_WEB_WIRE_VERSION: Final = 32
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -424,6 +424,7 @@ FOCUS_WEB_ENUMS: Final = (
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
     _enum("summary_export_scope", "all last_turn selected"),
+    _enum("summary_export_content", "qa final_answers prompts"),
     _enum("export_turn_status", "completed interrupted failed inProgress"),
     _enum("transcript_view", "transcript prompts"),
     _enum("thread_tool_kind", "commandExecution fileChange"),

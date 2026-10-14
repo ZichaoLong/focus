@@ -1734,13 +1734,21 @@ class CodexAppServerAdapter(AgentAdapter):
                 "thread/turns/list",
                 "Codex thread turns page is missing data",
             )
-        turns = [dict(turn) for turn in raw_turns if isinstance(turn, dict)]
+        if any(not isinstance(turn, dict) for turn in raw_turns):
+            raise CodexRpcProtocolError("thread/turns/list", "Codex turn page contains a non-object turn")
+        for cursor_field in ("nextCursor", "backwardsCursor"):
+            cursor = result.get(cursor_field)
+            if cursor is not None and (
+                not isinstance(cursor, str) or not cursor or cursor != cursor.strip()
+            ):
+                raise CodexRpcProtocolError("thread/turns/list", f"Codex turn page contains an invalid {cursor_field}")
+        turns = [dict(turn) for turn in raw_turns]
         if sort_direction == "desc":
             turns.reverse()
         return ThreadTurnsPage(
             turns=turns,
-            next_cursor=_read_string(result, "nextCursor"),
-            backwards_cursor=_read_string(result, "backwardsCursor"),
+            next_cursor=result.get("nextCursor"),
+            backwards_cursor=result.get("backwardsCursor"),
         )
 
     @staticmethod

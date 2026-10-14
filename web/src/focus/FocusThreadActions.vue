@@ -29,7 +29,7 @@ const selection = reactive(createExportTurnSelection({
 }));
 const filename = computed(() => request.value ? normalizeExportFilename(value.value, request.value.format) : '');
 const canSubmit = computed(() => Boolean(filename.value) && (request.value?.format === 'jsonl'
-  || scope.value !== 'selected' || (selection.selected.length > 0 && !selection.loading)));
+  || scope.value !== 'selected' || (selection.selected.length > 0 && !selection.loading && !selection.unavailableSelectedCount)));
 watch(() => [request.value?.threadId, scope.value], () => {
   if (request.value && scope.value === 'selected') selection.open(request.value.threadId);
 });
@@ -37,10 +37,14 @@ watch(() => [request.value?.threadId, scope.value], () => {
 function changeScope(value: string): void {
   if (value === 'all' || value === 'last_turn' || value === 'selected') scope.value = value;
 }
+function changeContent(value: string): void {
+  if (value === 'qa' || value === 'final_answers' || value === 'prompts') selection.setContent(value);
+}
 
 function requestExportOptions(options: ExportOptionsRequest): Promise<ExportOptionsChoice | null> {
   scope.value = 'all';
   selection.reset();
+  selection.setContent('qa');
   value.value = options.suggestedFilename;
   documentTitle.value = options.suggestedDocumentTitle ?? '';
   return new Promise((resolve) => { request.value = { ...options, resolve }; });
@@ -57,7 +61,7 @@ function submit(): void {
     filename: filename.value,
     ...(request.value?.format !== 'jsonl' ? {
       documentTitle: documentTitle.value,
-      selection: { scope: scope.value, turn_ids: scope.value === 'selected' ? [...selection.selected] : [] },
+      selection: { scope: scope.value, turn_ids: scope.value === 'selected' ? [...selection.selected] : [], content: selection.content },
     } : {}),
   });
 }
@@ -99,7 +103,18 @@ defineExpose(actions);
           <option value="selected">{{ t('focus.exportSelected') }}</option>
         </Select>
       </label>
-      <p v-if="request?.format !== 'jsonl' && scope === 'last_turn'" class="export-preview">{{ t('focus.exportLastTurnHelp') }}</p>
+      <label v-if="request?.format !== 'jsonl'" class="export-label">
+        <span>{{ t('focus.exportContent') }}</span>
+        <Select :model-value="selection.content" @update:model-value="changeContent">
+          <option value="qa">{{ t('focus.exportContentQa') }}</option>
+          <option value="final_answers">{{ t('focus.exportContentAnswers') }}</option>
+          <option value="prompts">{{ t('focus.exportContentPrompts') }}</option>
+        </Select>
+      </label>
+      <p v-if="request?.format !== 'jsonl' && selection.content !== 'qa'" class="export-preview">
+        {{ t(selection.content === 'prompts' ? 'focus.exportPromptsHelp' : 'focus.exportAnswersHelp') }}
+      </p>
+      <p v-if="request?.format !== 'jsonl' && scope === 'last_turn'" class="export-preview">{{ t(selection.content === 'prompts' ? 'focus.exportLastPromptsHelp' : 'focus.exportLastTurnHelp') }}</p>
       <ExportTurnPicker v-if="request?.format !== 'jsonl' && scope === 'selected'" :selection="selection" />
       <label v-if="request?.format !== 'print'" class="export-label">
         <span>{{ t('focus.exportFilename') }}</span>

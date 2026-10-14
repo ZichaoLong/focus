@@ -34,15 +34,15 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
             return object()
 
         self.gateway._ports.prepare_export_thread_summary = prepare
-        body = {"scope": "selected", "turn_ids": ["later", "earlier"]}
+        body = {"content": "qa", "scope": "selected", "turn_ids": ["later", "earlier"]}
         async with self.session.post(f"{self.endpoint}/api/threads/thread-1/export-summary",
                                      json=body, headers=self._client_headers(document)) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(response.content_type, "text/markdown")
         self.assertEqual(calls[0][:2], (document["client_id"], "thread-1"))
         self.assertEqual(calls[0][2]["selection"].turn_ids, ("later", "earlier"))
-        for bad in [{"scope": "selected", "turn_ids": []}, {"scope": "selected", "turn_ids": ["a", "a"]},
-                    {"scope": "all", "turn_ids": [], "extra": True}]:
+        for bad in [{"content": "qa", "scope": "selected", "turn_ids": []}, {"content": "qa", "scope": "selected", "turn_ids": ["a", "a"]},
+                    {"content": "qa", "scope": "all", "turn_ids": [], "extra": True}]:
             async with self.session.post(f"{self.endpoint}/api/threads/thread-1/export-summary",
                                          json=bad, headers=self._client_headers(document)) as response:
                 self.assertEqual(response.status, 400)
@@ -214,7 +214,7 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
         )
         async with self.session.post(
             f"{self.endpoint}/api/threads/thread-1/export-summary",
-            json={"scope": "all", "turn_ids": []},
+            json={"content": "qa", "scope": "all", "turn_ids": []},
             headers=self._client_headers(
                 document,
             ),
@@ -241,7 +241,7 @@ class ThreadHistoryGatewayTests(WebGatewayHarness):
         )
         async with self.session.post(
             f"{self.endpoint}/api/threads/thread-1/export-summary",
-            json={"scope": "all", "turn_ids": []},
+            json={"content": "qa", "scope": "all", "turn_ids": []},
             headers=self._client_headers(
                 document,
             ),

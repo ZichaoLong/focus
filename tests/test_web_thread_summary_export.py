@@ -119,6 +119,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
                 turns=[
                     {
                         "id": "turn-1",
+                        "status": "completed",
                         "items": [
                             {
                                 "type": "userMessage",
@@ -162,6 +163,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
                     },
                     {
                         "id": "turn-2",
+                        "status": "inProgress",
                         "items": [
                             {
                                 "type": "userMessage",
@@ -181,6 +183,7 @@ class ThreadSummaryExportTests(unittest.TestCase):
                 turns=[
                     {
                         "id": "turn-3",
+                        "status": "completed",
                         "items": [
                             {
                                 "type": "userMessage",
@@ -240,6 +243,8 @@ class ThreadSummaryExportTests(unittest.TestCase):
             None: ThreadTurnsPage(
                 turns=[
                     {
+                        "id": "turn-1",
+                        "status": "completed",
                         "items": [
                             {
                                 "type": "userMessage",
@@ -282,6 +287,8 @@ class ThreadSummaryExportTests(unittest.TestCase):
             None: ThreadTurnsPage(
                 turns=[
                     {
+                        "id": "turn-1",
+                        "status": "completed",
                         "items": [
                             {
                                 "type": "userMessage",
@@ -305,6 +312,8 @@ class ThreadSummaryExportTests(unittest.TestCase):
             None: ThreadTurnsPage(
                 turns=[
                     {
+                        "id": "turn-1",
+                        "status": "completed",
                         "items": [
                             {
                                 "type": "userMessage",

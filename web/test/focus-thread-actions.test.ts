@@ -63,7 +63,7 @@ describe('Q&A print action', () => {
       expect(openSummaryPrintWindow).toHaveBeenCalledOnce();
       expect(client.exportThreadSummary).not.toHaveBeenCalled();
     }
-    const selection = { scope: 'selected' as const, turn_ids: ['later', 'earlier'] };
+    const selection = { scope: 'selected' as const, turn_ids: ['later', 'earlier'], content: 'final_answers' as const };
     choice.resolve({ filename: 'Selected Q&A', documentTitle: 'My selection', selection });
     await exporting;
     expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('chosen-thread', selection);

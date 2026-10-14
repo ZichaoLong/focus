@@ -1221,6 +1221,10 @@
         {
           "path": "web/src/focus/exportTurnSelection.ts",
           "symbol": "createExportTurnSelection"
+        },
+        {
+          "path": "bot/web_runtime/thread_export_selection.py",
+          "symbol": "require_exportable_turn"
         }
       ],
       "contract": [
@@ -1268,7 +1272,9 @@
             "tests/test_web_thread_summary_export.py",
             "tests/web_runtime/test_thread_history_gateway.py",
             "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py",
-            "tests/test_web_thread_export_selection.py"
+            "tests/test_web_thread_export_selection.py",
+            "tests/test_web_thread_export_content.py",
+            "tests/test_codex_app_server.py"
           ]
         },
         {

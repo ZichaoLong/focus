@@ -643,7 +643,7 @@ export class FocusWebApi implements FocusWebApiPort {
   }
 
   async exportThreadSummary(
-    threadId: string, selection: FocusSummaryExportSelection = { scope: 'all', turn_ids: [] }, signal?: AbortSignal,
+    threadId: string, selection: FocusSummaryExportSelection = { scope: 'all', turn_ids: [], content: 'qa' }, signal?: AbortSignal,
   ): Promise<Blob> {
     const response = await fetch(focusWebEndpointPath(
       'thread_summary_export',

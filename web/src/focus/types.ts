@@ -548,6 +548,7 @@ export interface FocusSummaryPrompt {
 export interface FocusSummaryExportSelection {
   scope: FocusWebWireEnum<'summary_export_scope'>;
   turn_ids: string[];
+  content: FocusWebWireEnum<'summary_export_content'>;
 }
 
 export interface FocusExportTurn {

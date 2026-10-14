@@ -1,17 +1,57 @@
 import { describe, expect, it, vi } from 'vitest';
 import { createExportTurnSelection } from '../src/focus/exportTurnSelection';
 import { decodeFocusExportTurnPage } from '../src/focus/httpResponseDecoder';
-import type { FocusExportTurn, FocusExportTurnPage } from '../src/focus/types';
+import type { FocusExportTurn, FocusExportTurnPage, FocusSummaryExportSelection } from '../src/focus/types';
 
 const row = (id: string, status: FocusExportTurn['status'] = 'completed'): FocusExportTurn => ({ turn_id: id, status, prompt: `Question ${id}`, answer: `Reply ${id}` });
 const page = (turns: FocusExportTurn[], cursor: string | null = null): FocusExportTurnPage => ({ thread_id: 'one', turns, next_cursor: cursor });
 function harness() {
-  const listExportTurns = vi.fn(async (): Promise<FocusExportTurnPage> => page([row('new')], 'older'));
-  const previewExportTurn = vi.fn(async () => new Blob(['# Q&A\nFull answer']));
+  const listExportTurns = vi.fn(async (_threadId: string, _cursor?: string, _signal?: AbortSignal): Promise<FocusExportTurnPage> => page([row('new')], 'older'));
+  const previewExportTurn = vi.fn(async (_threadId: string, _turnId: string, _content: FocusSummaryExportSelection['content'], _signal?: AbortSignal) => new Blob(['# Q&A\nFull answer']));
   return { listExportTurns, previewExportTurn, state: createExportTurnSelection({ listExportTurns, previewExportTurn }) };
 }
 
 describe('export turn selection', () => {
+  it('allows unfinished prompts and preserves their selection with a visible blocker when switching to replies', async () => {
+    const h = harness(); h.state.setContent('prompts'); h.state.open('one');
+    await vi.waitFor(() => expect(h.state.loading.value).toBe(false));
+    h.state.toggle(row('running', 'inProgress'));
+    h.state.toggle(row('__proto__'));
+    expect(h.state.selected.value).toEqual(['running', '__proto__']);
+    expect(h.state.unavailableSelectedCount.value).toBe(0);
+    h.listExportTurns.mockResolvedValueOnce(page([row('old')])); await h.state.load(1);
+    h.state.setContent('final_answers');
+    expect(h.state.selected.value).toEqual(['running', '__proto__']);
+    expect(h.state.unavailableSelectedCount.value).toBe(1);
+    expect(h.state.canSelect(row('running', 'inProgress'))).toBe(false);
+    h.state.setContent('prompts');
+    expect(h.state.unavailableSelectedCount.value).toBe(0);
+    h.state.clear(); h.state.setContent('qa');
+    expect(h.state.unavailableSelectedCount.value).toBe(0);
+  });
+
+  it('previews the chosen content and discards a late preview after a content change', async () => {
+    const h = harness(); h.state.open('one');
+    await vi.waitFor(() => expect(h.state.loading.value).toBe(false));
+    let finish!: (blob: Blob) => void;
+    h.previewExportTurn.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const pending = h.state.preview(row('new'));
+    const signal = h.previewExportTurn.mock.calls[0]![3]!;
+    h.state.setContent('prompts'); expect(signal.aborted).toBe(true);
+    finish(new Blob(['Secret old answer'])); await pending;
+    expect(h.state.previewText.value).toBe('');
+    await h.state.preview(row('running', 'inProgress'));
+    expect(h.previewExportTurn).toHaveBeenLastCalledWith('one', 'running', 'prompts', expect.any(AbortSignal));
+  });
+
+  it('selects all unfinished rows on a page only in prompts mode', async () => {
+    const h = harness(); h.listExportTurns.mockResolvedValueOnce(page([row('running', 'inProgress'), row('failed', 'failed')]));
+    h.state.open('one'); await vi.waitFor(() => expect(h.state.loading.value).toBe(false));
+    expect(h.state.canSelectPage.value).toBe(false);
+    h.state.setContent('prompts'); h.state.selectPage();
+    expect(h.state.selected.value).toEqual(['running', 'failed']);
+  });
+
   it('keeps selections across pages and opening the same target, never selects unfinished turns', async () => {
     const h = harness(); h.state.open('one');
     await vi.waitFor(() => expect(h.state.rows.value).toHaveLength(1));
@@ -71,7 +111,7 @@ describe('export turn selection', () => {
   it('previews a whole turn on demand and toggles it closed', async () => {
     const h = harness(); h.state.open('one'); await vi.waitFor(() => expect(h.state.loading.value).toBe(false));
     await h.state.preview(row('new'));
-    expect(h.previewExportTurn).toHaveBeenCalledWith('one', 'new', expect.any(AbortSignal));
+    expect(h.previewExportTurn).toHaveBeenCalledWith('one', 'new', 'qa', expect.any(AbortSignal));
     expect(h.state.previewText.value).toContain('Full answer');
     await h.state.preview(row('new')); expect(h.state.previewText.value).toBe('');
   });

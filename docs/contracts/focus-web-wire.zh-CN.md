@@ -141,6 +141,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   并新增分页 `export-turns` 与 `FocusExportTurn` / `FocusExportTurnPage`。旧 GET 不保留 alias；
   详见[问答导出范围](focus-web-summary-export.zh-CN.md)。服务与静态资源必须同版本部署。
 
+- v32 为问答导出增加必填 `content=qa|final_answers|prompts`，独立于三种轮次范围。仅 Prompt 允许未完成轮次；
+  仅最终回复不包含提问标题。详见[导出范围与内容](focus-web-summary-export.zh-CN.md)。服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

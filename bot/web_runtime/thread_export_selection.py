@@ -22,13 +22,15 @@ EXPORT_TURN_PAGE_SIZE = 20
 class SummaryExportSelection:
     scope: str = "all"
     turn_ids: tuple[str, ...] = ()
+    content: str = "qa"
 
 
 def decode_export_selection(value: object) -> SummaryExportSelection:
     if (
         not isinstance(value, dict)
-        or set(value) != {"scope", "turn_ids"}
+        or set(value) != {"scope", "turn_ids", "content"}
         or value.get("scope") not in FOCUS_WEB_ENUM_BY_NAME["summary_export_scope"].values
+        or value.get("content") not in FOCUS_WEB_ENUM_BY_NAME["summary_export_content"].values
         or not isinstance(value.get("turn_ids"), list)
     ):
         raise invalid_selection()
@@ -41,12 +43,12 @@ def decode_export_selection(value: object) -> SummaryExportSelection:
         or (value["scope"] == "selected") != bool(ids)
     ):
         raise invalid_selection()
-    return SummaryExportSelection(value["scope"], tuple(ids))
+    return SummaryExportSelection(value["scope"], tuple(ids), value["content"])
 
 
 def invalid_selection() -> WebRuntimeError:
     return WebRuntimeError(
-        "Choose all, last_turn, or 1..100 distinct turns from this conversation.",
+        "Choose all, last_turn, or 1..100 distinct turns, and qa, final_answers, or prompts.",
         code="invalid_summary_export_selection", status=400,
     )
 
@@ -116,9 +118,17 @@ def export_qa(turn: object, *, include_followups: bool = False) -> tuple[list[st
     return prompts, final if has_final else legacy
 
 
-def require_complete_qa(turn: dict[str, Any]) -> None:
+def require_exportable_turn(turn: dict[str, Any], content: str) -> None:
     identity, status = export_turn_identity(turn)
     prompts, answer = export_qa(turn, include_followups=True)
+    if content == "prompts":
+        if any(prompts):
+            return
+        raise WebRuntimeError(
+            "A chosen turn has no text prompt to export. No partial file was downloaded.",
+            code="thread_summary_export_missing_content", status=409,
+            details={"turn_id": identity, "content": content},
+        )
     if status != "completed" or not prompts or not answer:
         raise WebRuntimeError(
             "A chosen turn is unfinished or has no final reply. "

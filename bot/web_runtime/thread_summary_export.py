@@ -32,7 +32,7 @@ from bot.web_runtime.thread_export_selection import (
     export_qa,
     export_turn_identity,
     export_turn_items,
-    require_complete_qa,
+    require_exportable_turn,
 )
 from bot.web_runtime.writer_workspace_coordinator import (
     require_web_client_id,
@@ -173,7 +173,8 @@ class WebThreadSummaryExportService:
         self._runtime_context_guard()
         if not isinstance(selection, SummaryExportSelection):
             raise TypeError("typed summary export selection is required")
-        decode_export_selection({"scope": selection.scope, "turn_ids": list(selection.turn_ids)})
+        decode_export_selection({"scope": selection.scope, "turn_ids": list(selection.turn_ids),
+                                 "content": selection.content})
         if cursor is not None and (not isinstance(cursor, str) or not cursor
                                    or cursor != cursor.strip() or len(cursor) > 4096):
             raise WebRuntimeError("Invalid export directory cursor.", code="invalid_export_cursor")
@@ -250,71 +251,36 @@ class WebThreadSummaryExportService:
 
     def _execute(self, prepared: WebThreadSummaryExportPreparation) -> bytes:
         snapshot = self._snapshot(prepared)
-        if prepared.selection.scope != "all":
+        if prepared.selection.scope != "all" or prepared.selection.content == "prompts":
             return self._execute_selection(prepared, snapshot)
 
         output = bytearray(_TITLE.encode("utf-8"))
         cursor: str | None = None
         seen_cursors: set[str] = set()
-        page_count = 0
+        seen_turns: set[str] = set()
         outline_number = 0
-        while True:
-            page_count += 1
-            page = self._ports.list_thread_turns(
-                prepared.thread_id,
-                cursor=cursor,
-                limit=self._page_limit,
-                sort_direction="asc",
-                items_view="summary",
-                timeout=self._remaining(prepared.deadline),
-                expected_connection_generation=prepared.connection_generation,
-            )
-            self._remaining(prepared.deadline)
-            if not isinstance(page, ThreadTurnsPage):
-                raise CodexRpcProtocolError(
-                    "thread/turns/list",
-                    "Codex returned an invalid summary turn page",
-                )
-            if len(page.turns) > self._page_limit:
-                raise CodexRpcProtocolError(
-                    "thread/turns/list",
-                    "Codex exceeded the requested summary turn page size",
-                )
+        for _ in range(self._max_pages):
+            page = self._turn_page(prepared, cursor, "asc", "summary", limit=self._page_limit)
             for turn in page.turns:
-                if self._append_turn(output, turn, outline_number + 1):
+                identity, status = export_turn_identity(turn)
+                if identity in seen_turns:
+                    raise CodexRpcProtocolError("thread/turns/list", "Repeated turn during export")
+                seen_turns.add(identity)
+                if prepared.selection.content == "final_answers" and status != "completed":
+                    continue
+                if self._append_turn(output, turn, outline_number + 1, content=prepared.selection.content):
                     outline_number += 1
             self._remaining(prepared.deadline)
-
-            next_cursor = page.next_cursor
-            if next_cursor is None:
+            cursor = self._next_cursor(page.next_cursor, cursor, seen_cursors)
+            if cursor is None:
                 break
-            if not isinstance(next_cursor, str) or not next_cursor.strip():
-                raise CodexRpcProtocolError(
-                    "thread/turns/list",
-                    "Codex returned an invalid summary turn cursor",
-                )
-            if next_cursor in seen_cursors or next_cursor == cursor:
-                raise WebRuntimeError(
-                    "Codex returned a non-progressing summary cursor. "
-                    "No partial file was downloaded.",
-                    code="thread_summary_export_cursor_loop",
-                    status=502,
-                    details={"thread_id": prepared.thread_id},
-                )
-            if page_count >= self._max_pages:
-                raise WebRuntimeError(
-                    "This conversation exceeds the browser export scan limit "
-                    f"of {self._max_pages:,} history pages. "
-                    "No partial file was downloaded; use fcodex /export for the full record.",
-                    code="thread_summary_export_too_many_pages",
-                    status=413,
-                    details={"thread_id": prepared.thread_id},
-                )
-            if cursor is not None:
-                seen_cursors.add(cursor)
-            seen_cursors.add(next_cursor)
-            cursor = next_cursor
-
+        else:
+            raise WebRuntimeError(
+                "This conversation exceeds the browser export scan limit. No partial file was downloaded.",
+                code="thread_summary_export_too_many_pages", status=413,
+            )
+        if prepared.selection.content == "final_answers" and not outline_number:
+            raise self._missing_content()
         self._append_bytes(output, b"\n")
         return bytes(output)
 
@@ -379,6 +345,7 @@ class WebThreadSummaryExportService:
     ) -> bytes:
         output = bytearray(_TITLE.encode("utf-8"))
         remaining = set(prepared.selection.turn_ids)
+        all_turns = prepared.selection.scope == "all"
         latest = prepared.selection.scope == "last_turn"
         direction = "desc" if latest else "asc"
         cursor: str | None = None
@@ -397,7 +364,7 @@ class WebThreadSummaryExportService:
                     raise CodexRpcProtocolError("thread/turns/list", "Repeated turn during export")
                 seen_turns.add(identity)
                 has_prompt = any(item.get("type") == "userMessage" for item in export_turn_items(turn))
-                if (latest and has_prompt) or identity in remaining:
+                if ((latest or all_turns) and has_prompt) or identity in remaining:
                     candidates.append(turn)
                     if latest:
                         break
@@ -413,15 +380,19 @@ class WebThreadSummaryExportService:
             for turn in candidates:
                 if snapshot.history_mode == "paginated":
                     turn = self._complete_turn(prepared, turn)
-                require_complete_qa(turn)
-                count += 1
-                self._append_turn(output, turn, count, include_followups=True)
+                if not all_turns:
+                    require_exportable_turn(turn, prepared.selection.content)
+                if self._append_turn(output, turn, count + 1, include_followups=True,
+                                     content=prepared.selection.content):
+                    count += 1
                 remaining.discard(turn["id"])
             self._remaining(prepared.deadline)
-            if count and (latest or not remaining):
+            if count and ((all_turns and next_cursor is None) or latest or (not all_turns and not remaining)):
                 self._append_bytes(output, b"\n")
                 return bytes(output)
             if next_cursor is None:
+                if all_turns:
+                    raise self._missing_content()
                 raise self._missing_turns()
             cursor = next_cursor
         raise WebRuntimeError("The chosen turns exceed the browser export scan limit. No partial file was downloaded.",
@@ -431,8 +402,8 @@ class WebThreadSummaryExportService:
         self, prepared: WebThreadSummaryExportPreparation, turn: dict[str, Any],
     ) -> dict[str, Any]:
         identity, status = export_turn_identity(turn)
-        if status != "completed":
-            require_complete_qa(turn)
+        if status != "completed" and prepared.selection.content != "prompts":
+            require_exportable_turn(turn, prepared.selection.content)
         cursor: str | None = None
         seen: set[str] = set()
         seen_items: set[str] = set()
@@ -456,7 +427,8 @@ class WebThreadSummaryExportService:
                     raise CodexRpcProtocolError("thread/items/list", "Export item identity mismatch")
                 seen_items.add(item_id)
                 if item.get("type") == "userMessage" or (
-                    item.get("type") == "agentMessage" and item.get("phase") not in {"commentary", "partial_answer"}
+                    prepared.selection.content != "prompts" and item.get("type") == "agentMessage"
+                    and item.get("phase") not in {"commentary", "partial_answer"}
                 ):
                     export_qa({"items": [item]}, include_followups=True)
                     if item.get("type") == "userMessage":
@@ -478,6 +450,11 @@ class WebThreadSummaryExportService:
                               code="thread_summary_export_too_many_pages", status=413)
 
     @staticmethod
+    def _missing_content() -> WebRuntimeError:
+        return WebRuntimeError("There is no content of the chosen kind to export.",
+                               code="thread_summary_export_missing_content", status=409)
+
+    @staticmethod
     def _missing_turns() -> WebRuntimeError:
         return WebRuntimeError("The chosen turns are missing or this conversation has no question to export. "
                                "Refresh the selection; no partial file was downloaded.",
@@ -490,9 +467,17 @@ class WebThreadSummaryExportService:
         outline_number: int,
         *,
         include_followups: bool = False,
+        content: str = "qa",
     ) -> bool:
         prompts, assistant_text = export_qa(turn, include_followups=include_followups)
         user_text = "\n\n".join(prompts) if prompts else None
+        if export_turn_identity(turn)[1] != "completed":
+            assistant_text = None
+        if content == "final_answers":
+            user_text = None
+        elif content == "prompts":
+            assistant_text = None
+            user_text = user_text or None
         if user_text is None and assistant_text is None:
             return False
         title_source = user_text or (

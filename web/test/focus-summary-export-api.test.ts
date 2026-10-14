@@ -23,7 +23,7 @@ describe('Focus Q&A export API', () => {
       }
       expect(path).toBe('/api/threads/thread-1/export-summary');
       expect(options?.method).toBe('POST');
-      expect(JSON.parse(options?.body as string)).toEqual({ scope: 'all', turn_ids: [] });
+      expect(JSON.parse(options?.body as string)).toEqual({ scope: 'all', turn_ids: [], content: 'qa' });
       expect(options?.headers).toMatchObject({
         'X-Focus-Web-Client': expect.any(String),
         'X-Focus-Web-Document': expect.any(String),
@@ -45,7 +45,7 @@ describe('Focus Q&A export API', () => {
   it('pages export turns independently and posts exact selections with cancellation and CSRF', async () => {
     window.location.hash = '';
     const signal = new AbortController().signal;
-    const selection = { scope: 'selected' as const, turn_ids: ['b', 'a'] };
+    const selection = { scope: 'selected' as const, turn_ids: ['b', 'a'], content: 'prompts' as const };
     const fetchMock = vi.fn(async (path: string, options?: RequestInit) => {
       if (path === '/api/client/register') return new Response(JSON.stringify(registration()));
       if (path === '/api/meta') return new Response(JSON.stringify(meta));

@@ -131,7 +131,7 @@ def test_directory_is_bounded_newest_first_and_does_not_load_bodies():
     {"scope": "selected", "turn_ids": [str(n) for n in range(101)]}])
 def test_rejects_ambiguous_unbounded_or_empty_selection(payload):
     with pytest.raises(WebRuntimeError) as error:
-        decode_export_selection(payload)
+        decode_export_selection({"content": "qa", **payload} if isinstance(payload, dict) else payload)
     assert error.value.code == "invalid_summary_export_selection"
 
 
