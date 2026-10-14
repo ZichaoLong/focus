@@ -47,7 +47,7 @@ const emit = defineEmits<{
   selectSession: [sessionId: string];
   renameSession: [id: string, title: string];
   archiveSession: [id: string];
-  setSessionHidden: [id: string, hidden: boolean];
+  closeThread: [id: string];
   forkSession: [id: string];
   exportSession: [request: SummaryExportRequest];
   loadMore: [workspaceId: string];
@@ -194,7 +194,7 @@ function onHeaderDragStart(event: DragEvent): void {
         @select="emit('selectSession', $event)"
         @rename="(id, title) => emit('renameSession', id, title)"
         @archive="emit('archiveSession', $event)"
-        @set-hidden="(id, hidden) => emit('setSessionHidden', id, hidden)"
+        @close-thread="(id) => emit('closeThread', id)"
         @fork="emit('forkSession', $event)"
         @export="emit('exportSession', $event)"
       />

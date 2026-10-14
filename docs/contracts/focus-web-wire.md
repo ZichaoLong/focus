@@ -46,7 +46,7 @@ remain owned by browser decoders rather than a general-purpose schema runtime.
 | Browser next-turn-settings snapshot installation | `WebNextTurnSettingsOwner` in `web/src/focus/client-state/web-next-turn-settings.ts` |
 | Browser-local recent-turn summary window preference | `BrowserTurnWindowOwner` in `web/src/focus/client-state/browser-turn-window.ts` |
 | Browser document-title presentation | `syncFocusDocumentTitle` in `web/src/focus/documentTitle.ts` |
-| Browser-local current-instance thread visibility preference | `ThreadVisibilityOwner` in `web/src/focus/client-state/thread-visibility.ts`; directory derivation belongs to `focusClientView.ts` |
+| Instance browser-open intent, close versions, and subscription facts | `WebRuntimeInterestRegistry` in `bot/web_runtime/interest.py`; document selection remains with `WebSelectionCoordinator` |
 | Browser-local document-activity favicon preference and presentation | `createFocusDocumentActivityFaviconPreference` and `syncFocusDocumentActivityFavicon` in `web/src/focus/documentActivityFavicon.ts` |
 | Typed app-server runtime-notice projection | `project_runtime_notice` in `bot/web_runtime/runtime_notice.py`; ordered publication remains with `WebRuntimeEventCoordinator` |
 | Bounded runtime-notice presentation for the current browser document | `RuntimeNoticeOwner` in `web/src/focus/client-state/runtime-notices.ts` |
@@ -199,6 +199,10 @@ guards and may not retain parallel key or enum inventories.
   allow unfinished turns; final replies exclude prompt headings. See [export ranges and content](focus-web-summary-export.md).
   Service and browser assets must deploy together.
 
+- v33 adds `POST /api/threads/{thread_id}/open` and `/close`; thread-read GET only restores open threads.
+  The current directory becomes the instance-wide open set, and action capabilities require `close`.
+  Browser-local hiding is removed. Service and browser assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,
@@ -339,7 +343,7 @@ guards and may not retain parallel key or enum inventories.
 - After a successful open commits a new selection, cleanup candidates produced
   by removing browser desire from previous threads must reach the runtime
   lifecycle owner. Cleanup still requires current backend-generation and
-  non-active status evidence, preserving other documents, surface subscribers,
+  non-active status evidence, preserving instance open intent, other documents, surface subscribers,
   and pending interactions. Unsubscribing does not immediately unload backend memory.
 - The prepared service-ingress receipt remains a shutdown barrier across
   RuntimeLoop prepare, document-lock release, the external worker, and final
@@ -786,24 +790,44 @@ guards and may not retain parallel key or enum inventories.
   and the event-triggered bounded refresh add no polling/retry loop and grant no
   writer, owner, lifecycle, settings, approval, FIFO, or mutation authority.
 
-### Browser Thread Hiding
+### Browser Thread Open and Close
 
-“Hide from current list” changes only current-instance directory presentation. It does not archive,
-delete, stop, unsubscribe, or change the selected conversation. Preferences persist across reloads
-within browser same-origin storage and `/meta.instance`; same-instance tabs synchronize through
-`storage` events, while devices remain independent. `ThreadVisibilityOwner` is the sole writer.
-Each exact thread id has a separate marker so edits to different threads cannot overwrite each
-other across tabs. New and forked threads do not inherit a marker.
+“Open threads” (`scope=current`) contains only this Focus instance's browser-open set, independently
+of backend residency. Global and search results retain upstream history and cross-instance loaded
+evidence. Explicit selection sends `POST /api/threads/{thread_id}/open`; known-success local commits
+of browser create and fork also join the set. Ordinary thread-read GET, reload, old URLs, reconnect,
+and selection restoration only read already-open threads. A closed target returns `thread_not_open`
+and clears unrestorable old selection. Search, history, export, and creation by other surfaces do
+not add browser-open intent.
 
-“Show hidden” is a temporary document-local view switch; hidden rows offer “Unhide”. Global and
-search results bypass hiding. Backend facts still determine directory membership; unhiding does
-not load a thread. Threads with an existing list-level approval/question or snapshot pending
-request retain a reachable row and reminder; the hidden preference applies again after resolution.
+`WebRuntimeInterestRegistry` owns process-local `browser_open` and close versions on RuntimeLoop,
+independently of document desired edges. Open intent retains the canonical subscription across
+navigation, page exit, and turn completion. Browsers on the same instance share it; other instances
+are independent. There is no new persistent record or batch recovery: service restart and confirmed
+backend reset clear the set, and old profiles/URLs do not automatically resume threads. Ordinary
+backend disconnect invalidates subscription facts; rereading an open thread uses existing resume
+admission, without batch background resumes.
 
-Ignore malformed keys/values. If storage is unavailable, preferences fall back to document memory
-without blocking startup, new conversations, or continued chat. Explicit unhiding or clearing site
-storage removes markers; missing list entries, status changes, unloading, and archiving do not
-prune them. Markers contain no thread content and never enter backend DTOs or runtime ownership.
+Close requires a live document, authoritative inactive state, and no pending interaction, uncertain
+runtime/control effect, or unreconciled prompt receipt. It removes instance browser intent, clears
+all matching persisted selections/materializations including offline documents, and retains working
+directories and thread draft/attachment scopes without moving them elsewhere. It publishes
+`thread_invalidated / web_thread_closed`, making other browsers leave the thread and refresh lists.
+Active or unconfirmed state rejects close; there is no delayed-close queue.
+
+Close commits local intent only. The existing lifecycle owner safely cleans up under generation,
+pending-interaction, canonical Feishu-subscriber, and runtime-holder checks. It does not stop,
+archive, delete, detach Feishu, or disconnect fcodex. Remaining backend residency never re-adds a
+closed row. Without another canonical need it unsubscribes; upstream manages actual unload.
+Subscription retention is not a main-turn writer, adds no browser holder type, and leaves existing
+archive admission intact.
+
+Open freezes the close version, which outlives subscription cleanup until process exit. Old requests
+cannot restore intent or selection after close. A sent known-success resume still settles subscription
+facts before safe cleanup; late results neither prove no effect nor reopen the thread. Only fresh
+explicit selection reopens it. `thread_invalidated / web_thread_opened` synchronizes additions.
+A lost close response causes authoritative refresh, never blind replay. Old localStorage hiding
+markers are ignored and never migrated into server close commands.
 
 ## 6. Installation and Failure Semantics
 

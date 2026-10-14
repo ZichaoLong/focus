@@ -51,7 +51,7 @@ function snapshot(): FocusThreadSnapshot {
       selectable: true,
       unavailable_reason: '',
       history_mode: 'paginated',
-      action_capabilities: {
+      action_capabilities: { close: false,
         rename: false,
         archive: false,
         unarchive: false,

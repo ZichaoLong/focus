@@ -90,6 +90,7 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
                 goal=lambda *_args, **_kwargs: {},
                 set_goal=lambda *_args, **_kwargs: {},
                 clear_goal=lambda *_args, **_kwargs: {},
+                close_thread=lambda *_args, **_kwargs: {"accepted": True, "thread_id": "thread-1"},
                 archive_thread=lambda *_args, **_kwargs: {},
                 unarchive_thread=lambda *_args, **_kwargs: {},
                 delete_thread=lambda *_args, **_kwargs: {},

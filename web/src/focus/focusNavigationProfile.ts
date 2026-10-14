@@ -72,6 +72,7 @@ export interface FocusNavigationProfileOptions {
 
 export interface FocusNavigationProjectionPort {
   refreshActiveThread(options?: {
+    openInBrowser?: boolean;
     requestIntentGeneration?: number;
     navigationGeneration?: number;
     navigationAuthorityGeneration?: number;
@@ -482,10 +483,12 @@ export function createFocusNavigationProfile(
     receipt: NavigationIntentReceipt,
     reportFailure = true,
     staleRetryUsed = false,
+    openInBrowser = false,
   ): Promise<boolean> {
     if (disposed.value) return false;
     try {
       const refreshed = await requireProjection().refreshActiveThread({
+        openInBrowser,
         requestIntentGeneration: receipt.requestGeneration,
         navigationGeneration: receipt.navigationGeneration,
         navigationAuthorityGeneration: receipt.authorityGeneration,
@@ -530,7 +533,7 @@ export function createFocusNavigationProfile(
     options.clearHistoryView();
     options.clearError();
     try {
-      await settleNavigationRead(receipt);
+      await settleNavigationRead(receipt, true, false, true);
     } finally {
       if (navigationIntentIsCurrent(receipt.navigationGeneration)) {
         if (disposed.value) return;

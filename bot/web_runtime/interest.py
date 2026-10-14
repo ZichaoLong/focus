@@ -1,15 +1,8 @@
-"""Single-owner Web runtime-interest records.
+"""RuntimeLoop-owned browser-open intent and subscription evidence.
 
-The Web controller needs to distinguish three facts which used to be spread
-across four containers:
-
-* which browser documents still desire this service subscription;
-* whether the latest resume/cleanup outcome is confirmed or unknown;
-* which backend connection epoch confirmed the live subscription.
-
-Keeping those values in one per-thread record prevents a thread from being
-simultaneously projected as "managed", "uncertain", and current by unrelated
-sets.  The registry is RuntimeLoop-owned; it intentionally provides no locks.
+Instance retention is independent of per-document desired edges. Close versions
+outlive subscription cleanup to reject superseded in-flight opens. Behavior is
+defined in docs/contracts/focus-web-wire.zh-CN.md, browser open and close.
 """
 
 from __future__ import annotations
@@ -64,6 +57,7 @@ class WebRuntimeInterestSnapshot:
     outcome: WebRuntimeInterestOutcome
     revision: int
     unsubscribe_outcome_unknown: bool
+    browser_open: bool = False
 
 
 @dataclass(slots=True)
@@ -74,6 +68,7 @@ class _WebRuntimeInterest:
     outcome: WebRuntimeInterestOutcome = "confirmed"
     revision: int = 0
     unsubscribe_outcome_unknown: bool = False
+    browser_open: bool = False
 
 
 class WebRuntimeInterestRegistry:
@@ -83,6 +78,36 @@ class WebRuntimeInterestRegistry:
         self._backend_epoch = 1
         self._next_revision = 0
         self._by_thread: dict[str, _WebRuntimeInterest] = {}
+        # Close receipts outlive subscription cleanup so an old in-flight open
+        # cannot recreate intent after the interest record has been forgotten.
+        self._browser_close_versions: dict[str, int] = {}
+
+    def browser_close_version(self, thread_id: str) -> int:
+        return self._browser_close_versions.get(self._thread_id(thread_id), 0)
+
+    def open_in_browser(self, thread_id: str, *, expected_close_version: int) -> bool:
+        normalized = self._thread_id(thread_id)
+        if self.browser_close_version(normalized) != expected_close_version:
+            return False
+        record = self._by_thread.setdefault(normalized, _WebRuntimeInterest())
+        record.browser_open = True
+        self._touch(record)
+        return True
+
+    def close_in_browser(self, thread_id: str) -> None:
+        normalized = self._thread_id(thread_id)
+        self._browser_close_versions[normalized] = self.browser_close_version(normalized) + 1
+        record = self._by_thread.get(normalized)
+        if record is not None:
+            record.browser_open = False
+            self._touch(record)
+
+    def is_browser_open(self, thread_id: str) -> bool:
+        record = self._by_thread.get(self._thread_id(thread_id))
+        return bool(record is not None and record.browser_open)
+
+    def browser_open_thread_ids(self) -> tuple[str, ...]:
+        return tuple(sorted(key for key, record in self._by_thread.items() if record.browser_open))
 
     @property
     def backend_epoch(self) -> int:
@@ -318,6 +343,7 @@ class WebRuntimeInterestRegistry:
             outcome=record.outcome,
             revision=record.revision,
             unsubscribe_outcome_unknown=record.unsubscribe_outcome_unknown,
+            browser_open=record.browser_open,
         )
 
     def _touch(self, record: _WebRuntimeInterest) -> None:

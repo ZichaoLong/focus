@@ -66,7 +66,7 @@ const wireThread = {
   selectable: true,
   unavailable_reason: '',
   history_mode: 'paginated',
-  action_capabilities: {
+  action_capabilities: { close: false,
     rename: true,
     archive: true,
     unarchive: false,
@@ -529,6 +529,15 @@ describe('FocusWebApi bounded turn-window requests', () => {
     await api.listOlderTurns('thread-1', 'cursor-1', 'summary', 20);
 
     expect(fetchMock.mock.calls[3]?.[0]).toBe('/api/threads/thread-1?turn_limit=20');
+    expect(fetchMock.mock.calls[3]?.[1]?.method).toBe('GET');
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(wireSnapshot), { status: 200 }));
+    await api.readThread('thread-1', 4, 20, true);
+    expect(fetchMock.mock.calls[5]?.[0]).toBe('/api/threads/thread-1/open?turn_limit=20');
+    expect(fetchMock.mock.calls[5]?.[1]?.method).toBe('POST');
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ accepted: true, thread_id: 'thread-1' }), { status: 200 }));
+    await api.closeThread('thread-1');
+    expect(fetchMock.mock.calls[6]?.[0]).toBe('/api/threads/thread-1/close');
+    expect(fetchMock.mock.calls[6]?.[1]?.method).toBe('POST');
     expect(fetchMock.mock.calls[4]?.[0]).toBe(
       '/api/threads/thread-1/turns?items_view=summary&turn_limit=20&cursor=cursor-1',
     );

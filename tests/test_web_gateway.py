@@ -66,7 +66,7 @@ class WebGatewayTests(WebGatewayHarness):
 
         self.assertEqual(
             source.count("self._document_request_to_thread("),
-            23,
+            24,
         )
         self.assertEqual(
             source.count("self._staged_document_request_to_thread("),
@@ -75,6 +75,20 @@ class WebGatewayTests(WebGatewayHarness):
         self.assertNotIn("self._client_to_thread(", source)
         self.assertIn("self._required_client_id(request)", helper)
         self.assertIn("self._required_client_id(request)", staged_helper)
+
+    async def test_open_and_passive_read_dispatch_distinct_intent(self):
+        await self._authenticate()
+        document = await self._register_document(resume_client_id="tab-open", incarnation_id="open-document")
+        headers = self._client_headers(document)
+        async with self.session.post(f"{self.endpoint}/api/threads/thread-1/open", headers=headers) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue((await response.json())["open_in_browser"])
+        async with self.session.get(f"{self.endpoint}/api/threads/thread-1", headers=headers) as response:
+            self.assertEqual(response.status, 200)
+            self.assertFalse((await response.json())["open_in_browser"])
+        async with self.session.post(f"{self.endpoint}/api/threads/thread-1/close", headers=headers) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue((await response.json())["accepted"])
 
     async def test_fork_dispatches_once_for_the_current_document(self):
         await self._authenticate()
@@ -828,8 +842,8 @@ class WebGatewayTests(WebGatewayHarness):
         socket = await self._connect_events(document)
         self.assertEqual((await socket.receive_json())["type"], "hello")
 
-        async with self.session.get(
-            f"{self.endpoint}/api/threads/thread-1",
+        async with self.session.post(
+            f"{self.endpoint}/api/threads/thread-1/open",
             headers=self._client_headers(document),
         ) as response:
             self.assertEqual(response.status, 409)
@@ -872,8 +886,8 @@ class WebGatewayTests(WebGatewayHarness):
         socket = await self._connect_events(document)
         self.assertEqual((await socket.receive_json())["type"], "hello")
 
-        async with self.session.get(
-            f"{self.endpoint}/api/threads/thread-1",
+        async with self.session.post(
+            f"{self.endpoint}/api/threads/thread-1/open",
             headers=self._client_headers(document),
         ) as response:
             self.assertEqual(response.status, 503)
@@ -1890,7 +1904,8 @@ class WebGatewayStartupTests(unittest.TestCase):
                     goal=lambda *_args, **_kwargs: {},
                     set_goal=lambda *_args, **_kwargs: {},
                     clear_goal=lambda *_args, **_kwargs: {},
-                    archive_thread=lambda *_args, **_kwargs: {},
+                    close_thread=lambda *_args, **_kwargs: {"accepted": True, "thread_id": "thread-1"},
+                archive_thread=lambda *_args, **_kwargs: {},
                     unarchive_thread=lambda *_args, **_kwargs: {},
                     delete_thread=lambda *_args, **_kwargs: {},
                     respond_request=lambda *_args, **_kwargs: {},

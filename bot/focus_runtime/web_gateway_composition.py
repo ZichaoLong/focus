@@ -227,6 +227,9 @@ def compose_web_gateway(
                 thread_id,
                 **kwargs,
             ),
+            close_thread=lambda client_id, thread_id: runtime_call(
+                web_runtime.close_thread, client_id, thread_id,
+            ),
             archive_thread=lambda client_id, thread_id: runtime_call(
                 web_runtime.archive_thread,
                 client_id,

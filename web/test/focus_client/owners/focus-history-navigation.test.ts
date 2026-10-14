@@ -44,7 +44,7 @@ function snapshot(turns: ChatTurn[], cursor = 'older-1'): FocusThreadSnapshot {
       observed_here: true,
       selectable: true, unavailable_reason: '',
       history_mode: 'paginated',
-      action_capabilities: {
+      action_capabilities: { close: false,
         rename: false, archive: false, unarchive: false, delete: false,
         compact: false, fork: false, export: false, review: false, goal: false,
       },

@@ -19,6 +19,7 @@ import {
 
 type ThreadMutationApiPort = Pick<
   FocusWebApiPort,
+  | 'closeThread'
   | 'archiveThread'
   | 'unarchiveThread'
   | 'deleteThread'
@@ -80,6 +81,7 @@ interface ThreadMutationActions {
     threadId: string,
     operation: string,
   ): boolean;
+  closeThread(threadId: string): Promise<boolean>;
   archiveThread(threadId: string): Promise<boolean>;
   unarchiveThread(threadId: string): Promise<boolean>;
   deleteThread(threadId: string, confirmation: string): Promise<boolean>;
@@ -198,6 +200,38 @@ export function createThreadMutationActions(
       durability: 'process_local',
       verification: null,
     });
+  }
+
+  async function closeThread(threadId: string): Promise<boolean> {
+    if (isDisposed() || options.connection.value !== 'connected'
+      || projection.snapshotInvalidated.value || !threadId
+      || threadMutations.isBusy(threadId) || threadMutations.getUnknown(threadId)) return false;
+    const navigationFloor = navigation.captureNavigationStateFloor();
+    const busyReceipt = threadMutations.beginBusy(threadId);
+    if (!busyReceipt) return false;
+    options.clearError();
+    try {
+      const result = await api.closeThread(threadId);
+      if (isDisposed()) return false;
+      if (!result.accepted || result.thread_id !== threadId) throw new Error('Focus could not confirm closing this thread.');
+      if (navigation.activeThreadId.value === threadId) {
+        if (navigation.navigationStateFloorIsCurrent(navigationFloor)) navigation.clearToRepairDraft();
+        else {
+          navigation.requireNavigationRepair();
+          projection.invalidateWireProjection();
+        }
+      }
+      await projection.refreshThreads();
+      return true;
+    } catch (error) {
+      if (!isDisposed()) {
+        options.reportError(error);
+        projection.invalidateWireProjection();
+      }
+      return false;
+    } finally {
+      if (!isDisposed()) threadMutations.finishBusy(busyReceipt);
+    }
   }
 
   async function archiveThread(threadId: string): Promise<boolean> {
@@ -494,6 +528,7 @@ export function createThreadMutationActions(
     captureUnknownMutationSnapshot,
     reconcileUnknownMutation,
     rememberProcessLocalUnknownFromError,
+    closeThread,
     archiveThread,
     unarchiveThread,
     deleteThread,

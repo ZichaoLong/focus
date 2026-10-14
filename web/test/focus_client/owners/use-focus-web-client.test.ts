@@ -180,7 +180,7 @@ function thread(title: string): FocusThreadSummary {
     selectable: true,
     unavailable_reason: '',
     history_mode: 'paginated',
-    action_capabilities: {
+    action_capabilities: { close: false,
       rename: false,
       archive: false,
       unarchive: false,
@@ -387,6 +387,7 @@ function testApi(intentGenerationFloor = 0) {
       focus_cleanup: 'complete' as const,
       cleanup_errors: [],
     })),
+    closeThread: vi.fn(async (threadId: string) => ({ accepted: true, thread_id: threadId })),
     startThread: vi.fn(),
     submitPrompt: vi.fn(),
     readPromptResult: vi.fn(async (threadId: string, mutationId: string) => ({
@@ -446,72 +447,62 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('useFocusWebClient thread hiding', () => {
-  it('changes only the directory while retaining the active chat and searchable history', async () => {
+describe('useFocusWebClient instance open threads', () => {
+  it('closes across browsers and drops a late snapshot without replaying open', async () => {
     stubBrowser();
     const fake = testApi();
     const client = useFocusWebClient(fake.api);
     await client.load();
-    const activeSnapshot = client.snapshot.value;
-    const canSubmit = client.canSubmit.value;
-    vi.clearAllMocks();
-
-    client.setThreadHidden('thread-1', true);
-
-    expect(client.sessions.value).toEqual([]);
-    expect(client.workspaceGroups.value.every(group => group.sessions.length === 0)).toBe(true);
-    expect(client.searchSessions.value.map(session => session.id)).toEqual(['thread-1']);
-    expect(client.activeThreadId.value).toBe('thread-1');
-    expect(client.snapshot.value).toBe(activeSnapshot);
-    expect(client.canSubmit.value).toBe(canSubmit);
-    for (const method of Object.values(fake.api)) {
-      if (vi.isMockFunction(method)) expect(method).not.toHaveBeenCalled();
-    }
-    client.setShowHiddenThreads(true);
-    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(true);
-    client.setShowHiddenThreads(false);
+    fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
+    const late = deferred<FocusThreadSnapshot>();
+    vi.mocked(fake.api.readThread).mockReturnValueOnce(late.promise);
+    const refreshing = client.setTurnWindowLimit(20);
+    vi.mocked(fake.api.listThreads).mockResolvedValue({ ...threadList(1, 'Closed'), threads: [] });
+    vi.mocked(fake.api.meta).mockResolvedValue({
+      ...meta(1), writer_profile: { ...meta(1).writer_profile, selected_thread_id: '', scope_generation: 2 },
+    });
+    fake.handlers.event({ type: 'thread_invalidated', runtime_epoch: EPOCH, revision: 1,
+      thread_id: 'thread-1', reason: 'web_thread_closed' });
+    expect(client.activeThreadId.value).toBe('');
+    late.resolve(snapshot(0, 'Late old response'));
+    await refreshing;
     await client.reloadAll();
+    expect(client.snapshot.value).toBeNull();
+    expect(client.activeThreadId.value).toBe('');
     expect(client.sessions.value).toEqual([]);
-    await client.setThreadScope('global');
-    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(true);
-    client.setThreadHidden('thread-1', false);
-    await client.setThreadScope('current');
-    expect(client.sessions.value[0]?.hiddenFromCurrent).toBe(false);
+    expect(vi.mocked(fake.api.readThread).mock.calls.every(call => call[3] !== true)).toBe(true);
     client.dispose();
   });
 
-  it.each(['approval', 'question'] as const)('keeps a hidden thread with a received %s reachable', async pending => {
+  it('sends one close and refreshes the shared list', async () => {
     stubBrowser();
     const fake = testApi();
-    const background = { ...thread('Background'), id: 'thread-2', status: 'active' };
-    vi.mocked(fake.api.listThreads).mockResolvedValue({
-      ...threadList(0, 'Initial'), threads: [thread('Initial'), background],
-    });
     const client = useFocusWebClient(fake.api);
     await client.load();
-    client.setThreadHidden('thread-2', true);
+    fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
+    vi.mocked(fake.api.listThreads).mockResolvedValue({ ...threadList(1, 'Closed'), threads: [] });
+    expect(await client.closeThread('thread-1')).toBe(true);
+    expect(fake.api.closeThread).toHaveBeenCalledExactlyOnceWith('thread-1');
+    expect(client.activeThreadId.value).toBe('');
+    expect(client.sessions.value).toEqual([]);
+    client.dispose();
+  });
+
+  it('ignores old browser hiding preferences and restores only by passive read', async () => {
+    stubBrowser();
+    localStorage.setItem('focus-web.hidden-thread:default:thread-1', '1');
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    fake.handlers.open?.();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1']);
-    vi.mocked(fake.api.listThreads).mockResolvedValue({
-      ...threadList(0, 'Updated'),
-      threads: [
-        thread('Initial'),
-        { ...background, pending_interaction: pending },
-        { ...thread('Fork'), id: 'fork-1', parent_thread_id: 'thread-2' },
-      ],
-    });
-    await client.reloadAll();
-    expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1', 'thread-2', 'fork-1']);
-    expect(client.sessions.value[1]?.hiddenFromCurrent).toBe(true);
-    expect(client.sessions.value[2]?.hiddenFromCurrent).toBe(false);
-    expect(client.pendingBySession.value['thread-2']).toEqual({
-      approvals: pending === 'approval' ? 1 : 0,
-      questions: pending === 'question' ? 1 : 0,
-    });
-    vi.mocked(fake.api.listThreads).mockResolvedValue({
-      ...threadList(0, 'Updated'), threads: [thread('Initial'), background],
-    });
-    await client.reloadAll();
-    expect(client.sessions.value.map(session => session.id)).toEqual(['thread-1']);
+    expect(vi.mocked(fake.api.readThread).mock.calls.every(call => call[3] !== true)).toBe(true);
+    vi.mocked(fake.api.readThread).mockClear();
+    await client.selectThread('thread-1');
+    expect(fake.api.readThread).toHaveBeenCalledWith('thread-1', expect.any(Number), 10, true);
     client.dispose();
   });
 });
@@ -1409,6 +1400,7 @@ describe('useFocusWebClient create-outcome navigation', () => {
     expect(fake.api.readThread).toHaveBeenLastCalledWith(
       'thread-2',
       expect.any(Number),
+      10, true,
     );
     expect(client.activeThreadId.value).toBe('thread-2');
     expect(client.snapshot.value).toBeNull();

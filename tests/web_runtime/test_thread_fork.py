@@ -45,6 +45,9 @@ class WebThreadForkTests(WebRuntimeControllerHarness):
         listing = self.controller.list_threads(client_id="tab-1", scope="global")
         listed = next(t for t in listing["threads"] if t["id"] == "fork-1")
         self.assertEqual(listed["name"], "Demo · 分支 fork-1")
+        self.assertTrue(self.controller._runtime_interest.is_browser_open("fork-1"))
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertEqual([t["id"] for t in self.controller.list_threads(scope="current")["threads"]], ["fork-1"])
 
     def test_fork_name_uses_display_title_when_source_has_no_explicit_name(self):
         for preview, title in (("First question", "First question"), ("", "（无标题）")):

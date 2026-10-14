@@ -1149,7 +1149,7 @@ describe('Focus Web client', () => {
       id: 'thread-2',
       name: 'Observed elsewhere',
       title: 'Observed elsewhere',
-      action_capabilities: {
+      action_capabilities: { close: false,
         rename: false,
         archive: false,
         unarchive: false,
@@ -1166,6 +1166,7 @@ describe('Focus Web client', () => {
     await client.load();
 
     expect(client.sessions.value.find((session) => session.id === 'thread-2')?.actionCapabilities).toEqual({
+      close: false,
       rename: false,
       archive: false,
       fork: false,
@@ -1181,6 +1182,7 @@ describe('Focus Web client', () => {
     await client.selectThread('thread-2');
 
     expect(client.activeSessionActionCapabilities.value).toEqual({
+      close: false,
       rename: false,
       archive: false,
       fork: false,

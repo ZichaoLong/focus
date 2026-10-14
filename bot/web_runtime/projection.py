@@ -211,6 +211,7 @@ def project_thread_summary(
     # missing projection must hide mutable browser controls rather than make a
     # best-effort guess that an action will be accepted.
     projected_action_capabilities = {
+        "close": False,
         "rename": False,
         "archive": False,
         "unarchive": False,

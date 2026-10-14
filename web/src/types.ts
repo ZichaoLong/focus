@@ -32,8 +32,6 @@ export interface Session {
   busy: boolean;
   /** List-level fallback for action-required badges on unopened sessions. */
   pendingInteraction?: 'none' | 'approval' | 'question';
-  /** Browser-local Focus preference, independent of runtime residency. */
-  hiddenFromCurrent?: boolean;
   /** Main agent's latest turn outcome — drives the "aborted" tag when the
       session is quiet and the last turn was cancelled/failed. */
   lastTurnReason?: 'completed' | 'cancelled' | 'failed';
@@ -468,6 +466,7 @@ export interface ComposerCapabilities {
 }
 
 export interface SessionActionCapabilities {
+  close?: boolean;
   rename: boolean;
   archive: boolean;
   fork: boolean;

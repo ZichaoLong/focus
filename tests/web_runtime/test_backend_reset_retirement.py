@@ -55,6 +55,7 @@ class WebRuntimeBackendResetRetirementTests(WebRuntimeControllerHarness):
         )
         self.assertIsNone(self.interaction_inbox.snapshot(request_key))
         self.assertFalse(self.operations.has_unknown_mutation("thread-1"))
+        self.controller.read_thread("tab-1", "thread-1")
         with self.assertRaises(WebRuntimeError) as locator:
             self.controller.prompt_result(
                 "tab-1",

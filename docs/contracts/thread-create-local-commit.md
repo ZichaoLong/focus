@@ -208,7 +208,7 @@ any opening error. If the user navigated elsewhere, that selection and the warni
 Success returns the new and source thread IDs. The browser refreshes the list and opens the branch
 through normal navigation, unless the user has navigated elsewhere meanwhile. Creation itself does
 not change selection or the parent writer. Runtime lease, effective settings, and local projection
-use `ThreadCreateTransaction`; existing interest/cleanup releases the temporary subscription.
+use `ThreadCreateTransaction`; known-success browser create/fork commits instance browser-open intent, retaining the subscription until explicit close or lifecycle cleanup.
 Unknown outcomes are not automatically retried and do not fence the parent. Local commit failures
 retain the known created ID and direct the user to open it from the list.
 

@@ -9,7 +9,7 @@ attachment, or mutation fact: those remain in their existing state owners.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Protocol
 
 from bot.adapters.base import ThreadGoalSummary, ThreadSnapshot
 from bot.codex_protocol.client import CodexRpcError
@@ -27,6 +27,7 @@ from bot.web_runtime.direct_thread_target_coordinator import (
 from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.goal_resume_policy import WebGoalResumePolicy
 from bot.web_runtime.operation_service import WebOperationService
+from bot.web_runtime.lifecycle_coordinator import WebRuntimeLifecycleCoordinator
 from bot.web_runtime.projection import FocusWebProjection, project_goal
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.event_coordinator import WebRuntimeEventCoordinator
@@ -159,6 +160,10 @@ def require_confirmed_inactive_web_thread(
     )
 
 
+class WebPromptCloseAdmissionPort(Protocol):
+    def has_prompt_result_reconciliation(self, thread_id: str) -> bool: ...
+
+
 class WebThreadMutationCoordinator:
     """Run Web thread mutations on RuntimeLoop without owning their facts."""
 
@@ -172,6 +177,8 @@ class WebThreadMutationCoordinator:
         goal_policy: WebGoalResumePolicy,
         workspace: WebWriterWorkspaceCoordinator,
         events: WebRuntimeEventCoordinator,
+        lifecycle: WebRuntimeLifecycleCoordinator,
+        prompt_submissions: WebPromptCloseAdmissionPort,
         projection: FocusWebProjection,
         ports: WebThreadMutationPorts,
         runtime_context_guard: RuntimeContextGuard,
@@ -191,6 +198,8 @@ class WebThreadMutationCoordinator:
         self._goal_policy = goal_policy
         self._workspace = workspace
         self._events = events
+        self._lifecycle = lifecycle
+        self._prompt_submissions = prompt_submissions
         self._projection = projection
         self._ports = ports
         self._runtime_context_guard = runtime_context_guard
@@ -461,6 +470,25 @@ class WebThreadMutationCoordinator:
             "goal": project_goal(None),
             "cleared": result,
         }
+
+    def close_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
+        """Drop instance browser intent without altering other surfaces or work."""
+
+        self._runtime_context_guard()
+        require_connected_web_document(self._documents, client_id)
+        normalized = require_web_thread_id(thread_id)
+        self._operations.require_no_unknown_mutation(normalized)
+        if self._prompt_submissions.has_prompt_result_reconciliation(normalized):
+            raise WebRuntimeError(
+                "A prompt result is still pending or unconfirmed. Resolve it before closing.",
+                code="thread_close_blocked", status=409,
+            )
+        self._lifecycle.require_browser_close_safe(normalized)
+        summary = self._direct_targets.read(normalized, operation="关闭").summary
+        require_confirmed_inactive_web_thread(summary.status, operation="closing")
+        self._direct_targets.clear_unusable_thread(normalized, reason="web_thread_closed")
+        self._projection.publish("thread_invalidated", thread_id=normalized, reason="web_thread_closed")
+        return {"accepted": True, "thread_id": normalized}
 
     def archive_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
         self._runtime_context_guard()

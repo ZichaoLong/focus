@@ -192,6 +192,7 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                     "kwargs": kwargs,
                 },
                 clear_goal=self._clear_goal,
+                close_thread=lambda *_args, **_kwargs: {"accepted": True, "thread_id": "thread-1"},
                 archive_thread=lambda *args, **kwargs: {
                     "upstream_outcome": "success",
                     "args": args,

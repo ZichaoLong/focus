@@ -188,6 +188,8 @@ class WebThreadMutationCoordinatorTests(unittest.TestCase):
             goal_policy=self.goal_policy,
             workspace=self.workspace,
             events=self.events,
+            lifecycle=Mock(),
+            prompt_submissions=Mock(),
             projection=self.projection,
             ports=self.ports,
             runtime_context_guard=self.guard,
@@ -621,6 +623,8 @@ def test_mutation_coordinator_requires_runtime_loop_guard() -> None:
             goal_policy=None,  # type: ignore[arg-type]
             workspace=None,  # type: ignore[arg-type]
             events=None,  # type: ignore[arg-type]
+            lifecycle=None,  # type: ignore[arg-type]
+            prompt_submissions=None,  # type: ignore[arg-type]
             projection=None,  # type: ignore[arg-type]
             ports=WebThreadMutationPorts(
                 read_thread=lambda _thread_id, _include_turns: _snapshot(),

@@ -578,6 +578,8 @@ class WebRuntimeController:
             goal_policy=self._goal_resume_policy,
             workspace=self._workspace,
             events=self._events,
+            lifecycle=self._lifecycle,
+            prompt_submissions=self._prompt_submissions,
             projection=projection,
             ports=WebThreadMutationPorts(
                 read_thread=ports.read_thread,
@@ -818,6 +820,9 @@ class WebRuntimeController:
             thread_id,
             intent_generation=intent_generation,
         )
+
+    def close_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
+        return self._thread_mutations.close_thread(client_id, thread_id)
 
     def archive_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
         return self._thread_mutations.archive_thread(client_id, thread_id)
@@ -1444,7 +1449,7 @@ class WebRuntimeController:
         return self._interaction_inbox.contains(request_key)
 
     def retire_backend_epoch_after_stop(self) -> WebBackendEpochRetirementReceipt:
-        return WebBackendEpochRetirementReceipt(
+        receipt = WebBackendEpochRetirementReceipt(
             interaction_requests=(
                 self._interaction_responses.retire_backend_epoch_after_stop()
             ),
@@ -1453,6 +1458,8 @@ class WebRuntimeController:
             ),
             mutations=self._operations.retire_backend_epoch_after_stop(),
         )
+        self._thread_open.retire_browser_open_threads_after_backend_stop()
+        return receipt
 
     def auto_resolve_request(
         self, request_key: str, backend_epoch: int, generation: int

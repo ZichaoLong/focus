@@ -57,8 +57,6 @@ export interface FocusClientViewOptions {
   draftWorkspaceId: Readonly<Ref<string>>;
   scopeReady: Readonly<Ref<boolean>>;
   settingsModel: Readonly<Ref<string>>;
-  hiddenThreadIds: Readonly<Ref<ReadonlySet<string>>>;
-  showHiddenThreads: Readonly<Ref<boolean>>;
 }
 
 function formatRelativeTime(timestampSeconds: number): string {
@@ -78,6 +76,7 @@ function workspaceName(path: string): string {
 
 function unavailableCapabilities(): SessionActionCapabilities {
   return {
+    close: false,
     rename: false,
     archive: false,
     fork: false,
@@ -309,14 +308,7 @@ export function createFocusClientView(options: FocusClientViewOptions) {
         supportEfforts: [],
       }
   ));
-  const directoryThreads = computed(() => options.threads.value.filter((thread) => (
-    options.threadScope.value === 'global'
-    || options.showHiddenThreads.value
-    || !options.hiddenThreadIds.value.has(thread.id)
-    || thread.pending_interaction === 'approval'
-    || thread.pending_interaction === 'question'
-    || options.snapshot.value?.pending_requests.some((request) => request.thread_id === thread.id)
-  )));
+  const directoryThreads = options.threads;
   const workspacesView = computed<WorkspaceView[]>(() => {
     const byRoot = new Map<string, FocusThreadSummary[]>();
     for (const thread of directoryThreads.value) {
@@ -345,6 +337,7 @@ export function createFocusClientView(options: FocusClientViewOptions) {
     }
     const source = thread.action_capabilities;
     return {
+      close: source?.close === true && thread.pending_interaction === 'none',
       rename: source?.rename === true,
       archive: source?.archive === true,
       fork: source?.fork === true,
@@ -387,7 +380,6 @@ export function createFocusClientView(options: FocusClientViewOptions) {
       selectable: thread.selectable !== false,
       unavailableReason: thread.unavailable_reason || undefined,
       actionCapabilities: threadCapabilities(thread),
-      hiddenFromCurrent: options.hiddenThreadIds.value.has(thread.id),
     };
   }
 

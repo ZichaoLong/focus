@@ -118,7 +118,7 @@ class WebThreadCreateCoordinator:
             self._remember_direct_thread_summary(snapshot.summary)
             self._workspace.remember_thread_cwd(new_id, snapshot.summary.cwd)
             self._runtime_interest.mark_confirmed(new_id)
-            self._lifecycle.settle_runtime_cleanup_candidates((new_id,))
+            self._runtime_interest.open_in_browser(new_id, expected_close_version=0)
             self._projection.publish("thread_invalidated", thread_id=new_id, reason="web_thread_forked")
             return new_id
 
@@ -204,7 +204,10 @@ class WebThreadCreateCoordinator:
         def commit_web_projection(snapshot: ThreadSnapshot) -> str:
             """Return the exact created id without creating a temporary owner."""
 
-            return require_web_thread_id(snapshot.summary.thread_id)
+            thread_id = require_web_thread_id(snapshot.summary.thread_id)
+            self._runtime_interest.mark_confirmed(thread_id)
+            self._runtime_interest.open_in_browser(thread_id, expected_close_version=0)
+            return thread_id
 
         try:
             try:

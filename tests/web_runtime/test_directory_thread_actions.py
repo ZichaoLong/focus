@@ -85,6 +85,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
             owner_instance="explorer"
         )
 
+        self.controller.read_thread("tab-1", "thread-1")
         current = self.controller.list_threads(client_id="tab-1", scope="current")
         global_threads = self.controller.list_threads(client_id="tab-1", scope="global")
 
@@ -330,6 +331,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
         self.assertEqual(
             capabilities(),
             {
+                "close": False,
                 "rename": True,
                 "archive": True,
                 "unarchive": False,
@@ -349,6 +351,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
         self.assertEqual(
             capabilities(),
             {
+                "close": False,
                 "rename": False,
                 "archive": False,
                 "unarchive": False,
@@ -366,6 +369,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
         self.assertEqual(
             capabilities(),
             {
+                "close": False,
                 "rename": True,
                 "archive": False,
                 "unarchive": False,
@@ -385,6 +389,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
         self.assertEqual(
             capabilities(),
             {
+                "close": False,
                 "rename": True,
                 "archive": False,
                 "unarchive": False,
@@ -408,6 +413,7 @@ class WebRuntimeDirectoryThreadActionTests(WebRuntimeControllerHarness):
         self.assertEqual(
             archived,
             {
+                "close": False,
                 "rename": True,
                 "archive": False,
                 "unarchive": True,

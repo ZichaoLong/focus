@@ -64,6 +64,7 @@ class WebThreadListProjection:
     runtime_leases: tuple[ThreadRuntimeLease, ...]
     interaction_leases: tuple[InteractionLease, ...]
     observed_thread_ids: frozenset[str]
+    browser_open_thread_ids: frozenset[str]
     pending_by_thread: tuple[tuple[str, str], ...]
     document_connected: bool
 
@@ -140,6 +141,7 @@ def project_thread_action_capabilities(
     interaction_lease: InteractionLease | None,
     document_connected: bool,
     archived: bool = False,
+    browser_open: bool = False,
 ) -> dict[str, bool]:
     """Project advisory controls without consulting mutable authority owners."""
 
@@ -172,6 +174,7 @@ def project_thread_action_capabilities(
         and owned_by_document
     )
     return {
+        "close": bool(browser_open and document_connected and inactive and not archived),
         "rename": mutable,
         "archive": mutable and inactive and not archived,
         "unarchive": mutable and inactive and archived,
@@ -239,11 +242,7 @@ def project_thread_list(
         observed_here = summary.thread_id in projection.observed_thread_ids
         if observed_here:
             known_loaded_instances.add(projection.instance_name)
-        if projection.scope == "current" and not (
-            projection.instance_name in known_loaded_instances
-            or observed_here
-            or summary.thread_id in loaded_ids
-        ):
+        if projection.scope == "current" and summary.thread_id not in projection.browser_open_thread_ids:
             continue
         loaded_instance = (
             projection.instance_name
@@ -323,6 +322,7 @@ def project_thread_list(
                     interaction_lease=interaction_lease,
                     document_connected=projection.document_connected,
                     archived=projection.archived,
+                    browser_open=summary.thread_id in projection.browser_open_thread_ids,
                 ),
             )
         )
@@ -367,6 +367,7 @@ def project_open_thread(
             snapshot.summary,
             interaction_lease=projection.owner_lease,
             document_connected=projection.document_connected,
+            browser_open=True,
         ),
     )
     result["mutation_unknown"] = projection.mutation_unknown

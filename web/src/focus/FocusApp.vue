@@ -851,7 +851,7 @@ onUnmounted(() => {
           @select="client.selectThread($event)"
           @rename="(id, title) => client.renameThread(id, title)"
           @archive="threadActions?.confirmArchiveThread($event)"
-          @set-hidden="client.setThreadHidden"
+          @close-thread="client.closeThread"
           @fork="client.forkThread($event)"
           @export="threadActions?.exportThreadSummary($event)"
           @create="openWorkspaceDraft(client.activeWorkspaceId.value)"
@@ -863,6 +863,7 @@ onUnmounted(() => {
           <template #directory-controls>
             <SegmentedControl
               class="directory-scope"
+              :title="t('focus.openThreadsHint')"
               :model-value="client.threadScope.value"
               :options="[
                 { value: 'current', label: t('focus.currentInstance') },
@@ -871,10 +872,6 @@ onUnmounted(() => {
               size="sm"
               @update:model-value="client.setThreadScope($event as FocusThreadScope)"
             />
-            <label v-if="client.threadScope.value === 'current'" class="directory-hidden-toggle" :title="t('focus.hiddenThreadsHint')">
-              <input type="checkbox" :checked="client.showHiddenThreads.value" @change="client.setShowHiddenThreads(($event.target as HTMLInputElement).checked)">
-              {{ t('focus.showHiddenThreads') }}
-            </label>
             <button
               type="button"
               class="runtime-details-entry"
@@ -1254,12 +1251,13 @@ onUnmounted(() => {
         @rename="(id, title) => client.renameThread(id, title)"
         @export="threadActions?.exportThreadSummary($event)"
         @archive="threadActions?.confirmArchiveThread($event)"
-        @set-hidden="client.setThreadHidden"
+        @close-thread="client.closeThread"
         @fork="client.forkThread($event)"
       >
         <template #controls>
           <SegmentedControl
             class="directory-scope narrow-scope"
+            :title="t('focus.openThreadsHint')"
             :model-value="client.threadScope.value"
             :options="[
               { value: 'current', label: t('focus.currentInstance') },
@@ -1268,10 +1266,6 @@ onUnmounted(() => {
             size="sm"
             @update:model-value="client.setThreadScope($event as FocusThreadScope)"
           />
-          <label v-if="client.threadScope.value === 'current'" class="directory-hidden-toggle" :title="t('focus.hiddenThreadsHint')">
-            <input type="checkbox" :checked="client.showHiddenThreads.value" @change="client.setShowHiddenThreads(($event.target as HTMLInputElement).checked)">
-            {{ t('focus.showHiddenThreads') }}
-          </label>
         </template>
       </NarrowSwitcherSheet>
     </div>
@@ -1429,15 +1423,6 @@ onUnmounted(() => {
   margin: 0 0 var(--space-2);
 }
 .narrow-scope { padding-inline: var(--space-2); }
-.directory-hidden-toggle {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  color: var(--color-text-muted);
-  font-size: var(--text-sm);
-  cursor: pointer;
-}
 .auth-page {
   flex: 1;
   display: flex;

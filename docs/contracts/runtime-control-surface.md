@@ -70,16 +70,16 @@ generation. `WebDocumentRegistry.materialized_thread_id` is only current-
 process evidence that Focus successfully installed a selection. Older-history
 admission therefore requires both facts to name the requested target; the
 materialized value cannot authorize a target which the durable profile does
-not select. `WebRuntimeInterestRegistry` alone owns desired-client edges and
+not select. `WebRuntimeInterestRegistry` alone owns instance browser-open intent, close versions, desired-client edges, and
 subscription outcome; neither selection fact is a substitute for it.
 
-When upstream authority makes a selected target unusable, Focus compares and
+When upstream authority makes a selected target unusable, or a user closes a browser thread in this instance, Focus compares and
 clears only an exact durable match. That store transaction changes selection
 to the draft and increments `scope_generation` atomically; replaying the same
 event is a no-op. Process cleanup forgets a materialized value only when it
 still names that target, preserves a replacement materialization, and removes
 all desired runtime edges for every document whose durable selection was
-cleared. It never automatically rebinds pending attachments. Archive,
+cleared. It never automatically rebinds pending attachments. Browser close, archive,
 not-found, and loaded-elsewhere outcomes leave old thread-scope records
 isolated; confirmed delete and an invalid direct `ThreadSpawn` target delete
 that thread scope. Only after the durable commit does Focus publish a
@@ -199,6 +199,7 @@ When an instance resets its backend:
 - exact process-local request/effect records tied to the old backend generation
   are retired with that generation; there is no durable retained-operation,
   server-request settlement, or interaction-lineage fence to carry forward
+- Confirmed stop clears the instance browser-open set and its selections, without automatically resuming the list. See [browser open and close](./focus-web-wire.md#browser-thread-open-and-close).
 - Web retirement removes the bounded process-local ordinary-prompt result
   receipts with the old backend generation. A browser locator may survive, but
   its later GET miss reports only unavailable/unknown outcome and establishes no

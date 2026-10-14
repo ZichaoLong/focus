@@ -140,7 +140,7 @@ function thread(id: string, title = id): FocusThreadSummary {
     selectable: true,
     unavailable_reason: '',
     history_mode: 'paginated',
-    action_capabilities: {
+    action_capabilities: { close: false,
       rename: false,
       archive: false,
       unarchive: false,
@@ -471,7 +471,7 @@ describe('FocusProjectionSync', () => {
     );
   });
 
-  it.each(['thread/archived', 'thread/deleted'] as const)(
+  it.each(['thread/archived', 'thread/deleted', 'web_thread_closed'] as const)(
     'keeps a rev9 active snapshot when a rev8 %s event arrives late',
     async (reason) => {
       const h = harness(7);
@@ -1986,7 +1986,7 @@ describe('FocusProjectionSync', () => {
     // The only read is the user-requested B transaction.  Fresh meta still
     // naming A is projection evidence, not authority to select A over B.
     expect(h.api.readThread).toHaveBeenCalledTimes(1);
-    expect(h.api.readThread).toHaveBeenCalledWith('thread-b', 1);
+    expect(h.api.readThread).toHaveBeenCalledWith('thread-b', 1, 10, true);
     expect(h.transport.scheduleProjectionReloadRetry).toHaveBeenCalled();
 
     readB.resolve(snapshot('thread-b', {

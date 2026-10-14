@@ -173,6 +173,7 @@ class WebGatewayPorts:
     goal: Callable[[str, str], dict[str, Any]]
     set_goal: Callable[..., dict[str, Any]]
     clear_goal: Callable[..., dict[str, Any]]
+    close_thread: Callable[[str, str], dict[str, Any]]
     archive_thread: Callable[[str, str], dict[str, Any]]
     unarchive_thread: Callable[[str, str], dict[str, Any]]
     delete_thread: Callable[..., dict[str, Any]]
@@ -1033,7 +1034,16 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
             )
         return self._json_response(result)
 
-    async def _handle_thread(self, request: web.Request) -> web.Response:
+    async def _handle_open_thread(self, request: web.Request) -> web.Response:
+        return await self._handle_thread(request, open_in_browser=True)
+
+    async def _handle_close_thread(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        return self._json_response(await self._document_request_to_thread(
+            self._ports.close_thread, request, client_id, request.match_info["thread_id"],
+        ))
+
+    async def _handle_thread(self, request: web.Request, *, open_in_browser: bool = False) -> web.Response:
         client_id = self._required_client_id(request)
         thread_id = request.match_info["thread_id"]
         turn_limit = request_decoder.decode_turn_window_limit(request.query)
@@ -1043,6 +1053,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 request,
                 client_id,
                 thread_id,
+                open_in_browser=open_in_browser,
                 turn_limit=turn_limit,
                 intent_generation=request_decoder.decode_intent_generation(
                     request.headers.get(_INTENT_HEADER, "")

@@ -52,14 +52,14 @@ turn 期间设置控件仍可修改，并明确作用于下一次 eligible Web t
 与设置独立的 Web navigation profile 中，`selected_thread_id` 是唯一的语义 selection 事实；meta、`/cd` 的 previous scope、
 attachment 准入与 scope generation 都只以它为准。`WebDocumentRegistry.materialized_thread_id` 只证明
 当前进程已成功安装某次 selection；older-history 准入因此要求这两项事实都等于请求 target，materialized
-值不能授权 durable profile 并未选择的 target。desired-client edge 与 subscription outcome 只归
+值不能授权 durable profile 并未选择的 target。实例 browser-open 意图、关闭版本、desired-client edge 与 subscription outcome 只归
 `WebRuntimeInterestRegistry` 所有，两个 selection 事实都不能替代它。
 
-当上游权威事实使已选 target 变得不可用时，Focus 只 compare-and-clear 与它 exact match 的 durable
+当上游权威事实使已选 target 变得不可用，或用户关闭实例内浏览器线程时，Focus 只 compare-and-clear 与它 exact match 的 durable
 selection。该 store transaction 会原子地把 selection 改为 draft 并令 `scope_generation` 加一；重复处理
 同一事件是 no-op。进程内清理只在 materialized 值仍等于旧 target 时遗忘它，保留已经替换的
 materialization，并清除每个 durable selection 被清 document 的全部 desired runtime edge。这里绝不自动
-rebind pending attachments：archive、not-found、loaded-elsewhere 会把旧 thread-scope records 保留为
+rebind pending attachments：浏览器关闭、archive、not-found、loaded-elsewhere 会把旧 thread-scope records 保留为
 isolated；确认 delete 与非法 direct `ThreadSpawn` target 则删除该 thread scope。只有 durable commit
 之后，Focus 才发布不携带 profile 副本的 `profile_changed` invalidation；每个浏览器必须重读自己的 meta，
 取得新 navigation generation 后才能继续 scope-bound 写入。该 generation 与 settings generation 互不排序或结算。
@@ -152,6 +152,7 @@ memory 行为，应直接通过上游 Codex 处理，而不是走项目自管的
 - binding-wise next-turn settings 保留
 - 绑定旧 backend generation 的 exact 进程内 request/effect record 随该 generation 一起退休；
   不存在需要带到新 generation 的 durable retained-operation、server-request settlement 或 interaction-lineage fence
+- 确认 stop 后清空实例 browser-open 集合并清理对应 selection；不自动 resume 打开列表。详见[浏览器打开与关闭](./focus-web-wire.zh-CN.md#浏览器线程打开与关闭)。
 - Web retirement 随旧 backend generation 退休 ordinary prompt 的有界 process-local result receipt；browser locator
   可以继续存在，但后续 GET miss 只报告结果 unavailable/unknown，不建立 durable explanation、retry、replay 或 payload
   restoration。旧 staged worker 受 exact generation fence 约束，不能作用于或结算 replacement backend

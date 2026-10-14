@@ -46,7 +46,7 @@ const emit = defineEmits<{
   select: [id: string];
   rename: [id: string, title: string];
   archive: [id: string];
-  setHidden: [id: string, hidden: boolean];
+  closeThread: [id: string];
   fork: [id: string];
   export: [request: SummaryExportRequest];
 }>();
@@ -268,9 +268,6 @@ defineExpose({ closeMenu });
           {{ runtimeLabel }}
         </Badge>
       </Tooltip>
-      <Badge v-if="session.hiddenFromCurrent" variant="neutral" size="sm">
-        {{ t('focus.hiddenThread') }}
-      </Badge>
       <!-- Aborted: a distinct, low-key error tag — the session is quiet and
            its last main turn was cancelled or failed. Hidden while input is
            pending (the awaiting pills own the row then, exactly like the
@@ -293,7 +290,7 @@ defineExpose({ closeMenu });
         <span class="ts">{{ session.time }}</span>
         <IconButton
           ref="kebabRef"
-          v-if="(selectable || session.hiddenFromCurrent !== undefined) && !renaming"
+          v-if="(selectable || session.actionCapabilities?.close) && !renaming"
           aria-disabled="false"
           class="kebab"
           :class="{ open: menuOpen }"
@@ -320,8 +317,8 @@ defineExpose({ closeMenu });
                 : t('sidebar.copySessionId')
           }}
         </MenuItem>
-        <MenuItem v-if="session.hiddenFromCurrent !== undefined" @click="emit('setHidden', session.id, !session.hiddenFromCurrent); closeMenu()">
-          {{ t(session.hiddenFromCurrent ? 'focus.restoreThread' : 'focus.hideThread') }}
+        <MenuItem v-if="session.actionCapabilities?.close" @click="emit('closeThread', session.id); closeMenu()">
+          {{ t('focus.closeThread') }}
         </MenuItem>
         <template v-if="sessionActions !== false">
           <MenuItem separator />

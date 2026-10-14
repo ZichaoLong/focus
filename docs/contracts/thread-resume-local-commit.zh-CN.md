@@ -60,7 +60,7 @@ local callback 只包含该 surface 首个必须提交的权威本地写入，�
 
 - 提交 exact 飞书 binding 或已准入的 blank main-turn owner；active-observer attach 必须在同一本地
   callback 中同时提交 attached binding 与 response 中唯一非空 `inProgress` turn 的 execution anchor；
-- 为请求 Web document 提交 confirmed runtime interest；
+- 为 Web 提交 confirmed runtime interest；显式打开同时提交实例 browser-open 意图（关闭版本仍匹配时），document desire 只在原 document 仍 current 时提交；
 - 提交 RuntimeAdmin attach 结果。
 
 cache、history、title、goal、card 与 projection refresh 都是后续结果；它们失败不能撤销已经
@@ -78,7 +78,7 @@ generation、projection revision 与 read observation。
 因此 final DTO check 因 F5/document reissue、较新 notification、projection revision 或 backend
 replacement 拒绝结果时，只说明该 response 已不适合安装。已经 known-success 且完成 local commit 的
 resume 仍然有效；Focus 不补发 compensation、不把它重分类为 transport unknown，也不因 stale DTO
-恢复旧 document 的 selection/materialization。browser 可以按新的权威坐标重新读取。
+恢复旧 document 的 selection/materialization。browser 可以按新的权威坐标重新读取。若实例已关闭该线程，known resume 仍结算 subscription fact，但旧请求不得重建打开意图；后续复用既有安全 cleanup。
 
 running resume response 可能因 turn 恰好完成而已经是 idle；此时 active-observer attach 可以提交
 binding，但不伪造 execution anchor。若 response 仍声称 active，却没有唯一非空 active turn id，

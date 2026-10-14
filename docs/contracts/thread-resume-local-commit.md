@@ -75,7 +75,7 @@ by that surface, for example:
 - commit the exact Feishu binding or admitted blank main-turn owner; an
   active-observer attach commits both the attached binding and the sole
   non-empty `inProgress` turn anchor from the response in the same callback;
-- mark the Web runtime interest confirmed for the requesting document;
+- confirm Web runtime interest; explicit open also commits instance browser-open intent if its close version still matches, while document desire commits only for a still-current document;
 - commit the RuntimeAdmin attach result.
 
 Cache, history, title, goal, card, and projection refreshes are later
@@ -102,7 +102,7 @@ response is no longer installable. A known-success resume whose local commit
 finished remains effective. Focus neither compensates it, reclassifies it as
 transport-unknown, nor restores the replaced document's old
 selection/materialization because the DTO became stale. The browser may reread
-under new authoritative coordinates.
+under new authoritative coordinates. If this instance closed the thread, the known resume still settles subscription facts, but the old request cannot restore open intent; existing safe cleanup follows.
 
 A running resume response may already be idle because the turn completed in the
 narrow race. The observer attach may commit the binding without fabricating an

@@ -82,7 +82,7 @@ export function thread(relation: 'none' | 'self' | 'other' = 'none'): FocusThrea
     selectable: true,
     unavailable_reason: '',
     history_mode: 'paginated',
-    action_capabilities: {
+    action_capabilities: { close: false,
       rename: true,
       archive: true,
       unarchive: false,

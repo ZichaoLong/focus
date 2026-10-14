@@ -777,10 +777,6 @@
           "symbol": "createBrowserTurnWindow"
         },
         {
-          "path": "web/src/focus/client-state/thread-visibility.ts",
-          "symbol": "createThreadVisibility"
-        },
-        {
           "path": "web/src/focus/client-state/web-next-turn-settings.ts",
           "symbol": "createWebNextTurnSettings"
         },
@@ -849,7 +845,6 @@
           "targets": [
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",
-            "web/test/focus_client/owners/thread-visibility.test.ts",
             "web/test/focus_client/owners/client-intent-clock.test.ts",
             "web/test/focus_client/owners/pending-request-actions.test.ts",
             "web/test/focus_client/owners/thread-event-revisions.test.ts",
@@ -2764,6 +2759,90 @@
         "web-wire",
         "web-dependency-direction",
         "web-typecheck"
+      ]
+    },
+    "focus-web-browser-open": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_open_thread"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_close_thread"
+        },
+        {
+          "path": "web/src/focus/focusNavigationProfile.ts",
+          "symbol": "createFocusNavigationProfile"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/interest.py",
+          "symbol": "WebRuntimeInterestRegistry"
+        },
+        {
+          "path": "bot/web_runtime/thread_open_coordinator.py",
+          "symbol": "WebThreadOpenCoordinator"
+        },
+        {
+          "path": "bot/web_runtime/thread_mutation_coordinator.py",
+          "symbol": "WebThreadMutationCoordinator"
+        },
+        {
+          "path": "bot/web_runtime/lifecycle_coordinator.py",
+          "symbol": "WebRuntimeLifecycleCoordinator"
+        },
+        {
+          "path": "bot/web_runtime/selection_coordinator.py",
+          "symbol": "WebSelectionCoordinator"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "浏览器线程打开与关闭"
+        },
+        {
+          "path": "docs/architecture/focus-shared-backend-runtime.zh-CN.md",
+          "heading": "6.1 Backend residency"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/web_runtime/test_browser_open_threads.py",
+            "tests/test_web_thread_open_coordinator.py",
+            "tests/test_web_runtime_lifecycle_coordinator.py",
+            "tests/web_runtime/test_thread_fork.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus_client/owners/use-focus-web-client.test.ts",
+            "web/test/focus_client/owners/focus-projection-sync.test.ts",
+            "web/test/focus-api.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/web_runtime/test_directory_thread_actions.py",
+            "tests/web_runtime/test_backend_reset_retirement.py",
+            "tests/test_web_gateway.py",
+            "tests/focus_runtime/test_focus_runtime_binding_coordinator.py"
+          ]
+        }
+      ],
+      "guard": [
+        "import-cycles",
+        "dependency-direction",
+        "source-context",
+        "web-wire"
       ]
     }
   }

@@ -57,15 +57,15 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         self.service_runtime_leases.add("thread-2")
         self.open.read_thread("tab-1", "thread-2", intent_generation=2)
 
-    def test_successful_switch_cleans_up_previous_idle_thread(self) -> None:
+    def test_successful_switch_retains_browser_open_idle_thread(self) -> None:
         self.open.read_thread("tab-1", "thread-1", intent_generation=1)
 
         self._open_second_thread()
 
-        self.assertEqual(self.fake.unsubscribed, ["thread-1"])
-        self.assertEqual(self.service_runtime_leases, {"thread-2"})
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertEqual(self.service_runtime_leases, {"thread-1", "thread-2"})
 
-    def test_successful_switch_retains_running_thread_until_completion(self) -> None:
+    def test_successful_switch_retains_running_thread_after_completion(self) -> None:
         self.open.read_thread("tab-1", "thread-1", intent_generation=1)
         self.fake.status = "active"
 
@@ -75,7 +75,7 @@ class WebThreadOpenCoordinatorTests(WebRuntimeControllerHarness):
         self.assertIn("thread-1", self.service_runtime_leases)
         self.fake.status = "idle"
         self.controller._lifecycle.maybe_release_web_runtime("thread-1")
-        self.assertEqual(self.fake.unsubscribed, ["thread-1"])
+        self.assertEqual(self.fake.unsubscribed, [])
 
     def test_successful_switch_preserves_another_browser_subscription(self) -> None:
         self.open.read_thread("tab-1", "thread-1", intent_generation=1)

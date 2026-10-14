@@ -394,7 +394,8 @@ class WebRuntimeThreadCreateAttachmentTests(WebRuntimeControllerHarness):
         record = self.attachment_store.download(attachment_id=upload["file_id"])
         self.assertTrue(record.record.submitted)
         self.controller.client_disconnected("tab-1")
-        self.assertEqual(self.fake.released, ["thread-1"])
+        self.assertEqual(self.fake.released, [])
+        self.assertTrue(self.controller._runtime_interest.is_browser_open("thread-1"))
 
     def test_unknown_first_prompt_is_not_replayed_or_wrapped_in_a_lease(self):
         upload = self.controller.stage_attachment(

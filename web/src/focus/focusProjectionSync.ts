@@ -43,11 +43,12 @@ const THREAD_LIST_EVENT_TYPES = new Set([
   'thread_invalidated',
 ]);
 const AUTHORITATIVE_LIFECYCLE_REASONS = new Set([
+  'web_thread_closed',
   'thread/archived',
   'thread/deleted',
   'thread/unarchived',
 ]);
-const THREAD_REMOVAL_REASONS = new Set(['thread/archived', 'thread/deleted']);
+const THREAD_REMOVAL_REASONS = new Set(['web_thread_closed', 'thread/archived', 'thread/deleted']);
 const ACTIVE_TURN_DISCLOSURE_DELTA_METHODS = new Set([
   'model/rerouted',
   'thread/archived',
@@ -133,6 +134,7 @@ export interface FocusProjectionSyncOptions {
 }
 
 export interface RefreshActiveThreadOptions {
+  openInBrowser?: boolean;
   requestIntentGeneration?: number;
   navigationGeneration?: number;
   navigationAuthorityGeneration?: number;
@@ -446,11 +448,13 @@ export function createFocusProjectionSync(
   let pendingStreamTimer: ReturnType<typeof setTimeout> | null = null;
   const disposedResult = Symbol('disposed projection result');
 
-  function readThreadWindow(threadId: string, intentGeneration: number) {
+  function readThreadWindow(threadId: string, intentGeneration: number, openInBrowser = false) {
     const turnLimit = options.turnWindowLimit.value;
-    return turnLimit === FOCUS_RECENT_FULL_TURN_LIMIT
-      ? options.api.readThread(threadId, intentGeneration)
-      : options.api.readThread(threadId, intentGeneration, turnLimit);
+    return openInBrowser
+      ? options.api.readThread(threadId, intentGeneration, turnLimit, true)
+      : turnLimit === FOCUS_RECENT_FULL_TURN_LIMIT
+        ? options.api.readThread(threadId, intentGeneration)
+        : options.api.readThread(threadId, intentGeneration, turnLimit);
   }
 
   function cancelPendingStreamFlush(): void {
@@ -1010,7 +1014,7 @@ export function createFocusProjectionSync(
     let result: FocusThreadSnapshot | typeof disposedResult;
     while (true) {
       try {
-        result = await awaitProjectionResult(readThreadWindow(threadId, requestIntent));
+        result = await awaitProjectionResult(readThreadWindow(threadId, requestIntent, refreshOptions.openInBrowser && !staleRetryUsed));
         break;
       } catch (error) {
         if (!isStaleWebReadError(error)) throw error;

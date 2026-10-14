@@ -39,7 +39,7 @@ projection event，浏览器在安装状态前对该投影做完整 runtime deco
 | 完整 snapshot 的 staging 与原子安装 | `web/src/focus/focusProjectionSync.ts` |
 | browser next-turn settings snapshot 安装 | `web/src/focus/client-state/web-next-turn-settings.ts` 的 `WebNextTurnSettingsOwner` |
 | browser-local 近期轮次摘要窗口 preference | `web/src/focus/client-state/browser-turn-window.ts` 的 `BrowserTurnWindowOwner` |
-| browser-local 当前实例线程隐藏 preference | `web/src/focus/client-state/thread-visibility.ts` 的 `ThreadVisibilityOwner`；列表派生由 `focusClientView.ts` 持有 |
+| 实例内浏览器打开意图、关闭版本与订阅事实 | `bot/web_runtime/interest.py` 的 `WebRuntimeInterestRegistry`；document selection 仍由 `WebSelectionCoordinator` 持有 |
 | browser document title presentation | `web/src/focus/documentTitle.ts` 的 `syncFocusDocumentTitle` |
 | browser-local document activity favicon preference 与 presentation | `web/src/focus/documentActivityFavicon.ts` 的 `createFocusDocumentActivityFaviconPreference` 与 `syncFocusDocumentActivityFavicon` |
 | app-server typed runtime notice 投影 | `bot/web_runtime/runtime_notice.py` 的 `project_runtime_notice`；有序发布由 `WebRuntimeEventCoordinator` 持有 |
@@ -145,6 +145,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v32 为问答导出增加必填 `content=qa|final_answers|prompts`，独立于三种轮次范围。仅 Prompt 允许未完成轮次；
   仅最终回复不包含提问标题。详见[导出范围与内容](focus-web-summary-export.zh-CN.md)。服务与静态资源必须同版本部署。
 
+- v33 新增 `POST /api/threads/{thread_id}/open` 与 `/close`，`thread_read` GET 只恢复已打开线程；
+  current 目录改为实例共享的已打开集合，action capabilities 增加必填 `close`。移除浏览器本地隐藏；服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
@@ -226,7 +229,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   重分类。known failure、outcome unknown、attempt replacement、connection replacement/disconnect 与 backend reset
   都丢弃相应临时槽；该槽不持久化、不自动 retry，也不取得 subscription、lifecycle 或 replay authority。
 - 成功打开并提交新的 selection 后，旧线程移除 browser desire 所产生的 cleanup candidates 必须交给
-  runtime lifecycle owner。清理仍需当前 backend generation 与非 active 状态证据，并保留其他 document、
+  runtime lifecycle owner。清理仍需当前 backend generation 与非 active 状态证据，并保留实例打开意图、其他 document、
   surface subscriber 与 pending interaction 的保护；取消订阅不等于立即从 backend 内存卸载。
 - prepared service-ingress receipt 从 RuntimeLoop prepare 跨越 document-lock release、external worker 与最终 settlement
   保持 shutdown barrier。handler cancellation、executor admission failure 或其它 handoff failure 只可 abandon 尚未
@@ -491,20 +494,37 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   mutation state 或任何其他 response 字段。上述 floor 与 event-triggered 有界 refresh 不建立 polling/
   retry loop，也不授予 writer、owner、lifecycle、settings、approval、FIFO 或 mutation authority。
 
-### 浏览器线程隐藏
+### 浏览器线程打开与关闭
 
-“从当前列表隐藏”只改变当前实例目录的显示，不归档、删除、停止、取消订阅或改变当前选中
-对话。偏好按浏览器同源存储与 `/meta.instance` 隔离，跨刷新保留，同源同实例标签页通过
-`storage` event 同步；不同设备不共享。`ThreadVisibilityOwner` 是唯一写入入口，每个 exact
-thread id 单独保存隐藏标记，避免标签页对不同线程的修改互相覆盖。新建与分叉线程不继承标记。
+“已打开”（`scope=current`）只列出本 Focus 实例的 browser-open 集合。它与后端 loaded 状态独立；
+全局列表和搜索仍按上游目录与跨实例 loaded 证据展示历史。只有用户明确选中线程发送
+`POST /api/threads/{thread_id}/open` 才能新增打开意图；浏览器创建与 fork 的 known-success
+本地提交也加入此集合。普通 `GET /api/threads/{thread_id}`、F5、旧 URL、重连与恢复 selection
+只能读取已打开线程，已关闭时返回 `thread_not_open` 并清除不可恢复的旧 selection。
+搜索、历史读取、导出和其他入口创建的线程不会自行加入集合。
 
-“显示已隐藏”是当前 document 的临时查看开关；隐藏行提供“取消隐藏”。全局列表与搜索始终
-不受隐藏过滤。后端仍决定目录成员，取消隐藏本身不加载线程。已有 list-level approval/question
-或 snapshot pending request 的线程保留可达行与提醒；交互结束后继续应用隐藏偏好。
+`WebRuntimeInterestRegistry` 在 RuntimeLoop 中持有进程内 `browser_open` 与关闭版本，独立于
+各 document 的 desired edge。打开后持续保留 canonical subscription；切换、关闭网页与工作完成
+均不撤销意图。所有访问同一实例的浏览器共享此集合；不同实例各自独立。没有新增持久记录或
+批量恢复机制：服务重启与确认成功的 backend reset 清空集合，旧 profile/URL 不自动 resume。
+普通 backend 断连使订阅事实失效；重新读取已打开线程沿既有准入恢复，不批量后台 resume。
 
-损坏的 key/value 被忽略；存储不可用时偏好退化为当前 document 内存状态，不阻断启动、新会话
-或继续对话。显式取消隐藏或清除站点存储删除标记，不因列表暂缺、状态更新、卸载或归档自动
-修剪。隐藏标记不保存 thread 内容，不进入 backend DTO 或 runtime ownership。
+`POST /api/threads/{thread_id}/close` 要求 live document、权威 inactive 状态，且没有待处理交互、
+未确认 runtime/control effect 或未结算 prompt receipt。关闭撤销实例浏览器意图，并清除所有
+匹配的持久 selection 与 materialization（含离线 document），保留 working directory 和 thread
+草稿/附件 scope；不迁移这些内容到其他线程。随后发布 `thread_invalidated`，reason 为
+`web_thread_closed`，使其他浏览器退出该线程并刷新目录。未知或工作中状态拒绝关闭，不排队延迟关闭。
+
+关闭只提交本地意图；已有 lifecycle owner 按 generation、pending interaction、canonical 飞书
+subscriber 和 runtime-holder 证据安全清理。它不 stop、archive、delete、detach 飞书或断开 fcodex；
+后台仍 loaded 不使行重新进入已打开列表。没有其他 canonical 需求时取消订阅，实际卸载由上游管理。
+保留订阅不是 main-turn writer，也不建立新的 browser holder 类型，不改变已有归档准入。
+
+打开事务冻结关闭版本；关闭后版本保留到进程结束，不随 subscription cleanup 丢失。旧请求不得
+重新建立打开意图或 selection。已经发送的 known resume 仍先结算订阅事实，再安全清理；不能把
+迟到结果当成无 effect，或用旧请求重开。只有新的显式选择允许重开。打开事件使用
+`thread_invalidated / web_thread_opened` 同步列表。浏览器丢失 close response 时刷新权威状态，不盲目重发。
+旧 localStorage 隐藏标记不再读取，也不迁移为服务端关闭操作。
 
 ## 6. 安装与失败语义
 

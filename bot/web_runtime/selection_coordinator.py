@@ -353,6 +353,7 @@ class WebSelectionCoordinator:
         target_interest = self._runtime_interest.snapshot(normalized_thread_id)
         if target_interest is not None:
             removed_thread_ids.add(normalized_thread_id)
+        self._runtime_interest.close_in_browser(normalized_thread_id)
         self._runtime_interest.clear_desired_clients(normalized_thread_id)
         return WebSelectionConvergence(
             cleared_profiles=receipts,

@@ -89,6 +89,7 @@ type FocusMutationApiPort = Pick<
   | 'startReview'
   | 'setGoal'
   | 'clearGoal'
+  | 'closeThread'
   | 'archiveThread'
   | 'unarchiveThread'
   | 'deleteThread'
@@ -177,6 +178,7 @@ export interface FocusMutationActions {
   review(target: Record<string, unknown>): Promise<void>;
   createGoal(objective: string): Promise<void>;
   controlGoal(action: 'pause' | 'resume' | 'cancel'): Promise<void>;
+  closeThread(threadId: string): Promise<boolean>;
   archiveThread(threadId: string): Promise<boolean>;
   unarchiveThread(threadId: string): Promise<boolean>;
   deleteThread(threadId: string, confirmation: string): Promise<boolean>;
@@ -247,6 +249,7 @@ export function createFocusMutationActions(
     captureUnknownMutationSnapshot,
     reconcileUnknownMutation,
     rememberProcessLocalUnknownFromError,
+    closeThread,
     archiveThread,
     unarchiveThread,
     deleteThread,
@@ -1013,6 +1016,7 @@ export function createFocusMutationActions(
     review,
     createGoal,
     controlGoal,
+    closeThread,
     archiveThread,
     unarchiveThread,
     deleteThread,

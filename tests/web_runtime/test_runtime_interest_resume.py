@@ -71,6 +71,9 @@ class WebRuntimeInterestResumeTests(WebRuntimeControllerHarness):
         )
 
         self.controller.client_disconnected("tab-2")
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.controller.client_connected("tab-1")
+        self.controller.close_thread("tab-1", "thread-1")
 
         self.assertEqual(self.fake.unsubscribed, ["thread-1"])
         self.assertEqual(self.fake.released, ["thread-1"])
@@ -422,8 +425,8 @@ class WebRuntimeInterestResumeTests(WebRuntimeControllerHarness):
             "thread-1",
         )
         self.controller.client_disconnected("tab-1")
-        self.assertEqual(self.fake.unsubscribed, ["thread-1"])
-        self.assertEqual(self.fake.released, ["thread-1"])
+        self.assertEqual(self.fake.unsubscribed, [])
+        self.assertEqual(self.fake.released, [])
 
     def test_missing_persisted_selection_is_cleared_during_open(self):
         self.profile_store.update(
@@ -438,13 +441,13 @@ class WebRuntimeInterestResumeTests(WebRuntimeControllerHarness):
         self.assertEqual(caught.exception.code, "thread_not_found")
         self.assertEqual(self.profile_store.load("tab-1").selected_thread_id, "")
 
-    def test_web_interest_is_dropped_without_unsubscribe_when_feishu_still_subscribes(
+    def test_closed_web_interest_is_dropped_without_unsubscribe_when_feishu_still_subscribes(
         self,
     ):
         self.fake.subscribers = (("sender", "chat"),)
         self.controller.read_thread("tab-1", "thread-1")
 
-        self.controller.client_disconnected("tab-1")
+        self.controller.close_thread("tab-1", "thread-1")
 
         self.assertEqual(self.fake.resumed, ["thread-1"])
         self.assertEqual(self.fake.unsubscribed, [])

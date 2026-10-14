@@ -131,7 +131,7 @@ class WebThreadListPreparation:
     archived: bool
     all_for_search: bool
     query_limit: int
-    managed_thread_ids: tuple[str, ...]
+    browser_open_thread_ids: tuple[str, ...]
     runtime_epoch: str
     projection_revision: int
 
@@ -154,6 +154,8 @@ class WebThreadOpenPreparation:
     observation: WebThreadReadObservationReceipt
     connection_generation: int
     subscription_current: bool
+    open_in_browser: bool
+    browser_close_version: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,7 +362,7 @@ class WebThreadOpenCoordinator:
             archived=bool(archived),
             all_for_search=bool(all_for_search),
             query_limit=query_limit,
-            managed_thread_ids=self._runtime_interest.managed_thread_ids(),
+            browser_open_thread_ids=self._runtime_interest.browser_open_thread_ids(),
             runtime_epoch=str(coordinates["runtime_epoch"]),
             projection_revision=int(coordinates["revision"]),
         )
@@ -422,7 +424,7 @@ class WebThreadOpenCoordinator:
                     summaries.append(summary)
         if prepared.scope == "current" and not prepared.archived:
             known_ids = {summary.thread_id for summary in summaries}
-            current_ids = loaded_ids | set(prepared.managed_thread_ids)
+            current_ids = set(prepared.browser_open_thread_ids)
             for thread_id in sorted(current_ids - known_ids):
                 try:
                     summaries.append(
@@ -482,6 +484,7 @@ class WebThreadOpenCoordinator:
             runtime_leases=effect.runtime_leases,
             interaction_leases=effect.interaction_leases,
             observed_thread_ids=observed_thread_ids,
+            browser_open_thread_ids=frozenset(self._runtime_interest.browser_open_thread_ids()),
             pending_by_thread=tuple(
                 self._pending_kind_by_thread(
                     prepared.client_id,
@@ -543,6 +546,22 @@ class WebThreadOpenCoordinator:
             raise TypeError("Web thread-list projection is required")
         return project_thread_list(projection)
 
+    def retire_browser_open_threads_after_backend_stop(self) -> None:
+        """Forget browser retention after a confirmed stop, without backend I/O."""
+
+        self._runtime_context_guard()
+        opened_ids = self._runtime_interest.browser_open_thread_ids()
+        # Clear before selection convergence so it cannot schedule cleanup on a
+        # stopped backend. Invalidate in-flight opens even if profile I/O fails.
+        self._runtime_interest.clear()
+        for thread_id in opened_ids:
+            self._runtime_interest.close_in_browser(thread_id)
+            try:
+                self._direct_targets.clear_unusable_thread(thread_id, reason="web_thread_closed")
+            except Exception:
+                logger.exception("Unable to clear browser selection after backend stop: %s", thread_id)
+            self._projection.publish("thread_invalidated", thread_id=thread_id, reason="web_thread_closed")
+
     def prepare_read_thread(
         self,
         client_id: str,
@@ -550,6 +569,7 @@ class WebThreadOpenCoordinator:
         *,
         turn_limit: int | None = None,
         intent_generation: int = 0,
+        open_in_browser: bool = True,
     ) -> WebThreadOpenPreparation:
         """Freeze exact document, target, cache, and backend coordinates."""
 
@@ -561,6 +581,14 @@ class WebThreadOpenCoordinator:
             intent_generation,
         )
         normalized_thread_id = require_web_thread_id(thread_id)
+        if not open_in_browser and not self._runtime_interest.is_browser_open(normalized_thread_id):
+            self._direct_targets.clear_unusable_thread(
+                normalized_thread_id, reason="web_thread_closed",
+            )
+            raise WebRuntimeError(
+                "This thread is closed in this Focus instance. Open it from the global list to continue.",
+                code="thread_not_open", status=409, details={"thread_id": normalized_thread_id},
+            )
         requested_turn_limit = self._requested_turn_limit(turn_limit)
         return WebThreadOpenPreparation(
             client_id=normalized_client_id,
@@ -575,6 +603,8 @@ class WebThreadOpenCoordinator:
                 normalized_thread_id
             ),
             connection_generation=self._ports.capture_connection_generation(),
+            open_in_browser=open_in_browser,
+            browser_close_version=self._runtime_interest.browser_close_version(normalized_thread_id),
             subscription_current=self._runtime_interest.subscription_is_current(
                 normalized_thread_id
             ),
@@ -666,6 +696,7 @@ class WebThreadOpenCoordinator:
     ) -> None:
         """Install the verified direct target only in its exact backend epoch."""
 
+        self._require_browser_open_current(initial)
         self._require_document_operation(initial.document)
         self._require_observation(initial.observation)
         self._direct_targets.remember_verified_snapshot(observed.metadata)
@@ -908,6 +939,7 @@ class WebThreadOpenCoordinator:
         self._ports.run_if_connection_generation(
             initial.connection_generation,
             lambda: (
+                self._require_browser_open_current(initial),
                 self._require_document_operation(initial.document),
                 self._require_observation(initial.observation),
             ),
@@ -1073,14 +1105,7 @@ class WebThreadOpenCoordinator:
             try:
                 self._ports.run_if_connection_generation(
                     initial.connection_generation,
-                    lambda: self._runtime_interest.mark_confirmed(
-                        initial.thread_id,
-                        client_id=(
-                            initial.client_id
-                            if self._open_read_is_current(initial)
-                            else ""
-                        ),
-                    ),
+                    lambda: self._commit_browser_resume_interest(initial),
                 )
             except AdapterOutboundRequestEpochLost as exc:
                 generation_failure = exc
@@ -1096,6 +1121,8 @@ class WebThreadOpenCoordinator:
             ),
         )
         if committed:
+            if not self._runtime_interest.is_browser_open(initial.thread_id):
+                self._lifecycle.settle_runtime_cleanup_candidates((initial.thread_id,))
             return
         if generation_failure is None:
             raise RuntimeError(
@@ -1240,6 +1267,7 @@ class WebThreadOpenCoordinator:
                     self._require_document_operation(initial.document)
                     self._require_observation(initial.observation)
                     if selection is not None:
+                        self._require_browser_open_current(initial)
                         selected = self._workspace.materialize_persisted_selection(selection)
                         self._lifecycle.settle_runtime_cleanup_candidates(selected.runtime_cleanup_thread_ids)
                     if cleanup is not None:
@@ -1287,6 +1315,7 @@ class WebThreadOpenCoordinator:
             if not isinstance(exc, WebRuntimeError) or exc.code in {
                 "stale_document_read",
                 "stale_thread_read",
+                "thread_not_open",
             }:
                 compensated = self._workspace.compensate_stale_persisted_selection(
                     selection
@@ -1316,6 +1345,7 @@ class WebThreadOpenCoordinator:
 
         def claim() -> WebThreadOpenCommit:
             self._claim_open_observation(initial)
+            self._retain_browser_open(initial)
             return WebThreadOpenCommit(
                 receipt=self._projection_receipt(self._projection.coordinates()),
                 observation=self._read_model.capture_observation(initial.thread_id),
@@ -1412,6 +1442,7 @@ class WebThreadOpenCoordinator:
     ) -> None:
         """CAS one exact read before any Web-local projection commit."""
 
+        self._require_browser_open_current(initial)
         self._require_document_operation(initial.document)
         self._require_observation(initial.observation)
         if not self._read_model.claim_observation(initial.observation):
@@ -1544,6 +1575,7 @@ class WebThreadOpenCoordinator:
             stale_code="stale_thread_read",
         )
         self._require_observation(commit.observation)
+        self._require_browser_open_current(prepared)
         selected = self._workspace.materialize_persisted_selection(selection)
         self._lifecycle.settle_runtime_cleanup_candidates(
             selected.runtime_cleanup_thread_ids
@@ -1889,8 +1921,33 @@ class WebThreadOpenCoordinator:
                 details={"thread_id": receipt.target_thread_id},
             )
 
+    def _commit_browser_resume_interest(self, prepared: WebThreadOpenPreparation) -> None:
+        self._runtime_interest.mark_confirmed(
+            prepared.thread_id,
+            client_id=prepared.client_id if self._open_read_is_current(prepared) else "",
+        )
+        self._retain_browser_open(prepared)
+
+    def _retain_browser_open(self, prepared: WebThreadOpenPreparation) -> None:
+        if not prepared.open_in_browser or self._runtime_interest.is_browser_open(prepared.thread_id):
+            return
+        if self._runtime_interest.open_in_browser(
+            prepared.thread_id, expected_close_version=prepared.browser_close_version,
+        ):
+            try:
+                self._projection.publish("thread_invalidated", thread_id=prepared.thread_id, reason="web_thread_opened")
+            except Exception:
+                logger.exception("Unable to publish browser-open intent for %s", prepared.thread_id)
+
+    def _require_browser_open_current(self, prepared: WebThreadOpenPreparation) -> None:
+        if self._runtime_interest.browser_close_version(prepared.thread_id) != prepared.browser_close_version:
+            raise WebRuntimeError(
+                "This thread was closed while the read was in progress.",
+                code="thread_not_open", status=409, details={"thread_id": prepared.thread_id},
+            )
+
     def _open_read_is_current(self, prepared: WebThreadOpenPreparation) -> bool:
-        return self._documents.operation_is_current(
+        return self._runtime_interest.browser_close_version(prepared.thread_id) == prepared.browser_close_version and self._documents.operation_is_current(
             prepared.document
         ) and self._read_model.observation_is_current(prepared.observation)
 

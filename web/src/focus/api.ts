@@ -246,6 +246,7 @@ export interface FocusWebApiPort {
     threadId: string,
     intentGeneration?: number,
     turnLimit?: number,
+    openInBrowser?: boolean,
   ): Promise<FocusThreadSnapshot>;
   listOlderTurns(
     threadId: string,
@@ -301,6 +302,7 @@ export interface FocusWebApiPort {
   getGoal(threadId: string): Promise<FocusGoalResult>;
   setGoal(threadId: string, input: { objective?: string; status?: string }, intentGeneration?: number): Promise<FocusGoalResult>;
   clearGoal(threadId: string, intentGeneration?: number): Promise<FocusGoalResult>;
+  closeThread(threadId: string): Promise<FocusMutationResult>;
   archiveThread(threadId: string): Promise<FocusLifecycleResult>;
   unarchiveThread(threadId: string): Promise<FocusLifecycleResult>;
   deleteThread(threadId: string, confirmation: string): Promise<FocusLifecycleResult>;
@@ -569,10 +571,11 @@ export class FocusWebApi implements FocusWebApiPort {
     threadId: string,
     intentGeneration = 0,
     turnLimit = 10,
+    openInBrowser = false,
   ): Promise<FocusThreadSnapshot> {
     const query = new URLSearchParams({ turn_limit: String(turnLimit) });
     return this.request(
-      'thread_read',
+      openInBrowser ? 'thread_open' : 'thread_read',
       decodeFocusThreadSnapshot,
       'thread snapshot',
       { parameters: { thread_id: threadId }, query, intentGeneration },
@@ -921,6 +924,12 @@ export class FocusWebApi implements FocusWebApiPort {
       'goal clear mutation',
       { parameters: { thread_id: threadId }, intentGeneration },
     );
+  }
+
+  closeThread(threadId: string): Promise<FocusMutationResult> {
+    return this.request('thread_close', decodeFocusMutationResult, 'close thread', {
+      parameters: { thread_id: threadId },
+    });
   }
 
   archiveThread(threadId: string): Promise<FocusLifecycleResult> {

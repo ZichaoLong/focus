@@ -380,6 +380,7 @@ export interface FocusOwner {
  * because a writer can change after this snapshot was produced.
  */
 export interface FocusThreadActionCapabilities {
+  close: boolean;
   rename: boolean;
   archive: boolean;
   unarchive: boolean;

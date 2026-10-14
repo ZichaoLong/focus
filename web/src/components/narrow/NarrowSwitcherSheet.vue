@@ -54,7 +54,7 @@ const emit = defineEmits<{
   fork: [id: string];
   export: [request: SummaryExportRequest];
   archive: [id: string];
-  setHidden: [id: string, hidden: boolean];
+  closeThread: [id: string];
   /** The parent shell owns confirmation and the async delete mutation. */
   deleteWorkspace: [workspaceId: string];
   loadMore: [workspaceId: string];
@@ -188,7 +188,7 @@ function onFork(id: string): void {
   close();
 }
 
-function canSessionAction(session: Session, action: 'rename' | 'fork' | 'export' | 'archive'): boolean {
+function canSessionAction(session: Session, action: 'close' | 'rename' | 'fork' | 'export' | 'archive'): boolean {
   const capability = session.actionCapabilities?.[action];
   if (capability !== undefined) return capability;
   // Generic Kimi-derived callers retain only their historical rename/archive
@@ -197,7 +197,7 @@ function canSessionAction(session: Session, action: 'rename' | 'fork' | 'export'
 }
 
 function hasSessionActions(session: Session): boolean {
-  return session.hiddenFromCurrent !== undefined
+  return canSessionAction(session, 'close')
     || canSessionAction(session, 'rename')
     || canSessionAction(session, 'fork')
     || canSessionAction(session, 'export')
@@ -316,12 +316,11 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
                 <span v-if="runtimeLabel(s)"> · {{ runtimeLabel(s) }}</span>
                 <span v-if="s.pendingInteraction === 'approval'"> · {{ t('workspace.awaitingPermission') }}</span>
                 <span v-else-if="s.pendingInteraction === 'question'"> · {{ t('workspace.awaitingAnswer') }}</span>
-                <span v-if="s.hiddenFromCurrent"> · {{ t('focus.hiddenThread') }}</span>
               </div>
             </div>
             <span v-if="(attentionBySession[s.id] ?? 0) > 0" class="att">{{ attentionBySession[s.id] }}</span>
             <IconButton
-              v-if="allowSessionActions && (s.selectable !== false || s.hiddenFromCurrent !== undefined) && hasSessionActions(s)"
+              v-if="allowSessionActions && (s.selectable !== false || s.actionCapabilities?.close) && hasSessionActions(s)"
               aria-disabled="false"
               size="lg"
               class="kb"
@@ -333,8 +332,8 @@ function onDeleteWorkspace(ws: WorkspaceView): void {
 
             <!-- Kebab menu -->
             <Menu v-if="allowSessionActions && menuFor === s.id && hasSessionActions(s)" class="kmenu" @click.stop>
-              <MenuItem v-if="s.hiddenFromCurrent !== undefined" size="lg" aria-disabled="false" @click="emit('setHidden', s.id, !s.hiddenFromCurrent); menuFor = null">
-                {{ t(s.hiddenFromCurrent ? 'focus.restoreThread' : 'focus.hideThread') }}
+              <MenuItem v-if="canSessionAction(s, 'close')" size="lg" @click="emit('closeThread', s.id); menuFor = null">
+                {{ t('focus.closeThread') }}
               </MenuItem>
               <MenuItem v-if="canSessionAction(s, 'rename')" size="lg" @click="onRename(s)">{{ t('sidebar.rename') }}</MenuItem>
               <MenuItem v-if="canSessionAction(s, 'fork')" size="lg" @click="onFork(s.id)">

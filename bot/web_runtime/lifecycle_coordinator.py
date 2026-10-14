@@ -453,7 +453,7 @@ class WebRuntimeLifecycleCoordinator:
         interest = ports.runtime_interest.snapshot(normalized_thread_id)
         if interest is None:
             return None
-        if interest.desired_client_ids or self._has_pending_for_thread(
+        if interest.browser_open or interest.desired_client_ids or self._has_pending_for_thread(
             normalized_thread_id
         ):
             return None
@@ -566,7 +566,8 @@ class WebRuntimeLifecycleCoordinator:
         if ports.runtime_interest.snapshot(prepared.thread_id) != prepared.interest:
             return None
         if (
-            ports.runtime_interest.has_desired_clients(prepared.thread_id)
+            prepared.interest.browser_open
+            or ports.runtime_interest.has_desired_clients(prepared.thread_id)
             or self._has_pending_for_thread(prepared.thread_id)
             or ports.thread_subscribers(prepared.thread_id)
         ):
@@ -838,6 +839,17 @@ class WebRuntimeLifecycleCoordinator:
         if not isinstance(release, WebRuntimeCleanupRelease):
             raise TypeError("Web runtime cleanup release is required")
 
+    def require_browser_close_safe(self, thread_id: str) -> None:
+        self._runtime_context_guard()
+        interest = self._ports.runtime_interest.snapshot(thread_id)
+        if self._has_pending_for_thread(thread_id) or (
+            interest is not None and interest.outcome == "unknown"
+        ):
+            raise WebRuntimeError(
+                "This thread has a pending interaction or an unconfirmed runtime operation. Resolve it before closing.",
+                code="thread_close_blocked", status=409,
+            )
+
     def _has_pending_for_thread(self, thread_id: str) -> bool:
         normalized_thread_id = self._thread_id(thread_id)
         if not normalized_thread_id:
@@ -855,6 +867,7 @@ class WebRuntimeLifecycleCoordinator:
         return bool(
             self._phase == "running"
             and ports.runtime_interest.snapshot(thread_id) == expected_interest
+            and not expected_interest.browser_open
             and not ports.runtime_interest.has_desired_clients(thread_id)
             and not self._has_pending_for_thread(thread_id)
             and not ports.thread_subscribers(thread_id)
