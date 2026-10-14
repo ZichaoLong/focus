@@ -129,6 +129,7 @@
 | `focusctl` 到底有哪些子命令、分别作用于哪个状态层、哪些会改状态、参数约束是什么、以及与飞书命令面如何对应？ | [`focusctl-command-matrix.zh-CN.md`](./contracts/focusctl-command-matrix.zh-CN.md) |
 | 飞书侧到底有哪些 slash 命令、哪些能从 `/help` 到达、谁可执行、有哪些按钮、以及它们与本地 CLI 的对应关系是什么？ | [`feishu-command-matrix.zh-CN.md`](./contracts/feishu-command-matrix.zh-CN.md) |
 | 当前总体架构、分层、模块划分、仓库结构是什么？ | [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md) |
+| 新旧格式如何取舍，历史功能降级如何保持 Focus 的基本可用性？ | [`focus-design.zh-CN.md` §7.1](./architecture/focus-design.zh-CN.md#71-当前格式与历史兼容) |
 | 日常开发应如何限制首轮读取、按证据扩展变更锥、处理 stale 导航，并在不制造第二事实源的前提下闭合导航影响？ | [`development-navigation.zh-CN.md`](./architecture/development-navigation.zh-CN.md) |
 | 当前有哪些未结架构债务、上游能力缺口、依赖顺序与验收条件？ | [`architecture-debt-register.zh-CN.md`](./architecture/architecture-debt-register.zh-CN.md) |
 | 飞书侧线程生命周期是什么？哪些状态绝不能混淆？ | [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md) |

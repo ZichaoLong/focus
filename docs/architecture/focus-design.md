@@ -2,10 +2,10 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/architecture/focus-design.zh-CN.md`.
 
-This document is only the current architecture map: layers, owners, fact sources,
-and dependency direction. Product behavior belongs in `docs/contracts/`, historical
-rationale in `docs/decisions/`, and campaign progress in `docs/_work/`. A work ledger
-must not become a runtime contract.
+This document covers the current architecture map and evolution principles: layers,
+owners, fact sources, and dependency direction. Product behavior belongs in
+`docs/contracts/`, historical rationale in `docs/decisions/`, and campaign progress
+in `docs/_work/`. A work ledger must not become a runtime contract.
 
 See also:
 
@@ -499,3 +499,33 @@ boundary can own the new fact.
   minimal increment, observable evidence, and user cost.
 - Track unresolved owner, aggregate, schema, test, and package work only in the
   [active architecture debt register](./architecture-debt-register.md).
+
+### 7.1 Current Formats and Historical Compatibility
+
+Develop against the current upstream protocol, data formats, and feature semantics
+that the project has adopted and verified, prioritizing their correctness,
+stability, performance, and architectural consistency. Review and verify new stable
+versions or experimental capabilities through the
+[schema drift contract](../contracts/codex-app-server-schema-drift.md) before adopting
+them. Determine support from actual formats and verifiable capabilities, not record age.
+
+Historical formats do not promise feature parity. Related historical features may
+be reduced when compatibility requires unverifiable semantic inference, duplicate
+fact sources, long-lived parallel implementations, or impedes current-format
+reliability and architectural evolution. Keep retained compatibility bounded and
+reuse existing owners; do not manufacture missing facts to achieve parity.
+
+**Compatibility reductions must keep Focus itself usable: it must start, create new
+conversations, and continue conversations.** A historical format or individual
+feature may degrade or become explicitly unsupported. Confine that impact to the
+affected capability so it cannot cause startup failure, prevent new conversations,
+or interrupt basic conversation workflows. This floor protects core product
+workflows; it does not require a reading, export, or migration alternative for every
+historical feature that is reduced or removed.
+
+Ship compatibility reductions together with capability notices, behavioral
+contracts, and regression verification covering affected historical formats,
+current formats, and the core workflows above. Update existing specific compatibility
+requirements in the same change. This principle neither initiates repository-wide
+legacy cleanup nor grants permission to delete, rewrite, or automatically migrate
+user history.

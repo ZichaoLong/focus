@@ -24,10 +24,9 @@ Maintenance constraints:
   verifiable exit criteria, not a commit-by-commit diary.
 - A closed item leaves a short index. Git history and frozen work ledgers retain
   details.
-- File size triggers ownership/context review, not completion. The three `AGENTS`
-  documents own thresholds and execution discipline.
-- Do not mechanically split files to satisfy a gate, and do not mix package moves
-  with behavior changes.
+- Follow the [repository navigation discipline](./development-navigation.md) for
+  file-size review, splitting, and migration. The [review policy](../../scripts/source-context-policy.json)
+  and [check script](../../scripts/check_source_context.py) enforce source-context gates.
 - Removed durable root writers, descendant gates, operator tree-stop, create/resume
   quarantine, and durable server-request ledgers are not compatibility targets and
   must not return through refactoring.

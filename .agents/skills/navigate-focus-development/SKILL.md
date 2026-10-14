@@ -12,28 +12,25 @@ discipline. This skill is its thin command entry point.
 
 ## Locate the change cone
 
-1. Read the applicable `AGENTS.md` files.
-2. List reviewed capabilities:
+List reviewed capabilities and show the closest match:
 
-   ```bash
-   python scripts/focus_nav.py list
-   ```
+```bash
+python scripts/focus_nav.py list
+python scripts/focus_nav.py show <capability>
+```
 
-3. Show the closest capability:
+Read the returned refs first. For evidence that crosses a Python module boundary,
+inspect direct imports and importers:
 
-   ```bash
-   python scripts/focus_nav.py show <capability>
-   ```
+```bash
+python scripts/focus_nav.py module bot.example
+```
 
-4. Read the returned refs first; expand only on the document's evidence triggers.
-5. Inspect one-hop Python dependencies when the change crosses a module boundary:
+Review explicit changed paths; add `--locations` to resolve refs in current source:
 
-   ```bash
-   python scripts/focus_nav.py module bot.example
-   ```
-6. Assist navigation-impact review with `python scripts/focus_nav.py paths
-   <path>... [--locations]`. If unavailable or `unmapped`, follow the canonical
-   stale/no-match path; the derived catalog is never completion authority.
+```bash
+python scripts/focus_nav.py paths <path>... [--locations]
+```
 
 ## Verify the capability
 
@@ -46,5 +43,5 @@ python scripts/focus_verify.py <capability>
 Pass `--python <exact-path>` or `--node <exact-path>` when required. Use
 `--dry-run` to inspect the fixed argv/cwd plan before execution.
 
-Complete stale-index handling, navigation-impact closure, and wider gates as
-required by the canonical discipline.
+Use the canonical discipline for no-match or stale-index handling, navigation
+closure, and wider verification gates.

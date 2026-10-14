@@ -14,10 +14,11 @@ transaction 中对齐相关合同、代码、测试、guard 与导航影响。�
 回答“目标与非目标是什么、允许多少提交、何时停止或请示”。两者组合使用，
 但不得互相复制状态或规则。
 
-需要用一句话启用完整流程时，使用 `使用 $develop-focus 完成：<任务>`。这个 skill
-只动态路由到当前路径适用的 `AGENTS.md`、本文和固定导航工具：`AGENTS.md` 拥有
-汇报、授权、campaign、请示与停止纪律，本文拥有导航和变更锥纪律。Skill 不复制
-规则，也不扩大用户任务授予的权限或范围。
+任务授权、汇报、campaign 与停止条件以当前用户指令及实际适用的 `AGENTS.md`
+为准。使用 `使用 $develop-focus 完成：<任务>` 进入执行流程，
+`$navigate-focus-development` 提供导航工具入口；skill 只路由到正式规则和固定工具，
+不扩大任务权限或范围。架构演进与兼容取舍遵循
+[技术设计 §7](./focus-design.zh-CN.md#7-演进规则)，本文负责导航与变更锥。
 
 ## 2. 事实角色与优先级
 
@@ -31,19 +32,15 @@ transaction 中对齐相关合同、代码、测试、guard 与导航影响。�
 | agent 操作入口 | `develop-focus`、`navigate-focus-development` skills 与适用的 `AGENTS.md` | 只路由到当前权威来源和固定工具 |
 | 临时 campaign 状态 | 当前 `docs/_work/` ledger | 不进入长期导航 |
 
-capability catalog 是人工复核、非完备、可丢弃重建的派生索引；`owner` ref 不会
-创造 ownership，只指向已经由正式文档与 production implementation 证明的 owner。
-它的价值是缩小首轮读取范围，而不是声明仓库的完整形状。catalog 与代码或正式文档
-冲突时，catalog 立即视为 stale，不能覆盖任何权威来源。代码与正式合同冲突则是
-合同缺口，不能由导航层裁决。测试只提供
-证据，不成为第二份行为合同；capability 缺失也不证明对应能力不存在。
+capability catalog 是人工复核、非完备、可丢弃重建的派生索引，用于缩小首轮读取
+范围。`owner` ref 只定位正式文档与 production implementation 已确立的 owner，
+不创造 ownership；capability 缺失不证明对应能力不存在。catalog 与权威来源冲突时，
+按第 6 节处理。代码与正式合同冲突则是合同缺口，导航与测试证据均不能裁决规范。
 
 ## 3. Code-first 导航 invariant
 
-“代码即导航”是指 production 结构是实现位置、依赖方向和 runtime authority 的首要
-地图，不是让代码取代正式合同。理想情况下，即使删除 capability catalog，开发者
-仍能沿 public entry、明确命名的 owner、直接依赖和对应测试定位变更；正式合同仍
-独立拥有规范行为与架构意图。
+production 结构应让开发者沿 public entry、明确命名的 owner、直接依赖和对应测试
+定位变更，无需依赖 catalog 中的额外叙述。事实角色仍按第 2 节区分。
 
 代码和测试应持续满足以下可发现性约束：
 
@@ -58,10 +55,8 @@ capability catalog 是人工复核、非完备、可丢弃重建的派生索引�
 - 只在 ownership、change locality 或依赖方向确实更清晰时分包或拆文件；不得为了
   指标拆散一个必须共同维护 invariant 的 owner。
 
-Catalog 与 skills 只能加速第一跳，不能成为理解代码所必需的旁路。如果稳定任务
-必须依赖 catalog 中的叙述才能找到 owner、call chain 或测试，应把它视为代码结构
-或正式合同的可发现性缺口，在有边界的 transaction/campaign 中修正，而不是扩充
-第二份架构描述。
+若稳定任务无法沿这些入口找到 owner、call chain 或测试，应在有边界的
+transaction/campaign 中修正代码结构或正式合同的可发现性缺口。
 
 ## 4. 读取锥纪律
 
@@ -99,12 +94,10 @@ capability refs：
 - import 方向、直接 consumer 或适用 guard 改变；
 - capability 被新增、合并、拆分或删除。
 
-如果 catalog 中没有受影响 capability，可以明确结束 navigation-impact 复核而不
-新增条目。catalog 不以全仓覆盖为目标，只登记已经人工复核且对重复开发有明确
-价值的稳定入口。
+如果 catalog 中没有受影响 capability，可以结束 navigation-impact 复核而不新增
+条目；新增项仍须满足第 4 节的人工复核要求，并对重复开发有明确价值。
 
-每笔 transaction 在编辑前建立初始锥，并在提交前人工复核本笔显式 changed
-paths。以下实时反查可以辅助这次复核：
+提交前人工复核本笔显式 changed paths，以下实时反查可辅助复核：
 
 ```bash
 python scripts/focus_nav.py paths <repo-relative-path>... [--locations]
@@ -114,11 +107,8 @@ python scripts/focus_nav.py paths <repo-relative-path>... [--locations]
 中精确命中的 capability、role 与 ref；pytest `::node` ref 按其基础文件匹配，
 `--locations` 从当前源码解析 symbol、heading section 或 test target 的行范围。任何
 selector 无法唯一定位、或目录级 test target 没有精确行范围时，`--locations` 整次
-查询 fail closed。这个命令是派生索引助手，不是 transaction 的完成 authority；
-`unmapped` 只表示没有 catalog ref 命中，不能证明没有语义影响，也不能替代本节
-人工 navigation-impact 复核。若完整 catalog 因无关 stale ref 无法载入，从正式
-合同、代码与 tests 完成人工复核；不得据此修改权威来源来适配 catalog，也不得把
-无关修复自动扩入当前 scope。
+查询 fail closed。`unmapped` 只表示没有 catalog ref 命中，不能证明没有语义影响，
+也不能替代人工 navigation-impact 复核。catalog 无法载入时按第 6 节处理。
 
 路径迁移必须原子删除旧 ref。除非正式外部合同明确要求兼容，不保留旧导航路径、
 shim、宽泛 re-export 或新旧双入口。行为修复、owner extraction 与 package move
@@ -132,15 +122,17 @@ shim、宽泛 re-export 或新旧双入口。行为修复、owner extraction 与
 
 1. 停止把该 catalog 项用作证据；
 2. 从正式文档、production code 和 tests 窄范围重建 change cone；
-3. 在本次 transaction 中修正或删除 stale refs；
+3. 在本次 transaction 中修正或删除本任务涉及的 stale refs；
 4. 重新运行 catalog 校验和受影响验证锥。
 
-不得以 stale catalog 的结论反向修改代码或合同来“适配导航”。
+不得以 stale catalog 的结论反向修改代码或合同来“适配导航”。若无关 stale ref
+导致整个 catalog 无法载入，从正式合同、代码与 tests 完成人工复核并记录该限制，
+不把无关修复自动扩入当前 scope。
 
 ## 7. 长期导航允许与禁止承载的内容
 
 capability catalog 只允许 reviewed entry、owner、contract、focused-test、sentinel
-与 guard refs。skill 只保留调用工具和路由到本文所需的步骤。
+与 guard refs。
 
 长期导航不得保存：
 
@@ -164,5 +156,5 @@ capability catalog 只允许 reviewed entry、owner、contract、focused-test、
 
 - 权威合同、代码与测试对本次语义保持一致；
 - 所有受影响 capability 的 navigation-impact 已更新、删除或确认无命中；
-- 旧路径与 stale refs 归零；
+- 本次变更涉及的旧路径与 stale refs 归零；
 - focused verification 与本 transaction 所需的更宽门禁均为绿色。

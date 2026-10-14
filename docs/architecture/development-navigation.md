@@ -19,13 +19,14 @@ an additional layer for broad changes. It answers what the objective and
 non-goals are, how many commits are available, and when to stop or escalate.
 The two compose, but must not duplicate rules or mutable status.
 
-To activate the complete workflow with one sentence, use
-`Use $develop-focus to complete: <task>`. The skill only routes dynamically to
-the `AGENTS.md` files applicable to the current paths, this document, and fixed
-navigation tools. `AGENTS.md` owns progress updates, authority, campaigns,
-escalation, and stop discipline; this document owns navigation and change-cone
-discipline. The skill copies neither policy nor expands the authority or scope
-granted by the user's task.
+Task authority, progress reporting, campaigns, and stop conditions follow the
+current user instructions and actually applicable `AGENTS.md` files. Use
+`Use $develop-focus to complete: <task>` for the execution workflow;
+`$navigate-focus-development` provides the navigation tool entry point. Skills
+route to formal rules and fixed tools without expanding task authority or scope.
+Architecture evolution and compatibility decisions follow
+[Technical Design §7](./focus-design.md#7-evolution-rules); this document owns
+navigation and change-cone discipline.
 
 ## 2. Fact Roles and Precedence
 
@@ -40,24 +41,18 @@ granted by the user's task.
 | Temporary campaign status | The current `docs/_work/` ledger | Never enter long-lived navigation |
 
 The capability catalog is a human-reviewed, incomplete, disposable, and
-rebuildable derived index. An `owner` reference does not create ownership; it
-only points to an owner already established by formal documentation and the
-production implementation. Its purpose is to reduce the first read, not to
-describe the whole repository. If it conflicts with code or a formal document,
-the catalog is stale and cannot override either authority. A
-code/formal-contract disagreement is a contract gap that navigation cannot
-resolve. Tests are evidence, never a second behavior contract, and a missing
-capability does not prove that the capability is absent from the repository.
+rebuildable derived index that narrows the first read. An `owner` reference
+locates an owner established by formal documentation and production code; it
+does not create ownership. A missing capability does not prove its absence from
+the repository. Handle conflicts with authoritative sources under section 6.
+A code/formal-contract disagreement is a contract gap; neither navigation nor
+test evidence can decide the normative behavior.
 
 ## 3. Code-First Navigation Invariant
 
-“Code as navigation” means that production structure is the primary map of
-implementation location, dependency direction, and runtime authority. It does
-not mean that code replaces formal contracts. Even if the capability catalog
-were deleted, a developer should still be able to follow a public entry, a
-clearly named owner, direct dependencies, and corresponding tests to locate a
-change. Formal contracts continue to own normative behavior and architecture
-intent.
+Production structure should let developers follow public entries, clearly named
+owners, direct dependencies, and corresponding tests to locate a change without
+additional catalog prose. Fact roles remain as defined in section 2.
 
 Code and tests must preserve these discoverability properties:
 
@@ -75,12 +70,9 @@ Code and tests must preserve these discoverability properties:
   direction becomes clearer; do not fragment an owner that must maintain one
   invariant merely to satisfy a metric.
 
-The catalog and skills may accelerate the first hop, but they cannot become a
-required side channel for understanding the code. If a recurring task needs
-catalog prose to find its owner, call chain, or tests, treat that as a
-discoverability defect in code structure or formal contracts. Correct it in a
-bounded transaction or campaign instead of expanding a second architecture
-description.
+If a recurring task cannot find its owner, call chain, or tests through those
+entries, correct the discoverability gap in code structure or formal contracts
+within a bounded transaction or campaign.
 
 ## 4. Read-Cone Discipline
 
@@ -128,14 +120,12 @@ transaction whenever any of the following changes:
 - import direction, direct consumers, or applicable guards;
 - capability creation, merge, split, or removal.
 
-If no catalog capability is affected, navigation-impact review may close
-without adding one. The catalog does not target full repository coverage; it
-contains only stable entries that have been reviewed and have clear repeated
-development value.
+If no catalog capability is affected, navigation-impact review may close without
+adding one. New entries still require the human review in section 4 and clear
+value for repeated development.
 
-Establish the initial cone before editing and manually review the transaction's
-explicit changed paths before committing. The live reverse lookup can assist
-that review:
+Manually review the transaction's explicit changed paths before committing.
+The live reverse lookup can assist that review:
 
 ```bash
 python scripts/focus_nav.py paths <repo-relative-path>... [--locations]
@@ -146,13 +136,9 @@ It returns only exact current-catalog matches with their capability, role, and
 reference. A pytest `::node` reference matches its base file. `--locations`
 parses current source to locate a symbol, Markdown heading section, or test
 target. It fails closed if any selector is not unique or if a directory-level
-test target has no exact line range. This command is a derived-index aid, not
-transaction completion authority. `unmapped` means only that no catalog
+test target has no exact line range. `unmapped` means only that no catalog
 reference matched; it is not proof of no semantic impact and does not replace
-manual navigation-impact review. If an unrelated stale ref prevents the whole
-catalog from loading, complete that review from formal contracts, code, and
-tests. Never change an authority to fit the catalog or automatically expand the
-current scope to repair unrelated refs.
+manual navigation-impact review. If the catalog cannot load, follow section 6.
 
 A path migration must atomically remove the old reference. Unless a formal
 external contract requires compatibility, do not retain old navigation paths,
@@ -171,16 +157,19 @@ no longer cover the behavior, or a capability points to ambiguous paths:
 1. Stop using that catalog item as evidence.
 2. Reconstruct the change cone narrowly from formal documents, production
    code, and tests.
-3. Correct or remove stale references in the current transaction.
+3. Correct or remove stale references within this task's scope in the current
+   transaction.
 4. Rerun catalog validation and the affected verification cone.
 
-Never change code or contracts to conform to a stale catalog conclusion.
+Never change code or contracts to conform to a stale catalog conclusion. If an
+unrelated stale reference prevents the whole catalog from loading, complete the
+manual review from formal contracts, code, and tests and record that limitation.
+Do not automatically expand the scope to repair unrelated references.
 
 ## 7. Allowed and Forbidden Long-Lived Navigation Content
 
 The capability catalog contains only reviewed entry, owner, contract,
-focused-test, sentinel, and guard references. The skill contains only the
-steps needed to invoke fixed tools and route to this document.
+focused-test, sentinel, and guard references.
 
 Long-lived navigation must not store:
 
@@ -209,5 +198,5 @@ A development transaction is complete only when:
 - authoritative contracts, code, and tests agree for the changed semantics;
 - navigation impact for every affected capability is updated, removed, or
   confirmed to have no catalog match;
-- old paths and stale references are absent;
+- old paths and stale references affected by this change are absent;
 - focused verification and all wider gates required by the transaction pass.

@@ -146,6 +146,7 @@ Status guidance:
 | What `focusctl` subcommands exist, which state layer each operates on, which mutate state, what the parameter constraints are, and how they map to the Feishu surface? | [`focusctl-command-matrix.md`](./contracts/focusctl-command-matrix.md) |
 | What Feishu slash commands currently exist, which are reachable from `/help`, who may execute them, what buttons belong to them, and how do they map to local CLIs? | [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md) |
 | What is the current architecture, layering, module split, and repository structure? | [`focus-design.md`](./architecture/focus-design.md) |
+| How should current and historical formats be balanced while keeping Focus itself usable? | [`focus-design.md` §7.1](./architecture/focus-design.md#71-current-formats-and-historical-compatibility) |
 | How should repository work limit its initial read, expand a change cone, handle stale navigation, and close navigation impact without creating another fact source? | [`development-navigation.md`](./architecture/development-navigation.md) |
 | Which architecture debts and upstream capability gaps remain active, in what dependency order, and with what acceptance criteria? | [`architecture-debt-register.md`](./architecture/architecture-debt-register.md) |
 | What is the Feishu-side thread lifecycle, and what states must stay distinct? | [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md) |

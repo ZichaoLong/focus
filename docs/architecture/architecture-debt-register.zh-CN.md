@@ -18,8 +18,9 @@
 
 - 活跃项只写根因、当前 owner、目标边界和可验证退出条件，不保存逐提交流水账；
 - closed 项只留简短索引；详细历史由 Git 与冻结 work ledger 保存；
-- 文件体量是 ownership/context review 信号，不是完成标准；阈值与执行纪律由三份 `AGENTS` 文档统一规定；
-- 不为通过门禁机械拆文件，也不在行为修改中混入 package move；
+- 文件体量审阅、拆分与迁移遵循[仓库导航纪律](./development-navigation.zh-CN.md)；
+  source-context 门禁由[审阅策略](../../scripts/source-context-policy.json)和
+  [检查脚本](../../scripts/check_source_context.py)执行；
 - 已删除的 durable root writer、descendant gate、operator tree-stop、create/resume quarantine 与 durable
   server-request ledger 不是兼容目标，不得借重构恢复。
 
