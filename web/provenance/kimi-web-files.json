@@ -392,6 +392,7 @@
     "test/focus-viewport.test.ts",
     "test/focus-workspace-draft-surface.test.ts",
     "test/focus_client/context-usage.test.ts",
+    "test/focus_client/directory-order.test.ts",
     "test/focus_client/draft-create-attachment.test.ts",
     "test/focus_client/interaction-settings.test.ts",
     "test/focus_client/navigation-profile.test.ts",

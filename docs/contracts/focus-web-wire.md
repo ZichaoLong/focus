@@ -790,6 +790,16 @@ guards and may not retain parallel key or enum inventories.
   and the event-triggered bounded refresh add no polling/retry loop and grant no
   writer, owner, lifecycle, settings, approval, FIFO, or mutation authority.
 
+### Browser Directory Order
+
+`createFocusClientView` derives display order from the current directory: workspaces sort by full
+path in ascending, locale-independent string order; threads within each workspace sort by
+`updated_at` descending, with thread id ascending as the tie-breaker. Selecting a thread,
+refreshing its snapshot, switching directory scope, or reloading the page preserves the relative
+order of remaining workspaces. New workspaces enter at their path position. Sorting neither
+mutates upstream directory data nor adds persistent ordering state, and does not change the
+browser-open set, subscriptions, or runtime residency.
+
 ### Browser Thread Open and Close
 
 “Open threads” (`scope=current`) contains only this Focus instance's browser-open set, independently

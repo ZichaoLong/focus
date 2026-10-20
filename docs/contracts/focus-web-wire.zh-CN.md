@@ -494,6 +494,13 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   mutation state 或任何其他 response 字段。上述 floor 与 event-triggered 有界 refresh 不建立 polling/
   retry loop，也不授予 writer、owner、lifecycle、settings、approval、FIFO 或 mutation authority。
 
+### 浏览器目录排序
+
+`createFocusClientView` 从当前目录投影展示顺序：工作区按完整路径字符串升序，使用与 locale 无关的
+比较；组内线程按 `updated_at` 降序，同一更新时间按 thread id 字符串升序。选择线程、刷新 snapshot、
+切换目录范围或刷新页面不改变仍存在工作区之间的相对顺序；新增工作区插入其路径对应的位置。
+排序不修改上游目录数据，不新增持久排序记录，也不改变打开集合、订阅或加载状态。
+
 ### 浏览器线程打开与关闭
 
 “已打开”（`scope=current`）只列出本 Focus 实例的 browser-open 集合。它与后端 loaded 状态独立；

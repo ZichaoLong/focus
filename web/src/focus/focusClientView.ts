@@ -74,6 +74,10 @@ function workspaceName(path: string): string {
   return normalized.split('/').filter(Boolean).at(-1) ?? path;
 }
 
+function compareDirectoryKeys(left: string, right: string): number {
+  return left === right ? 0 : left < right ? -1 : 1;
+}
+
 function unavailableCapabilities(): SessionActionCapabilities {
   return {
     close: false,
@@ -318,10 +322,7 @@ export function createFocusClientView(options: FocusClientViewOptions) {
     const defaultRoot = options.meta.value?.default_working_dir;
     if (byRoot.size === 0 && defaultRoot) byRoot.set(defaultRoot, []);
     return [...byRoot.entries()]
-      .sort((left, right) => (
-        Math.max(0, ...right[1].map((thread) => thread.updated_at))
-        - Math.max(0, ...left[1].map((thread) => thread.updated_at))
-      ))
+      .sort(([left], [right]) => compareDirectoryKeys(left, right))
       .map(([root, threads]) => ({
         id: root,
         root,
@@ -383,7 +384,11 @@ export function createFocusClientView(options: FocusClientViewOptions) {
     };
   }
 
-  const sessions = computed<Session[]>(() => directoryThreads.value.map(projectSession));
+  const sessions = computed<Session[]>(() => directoryThreads.value
+    .toSorted((left, right) => (
+      right.updated_at - left.updated_at || compareDirectoryKeys(left.id, right.id)
+    ))
+    .map(projectSession));
   const searchSessions = computed<Session[]>(() => (
     options.searchThreads.value.length
       ? options.searchThreads.value

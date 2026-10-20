@@ -820,6 +820,10 @@
       "contract": [
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "浏览器目录排序"
+        },
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "2. 单一事实源与 owner"
         },
         {
@@ -843,6 +847,7 @@
         {
           "runner": "vitest",
           "targets": [
+            "web/test/focus_client/directory-order.test.ts",
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",
             "web/test/focus_client/owners/client-intent-clock.test.ts",
