@@ -249,9 +249,35 @@ only this GET. They never issue POST, reserve, execute, resolve, discard, retry,
 attachment restoration, or any request that acquires an effect slot. `pending` says
 only that the original worker is not terminal. A receipt miss, eviction, or restart
 produces unavailable/unknown presentation, opens no retry, and blocks no new mutation.
-The browser presents every non-success receipt and every unavailable or transient GET
-failure explicitly while stating that it did not replay the prompt. It forgets the
-locator only after `succeeded`, `known_no_effect`, or an authoritative
+The browser queries only after the current socket's `hello` and exact thread
+materialization. Initial load, thread selection, reconnect, and explicit projection
+reload reconcile through that boundary. Concurrent reads of an exact locator within
+one boundary are coalesced. A navigation or connection boundary retires old reads:
+they cannot change locators or presentation, even after returning to the same thread.
+Queries never block the Composer.
+Live POSTs settle the Composer before retained locators are queried, so a late POST
+transport error cannot overwrite an earlier GET success. Existing thread notifications
+`web_prompt_succeeded`, `web_prompt_outcome_unknown`, and `web_prompt_result_observed`
+trigger fresh GETs and supersede reads still pending from before the notification;
+the notification itself never substitutes for an exact receipt.
+
+Non-success historical receipts and authoritative unavailable results use one
+collapsed, dismissible submission-results notice scoped to the current thread.
+Expanded details include each result and copyable diagnostics. The notice explains
+that conversation can continue, no automatic resend occurred, and users should check
+the conversation before manually resending the original request. It must not describe
+a failure to load prompt text or history details. Dismissal hides the same result for
+that locator in this document only: it neither deletes the locator, confirms the
+outcome, nor grants replay authority. A changed result classification may appear again.
+Notices and dismissal state are bounded and memory-only. Success clears the exact
+locator's old notice; reconciliation replaces only a same-identity submission error,
+never an unrelated operation's or newer request's error.
+
+Transient GET failures retain locators for the next ready boundary or reload without
+creating separate error banners. `web_writer_disconnected` uses existing event
+connection status and reconnection; authentication failures and document replacement
+still use global recovery. A lookup failure alone is not evidence of POST failure or
+lost messages. The browser forgets the locator only after `succeeded`, `known_no_effect`, or an authoritative
 `prompt_result_unavailable`; `pending`, `outcome_unknown`, and transient lookup failure
 retain it for a later GET.
 
@@ -337,6 +363,10 @@ refresh; no late clear
 of newer Composer content; availability of a new same-thread mutation, other threads,
 and other surfaces after unknown; and zero server replay for thread-create local
 recovery.
+Browser regressions also cover no GET before hello, reconciliation after reconnect,
+exact notice cleanup on success without clearing newer errors, cross-thread and ABA
+late-result retirement, dismissal without losing locators, transient GETs without
+error banners, and collapsed notices on desktop and narrow screens.
 
 Stop and realign if correctness requires a durable effect ledger, cross-process
 idempotency/replay, negative-effect evidence unavailable from upstream, or spreading

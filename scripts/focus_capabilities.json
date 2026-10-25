@@ -859,7 +859,8 @@
             "web/test/focus_client/owners/runtime-notices.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/focus-document-activity-favicon.test.ts",
-            "web/test/focus-document-title.test.ts"
+            "web/test/focus-document-title.test.ts",
+            "web/test/focus_client/prompt-result-reconciliation.test.ts"
           ]
         }
       ],
@@ -1972,6 +1973,10 @@
           "symbol": "copyDiagnostic"
         },
         {
+          "path": "web/src/focus/FocusPromptResultNotices.vue",
+          "symbol": "dismiss"
+        },
+        {
           "path": "bot/web_runtime/gateway.py",
           "symbol": "WebGateway._handle_fork_thread"
         }
@@ -1992,6 +1997,10 @@
         {
           "path": "web/src/focus/mutations/actions.ts",
           "symbol": "createFocusMutationActions"
+        },
+        {
+          "path": "web/src/focus/mutations/prompt-results.ts",
+          "symbol": "createPromptResults"
         },
         {
           "path": "web/src/focus/mutations/thread-mutation-actions.ts",
@@ -2104,7 +2113,8 @@
             "web/test/focus_client/owners/web-prompt-result-locators.test.ts",
             "web/test/focus_client/owners/web-prompt-mutation-recovery.test.ts",
             "web/test/focus-prompt-diagnostic.test.ts",
-            "web/test/focus-thread-fork.test.ts"
+            "web/test/focus-thread-fork.test.ts",
+            "web/test/focus_client/prompt-result-reconciliation.test.ts"
           ]
         }
       ],

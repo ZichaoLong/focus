@@ -3,6 +3,8 @@ import { useI18n } from 'vue-i18n';
 import Banner from '../components/ui/Banner.vue';
 import Button from '../components/ui/Button.vue';
 import FocusPromptDiagnostic from './FocusPromptDiagnostic.vue';
+import FocusPromptResultNotices from './FocusPromptResultNotices.vue';
+import type { PromptResultNotice } from './mutations/prompt-results';
 import type { RuntimeNoticeItem } from './client-state/runtime-notices';
 import type {
   UnknownLifecycleMutation,
@@ -17,6 +19,7 @@ const props = defineProps<{
   projectionReloading: boolean;
   backendResetOutcomeUnknown: boolean;
   error: { message: string; diagnostic: string };
+  promptResultNotices: readonly PromptResultNotice[];
   primaryRuntimeErrors: readonly RuntimeNoticeItem[];
   primaryOperatorWarningCount: number;
   operatorErrorCount: number;
@@ -32,6 +35,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   reload: [];
   reloadProjection: [];
+  dismissPromptResultNotice: [mutationId: string];
   openRuntimeDetails: [];
   retryUnknownSubmission: [draft: UnknownSubmissionDraft];
   discardUnknownSubmission: [attemptKey: string];
@@ -57,6 +61,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
       || projectionStale
       || backendResetOutcomeUnknown
       || error.message
+      || promptResultNotices.length > 0
       || primaryRuntimeErrors.length > 0
       || primaryOperatorWarningCount > 0
       || operatorDegradedWithoutDetails
@@ -226,6 +231,11 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
         </Button>
       </span>
     </Banner>
+
+    <FocusPromptResultNotices
+      :notices="promptResultNotices"
+      @dismiss="emit('dismissPromptResultNotice', $event)"
+    />
 
     <Banner v-if="error.message" variant="danger">
       <div class="primary-runtime-error">

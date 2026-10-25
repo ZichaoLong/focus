@@ -1067,6 +1067,10 @@ describe('useFocusWebClient initial writer authority', () => {
     const client = useFocusWebClient(fake.api);
 
     await client.load();
+    expect(fake.api.readPromptResult).not.toHaveBeenCalled();
+    fake.handlers.open?.();
+    expect(fake.api.readPromptResult).not.toHaveBeenCalled();
+    fake.handlers.event({ type: 'hello', runtime_epoch: EPOCH, revision: client.revision.value });
     await vi.waitFor(() => expect(fake.api.readPromptResult).toHaveBeenCalledWith(
       'thread-1',
       PROMPT_MUTATION_ID,

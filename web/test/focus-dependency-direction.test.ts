@@ -282,7 +282,7 @@ describe('Focus Web dependency direction', () => {
     const result = analyzeFocusDependencyDirection(path.join(webRoot, 'src'), ACTIVE_FOCUS_BOUNDARIES);
 
     expect(result.layerModules.clientState).toBe(7);
-    expect(result.layerModules.mutations).toBe(3);
+    expect(result.layerModules.mutations).toBe(4);
     expect(result.layerModules.composition).toBeGreaterThan(0);
     expect(result.layerModules.presentation).toBeGreaterThan(0);
     expect(result.directRelativeEdges).toBeGreaterThan(0);

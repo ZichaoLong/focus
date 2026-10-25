@@ -372,6 +372,7 @@ export function harness(clientId = 'client-1'): Harness {
     reportError,
     reportFatalError,
     clearError: vi.fn(),
+    clearPromptError: vi.fn(),
   };
   const actions = createFocusMutationActions(options);
   return {

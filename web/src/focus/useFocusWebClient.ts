@@ -32,6 +32,7 @@ import { createBrowserTurnWindow } from './client-state/browser-turn-window';
 import { createThreadInspection } from './client-state/thread-inspection';
 import { createRuntimeNoticeOwner } from './client-state/runtime-notices';
 import { FocusPromptError } from './webPromptDiagnostic';
+import type { WebPromptResultLocator } from './webPromptResultLocators';
 import {
   FocusApiError,
   isStaleWebReadError,
@@ -89,6 +90,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // document identity first.
   const documentReloadRequired = ref(false);
   const errorPresentation = ref({ message: '', diagnostic: '' });
+  let promptErrorLocator: WebPromptResultLocator | null = null;
   const errorMessage = computed(() => errorPresentation.value.message);
   let operatorStatusTimer: ReturnType<typeof setTimeout> | null = null;
   let operatorStatusRefreshPromise: Promise<void> | null = null;
@@ -287,7 +289,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const refreshThreads = projection.refreshThreads;
   const refreshArchivedThreads = projection.refreshArchivedThreads;
   const refreshActiveThread = projection.refreshActiveThread;
-  const reloadAll = projection.reloadAll;
+  async function reloadAll(): Promise<void> {
+    await projection.reloadAll();
+    reconcileMaterializedPromptResults();
+  }
   const backendReset = createFocusBackendResetTransaction({ api, reloadAll });
   const transportSession = createFocusTransportSession({
     mayConnect: () => (
@@ -328,6 +333,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     onEvent: (event) => {
       runtimeNotices.handleEvent(event);
       projection.handleEvent(event);
+      if (event.type === 'thread_invalidated' && event.thread_id
+        && ['web_prompt_succeeded', 'web_prompt_outcome_unknown',
+          'web_prompt_result_observed'].includes(event.reason ?? '')) {
+        void mutationActions.reconcilePromptResultsForThread(event.thread_id, true);
+      }
     },
     onInvalidEvent: () => {
       runtimeNotices.reset();
@@ -477,6 +487,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     reportError,
     reportFatalError,
     clearError,
+    clearPromptError,
   });
   const {
     starting,
@@ -494,6 +505,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     canInterrupt,
     pendingApprovalActions,
     pendingQuestionActions,
+    promptResultNotices,
+    dismissPromptResultNotice,
     reconcilePromptResultsForThread,
     renameThread,
     forkThread: forkThreadMutation,
@@ -566,13 +579,20 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       requireAuthentication();
       return;
     }
+    promptErrorLocator = error instanceof FocusPromptError ? error.locator : null;
     errorPresentation.value = {
       message: error instanceof Error ? error.message : String(error),
       diagnostic: error instanceof FocusPromptError ? error.diagnostic : '',
     };
   }
 
+  function clearPromptError(locator: WebPromptResultLocator): void {
+    if (promptErrorLocator?.threadId === locator.threadId
+      && promptErrorLocator.mutationId === locator.mutationId) clearError();
+  }
+
   function clearError(): void {
+    promptErrorLocator = null;
     errorPresentation.value = { message: '', diagnostic: '' };
   }
 
@@ -795,6 +815,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     // Normal navigation clears the banner; present naming warnings after opening.
     if (result.name_warning && !navigation.isDisposed
       && !authRequired.value && !documentReloadRequired.value) {
+      promptErrorLocator = null;
       errorPresentation.value = {
         ...errorPresentation.value,
         message: [errorPresentation.value.message, result.name_warning].filter(Boolean).join('\n'),
@@ -933,7 +954,6 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
         persistedThreadId: initialMeta.writer_profile.selected_thread_id.trim(),
       });
       if (navigation.isDisposed) return;
-      reconcileMaterializedPromptResults();
       transportSession.connect();
     } catch (error) {
       if (!navigation.isDisposed) reportError(error);
@@ -1038,6 +1058,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     documentReloadRequired,
     errorMessage,
     errorPresentation,
+    promptResultNotices,
+    dismissPromptResultNotice,
     unknownSubmissionDraft,
     unknownSubmissionDrafts,
     unknownLifecycleMutations,

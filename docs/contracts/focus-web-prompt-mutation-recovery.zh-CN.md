@@ -176,7 +176,22 @@ GET endpoint 无 body、无 bearer、无 mutation action。它仍要求当前 au
 exact thread；只读取有界 registry receipt。F5 或短暂轮询只能发送这个 GET，绝不能发送 POST、reserve、execute、
 resolve、discard、retry、attachment restore 或任何会取得 effect slot 的请求。`pending` 只说明原 worker 尚未 terminal；
 receipt miss/eviction/restart 只产生 unavailable/unknown presentation，不开放 retry，也不阻塞新 mutation。
-browser 必须明确展示每一种非 success receipt，以及 unavailable 或 transient GET failure，并同时说明没有重放 Prompt。
+browser 仅在当前 socket 的 `hello` 已确认且 exact thread 已 materialize 后查询；首次加载、线程切换、重连和显式
+projection reload 都通过这一边界核对。查询按 exact locator 合并同一边界内的并发请求；导航或连接边界变化后，
+旧请求不得修改 locator 或展示结果，即使随后又回到同一线程。查询不阻塞 Composer。
+live POST 先完成 Composer settlement，再核对仍保留的 locator，避免 GET 的成功被迟到的 POST transport error 覆盖。
+现有 `web_prompt_succeeded`、`web_prompt_outcome_unknown`、`web_prompt_result_observed` 线程通知触发新 GET，
+并淘汰该通知之前尚未完成的查询；通知本身不替代 exact receipt。
+
+历史查询得到的非 success receipt 与权威 unavailable 使用当前线程内一条默认折叠、可关闭的发送结果提示，
+展开后提供各条结果及可复制诊断。它说明可以继续对话、没有自动重发、手动重发原请求前应先检查对话内容，
+不能称为 Prompt 正文或历史详情加载失败。关闭仅隐藏当前 document 中对应 locator 的相同结果提示；不删除
+locator、不确认发送结果、不取得重发 authority，后续结果分类改变可重新显示。展示与关闭状态仅在内存中有界保留。
+`succeeded` 清除 exact locator 的旧提示；核对结果只替换同 identity 的发送错误，不得清除其他操作或更新请求的错误。
+
+transient GET failure 保留 locator，等待下一次就绪或 reload 再核对，不为它创建独立错误横幅。
+`web_writer_disconnected` 通过现有事件连接状态与重连处理；认证失败、document replacement 等仍走既有全局恢复。
+查询失败本身不是原 POST 失败或消息丢失的证据。
 只有 `succeeded`、`known_no_effect` 或权威 `prompt_result_unavailable` 才删除 locator；`pending`、
 `outcome_unknown` 与 transient lookup failure 都保留 locator，供稍后的 GET 再次核对。
 
@@ -236,6 +251,8 @@ cancellation、executor failure、shutdown barrier；POST response loss；GET-on
 immediate commit/retain 且不等待 projection refresh；newer Composer
 不被迟到 result 清除；同 thread 新 mutation、其他 thread 与其他 surface 不受 unknown 影响；thread-create local recovery
 仍为零 server replay。
+浏览器回归同时覆盖 hello 前不查询、断线后重连核对、成功清除 exact 旧提示、更新错误不被清除、
+跨线程与 ABA 迟到结果丢弃、关闭提示不丢 locator、transient GET 不制造横幅，以及桌面/窄屏的折叠提示。
 
 若 correctness 需要 durable effect ledger、跨进程 idempotency/replay、上游不存在的 negative effect evidence，或把 exact
 prompt unknown 扩散成 thread/service 不可用，必须停止并重新对齐。

@@ -24,10 +24,7 @@ import {
   type FocusThreadSnapshot,
   type FocusThreadSummary,
 } from '../types';
-import {
-  createWebPromptMutationId,
-  isWebPromptClientUserMessageId,
-} from '../webPromptMutation';
+import { createWebPromptMutationId } from '../webPromptMutation';
 import {
   createFirstPromptPossiblySentDraft,
   createUnknownSubmissionDraftStore,
@@ -35,15 +32,13 @@ import {
   type UnknownSubmissionDraft,
   type UnknownSubmissionHandoff,
 } from '../webPromptMutationRecovery';
-import {
-  createWebPromptResultLocatorStore,
-  type WebPromptResultLocator,
-} from '../webPromptResultLocators';
+import type { WebPromptResultLocator } from '../webPromptResultLocators';
 import {
   FocusPromptError,
   webPromptTransportDiagnostic,
   type WebPromptDiagnostic,
 } from '../webPromptDiagnostic';
+import { createPromptResults, type PromptResultNotice } from './prompt-results';
 import { createPendingRequestResponses } from './pending-request-responses';
 import {
   createThreadMutationActions,
@@ -77,8 +72,7 @@ export type FocusPromptMessageKey =
   | 'promptPending'
   | 'promptAttachmentRollbackFailed'
   | 'promptIdentityUnavailable'
-  | 'promptResultUnavailable'
-  | 'promptResultLookupFailed';
+  | 'promptResultUnavailable';
 
 type FocusMutationApiPort = Pick<
   FocusWebApiPort,
@@ -141,6 +135,7 @@ export interface FocusMutationActionsOptions {
   reportError(error: unknown): void;
   reportFatalError(error: unknown): boolean;
   clearError(): void;
+  clearPromptError(locator: WebPromptResultLocator): void;
 }
 
 export interface FocusMutationActions {
@@ -160,7 +155,9 @@ export interface FocusMutationActions {
   readonly pendingApprovalActions: ComputedRef<Record<string, true>>;
   readonly pendingQuestionActions: ComputedRef<Record<string, PendingQuestionAction>>;
   installInitialState(initialMeta: FocusMeta): void;
-  reconcilePromptResultsForThread(threadId: string): Promise<void>;
+  readonly promptResultNotices: ComputedRef<PromptResultNotice[]>;
+  dismissPromptResultNotice(mutationId: string): void;
+  reconcilePromptResultsForThread(threadId: string, supersedePending?: boolean): Promise<void>;
   captureUnknownMutationSnapshot(threadId: string): UnknownMutationSnapshotReceipt;
   reconcileUnknownMutation(
     receipt: UnknownMutationSnapshotReceipt,
@@ -241,7 +238,15 @@ export function createFocusMutationActions(
   const starting = ref(false);
   const actionBusy = ref(false);
   const unknownSubmissionDraftStore = createUnknownSubmissionDraftStore();
-  const promptResultLocators = createWebPromptResultLocatorStore();
+  const promptResults = createPromptResults({
+    api, navigation, connection: options.connection, snapshot: projection.snapshot,
+    submitting: starting,
+    reconnectEventTransport: options.reconnectEventTransport,
+    invalidateWireProjection: projection.invalidateWireProjection,
+    promptMessage: options.promptMessage,
+    clearPromptError: options.clearPromptError,
+    reportFatalError: options.reportFatalError,
+  });
   let unknownSubmissionActionKey: string | null = null;
   let disposed = false;
   const {
@@ -562,32 +567,6 @@ export function createFocusMutationActions(
     }
   }
 
-  function promptResultIsExact(
-    result: FocusPromptResultReceipt,
-    locator: WebPromptResultLocator,
-  ): boolean {
-    return result.thread_id === locator.threadId
-      && result.mutation_id === locator.mutationId
-      && isWebPromptClientUserMessageId(
-        result.client_user_message_id,
-        locator.mutationId,
-      );
-  }
-
-  function settlePromptResultLocator(
-    result: FocusPromptResultReceipt,
-    locator: WebPromptResultLocator,
-  ): boolean {
-    if (!promptResultIsExact(result, locator)) {
-      projection.invalidateWireProjection();
-      return false;
-    }
-    if (result.status === 'succeeded' || result.status === 'known_no_effect') {
-      promptResultLocators.forget(locator);
-    }
-    return true;
-  }
-
   function reportPromptMessage(
     key: FocusPromptMessageKey,
     reasonCode = '',
@@ -603,55 +582,6 @@ export function createFocusMutationActions(
     options.reportError(diagnostic
       ? new FocusPromptError(message, diagnostic)
       : new Error(message));
-  }
-
-  async function reconcilePromptResultsForThread(
-    threadId: string,
-    presentLookupFailure = true,
-  ): Promise<void> {
-    const normalizedThreadId = threadId.trim();
-    if (!normalizedThreadId || isDisposed()) return;
-    const locators = promptResultLocators.list().filter((locator) => (
-      locator.threadId === normalizedThreadId
-    ));
-    await Promise.all(locators.map(async (locator) => {
-      try {
-        const result = await api.readPromptResult(locator.threadId, locator.mutationId);
-        if (isDisposed()) return;
-        if (!settlePromptResultLocator(result, locator)) {
-          if (presentLookupFailure) reportPromptMessage('promptResultLookupFailed');
-          return;
-        }
-        if (result.status === 'known_no_effect') {
-          reportPromptMessage(
-            'promptKnownNoEffectAfterReload',
-            result.reason_code,
-            result,
-          );
-        } else if (result.status === 'outcome_unknown') {
-          reportPromptMessage('promptOutcomeUnknown', result.reason_code, result);
-        } else if (result.status === 'pending') {
-          reportPromptMessage('promptPending', result.reason_code, result);
-        }
-      } catch (error) {
-        if (error instanceof FocusApiError
-          && error.effectEvidence === 'pre_effect'
-          && error.code === 'prompt_result_unavailable') {
-          promptResultLocators.forget(locator);
-          reportPromptMessage('promptResultUnavailable', '',
-            webPromptTransportDiagnostic(locator, 'outcome_unknown', error.code, 'result_lookup'));
-          return;
-        }
-        if (options.reportFatalError(error)) return;
-        // A reload is lookup-only. A missing/temporarily unavailable receipt
-        // never authorizes replay and can be queried again by a later reload.
-        if (presentLookupFailure) {
-          const reason = error instanceof FocusApiError ? error.code : 'result_lookup_failed';
-          reportPromptMessage('promptResultLookupFailed', '',
-            webPromptTransportDiagnostic(locator, 'outcome_unknown', reason, 'result_lookup'));
-        }
-      }
-    }));
   }
 
   function convergePromptProjection(
@@ -689,7 +619,7 @@ export function createFocusMutationActions(
     attachments: readonly PromptAttachment[],
     retainTextWithoutAttachments?: () => boolean,
   ): boolean {
-    const exact = settlePromptResultLocator(result, locator);
+    const exact = promptResults.settle(result, locator);
     if (!exact) {
       // A mismatched success response cannot prove no effect. Treat the exact
       // payload as possibly sent so it cannot be replayed with one click.
@@ -732,7 +662,7 @@ export function createFocusMutationActions(
       reportPromptMessage('promptIdentityUnavailable');
       return false;
     }
-    if (locator) promptResultLocators.remember(locator);
+    if (locator) promptResults.remember(locator);
 
     const intent = options.intentClock.beginIntent();
     starting.value = true;
@@ -753,9 +683,7 @@ export function createFocusMutationActions(
           const knownNoEffect = error instanceof FocusApiError
             && error.effectEvidence === 'pre_effect';
           if (knownNoEffect) {
-            promptResultLocators.forget(locator);
-          } else {
-            void reconcilePromptResultsForThread(submissionThreadId, false);
+            promptResults.forget(locator);
           }
           if (knownNoEffect && error.code === 'web_writer_disconnected') {
             // Repair delivery first. The next hello owns resynchronization;
@@ -790,9 +718,8 @@ export function createFocusMutationActions(
           attachments,
           retainTextWithoutAttachments,
         );
-        if (result.status === 'succeeded') options.clearError();
-        else if (result.status !== 'known_no_effect'
-          && promptResultIsExact(result, locator)) reportPromptReceipt(result);
+        if (result.status !== 'known_no_effect'
+          && promptResults.isExact(result, locator)) reportPromptReceipt(result);
         convergePromptProjection(receipt, intent);
         return commitPayload;
       }
@@ -987,6 +914,7 @@ export function createFocusMutationActions(
     starting.value = false;
     actionBusy.value = false;
     pendingRequestActions.clear();
+    promptResults.dispose();
   }
 
   return {
@@ -1006,7 +934,9 @@ export function createFocusMutationActions(
     pendingApprovalActions: pendingRequestActions.approvalActions,
     pendingQuestionActions: pendingRequestActions.questionActions,
     installInitialState,
-    reconcilePromptResultsForThread,
+    promptResultNotices: promptResults.notices,
+    dismissPromptResultNotice: promptResults.dismiss,
+    reconcilePromptResultsForThread: promptResults.reconcile,
     captureUnknownMutationSnapshot,
     reconcileUnknownMutation,
     settleUnknownMutationFromEvent,

@@ -303,6 +303,7 @@ describe('FocusMutationActions single-POST settlement', () => {
   ] as const)('commits a %s receipt and retains only its GET locator', async (_label, receipt) => {
     const h = harness();
     h.api.submitPrompt.mockResolvedValueOnce(receipt);
+    h.api.readPromptResult.mockResolvedValueOnce(receipt);
 
     await expect(h.actions.submit('possibly sent')).resolves.toBe(true);
     const stored = sessionStorage.getItem(PROMPT_LOCATOR_KEY) ?? '';
@@ -344,6 +345,7 @@ describe('FocusMutationActions single-POST settlement', () => {
 
   it('treats a mismatched receipt as possibly sent and invalidates projection', async () => {
     const h = harness();
+    h.api.readPromptResult.mockRejectedValueOnce(new TypeError('still unavailable'));
     h.api.submitPrompt.mockResolvedValueOnce(promptReceipt('known_no_effect', {
       mutation_id: '00000000-0000-4000-8000-000000000002',
       client_user_message_id: 'focus-web:00000000-0000-4000-8000-000000000002',
@@ -432,8 +434,10 @@ describe('FocusMutationActions single-POST settlement', () => {
     await unavailable.actions.reconcilePromptResultsForThread('thread-a');
     expect(unavailable.promptMessage).toHaveBeenCalledWith(
       'promptResultUnavailable',
-      { reason: '' },
+      { reason: ' (prompt_result_unavailable)' },
     );
+    expect(unavailable.actions.promptResultNotices.value).toHaveLength(1);
+    expect(unavailable.reportError).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toBeNull();
 
     sessionStorage.setItem(PROMPT_LOCATOR_KEY, JSON.stringify({
@@ -443,10 +447,9 @@ describe('FocusMutationActions single-POST settlement', () => {
     const transient = harness();
     transient.api.readPromptResult.mockRejectedValueOnce(new TypeError('offline'));
     await transient.actions.reconcilePromptResultsForThread('thread-a');
-    expect(transient.promptMessage).toHaveBeenCalledWith(
-      'promptResultLookupFailed',
-      { reason: '' },
-    );
+    expect(transient.promptMessage).not.toHaveBeenCalled();
+    expect(transient.reportError).not.toHaveBeenCalled();
+    expect(transient.actions.promptResultNotices.value).toEqual([]);
     expect(sessionStorage.getItem(PROMPT_LOCATOR_KEY)).toContain(PROMPT_MUTATION_ID);
     expect(transient.api.submitPrompt).not.toHaveBeenCalled();
   });

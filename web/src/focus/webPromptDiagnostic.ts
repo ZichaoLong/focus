@@ -7,10 +7,12 @@ export type WebPromptDiagnostic = Omit<FocusPromptResultReceipt,
 /** Display-only evidence. Never persist input, construct a POST, or grant retry authority. */
 export class FocusPromptError extends Error {
   readonly diagnostic: string;
+  readonly locator: WebPromptResultLocator;
 
   constructor(message: string, result: WebPromptDiagnostic) {
     super(message);
     this.name = 'FocusPromptError';
+    this.locator = { threadId: result.thread_id, mutationId: result.mutation_id };
     this.diagnostic = JSON.stringify({
       diagnostic_id: result.mutation_id,
       thread_id: result.thread_id,

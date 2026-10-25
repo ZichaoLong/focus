@@ -3,12 +3,29 @@ import { renderToString } from '@vue/server-renderer';
 import { createI18n } from 'vue-i18n';
 import { describe, expect, it } from 'vitest';
 import FocusPromptDiagnostic from '../src/focus/FocusPromptDiagnostic.vue';
+import FocusPromptResultNotices from '../src/focus/FocusPromptResultNotices.vue';
 import { FocusPromptError, webPromptTransportDiagnostic } from '../src/focus/webPromptDiagnostic';
 import focus from '../src/i18n/locales/zh/focus';
 
 const locator = { threadId: 'thread-1', mutationId: '00000000-0000-4000-8000-000000000001' };
 
 describe('Web prompt diagnostic presentation', () => {
+  it('folds historical submission details into one dismissible notice without implying lost text', async () => {
+    const diagnostic = new FocusPromptError('Earlier result unavailable',
+      webPromptTransportDiagnostic(locator, 'outcome_unknown', 'prompt_result_unavailable', 'result_lookup'));
+    const app = createSSRApp({ render: () => h(FocusPromptResultNotices, {
+      notices: [{ ...locator, message: focus.promptResultUnavailable, diagnostic: diagnostic.diagnostic }],
+    }) });
+    app.use(createI18n({ legacy: false, locale: 'zh', messages: { zh: { focus } } }));
+    const html = await renderToString(app);
+    expect(html).toContain('先前 Prompt 的发送结果（1）');
+    expect(html).toContain('关闭提示');
+    expect(html).toContain('这些提示不影响继续对话');
+    expect(html).toContain('Focus 不会自动重发');
+    expect(html).toContain(locator.mutationId);
+    expect(html).not.toMatch(/<details\b[^>]*\bopen\b/u);
+  });
+
   it('never copies input or capabilities from an extended result object', () => {
     const diagnostic = webPromptTransportDiagnostic(locator, 'outcome_unknown', 'transport_error');
     const error = new FocusPromptError('Result unknown', {
