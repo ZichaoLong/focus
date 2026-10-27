@@ -12,6 +12,7 @@ import StatusDot from '../ui/StatusDot.vue';
 const props = withDefaults(
   defineProps<{
     tools: ToolStackItem[];
+    open: boolean;
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
     toolDetailTarget?: ToolCallData | null;
@@ -20,13 +21,12 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
+  toggle: [];
   openMedia: [media: ToolMedia];
   openFile: [target: FilePreviewRequest];
   openToolDiff: [tool: ToolCallData];
   openAgent: [toolCallId: string];
 }>();
-
-const open = ref(true);
 
 const count = computed(() => props.tools.length);
 const aggregateStatus = computed<'running' | 'error' | 'done'>(() => {
@@ -47,15 +47,11 @@ const statusLabel = computed(() => {
   }
 });
 
-function toggle(): void {
-  open.value = !open.value;
-}
-
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
 const headEl = ref<HTMLElement | null>(null);
 
 function onHeadClick(): void {
-  toggle();
+  emit('toggle');
   const el = headEl.value;
   if (el) nextTick(() => pinScroll(el));
 }

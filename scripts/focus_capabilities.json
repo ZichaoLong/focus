@@ -1486,6 +1486,7 @@
         {
           "runner": "vitest",
           "targets": [
+            "web/test/chat-turn-rendering.test.ts",
             "web/test/focus-api.test.ts",
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/swarm-card-rows.test.ts",

@@ -21,11 +21,13 @@ import TranscriptRow from './TranscriptRow.vue';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import {
   assistantRenderBlocks,
+  createToolGroupExpansionState,
   formatDuration,
   formatTokens,
   renderBlockKey,
   turnBlocks,
   turnFinalText,
+  type AssistantRenderBlock,
 } from '../chatTurnRendering';
 
 const { t } = useI18n();
@@ -202,6 +204,25 @@ const streamingTurnId = computed<string | null>(() => {
   const last = props.turns.at(-1)!;
   return last.role === 'assistant' ? last.id : null;
 });
+
+type ToolStackBlock = Extract<AssistantRenderBlock, { kind: 'tool-stack' }>;
+const toolGroupExpansion = createToolGroupExpansionState();
+const toolGroupExpansionRevision = ref(0);
+watch(
+  () => props.turns.map((turn) => turn.id).join('\n'),
+  () => toolGroupExpansion.prune(props.turns),
+  { immediate: true },
+);
+
+function toolGroupOpen(turn: ChatTurn, block: ToolStackBlock, index: number): boolean {
+  void toolGroupExpansionRevision.value;
+  return toolGroupExpansion.isOpen(turn, block, index);
+}
+
+function toggleToolGroup(turn: ChatTurn, block: ToolStackBlock, index: number): void {
+  toolGroupExpansion.toggle(turn, block, index);
+  toolGroupExpansionRevision.value += 1;
+}
 
 // Trailing "working" moon: shown while the main conversation has an unfinished
 // prompt. `working` is the union of the optimistic submit window and the main
@@ -591,8 +612,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
+            :open="toolGroupOpen(turn, blk, bi)"
             :tool-diff-panel="toolDiffPanel"
             :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
+            @toggle="toggleToolGroup(turn, blk, bi)"
             @open-media="emit('openMedia', $event)"
             @open-file="emit('openFile', $event)"
             @open-tool-diff="emit('openToolDiff', $event)"

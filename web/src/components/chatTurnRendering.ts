@@ -1,7 +1,6 @@
 // apps/kimi-web/src/components/chatTurnRendering.ts
-// Pure turn-rendering helpers: pure functions of their arguments (no Vue
-// reactivity, no component state). Shared by ChatPane.vue's template and its
-// stateful copy/edit helpers.
+// Turn-rendering helpers and browser-local expansion state. Block derivation
+// stays independent of Vue reactivity and component-local row lifetimes.
 import type { ChatTurn, ReplyMetadata, TurnBlock } from '../types';
 
 // Shared 1024-based token formatter (lib/formatTokens); re-exported so the
@@ -40,7 +39,7 @@ export type AssistantRenderBlock =
   | { kind: 'text'; text: string; sourceIndex: number; reply?: ReplyMetadata }
   | { kind: 'reply-separator'; sourceIndex: number }
   | { kind: 'tool'; tool: ToolStackItem['tool']; sourceIndex: number }
-  | { kind: 'tool-stack'; tools: ToolStackItem[] };
+  | { kind: 'tool-stack'; tools: ToolStackItem[]; collapsedByDefault: boolean };
 
 export function rendersToolCard(block: Extract<TurnBlock, { kind: 'tool' }>): boolean {
   return !(block.tool.status === 'ok' && block.tool.media);
@@ -57,16 +56,26 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
   const blocks = turnBlocks(turn);
   const rendered: AssistantRenderBlock[] = [];
   let toolRun: ToolStackItem[] = [];
+  let emptyBlocks: AssistantRenderBlock[] = [];
   let hasPendingWorkActivity = false;
+  let lastReplyIndex = -1;
+  blocks.forEach((block, sourceIndex) => {
+    if (block.kind === 'text' && block.text.trim().length > 0) lastReplyIndex = sourceIndex;
+  });
 
   const flushToolRun = () => {
-    if (toolRun.length === 1) {
-      const [item] = toolRun;
-      if (item) rendered.push({ kind: 'tool', tool: item.tool, sourceIndex: item.sourceIndex });
-    } else if (toolRun.length > 1) {
-      rendered.push({ kind: 'tool-stack', tools: toolRun });
+    const [first] = toolRun;
+    if (first) {
+      const collapsedByDefault = first.sourceIndex < lastReplyIndex;
+      if (toolRun.length === 1 && !collapsedByDefault) {
+        rendered.push({ kind: 'tool', tool: first.tool, sourceIndex: first.sourceIndex });
+      } else {
+        rendered.push({ kind: 'tool-stack', tools: toolRun, collapsedByDefault });
+      }
     }
     toolRun = [];
+    rendered.push(...emptyBlocks);
+    emptyBlocks = [];
   };
 
   blocks.forEach((block, sourceIndex) => {
@@ -83,16 +92,27 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
       return;
     }
 
-    flushToolRun();
     if (block.kind === 'thinking') {
-      rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
-      if (block.thinking.trim().length > 0) hasPendingWorkActivity = true;
-    } else if (block.kind === 'text') {
-      if (block.text.trim().length > 0 && hasPendingWorkActivity) {
+      if (block.thinking.trim().length > 0) {
+        flushToolRun();
+        hasPendingWorkActivity = true;
+        rendered.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
+      } else {
+        emptyBlocks.push({ kind: 'thinking', thinking: block.thinking, sourceIndex });
+      }
+      return;
+    }
+
+    const hasReply = block.text.trim().length > 0;
+    if (hasReply) {
+      flushToolRun();
+      if (hasPendingWorkActivity) {
         rendered.push({ kind: 'reply-separator', sourceIndex });
         hasPendingWorkActivity = false;
       }
       rendered.push({ kind: 'text', text: block.text, sourceIndex, ...(block.reply ? { reply: block.reply } : {}) });
+    } else {
+      emptyBlocks.push({ kind: 'text', text: block.text, sourceIndex, ...(block.reply ? { reply: block.reply } : {}) });
     }
   });
 
@@ -116,4 +136,41 @@ export function renderBlockKey(block: AssistantRenderBlock, index: number): stri
   }
   if (block.kind === 'tool') return toolStackKey({ tool: block.tool, sourceIndex: block.sourceIndex });
   return `${block.kind}-${block.sourceIndex}`;
+}
+
+type ToolStackRenderBlock = Extract<AssistantRenderBlock, { kind: 'tool-stack' }>;
+
+export interface ToolGroupExpansionState {
+  isOpen(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean;
+  toggle(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean;
+  prune(turns: readonly ChatTurn[]): void;
+}
+
+export function createToolGroupExpansionState(): ToolGroupExpansionState {
+  const overrides = new Map<string, Map<string, boolean>>();
+
+  function isOpen(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean {
+    const override = overrides.get(turn.id)?.get(renderBlockKey(block, index));
+    return override ?? !block.collapsedByDefault;
+  }
+
+  return {
+    isOpen,
+    toggle(turn, block, index) {
+      const open = !isOpen(turn, block, index);
+      let turnOverrides = overrides.get(turn.id);
+      if (!turnOverrides) {
+        turnOverrides = new Map<string, boolean>();
+        overrides.set(turn.id, turnOverrides);
+      }
+      turnOverrides.set(renderBlockKey(block, index), open);
+      return open;
+    },
+    prune(turns) {
+      const currentIds = new Set(turns.map((turn) => turn.id));
+      for (const turnId of overrides.keys()) {
+        if (!currentIds.has(turnId)) overrides.delete(turnId);
+      }
+    },
+  };
 }
