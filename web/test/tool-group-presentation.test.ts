@@ -25,7 +25,9 @@ describe('transcript tool group presentation', () => {
     expect(rows).toHaveLength(3);
     const sealed = projectTranscriptToolGroups([...rows, prose('reply', 'Done'), tool('c')]);
     expect(sealed.leaders.get(rows[0]!.id)?.collapsedByDefault).toBe(true);
-    expect(sealed.members.has(tool('c').id)).toBe(false);
+    expect(sealed.members.get(tool('c').id)).toMatchObject({
+      sourceIds: [tool('c').id], collapsedByDefault: false,
+    });
   });
 
   it('keeps lone completed tools foldable and does not group across source-turn boundaries', () => {
@@ -45,6 +47,36 @@ describe('transcript tool group presentation', () => {
 });
 
 describe('bounded tool group expansion choices', () => {
+  it('applies retained choices to projected singletons through splits, merges and eviction', () => {
+    const a = tool('a'); const b = tool('b');
+    const state = createToolGroupExpansion();
+    function project(rows: ChatTurn[]) {
+      const projected = projectTranscriptToolGroups(rows);
+      state.reconcile([...projected.leaders.values()], new Set(rows.map(row => toolGroupMember(row.id))));
+      return projected;
+    }
+    const joined = project([a, prose('reasoning', '', 'thinking'), b]).leaders.get(a.id)!;
+    expect(state.hasChoice(joined)).toBe(false);
+    state.toggle(joined);
+    const splitRows = [a, prose('reasoning', 'Checking', 'thinking'), b];
+    const split = project(splitRows);
+    expect(split.leaders.size).toBe(2);
+    for (const single of split.leaders.values()) {
+      expect(state.hasChoice(single)).toBe(true);
+      expect(state.isOpen(single)).toBe(false);
+    }
+    state.toggle(split.leaders.get(b.id)!);
+    expect(state.isOpen(project([a, b]).leaders.get(a.id)!)).toBe(true);
+    for (const single of project(splitRows).leaders.values()) expect(state.isOpen(single)).toBe(true);
+    const remaining = project([b]).leaders.get(b.id)!;
+    expect(state.hasChoice(remaining)).toBe(true);
+    state.toggle(remaining);
+    project([]);
+    const reloaded = project([b]).leaders.get(b.id)!;
+    expect(state.hasChoice(reloaded)).toBe(false);
+    expect(state.isOpen(reloaded)).toBe(true);
+  });
+
   it('inherits explicit expansion through prepend, leader eviction, and a subsequent split', () => {
     const state = createToolGroupExpansion();
     const bc = group(['b', 'c']);

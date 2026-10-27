@@ -112,14 +112,17 @@ text/reasoning placeholders do not break a group; nonempty replies, visible reas
 user messages and other semantic items do. Groups never cross source turns. A later
 nonempty assistant text reply in the loaded window makes preceding tool groups collapsed
 by default. Derive this default from loaded content without scanning history. Multiple
-tools without a later reply start expanded; a lone tool stays standalone until a later
-reply makes it foldable. Headers summarize count and status, preferring running, then
-error, then done.
+tools without a later reply start expanded; a lone tool without a retained expansion choice
+stays standalone until a later reply makes it foldable. Headers summarize count and status,
+preferring running, then error, then done.
 
 Explicit expansion/collapse overrides the default. Retain choices by stable source-row
 identity across prepends, leader changes, splits and merges. The most recent choice wins
 when differently toggled groups join and propagates to new members. Evicted members lose
-their choices; retain no group state after all members leave the window. Automatic folding
+their choices; retain no group state after all members leave the window. If a split or page
+eviction leaves one member with a retained choice, keep its operable header and apply that
+choice, including after reopening it. Once all members leave the window, reloading a lone
+tool restores its default presentation. Automatic folding
 must preserve rows containing focus or selection endpoints by keeping their group open
 until another user choice or member eviction. Legacy whole-turn groups share this choice
 owner, identifying members by turn and tool.

@@ -35,7 +35,9 @@ export function projectTranscriptToolGroups(turns: readonly ChatTurn[]): Transcr
   let runStart = 0;
   const flush = () => {
     const first = run[0];
-    if (first && (run.length > 1 || runStart < lastReply)) {
+    // A lone member may still carry a choice inherited from an earlier group.
+    // Keep it in the projection even when its default presentation has no header.
+    if (first) {
       const group: TranscriptToolGroup = {
         sourceIds: run.map(turn => turn.id),
         members: run.map(turn => toolGroupMember(turn.id)),
@@ -91,6 +93,7 @@ export function createToolGroupExpansion() {
 
   return {
     isOpen,
+    hasChoice(group: ToolGroup): boolean { return choice(group) !== undefined; },
     setOpen,
     toggle(group: ToolGroup): void { setOpen(group, !isOpen(group)); },
     reconcile(groups: readonly ToolGroup[], retainedMembers: ReadonlySet<string>): void {

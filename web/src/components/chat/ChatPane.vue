@@ -215,6 +215,11 @@ const renderedBlocks = computed(() => new Map(props.turns.map(turn => [turn.id,
   turn.role === 'assistant' && !turn.contentDeferred ? assistantRenderBlocks(turn) : [],
 ])));
 const deferredProjection = computed(() => projectTranscriptToolGroups(props.turns));
+const deferredGroupHeaders = computed(() => {
+  void toolGroupExpansionRevision.value;
+  return new Map([...deferredProjection.value.leaders].filter(([, group]) =>
+    group.sourceIds.length > 1 || group.collapsedByDefault || toolGroupExpansion.hasChoice(group)));
+});
 
 function legacyGroup(turn: ChatTurn, block: ToolStackBlock): ExpansionGroup {
   return { members: block.tools.map(item => toolGroupMember(turn.id, item.tool.id || String(item.sourceIndex))),
@@ -548,10 +553,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     </div>
 
     <template v-for="(turn, ti) in turns" :key="turn.id">
-      <div v-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
+      <div v-if="deferredGroupHeaders.has(turn.id)" class="transcript-tool-group"
         :data-turn-id="turn.id"
-        :data-transcript-tool-group="JSON.stringify(deferredProjection.leaders.get(turn.id)!.sourceIds)">
-        <ToolGroupHeader :tools="deferredProjection.leaders.get(turn.id)!.tools"
+        :data-transcript-tool-group="JSON.stringify(deferredGroupHeaders.get(turn.id)!.sourceIds)">
+        <ToolGroupHeader :tools="deferredGroupHeaders.get(turn.id)!.tools"
           :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
       </div>
       <TranscriptRow :turn="turn" :folded="!deferredGroupOpen(turn)">

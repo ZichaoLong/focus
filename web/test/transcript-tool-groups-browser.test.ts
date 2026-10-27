@@ -2,10 +2,16 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium, type Browser, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 
+type FixtureKind = 'working' | 'replied' | 'large' | 'split' | 'paged';
+
 declare global {
   interface Window {
     toolGroupFixture: {
-      reset(kind: 'working' | 'replied' | 'large'): Promise<void>;
+      reset(kind: FixtureKind): Promise<void>;
+      reasoning(text: string): Promise<void>;
+      evictFirstPage(): Promise<void>;
+      navigateAway(): Promise<void>;
+      revisitTool(): Promise<void>;
       reply(): Promise<void>;
       prepend(): Promise<void>;
       evictOlder(): Promise<void>;
@@ -33,7 +39,7 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => { await browser?.close(); await server?.close(); });
 
-async function fixture(kind: 'working' | 'replied' | 'large', run: (page: Page) => Promise<void>) {
+async function fixture(kind: FixtureKind, run: (page: Page) => Promise<void>) {
   const page = await browser.newPage({ viewport: { width: 1000, height: 600 } });
   page.setDefaultTimeout(10_000);
   const errors: string[] = [];
@@ -54,8 +60,89 @@ async function browseTop(page: Page) {
 }
 const row = (id: string) => `.transcript-row[data-turn-id="turn:item:${id}:0"]`;
 const tool = (id: string) => `[data-scroll-anchor-id="${id}"]`;
+const head = (id: string) => `.transcript-tool-group[data-turn-id="turn:item:${id}:0"] .tool-group-head`;
+
+async function browseTo(page: Page, selector: string) {
+  await page.locator('.panes').hover();
+  const delta = await page.locator(selector).evaluate(element =>
+    element.getBoundingClientRect().top - document.querySelector('.panes')!.getBoundingClientRect().top - 4);
+  await page.mouse.wheel(0, delta);
+  await page.waitForFunction(selector => Math.abs(document.querySelector(selector)!.getBoundingClientRect().top
+    - document.querySelector('.panes')!.getBoundingClientRect().top - 4) < 1, selector);
+}
 
 describe('tool groups in the real conversation scroll owner', () => {
+  it.each([false, true])('preserves controls and the latest choice through singleton splits and merges (open=%s)', async open => {
+    await fixture('split', async page => {
+      await browseTop(page);
+      await page.waitForFunction(() => document.querySelector('.transcript-row[data-turn-id="turn:item:older:0"]')!.getBoundingClientRect().height > 600);
+      await page.locator(head('b')).click();
+      await browseTo(page, head('b'));
+      await page.waitForFunction(() => window.toolGroupFixture.protectedRow === 'turn:item:b:0');
+      const before = (await page.locator(head('b')).boundingBox())!.y;
+      await page.evaluate(() => window.toolGroupFixture.reasoning('Checking the next tool.'));
+      expect(await page.locator('.tool-group-head').count()).toBe(2);
+      for (const id of ['b', 'c']) expect(await page.locator(head(id)).getAttribute('aria-expanded')).toBe('false');
+      expect(await page.locator('[data-scroll-anchor-id]').count()).toBe(0);
+      await page.waitForFunction(before => Math.abs(document.querySelector('.tool-group-head')!.getBoundingClientRect().y - before) < 1, before);
+
+      await page.locator(head('b')).click();
+      await page.locator(tool('b')).waitFor();
+      expect(await page.locator(tool('c')).count()).toBe(0);
+      if (!open) {
+        await page.locator(head('c')).click();
+        await page.locator(head('c')).click();
+      }
+      await page.evaluate(() => window.toolGroupFixture.reasoning(''));
+      expect(await page.locator('.tool-group-head').count()).toBe(1);
+      expect(await page.locator(head('b')).getAttribute('aria-expanded')).toBe(String(open));
+      await page.evaluate(() => window.toolGroupFixture.reasoning('Checking again.'));
+      for (const id of ['b', 'c']) expect(await page.locator(head(id)).getAttribute('aria-expanded')).toBe(String(open));
+      if (!open) await page.locator(head('c')).click();
+      await page.locator(tool('c')).getByRole('button').last().click();
+      expect(await page.evaluate(() => window.toolGroupFixture.details)).toEqual(['c']);
+    });
+  }, 30_000);
+
+  it('retains a collapsed singleton after page eviction and clears its choice after leaving the window', async () => {
+    await fixture('paged', async page => {
+      await page.locator(head('b')).click();
+      await browseTo(page, row('tail'));
+      await page.waitForFunction(() => window.toolGroupFixture.protectedRow === 'turn:item:tail:0');
+      const before = (await page.locator(row('tail')).boundingBox())!.y;
+      await page.evaluate(() => window.toolGroupFixture.evictFirstPage());
+      expect(await page.locator(row('b')).count()).toBe(0);
+      expect(await page.locator(head('c')).getAttribute('aria-expanded')).toBe('false');
+      expect(await page.locator(tool('c')).count()).toBe(0);
+      await page.waitForFunction(before => Math.abs(document.querySelector('.transcript-row[data-turn-id="turn:item:tail:0"]')!.getBoundingClientRect().y - before) < 1, before);
+      await page.locator(head('c')).click();
+      await page.locator(tool('c')).waitFor();
+      await page.locator(head('c')).click();
+      await page.evaluate(() => window.toolGroupFixture.navigateAway());
+      await page.evaluate(() => window.toolGroupFixture.revisitTool());
+      expect(await page.locator('.tool-group-head').count()).toBe(0);
+      await page.locator(tool('c')).waitFor();
+    });
+  }, 30_000);
+
+  it.each(['focus', 'selection'])('preserves %s when a group splits into untouched singletons and later seals', async kind => {
+    await fixture('working', async page => {
+      await page.locator(tool('b')).waitFor();
+      if (kind === 'focus') await page.locator(tool('b')).getByRole('button').last().focus();
+      else await page.locator(tool('b')).evaluate(element => {
+        const range = document.createRange(); range.selectNodeContents(element);
+        const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
+      });
+      await page.evaluate(() => window.toolGroupFixture.reasoning('Checking the next tool.'));
+      expect(await page.locator('.tool-group-head').count()).toBe(0);
+      await page.evaluate(() => window.toolGroupFixture.reply());
+      expect(await page.locator(head('b')).getAttribute('aria-expanded')).toBe('true');
+      expect(await page.locator(head('c')).getAttribute('aria-expanded')).toBe('false');
+      if (kind === 'focus') expect(await page.locator(tool('b')).evaluate(el => el.contains(document.activeElement))).toBe(true);
+      else expect(await page.evaluate(() => document.getSelection()?.toString())).toContain('echo b');
+    });
+  }, 30_000);
+
   it('folds after a reply, unmounts content, and preserves the exact detail target', async () => {
     await fixture('working', async page => {
       expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe('true');
