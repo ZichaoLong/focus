@@ -86,7 +86,7 @@ describe('Focus Web document activity favicon', () => {
     expect(localStorage.getItem(STORAGE_KEYS.activityFaviconEnabled)).toBeNull();
   });
 
-  it('uses four discrete half-disc frames in Kimi-style order', () => {
+  it('uses four discrete half-disc frames in clockwise order', () => {
     vi.useFakeTimers();
     const connected = ref(true);
     const working = ref(true);
@@ -105,7 +105,7 @@ describe('Focus Web document activity favicon', () => {
     expect(firstSvg).not.toContain('<linearGradient');
 
     const frames = [firstFrame];
-    for (const rotation of [270, 180, 90, 0]) {
+    for (const rotation of [90, 180, 270, 0]) {
       vi.advanceTimersByTime(250);
       const frame = target.href();
       expect(decodeSvgDataUrl(frame)).toContain(`rotate(${rotation} 32 32)`);
@@ -181,7 +181,7 @@ describe('Focus Web document activity favicon', () => {
     expect(target.href()).toBe('focus-idle.svg');
   });
 
-  it('uses a slower cadence while the browser document is hidden', () => {
+  it('uses every half-disc frame at a slower cadence while hidden', () => {
     vi.useFakeTimers();
     const connected = ref(true);
     const working = ref(true);
@@ -194,23 +194,21 @@ describe('Focus Web document activity favicon', () => {
     );
 
     const hiddenFrame = target.href();
+    expect(decodeSvgDataUrl(hiddenFrame)).toContain('rotate(0 32 32)');
     vi.advanceTimersByTime(499);
     expect(target.href()).toBe(hiddenFrame);
     vi.advanceTimersByTime(1);
-    const secondHiddenFrame = target.href();
-    expect(secondHiddenFrame).not.toBe(hiddenFrame);
 
-    working.value = false;
-    target.setHidden(false);
-    working.value = true;
-    const visibleFrame = target.href();
-    expect(visibleFrame).toBe(hiddenFrame);
-    vi.advanceTimersByTime(249);
-    expect(target.href()).toBe(visibleFrame);
-    vi.advanceTimersByTime(1);
-    expect(target.href()).not.toBe(visibleFrame);
-    vi.advanceTimersByTime(250);
-    expect(target.href()).toBe(secondHiddenFrame);
+    const frames = [hiddenFrame, target.href()];
+    expect(decodeSvgDataUrl(frames[1])).toContain('rotate(90 32 32)');
+    for (const rotation of [180, 270, 0]) {
+      vi.advanceTimersByTime(500);
+      const frame = target.href();
+      expect(decodeSvgDataUrl(frame)).toContain(`rotate(${rotation} 32 32)`);
+      frames.push(frame);
+    }
+    expect(new Set(frames).size).toBe(4);
+    expect(frames[4]).toBe(hiddenFrame);
 
     stop();
   });

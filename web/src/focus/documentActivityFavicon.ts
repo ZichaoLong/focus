@@ -15,8 +15,8 @@ import {
 
 const VISIBLE_FRAME_INTERVAL_MS = 250;
 const HIDDEN_FRAME_INTERVAL_MS = 500;
-const HIDDEN_FRAME_STEP = 2;
-const WORKING_FRAME_ROTATIONS = [0, 270, 180, 90] as const;
+const HIDDEN_FRAME_STEP = 1;
+const WORKING_FRAME_ROTATIONS = [0, 90, 180, 270] as const;
 const WORKING_FRAME_COUNT = WORKING_FRAME_ROTATIONS.length;
 
 interface DocumentActivityFaviconTarget {
