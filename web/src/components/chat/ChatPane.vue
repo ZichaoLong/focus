@@ -24,6 +24,7 @@ import {
   createToolGroupExpansionState,
   formatDuration,
   formatTokens,
+  projectDeferredToolGroups,
   renderBlockKey,
   turnBlocks,
   turnFinalText,
@@ -222,6 +223,22 @@ function toolGroupOpen(turn: ChatTurn, block: ToolStackBlock, index: number): bo
 function toggleToolGroup(turn: ChatTurn, block: ToolStackBlock, index: number): void {
   toolGroupExpansion.toggle(turn, block, index);
   toolGroupExpansionRevision.value += 1;
+}
+
+const deferredProjection = computed(() => projectDeferredToolGroups(props.turns));
+
+function hasDeferredGroup(turn: ChatTurn): boolean {
+  return deferredProjection.value.leaders.has(turn.id);
+}
+
+function deferredGroupBlock(turn: ChatTurn): ToolStackBlock {
+  const block = deferredProjection.value.leaders.get(turn.id);
+  if (!block) throw new Error('Deferred tool group is not available for this turn.');
+  return block;
+}
+
+function isDeferredContinuation(turn: ChatTurn): boolean {
+  return deferredProjection.value.continuations.has(turn.id);
 }
 
 // Trailing "working" moon: shown while the main conversation has an unfinished
@@ -497,7 +514,8 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </span>
     </div>
 
-    <TranscriptRow v-for="(turn, ti) in turns" :key="turn.id" :turn="turn">
+    <template v-for="(turn, ti) in turns" :key="turn.id">
+      <TranscriptRow v-if="!isDeferredContinuation(turn)" :turn="turn">
       <!-- User turn → right-aligned soft-blue bubble (copy-to-composer lives
            below the bubble, in the meta row). -->
       <template v-if="turn.role === 'user'">
@@ -594,7 +612,22 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
-        <template v-if="turn.contentDeferred && turn.tools?.length">
+        <template v-if="hasDeferredGroup(turn)">
+          <ToolGroup
+            :tools="deferredGroupBlock(turn).tools"
+            :open="toolGroupOpen(turn, deferredGroupBlock(turn), ti)"
+            summary-only
+            :tool-diff-panel="toolDiffPanel"
+            :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
+            @toggle="toggleToolGroup(turn, deferredGroupBlock(turn), ti)"
+            @open-media="emit('openMedia', $event)"
+            @open-file="emit('openFile', $event)"
+            @open-tool-diff="emit('openToolDiff', $event)"
+            @open-full-content="emit('openFullContent', $event)"
+            @open-agent="emit('openAgent', $event)"
+          />
+        </template>
+        <template v-else-if="turn.contentDeferred && turn.tools?.length">
           <ToolCall v-for="tool in turn.tools" :key="tool.id" :tool="tool" summary-only
             :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
             @open-tool-diff="emit('openToolDiff', $event)" @open-full-content="emit('openFullContent', turn)" />
@@ -641,7 +674,8 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           </template>
         </div>
       </div>
-    </TranscriptRow>
+      </TranscriptRow>
+    </template>
 
     <div v-if="hasNewerMessages" ref="bottomSentinelRef" class="transcript-notice">
       <span v-if="loadingNewer"><Spinner size="sm" /> {{ t('conversation.loadingNewer') }}</span>

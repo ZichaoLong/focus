@@ -5,7 +5,7 @@ import { useI18n } from 'vue-i18n';
 import ToolCall from './ToolCall.vue';
 import { toolStackKey, toolStackPosition } from '../chatTurnRendering';
 import type { ToolStackItem } from '../chatTurnRendering';
-import type { FilePreviewRequest, ToolCall as ToolCallData, ToolMedia } from '../../types';
+import type { ChatTurn, FilePreviewRequest, ToolCall as ToolCallData, ToolMedia } from '../../types';
 import Icon from '../ui/Icon.vue';
 import StatusDot from '../ui/StatusDot.vue';
 
@@ -13,11 +13,12 @@ const props = withDefaults(
   defineProps<{
     tools: ToolStackItem[];
     open: boolean;
+    summaryOnly?: boolean;
     toolDiffPanel?: boolean;
     toolDetailAvailable?: boolean;
     toolDetailTarget?: ToolCallData | null;
   }>(),
-  { toolDiffPanel: false },
+  { summaryOnly: false, toolDiffPanel: false },
 );
 
 const emit = defineEmits<{
@@ -25,6 +26,7 @@ const emit = defineEmits<{
   openMedia: [media: ToolMedia];
   openFile: [target: FilePreviewRequest];
   openToolDiff: [tool: ToolCallData];
+  openFullContent: [turn: ChatTurn];
   openAgent: [toolCallId: string];
 }>();
 
@@ -72,12 +74,14 @@ function onHeadClick(): void {
           v-for="(item, si) in tools"
           :key="toolStackKey(item)"
           :tool="item.tool"
+          :summary-only="summaryOnly"
           :stack-position="toolStackPosition(si, tools.length)"
           :tool-diff-panel="toolDiffPanel"
           :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
           @open-media="emit('openMedia', $event)"
           @open-file="emit('openFile', $event)"
           @open-tool-diff="emit('openToolDiff', $event)"
+          @open-full-content="item.sourceTurn && emit('openFullContent', item.sourceTurn)"
           @open-agent="emit('openAgent', $event)"
         />
       </div>
