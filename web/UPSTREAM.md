@@ -21,8 +21,9 @@ by the current local Focus path: a `null` value is a byte-for-byte copy, while a
 SHA-256 value records the reviewed Focus modification of that upstream-derived
 file. The upstream source defaults to the same relative path under
 `apps/kimi-web` at the commit above. When a reviewed Focus refactor moves or
-renames a derived file, `upstream_path_overrides` maps its current local path to
-the original Kimi source path. `focus_owned_files` is reserved for source files
+renames or extracts a derived file, `upstream_path_overrides` maps its current local path to
+the original Kimi source path. A split may map multiple local files to one upstream
+file; each local file retains its own reviewed digest. `focus_owned_files` is reserved for source files
 that have no Kimi counterpart, so neither a new file nor a local path migration
 can silently acquire ambiguous provenance.
 
@@ -69,6 +70,9 @@ The Markdown formula and code copy components and their copy regression
 tests are Focus-owned additions, explicitly listed in `focus_owned_files`.
 The shared Markdown parser configuration and CJK emphasis regression tests
 are also Focus-owned additions.
+`ToolGroupHeader.vue` is extracted from the Kimi-derived `ToolGroup.vue`; both
+retain that upstream source attribution. The tool-group projection/expansion
+owner and its unit/browser regressions are Focus-owned additions.
 
 This guard is intentionally not part of `npm run build`: build and release
 remain reproducible from checked-in code and license evidence, without a

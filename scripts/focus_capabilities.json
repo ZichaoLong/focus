@@ -1078,6 +1078,18 @@
         {
           "path": "web/src/focus/projectionEventDecoder.ts",
           "symbol": "isFocusTranscriptWindow"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "projectTranscriptToolGroups"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "createToolGroupExpansion"
+        },
+        {
+          "path": "web/src/components/chat/transcriptScrollAnchor.ts",
+          "symbol": "restoreTranscriptScrollAnchor"
         }
       ],
       "contract": [
@@ -1100,6 +1112,10 @@
         {
           "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
           "heading": "正文强调与换行"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "工具组展示"
         }
       ],
       "focused-test": [
@@ -1131,7 +1147,9 @@
             "web/test/focus_client/owners/transcript-page-window.test.ts",
             "web/test/transcript-scroll-anchor.test.ts",
             "web/test/markdown-chunks.test.ts",
-            "web/test/reply-time.test.ts"
+            "web/test/reply-time.test.ts",
+            "web/test/tool-group-presentation.test.ts",
+            "web/test/transcript-tool-groups-browser.test.ts"
           ]
         }
       ],
@@ -1463,12 +1481,24 @@
         {
           "path": "bot/web_runtime/notification_projection.py",
           "symbol": "project_notification"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "projectTranscriptToolGroups"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "createToolGroupExpansion"
         }
       ],
       "contract": [
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "工具组展示"
         }
       ],
       "focused-test": [
@@ -1493,7 +1523,9 @@
             "web/test/tool-output-dom-window.test.ts",
             "web/test/tool-output-presentation.test.ts",
             "web/test/tool-presentation.test.ts",
-            "web/test/deferred-tool-output.test.ts"
+            "web/test/deferred-tool-output.test.ts",
+            "web/test/tool-group-presentation.test.ts",
+            "web/test/transcript-tool-groups-browser.test.ts"
           ]
         }
       ],

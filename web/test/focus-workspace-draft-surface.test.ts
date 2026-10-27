@@ -41,7 +41,7 @@ describe('Focus targetless workspace draft surface', () => {
     };
 
     expect(manifest.format_version).toBe(2);
-    expect(manifest.upstream_path_overrides).toEqual(expected);
+    expect(manifest.upstream_path_overrides).toMatchObject(expected);
     for (const localPath of Object.keys(expected)) {
       expect(manifest.files[localPath]).toMatch(/^[0-9a-f]{64}$/u);
       expect(manifest.focus_owned_files).not.toContain(localPath);

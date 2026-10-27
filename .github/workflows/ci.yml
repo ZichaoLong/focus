@@ -132,6 +132,10 @@ jobs:
         working-directory: web
         run: npm run typecheck
 
+      - name: Install browser for transcript regressions
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
       - name: Test
         working-directory: web
         run: npm test

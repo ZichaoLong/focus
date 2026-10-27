@@ -5,8 +5,8 @@
 ## Build provenance
 
 - Generator version: 2
-- npm lockfile: `web/package-lock.json` (SHA-256 `7b92935458c6a2ad799fd40e3421ceb2cfaaf6fec48075690b0acbc365eef647`)
-- Rendered Rollup module identifiers inspected: 1333
+- npm lockfile: `web/package-lock.json` (SHA-256 `652e7e95f73bd1a0d34287b91ad9a7555737a44910d42a5f85a8014ecf1a2dd1`)
+- Rendered Rollup module identifiers inspected: 1337
 - kimi-web source: https://github.com/MoonshotAI/kimi-code at `c497af60e6cd20aab05e590f98a28fb15dd3491d` (package 0.1.2, imported 2026-07-27)
 
 The component table starts with the copied kimi-web source.  For npm code, it records

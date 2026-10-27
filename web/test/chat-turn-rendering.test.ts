@@ -4,10 +4,8 @@ import { describe, expect, it } from 'vitest';
 import type { ChatTurn, ToolCall, TurnBlock } from '../src/types';
 import {
   assistantRenderBlocks,
-  createToolGroupExpansionState,
   formatDuration,
   formatTokens,
-  projectDeferredToolGroups,
   rendersToolCard,
   renderBlockKey,
   toolStackPosition,
@@ -25,33 +23,6 @@ function toolBlock(id: string, over: Partial<ToolCall> = {}): Extract<TurnBlock,
 
 function assistantTurn(blocks: TurnBlock[], over: Partial<ChatTurn> = {}): ChatTurn {
   return { id: 't1', role: 'assistant', no: 1, text: '', blocks, ...over };
-}
-
-function deferredToolTurn(id: string): ChatTurn {
-  const current = tool(id);
-  return {
-    id: `turn-1:item:${id}:0`,
-    rawTurnId: 'turn-1',
-    itemId: id,
-    role: 'assistant',
-    no: 0,
-    text: '',
-    contentDeferred: true,
-    tools: [current],
-    blocks: [{ kind: 'tool', tool: current }],
-  };
-}
-
-function assistantItem(id: string, blocks: TurnBlock[]): ChatTurn {
-  return {
-    id: `turn-1:item:${id}:0`,
-    rawTurnId: 'turn-1',
-    itemId: id,
-    role: 'assistant',
-    no: 0,
-    text: blocks.flatMap((block) => block.kind === 'text' ? [block.text] : []).join('\n\n'),
-    blocks,
-  };
 }
 
 function source(relativePath: string): string {
@@ -377,116 +348,5 @@ describe('renderBlockKey', () => {
     expect(
       renderBlockKey({ kind: 'tool-stack', tools, collapsedByDefault: true }, 0),
     ).toBe('tool-stack-5');
-  });
-});
-
-describe('tool group expansion state', () => {
-  it('keeps manual expansion through updates and clears it only after turn eviction', () => {
-    const turn = assistantTurn([toolBlock('a'), { kind: 'text', text: 'answer' }]);
-    const block = assistantRenderBlocks(turn)[0];
-    if (block?.kind !== 'tool-stack') throw new Error('expected a collapsed tool stack');
-    const state = createToolGroupExpansionState();
-
-    expect(state.isOpen(turn, block, 0)).toBe(false);
-    expect(state.toggle(turn, block, 0)).toBe(true);
-    state.prune([turn]);
-    expect(state.isOpen(turn, block, 0)).toBe(true);
-    state.prune([]);
-    expect(state.isOpen(turn, block, 0)).toBe(false);
-  });
-
-  it('does not reopen a manually collapsed group when its automatic default changes', () => {
-    const activeTurn = assistantTurn([toolBlock('a'), toolBlock('b')]);
-    const activeBlock = assistantRenderBlocks(activeTurn)[0];
-    if (activeBlock?.kind !== 'tool-stack') throw new Error('expected an open tool stack');
-    const state = createToolGroupExpansionState();
-    expect(state.toggle(activeTurn, activeBlock, 0)).toBe(false);
-
-    const sealedTurn = assistantTurn([
-      toolBlock('a'),
-      toolBlock('b'),
-      { kind: 'text', text: 'answer' },
-    ]);
-    const sealedBlock = assistantRenderBlocks(sealedTurn)[0];
-    if (sealedBlock?.kind !== 'tool-stack') throw new Error('expected a sealed tool stack');
-    expect(sealedBlock.collapsedByDefault).toBe(true);
-    expect(state.isOpen(sealedTurn, sealedBlock, 0)).toBe(false);
-  });
-});
-
-describe('deferred transcript tool groups', () => {
-  it('groups production-shaped rows without changing their original detail turns', () => {
-    const turns = [deferredToolTurn('a'), deferredToolTurn('b'), deferredToolTurn('c')];
-    const projected = projectDeferredToolGroups(turns);
-    const block = projected.leaders.get(turns[0]!.id);
-
-    expect(projected.continuations).toEqual(new Set([turns[1]!.id, turns[2]!.id]));
-    expect(block?.collapsedByDefault).toBe(false);
-    expect(block?.tools.map((item) => item.tool.id)).toEqual(['a', 'b', 'c']);
-    expect(block?.tools.map((item) => item.sourceTurn)).toEqual(turns);
-    expect(block?.tools.map((item) => item.sourceKey)).toEqual(turns.map((turn) => turn.id));
-    expect(renderBlockKey(block!, 0)).toBe(`tool-stack-${turns[0]!.id}`);
-  });
-
-  it('seals groups after a reply and leaves the latest deferred tool standalone', () => {
-    const turns = [
-      deferredToolTurn('a'),
-      deferredToolTurn('b'),
-      assistantItem('reply-1', [{ kind: 'text', itemId: 'reply-1', text: 'First reply' }]),
-      deferredToolTurn('c'),
-    ];
-    const projected = projectDeferredToolGroups(turns);
-    const block = projected.leaders.get(turns[0]!.id);
-
-    expect(block?.collapsedByDefault).toBe(true);
-    expect(block?.tools.map((item) => item.tool.id)).toEqual(['a', 'b']);
-    expect(projected.continuations).toEqual(new Set([turns[1]!.id]));
-    expect(projected.leaders.has(turns[3]!.id)).toBe(false);
-  });
-
-  it('uses a collapsed one-tool group before a reply', () => {
-    const turns = [
-      deferredToolTurn('a'),
-      assistantItem('reply-1', [{ kind: 'text', itemId: 'reply-1', text: 'Reply' }]),
-    ];
-    const projected = projectDeferredToolGroups(turns);
-
-    expect(projected.leaders.get(turns[0]!.id)).toMatchObject({
-      kind: 'tool-stack',
-      collapsedByDefault: true,
-    });
-    expect(projected.continuations).toEqual(new Set());
-  });
-
-  it('ignores empty reasoning but splits around visible reasoning', () => {
-    const empty = projectDeferredToolGroups([
-      deferredToolTurn('a'),
-      assistantItem('reasoning', [{ kind: 'thinking', itemId: 'reasoning', thinking: '' }]),
-      deferredToolTurn('b'),
-    ]);
-    expect(empty.leaders.get('turn-1:item:a:0')?.tools.map((item) => item.tool.id)).toEqual(['a', 'b']);
-    expect(empty.continuations).toEqual(new Set(['turn-1:item:b:0']));
-
-    const visible = projectDeferredToolGroups([
-      deferredToolTurn('a'),
-      assistantItem('reasoning', [{ kind: 'thinking', itemId: 'reasoning', thinking: 'Visible' }]),
-      deferredToolTurn('b'),
-    ]);
-    expect(visible.leaders.size).toBe(0);
-    expect(visible.continuations.size).toBe(0);
-  });
-
-  it('does not merge deferred tools across user boundaries', () => {
-    const user = { ...assistantItem('user', [{ kind: 'text', itemId: 'user', text: 'steer' }]), role: 'user' as const };
-    const projected = projectDeferredToolGroups([
-      deferredToolTurn('a'),
-      user,
-      deferredToolTurn('b'),
-      assistantItem('reply', [{ kind: 'text', itemId: 'reply', text: 'Reply' }]),
-    ]);
-
-    expect([...projected.leaders.keys()]).toEqual(['turn-1:item:a:0', 'turn-1:item:b:0']);
-    expect(projected.continuations.size).toBe(0);
-    expect([...projected.leaders.values()].map((block) => block.collapsedByDefault)).toEqual([true, true]);
   });
 });

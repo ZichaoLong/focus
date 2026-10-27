@@ -5,6 +5,7 @@ import { useI18n } from 'vue-i18n';
 import type { ChatTurn, ApprovalBlock, FilePreviewRequest, ToolCall as ToolCallData, ToolMedia, QueuedPromptView, TurnAttachment } from '../../types';
 import ToolCall from './ToolCall.vue';
 import ToolGroup from './ToolGroup.vue';
+import ToolGroupHeader from './ToolGroupHeader.vue';
 import Markdown from './LazyMarkdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
@@ -18,13 +19,13 @@ import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import TranscriptRow from './TranscriptRow.vue';
+import { isTranscriptRowPinned } from './transcriptScrollAnchor';
+import { createToolGroupExpansion, projectTranscriptToolGroups, toolGroupMember, type ToolGroup as ExpansionGroup } from '../toolGroupPresentation';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import {
   assistantRenderBlocks,
-  createToolGroupExpansionState,
   formatDuration,
   formatTokens,
-  projectDeferredToolGroups,
   renderBlockKey,
   turnBlocks,
   turnFinalText,
@@ -207,38 +208,70 @@ const streamingTurnId = computed<string | null>(() => {
 });
 
 type ToolStackBlock = Extract<AssistantRenderBlock, { kind: 'tool-stack' }>;
-const toolGroupExpansion = createToolGroupExpansionState();
+const chatElement = ref<HTMLElement | null>(null);
+const toolGroupExpansion = createToolGroupExpansion();
 const toolGroupExpansionRevision = ref(0);
-watch(
-  () => props.turns.map((turn) => turn.id).join('\n'),
-  () => toolGroupExpansion.prune(props.turns),
-  { immediate: true },
-);
+const renderedBlocks = computed(() => new Map(props.turns.map(turn => [turn.id,
+  turn.role === 'assistant' && !turn.contentDeferred ? assistantRenderBlocks(turn) : [],
+])));
+const deferredProjection = computed(() => projectTranscriptToolGroups(props.turns));
 
-function toolGroupOpen(turn: ChatTurn, block: ToolStackBlock, index: number): boolean {
-  void toolGroupExpansionRevision.value;
-  return toolGroupExpansion.isOpen(turn, block, index);
+function legacyGroup(turn: ChatTurn, block: ToolStackBlock): ExpansionGroup {
+  return { members: block.tools.map(item => toolGroupMember(turn.id, item.tool.id || String(item.sourceIndex))),
+    collapsedByDefault: block.collapsedByDefault };
 }
 
-function toggleToolGroup(turn: ChatTurn, block: ToolStackBlock, index: number): void {
-  toolGroupExpansion.toggle(turn, block, index);
+const expansionGroups = computed(() => {
+  const groups: ExpansionGroup[] = [...deferredProjection.value.leaders.values()];
+  const retained = new Set<string>();
+  for (const turn of props.turns) {
+    if (turn.contentDeferred) retained.add(toolGroupMember(turn.id));
+    else {
+      turnBlocks(turn).forEach((block, index) => {
+        if (block.kind === 'tool') retained.add(toolGroupMember(turn.id, block.tool.id || String(index)));
+      });
+      for (const block of renderedBlocks.value.get(turn.id) ?? []) {
+        if (block.kind === 'tool-stack') groups.push(legacyGroup(turn, block));
+      }
+    }
+  }
+  return { groups, retained };
+});
+
+watch(expansionGroups, ({ groups, retained }) => {
+  toolGroupExpansion.reconcile(groups, retained);
+  // A reply may seal a group while the reader is interacting with one of its rows.
+  // Preserve that interaction before Vue removes any folded content.
+  const pinned = new Set([...chatElement.value?.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]') ?? []]
+    .filter(isTranscriptRowPinned).map(row => row.dataset.turnId!));
+  for (const group of deferredProjection.value.leaders.values()) {
+    if (!toolGroupExpansion.isOpen(group) && group.sourceIds.some(id => pinned.has(id))) {
+      toolGroupExpansion.setOpen(group, true);
+    }
+  }
+  toolGroupExpansionRevision.value += 1;
+}, { immediate: true });
+
+function toolGroupOpen(turn: ChatTurn, block: ToolStackBlock): boolean {
+  void toolGroupExpansionRevision.value;
+  return toolGroupExpansion.isOpen(legacyGroup(turn, block));
+}
+
+function toggleToolGroup(turn: ChatTurn, block: ToolStackBlock): void {
+  toolGroupExpansion.toggle(legacyGroup(turn, block));
   toolGroupExpansionRevision.value += 1;
 }
 
-const deferredProjection = computed(() => projectDeferredToolGroups(props.turns));
-
-function hasDeferredGroup(turn: ChatTurn): boolean {
-  return deferredProjection.value.leaders.has(turn.id);
+function deferredGroupOpen(turn: ChatTurn): boolean {
+  void toolGroupExpansionRevision.value;
+  const group = deferredProjection.value.members.get(turn.id);
+  return !group || toolGroupExpansion.isOpen(group);
 }
 
-function deferredGroupBlock(turn: ChatTurn): ToolStackBlock {
-  const block = deferredProjection.value.leaders.get(turn.id);
-  if (!block) throw new Error('Deferred tool group is not available for this turn.');
-  return block;
-}
-
-function isDeferredContinuation(turn: ChatTurn): boolean {
-  return deferredProjection.value.continuations.has(turn.id);
+function toggleDeferredGroup(turn: ChatTurn): void {
+  const group = deferredProjection.value.leaders.get(turn.id);
+  if (group) toolGroupExpansion.toggle(group);
+  toolGroupExpansionRevision.value += 1;
 }
 
 // Trailing "working" moon: shown while the main conversation has an unfinished
@@ -482,7 +515,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   <!-- Chat bubbles: user turns are right-aligned soft-blue bubbles; assistant
        turns are left-aligned ordered semantic blocks with no role/name label.
        A derived thin line marks only a local work-to-reply transition. -->
-  <div class="chat">
+  <div ref="chatElement" class="chat">
     <div v-if="transcriptError" role="status" class="transcript-notice">
       <span>{{ t('conversation.transcriptError') }}</span>
       <button type="button" @click="emit('retryTranscript')">{{ t('conversation.retryTranscript') }}</button>
@@ -515,7 +548,13 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     </div>
 
     <template v-for="(turn, ti) in turns" :key="turn.id">
-      <TranscriptRow v-if="!isDeferredContinuation(turn)" :turn="turn">
+      <div v-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
+        :data-turn-id="turn.id"
+        :data-transcript-tool-group="JSON.stringify(deferredProjection.leaders.get(turn.id)!.sourceIds)">
+        <ToolGroupHeader :tools="deferredProjection.leaders.get(turn.id)!.tools"
+          :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
+      </div>
+      <TranscriptRow :turn="turn" :folded="!deferredGroupOpen(turn)">
       <!-- User turn → right-aligned soft-blue bubble (copy-to-composer lives
            below the bubble, in the meta row). -->
       <template v-if="turn.role === 'user'">
@@ -612,27 +651,12 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 
       <!-- Assistant turn → left-aligned, no name/role label. -->
       <div v-else class="a-msg" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
-        <template v-if="hasDeferredGroup(turn)">
-          <ToolGroup
-            :tools="deferredGroupBlock(turn).tools"
-            :open="toolGroupOpen(turn, deferredGroupBlock(turn), ti)"
-            summary-only
-            :tool-diff-panel="toolDiffPanel"
-            :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
-            @toggle="toggleToolGroup(turn, deferredGroupBlock(turn), ti)"
-            @open-media="emit('openMedia', $event)"
-            @open-file="emit('openFile', $event)"
-            @open-tool-diff="emit('openToolDiff', $event)"
-            @open-full-content="emit('openFullContent', $event)"
-            @open-agent="emit('openAgent', $event)"
-          />
-        </template>
-        <template v-else-if="turn.contentDeferred && turn.tools?.length">
+        <template v-if="turn.contentDeferred && turn.tools?.length">
           <ToolCall v-for="tool in turn.tools" :key="tool.id" :tool="tool" summary-only
             :tool-diff-panel="toolDiffPanel" :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
             @open-tool-diff="emit('openToolDiff', $event)" @open-full-content="emit('openFullContent', turn)" />
         </template>
-        <template v-for="(blk, bi) in turn.contentDeferred ? [] : assistantRenderBlocks(turn)" :key="renderBlockKey(blk, bi)">
+        <template v-for="(blk, bi) in renderedBlocks.get(turn.id)" :key="renderBlockKey(blk, bi)">
           <ThinkingBlock v-if="blk.kind === 'thinking'" :text="blk.thinking" :full="!!turn.itemId" :streaming="isStreamingRenderBlock(turn, blk)" @open="emit('openThinking', { turnId: turn.id, blockIndex: blk.sourceIndex })" />
           <div
             v-else-if="blk.kind === 'reply-separator'"
@@ -645,10 +669,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           <ToolGroup
             v-else-if="blk.kind === 'tool-stack'"
             :tools="blk.tools"
-            :open="toolGroupOpen(turn, blk, bi)"
+            :open="toolGroupOpen(turn, blk)"
             :tool-diff-panel="toolDiffPanel"
             :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
-            @toggle="toggleToolGroup(turn, blk, bi)"
+            @toggle="toggleToolGroup(turn, blk)"
             @open-media="emit('openMedia', $event)"
             @open-file="emit('openFile', $event)"
             @open-tool-diff="emit('openToolDiff', $event)"
@@ -775,6 +799,14 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 </template>
 
 <style scoped>
+.transcript-tool-group {
+  margin-top: var(--chat-turn-gap);
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
 .chat-empty {
   /* Fills the chat area and centers the hint vertically (parent grows via flex). */
   flex: 1;

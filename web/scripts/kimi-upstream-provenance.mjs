@@ -155,7 +155,7 @@ function loadManifest() {
   if (!manifest.upstream_path_overrides
       || typeof manifest.upstream_path_overrides !== 'object'
       || Array.isArray(manifest.upstream_path_overrides)) {
-    fail('Manifest upstream_path_overrides must be an object mapping moved local paths to their Kimi source paths.');
+    fail('Manifest upstream_path_overrides must map moved or extracted local paths to their Kimi source paths.');
   }
   const upstreamPathOverrides = Object.entries(manifest.upstream_path_overrides).map(
     ([localPath, upstreamPath]) => ({
@@ -183,8 +183,8 @@ function loadManifest() {
     ...record,
     upstream_path: upstreamPathByLocal.get(record.path) ?? record.path,
   }));
-  const upstreamPaths = files.map((record) => record.upstream_path).sort();
-  assertSortedUnique(upstreamPaths, 'Manifest resolved Kimi source paths');
+  // A reviewed extraction may split one upstream file into several local files.
+  // Local paths stay unique; each derived file still verifies its own digest.
 
   if (!Array.isArray(manifest.focus_owned_files)) fail('Manifest focus_owned_files must be an array.');
   const focusOwnedFiles = manifest.focus_owned_files.map((entry, index) => assertRelativePath(entry, `Manifest focus_owned_files[${index}]`));

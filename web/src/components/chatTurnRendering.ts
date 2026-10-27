@@ -1,6 +1,5 @@
 // apps/kimi-web/src/components/chatTurnRendering.ts
-// Turn-rendering helpers and browser-local expansion state. Block derivation
-// stays independent of Vue reactivity and component-local row lifetimes.
+// Pure turn-rendering helpers, independent of Vue and component lifetimes.
 import type { ChatTurn, ReplyMetadata, TurnBlock } from '../types';
 
 // Shared 1024-based token formatter (lib/formatTokens); re-exported so the
@@ -32,8 +31,6 @@ export type ToolStackPosition = 'single' | 'first' | 'middle' | 'last';
 export type ToolStackItem = {
   tool: Extract<TurnBlock, { kind: 'tool' }>['tool'];
   sourceIndex: number;
-  sourceTurn?: ChatTurn;
-  sourceKey?: string;
 };
 
 export type AssistantRenderBlock =
@@ -134,101 +131,8 @@ export function toolStackKey(item: ToolStackItem): string {
 
 export function renderBlockKey(block: AssistantRenderBlock, index: number): string {
   if (block.kind === 'tool-stack') {
-    const [first] = block.tools;
-    return `tool-stack-${first?.sourceKey ?? first?.sourceIndex ?? index}`;
+    return `tool-stack-${block.tools[0]?.sourceIndex ?? index}`;
   }
   if (block.kind === 'tool') return toolStackKey({ tool: block.tool, sourceIndex: block.sourceIndex });
   return `${block.kind}-${block.sourceIndex}`;
-}
-
-export type ToolStackRenderBlock = Extract<AssistantRenderBlock, { kind: 'tool-stack' }>;
-
-export interface ToolGroupExpansionState {
-  isOpen(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean;
-  toggle(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean;
-  prune(turns: readonly ChatTurn[]): void;
-}
-
-export function createToolGroupExpansionState(): ToolGroupExpansionState {
-  const overrides = new Map<string, Map<string, boolean>>();
-
-  function isOpen(turn: ChatTurn, block: ToolStackRenderBlock, index: number): boolean {
-    const override = overrides.get(turn.id)?.get(renderBlockKey(block, index));
-    return override ?? !block.collapsedByDefault;
-  }
-
-  return {
-    isOpen,
-    toggle(turn, block, index) {
-      const open = !isOpen(turn, block, index);
-      let turnOverrides = overrides.get(turn.id);
-      if (!turnOverrides) {
-        turnOverrides = new Map<string, boolean>();
-        overrides.set(turn.id, turnOverrides);
-      }
-      turnOverrides.set(renderBlockKey(block, index), open);
-      return open;
-    },
-    prune(turns) {
-      const currentIds = new Set(turns.map((turn) => turn.id));
-      for (const turnId of overrides.keys()) {
-        if (!currentIds.has(turnId)) overrides.delete(turnId);
-      }
-    },
-  };
-}
-
-export interface DeferredToolGroupProjection {
-  leaders: ReadonlyMap<string, ToolStackRenderBlock>;
-  continuations: ReadonlySet<string>;
-}
-
-export function projectDeferredToolGroups(turns: readonly ChatTurn[]): DeferredToolGroupProjection {
-  const leaders = new Map<string, ToolStackRenderBlock>();
-  const continuations = new Set<string>();
-  let lastReplyIndex = -1;
-  turns.forEach((turn, sourceIndex) => {
-    if (turn.role !== 'assistant') return;
-    const hasReply = turnBlocks(turn).some((block) => (
-      block.kind === 'text' && block.text.trim().length > 0
-    ));
-    if (hasReply) lastReplyIndex = sourceIndex;
-  });
-
-  let run: { turn: ChatTurn; item: ToolStackItem; sourceIndex: number }[] = [];
-  const flush = () => {
-    const [first] = run;
-    if (first) {
-      const collapsedByDefault = first.sourceIndex < lastReplyIndex;
-      if (run.length > 1 || collapsedByDefault) {
-        leaders.set(first.turn.id, {
-          kind: 'tool-stack',
-          tools: run.map((entry) => entry.item),
-          collapsedByDefault,
-        });
-        for (const entry of run.slice(1)) continuations.add(entry.turn.id);
-      }
-    }
-    run = [];
-  };
-
-  turns.forEach((turn, sourceIndex) => {
-    if (turn.role === 'assistant' && turn.contentDeferred && turn.tools?.length) {
-      for (const tool of turn.tools) {
-        run.push({
-          turn,
-          sourceIndex,
-          item: { tool, sourceIndex, sourceTurn: turn, sourceKey: turn.id },
-        });
-      }
-      return;
-    }
-    if (turn.role === 'assistant' && turnBlocks(turn).every((block) => (
-      (block.kind === 'text' && block.text.trim().length === 0)
-      || (block.kind === 'thinking' && block.thinking.trim().length === 0)
-    ))) return;
-    flush();
-  });
-  flush();
-  return { leaders, continuations };
 }

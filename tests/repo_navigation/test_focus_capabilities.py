@@ -146,6 +146,18 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/focus/projectionEventDecoder.ts",
                     "isFocusTranscriptWindow",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/toolGroupPresentation.ts",
+                    "projectTranscriptToolGroups",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/toolGroupPresentation.ts",
+                    "createToolGroupExpansion",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/chat/transcriptScrollAnchor.ts",
+                    "restoreTranscriptScrollAnchor",
+                ),
             ),
         )
 

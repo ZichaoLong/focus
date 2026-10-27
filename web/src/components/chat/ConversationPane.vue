@@ -702,10 +702,16 @@ const historyAutoLoadArmed = computed({
 });
 const newerAutoLoadArmed = computed(() => historyAutoLoadDirection.value === 'newer');
 let transcriptAnchor: TranscriptScrollAnchor | null = null;
+function currentTranscriptAnchor(pane: HTMLElement): TranscriptScrollAnchor | null {
+  // A correction's own scroll event must not select newly inserted content
+  // above the reader's anchor before its delayed measurements have settled.
+  return transcriptAnchor?.scrollTop === pane.scrollTop
+    ? transcriptAnchor : captureTranscriptScrollAnchor(pane);
+}
 function reportTranscriptViewport(): void {
   const pane = panesRef.value;
   if (!props.continuousTranscript || !pane) return;
-  const anchor = captureTranscriptScrollAnchor(pane);
+  const anchor = currentTranscriptAnchor(pane);
   transcriptAnchor = !following.value && !promptNavigation.ownsScroll() && !isPinned() ? anchor : null;
   props.updateTranscriptViewport?.(anchor?.id ?? null, following.value && !props.hasNewerMessages);
 }
@@ -719,10 +725,13 @@ watch(() => props.turns, async () => {
   const pane = panesRef.value;
   if (!props.continuousTranscript || !pane || promptNavigation.ownsScroll()
     || (following.value && !historyLoadInProgress.value)) return;
-  const anchor = captureTranscriptScrollAnchor(pane);
+  const anchor = currentTranscriptAnchor(pane);
   const fence = captureScrollWriteFence();
   await nextTick();
   if (!anchor || !scrollWriteFenceIsCurrent(fence)) return;
+  // A page can replace a group header during its click animation. Transfer
+  // position keeping to the source-member anchor before the old pin can write.
+  if (pinEl && !pinEl.isConnected) cancelScrollPin();
   transcriptAnchor = anchor;
   // This Vue DOM transaction can clamp scrollTop when it evicts an edge page.
   // That synchronous clamp is layout movement, not touch or inertial motion.
@@ -1154,6 +1163,13 @@ function isPinned(): boolean {
   return performance.now() < pinUntil;
 }
 
+function cancelScrollPin(): void {
+  pinUntil = 0;
+  pinEl = null;
+  if (pinRaf) cancelRaf(pinRaf);
+  pinRaf = 0;
+}
+
 function pinScrollFor(el: HTMLElement, ms = 260): void {
   if (promptNavigation.ownsScroll()) {
     claimOrdinaryScrollAuthority();
@@ -1167,8 +1183,8 @@ function pinScrollFor(el: HTMLElement, ms = 260): void {
   if (pinRaf) return;
   const tick = () => {
     pinRaf = 0;
-    if (performance.now() >= pinUntil || !pinEl) {
-      pinEl = null;
+    if (performance.now() >= pinUntil || !pinEl?.isConnected) {
+      cancelScrollPin();
       return;
     }
     const delta = pinEl.getBoundingClientRect().top - pinTargetTop;
@@ -1500,12 +1516,7 @@ function cancelOrdinaryScrollWrites(): void {
 
   userActionFollowUntil = 0;
   cancelScheduledFollow();
-  pinUntil = 0;
-  pinEl = null;
-  if (pinRaf) {
-    cancelRaf(pinRaf);
-    pinRaf = 0;
-  }
+  cancelScrollPin();
 
   if (el) {
     const top = el.scrollTop;

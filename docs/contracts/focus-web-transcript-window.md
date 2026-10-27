@@ -14,6 +14,8 @@ reads frozen inputs and projects items. `createFocusTranscript`, through `Transc
 window; `createFocusPromptHistory` owns the paginated Prompt directory, while
 `createFocusHistoryNavigation` retains legacy summary navigation. `TranscriptRow.vue`
 owns visibility and measured heights, never history or sending authority.
+`toolGroupPresentation.ts` derives tool groups and browser-local expansion choices without
+changing source rows in the transcript window.
 
 ## Control state and body reads
 
@@ -102,6 +104,40 @@ Tool source-JSON detail also displays the selected tool's name and invocation su
 context is captured with the request, retained during loading/errors and cleared with the
 content. Old requests cannot replace a newer tool's content or title.
 Explicit full-read transfer/memory costs depend on the chosen item and its bounded source page.
+
+## Tool group presentation
+
+Consecutive tool-summary rows within one `rawTurnId` form a presentation group. Blank
+text/reasoning placeholders do not break a group; nonempty replies, visible reasoning,
+user messages and other semantic items do. Groups never cross source turns. A later
+nonempty assistant text reply in the loaded window makes preceding tool groups collapsed
+by default. Derive this default from loaded content without scanning history. Multiple
+tools without a later reply start expanded; a lone tool stays standalone until a later
+reply makes it foldable. Headers summarize count and status, preferring running, then
+error, then done.
+
+Explicit expansion/collapse overrides the default. Retain choices by stable source-row
+identity across prepends, leader changes, splits and merges. The most recent choice wins
+when differently toggled groups join and propagates to new members. Evicted members lose
+their choices; retain no group state after all members leave the window. Automatic folding
+must preserve rows containing focus or selection endpoints by keeping their group open
+until another user choice or member eviction. Legacy whole-turn groups share this choice
+owner, identifying members by turn and tool.
+
+Presentation groups never replace, reparent or merge source rows. Each tool keeps its own
+`TranscriptRow` and exact-item detail action. Folding unmounts member tool components,
+retaining source-row shells and a separate header. Expansion still virtualizes each row
+within the existing approximately 900px overscan, without mounting an entire large group.
+Zero heights caused by folding must not overwrite valid row measurements.
+
+Resolve header anchors through a retained source member, so prepending an earlier leader
+does not invalidate an anchor. When folding hides an anchored source row, the existing
+transcript scroll owner resolves it to the current header containing that member and
+preserves the reading position. Layout corrections continue to preserve touch/inertia,
+without adding another scroll owner. Grouping does not change DTOs, cursors, page budgets,
+source copy/export or exact turn/item detail reads.
+If paging replaces a header during its click pin, release the detached DOM pin and hand
+position keeping back to the same source-member anchor.
 
 ## Reply times and long replies
 

@@ -2,8 +2,9 @@
 import { computed, onMounted, onBeforeUnmount, provide, ref } from 'vue';
 import type { ChatTurn } from '../../types';
 import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights';
+import { isTranscriptRowPinned } from './transcriptScrollAnchor';
 
-const props = defineProps<{ turn: ChatTurn }>();
+const props = withDefaults(defineProps<{ turn: ChatTurn; folded?: boolean }>(), { folded: false });
 provide(markdownChunkHeightsKey, new Map());
 const element = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === 'undefined');
@@ -13,15 +14,6 @@ const estimate = computed(() => Math.min(1200, Math.max(64,
 let intersection: IntersectionObserver | null = null;
 let resize: ResizeObserver | null = null;
 
-function pinned(): boolean {
-  const el = element.value;
-  if (!el) return false;
-  const selection = el.ownerDocument.getSelection();
-  return el.contains(el.ownerDocument.activeElement)
-    || !!(selection && !selection.isCollapsed
-      && (el.contains(selection.anchorNode) || el.contains(selection.focusNode)));
-}
-
 onMounted(() => {
   const el = element.value;
   if (!el || !props.turn.itemId || typeof IntersectionObserver === 'undefined') return;
@@ -29,8 +21,9 @@ onMounted(() => {
     const entry = entries[0];
     if (!entry) return;
     if (entry.isIntersecting) visible.value = true;
-    else if (!pinned()) {
-      if (visible.value) height.value = el.getBoundingClientRect().height;
+    else if (!isTranscriptRowPinned(el)) {
+      const measured = el.getBoundingClientRect().height;
+      if (visible.value && measured > 0) height.value = measured;
       visible.value = false;
     }
   }, { root: el.closest('.chat-scroll, .panes'), rootMargin: '900px 0px' });
@@ -46,17 +39,19 @@ onBeforeUnmount(() => { intersection?.disconnect(); resize?.disconnect(); });
 </script>
 <template>
   <div v-if="turn.itemId" ref="element" class="transcript-row turn-anchor"
+    :hidden="folded"
     :class="{ 'transcript-assistant': turn.role === 'assistant' }"
     :data-turn-id="turn.id"
     :data-raw-turn-id="turn.rawTurnId"
     :data-prompt-id="turn.role === 'user' ? turn.id : undefined"
     :style="visible ? undefined : { height: `${height ?? estimate}px` }">
-    <slot v-if="visible" />
+    <slot v-if="visible && !folded" />
   </div>
   <slot v-else />
 </template>
 <style scoped>
 .transcript-row { display: flow-root; width: 100%; margin-top: var(--chat-turn-gap); }
+.transcript-row[hidden] { display: none; }
 .transcript-assistant { margin-top: 10px; }
 .transcript-row:first-child { margin-top: 0; }
 /* This row already owns offscreen mounting and measured placeholders.
