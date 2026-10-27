@@ -25,6 +25,7 @@ directory:
 
 ```bash
 npm ci
+npx playwright install chromium
 npm run typecheck
 npm test
 npm run check:style
@@ -32,6 +33,14 @@ npm run check:kimi-provenance -- --upstream /path/to/kimi-code
 npm run build
 npm run check:notices
 ```
+
+`npm test` and the tool-output/history capability checks include Chromium
+regressions against the real conversation pane. On Linux, use
+`npx playwright install --with-deps chromium` if browser system libraries are
+missing. To use an existing compatible browser, set
+`FOCUS_TEST_CHROMIUM_EXECUTABLE=/absolute/path/to/chromium` for the test command.
+The browser fixture starts its own local Vite server and needs no running Focus
+service.
 
 `npm run build` writes the packaged static assets to
 `../bot/web_assets/dist`.  It also regenerates the browser-delivery third-party
