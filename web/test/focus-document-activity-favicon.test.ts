@@ -86,7 +86,7 @@ describe('Focus Web document activity favicon', () => {
     expect(localStorage.getItem(STORAGE_KEYS.activityFaviconEnabled)).toBeNull();
   });
 
-  it('uses a fading trail for working frames', () => {
+  it('uses four discrete half-disc frames in Kimi-style order', () => {
     vi.useFakeTimers();
     const connected = ref(true);
     const working = ref(true);
@@ -98,11 +98,21 @@ describe('Focus Web document activity favicon', () => {
       target,
     );
 
-    const svg = decodeSvgDataUrl(target.href());
-    expect(svg).toContain('<linearGradient id="focus-working-tail"');
-    expect(svg).toContain('stop-opacity="0"');
-    expect(svg).toContain('stop-opacity=".75"');
-    expect(svg).toContain('stroke="url(#focus-working-tail)"');
+    const firstFrame = target.href();
+    const firstSvg = decodeSvgDataUrl(firstFrame);
+    expect(firstSvg).toContain('<path d="M32 8A24 24 0 0 0 32 56Z" fill="#1783ff"');
+    expect(firstSvg).toContain('rotate(0 32 32)');
+    expect(firstSvg).not.toContain('<linearGradient');
+
+    const frames = [firstFrame];
+    for (const rotation of [270, 180, 90, 0]) {
+      vi.advanceTimersByTime(250);
+      const frame = target.href();
+      expect(decodeSvgDataUrl(frame)).toContain(`rotate(${rotation} 32 32)`);
+      frames.push(frame);
+    }
+    expect(new Set(frames).size).toBe(4);
+    expect(frames[4]).toBe(firstFrame);
 
     stop();
   });
@@ -127,7 +137,7 @@ describe('Focus Web document activity favicon', () => {
     expect(firstFrame).not.toBe('focus-idle.svg');
     expect(vi.getTimerCount()).toBe(1);
 
-    vi.advanceTimersByTime(41);
+    vi.advanceTimersByTime(249);
     expect(target.href()).toBe(firstFrame);
     vi.advanceTimersByTime(1);
     expect(target.href()).not.toBe(firstFrame);
@@ -184,7 +194,7 @@ describe('Focus Web document activity favicon', () => {
     );
 
     const hiddenFrame = target.href();
-    vi.advanceTimersByTime(82);
+    vi.advanceTimersByTime(499);
     expect(target.href()).toBe(hiddenFrame);
     vi.advanceTimersByTime(1);
     const secondHiddenFrame = target.href();
@@ -195,11 +205,11 @@ describe('Focus Web document activity favicon', () => {
     working.value = true;
     const visibleFrame = target.href();
     expect(visibleFrame).toBe(hiddenFrame);
-    vi.advanceTimersByTime(41);
+    vi.advanceTimersByTime(249);
     expect(target.href()).toBe(visibleFrame);
     vi.advanceTimersByTime(1);
     expect(target.href()).not.toBe(visibleFrame);
-    vi.advanceTimersByTime(42);
+    vi.advanceTimersByTime(250);
     expect(target.href()).toBe(secondHiddenFrame);
 
     stop();

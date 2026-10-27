@@ -13,10 +13,11 @@ import {
   STORAGE_KEYS,
 } from '../lib/storage';
 
-const VISIBLE_FRAME_INTERVAL_MS = 42;
-const HIDDEN_FRAME_INTERVAL_MS = 83;
+const VISIBLE_FRAME_INTERVAL_MS = 250;
+const HIDDEN_FRAME_INTERVAL_MS = 500;
 const HIDDEN_FRAME_STEP = 2;
-const WORKING_FRAME_COUNT = 24;
+const WORKING_FRAME_ROTATIONS = [0, 270, 180, 90] as const;
+const WORKING_FRAME_COUNT = WORKING_FRAME_ROTATIONS.length;
 
 interface DocumentActivityFaviconTarget {
   readonly idleHref: string;
@@ -57,18 +58,9 @@ const WORKING_HREFS = Object.freeze(Array.from(
   { length: WORKING_FRAME_COUNT },
   (_unused, index) => svgDataUrl(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
-    + '<defs>'
-    + '<linearGradient id="focus-working-tail" x1="0%" y1="100%" x2="100%" y2="0%">'
-    + '<stop offset="0%" stop-color="#1783ff" stop-opacity="0"/>'
-    + '<stop offset="28%" stop-color="#1783ff" stop-opacity=".12"/>'
-    + '<stop offset="58%" stop-color="#1783ff" stop-opacity=".4"/>'
-    + '<stop offset="82%" stop-color="#1783ff" stop-opacity=".75"/>'
-    + '<stop offset="100%" stop-color="#1783ff"/>'
-    + '</linearGradient>'
-    + '</defs>'
-    + '<circle cx="32" cy="32" r="24" fill="none" stroke="#dbeafe" stroke-width="8"/>'
-    + `<g transform="rotate(${index * 15} 32 32)">`
-    + '<path d="M11.22 44A24 24 0 0 1 32 8" fill="none" stroke="url(#focus-working-tail)" stroke-width="8" stroke-linecap="round"/>'
+    + '<circle cx="32" cy="32" r="24" fill="#eff6ff" stroke="#dbeafe" stroke-width="4"/>'
+    + `<g transform="rotate(${WORKING_FRAME_ROTATIONS[index]} 32 32)">`
+    + '<path d="M32 8A24 24 0 0 0 32 56Z" fill="#1783ff"/>'
     + '</g>'
     + '</svg>',
   ),
