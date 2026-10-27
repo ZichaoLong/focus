@@ -53,7 +53,7 @@ bash install.sh
 如需指定解释器，可执行 `FOCUS_INSTALL_PYTHON=/path/to/python3.13 bash install.sh`。
 
 需要安装当前源码 workspace，而不是 GitHub Release 时，在首次 clone、
-`web/package-lock.json` 变化或 `node_modules` 缺失后先执行一次 `npm --prefix web ci`，
+`web/package-lock.json` 变化或 `node_modules` 缺失后先执行一次 `npm --prefix web ci --include=dev`，
 日常构建和安装只需：
 
 ```bash

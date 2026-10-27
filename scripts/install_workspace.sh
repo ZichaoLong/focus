@@ -11,7 +11,7 @@ usage() {
     "" \
     "可选迁移参数会原样转发给 install.sh；artifact 来源始终是当前 workspace。" \
     "首次 clone、web/package-lock.json 变化或 node_modules 缺失时，请先运行：" \
-    "  npm --prefix web ci"
+    "  npm --prefix web ci --include=dev"
 }
 
 installer_args=()
@@ -67,7 +67,24 @@ if ! select_workspace_python; then
   exit 1
 fi
 
-npm --prefix "$repo_root/web" run build
+if npm --prefix "$repo_root/web" run build; then
+  :
+else
+  build_status=$?
+  if [[ ! -x "$repo_root/web/node_modules/.bin/vite" ]]; then
+    {
+      printf '%s\n' "未找到可执行的本地 Vite。请先安装 Web 依赖（含开发依赖）："
+      printf '  npm --prefix %q ci --include=dev\n' "$repo_root/web"
+      printf '%s\n' "安装成功后重试："
+      printf '  bash %q' "$repo_root/scripts/install_workspace.sh"
+      if [[ "${#installer_args[@]}" -gt 0 ]]; then
+        printf ' %q' "${installer_args[@]}"
+      fi
+      printf '\n'
+    } >&2
+  fi
+  exit "$build_status"
+fi
 
 workspace_artifact_dir="$(mktemp -d "${TMPDIR:-/tmp}/focus-workspace-install.XXXXXX")"
 cleanup_workspace_artifacts() {

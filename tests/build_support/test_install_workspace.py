@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -33,7 +34,82 @@ class InstallWorkspaceScriptTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("scripts/install_workspace.sh", result.stdout)
-        self.assertIn("npm --prefix web ci", result.stdout)
+        self.assertIn("npm --prefix web ci --include=dev", result.stdout)
+
+    def test_build_failure_preserves_error_and_guides_missing_vite_recovery(self) -> None:
+        for vite_present, build_status in ((False, 127), (True, 42)):
+            with self.subTest(vite_present=vite_present), tempfile.TemporaryDirectory() as tmpdir:
+                root = pathlib.Path(tmpdir)
+                workspace = root / "workspace with spaces"
+                scripts = workspace / "scripts"
+                scripts.mkdir(parents=True)
+                script = scripts / "install_workspace.sh"
+                shutil.copyfile(self.script, script)
+                if vite_present:
+                    vite = workspace / "web" / "node_modules" / ".bin" / "vite"
+                    vite.parent.mkdir(parents=True)
+                    self._write_executable(vite, "#!/usr/bin/env bash\nexit 0\n")
+                fake_bin = root / "fake bin"
+                fake_bin.mkdir()
+                self._write_executable(
+                    fake_bin / "npm",
+                    """
+                    #!/usr/bin/env bash
+                    printf '%s\\n' 'original build error' >&2
+                    exit "$FOCUS_TEST_BUILD_STATUS"
+                    """,
+                )
+                fake_python = fake_bin / "python"
+                self._write_executable(
+                    fake_python,
+                    """
+                    #!/usr/bin/env bash
+                    if [[ "${1:-}" == "-c" ]]; then
+                      exit 0
+                    fi
+                    touch "$FOCUS_TEST_UNEXPECTED_BUILD"
+                    exit 97
+                    """,
+                )
+                unexpected_build = root / "unexpected-build"
+                temporary_root = root / "temporary artifacts"
+                temporary_root.mkdir()
+                result = subprocess.run(
+                    ["bash", str(script), "--migrate-from-feishu-codex"],
+                    cwd=root,
+                    env={
+                        **os.environ,
+                        "PATH": f"{fake_bin}{os.pathsep}{os.environ.get('PATH', '')}",
+                        "FOCUS_INSTALL_PYTHON": str(fake_python),
+                        "FOCUS_TEST_BUILD_STATUS": str(build_status),
+                        "FOCUS_TEST_UNEXPECTED_BUILD": str(unexpected_build),
+                        "TMPDIR": str(temporary_root),
+                    },
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, build_status, result.stderr)
+                self.assertIn("original build error", result.stderr)
+                self.assertFalse(unexpected_build.exists())
+                self.assertEqual(list(temporary_root.iterdir()), [])
+                if vite_present:
+                    self.assertNotIn("ci --include=dev", result.stderr)
+                else:
+                    self.assertIn("Vite", result.stderr)
+                    commands = [
+                        shlex.split(line.strip())
+                        for line in result.stderr.splitlines()
+                        if line.startswith("  ")
+                    ]
+                    self.assertEqual(
+                        commands,
+                        [
+                            ["npm", "--prefix", str(workspace / "web"), "ci", "--include=dev"],
+                            ["bash", str(script), "--migrate-from-feishu-codex"],
+                        ],
+                    )
 
     def test_rejects_artifact_source_override(self) -> None:
         environment = {
