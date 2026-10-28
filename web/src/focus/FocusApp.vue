@@ -14,7 +14,7 @@ import Icon from '../components/ui/Icon.vue';
 import IconButton from '../components/ui/IconButton.vue';
 import SegmentedControl from '../components/ui/SegmentedControl.vue';
 import ConfirmDialogHost from '../components/dialogs/ConfirmDialogHost.vue';
-import type { AgentMember, ChatTurn, ComposerCapabilities, PromptAttachment, ToolCall, ToolMedia, TurnAttachment } from '../types';
+import type { AgentMember, ChatTurn, ComposerCapabilities, PromptAttachment, ToolCall, ToolMedia } from '../types';
 import type { ComposerSubmission } from '../components/chat/composerSubmission';
 import { useAppearance } from '../composables/client/useAppearance';
 import { useNarrowViewport } from '../composables/useNarrowViewport';
@@ -494,11 +494,6 @@ async function confirmProcessLocalMutationDiscard(
     variant: 'danger',
   });
   if (approved) await client.discardUnknownProcessLocalMutation(threadId);
-}
-
-function handleCopyMessageToComposer(payload: { text: string; attachments?: TurnAttachment[] }): void {
-  conversationPaneRef.value?.loadComposerForEdit(payload.text, payload.attachments);
-  conversationPaneRef.value?.focusComposer();
 }
 
 async function restoreForkPrompt(): Promise<void> {
@@ -1086,7 +1081,6 @@ onUnmounted(() => {
           @open-tool-diff="openToolDiff"
           @open-agent="openAgent"
           @search-conversation="openConversationSearch"
-          @copy-message-to-composer="handleCopyMessageToComposer"
           @edit-prompt="client.forkThread(client.activeThreadId.value, $event)"
           @rename-session="(id, title) => client.renameThread(id, title)"
           @archive-session="threadActions?.confirmArchiveThread($event)"

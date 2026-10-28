@@ -20,7 +20,6 @@ export default {
   viewSummary: '查看摘要',
   summaryTitle: '压缩摘要',
   activatedSkill: '已激活技能: {name}',
-  copyToComposerTooltip: '复制到输入框，作为新的后续消息（历史不会改变）',
   yesterday: '昨天',
   loadOlder: '加载更早的消息',
   loadNewer: '加载较新的消息',

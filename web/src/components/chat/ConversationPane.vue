@@ -204,8 +204,6 @@ const emit = defineEmits<{
   /** Chat header / files pane: focus the diff detail layer and refresh git status. */
   openChanges: [];
   refreshGitStatus: [];
-  /** Copy a message into the composer as an unsent follow-up draft. */
-  copyMessageToComposer: [payload: { text: string; attachments?: TurnAttachment[] }];
   editPrompt: [target: { turn_id: string; item_id: string }];
   /** Empty-composer workspace picker: start a new conversation elsewhere. */
   selectWorkspace: [workspaceId: string];
@@ -356,8 +354,8 @@ const dockedComposerRef = ref<ComposerHandle | null>(null);
 const goalExpandSignal = ref(0);
 
 /** Load text (and any attachments) into whichever composer is currently mounted
-    (docked vs the empty-session composer). Used when a message is copied into
-    a new draft, and by the queue when a pending prompt is loaded for edit.
+    (docked vs the empty-session composer). Used when loading a draft, and by
+    the queue when a pending prompt is loaded for edit.
     Returns false when no composer is actually able to receive the content (e.g.
     the dock is showing a pending question/approval and the composer is hidden),
     so the caller can avoid dropping the prompt. */
@@ -1392,21 +1390,6 @@ function handleComposerSubmit(payload: ComposerSubmission): void {
   emit('submit', payload);
 }
 
-// Copying a historical message creates an unsent follow-up draft. It does not
-// alter the transcript, but moving focus to the dock is still a user action so
-// future new messages should follow the bottom.
-function handleCopyMessageToComposer(payload: {
-  text: string;
-  attachments?: TurnAttachment[];
-}): void {
-  claimOrdinaryScrollAuthority();
-  historyAutoLoadArmed.value = false;
-  following.value = true;
-  showPill.value = false;
-  userActionFollowUntil = Date.now() + USER_ACTION_FOLLOW_LOCK_MS;
-  emit('copyMessageToComposer', payload);
-}
-
 // A queued message was clicked for editing: load its text (and any attachments)
 // back into the active composer, then let the parent dequeue it (mirrors the old
 // dock-queue flow). Only dequeue when the load actually succeeds — if the dock is
@@ -2123,7 +2106,6 @@ defineExpose({
               @open-compaction="emit('openCompaction', $event)"
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
-              @copy-message-to-composer="handleCopyMessageToComposer"
               @edit-prompt="emit('editPrompt', $event)"
               @load-older-messages="handleLoadOlderMessages"
               @load-newer-messages="handleLoadNewerMessages"

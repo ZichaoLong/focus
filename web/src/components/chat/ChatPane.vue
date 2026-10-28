@@ -55,7 +55,7 @@ const props = withDefaults(
     /**
      * The main conversation has an unfinished prompt (submitted, or a main
      * turn in flight). Renders the moon-spinner placeholder at the end of the
-     * transcript and gates copying the last message into the composer.
+     * transcript.
      */
     working?: boolean;
     /** Switches the CSS-only working moon to the faster visual cadence. */
@@ -302,8 +302,6 @@ const emit = defineEmits<{
   openAgent: [toolCallId: string];
   /** Show an Edit/Write tool call's diff in the right-side panel. */
   openToolDiff: [tool: ToolCallData];
-  /** Copy a message into the composer as a new, unsent follow-up draft. */
-  copyMessageToComposer: [payload: { text: string; attachments?: TurnAttachment[] }];
   editPrompt: [target: { turn_id: string; item_id: string }];
   /** Fetch the next older page of messages (triggered by top sentinel visibility or click). */
   loadOlderMessages: [source: 'sentinel' | 'button'];
@@ -371,28 +369,6 @@ function onQueueDragEnd(): void {
   dragOver.value = null;
 }
 
-// Id of the most recent user turn — only that message offers a compact
-// "copy into composer" affordance. It never alters the persisted transcript.
-const lastUserTurnId = computed<string | null>(() => {
-  for (let i = props.turns.length - 1; i >= 0; i--) {
-    if (props.turns[i]!.role === 'user') return props.turns[i]!.id;
-  }
-  return null;
-});
-
-/** Whether to offer a follow-up draft from this message: latest user message,
-    only while the conversation has nothing unfinished and it isn't a slash activation. */
-function canCopyMessageToComposer(turn: ChatTurn): boolean {
-  return (
-    turn.role === 'user' &&
-    !turn.contentDeferred &&
-    turn.id === lastUserTurnId.value &&
-    !props.working &&
-    !turn.skillActivation &&
-    !turn.pluginCommand
-  );
-}
-
 function userTurnHasPresentation(turn: ChatTurn): boolean {
   return turn.text.length > 0
     || (turn.attachments?.length ?? 0) > 0
@@ -419,10 +395,6 @@ function compactionDividerLabel(turn: ChatTurn): string {
 
 // Per-turn copy button state (keyed by turn id)
 const copiedTurn = ref<string | null>(null);
-
-function copyMessageToComposer(turn: ChatTurn): void {
-  emit('copyMessageToComposer', { text: turn.text, attachments: turn.attachments });
-}
 
 function assistantRunEndingAt(index: number): ChatTurn[] {
   const run: ChatTurn[] = [];
@@ -562,8 +534,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
       </div>
       <TranscriptRow :turn="turn" :folded="!deferredGroupOpen(turn)">
-      <!-- User turn → right-aligned soft-blue bubble (copy-to-composer lives
-           below the bubble, in the meta row). -->
+      <!-- User turn → right-aligned soft-blue bubble with actions below. -->
       <template v-if="turn.role === 'user'">
         <div v-if="userTurnHasPresentation(turn)" class="u-turn">
           <div class="u-bub" :class="{ 'turn-anchor': !turn.itemId }" :data-turn-id="turn.itemId ? undefined : turn.id">
@@ -603,23 +574,13 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             <!-- User input renders verbatim (pre-wrap), never through Markdown -->
             <div v-else class="u-text">{{ turn.text }}</div>
           </div>
-          <div v-if="turn.createdAt || canCopyMessageToComposer(turn) || turn.itemId" class="u-meta">
+          <div v-if="turn.createdAt || turn.itemId || (turn.text.trim().length > 0 && !turn.contentDeferred)" class="u-meta">
             <button v-if="historyEditAvailable && turn.rawTurnId && turn.itemId"
               type="button" class="u-edit"
               :aria-label="t('focus.editAndFork')"
               :title="t('focus.editAndForkHelp')"
               @click="emit('editPrompt', { turn_id: turn.rawTurnId, item_id: turn.itemId })"
             >{{ t('focus.editAndFork') }}</button>
-            <div v-if="canCopyMessageToComposer(turn)" class="u-edit-wrap">
-              <button
-                type="button"
-                class="u-edit"
-                :aria-label="t('conversation.copyToComposerTooltip')"
-                @click="copyMessageToComposer(turn)"
-              >
-                <Icon name="pencil" size="sm" />
-              </button>
-            </div>
             <button
               v-if="turn.text.trim().length > 0 && !turn.contentDeferred"
               type="button"
@@ -923,8 +884,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 .transcript-notice button { color: var(--color-accent); background: none; border: none; cursor: pointer; font: inherit; }
 .transcript-notice { padding: 12px 0; display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* Copy-to-composer affordance on the most recent user message. It creates only
-   an unsent draft; Focus never rewrites app-server history from this control. */
+/* History edit-and-fork action below a user message. */
 .u-edit {
   display: inline-flex;
   align-items: center;
@@ -940,10 +900,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
   cursor: pointer;
   opacity: 0.7;
   transition: opacity 0.12s, color 0.12s, background-color 0.12s;
-}
-.u-edit svg {
-  display: block;
-  flex: none;
 }
 .u-edit:hover { opacity: 1; color: var(--color-accent); background: var(--hover); }
 /* Copy button — icon-only, shares the message action muted→hover style. */
@@ -967,11 +923,6 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 }
 .u-copy svg { display: block; flex: none; }
 .u-copy:hover { opacity: 1; color: var(--color-accent); background: var(--hover); }
-/* Compact bubble presentation: right-align the message action below the bubble. */
-.u-edit-wrap { display: flex; justify-content: flex-end; }
-.chat > .u-edit-wrap { margin-top: 4px; }
-.chat > .u-edit-wrap + .a-msg { margin-top: 8px; }
-
 /* Compaction divider — a full-width separator marking where the daemon
    compacted the context. Prior turns above it are untouched; clicking the
    label opens the summary in the right-side panel. */

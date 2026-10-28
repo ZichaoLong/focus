@@ -20,7 +20,6 @@ export default {
   viewSummary: 'View summary',
   summaryTitle: 'Compaction summary',
   activatedSkill: 'Activated skill: {name}',
-  copyToComposerTooltip: 'Copy into the composer as a new follow-up (history is unchanged)',
   yesterday: 'Yesterday',
   loadOlder: 'Load earlier messages',
   loadNewer: 'Load newer messages',
