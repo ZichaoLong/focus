@@ -5,7 +5,7 @@ import type { FocusForkResult } from '../../src/focus/types';
 i18n.global.locale.value = 'zh';
 
 const note = ref<FocusForkResult | null>({ accepted: true, thread_id: 'branch-exact-id',
-  source_thread_id: 'parent', name_warning: '分支已创建，命名未确认。', list_visibility: 'not_found', visibility_diagnostic: '', edit_prompt: null });
+  source_thread_id: 'parent', name_warning: '分支已创建，命名未确认。', list_visibility: 'not_found', visibility_diagnostic: '' });
 createApp({ setup: () => () => h(FocusPrimaryNotices, {
   documentReloadRequired: false, projectionStale: false, projectionReloading: false,
   backendResetOutcomeUnknown: false, error: { message: '', diagnostic: '' },

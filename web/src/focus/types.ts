@@ -689,6 +689,7 @@ export interface FocusRenameResult {
 }
 
 export interface FocusHistoryEditPrompt {
+  thread_id: string;
   turn_id: string;
   item_id: string;
   text: string;
@@ -701,7 +702,6 @@ export interface FocusForkResult {
   name_warning: string;
   list_visibility: FocusWebWireEnum<'fork_list_visibility'>;
   visibility_diagnostic: string;
-  edit_prompt: FocusHistoryEditPrompt | null;
 }
 
 export interface FocusGoalResult extends FocusCoordinates {

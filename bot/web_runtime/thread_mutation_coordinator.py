@@ -8,10 +8,12 @@ attachment, or mutation fact: those remain in their existing state owners.
 
 from __future__ import annotations
 
+import time
+
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from bot.adapters.base import ThreadGoalSummary, ThreadSnapshot
+from bot.adapters.base import ThreadGoalSummary, ThreadItemsPage, ThreadSnapshot
 from bot.codex_protocol.client import CodexRpcError
 from bot.goal_continuation_policy import goal_status_may_continue
 from bot.runtime_loop import RuntimeContextGuard
@@ -128,6 +130,9 @@ class WebThreadMutationPorts:
 
     read_thread: Callable[[str, bool], ThreadSnapshot]
     rename_thread: Callable[[str, str], None]
+    revert_thread: Callable[..., None]
+    list_thread_items: Callable[..., ThreadItemsPage]
+    capture_connection_generation: Callable[[], int]
     set_thread_goal: Callable[..., ThreadGoalSummary]
     clear_thread_goal: Callable[..., bool]
     archive_thread: Callable[..., dict[str, Any]]
@@ -203,6 +208,93 @@ class WebThreadMutationCoordinator:
         self._projection = projection
         self._ports = ports
         self._runtime_context_guard = runtime_context_guard
+
+    def history_edit_prompt(
+        self, client_id: str, thread_id: str, *, turn_id: str, item_id: str,
+    ) -> dict[str, Any]:
+        """Read the original before the browser requests a destructive history edit."""
+        self._runtime_context_guard()
+        require_connected_web_document(self._documents, client_id)
+        thread_id = require_web_thread_id(thread_id)
+        if not turn_id or not item_id or turn_id.strip() != turn_id or item_id.strip() != item_id:
+            raise WebRuntimeError("历史编辑需要确切的 turn ID 和 item ID。", code="invalid_history_target")
+        self._require_paginated_history(thread_id)
+        generation = self._ports.capture_connection_generation()
+        try:
+            text = self._read_edit_prompt(thread_id, turn_id, item_id, generation)
+        except WebRuntimeError:
+            raise
+        except Exception as exc:
+            raise WebRuntimeError(
+                "无法完整读取原 prompt；未回退历史。请刷新后重试。",
+                code="history_edit_unavailable", status=409,
+            ) from exc
+        return {"thread_id": thread_id, "turn_id": turn_id, "item_id": item_id, "text": text}
+
+    def revert_thread(self, client_id: str, thread_id: str, *, turn_id: str) -> dict[str, Any]:
+        self._runtime_context_guard()
+        client_id = require_connected_web_document(self._documents, client_id)
+        thread_id = require_web_thread_id(thread_id)
+        if not turn_id or turn_id.strip() != turn_id:
+            raise WebRuntimeError("历史回退需要确切的 turn ID。", code="invalid_history_target")
+        self._require_paginated_history(thread_id)
+        self._operations.raise_other_writer(client_id, thread_id)
+        generation = self._ports.capture_connection_generation()
+        try:
+            self._operations.run_writer_scoped_control_mutation(
+                client_id, thread_id, operation="revert",
+                call=lambda: self._ports.revert_thread(
+                    thread_id, before_turn_id=turn_id, expected_connection_generation=generation,
+                ),
+            )
+        except WebRuntimeError as exc:
+            if exc.code == "mutation_unknown":
+                self._events.invalidate_thread_history(thread_id, reason="web_thread_revert_unconfirmed")
+            raise
+        self._events.invalidate_thread_history(thread_id, reason="thread/reverted")
+        return {"accepted": True, "thread_id": thread_id}
+
+    def _require_paginated_history(self, thread_id: str) -> None:
+        snapshot = self._direct_targets.read(thread_id, operation="历史编辑")
+        if snapshot.history_mode != "paginated":
+            raise WebRuntimeError(
+                "历史编辑仅支持 paginated 历史；未回退历史。", code="history_edit_unsupported",
+            )
+
+    def _read_edit_prompt(self, thread_id: str, turn_id: str, item_id: str, generation: int) -> str:
+        """Read the first input in the exact upstream turn, never a display preview."""
+        deadline = time.monotonic() + 5.0
+        cursor = None
+        seen: set[str] = set()
+        while time.monotonic() < deadline:
+            page = self._ports.list_thread_items(
+                thread_id, turn_id=turn_id, cursor=cursor, limit=100, sort_direction="asc",
+                timeout=max(0.001, deadline - time.monotonic()), expected_connection_generation=generation,
+            )
+            for entry in page.items:
+                if entry.turn_id != turn_id:
+                    raise WebRuntimeError("上游历史坐标不匹配；未回退历史。", code="history_edit_unsupported")
+                item = entry.item
+                if item.get("type") != "userMessage":
+                    continue
+                if item.get("id") != item_id:
+                    raise WebRuntimeError("同一轮的补充消息不能独立编辑；请选择该轮的首条 prompt。未回退历史。", code="history_edit_unsupported")
+                content = item.get("content")
+                if (not isinstance(content, list) or not content or any(
+                    not isinstance(part, dict) or part.get("type") != "text"
+                    or not isinstance(part.get("text"), str) or part.get("text_elements")
+                    or set(part) - {"type", "text", "text_elements"} for part in content
+                )):
+                    raise WebRuntimeError("此 prompt 含附件、提及或其他结构化输入，暂不能完整恢复，未回退历史。", code="history_edit_unsupported")
+                text = "\n".join(part["text"] for part in content)
+                if not text.strip() or len(text.encode("utf-8")) > 1024 * 1024:
+                    raise WebRuntimeError("原 prompt 为空或超过编辑大小限制；未回退历史。", code="history_edit_unsupported")
+                return text
+            if not page.next_cursor or page.next_cursor in seen:
+                break
+            cursor = page.next_cursor
+            seen.add(cursor)
+        raise WebRuntimeError("未能确认原 prompt，请刷新历史后重试；未回退历史。", code="history_edit_unavailable")
 
     def rename_thread(
         self,

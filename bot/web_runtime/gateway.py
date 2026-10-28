@@ -168,6 +168,8 @@ class WebGatewayPorts:
     resolve_unknown_mutation: Callable[..., dict[str, Any]]
     rename_thread: Callable[..., dict[str, Any]]
     fork_thread: Callable[..., dict[str, Any]]
+    history_edit_prompt: Callable[..., dict[str, Any]]
+    revert_thread: Callable[..., dict[str, Any]]
     compact_thread: Callable[[str, str], dict[str, Any]]
     start_review: Callable[..., dict[str, Any]]
     goal: Callable[[str, str], dict[str, Any]]
@@ -1306,16 +1308,35 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
     async def _handle_fork_thread(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         body = await request_decoder.decode_json_object(request) if request.can_read_body else {}
-        if body and (set(body) != {"turn_id", "item_id"} or any(
-            not isinstance(value, str) or not value or value.strip() != value for value in body.values()
-        )):
+        if body:
+            raise WebRuntimeError("Full fork accepts an empty body only.", code="invalid_fork_request")
+        return web.json_response(await self._document_request_to_thread(
+            self._ports.fork_thread, request, client_id, request.match_info["thread_id"],
+        ))
+
+    async def _handle_history_edit_prompt(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        query = request.query
+        if len(query) != 2 or set(query) != {"turn_id", "item_id"} or any(
+            not value or value.strip() != value for value in query.values()
+        ):
             raise WebRuntimeError("历史编辑需要确切 turn_id 和 item_id。", code="invalid_history_target")
-        return web.json_response(
-            await self._document_request_to_thread(
-                self._ports.fork_thread, request, client_id, request.match_info["thread_id"],
-                **body,
-            )
-        )
+        return web.json_response(await self._document_request_to_thread(
+            self._ports.history_edit_prompt, request, client_id, request.match_info["thread_id"],
+            **query,
+        ))
+
+    async def _handle_revert_thread(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        body = await request_decoder.decode_json_object(request)
+        turn_id = body.get("turn_id")
+        if (set(body) != {"turn_id"} or not isinstance(turn_id, str)
+            or not turn_id or turn_id.strip() != turn_id):
+            raise WebRuntimeError("历史回退需要确切 turn_id。", code="invalid_history_target")
+        return web.json_response(await self._document_request_to_thread(
+            self._ports.revert_thread, request, client_id, request.match_info["thread_id"],
+            turn_id=turn_id,
+        ))
 
     async def _handle_rename_thread(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)

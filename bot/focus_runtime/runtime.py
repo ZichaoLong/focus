@@ -675,6 +675,7 @@ class FocusRuntime:
                     **kwargs,
                 ),
                 rename_thread=self._adapter.rename_thread,
+                revert_thread=self._adapter.revert_thread,
                 get_thread_goal=self._adapter.get_thread_goal,
                 prepare_runtime_lease_preflight=(
                     service_authority.prepare_service_thread_runtime_preflight

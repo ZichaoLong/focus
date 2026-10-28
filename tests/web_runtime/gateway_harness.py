@@ -162,9 +162,17 @@ class WebGatewayHarness(unittest.IsolatedAsyncioTestCase):
                     "args": args,
                     "kwargs": kwargs,
                 },
+                history_edit_prompt=lambda client_id, thread_id, **kwargs: (
+                    self.calls.append(("history_edit_prompt", (client_id, thread_id), kwargs))
+                    or {"thread_id": thread_id, **kwargs, "text": "original"}
+                ),
+                revert_thread=lambda client_id, thread_id, **kwargs: (
+                    self.calls.append(("revert", (client_id, thread_id), kwargs))
+                    or {"accepted": True, "thread_id": thread_id}
+                ),
                 fork_thread=lambda client_id, thread_id, **kwargs: (
                     self.calls.append(("fork", (client_id, thread_id), kwargs))
-                    or {"accepted": True, "thread_id": "fork-1", "source_thread_id": thread_id, "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "", "edit_prompt": None}
+                    or {"accepted": True, "thread_id": "fork-1", "source_thread_id": thread_id, "name_warning": "", "list_visibility": "found", "visibility_diagnostic": ""}
                 ),
                 rename_thread=lambda *args, **kwargs: {
                     "accepted": True,

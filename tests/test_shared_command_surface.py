@@ -76,6 +76,11 @@ class _StubAdapter:
     def compact_thread(self, _thread_id: str) -> None:
         return None
 
+    def revert_thread(
+        self, thread_id: str, *, before_turn_id: str, expected_connection_generation: int,
+    ) -> None:
+        raise NotImplementedError("history revert is exercised by the Web history fixture")
+
     def rename_thread(self, _thread_id: str, _name: str) -> None:
         return None
 

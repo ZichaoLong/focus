@@ -10,12 +10,10 @@ owners; this module only fixes their ordering.
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from bot.adapters.base import ThreadItemsPage, ThreadSnapshot, ThreadSummary
-from bot.codex_protocol.client import CodexRpcPreSendError
+from bot.adapters.base import ThreadSnapshot, ThreadSummary
 from bot.runtime_loop import RuntimeContextGuard
 from bot.stores.web_next_turn_settings_store import WebNextTurnSettings
 from bot.thread_create_transaction import (
@@ -53,8 +51,6 @@ class WebThreadCreatePorts:
     read_thread: Callable[[str, bool], ThreadSnapshot]
     rename_thread: Callable[[str, str], None]
     list_threads_page: Callable[..., tuple[list[ThreadSummary], str | None]]
-    list_thread_items: Callable[..., ThreadItemsPage]
-    capture_connection_generation: Callable[[], int]
 
 
 class WebThreadCreateCoordinator:
@@ -96,7 +92,7 @@ class WebThreadCreateCoordinator:
         self._runtime_context_guard = runtime_context_guard
 
     def fork_thread(
-        self, client_id: str, thread_id: str, *, turn_id: str = "", item_id: str = "",
+        self, client_id: str, thread_id: str,
     ) -> dict[str, Any]:
         """Create an independent persistent branch; selection is a normal Web open."""
         self._runtime_context_guard()
@@ -105,28 +101,6 @@ class WebThreadCreateCoordinator:
         source = self._ports.read_thread(source_id, False)
         require_web_direct_thread_snapshot(source, thread_id=source_id, operation="fork")
         name_warning = ""
-        edit_prompt = None
-        fork_args: dict[str, Any] = {}
-        if turn_id or item_id:
-            if not turn_id or not item_id or turn_id.strip() != turn_id or item_id.strip() != item_id:
-                raise WebRuntimeError("历史编辑需要确切的 turn ID 和 item ID。", code="invalid_history_target")
-            if source.history_mode != "paginated":
-                raise WebRuntimeError("历史编辑仅支持 paginated 历史；未创建分支。", code="history_edit_unsupported")
-            try:
-                generation = self._ports.capture_connection_generation()
-                text = self._read_edit_prompt(source_id, turn_id, item_id, generation)
-            except WebRuntimeError:
-                raise
-            except Exception as exc:
-                logger.warning("History edit input read failed for %s", source_id, exc_info=True)
-                raise WebRuntimeError(
-                    "无法完整读取原 prompt；未创建分支。请刷新历史后重试。",
-                    code="history_edit_unavailable", status=409,
-                    details={"source_thread_id": source_id, "read_error": type(exc).__name__},
-                ) from exc
-            edit_prompt = {"turn_id": turn_id, "item_id": item_id, "text": text}
-            fork_args = {"fork_before_turn_id": turn_id, "fork_connection_generation": generation}
-
         def commit_fork(snapshot: ThreadSnapshot) -> str:
             nonlocal name_warning
             new_id = require_web_thread_id(snapshot.summary.thread_id)
@@ -154,7 +128,6 @@ class WebThreadCreateCoordinator:
             created = self._ports.create_and_commit_thread(
                 fork_from_thread_id=source_id,
                 local_commit=commit_fork,
-                **fork_args,
             )
         except ThreadCreateOutcomeUnknown as exc:
             raise WebRuntimeError(
@@ -162,8 +135,6 @@ class WebThreadCreateCoordinator:
                 code="thread_fork_unknown", status=409,
                 details={"attempt_id": exc.attempt_id, "source_thread_id": source_id},
             ) from exc
-        except CodexRpcPreSendError as exc:
-            raise WebRuntimeError(str(exc), code="history_edit_unavailable", status=409) from exc
         except ThreadCreateLocalCommitFailed as exc:
             raise WebRuntimeError(
                 "The branch was created, but local setup failed. Open it from the session list.",
@@ -192,43 +163,7 @@ class WebThreadCreateCoordinator:
             "name_warning": name_warning,
             "list_visibility": visibility,
             "visibility_diagnostic": visibility_diagnostic,
-            "edit_prompt": edit_prompt,
         }
-
-    def _read_edit_prompt(self, thread_id: str, turn_id: str, item_id: str, generation: int) -> str:
-        """Read the first input in the exact upstream turn, never a display preview."""
-        deadline = time.monotonic() + 5.0
-        cursor = None
-        seen: set[str] = set()
-        while time.monotonic() < deadline:
-            page = self._ports.list_thread_items(
-                thread_id, turn_id=turn_id, cursor=cursor, limit=100, sort_direction="asc",
-                timeout=max(0.001, deadline - time.monotonic()), expected_connection_generation=generation,
-            )
-            for entry in page.items:
-                if entry.turn_id != turn_id:
-                    raise WebRuntimeError("上游历史坐标不匹配；未创建分支。", code="history_edit_unsupported")
-                item = entry.item
-                if item.get("type") != "userMessage":
-                    continue
-                if item.get("id") != item_id:
-                    raise WebRuntimeError("同一轮的补充消息不能独立编辑；请选择该轮的首条 prompt。未创建分支。", code="history_edit_unsupported")
-                content = item.get("content")
-                if (not isinstance(content, list) or not content or any(
-                    not isinstance(part, dict) or part.get("type") != "text"
-                    or not isinstance(part.get("text"), str) or part.get("text_elements")
-                    or set(part) - {"type", "text", "text_elements"} for part in content
-                )):
-                    raise WebRuntimeError("此 prompt 含附件、提及或其他结构化输入，暂不能完整恢复，未创建分支。", code="history_edit_unsupported")
-                text = "\n".join(part["text"] for part in content)
-                if not text.strip() or len(text.encode("utf-8")) > 1024 * 1024:
-                    raise WebRuntimeError("原 prompt 为空或超过编辑大小限制；未创建分支。", code="history_edit_unsupported")
-                return text
-            if not page.next_cursor or page.next_cursor in seen:
-                break
-            cursor = page.next_cursor
-            seen.add(cursor)
-        raise WebRuntimeError("未能确认原 prompt，请刷新历史后重试；未创建分支。", code="history_edit_unavailable")
 
     def start_thread(
         self,

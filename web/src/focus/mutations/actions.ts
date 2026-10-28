@@ -18,6 +18,7 @@ import type { FocusProjectionSync } from '../focusProjectionSync';
 import {
   FocusApiError,
   type FocusForkResult,
+  type FocusHistoryEditPrompt,
   type FocusMeta,
   type FocusMutationDisposition,
   type FocusPromptResultReceipt,
@@ -79,6 +80,8 @@ type FocusMutationApiPort = Pick<
   | 'clientId'
   | 'renameThread'
   | 'forkThread'
+  | 'readHistoryEditPrompt'
+  | 'revertThread'
   | 'compactThread'
   | 'startReview'
   | 'setGoal'
@@ -170,7 +173,9 @@ export interface FocusMutationActions {
     disposition: FocusMutationDisposition,
   ): void;
   renameThread(threadId: string, name: string): Promise<void>;
-  forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult | null>;
+  forkThread(threadId: string): Promise<FocusForkResult | null>;
+  editPrompt(threadId: string, target: { turn_id: string; item_id: string },
+    retainOriginal: (prompt: FocusHistoryEditPrompt) => void): Promise<boolean>;
   compact(): Promise<void>;
   review(target: Record<string, unknown>): Promise<void>;
   createGoal(objective: string): Promise<void>;
@@ -402,19 +407,16 @@ export function createFocusMutationActions(
     );
   }
 
-  async function forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult | null> {
+  async function forkThread(threadId: string): Promise<FocusForkResult | null> {
     if (isDisposed() || options.connection.value !== 'connected'
       || projection.snapshotInvalidated.value || !threadId || actionBusy.value) return null;
     actionBusy.value = true;
     options.clearError();
     try {
-      const result = await (edit ? api.forkThread(threadId, edit) : api.forkThread(threadId));
+      const result = await api.forkThread(threadId);
       if (isDisposed()) return null;
       if (!result.accepted || result.source_thread_id !== threadId || result.thread_id === threadId) {
         throw new Error('Focus could not verify the created branch. Refresh the session list before retrying.');
-      }
-      if (edit && (result.edit_prompt?.turn_id !== edit.turn_id || result.edit_prompt.item_id !== edit.item_id)) {
-        throw new Error(`Branch ${result.thread_id} was created, but the original prompt could not be verified. Open it by ID; do not repeat the fork automatically.`);
       }
       try {
         await projection.refreshThreads();
@@ -444,6 +446,47 @@ export function createFocusMutationActions(
         }
       }
       return null;
+    } finally {
+      if (!isDisposed()) actionBusy.value = false;
+    }
+  }
+
+  async function editPrompt(
+    threadId: string, target: { turn_id: string; item_id: string },
+    retainOriginal: (prompt: FocusHistoryEditPrompt) => void,
+  ): Promise<boolean> {
+    if (isDisposed() || options.connection.value !== 'connected' || actionBusy.value
+      || projection.snapshotInvalidated.value || !navigation.scopeReady.value
+      || navigation.activeThreadId.value !== threadId) return false;
+    const receipt = navigation.scopeReceipt.value;
+    if (!receipt || !navigation.scopeReceiptIsCurrent(receipt)) return false;
+    let dispatched = false;
+    actionBusy.value = true;
+    options.clearError();
+    try {
+      const prompt = await api.readHistoryEditPrompt(threadId, target);
+      if (isDisposed() || !navigation.scopeReceiptIsCurrent(receipt)) return false;
+      if (prompt.thread_id !== threadId || prompt.turn_id !== target.turn_id || prompt.item_id !== target.item_id) {
+        throw new Error('The original prompt could not be verified; history was not changed.');
+      }
+      // Retain the full original before any destructive RPC, including a lost HTTP response.
+      retainOriginal(prompt);
+      dispatched = true;
+      const result = await api.revertThread(threadId, target.turn_id);
+      if (isDisposed()) return false;
+      if (!result.accepted || result.thread_id !== threadId) {
+        throw new Error('The history revert could not be confirmed. Reload this thread before continuing; no automatic retry.');
+      }
+      return true;
+    } catch (error) {
+      if (!isDisposed()) {
+        rememberProcessLocalUnknownFromError(error, threadId, 'revert');
+        const reported = dispatched && (!(error instanceof FocusApiError) || error.status >= 500)
+          ? new Error(`Revert result could not be confirmed. Reload this thread before continuing; no automatic retry. ${String(error)}`)
+          : error;
+        reportErrorIfCurrent(reported, navigation.scopeReceiptIsCurrent(receipt));
+      }
+      return false;
     } finally {
       if (!isDisposed()) actionBusy.value = false;
     }
@@ -964,6 +1007,7 @@ export function createFocusMutationActions(
     settleUnknownMutationFromEvent,
     renameThread,
     forkThread,
+    editPrompt,
     compact,
     review,
     createGoal,

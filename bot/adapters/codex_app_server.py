@@ -491,34 +491,31 @@ class CodexAppServerAdapter(AgentAdapter):
         )
         return snapshot
 
-    def fork_thread(
-        self, thread_id: str, *, before_turn_id: str | None = None,
-        expected_connection_generation: int | None = None,
-    ) -> ThreadSnapshot:
+    def fork_thread(self, thread_id: str) -> ThreadSnapshot:
         """Create a persistent branch without starting a turn or carrying a goal."""
-        params: dict[str, Any] = {"threadId": thread_id, "ephemeral": False, "excludeTurns": True}
-        if before_turn_id is not None:
-            # Older servers may ignore unknown fork fields. Never silently fork
-            # the full history when this operation promises an exact boundary.
-            identity = self._rpc.current_initialize_result(timeout=1.0)
-            if (identity is None or identity[0] != expected_connection_generation
-                or not re.match(r"^\S+/0\.(164|165)\.0(?:\s|$)", str(identity[1].get("userAgent", "")))):
-                raise CodexRpcPreSendError("thread/fork", ValueError(
-                    "历史编辑需要已核实的 Codex app-server 0.164.0 或 0.165.0；未创建分支。"
-                ))
-            params["beforeTurnId"] = require_request_identity(before_turn_id, field="before_turn_id")
-            params["deferGoalContinuation"] = False
         result = self._rpc_request(
-            "thread/fork",
-            params,
-            **({"expected_connection_generation": expected_connection_generation,
-                "require_existing_connection": True, "admit_existing_connection": True}
-               if before_turn_id is not None else {}),
+            "thread/fork", {"threadId": thread_id, "ephemeral": False, "excludeTurns": True},
         )
         _result, snapshot = self._require_thread_snapshot_result("thread/fork", result)
         if snapshot.summary.ephemeral or snapshot.summary.thread_id == thread_id:
             raise ValueError("thread/fork did not return a new persistent thread")
         return snapshot
+
+    def revert_thread(
+        self, thread_id: str, *, before_turn_id: str, expected_connection_generation: int,
+    ) -> None:
+        """Use native same-thread history replacement; never fall back to a fork."""
+        result = self._rpc_request(
+            "thread/revert",
+            {"threadId": require_request_identity(thread_id, field="thread_id"),
+             "beforeTurnId": require_request_identity(before_turn_id, field="before_turn_id")},
+            expected_connection_generation=expected_connection_generation,
+            require_existing_connection=True, admit_existing_connection=True,
+        )
+        self._require_thread_snapshot_result(
+            "thread/revert", result, expected_thread_id=thread_id,
+            expected_history_mode="paginated",
+        )
 
     def resume_thread(
         self,

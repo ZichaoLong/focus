@@ -578,6 +578,11 @@ class _FakeAdapter:
     def compact_thread(self, thread_id: str) -> None:
         self.compact_thread_calls.append(thread_id)
 
+    def revert_thread(
+        self, thread_id: str, *, before_turn_id: str, expected_connection_generation: int,
+    ) -> None:
+        raise NotImplementedError("history revert is exercised by the Web history fixture")
+
     def rename_thread(self, thread_id: str, name: str) -> None:
         self.rename_thread_calls.append((thread_id, name))
 

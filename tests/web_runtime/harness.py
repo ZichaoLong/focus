@@ -256,6 +256,7 @@ class WebRuntimeControllerHarness(unittest.TestCase):
                 start_review=lambda *args, **kwargs: self.fake.start_review(
                     *args, **kwargs
                 ),
+                revert_thread=lambda *args, **kwargs: self.fake.revert_thread(*args, **kwargs),
                 rename_thread=lambda *args, **kwargs: self.fake.rename_thread(
                     *args, **kwargs
                 ),

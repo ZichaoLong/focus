@@ -411,6 +411,15 @@ class WebRuntimeEventCoordinator:
                 detail=dict(runtime_notice.detail),
             )
 
+    def invalidate_thread_history(self, thread_id: str, *, reason: str) -> None:
+        """Fence cached history after a confirmed or uncertain native revert response."""
+        self._runtime_context_guard()
+        self._ports.read_model.observe_notification(thread_id)
+        self._ports.read_model.forget_thread(thread_id)
+        self._transcript_items.pop(thread_id, None)
+        self._projection_successors.pop(thread_id, None)
+        self._ports.publish_projection("thread_invalidated", thread_id=thread_id, reason=reason)
+
     def drop_thread_after_lifecycle(self, thread_id: str) -> None:
         self._runtime_context_guard()
         self._drop_thread_after_lifecycle(thread_id)

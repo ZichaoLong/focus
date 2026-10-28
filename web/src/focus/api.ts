@@ -20,6 +20,7 @@ import type {
   FocusPromptResultReceipt,
   FocusRenameResult,
   FocusForkResult,
+  FocusHistoryEditPrompt,
   FocusThreadList,
   FocusThreadConversationSearchPage,
   FocusThreadScope,
@@ -61,6 +62,7 @@ import {
   decodeFocusUpdateStatus,
   decodeFocusRenameResult,
   decodeFocusForkResult,
+  decodeFocusHistoryEditPrompt,
   decodeFocusRequestResponseResult,
   decodeFocusPromptResultReceipt,
   decodeFocusThreadList,
@@ -296,7 +298,9 @@ export interface FocusWebApiPort {
     mutationId: string,
   ): Promise<FocusMutationResult>;
   renameThread(threadId: string, name: string): Promise<FocusRenameResult>;
-  forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult>;
+  forkThread(threadId: string): Promise<FocusForkResult>;
+  readHistoryEditPrompt(threadId: string, target: { turn_id: string; item_id: string }): Promise<FocusHistoryEditPrompt>;
+  revertThread(threadId: string, turnId: string): Promise<FocusMutationResult>;
   compactThread(threadId: string): Promise<FocusMutationResult>;
   startReview(threadId: string, target: Record<string, unknown>): Promise<FocusMutationResult>;
   getGoal(threadId: string): Promise<FocusGoalResult>;
@@ -862,10 +866,21 @@ export class FocusWebApi implements FocusWebApiPort {
     );
   }
 
-  forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult> {
+  forkThread(threadId: string): Promise<FocusForkResult> {
     return this.request('thread_fork', decodeFocusForkResult, 'thread fork', {
       parameters: { thread_id: threadId },
-      ...(edit ? { body: edit } : {}),
+    });
+  }
+
+  readHistoryEditPrompt(threadId: string, target: { turn_id: string; item_id: string }): Promise<FocusHistoryEditPrompt> {
+    return this.request('thread_history_edit_prompt', decodeFocusHistoryEditPrompt, 'original history prompt', {
+      parameters: { thread_id: threadId }, query: new URLSearchParams(target),
+    });
+  }
+
+  revertThread(threadId: string, turnId: string): Promise<FocusMutationResult> {
+    return this.request('thread_revert', decodeFocusMutationResult, 'thread revert', {
+      parameters: { thread_id: threadId }, body: { turn_id: turnId },
     });
   }
 

@@ -195,6 +195,7 @@ class WebRuntimePorts:
     compact_thread: Callable[[str], None]
     start_review: Callable[..., dict[str, Any]]
     rename_thread: Callable[[str, str], None]
+    revert_thread: Callable[..., None]
     get_thread_goal: Callable[[str], ThreadGoalSummary | None]
     prepare_runtime_lease_preflight: Callable[[str], Any]
     set_thread_goal: Callable[..., ThreadGoalSummary]
@@ -415,8 +416,6 @@ class WebRuntimeController:
             runtime_interest=self._runtime_interest,
             projection=projection,
             ports=WebThreadCreatePorts(
-                list_thread_items=ports.list_thread_items,
-                capture_connection_generation=ports.capture_connection_generation,
                 list_threads_page=ports.list_threads_page,
                 create_and_commit_thread=ports.create_and_commit_thread,
                 start_turn=ports.start_turn,
@@ -586,6 +585,9 @@ class WebRuntimeController:
             prompt_submissions=self._prompt_submissions,
             projection=projection,
             ports=WebThreadMutationPorts(
+                revert_thread=ports.revert_thread,
+                list_thread_items=ports.list_thread_items,
+                capture_connection_generation=ports.capture_connection_generation,
                 read_thread=ports.read_thread,
                 rename_thread=ports.rename_thread,
                 set_thread_goal=ports.set_thread_goal,
@@ -764,8 +766,14 @@ class WebRuntimeController:
             **kwargs,
         )
 
-    def fork_thread(self, client_id: str, thread_id: str, **kwargs: Any) -> dict[str, Any]:
-        return self._thread_create.fork_thread(client_id, thread_id, **kwargs)
+    def fork_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
+        return self._thread_create.fork_thread(client_id, thread_id)
+
+    def history_edit_prompt(self, client_id: str, thread_id: str, **kwargs: Any) -> dict[str, Any]:
+        return self._thread_mutations.history_edit_prompt(client_id, thread_id, **kwargs)
+
+    def revert_thread(self, client_id: str, thread_id: str, **kwargs: Any) -> dict[str, Any]:
+        return self._thread_mutations.revert_thread(client_id, thread_id, **kwargs)
 
     def rename_thread(
         self, client_id: str, thread_id: str, *, name: str

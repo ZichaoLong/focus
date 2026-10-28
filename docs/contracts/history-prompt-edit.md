@@ -12,9 +12,9 @@ The reviewed source is Codex 0.164.0,
 Schemas exported from the actual 0.164.0 and 0.165.0 binaries expose `thread/revert {threadId,beforeTurnId}`,
 `thread/reverted {threadId}` and `thread/fork.beforeTurnId`. Revert changes the existing thread; fork creates a new ID.
 Both exclude the selected turn and every later turn. Neither version exposes the old `thread/rollback`; Focus performs no rename or fork fallback.
-Web history forks require a ready initialize identity for 0.164.0 or 0.165.0 and the exact generation used to read the original prompt.
-Unreviewed versions refuse only this feature. Startup, ordinary creation and conversation remain available.
-The complete schema baseline is 0.164.0; only this feature's subset is verified against 0.165.0.
+Web history editing uses the same public `thread/revert`, without the experimental `thread/fork.beforeTurnId` or a version-string
+allowlist for edit forks. Unsupported methods fail without fork/rollback fallback. The current semantic baseline was verified on
+0.164.0 and 0.165.0. The complete schema baseline is 0.164.0; only this feature's subset is verified against 0.165.0.
 
 Pinned implementation: [TUI selection](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/tui/src/app_backtrack.rs),
 [TUI settlement](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/tui/src/app/event_dispatch.rs),
@@ -41,32 +41,45 @@ owned by that TUI version; Focus neither strips it nor applies Web's plain-text 
 The internal revert reload does not invoke resume's idle-goal continuation. Focus does not clear goal state; subsequent explicit resume/start
 continues to use existing goal/owner semantics. Revert does not promise to cancel the goal.
 
-## Web edit and fork
+## Web revert and edit
 
-The historical action posts exactly `{turn_id,item_id}` to the existing fork endpoint; ordinary full-history fork keeps an empty body.
-Read the first userMessage from that exact turn through generation-pinned `thread/items/list`, match its real item ID, and retain full input.
-The read is limited to five seconds and advancing cursors. Never use display numbers, synthetic row IDs or clipped preview text.
-Only then use `ThreadCreateTransaction` to send one native fork with `beforeTurnId`, persistent metadata-only output and
-`deferGoalContinuation:false`. Do not revert the source, move its selection/owner/binding, inherit its goal or submit a prompt.
+The chat action keeps the current thread ID, replaces its effective history with the prefix before the selected turn, and restores
+that prompt for editing. That turn and all later turns leave the current history. Other frontends on the same thread observe the change;
+a running ordinary turn can be interrupted. File changes and goal state keep upstream semantics. Full fork in the session list remains
+an independent operation that preserves the source history.
 
-Support the first plain-text user prompt in each paginated turn, including first, older and inherited turns. Forking before the first turn
-may yield empty history. Explicitly refuse legacy history, missing/mismatched coordinates, supplemental inputs, attachments/non-text
-inputs, nonempty text elements, incomplete reads, empty text and input over 1 MiB UTF-8 before creation. Join multiple plain-text pieces
-with newlines while retaining their text. Do not strip structured content. Upstream decides concurrent boundary validity; never substitute
-another turn or fall back to a full fork.
+First GET `/api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`. The server reads the selected turn's first userMessage through
+generation-pinned `thread/items/list`, checks the actual item ID, and returns `{thread_id,turn_id,item_id,text}`. The read is limited to
+five seconds and advancing cursors. Never infer coordinates or original text from display numbers, synthetic IDs or clipped previews.
+Preparation does not mutate history or introduce a persistent prepare token, journal or history copy.
 
-Every success contains `edit_prompt=null|{turn_id,item_id,text}`. Verify the exact coordinates again in the browser. Restore only into the
-new branch through existing Composer recovery's exact scope and empty-input gate. Preserve navigation made while the request was pending.
-If handoff cannot finish, retain the original with a visible restore action; delete the memory record after handoff. Never overwrite newer
-text or attachments. Sending requires another explicit user gesture and uses the ordinary single-POST receipt protocol. Creation or send
-uncertainty never authorizes replay. Pending memory-only handoffs do not survive F5; preserve known branch IDs for manual reopening.
+The browser validates all coordinates and retains the full original in document memory before sending exactly one
+POST `/api/threads/{thread_id}/revert {turn_id}`. Navigation or a changed scope during preparation cancels an unsent revert.
+The server reuses direct-root admission, the control writer gate and the process-local unknown registry. It calls
+`thread/revert {threadId,beforeTurnId}` on the exact connection captured before dispatch, without another lock or a foreign-lease bypass.
+Success is `{accepted:true,thread_id}` for the same ID. Upstream atomically decides boundary validity; a concurrently removed turn
+remains a rejection, never a guessed cutoff or a fallback fork.
 
-Naming, bounded visibility checks and dismissible notes follow the [creation contract](thread-create-local-commit.md).
-One missed page is not proof of directory absence, and restart does not guarantee discovery of all empty-preview branches.
+Web restoration supports the first plain-text prompt in each persistent paginated turn, including first, older and inherited turns.
+Reverting before the first turn may leave empty history. Preparation refuses legacy, absent/mismatched coordinates, supplemental inputs,
+attachments/non-text inputs, nonempty text elements, incomplete reads, empty text and over 1 MiB UTF-8. Join plain-text pieces with
+newlines; never silently strip structured content.
+
+After confirmed success and a history refresh, use existing Composer recovery's exact scope and empty-input gate to restore an unsent
+draft. Preserve newer text, attachments and navigation; restore only when the original thread is selected. If handoff cannot complete,
+retain the original with an explicit restore action. Do not start another edit while an original is awaiting handoff. Sending remains an
+explicit user action through the ordinary prompt path.
+
+Preserve native validation/unsupported errors -32600/-32601/-32602. Other revert errors may follow a durable commit and settle as
+unknown through the existing control registry. Transport loss, timeout and malformed results never authorize automatic replay or fork
+fallback. Because the browser retains the original before mutation, even a lost HTTP response leaves it available for manual recovery.
+Refresh history on uncertainty and do not automatically load the composer. Pending memory-only originals do not survive F5.
+
+Full fork accepts only an empty HTTP body and no longer returns `edit_prompt`. Naming and list-visibility notes belong only to full fork.
 
 ## History notifications and caches
 
-Canonical `thread/reverted` advances the existing observation fence, forgets the exact thread's Web history/token usage and pending
+Canonical `thread/reverted`, plus confirmed or uncertain Web revert responses, advance the existing observation fence, forgets the exact thread's Web history/token usage and pending
 transcript projection, and publishes `thread_invalidated`. Existing forks are unaffected. After event epoch/revision admission, the browser
 clears that thread's transcript, prompt navigation, full/tool details and search cache, cancels stale reads, and uses ordinary projection
 refresh. A full projection reload after reconnect or an event gap also clears these caches, since the revert notification may have been missed.
@@ -74,6 +87,7 @@ Late reads or old events cannot reinstall removed history.
 
 ## Verification
 
-Cover exact boundaries, unchanged source and inherited history, empty first-turn fork, explicit attachment/supplement refusal,
-navigation and draft safety, native same-ID revert, foreign leases, unknown/disconnect without replay, and history cache invalidation.
-Version-specific isolated and browser evidence is recorded in `../verification/history-prompt-edit-2026-10-28.zh-CN.md`.
+Cover exact boundaries, same IDs, inherited history, empty first-turn history, attachment/supplement refusal, original retention before
+mutation, navigation and draft safety, foreign leases, unknown/disconnect without replay, and history cache invalidation.
+Existing upstream isolation evidence is recorded in `../verification/history-prompt-edit-2026-10-28.zh-CN.md`. The current Web path is
+covered by `test_history_prompt_edit.py`, `test_history_edit_gateway.py`, `test_codex_thread_revert.py` and `focus-history-edit*.test.ts`.

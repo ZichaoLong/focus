@@ -66,7 +66,7 @@ class WebGatewayTests(WebGatewayHarness):
 
         self.assertEqual(
             source.count("self._document_request_to_thread("),
-            24,
+            26,
         )
         self.assertEqual(
             source.count("self._staged_document_request_to_thread("),
@@ -102,7 +102,7 @@ class WebGatewayTests(WebGatewayHarness):
             self.assertEqual(response.status, 200)
             self.assertEqual(await response.json(), {
                 "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1",
-                "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "", "edit_prompt": None,
+                "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "",
             })
         self.assertEqual(self.calls, [
             ("fork", (document["client_id"], "thread-1"), {}),
@@ -1898,6 +1898,8 @@ class WebGatewayStartupTests(unittest.TestCase):
                     interrupt=lambda *_args, **_kwargs: {},
                     resolve_unknown_mutation=lambda *_args, **_kwargs: {},
                     fork_thread=lambda *_args, **_kwargs: {},
+                    history_edit_prompt=lambda *_args, **_kwargs: {},
+                    revert_thread=lambda *_args, **_kwargs: {},
                     rename_thread=lambda *_args, **_kwargs: {},
                     compact_thread=lambda *_args, **_kwargs: {},
                     start_review=lambda *_args, **_kwargs: {},

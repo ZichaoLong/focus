@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable
 
-from bot.codex_protocol.client import CodexRpcProtocolError, CodexRpcTransportError
+from bot.codex_protocol.client import CodexRpcError, CodexRpcProtocolError, CodexRpcTransportError
 from bot.exception_chain import iter_exception_chain
 from bot.runtime_loop import RuntimeContextGuard
 from bot.stores.interaction_lease_store import (
@@ -774,6 +774,9 @@ class WebOperationService:
     @staticmethod
     def is_unknown_mutation_error(exc: Exception) -> bool:
         for current in iter_exception_chain(exc):
+            if (isinstance(current, CodexRpcError) and current.method == "thread/revert"
+                and current.error.get("code") not in {-32600, -32601, -32602}):
+                return True
             if isinstance(current, ThreadResumeSettlementError):
                 return (
                     current.settlement.outcome

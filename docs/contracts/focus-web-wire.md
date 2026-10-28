@@ -211,6 +211,10 @@ guards and may not retain parallel key or enum inventories.
   contents or query parameters. The browser supplies its already-read HTML over a private channel.
   Service and static assets must deploy together; see [file previews](focus-web-file-download.md#interactive-html-previews).
 
+- v36 changes Web history editing to native revert: read-only `history-prompt` GET precedes `revert` POST on the same thread.
+  Full fork accepts only an empty body and drops `edit_prompt`; original-prompt DTOs require `thread_id`.
+  Service and static assets must deploy together.
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

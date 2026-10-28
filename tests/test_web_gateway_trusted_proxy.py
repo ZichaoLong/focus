@@ -84,6 +84,8 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
                 interrupt=lambda *_args, **_kwargs: {},
                 resolve_unknown_mutation=lambda *_args, **_kwargs: {},
                 fork_thread=lambda *_args, **_kwargs: {},
+                history_edit_prompt=lambda *_args, **_kwargs: {},
+                revert_thread=lambda *_args, **_kwargs: {},
                 rename_thread=lambda *_args, **_kwargs: {},
                 compact_thread=lambda *_args, **_kwargs: {},
                 start_review=lambda *_args, **_kwargs: {},

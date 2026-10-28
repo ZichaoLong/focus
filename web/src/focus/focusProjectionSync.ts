@@ -1222,7 +1222,7 @@ export function createFocusProjectionSync(
     }
     if (event.thread_id && event.runtime_epoch) threadEventRevision.observe(event.thread_id, event);
     const reason = event.reason?.trim() ?? '';
-    if (event.type === 'thread_invalidated' && reason === 'thread/reverted'
+    if (event.type === 'thread_invalidated' && ['thread/reverted', 'web_thread_revert_unconfirmed'].includes(reason)
       && event.thread_id === options.navigation.activeThreadId.value) {
       options.onHistoryInvalidated?.();
     }

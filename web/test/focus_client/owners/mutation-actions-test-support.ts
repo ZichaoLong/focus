@@ -179,6 +179,8 @@ export interface Harness {
   api: {
     renameThread: ReturnType<typeof vi.fn>;
     forkThread: ReturnType<typeof vi.fn>;
+    readHistoryEditPrompt: ReturnType<typeof vi.fn>;
+    revertThread: ReturnType<typeof vi.fn>;
     compactThread: ReturnType<typeof vi.fn>;
     startReview: ReturnType<typeof vi.fn>;
     setGoal: ReturnType<typeof vi.fn>;
@@ -235,7 +237,9 @@ export function harness(clientId = 'client-1'): Harness {
   let navigationDisposed = false;
 
   const api = {
-    forkThread: vi.fn(async () => ({ accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', edit_prompt: null, source_thread_id: 'thread-a', name_warning: '' })),
+    readHistoryEditPrompt: vi.fn(async (thread_id, target) => ({ thread_id, ...target, text: 'Original prompt' })),
+    revertThread: vi.fn(async (thread_id) => ({ accepted: true, thread_id })),
+    forkThread: vi.fn(async () => ({ accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', source_thread_id: 'thread-a', name_warning: '' })),
     renameThread: vi.fn(async (): Promise<FocusRenameResult> => ({
       accepted: true, thread_id: 'thread-a', name: 'renamed',
     })),

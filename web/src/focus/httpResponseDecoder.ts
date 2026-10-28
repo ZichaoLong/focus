@@ -26,6 +26,7 @@ import type {
   FocusPromptResultReceipt,
   FocusRenameResult,
   FocusForkResult,
+  FocusHistoryEditPrompt,
   FocusRequestResponseResult,
   FocusRuntimeIdentity,
   FocusThreadList,
@@ -1174,6 +1175,13 @@ export const decodeFocusRenameResult: FocusHttpDecoder<FocusRenameResult> = (val
   return value as unknown as FocusRenameResult;
 };
 
+export const decodeFocusHistoryEditPrompt: FocusHttpDecoder<FocusHistoryEditPrompt> = (value) => {
+  if (!isRequiredRecord('history_edit_prompt', value)
+    || !isNonEmptyTrimmedString(value.thread_id) || !isNonEmptyTrimmedString(value.turn_id)
+    || !isNonEmptyTrimmedString(value.item_id) || typeof value.text !== 'string' || !value.text.trim()) return null;
+  return value as unknown as FocusHistoryEditPrompt;
+};
+
 export const decodeFocusForkResult: FocusHttpDecoder<FocusForkResult> = (value) => {
   if (!isRequiredRecord('fork_result', value) || value.accepted !== true) return null;
   if (!isNonEmptyTrimmedString(value.thread_id) || !isNonEmptyTrimmedString(value.source_thread_id)
@@ -1181,10 +1189,6 @@ export const decodeFocusForkResult: FocusHttpDecoder<FocusForkResult> = (value) 
   if (!hasString(value, 'name_warning')) return null;
   if (!isFocusWebWireEnum('fork_list_visibility', value.list_visibility)
     || !hasString(value, 'visibility_diagnostic')) return null;
-  if (value.edit_prompt !== null && (!isRequiredRecord('history_edit_prompt', value.edit_prompt)
-    || !isNonEmptyTrimmedString(value.edit_prompt.turn_id)
-    || !isNonEmptyTrimmedString(value.edit_prompt.item_id)
-    || !hasString(value.edit_prompt, 'text'))) return null;
   return value as unknown as FocusForkResult;
 };
 

@@ -93,7 +93,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const documentReloadRequired = ref(false);
   const errorPresentation = ref({ message: '', diagnostic: '' });
   const forkNotes = ref<Record<string, FocusForkResult>>({});
-  const forkPrompts = ref<Record<string, FocusHistoryEditPrompt>>({});
+  const historyEdits = ref<Record<string, { prompt: FocusHistoryEditPrompt; restoreAutomatically: boolean }>>({});
   let promptErrorLocator: WebPromptResultLocator | null = null;
   const errorMessage = computed(() => errorPresentation.value.message);
   let operatorStatusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -526,6 +526,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     reconcilePromptResultsForThread,
     renameThread,
     forkThread: forkThreadMutation,
+    editPrompt: editPromptMutation,
     compact,
     review,
     createGoal,
@@ -821,11 +822,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     void reconcilePromptResultsForThread(threadId);
   }
 
-  async function forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<void> {
+  async function forkThread(threadId: string): Promise<void> {
     const floor = navigation.captureNavigationStateFloor();
-    const result = await forkThreadMutation(threadId, edit);
+    const result = await forkThreadMutation(threadId);
     if (!result) return;
-    if (result.edit_prompt) forkPrompts.value[result.thread_id] = result.edit_prompt;
     if (result.name_warning || result.list_visibility === 'not_found') {
       forkNotes.value = { ...forkNotes.value, [result.thread_id]: result };
     }
@@ -835,6 +835,23 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (navigation.navigationStateFloorIsCurrent(floor)) {
       await selectThread(result.thread_id);
     }
+  }
+
+  async function editPrompt(threadId: string, target: { turn_id: string; item_id: string }): Promise<void> {
+    if (Object.hasOwn(historyEdits.value, threadId)) return;
+    const prepared: { prompt?: FocusHistoryEditPrompt } = {};
+    const succeeded = await editPromptMutation(threadId, target, prompt => {
+      historyEdits.value[threadId] = { prompt, restoreAutomatically: false };
+      prepared.prompt = historyEdits.value[threadId]!.prompt;
+    });
+    if (!prepared.prompt || navigation.isDisposed) return;
+    if (activeThreadId.value === threadId) {
+      clearHistoryView();
+      try { await projection.refreshActiveThread(); }
+      catch (error) { reportError(error); return; }
+    }
+    const draft = historyEdits.value[threadId];
+    if (succeeded && draft?.prompt === prepared.prompt) draft.restoreAutomatically = true;
   }
 
   async function selectThread(threadId: string): Promise<void> {
@@ -1074,9 +1091,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     errorPresentation,
     forkNote: computed(() => forkNotes.value[activeThreadId.value] ?? null),
     dismissForkNote: (threadId: string) => { delete forkNotes.value[threadId]; },
-    forkPrompt: computed(() => forkPrompts.value[activeThreadId.value] ?? null),
-    consumeForkPrompt: (threadId: string, prompt: FocusHistoryEditPrompt) => {
-      if (forkPrompts.value[threadId] === prompt) delete forkPrompts.value[threadId];
+    historyEditPrompt: computed(() => historyEdits.value[activeThreadId.value]?.prompt ?? null),
+    historyEditReady: computed(() => historyEdits.value[activeThreadId.value]?.restoreAutomatically ?? false),
+    consumeHistoryEditPrompt: (threadId: string, prompt: FocusHistoryEditPrompt) => {
+      if (historyEdits.value[threadId]?.prompt === prompt) delete historyEdits.value[threadId];
     },
     promptResultNotices,
     dismissPromptResultNotice,
@@ -1136,6 +1154,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     executeBackendReset,
     selectThread,
     forkThread,
+    editPrompt,
     setThreadScope,
     loadAllSessionsForSearch,
     openWorkspaceDraft,

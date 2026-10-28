@@ -23,7 +23,7 @@ const props = defineProps<{
   error: { message: string; diagnostic: string };
   promptResultNotices: readonly PromptResultNotice[];
   forkNote?: FocusForkResult | null;
-  forkPrompt?: FocusHistoryEditPrompt | null;
+  historyEditPrompt?: FocusHistoryEditPrompt | null;
   primaryRuntimeErrors: readonly RuntimeNoticeItem[];
   unknownSubmissionDrafts: readonly UnknownSubmissionDraft[];
   unknownProcessLocalMutations: readonly UnknownProcessLocalMutation[];
@@ -38,7 +38,7 @@ const emit = defineEmits<{
   reloadProjection: [];
   dismissPromptResultNotice: [mutationId: string];
   dismissForkNote: [threadId: string];
-  restoreForkPrompt: [];
+  restoreHistoryEditPrompt: [];
   openRuntimeDetails: [];
   retryUnknownSubmission: [draft: UnknownSubmissionDraft];
   discardUnknownSubmission: [attemptKey: string];
@@ -70,7 +70,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
       || backendResetOutcomeUnknown
       || error.message
       || forkNote
-      || forkPrompt
+      || historyEditPrompt
       || promptResultNotices.length > 0
       || primaryRuntimeErrors.length > 0
       || unknownSubmissionDrafts.length > 0
@@ -122,11 +122,11 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
         <span v-if="copyFailedThreadId === forkNote.thread_id">{{ t('focus.promptDiagnosticCopyFailed') }} {{ forkNote.thread_id }}</span>
       </div>
     </Banner>
-    <Banner v-if="forkPrompt" variant="info">
+    <Banner v-if="historyEditPrompt" variant="info">
       <div class="primary-runtime-error">
-        <span>{{ t('focus.forkPromptPending') }}</span>
-        <details><summary>{{ t('focus.originalPrompt') }}</summary><pre style="white-space: pre-wrap">{{ forkPrompt.text }}</pre></details>
-        <Button size="sm" variant="secondary" @click="emit('restoreForkPrompt')">{{ t('focus.restoreForkPrompt') }}</Button>
+        <span>{{ t('focus.historyEditPromptPending') }}</span>
+        <details><summary>{{ t('focus.originalPrompt') }}</summary><pre style="white-space: pre-wrap">{{ historyEditPrompt.text }}</pre></details>
+        <Button size="sm" variant="secondary" @click="emit('restoreHistoryEditPrompt')">{{ t('focus.restoreHistoryEditPrompt') }}</Button>
       </div>
     </Banner>
 

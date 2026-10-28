@@ -577,10 +577,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
           <div v-if="turn.createdAt || turn.itemId || (turn.text.trim().length > 0 && !turn.contentDeferred)" class="u-meta">
             <button v-if="historyEditAvailable && turn.rawTurnId && turn.itemId"
               type="button" class="u-edit"
-              :aria-label="t('focus.editAndFork')"
-              :title="t('focus.editAndForkHelp')"
+              :aria-label="t('focus.revertAndEdit')"
+              :title="t('focus.revertAndEditHelp')"
               @click="emit('editPrompt', { turn_id: turn.rawTurnId, item_id: turn.itemId })"
-            >{{ t('focus.editAndFork') }}</button>
+            >{{ t('focus.revertAndEdit') }}</button>
             <button
               v-if="turn.text.trim().length > 0 && !turn.contentDeferred"
               type="button"
@@ -884,7 +884,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 .transcript-notice button { color: var(--color-accent); background: none; border: none; cursor: pointer; font: inherit; }
 .transcript-notice { padding: 12px 0; display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* History edit-and-fork action below a user message. */
+/* Native history revert-and-edit action below a user message. */
 .u-edit {
   display: inline-flex;
   align-items: center;

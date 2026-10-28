@@ -252,6 +252,11 @@ class AgentAdapter(ABC):
     def fork_thread(self, thread_id: str) -> ThreadSnapshot:
         raise NotImplementedError("persistent thread fork is not supported")
 
+    def revert_thread(
+        self, thread_id: str, *, before_turn_id: str, expected_connection_generation: int,
+    ) -> None:
+        raise NotImplementedError("native history revert is not supported")
+
     @abstractmethod
     def resume_thread(
         self,

@@ -154,6 +154,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v35 新增已认证的 `GET /api/files/html-preview` 固定隔离引导文档；不携文件路径、内容或 query。
   浏览器经私有消息通道交付已读取的 HTML。服务与静态资源必须同版本部署，见[文件预览](focus-web-file-download.zh-CN.md#html-交互预览)。
 
+- v36 将 Web 历史编辑改为原生 revert：新增只读 `history-prompt` GET 及 `revert` POST，先保留原文再修改同一线程。
+  完整 fork 只接受空 body，返回移除 `edit_prompt`；原文 DTO 必填 `thread_id`。服务与静态资源必须同版本部署。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

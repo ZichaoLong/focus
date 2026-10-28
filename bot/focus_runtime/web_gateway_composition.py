@@ -190,8 +190,14 @@ def compose_web_gateway(
                 thread_id,
                 **kwargs,
             ),
-            fork_thread=lambda client_id, thread_id, **kwargs: runtime_call(
-                web_runtime.fork_thread, client_id, thread_id, **kwargs,
+            fork_thread=lambda client_id, thread_id: runtime_call(
+                web_runtime.fork_thread, client_id, thread_id,
+            ),
+            history_edit_prompt=lambda client_id, thread_id, **kwargs: runtime_call(
+                web_runtime.history_edit_prompt, client_id, thread_id, **kwargs,
+            ),
+            revert_thread=lambda client_id, thread_id, **kwargs: runtime_call(
+                web_runtime.revert_thread, client_id, thread_id, **kwargs,
             ),
             rename_thread=lambda client_id, thread_id, **kwargs: runtime_call(
                 web_runtime.rename_thread,

@@ -12,7 +12,7 @@ describe('persistent thread fork', () => {
   it('creates once and refreshes the list without submitting a prompt', async () => {
     const h = harness();
     expect(await h.actions.forkThread('thread-a')).toEqual({
-      accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', edit_prompt: null, source_thread_id: 'thread-a', name_warning: '',
+      accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', source_thread_id: 'thread-a', name_warning: '',
     });
     expect(h.api.forkThread).toHaveBeenCalledExactlyOnceWith('thread-a');
     expect(h.refreshThreads).toHaveBeenCalledOnce();
@@ -37,7 +37,7 @@ describe('persistent thread fork', () => {
     const h = harness();
     h.refreshThreads.mockRejectedValueOnce(new Error('List unavailable'));
     h.api.forkThread.mockResolvedValueOnce({
-      accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', edit_prompt: null, source_thread_id: 'thread-a', name_warning: 'Rename failed.',
+      accepted: true, thread_id: 'fork-a', list_visibility: 'found', visibility_diagnostic: '', source_thread_id: 'thread-a', name_warning: 'Rename failed.',
     });
     expect(await h.actions.forkThread('thread-a')).toMatchObject({
       accepted: true, thread_id: 'fork-a', visibility_diagnostic: expect.stringContaining('List unavailable'), name_warning: 'Rename failed.',
@@ -57,9 +57,9 @@ describe('persistent thread fork', () => {
 
   it('rejects misdirected responses and rejects invalid wire results', async () => {
     const h = harness();
-    h.api.forkThread.mockResolvedValue({ accepted: true, thread_id: 'fork-b', list_visibility: 'found', visibility_diagnostic: '', edit_prompt: null, source_thread_id: 'other', name_warning: '' });
+    h.api.forkThread.mockResolvedValue({ accepted: true, thread_id: 'fork-b', list_visibility: 'found', visibility_diagnostic: '', source_thread_id: 'other', name_warning: '' });
     expect(await h.actions.forkThread('thread-a')).toBeNull();
-    const valid = { accepted: true, thread_id: 'fork', list_visibility: 'found', visibility_diagnostic: '', edit_prompt: null, source_thread_id: 'parent', name_warning: '' };
+    const valid = { accepted: true, thread_id: 'fork', list_visibility: 'found', visibility_diagnostic: '', source_thread_id: 'parent', name_warning: '' };
     expect(decodeFocusForkResult({ ...valid, thread_id: 'parent' })).toBeNull();
     expect(decodeFocusForkResult({ ...valid, accepted: false })).toBeNull();
     expect(decodeFocusForkResult({ ...valid, name_warning: undefined })).toBeNull();
@@ -76,11 +76,12 @@ describe('fork navigation and naming warnings', () => {
   async function clientHarness(nameWarning = '', forkGate = Promise.resolve(), visibility: FocusForkResult['list_visibility'] = 'found') {
     const branch = { ...thread(), id: 'fork-a', name: 'Demo · 分支 fork-a', title: 'Demo · 分支 fork-a' };
     const api = Object.assign(new FakeApi(), {
-      forkThread: vi.fn(async (_sourceId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult> => {
+      readHistoryEditPrompt: vi.fn(async (thread_id, target) => ({ thread_id, ...target, text: 'Full original\n  preserved  ' })),
+      revertThread: vi.fn(async (thread_id) => { await forkGate; return { accepted: true as const, thread_id }; }),
+      forkThread: vi.fn(async (_sourceId: string): Promise<FocusForkResult> => {
         await forkGate;
         api.threads.push(branch);
         return { accepted: true, thread_id: branch.id, list_visibility: visibility, visibility_diagnostic: '',
-          edit_prompt: edit ? { ...edit, text: 'Full original\n  preserved  ' } : null,
           source_thread_id: 'thread-1', name_warning: nameWarning };
       }),
     });
@@ -175,23 +176,25 @@ describe('fork navigation and naming warnings', () => {
     expect(client.activeThreadId.value).toBe('thread-1');
   });
 
-  it('retains the exact original for a late edit fork without overwriting another thread', async () => {
+  it('retains the original during revert without changing a newer thread selection', async () => {
     const gate = deferred<void>();
     const { api, client } = await clientHarness('', gate.promise);
     const target = { turn_id: 'inherited-turn', item_id: 'actual-item' };
-    const creating = client.forkThread('thread-1', target);
+    const creating = client.editPrompt('thread-1', target);
+    await vi.advanceTimersByTimeAsync(0);
     await client.selectThread('other');
     gate.resolve(); await creating;
     expect(client.activeThreadId.value).toBe('other');
-    expect(client.forkPrompt.value).toBeNull();
-    await client.selectThread('fork-a');
-    const prompt = client.forkPrompt.value!;
-    expect(prompt).toEqual({ ...target, text: 'Full original\n  preserved  ' });
-    client.consumeForkPrompt('other', prompt);
-    expect(client.forkPrompt.value).toBe(prompt);
-    client.consumeForkPrompt('fork-a', prompt);
-    expect(client.forkPrompt.value).toBeNull();
-    expect(api.forkThread).toHaveBeenCalledExactlyOnceWith('thread-1', target);
+    expect(client.historyEditPrompt.value).toBeNull();
+    await client.selectThread('thread-1');
+    const prompt = client.historyEditPrompt.value!;
+    expect(prompt).toEqual({ thread_id: 'thread-1', ...target, text: 'Full original\n  preserved  ' });
+    client.consumeHistoryEditPrompt('other', prompt);
+    expect(client.historyEditPrompt.value).toBe(prompt);
+    client.consumeHistoryEditPrompt('thread-1', prompt);
+    expect(client.historyEditPrompt.value).toBeNull();
+    expect(api.revertThread).toHaveBeenCalledExactlyOnceWith('thread-1', target.turn_id);
+    expect(api.forkThread).not.toHaveBeenCalled();
     expect(api.submitPromptCalls).toEqual([]);
     client.dispose();
   });

@@ -2029,6 +2029,14 @@
         {
           "path": "bot/web_runtime/gateway.py",
           "symbol": "WebGateway._handle_fork_thread"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_history_edit_prompt"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_revert_thread"
         }
       ],
       "owner": [
@@ -2107,6 +2115,18 @@
         {
           "path": "bot/thread_create_transaction.py",
           "symbol": "ThreadCreateTransaction.create_and_commit_thread"
+        },
+        {
+          "path": "bot/web_runtime/thread_mutation_coordinator.py",
+          "symbol": "WebThreadMutationCoordinator.history_edit_prompt"
+        },
+        {
+          "path": "bot/web_runtime/thread_mutation_coordinator.py",
+          "symbol": "WebThreadMutationCoordinator.revert_thread"
+        },
+        {
+          "path": "bot/adapters/codex_app_server.py",
+          "symbol": "CodexAppServerAdapter.revert_thread"
         }
       ],
       "contract": [
@@ -2136,7 +2156,7 @@
         },
         {
           "path": "docs/contracts/history-prompt-edit.zh-CN.md",
-          "heading": "Web 编辑并分叉"
+          "heading": "Web 回退并编辑"
         },
         {
           "path": "docs/contracts/thread-create-local-commit.zh-CN.md",
@@ -2155,7 +2175,8 @@
             "tests/test_codex_thread_fork.py",
             "tests/test_thread_create_transaction.py",
             "tests/web_runtime/test_history_prompt_edit.py",
-            "tests/web_runtime/test_history_edit_gateway.py"
+            "tests/web_runtime/test_history_edit_gateway.py",
+            "tests/test_codex_thread_revert.py"
           ]
         },
         {
@@ -2176,7 +2197,8 @@
             "web/test/focus-thread-fork.test.ts",
             "web/test/focus_client/prompt-result-reconciliation.test.ts",
             "web/test/focus-fork-notices-browser.test.ts",
-            "web/test/focus-history-edit-browser.test.ts"
+            "web/test/focus-history-edit-browser.test.ts",
+            "web/test/focus-history-edit.test.ts"
           ]
         }
       ],

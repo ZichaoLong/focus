@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 35
+FOCUS_WEB_WIRE_VERSION: Final = 36
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -287,6 +287,13 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "_handle_unknown_mutation",
     ),
     FocusWebEndpointSpec(
+        "thread_history_edit_prompt", "GET",
+        "/api/threads/{thread_id}/history-prompt", "_handle_history_edit_prompt",
+    ),
+    FocusWebEndpointSpec(
+        "thread_revert", "POST", "/api/threads/{thread_id}/revert", "_handle_revert_thread",
+    ),
+    FocusWebEndpointSpec(
         "thread_fork",
         "POST",
         "/api/threads/{thread_id}/fork",
@@ -371,6 +378,7 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "thread_prompt",
         "thread_interrupt",
         "thread_fork",
+        "thread_revert",
         "thread_rename",
         "thread_compact",
         "thread_review",
@@ -798,8 +806,8 @@ FOCUS_WEB_RECORDS: Final = (
         "status:prompt_result_status mode:prompt_result_mode",
     ),
     _record("rename_result", "FocusRenameResult", "accepted thread_id name"),
-    _record("fork_result", "FocusForkResult", "accepted thread_id source_thread_id name_warning list_visibility visibility_diagnostic edit_prompt", "list_visibility:fork_list_visibility"),
-    _record("history_edit_prompt", "FocusHistoryEditPrompt", "turn_id item_id text"),
+    _record("fork_result", "FocusForkResult", "accepted thread_id source_thread_id name_warning list_visibility visibility_diagnostic", "list_visibility:fork_list_visibility"),
+    _record("history_edit_prompt", "FocusHistoryEditPrompt", "thread_id turn_id item_id text"),
     _record(
         "goal_result",
         "FocusGoalResult",

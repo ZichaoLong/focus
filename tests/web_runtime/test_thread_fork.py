@@ -62,7 +62,7 @@ class WebThreadForkTests(WebRuntimeControllerHarness):
         branch = self.prepare_fork()
         result = self.controller.fork_thread("tab-1", "thread-1")
         self.assertEqual(result, {
-            "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1", "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "", "edit_prompt": None,
+            "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1", "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "",
         })
         self.fake.fork_thread.assert_called_once_with("thread-1")
         self.fake.rename_thread.assert_called_once_with("fork-1", "Demo · 分支 fork-1")

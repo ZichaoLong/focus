@@ -158,6 +158,9 @@ class WebThreadMutationCoordinatorTests(unittest.TestCase):
         )
         self.interrupt_turn = Mock()
         self.ports = WebThreadMutationPorts(
+            revert_thread=Mock(),
+            list_thread_items=Mock(),
+            capture_connection_generation=lambda: 1,
             read_thread=Mock(return_value=self.snapshot),
             rename_thread=self.rename_thread,
             set_thread_goal=self.set_thread_goal,
@@ -627,6 +630,9 @@ def test_mutation_coordinator_requires_runtime_loop_guard() -> None:
             prompt_submissions=None,  # type: ignore[arg-type]
             projection=None,  # type: ignore[arg-type]
             ports=WebThreadMutationPorts(
+                revert_thread=Mock(),
+                list_thread_items=Mock(),
+                capture_connection_generation=lambda: 1,
                 read_thread=lambda _thread_id, _include_turns: _snapshot(),
                 rename_thread=lambda _thread_id, _name: None,
                 set_thread_goal=lambda *_args, **_kwargs: ThreadGoalSummary(

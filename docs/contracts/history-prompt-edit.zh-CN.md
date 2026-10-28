@@ -13,8 +13,8 @@ Codex 拥有线程、持久历史和目录。Focus 不扫描或改写 Codex 私�
 及 `thread/fork.beforeTurnId`。前者改写同一线程的持久历史，后者创建独立 ID；均排除目标轮及其后续历史。
 `thread/rollback` 已不在这两个版本的协议清单中，Focus 不做名称替换或 fork fallback。
 
-Web 编辑 fork 在发送前核对当前 initialize 握手中的版本与 exact connection generation，目前只接受
-0.164.0、0.165.0。未知、旧版或未审阅新版不会退化为全历史 fork；限制只作用于编辑能力，基本启动、创建和对话不变。
+Web 历史编辑采用同一个公开 `thread/revert`，不再使用实验性的 `thread/fork.beforeTurnId`，也不按版本字符串
+维护编辑 fork 白名单。接口不支持时原样失败，不退化为分叉或其他回退方法；当前实现以 0.164.0、0.165.0 的已验证语义为基线。
 完整升级期 schema 基线采用 0.164.0；0.165.0 只验证本合同的协议子集，不声称其所有新增能力已被接入。
 
 固定上游实现：
@@ -44,33 +44,40 @@ TUI 自行加载历史并验证输入对应的真实 turn/item；Focus 只运输
 revert 的内部 reload 不调用 resume 的 idle-goal continuation；goal 的持久状态不由 Focus 清除或改写。
 之后明确 resume/start 的自动续跑和准入继续受既有 owner/goal 合同约束；不承诺原生回退取消目标。
 
-## Web 编辑并分叉
+## Web 回退并编辑
 
-聊天中的“编辑并分叉”提交 `POST /api/threads/{thread_id}/fork`，body 必须恰好为 `{turn_id,item_id}`；
-普通完整 fork 仍使用空 body。浏览器不提交正文作为权威输入。服务用同一 generation 的 `thread/items/list`
-读取目标轮首条 `userMessage`，核对 item ID 并取完整内容；不从界面 no、synthetic row ID 或 preview 反推边界。
-读取最多 5 秒，分页 cursor 必须前进。只有验证完成才进入既有 `ThreadCreateTransaction`，一次发送
-`thread/fork {threadId,beforeTurnId,ephemeral:false,excludeTurns:true,deferGoalContinuation:false}`。
-不调用来源 revert、不改变来源选择/owner/绑定，不复制或启动来源 goal，也不自动提交 prompt。
+聊天中的“回退并编辑”采用原生语义：保留当前线程 ID，将有效历史替换为目标轮之前的前缀，再恢复原 prompt
+供用户编辑。目标轮及其后续轮不再属于该线程的当前有效历史；其他打开该线程的前端同样受影响，运行中的普通 turn
+可能被中断。文件改动和 goal 状态遵循上游，不由 Focus 回滚或取消。线程列表的完整 fork 是独立操作，仍保留来源历史。
 
-支持 paginated 历史中每轮第一条纯文本 prompt，包括首轮、较早轮次及继承轮次。首轮之前的分支历史可为空。
-以下情况在创建前明确拒绝：legacy 历史、坐标缺失/不匹配、同轮补充消息、附件或其他非文本输入、非空 text elements、
-无法完整读取、空文本，以及 UTF-8 超过 1 MiB。多个文本片段用换行连接，保留片段原文；不静默丢弃附件或结构化信息。
-上游仍原子裁决历史边界；并发回退删除目标时不得 fallback 或猜另一个 turn。
+浏览器先请求 `GET /api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`。
+服务通过同一 connection generation 的 `thread/items/list` 读取目标轮首条 `userMessage`，核对真实 item ID 并返回
+`{thread_id,turn_id,item_id,text}`。读取最多 5 秒，cursor 必须前进；不使用显示序号、synthetic ID 或截断 preview。
+这一读取不修改历史，也不创建持久 prepare 记录、token 或第二份历史。
 
-成功响应在普通 fork 字段之外总有 `edit_prompt=null|{turn_id,item_id,text}`，浏览器再次核对来源和目标坐标。
-完整原文仅恢复为新分支的未发送草稿，使用已有 `loadComposerRecovery` exact scope、空输入框 gate；不覆盖更新的输入或附件。
-若用户创建期间切走，保留其导航，只在对应新分支打开后恢复。handoff 未成功则保留原文和显式恢复入口，成功后删除内存记录；
-发送仍由用户通过现有普通 prompt 单 POST/receipt 路径发起。创建/发送 unknown 均不自动重复。
-尚未 handoff 的内存文本不保证跨 F5；分支 ID 已知时保留 ID 诊断，以便手动打开。
+浏览器核对全部坐标并将完整原文保留在当前 document 内存，之后才发送一次
+`POST /api/threads/{thread_id}/revert {turn_id}`。读取期间导航或 scope 已改变则取消尚未发送的回退。
+后端复用现有 direct-root 准入、control writer gate 和 process-local unknown registry，使用发送前捕获的 exact connection
+执行 `thread/revert {threadId,beforeTurnId}`；不另造线程锁，不绕过 foreign exclusive/autonomous lease。
+成功返回 `{accepted:true,thread_id}`，必须是原 ID。上游原子决定边界；目标已被并发回退移除时保留拒绝，不猜其他轮次。
 
-命名、一次限时列表检查、可关闭的分支可见性提醒沿用
-[创建合同](thread-create-local-commit.zh-CN.md#创建后的列表观察与提示)。一页未命中不证明完整目录不存在，
-也不承诺重启后自动发现所有空 preview 分支。
+Web 原文恢复限持久 paginated 历史中每轮首条纯文本 prompt，包括首轮、较早轮次和继承轮次。首轮回退后历史可为空。
+准备阶段明确拒绝 legacy、坐标缺失或不匹配、同轮补充消息、附件及其他非文本输入、非空 text elements、无法完整读取、
+空文本及 UTF-8 超过 1 MiB；多个文本片段用换行连接，不静默丢弃结构化内容。
+
+确认成功并刷新当前历史后，原文通过已有 `loadComposerRecovery` 的 exact scope、空输入框 gate 恢复为未发送草稿。
+不覆盖新的文字或附件，不抢回请求期间发生的导航；切回原线程后才尝试恢复。无法自动恢复时保留原文和显式恢复入口；
+已有待恢复原文时不接受另一次编辑。普通发送仍要求用户明确操作，沿用现有 prompt 路径。
+
+上游 `-32600/-32601/-32602` 保留验证或不支持错误；其他 revert 错误可能发生在持久提交之后，按现有 unknown control
+机制结算。断线、超时和畸形结果同样不自动重试，也不 fallback 到 fork。浏览器在发出 mutation 前已经保留原文，
+因此 HTTP response 丢失仍可显示并手动恢复；结果不明时刷新历史，不自动恢复到输入框。未交接的内存原文不保证跨 F5。
+
+完整 fork 的 HTTP body 只能为空，其返回不再携 `edit_prompt`；命名及列表可见性提示只属于完整 fork。
 
 ## 历史变更与缓存
 
-canonical app-server 的 `thread/reverted` 通知只失效对应线程：推进既有 read observation fence，清除 Web 历史、
+canonical app-server 的 `thread/reverted` 通知，以及 Web 已确认或结果不明的回退 response，只失效对应线程：推进既有 read observation fence，清除 Web 历史、
 token usage 和在途 transcript projection，发布 `thread_invalidated`。不改变已存在 fork 的缓存或历史。
 浏览器在既有 event epoch/revision admission 后清除对应正文、prompt 导航、全文/工具与搜索缓存；取消在途旧读取，
 再通过正常 projection/read 路径获取新历史。重连或 event gap 的完整 projection reload 同样先清除这些缓存，
@@ -78,6 +85,8 @@ token usage 和在途 transcript projection，发布 `thread_invalidated`。不�
 
 ## 验证边界
 
-必须验证 exact boundary、来源保持不变、继承历史、首轮空历史、附件/补充消息的明确拒绝、跨线程导航、草稿不覆盖、
-原生回退同一 ID、foreign lease、断线/unknown 不重试，以及 reverted 后缓存刷新。
-真实版本的隔离验证与浏览器证据见 [验证记录](../verification/history-prompt-edit-2026-10-28.zh-CN.md)。
+必须验证 exact boundary、同一 ID、继承历史、首轮空历史、附件/补充消息的明确拒绝、先保留原文再 mutation、
+跨线程导航与草稿不覆盖、foreign lease、断线/unknown 不重试，以及 reverted 后缓存刷新。
+上游真实版本的既有隔离证据见 [验证记录](../verification/history-prompt-edit-2026-10-28.zh-CN.md)；
+当前 Web 路径由 `test_history_prompt_edit.py`、`test_history_edit_gateway.py`、`test_codex_thread_revert.py`
+与 `focus-history-edit*.test.ts` 覆盖。
