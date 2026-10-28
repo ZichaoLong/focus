@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { decodeFocusForkResult } from '../src/focus/httpResponseDecoder';
-import type { FocusForkResult } from '../src/focus/types';
+import type { FocusForkResult, FocusThreadSnapshot } from '../src/focus/types';
 import { FocusApiError } from '../src/focus/types';
 import { useFocusWebClient } from '../src/focus/useFocusWebClient';
 import { deferred, harness, installMutationActionsTestHooks } from './focus_client/owners/mutation-actions-test-support';
@@ -68,7 +68,7 @@ describe('persistent thread fork', () => {
   });
 });
 
-describe('fork navigation and naming warnings', () => {
+describe('fork and history edit navigation', () => {
   installFocusClientTestHooks();
 
   const warning = 'Branch fork-a was created, but its automatic name could not be confirmed. You can rename it manually.';
@@ -189,6 +189,7 @@ describe('fork navigation and naming warnings', () => {
     await client.selectThread('thread-1');
     const prompt = client.historyEditPrompt.value!;
     expect(prompt).toEqual({ thread_id: 'thread-1', ...target, text: 'Full original\n  preserved  ' });
+    expect(client.historyEditReady.value).toBe(false);
     client.consumeHistoryEditPrompt('other', prompt);
     expect(client.historyEditPrompt.value).toBe(prompt);
     client.consumeHistoryEditPrompt('thread-1', prompt);
@@ -196,6 +197,92 @@ describe('fork navigation and naming warnings', () => {
     expect(api.revertThread).toHaveBeenCalledExactlyOnceWith('thread-1', target.turn_id);
     expect(api.forkThread).not.toHaveBeenCalled();
     expect(api.submitPromptCalls).toEqual([]);
+    client.dispose();
+  });
+
+  it('keeps the original pending when repeated stale reads cannot install the reverted snapshot', async () => {
+    const { api, client } = await clientHarness();
+    const previous = client.snapshot.value;
+    vi.mocked(api.readThread).mockClear().mockRejectedValue(new FocusApiError('Stale snapshot', {
+      status: 409, code: 'stale_thread_read',
+    }));
+    await client.editPrompt('thread-1', { turn_id: 'turn', item_id: 'item' });
+    expect(api.readThread).toHaveBeenCalledTimes(2);
+    expect(client.snapshot.value).toBe(previous);
+    expect(client.historyEditPrompt.value?.text).toBe('Full original\n  preserved  ');
+    expect(client.historyEditReady.value).toBe(false);
+    expect(client.errorMessage.value).toBe('');
+    expect(api.revertThread).toHaveBeenCalledOnce();
+    expect(api.submitPromptCalls).toEqual([]);
+    client.dispose();
+  });
+
+  it('reports a current revert-refresh error while retaining the original for recovery', async () => {
+    const { api, client } = await clientHarness();
+    vi.mocked(api.readThread).mockRejectedValueOnce(new Error('Source refresh failed'));
+    await client.editPrompt('thread-1', { turn_id: 'turn', item_id: 'item' });
+    expect(client.errorMessage.value).toBe('Source refresh failed');
+    expect(client.historyEditPrompt.value?.text).toBe('Full original\n  preserved  ');
+    expect(client.historyEditReady.value).toBe(false);
+    expect(api.revertThread).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+
+  it.each(['other', 'thread-1'])('drops a late revert-refresh error after navigation to %s', async destination => {
+    const { api, client } = await clientHarness();
+    const started = deferred<void>(), refresh = deferred<FocusThreadSnapshot>();
+    vi.mocked(api.readThread).mockImplementationOnce(() => { started.resolve(); return refresh.promise; });
+    const editing = client.editPrompt('thread-1', { turn_id: 'turn', item_id: 'item' });
+    await started.promise;
+    await client.selectThread('other');
+    if (destination === 'thread-1') await client.selectThread('thread-1');
+    const selected = client.snapshot.value;
+    refresh.reject(new Error('Source refresh failed'));
+    await editing;
+    expect(client.activeThreadId.value).toBe(destination);
+    expect(client.snapshot.value).toBe(selected);
+    expect(client.errorMessage.value).toBe('');
+    if (destination === 'other') await client.selectThread('thread-1');
+    expect(client.historyEditPrompt.value?.text).toBe('Full original\n  preserved  ');
+    expect(client.historyEditReady.value).toBe(false);
+    expect(api.revertThread).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+
+  it('does not automatically restore from a superseded refresh after navigating away and back', async () => {
+    const { api, client } = await clientHarness();
+    const started = deferred<void>(), refresh = deferred<FocusThreadSnapshot>();
+    const previous = client.snapshot.value!;
+    vi.mocked(api.readThread).mockImplementationOnce(() => { started.resolve(); return refresh.promise; });
+    const editing = client.editPrompt('thread-1', { turn_id: 'turn', item_id: 'item' });
+    await started.promise;
+    await client.selectThread('other');
+    await client.selectThread('thread-1');
+    const selected = client.snapshot.value;
+    refresh.resolve(previous);
+    await editing;
+    expect(client.snapshot.value).toBe(selected);
+    expect(client.historyEditPrompt.value?.text).toBe('Full original\n  preserved  ');
+    expect(client.historyEditReady.value).toBe(false);
+    expect(api.revertThread).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+
+  it.each([
+    { status: 401, code: 'unauthorized', state: 'authRequired' as const },
+    { status: 409, code: 'document_replaced', state: 'documentReloadRequired' as const },
+  ])('keeps global $code handling for a late revert-refresh error', async ({ status, code, state }) => {
+    const { api, client } = await clientHarness();
+    const started = deferred<void>(), refresh = deferred<FocusThreadSnapshot>();
+    vi.mocked(api.readThread).mockImplementationOnce(() => { started.resolve(); return refresh.promise; });
+    const editing = client.editPrompt('thread-1', { turn_id: 'turn', item_id: 'item' });
+    await started.promise;
+    await client.selectThread('other');
+    refresh.reject(new FocusApiError('Access expired', { status, code }));
+    await editing;
+    expect(client[state].value).toBe(true);
+    expect(client.errorMessage.value).toBe('');
+    expect(client.activeThreadId.value).toBe('other');
     client.dispose();
   });
 

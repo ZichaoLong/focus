@@ -2057,6 +2057,10 @@
           "symbol": "createFocusMutationActions"
         },
         {
+          "path": "web/src/focus/useFocusWebClient.ts",
+          "symbol": "useFocusWebClient"
+        },
+        {
           "path": "web/src/focus/mutations/prompt-results.ts",
           "symbol": "createPromptResults"
         },

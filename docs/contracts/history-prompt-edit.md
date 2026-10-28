@@ -65,10 +65,12 @@ Reverting before the first turn may leave empty history. Preparation refuses leg
 attachments/non-text inputs, nonempty text elements, incomplete reads, empty text and over 1 MiB UTF-8. Join plain-text pieces with
 newlines; never silently strip structured content.
 
-After confirmed success and a history refresh, use existing Composer recovery's exact scope and empty-input gate to restore an unsent
-draft. Preserve newer text, attachments and navigation; restore only when the original thread is selected. If handoff cannot complete,
-retain the original with an explicit restore action. Do not start another edit while an original is awaiting handoff. Sending remains an
-explicit user action through the ordinary prompt path.
+After confirmed revert success, installation of the corresponding snapshot, and validation of the operation's original navigation state,
+use existing Composer recovery's exact scope and empty-input gate to restore an unsent draft automatically. If the refresh installs no
+snapshot, fails, or navigation changes, retain the original with an explicit restore action available on returning to that thread.
+Preserve newer text, attachments and navigation. Show ordinary refresh errors only while the initiating navigation state remains current;
+authentication or document invalidation still follows global handling. Do not start another edit while an original is awaiting handoff.
+Sending remains an explicit user action through the ordinary prompt path.
 
 Preserve native validation/unsupported errors -32600/-32601/-32602. Other revert errors may follow a durable commit and settle as
 unknown through the existing control registry. Transport loss, timeout and malformed results never authorize automatic replay or fork

@@ -96,6 +96,10 @@ it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and
       await page.waitForFunction(() => !document.body.innerText.includes('TRUNCATED PREVIEW'));
       expect(await page.locator('textarea:visible').first().inputValue()).toBe('Other thread draft');
       await page.getByText('Source', { exact: true }).first().click();
+      await page.waitForURL('**thread=thread-1*');
+      await expect.poll(() => page.locator('textarea:visible').first().isEnabled()).toBe(true);
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('');
+      await page.getByRole('button', { name: 'Restore to composer', exact: true }).click();
     }
     if (mode === 'draft') {
       await page.getByRole('button', { name: 'Restore to composer', exact: true }).waitFor();

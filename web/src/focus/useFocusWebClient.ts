@@ -839,17 +839,25 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function editPrompt(threadId: string, target: { turn_id: string; item_id: string }): Promise<void> {
     if (Object.hasOwn(historyEdits.value, threadId)) return;
+    const navigationFloor = navigation.captureNavigationStateFloor();
     const prepared: { prompt?: FocusHistoryEditPrompt } = {};
     const succeeded = await editPromptMutation(threadId, target, prompt => {
       historyEdits.value[threadId] = { prompt, restoreAutomatically: false };
       prepared.prompt = historyEdits.value[threadId]!.prompt;
     });
-    if (!prepared.prompt || navigation.isDisposed) return;
-    if (activeThreadId.value === threadId) {
-      clearHistoryView();
-      try { await projection.refreshActiveThread(); }
-      catch (error) { reportError(error); return; }
+    if (!prepared.prompt || navigation.isDisposed || activeThreadId.value !== threadId) return;
+    clearHistoryView();
+    let installed = false;
+    try {
+      installed = await projection.refreshActiveThread();
+    } catch (error) {
+      if (!navigation.isDisposed && !reportFatalError(error)
+        && navigation.navigationStateFloorIsCurrent(navigationFloor)) reportError(error);
+      return;
     }
+    // A completed read may have been stale or superseded without installing a snapshot.
+    if (!installed || navigation.isDisposed
+      || !navigation.navigationStateFloorIsCurrent(navigationFloor)) return;
     const draft = historyEdits.value[threadId];
     if (succeeded && draft?.prompt === prepared.prompt) draft.restoreAutomatically = true;
   }
