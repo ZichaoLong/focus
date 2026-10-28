@@ -134,6 +134,7 @@ Status guidance:
 
 ### Verification
 
+- [`fcodex-steer-null-context-2026-10-28.zh-CN.md`](./verification/fcodex-steer-null-context-2026-10-28.zh-CN.md)
 - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
 - [`history-prompt-edit-2026-10-28.zh-CN.md`](./verification/history-prompt-edit-2026-10-28.zh-CN.md)
 - [`html-preview-2026-10-28.zh-CN.md`](./verification/html-preview-2026-10-28.zh-CN.md)

@@ -84,11 +84,12 @@ _STEER_ALLOWED_PARAMS = _STEER_REQUIRED_PARAMS | frozenset(
     {
         "clientUserMessageId",
         "responsesapiClientMetadata",
+        "responsesapiClientMetadataPatch",
         "additionalContext",
     }
 )
 _STEER_EXPERIMENTAL_CONTEXT_PARAMS = frozenset(
-    {"responsesapiClientMetadata", "additionalContext"}
+    {"responsesapiClientMetadata", "responsesapiClientMetadataPatch", "additionalContext"}
 )
 
 

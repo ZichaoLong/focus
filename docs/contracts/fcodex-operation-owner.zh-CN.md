@@ -259,7 +259,9 @@ Web、飞书或 autonomous-goal origin turn 的 endpoint。
 
 - raw params 必须包含非空且无首尾空白的 `threadId`、`expectedTurnId`，以及 `input`。稳定可选的
   `clientUserMessageId` 和 upstream `input` payload 原样保留，由 upstream schema 校验。未知 key 不准入；
-  experimental `additionalContext`、`responsesapiClientMetadata` 必须 absent 或 null；
+  experimental `additionalContext`、`responsesapiClientMetadata`、
+  `responsesapiClientMetadataPatch` 必须 absent 或 null。原生 TUI 显式发送的 null
+  字段不构成 context 注入，准入后仍原样转发；非 null 值（包括空 object）继续拒绝；
 - endpoint 必须在当前 backend generation 中 live，并拥有该 exact root 的成功 connection runtime source。
   initiating fcodex endpoint 尚无该 source 时，只有 participant、connection、root 与 exact expected turn
   全部 matching 的 lease 可以作为 attach proof；

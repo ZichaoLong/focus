@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
+from unittest.mock import Mock
 
+from bot.fcodex.proxy import _ProxyInteractionGate
 from bot.stores.interaction_lease_store import (
     make_feishu_interaction_holder,
     make_web_interaction_holder,
@@ -24,6 +28,9 @@ class FcodexSharedSteerTests(FcodexOperationHarness):
             "threadId": thread_id,
             "clientUserMessageId": "client-message-1",
             "input": [{"type": "text", "text": text}],
+            "responsesapiClientMetadata": None,
+            "responsesapiClientMetadataPatch": None,
+            "additionalContext": None,
             "expectedTurnId": turn_id,
             **extra,
         }
@@ -355,6 +362,8 @@ class FcodexSharedSteerTests(FcodexOperationHarness):
             self._steer_params(extra=True),
             self._steer_params(additionalContext={"hook": {"text": "override"}}),
             self._steer_params(responsesapiClientMetadata={"source": "guest"}),
+            self._steer_params(responsesapiClientMetadataPatch={"source": "guest"}),
+            self._steer_params(responsesapiClientMetadataPatch={}),
         )
 
         for request_id, request_params in enumerate(malformed, start=10):
@@ -380,19 +389,70 @@ class FcodexSharedSteerTests(FcodexOperationHarness):
     def test_null_experimental_fields_preserve_the_stable_upstream_shape(self) -> None:
         self._connect("connection-a")
         self._seed_fcodex_active_lease("connection-a")
+        native_params = self._steer_params()
+        baseline_path = (
+            Path(__file__).resolve().parents[1]
+            / "docs/contracts/codex-app-server-schema-baseline.json"
+        )
+        baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+        schema = baseline["focused_schema"]["client_request"]["turn/steer"]["params"]
+        # A baseline refresh must not leave the native request fixture stale.
+        self.assertEqual(set(native_params), set(schema["properties"]))
 
-        admitted = self._admit(
+        minimal_params = {key: native_params[key] for key in schema["required"]}
+        for request_id, params in enumerate((native_params, minimal_params), start=2):
+            with self.subTest(params=params):
+                admitted = self._admit(
+                    connection_id="connection-a",
+                    request_id=request_id,
+                    method="turn/steer",
+                    request_params=params,
+                )
+                self.assertTrue(admitted["allowed"])
+                self.assertTrue(admitted["tracks_response"])
+
+    def test_native_steer_crosses_proxy_and_real_admission_unchanged(self) -> None:
+        def control(_data_dir: Path, method: str, params: dict) -> dict:
+            if method == "operation/participant-connected":
+                return self.coordinator.participant_connected(**params)
+            if method == "operation/admit":
+                return self._admit(
+                    method=params["rpc_method"],
+                    **{key: value for key, value in params.items() if key != "rpc_method"},
+                )
+            if method == "operation/client-response":
+                return self.coordinator.client_response(**params)
+            raise AssertionError(f"unexpected control call: {method}")
+
+        gate = _ProxyInteractionGate(
+            cwd="/repo",
+            data_dir=self.data_dir,
+            participant_id=self.participant_id,
             connection_id="connection-a",
-            request_id=2,
-            method="turn/steer",
-            request_params=self._steer_params(
-                additionalContext=None,
-                responsesapiClientMetadata=None,
-            ),
+            control_request_fn=control,
+        )
+        self._seed_fcodex_active_lease("connection-a")
+        before = self.interaction_leases.load("root-1")
+        client_ws, backend_ws = Mock(), Mock()
+        request = {"id": 42, "method": "turn/steer", "params": self._steer_params()}
+
+        gate.handle_client_message(
+            json.dumps(request), client_ws=client_ws, backend_ws=backend_ws,
         )
 
-        self.assertTrue(admitted["allowed"])
-        self.assertTrue(admitted["tracks_response"])
+        client_ws.send.assert_not_called()
+        backend_ws.send.assert_called_once()
+        self.assertEqual(json.loads(backend_ws.send.call_args.args[0]), request)
+        response = {"id": 42, "result": {"turnId": "turn-1"}}
+        gate.handle_backend_message(
+            json.dumps(response), client_ws=client_ws, backend_ws=backend_ws,
+        )
+        client_ws.send.assert_called_once()
+        self.assertEqual(json.loads(client_ws.send.call_args.args[0]), response)
+        client_ws.close.assert_not_called()
+        backend_ws.close.assert_not_called()
+        self.assertEqual(self.operation_service._client_requests, {})
+        self.assertEqual(self.interaction_leases.load("root-1"), before)
 
     def test_attached_stale_expected_turn_reaches_upstream_without_retargeting(
         self,

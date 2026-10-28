@@ -205,6 +205,10 @@
         },
         {
           "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
+          "heading": "共享 same-turn input"
+        },
+        {
+          "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
           "heading": "participant 与 connection 生命周期"
         },
         {

@@ -345,7 +345,10 @@ a Web-, Feishu-, or autonomous-goal-origin turn.
   `expectedTurnId`, plus `input`. The stable optional
   `clientUserMessageId` and upstream `input` payload are preserved unchanged
   for upstream schema validation. No unknown key is admitted, and experimental
-  `additionalContext` or `responsesapiClientMetadata` must be absent or null.
+  `additionalContext`, `responsesapiClientMetadata`, and
+  `responsesapiClientMetadataPatch` must be absent or null. Explicit null fields
+  from the native TUI do not inject context and are forwarded unchanged after
+  admission; non-null values, including empty objects, remain rejected.
 - The endpoint must be live in the current backend generation and have a
   successful connection runtime source for that exact root. For the initiating
   fcodex endpoint before such a source exists, only a lease matching its
