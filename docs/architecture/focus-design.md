@@ -179,6 +179,19 @@ owner; this boundary neither mirrors its records nor owns execution-output state
 generations, RPC outcomes, and schema drift. Application code consumes typed
 responses and notifications and does not depend on Codex private disk layout.
 
+Every Focus-issued `thread/list` sets `useStateDbOnly=true`, including active and
+archived directories, search, pagination, relationship queries, and post-create
+visibility checks. Codex's state database selects the thread inventory and current
+rollout. Focus neither accesses that database directly nor merges rollout generations
+or falls back to filesystem scan-and-repair after a query failure. Filters, cursors,
+connection generations, and duplicate-ID validation retain their existing semantics.
+Manually imported, unindexed history is not guaranteed to appear automatically;
+import, rebuild, and repair are explicit upstream maintenance operations rather than
+directory-refresh responsibilities. This policy does not change `thread/read`,
+fork/revert, archive/unarchive/delete, their reference protections, or native requests
+forwarded by fcodex. See the pinned [0.164.0 protocol](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
+and [listing implementation](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/rollout/src/recorder.rs).
+
 `CodexRpcConnection` owns the websocket, identity lock, handshake state and
 generation, pending response map, reader/callback producers, and inbound JSON-RPC
 dispatch. `CodexRpcClient` is a typed façade with one connection capability and no

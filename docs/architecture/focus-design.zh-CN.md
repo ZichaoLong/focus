@@ -138,6 +138,14 @@ state。
 `bot/adapters/` 与 `bot/codex_protocol/` 隔离 app-server wire、连接 generation、RPC outcome 和
 schema drift。业务层只消费 typed response/notification，不依赖 Codex 私有磁盘布局。
 
+Focus 自己发起的 `thread/list` 统一携带 `useStateDbOnly=true`，包括普通/归档目录、搜索、分页、
+关系查询和创建后的可见性检查。Codex 状态数据库决定线程目录与当前 rollout；Focus 不直接访问该数据库，
+不合并 rollout 代次，也不在查询失败时退回文件扫描修补。过滤、cursor、连接代次及重复 ID 校验保持原语义。
+未入库的手工导入历史不保证自动出现在列表；导入、重建与修复属于显式上游维护流程，不由目录刷新承担。
+此策略不改变 `thread/read`、fork/revert、归档/恢复/删除的协议与引用保护，也不改写 fcodex 透传的原生请求。
+上游参数与两种查询语义见固定 [0.164.0 协议](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
+及 [目录实现](https://github.com/openai/codex/blob/fe3b29455488c2e189e43ad5526a107900c5e1b7/codex-rs/rollout/src/recorder.rs)。
+
 `CodexRpcConnection` 独占 websocket、identity lock、handshake state/generation、pending response map、
 reader/callback producer 与 inbound JSON-RPC dispatch。`CodexRpcClient` 只是持有一份 connection capability 的
 typed façade，不保存 mutable transport fact。

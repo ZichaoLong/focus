@@ -8,6 +8,7 @@ from bot.adapters.base import (
 from bot.adapters.codex_app_server import CodexAppServerAdapter, CodexAppServerConfig
 from bot.adapters.codex_thread_summary import thread_summary_from_app_server_thread
 from bot.codex_protocol.connection import (
+    CodexRpcError,
     CodexRpcProtocolError,
 )
 
@@ -73,6 +74,7 @@ class CodexAppServerInventoryTests(unittest.TestCase):
                     "limit": 5,
                     "sourceKinds": ["cli", "vscode", "exec", "appServer"],
                     "modelProviders": [],
+                    "useStateDbOnly": True,
                 },
             ),
         )
@@ -96,6 +98,7 @@ class CodexAppServerInventoryTests(unittest.TestCase):
                     "sourceKinds": ["cli", "vscode", "exec", "appServer"],
                     "archived": True,
                     "modelProviders": [],
+                    "useStateDbOnly": True,
                 },
             ),
         )
@@ -114,9 +117,59 @@ class CodexAppServerInventoryTests(unittest.TestCase):
                 {
                     "limit": 5,
                     "parentThreadId": "thread-root",
+                    "useStateDbOnly": True,
                 },
             ),
         )
+
+    def test_directory_failure_does_not_fall_back_to_rollout_repair(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        failure = CodexRpcError(
+            "thread/list", {"code": -32603, "message": "state database unavailable"}
+        )
+        with patch.object(adapter, "_rpc_request", side_effect=failure) as rpc:
+            with self.assertRaises(CodexRpcError) as raised:
+                adapter.list_threads_all(search_term="tide", archived=True)
+
+        self.assertIs(raised.exception, failure)
+        rpc.assert_called_once()
+        self.assertEqual(rpc.call_args.args[0], "thread/list")
+        self.assertTrue(rpc.call_args.args[1]["useStateDbOnly"])
+
+    def test_directory_keeps_state_db_mode_across_search_pages(self) -> None:
+        adapter = CodexAppServerAdapter(CodexAppServerConfig())
+        current = {
+            "id": "tide",
+            "historyMode": "paginated",
+            "path": "/sessions/current.jsonl",
+        }
+        branch = {**current, "id": "branch", "path": "/sessions/branch.jsonl"}
+        with patch.object(adapter, "_rpc_request", side_effect=[
+            {"data": [current], "nextCursor": "page-2"},
+            {"data": [branch], "nextCursor": None},
+        ]) as rpc:
+            rows = adapter.list_threads_all(
+                limit=2, search_term="tide", archived=False,
+                source_kinds=[], model_providers=[],
+                expected_connection_generation=7,
+            )
+
+        self.assertEqual([row.thread_id for row in rows], ["tide", "branch"])
+        self.assertEqual(len(rpc.call_args_list), 2)
+        for index, call in enumerate(rpc.call_args_list):
+            self.assertEqual(call.args[0], "thread/list")
+            self.assertEqual(call.args[1], {
+                "limit": 2 - index,
+                "sortKey": "updated_at",
+                "searchTerm": "tide",
+                "sourceKinds": [],
+                "modelProviders": [],
+                "archived": False,
+                "useStateDbOnly": True,
+                **({"cursor": "page-2"} if index else {}),
+            })
+            self.assertEqual(call.kwargs["expected_connection_generation"], 7)
+            self.assertTrue(call.kwargs["require_existing_connection"])
 
     def test_existing_authority_response_forwards_bounded_no_reconnect_options(
         self,

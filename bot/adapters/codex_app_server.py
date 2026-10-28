@@ -681,6 +681,7 @@ class CodexAppServerAdapter(AgentAdapter):
                 "sourceKinds": effective_source_kinds,
                 "archived": archived,
                 "parentThreadId": parent_thread_id,
+                "useStateDbOnly": True,
             }
         )
         if source_kinds is not None:
