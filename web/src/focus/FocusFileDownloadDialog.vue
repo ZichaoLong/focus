@@ -16,6 +16,7 @@ const download = createFileDownload(props.api);
 const preview = createFilePreview(props.api);
 const narrow = useNarrowViewport();
 const targetLine = ref<number | undefined>();
+const targetAnchor = ref<string | undefined>();
 const previewKind = computed(() => filePreviewKind(download.info.value?.name ?? ''));
 const previewLimit = computed(() => filePreviewLimit(previewKind.value ?? 'text'));
 const notice = ref('');
@@ -33,9 +34,10 @@ watch(download.opened, async isOpen => {
   document.querySelector<HTMLElement>(isOpen ? '.file-download-form input, .file-download-actions button' : '.file-preview-toolbar button')?.focus({ preventScroll: true });
 });
 
-function open(path: string, cwd: string, line?: number): Promise<void> {
+function open(path: string, cwd: string, line?: number, anchor?: string): Promise<void> {
   preview.close();
   targetLine.value = line;
+  targetAnchor.value = anchor;
   notice.value = '';
   return download.open(path, cwd);
 }
@@ -43,12 +45,12 @@ function open(path: string, cwd: string, line?: number): Promise<void> {
 function openLinkedFile(target: FilePreviewRequest): void {
   const path = preview.file.value?.path ?? '';
   const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  void open(target.path, path.slice(0, separator + 1), target.line);
+  void open(target.path, path.slice(0, separator + 1), target.line, target.anchor);
 }
 
 function showPreview(): void {
   if (!download.info.value) return;
-  void preview.open(download.info.value, targetLine.value);
+  void preview.open(download.info.value, targetLine.value, targetAnchor.value);
   download.close();
   void nextTick(() => document.querySelector<HTMLElement>('.file-preview-toolbar button')?.focus({ preventScroll: true }));
 }

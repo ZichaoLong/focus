@@ -34,6 +34,7 @@ from bot.web_runtime.auth import (
     WebAuthSession,
 )
 from bot.web_runtime.contract import WebRuntimeError
+from bot.web_runtime.html_preview import HTML_PREVIEW_CSP
 
 _SESSION_COOKIE_PREFIX = "focus_web_session_"
 _CSRF_HEADER = "X-Focus-Web-Csrf"
@@ -149,6 +150,11 @@ class WebGatewayRequestAdmission:
             "img-src 'self' data: blob:; media-src 'self' data: blob:; "
             "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:"
         )
+        if request.path == "/api/files/html-preview" and response.status == 200:
+            # Only this authenticated, fixed bootstrap receives the preview
+            # policy. Errors never receive this exception.
+            response.headers.pop("X-Frame-Options", None)
+            response.headers["Content-Security-Policy"] = HTML_PREVIEW_CSP
         return response
 
     @web.middleware

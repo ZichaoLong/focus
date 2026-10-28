@@ -2771,6 +2771,14 @@
         {
           "path": "web/src/focus/filePreviewImage.ts",
           "symbol": "inspectPreviewImage"
+        },
+        {
+          "path": "bot/web_runtime/html_preview.py",
+          "symbol": "HTML_PREVIEW_DOCUMENT"
+        },
+        {
+          "path": "web/src/focus/FocusHtmlPreview.vue",
+          "symbol": "load"
         }
       ],
       "contract": [
@@ -2785,6 +2793,10 @@
         {
           "path": "docs/contracts/focus-web-file-download.zh-CN.md",
           "heading": "按需预览"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "HTML 交互预览"
         }
       ],
       "focused-test": [
@@ -2800,7 +2812,8 @@
             "web/test/file-download.test.ts",
             "web/test/file-download-api.test.ts",
             "web/test/file-preview.test.ts",
-            "web/test/markdown-file-preview.test.ts"
+            "web/test/markdown-file-preview.test.ts",
+            "web/test/html-preview-browser.test.ts"
           ]
         }
       ],

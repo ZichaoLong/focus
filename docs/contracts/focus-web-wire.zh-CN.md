@@ -151,6 +151,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v34 扩展 fork 成功 DTO，必填一次列表观察及诊断、可空原 prompt handoff；fork body 可携 exact turn/item ID。
   服务和静态资源必须同版本部署，见[历史 prompt 编辑](history-prompt-edit.zh-CN.md)。
 
+- v35 新增已认证的 `GET /api/files/html-preview` 固定隔离引导文档；不携文件路径、内容或 query。
+  浏览器经私有消息通道交付已读取的 HTML。服务与静态资源必须同版本部署，见[文件预览](focus-web-file-download.zh-CN.md#html-交互预览)。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request

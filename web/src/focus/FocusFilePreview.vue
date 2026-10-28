@@ -1,23 +1,28 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type { FilePreviewRequest } from '../types';
 import LazyMarkdown from '../components/chat/LazyMarkdown.vue';
 import Icon from '../components/ui/Icon.vue';
 import IconButton from '../components/ui/IconButton.vue';
 import ImageViewport from '../components/ui/ImageViewport.vue';
+import FocusHtmlPreview from './FocusHtmlPreview.vue';
 import { copyTextToClipboard } from '../lib/clipboard';
 import { canChooseFileDestination } from './browserFileSave';
 import { formatFileSize } from './fileDownload';
 import { filePreviewKind, filePreviewLimit, type FilePreviewState } from './filePreview';
+import { findPreviewHeading } from './filePreviewAnchor';
 
 const props = defineProps<{ preview: FilePreviewState }>();
 const emit = defineEmits<{ close: []; download: []; openFile: [target: FilePreviewRequest] }>();
 const { t } = useI18n();
 const content = computed(() => props.preview.content.value);
+const panel = ref<HTMLElement | null>(null);
+const fullscreen = ref(false);
 const sourceMode = ref(false);
 const wrapped = ref(false);
 const source = ref<HTMLTextAreaElement | null>(null);
+const markdown = ref<HTMLElement | null>(null);
 const infoOpen = ref(false);
 const info = ref<HTMLElement | null>(null);
 const infoButton = ref<HTMLButtonElement | null>(null);
@@ -35,13 +40,31 @@ const filenameParts = computed(() => {
 const saveLabel = computed(() => t(canChooseFileDestination() ? 'focus.fileSaveAs' : 'focus.fileDownloadAction'));
 const limit = computed(() => filePreviewLimit(filePreviewKind(props.preview.file.value?.name ?? '') ?? 'text'));
 const showingSource = computed(() => content.value?.kind !== 'image'
-  && (!content.value?.renderMarkdown || sourceMode.value));
+  && (!(content.value?.renderMarkdown || content.value?.kind === 'html') || sourceMode.value));
 
 function showNotice(message: string): void {
   clearTimeout(noticeTimer);
   notice.value = message;
   noticeTimer = setTimeout(() => { notice.value = ''; copied.value = null; }, 3500);
 }
+
+function updateFullscreen(): void { fullscreen.value = document.fullscreenElement === panel.value; }
+async function toggleFullscreen(): Promise<void> {
+  try {
+    if (fullscreen.value) await document.exitFullscreen();
+    else await panel.value?.requestFullscreen();
+  } catch { showNotice(t('focus.filePreviewFullscreenFailed')); }
+}
+async function downloadFile(): Promise<void> {
+  // The download form is outside the fullscreen panel. Leave fullscreen before
+  // hiding the panel, keeping the report mounted while its form is open.
+  if (document.fullscreenElement && panel.value?.contains(document.fullscreenElement)) {
+    try { await document.exitFullscreen(); }
+    catch { showNotice(t('focus.filePreviewFullscreenFailed')); return; }
+  }
+  emit('download');
+}
+onMounted(() => document.addEventListener('fullscreenchange', updateFullscreen));
 
 function closeInfo(): void {
   infoOpen.value = false;
@@ -102,6 +125,28 @@ watch(content, async () => {
   if (content.value && content.value.kind !== 'image') await locateLine();
 }, { immediate: true });
 
+watch([markdown, () => props.preview.anchor.value, content], ([root, anchor], _, onCleanup) => {
+  if (!root || !anchor) return;
+  let observer: MutationObserver | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const locate = () => {
+    const heading = findPreviewHeading(root, anchor);
+    if (!heading) return false;
+    heading.scrollIntoView({ block: 'start' });
+    observer?.disconnect();
+    clearTimeout(timer);
+    return true;
+  };
+  if (locate()) return;
+  observer = new MutationObserver(locate);
+  observer.observe(root, { subtree: true, childList: true, characterData: true });
+  timer = setTimeout(() => {
+    observer?.disconnect();
+    if (!locate()) showNotice(t('focus.filePreviewAnchorMissing', { anchor }));
+  }, 5000);
+  onCleanup(() => { observer?.disconnect(); clearTimeout(timer); });
+});
+
 async function copy(target: CopyTarget): Promise<void> {
   const text = target === 'content' ? content.value?.text : props.preview.file.value?.[target];
   const success = await copyTextToClipboard(text ?? '');
@@ -109,11 +154,14 @@ async function copy(target: CopyTarget): Promise<void> {
   showNotice(t(success ? 'filePreview.copied' : 'filePreview.failed'));
 }
 
-onBeforeUnmount(() => clearTimeout(noticeTimer));
+onBeforeUnmount(() => {
+  clearTimeout(noticeTimer);
+  document.removeEventListener('fullscreenchange', updateFullscreen);
+});
 </script>
 
 <template>
-  <section class="file-preview" @keydown.esc="onEscape">
+  <section ref="panel" class="file-preview" @keydown.esc="onEscape">
     <div class="file-preview-toolbar">
       <IconButton size="lg" :label="t('focus.filePreviewClose')" :title="t('focus.filePreviewClose')" @click="emit('close')"><Icon name="close" /></IconButton>
       <button ref="infoButton" type="button" class="file-preview-filename" :title="filename"
@@ -121,8 +169,10 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
         <span class="file-preview-name" aria-hidden="true"><span class="file-preview-name-start">{{ filenameParts[0] }}</span><span class="file-preview-name-end"><bdi>{{ filenameParts[1] }}</bdi></span></span>
         <Icon :name="infoOpen ? 'chevron-up' : 'chevron-down'" size="sm" />
       </button>
-      <IconButton size="lg" :label="saveLabel" :title="saveLabel" @click="emit('download')"><Icon name="download" /></IconButton>
-      <IconButton v-if="content?.renderMarkdown" size="lg" :label="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')"
+      <IconButton size="lg" :label="saveLabel" :title="saveLabel" @click="downloadFile"><Icon name="download" /></IconButton>
+      <IconButton v-if="content?.kind === 'html'" size="lg" :label="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')"
+        :title="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')" @click="toggleFullscreen"><Icon :name="fullscreen ? 'collapse' : 'expand'" /></IconButton>
+      <IconButton v-if="content?.renderMarkdown || content?.kind === 'html'" size="lg" :label="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')"
         :title="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')" :aria-pressed="sourceMode" @click="sourceMode = !sourceMode">
         <Icon :name="sourceMode ? 'file-text' : 'code'" />
       </IconButton>
@@ -144,6 +194,8 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
       <label v-if="content && showingSource" class="file-preview-wrap"><input v-model="wrapped" type="checkbox" />{{ t('focus.filePreviewWrap') }}</label>
       <p v-if="content?.kind === 'markdown' && !content.renderMarkdown">{{ t('focus.filePreviewLargeMarkdown') }}</p>
       <p>{{ t('focus.filePreviewCurrent') }}</p>
+      <p v-if="preview.anchor.value">{{ t('focus.filePreviewAnchor', { anchor: preview.anchor.value }) }}</p>
+      <p v-if="content?.kind === 'html'">{{ t('focus.filePreviewHtmlHelp') }}</p>
       <p v-if="content?.kind === 'image'">{{ t('filePreview.imageControls') }}</p>
     </section>
     <p v-if="preview.loading.value" class="file-preview-message" role="status">{{ t('focus.filePreviewLoading', { size: formatFileSize(preview.received.value) }) }}</p>
@@ -154,7 +206,8 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
         :help="t('filePreview.imageControls')" :hide-help="true" :failed-text="t('focus.filePreviewImageInvalid')" />
       <textarea v-else-if="showingSource" ref="source" class="file-preview-source" readonly :spellcheck="false"
         :aria-label="t('focus.filePreviewSource')" :wrap="wrapped ? 'soft' : 'off'" :value="content.text" />
-      <div v-else class="file-preview-markdown"><LazyMarkdown :text="content.text" :defer-images="true" :open-file="target => emit('openFile', target)" /></div>
+      <FocusHtmlPreview v-else-if="content.kind === 'html'" :text="content.text" :anchor="preview.anchor.value" @open-file="emit('openFile', $event)" />
+      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.text" :defer-images="true" :open-file="target => emit('openFile', target)" /></div>
     </template>
     <div v-if="notice" class="file-preview-notice" role="status">{{ notice }}</div>
   </section>
@@ -162,6 +215,7 @@ onBeforeUnmount(() => clearTimeout(noticeTimer));
 
 <style scoped>
 .file-preview { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.file-preview:fullscreen { background: var(--color-surface); }
 .file-preview-toolbar { display: flex; flex: none; align-items: center; padding: 0 var(--space-1); border-bottom: 1px solid var(--color-line); }
 .file-preview-filename { display: flex; align-items: center; gap: var(--space-1); flex: 1; min-width: 0; height: 44px; padding: 0 var(--space-1);
   border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; cursor: pointer; }

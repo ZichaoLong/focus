@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 34
+FOCUS_WEB_WIRE_VERSION: Final = 35
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -210,6 +210,7 @@ FOCUS_WEB_ENDPOINTS: Final = (
     FocusWebEndpointSpec("thread_list", "GET", "/api/threads", "_handle_threads"),
     FocusWebEndpointSpec("file_info", "GET", "/api/files/info", "_handle_file_info"),
     FocusWebEndpointSpec("file_download", "GET", "/api/files/download", "_handle_file_download"),
+    FocusWebEndpointSpec("html_preview", "GET", "/api/files/html-preview", "_handle_html_preview"),
     FocusWebEndpointSpec(
         "thread_start", "POST", "/api/threads", "_handle_start_thread"
     ),

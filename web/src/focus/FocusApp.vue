@@ -1076,7 +1076,7 @@ onUnmounted(() => {
           @pick-model="showModelPicker = true"
           @select-model="client.selectModel($event)"
           @open-thinking="openThinking"
-          @open-file="fileDownloadDialog?.open($event.path, client.activeThread.value?.cwd ?? '', $event.line)"
+          @open-file="fileDownloadDialog?.open($event.path, client.activeThread.value?.cwd ?? '', $event.line, $event.anchor)"
           @open-media="openMedia"
           @open-tool-diff="openToolDiff"
           @open-agent="openAgent"

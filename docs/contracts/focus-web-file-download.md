@@ -72,13 +72,13 @@ naming, independent document title, cancellation and fallback behavior under the
 
 The download dialog offers a separate Preview action. Opening a link reads metadata only; loading a
 conversation, scrolling past links or opening file information does not prefetch content. Previews
-reuse the session-authenticated file transfer, with no new endpoint, runtime dependency or wire
-version. Only one preview is retained, with no persisted content or object URLs.
+reuse the session-authenticated file transfer; the HTML sandbox bootstrap is described below.
+Only one preview is retained, with no persisted content or object URLs, new runtime dependencies or separate service.
 
 - `filePreview.ts` owns preview requests, cancellation, complete contents and object URL lifetime.
   Closing, replacing or refreshing cancels previous requests and releases their contents. Refresh is
   explicit and reads the current file, without historical snapshots or automatic tracking.
-- Text/code/log/JSON/HTML and similar files show complete selectable, copyable read-only text with a
+- Text/code/log/JSON and similar files show complete selectable, copyable read-only text with a
   line-wrap toggle. Strict UTF-8 and BOM-marked UTF-16 are supported. Unknown formats, binary data and
   unsupported encodings offer download, never silently replacing invalid characters. Text is limited
   to 1 MiB, checked at metadata, Content-Length and actual stream bytes so file growth cannot bypass
@@ -90,6 +90,9 @@ version. Only one preview is retained, with no persisted content or object URLs.
   later conversation changes. Math, tables, code and Mermaid share existing Markdown facilities with
   an isolated parser configuration: images (including reference images) become explicit links and raw
   HTML remains literal text, without attachment requests. Chat and print rendering stay unchanged.
+- Local links preserve section fragments: `#2-heading` is not line 2. Rendered Markdown locates a
+  heading ID or conventional lowercase hyphenated slug and scrolls to it. A missing heading produces
+  an explicit notice; source views retain the requested section in file information.
 - Initial image support covers PNG/JPEG/WebP original files, without thumbnails or transcoding.
   Transfers are limited to 16 MiB. Before creating a Blob URL or letting the browser decode pixels,
   `filePreviewImage.ts` inspects headers, limiting images to 24 million pixels and 32768 pixels per
@@ -99,7 +102,7 @@ version. Only one preview is retained, with no persisted content or object URLs.
 - Desktop uses a large dialog and narrow screens use the full viewport. Closing restores conversation
   focus and scroll position. Download and refresh remain available; filename editing and native Save
   As keep their behavior. Closing a nested Mermaid viewer does not also close the file preview.
-- One toolbar contains close, a shrinkable filename, download, the Markdown source/render toggle,
+- One toolbar contains close, a shrinkable filename, download, the Markdown/HTML source/render toggle,
   content copy and refresh. Icon actions have text labels and 44px touch targets. Long names use middle
   ellipsis, retaining both ends. Tapping the name opens an independently scrollable overlay with the
   complete filename and server path, each separately copyable; desktop hover also reveals the full name.
@@ -110,3 +113,46 @@ version. Only one preview is retained, with no persisted content or object URLs.
   overlay. Line location and copy results use temporary notices.
 
 PDF, Office and audio/video have no embedded preview yet. Existing PDF export printing is unaffected.
+
+## Interactive HTML previews
+
+`.html/.htm` supports self-contained reports, charts and presentations with embedded HTML, CSS,
+JavaScript, SVG, images and data. Its separate 8 MiB budget applies to metadata, Content-Length and
+actual bytes. Decoding retains strict UTF-8/BOM-marked UTF-16. Source and rendering share one complete
+file read. Explicit refresh rereads the file; returning from source restarts the document.
+
+`GET /api/files/html-preview` serves a fixed bootstrap without query parameters. Existing Host,
+session and trusted-proxy audience admission applies. It does not renew sessions, register an active
+document, call RuntimeLoop or read user files. The existing Web service and port serve it without
+another process, directory mapping, content cache or token URL. Wire v35 requires synchronized assets.
+
+Only this endpoint's successful response uses the dedicated CSP: `sandbox allow-scripts` without
+`allow-same-origin`; inline scripts/styles and data/blob media only; no network resources, connect,
+workers, nested frames, objects, base or form submissions. `frame-ancestors 'self'` allows Focus to
+embed it. Other responses receive no exception, and the main application's CSP is unchanged.
+The iframe explicitly delegates fullscreen for user actions inside the report or the Focus toolbar;
+unsupported browser behavior is reported.
+
+`FocusHtmlPreview.vue` hands the complete source and a private MessagePort to the exact iframe once.
+The bootstrap validates parent and origin, retains the port in a closure, then installs the original
+document. Report scripts lack same-origin access to the parent, cookies, storage or Focus APIs.
+Only trusted user link clicks cross that closure's port. Ordinary `window.postMessage`, synthetic
+`.click()` and unmounted documents cannot request file opens. File contents never return over this channel.
+
+Local references use the existing file dialog and the resolved report directory, preserving line or
+section references independently of subsequent conversation selection. A click reads metadata first;
+preview/download remains explicit, with no prefetch. In-document fragments stay in the report.
+External links produce an unsupported notice instead of sandbox popups. Blocked resources, script
+errors and bootstrap failures produce visible notes while source and download remain available.
+
+Closing, replacing, refreshing or switching to source unloads the iframe and closes its channel.
+A download dialog temporarily covering the preview preserves its state; opening it from toolbar
+fullscreen exits fullscreen first so the old fullscreen element cannot hide the form. Internal report state does
+not survive refresh. The sandbox isolates permissions, not CPU/memory consumption. Fonts, fullscreen
+and touch depend on the client browser; fixed canvases can appear small on narrow screens. CDN,
+sibling resources, module imports, storage, backend APIs and project development services are outside
+this single-file capability and are never silently replaced with a full website runtime.
+
+CSP restricts subresources and connections, not all network activity or data exfiltration: browsers
+still allow scripts to navigate their own iframe. Blocking every outbound request from arbitrary
+hostile HTML is not guaranteed; isolation protects Focus parent-page, credential and API read access.

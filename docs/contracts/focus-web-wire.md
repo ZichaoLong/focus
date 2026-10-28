@@ -207,6 +207,10 @@ guards and may not retain parallel key or enum inventories.
   and accepts exact turn/item IDs in fork bodies. Service and static assets must deploy together;
   see [historical prompt editing](history-prompt-edit.md).
 
+- v35 adds authenticated `GET /api/files/html-preview`, a fixed sandbox bootstrap without file paths,
+  contents or query parameters. The browser supplies its already-read HTML over a private channel.
+  Service and static assets must deploy together; see [file previews](focus-web-file-download.md#interactive-html-previews).
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,

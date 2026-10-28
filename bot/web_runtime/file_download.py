@@ -14,6 +14,7 @@ from urllib.parse import quote
 from aiohttp import web
 
 from bot.web_runtime.contract import WebRuntimeError
+from bot.web_runtime.html_preview import HTML_PREVIEW_DOCUMENT
 
 
 def inspect_file(path: str, cwd: str = "") -> dict[str, str | int]:
@@ -90,6 +91,17 @@ class SingleFileResponse(web.FileResponse):
 
 
 class WebGatewayFileDownloadMixin:
+    async def _handle_html_preview(self, request: web.Request) -> web.Response:
+        if request.query:
+            raise WebRuntimeError(
+                "HTML preview does not accept query parameters.",
+                code="invalid_file_request", status=400,
+            )
+        return web.Response(
+            text=HTML_PREVIEW_DOCUMENT, content_type="text/html",
+            headers={"Cache-Control": "no-store"},
+        )
+
     async def _handle_file_info(self, request: web.Request) -> web.Response:
         query = _query(request, download=False)
         info = await asyncio.to_thread(inspect_file, query["path"], query.get("cwd", ""))

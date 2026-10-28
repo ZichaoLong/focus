@@ -136,6 +136,7 @@ Status guidance:
 
 - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
 - [`history-prompt-edit-2026-10-28.zh-CN.md`](./verification/history-prompt-edit-2026-10-28.zh-CN.md)
+- [`html-preview-2026-10-28.zh-CN.md`](./verification/html-preview-2026-10-28.zh-CN.md)
 - [`state-db-thread-directory-2026-10-28.zh-CN.md`](./verification/state-db-thread-directory-2026-10-28.zh-CN.md)
 
 ### Archive

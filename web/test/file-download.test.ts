@@ -182,6 +182,12 @@ describe('single-file saving', () => {
 });
 
 describe('file references and names', () => {
+  it('preserves section anchors instead of treating numbered headings as line references', () => {
+    expect(parseLocalFileHref('../../note.md#2-使用说明')).toEqual({ path: '../../note.md', anchor: '2-使用说明' });
+    expect(parseLocalFileHref('report.html#9.2')).toEqual({ path: 'report.html', anchor: '9.2' });
+    expect(parseLocalFileHref('note.md#%E7%AB%A0%E8%8A%82')).toEqual({ path: 'note.md', anchor: '章节' });
+    expect(parseLocalFileHref('a.py#L2-L8')).toEqual({ path: 'a.py', line: 2 });
+  });
   it.each([
     ['/home/me/report.pdf', '/home/me/report.pdf', undefined],
     ['../report%20%E4%B8%AD%E6%96%87.pdf#L12', '../report 中文.pdf', 12],

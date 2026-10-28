@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createFilePreview, filePreviewKind, IMAGE_PREVIEW_BYTES, MARKDOWN_RENDER_BYTES, TEXT_PREVIEW_BYTES } from '../src/focus/filePreview';
+import { createFilePreview, filePreviewKind, HTML_PREVIEW_BYTES, IMAGE_PREVIEW_BYTES, MARKDOWN_RENDER_BYTES, TEXT_PREVIEW_BYTES } from '../src/focus/filePreview';
 import { inspectPreviewImage, IMAGE_PREVIEW_PIXELS } from '../src/focus/filePreviewImage';
 import { FocusApiError } from '../src/focus/types';
 
@@ -43,8 +43,22 @@ describe('on-demand file preview', () => {
     expect(preview.errorKey.value).toBe('focus.filePreviewUnsupported');
   });
 
-  it.each(['README', '.gitignore', 'data.jsonl', 'file.py', 'index.html', 'diagram.svg'])('treats %s as source text', name => {
+  it.each(['README', '.gitignore', 'data.jsonl', 'file.py', 'diagram.svg'])('treats %s as source text', name => {
     expect(filePreviewKind(name)).toBe('text');
+  });
+
+  it('keeps the exact HTML source and a separate bounded budget without running it during reads', async () => {
+    const { api, preview } = setup();
+    const text = '<script>throw Error("must not run in the parent")</script>' + ' '.repeat(TEXT_PREVIEW_BYTES);
+    api.fileContent.mockResolvedValueOnce(new Response(text));
+    await preview.open({ ...file, name: 'report.HTML', size: text.length }, undefined, '9.2');
+    expect(preview.content.value).toMatchObject({ kind: 'html', text, renderMarkdown: false });
+    expect(preview.anchor.value).toBe('9.2');
+    expect(filePreviewKind('report.htm')).toBe('html');
+    await preview.open({ ...file, name: 'large.html', size: HTML_PREVIEW_BYTES + 1 });
+    expect(preview.errorKey.value).toBe('focus.filePreviewTooLarge');
+    expect(api.fileContent).toHaveBeenCalledOnce();
+    expect(preview.anchor.value).toBeUndefined();
   });
 
   it('declines a known oversized file before fetching any content', async () => {

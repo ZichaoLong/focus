@@ -503,6 +503,14 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
         ) as response:
             self.assertEqual(response.status, 200)
 
+        async with self.session.get(
+            f"{self.endpoint}/api/files/html-preview",
+            headers=external_headers,
+        ) as response:
+            self.assertEqual(response.status, 200)
+            self.assertIn("sandbox allow-scripts", response.headers["Content-Security-Policy"])
+            self.assertNotIn("Set-Cookie", response.headers)
+
         cross_http_headers = (
             self._document_headers(
                 external_document,
@@ -527,12 +535,12 @@ class WebGatewayTrustedProxyTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         for headers in cross_http_headers:
-            with self.subTest(headers=headers):
-                async with self.session.get(
-                    f"{self.endpoint}/api/meta",
-                    headers=headers,
-                ) as response:
-                    self.assertEqual(response.status, 401)
+            for path in ("/api/meta", "/api/files/html-preview"):
+                with self.subTest(headers=headers, path=path):
+                    async with self.session.get(
+                        f"{self.endpoint}{path}", headers=headers,
+                    ) as response:
+                        self.assertEqual(response.status, 401)
 
         cross_socket_headers = (
             self._document_headers(

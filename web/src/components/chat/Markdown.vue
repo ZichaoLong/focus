@@ -397,7 +397,8 @@ function copyDiff(code: string, idx: number): void {
         :code-block-props="codeBlockProps"
         :final="final"
         :smooth-streaming="false"
-        :batch-rendering="allowBatchRender"
+        :batch-rendering="deferImages ? false : allowBatchRender"
+        :node-virtual="deferImages ? false : undefined"
         :defer-nodes-until-visible="false"
         @copy="copyCodeBlockFallback"
       />

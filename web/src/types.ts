@@ -242,6 +242,7 @@ export type TurnRole = 'user' | 'assistant' | 'compaction' | 'cron';
 export interface FilePreviewRequest {
   path: string;
   line?: number;
+  anchor?: string;
 }
 
 /** Metadata carried by a cron fire — shared by a standalone cron turn and by a

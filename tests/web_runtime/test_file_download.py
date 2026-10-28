@@ -5,10 +5,32 @@ from unittest.mock import patch
 
 from bot.focus_web_wire_catalog import FOCUS_WEB_RECORD_BY_NAME
 from bot.web_runtime.file_download import inspect_file
+from bot.web_runtime.html_preview import HTML_PREVIEW_CSP, HTML_PREVIEW_DOCUMENT
 from tests.web_runtime.gateway_harness import WebGatewayHarness
 
 
 class FileDownloadTests(WebGatewayHarness):
+    async def test_html_preview_requires_authentication_and_only_its_success_is_frameable(self):
+        async with self.session.get(f"{self.endpoint}/api/files/html-preview") as response:
+            self.assertEqual(response.status, 401)
+            self.assertEqual(response.content_type, "application/json")
+            self.assertNotEqual(response.headers.get("Content-Security-Policy"), HTML_PREVIEW_CSP)
+        await self._authenticate()
+        async with self.session.get(f"{self.endpoint}/api/files/html-preview") as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.content_type, "text/html")
+            self.assertEqual(response.headers["Content-Security-Policy"], HTML_PREVIEW_CSP)
+            self.assertNotIn("X-Frame-Options", response.headers)
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+            self.assertNotIn("Set-Cookie", response.headers)
+            self.assertEqual(await response.text(), HTML_PREVIEW_DOCUMENT)
+        self.assertEqual(self.calls, [])
+        for path in ("/api/files/html-preview?path=/etc/passwd", "/api/files/info"):
+            async with self.session.get(f"{self.endpoint}{path}") as response:
+                self.assertEqual(response.status, 400)
+                self.assertEqual(response.content_type, "application/json")
+                self.assertNotEqual(response.headers.get("Content-Security-Policy"), HTML_PREVIEW_CSP)
+
     async def test_session_is_required_for_metadata_and_download(self):
         for route in ("info", "download"):
             async with self.session.get(

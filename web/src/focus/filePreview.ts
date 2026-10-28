@@ -8,7 +8,8 @@ import { inspectPreviewImage } from './filePreviewImage';
 export const TEXT_PREVIEW_BYTES = 1024 * 1024;
 export const MARKDOWN_RENDER_BYTES = 128 * 1024;
 export const IMAGE_PREVIEW_BYTES = 16 * 1024 * 1024;
-export type FilePreviewKind = 'text' | 'markdown' | 'image';
+export const HTML_PREVIEW_BYTES = 8 * 1024 * 1024;
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'html';
 export interface FilePreviewContent {
   kind: FilePreviewKind;
   text: string;
@@ -28,13 +29,14 @@ export function filePreviewKind(name: string): FilePreviewKind | null {
   const lower = name.toLowerCase();
   const extension = lower.split('.').at(-1) ?? '';
   if (['md', 'markdown', 'mdown'].includes(extension)) return 'markdown';
+  if (['html', 'htm'].includes(extension)) return 'html';
   if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) return 'image';
   if (TEXT_EXTENSIONS.has(extension) || TEXT_NAMES.has(lower)) return 'text';
   return null;
 }
 
 export function filePreviewLimit(kind: FilePreviewKind): number {
-  return kind === 'image' ? IMAGE_PREVIEW_BYTES : TEXT_PREVIEW_BYTES;
+  return kind === 'image' ? IMAGE_PREVIEW_BYTES : kind === 'html' ? HTML_PREVIEW_BYTES : TEXT_PREVIEW_BYTES;
 }
 
 function decodeText(bytes: Uint8Array): string {
@@ -83,6 +85,7 @@ export function createFilePreview(api: Pick<FileDownloadApi, 'fileContent'>) {
   const opened = ref(false);
   const file = shallowRef<FocusFileInfo | null>(null);
   const line = ref<number | undefined>();
+  const anchor = ref<string | undefined>();
   const loading = ref(false);
   const received = ref(0);
   const errorKey = ref('');
@@ -101,6 +104,7 @@ export function createFilePreview(api: Pick<FileDownloadApi, 'fileContent'>) {
     opened.value = false;
     file.value = null;
     line.value = undefined;
+    anchor.value = undefined;
     loading.value = false;
     received.value = 0;
     errorKey.value = '';
@@ -142,18 +146,19 @@ export function createFilePreview(api: Pick<FileDownloadApi, 'fileContent'>) {
     }
   }
 
-  async function open(target: FocusFileInfo, targetLine?: number): Promise<void> {
+  async function open(target: FocusFileInfo, targetLine?: number, targetAnchor?: string): Promise<void> {
     close();
     opened.value = true;
     file.value = target;
     line.value = targetLine;
+    anchor.value = targetAnchor;
     const kind = filePreviewKind(target.name);
     if (!kind) { errorKey.value = 'focus.filePreviewUnsupported'; return; }
     if (target.size > filePreviewLimit(kind)) { errorKey.value = 'focus.filePreviewTooLarge'; return; }
     await refresh();
   }
 
-  return { opened, file, line, loading, received, errorKey, content, open, close, refresh };
+  return { opened, file, line, anchor, loading, received, errorKey, content, open, close, refresh };
 }
 
 export type FilePreviewState = ReturnType<typeof createFilePreview>;
