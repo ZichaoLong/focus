@@ -29,7 +29,7 @@ _CreateResponseT = TypeVar("_CreateResponseT")
 
 class ThreadCreateAdapter(Protocol):
     def create_thread(self, **kwargs: Any) -> ThreadSnapshot: ...
-    def fork_thread(self, thread_id: str) -> ThreadSnapshot: ...
+    def fork_thread(self, thread_id: str, **kwargs: Any) -> ThreadSnapshot: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,6 +132,8 @@ class ThreadCreateTransaction:
         *,
         local_commit: Callable[[ThreadSnapshot], _LocalCommitT],
         fork_from_thread_id: str = "",
+        fork_before_turn_id: str = "",
+        fork_connection_generation: int | None = None,
         **kwargs: Any,
     ) -> CommittedThreadCreate[ThreadSnapshot, _LocalCommitT]:
         """Create once, then apply the response to the requesting surface."""
@@ -141,7 +143,11 @@ class ThreadCreateTransaction:
         attempt_id = self._next_attempt_id()
         try:
             snapshot = (
-                self._adapter.fork_thread(fork_from_thread_id)
+                self._adapter.fork_thread(fork_from_thread_id, **(
+                    {"before_turn_id": fork_before_turn_id,
+                     "expected_connection_generation": fork_connection_generation}
+                    if fork_before_turn_id else {}
+                ))
                 if fork_from_thread_id else self._adapter.create_thread(**kwargs)
             )
         except Exception as exc:

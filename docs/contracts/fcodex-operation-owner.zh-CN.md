@@ -358,3 +358,5 @@ matching `serverRequest/resolved` 可从原 proxy 结算；后到副本、其他
 [原生 side](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/tui/src/app/side.rs)、
 [fork 订阅](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/thread_processor.rs#L5504)、
 [原连接回答与 first-response 消费](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/outgoing_message.rs#L567)。
+
+历史 prompt 编辑的原生回退、Web 历史边界及缓存失效见 [history-prompt-edit](history-prompt-edit.zh-CN.md)。

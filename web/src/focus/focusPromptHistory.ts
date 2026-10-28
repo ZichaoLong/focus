@@ -115,6 +115,7 @@ export function createFocusPromptHistory(options: {
     if (!value) pause();
     else if (!scanStarted) void loadMore();
   }
+  function refreshVisible() { if (visible && !scanStarted) void loadMore(); }
   function handleDelta(detail: FocusThreadDeltaDetail) {
     if (!options.enabled.value) return;
     const entries = (detail.item_turns ?? []).flatMap((turn) => { const entry = prompt(turn); return entry ? [entry] : []; });
@@ -123,5 +124,5 @@ export function createFocusPromptHistory(options: {
   }
   const stop = watch(identity, () => { reset(); if (visible) void loadMore(); }, { flush: 'sync' });
   function dispose() { disposed = true; reset(); stop(); }
-  return { outline, loading, error, truncated, hasMore, setVisible, pause, loadMore, handleDelta, dispose };
+  return { outline, loading, error, truncated, hasMore, setVisible, pause, loadMore, handleDelta, reset, refreshVisible, dispose };
 }

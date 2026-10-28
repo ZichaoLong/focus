@@ -102,6 +102,7 @@ describe('RuntimeNoticeOwner', () => {
       detail: { method: 'item/agentMessage/delta', turn_id: 'turn-1' },
     });
     expect(owner.presentation.value.retry).toBeNull();
+    expect(owner.presentation.value.notices).toEqual([expect.objectContaining({ recovered: true, willRetry: false })]);
 
     owner.handleEvent(warning(3, 'old warning'));
     owner.handleEvent(warning(1, 'new epoch warning', 'thread-a', 'epoch-2'));

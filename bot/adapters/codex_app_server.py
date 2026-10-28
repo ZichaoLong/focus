@@ -491,11 +491,29 @@ class CodexAppServerAdapter(AgentAdapter):
         )
         return snapshot
 
-    def fork_thread(self, thread_id: str) -> ThreadSnapshot:
+    def fork_thread(
+        self, thread_id: str, *, before_turn_id: str | None = None,
+        expected_connection_generation: int | None = None,
+    ) -> ThreadSnapshot:
         """Create a persistent branch without starting a turn or carrying a goal."""
+        params: dict[str, Any] = {"threadId": thread_id, "ephemeral": False, "excludeTurns": True}
+        if before_turn_id is not None:
+            # Older servers may ignore unknown fork fields. Never silently fork
+            # the full history when this operation promises an exact boundary.
+            identity = self._rpc.current_initialize_result(timeout=1.0)
+            if (identity is None or identity[0] != expected_connection_generation
+                or not re.match(r"^\S+/0\.(164|165)\.0(?:\s|$)", str(identity[1].get("userAgent", "")))):
+                raise CodexRpcPreSendError("thread/fork", ValueError(
+                    "历史编辑需要已核实的 Codex app-server 0.164.0 或 0.165.0；未创建分支。"
+                ))
+            params["beforeTurnId"] = require_request_identity(before_turn_id, field="before_turn_id")
+            params["deferGoalContinuation"] = False
         result = self._rpc_request(
             "thread/fork",
-            {"threadId": thread_id, "ephemeral": False, "excludeTurns": True},
+            params,
+            **({"expected_connection_generation": expected_connection_generation,
+                "require_existing_connection": True, "admit_existing_connection": True}
+               if before_turn_id is not None else {}),
         )
         _result, snapshot = self._require_thread_snapshot_result("thread/fork", result)
         if snapshot.summary.ephemeral or snapshot.summary.thread_id == thread_id:

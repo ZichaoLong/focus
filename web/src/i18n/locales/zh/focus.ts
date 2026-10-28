@@ -1,4 +1,13 @@
 export default {
+  runtimeRecovered: '瞬时异常后已收到后续进展',
+  editAndFork: '编辑并分叉',
+  editAndForkHelp: '保留来源线程，在此轮之前创建分支，将原 prompt 放入输入框。仅支持每轮首条纯文本 prompt。',
+  forkPromptPending: '分支已创建，原 prompt 等待恢复。请先清空新分支输入框，再恢复并编辑；尚未发送。',
+  originalPrompt: '查看完整原 prompt',
+  restoreForkPrompt: '恢复到输入框',
+  forkNotListed: '分支已创建，但本次未在全局列表中找到。发送一条消息通常会使它出现在列表中；若暂不继续对话，请保存线程 ID，以便关闭或重启后重新打开。',
+  forkCopyId: '复制线程 ID',
+  forkDismiss: '知道了',
   fileDownloadTitle: '下载文件',
   filePreviewTitle: '文件预览',
   filePreviewClose: '关闭预览',

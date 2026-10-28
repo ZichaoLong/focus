@@ -148,6 +148,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v33 新增 `POST /api/threads/{thread_id}/open` 与 `/close`，`thread_read` GET 只恢复已打开线程；
   current 目录改为实例共享的已打开集合，action capabilities 增加必填 `close`。移除浏览器本地隐藏；服务与静态资源必须同版本部署。
 
+- v34 扩展 fork 成功 DTO，必填一次列表观察及诊断、可空原 prompt handoff；fork body 可携 exact turn/item ID。
+  服务和静态资源必须同版本部署，见[历史 prompt 编辑](history-prompt-edit.zh-CN.md)。
+
 ## 4. Endpoint 与 event admission
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
@@ -273,7 +276,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   不从 `Reconnecting` 等英文内容推断 retry、严重性或 lifecycle。
 - `runtime_notice` 只进入当前 browser document 的有界 presentation owner，并由统一“运行详情”读取：
   `will_retry=true` 的 retry 与普通 warning 不进入主聊天流；non-retry error 继续在主聊天流显著显示，同时也保留在
-  详情中。connection/disconnected 是独立事实，只在 presentation join 时与 notice 同屏，不由 notice owner 持有。
+  详情中。retry 后观察到同轮后续进展时保留一条已恢复诊断，仅放在详情中。connection/disconnected 是独立事实，只在 presentation join 时与 notice 同屏，不由 notice owner 持有。
   notice 不持久化，不取得 turn completion、writer、recovery 或 projection-reload authority；合法 notice 自身不得触发
   snapshot reload。既有 `error` notification 的 authoritative thread invalidation 仍先发生，再按同一有序 event stream
   发布 notice。
@@ -329,7 +332,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   registry 新 family 默认 `attention=correctness`；同 family coalesce 时两个维度都只能升级，已有 `error` 不得被
   `warning` 降级，已有 `correctness` 不得被 `advisory` 降级。`runtime_queue_delay` 与 `runtime_task_slow` 明确是
   `attention=advisory`：它们证明观察到延迟，不证明 turn、writer、mutation 或外部 effect 已出现正确性故障，也不取得
-  lifecycle authority。
+  lifecycle authority。内部 operator 告警只在运行详情展示，不因技术告警推断某次用户操作失败。
 - RuntimeLoop 在任务入队时只捕获诊断 snapshot，不改变 FIFO、threshold、timeout、call/cancel 或 stop 语义。
   `queue_depth_at_enqueue` 是新任务入队前已经等待的任务数；`active_task_at_enqueue` 与
   `active_task_age_seconds_at_enqueue` 描述当时正在运行的任务及其已运行时长。queue-delay detail 使用

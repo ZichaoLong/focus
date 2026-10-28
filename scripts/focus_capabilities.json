@@ -226,6 +226,10 @@
         {
           "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
           "heading": "原生 fork 与 side"
+        },
+        {
+          "path": "docs/contracts/history-prompt-edit.zh-CN.md",
+          "heading": "fcodex 原生回退"
         }
       ],
       "focused-test": [
@@ -242,7 +246,8 @@
             "tests/test_fcodex_config_write.py",
             "tests/test_fcodex_fork.py",
             "tests/test_fcodex_targetless_thread_create.py",
-            "tests/focus_runtime/test_codex_handler_fcodex.py"
+            "tests/focus_runtime/test_codex_handler_fcodex.py",
+            "tests/test_fcodex_history_edit.py"
           ]
         }
       ],
@@ -1090,6 +1095,10 @@
         {
           "path": "web/src/components/chat/transcriptScrollAnchor.ts",
           "symbol": "restoreTranscriptScrollAnchor"
+        },
+        {
+          "path": "bot/web_runtime/event_coordinator.py",
+          "symbol": "WebRuntimeEventCoordinator.handle_notification"
         }
       ],
       "contract": [
@@ -1116,6 +1125,10 @@
         {
           "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
           "heading": "工具组展示"
+        },
+        {
+          "path": "docs/contracts/history-prompt-edit.zh-CN.md",
+          "heading": "历史变更与缓存"
         }
       ],
       "focused-test": [
@@ -2116,6 +2129,14 @@
         {
           "path": "docs/contracts/thread-create-local-commit.zh-CN.md",
           "heading": "持久分支创建"
+        },
+        {
+          "path": "docs/contracts/history-prompt-edit.zh-CN.md",
+          "heading": "Web 编辑并分叉"
+        },
+        {
+          "path": "docs/contracts/thread-create-local-commit.zh-CN.md",
+          "heading": "创建后的列表观察与提示"
         }
       ],
       "focused-test": [
@@ -2128,7 +2149,9 @@
             "tests/test_web_attachment_store.py",
             "tests/web_runtime/test_thread_fork.py",
             "tests/test_codex_thread_fork.py",
-            "tests/test_thread_create_transaction.py"
+            "tests/test_thread_create_transaction.py",
+            "tests/web_runtime/test_history_prompt_edit.py",
+            "tests/web_runtime/test_history_edit_gateway.py"
           ]
         },
         {
@@ -2147,7 +2170,9 @@
             "web/test/focus_client/owners/web-prompt-mutation-recovery.test.ts",
             "web/test/focus-prompt-diagnostic.test.ts",
             "web/test/focus-thread-fork.test.ts",
-            "web/test/focus_client/prompt-result-reconciliation.test.ts"
+            "web/test/focus_client/prompt-result-reconciliation.test.ts",
+            "web/test/focus-fork-notices-browser.test.ts",
+            "web/test/focus-history-edit-browser.test.ts"
           ]
         }
       ],

@@ -202,8 +202,8 @@ fcodex forks gain no naming rule. The local summary changes only after naming is
 A rejected or uncertain rename preserves the created branch, retries neither fork nor rename, and
 does not turn a naming failure into a creation failure. Every successful response includes a string
 `name_warning`: empty after confirmed naming, otherwise a notice identifying the branch's short ID
-and the manual rename option. The browser presents it after normal opening completes, preserving
-any opening error. If the user navigated elsewhere, that selection and the warning are both retained.
+and the manual rename option. The browser retains it as a success note on the new branch, separate from
+any opening error. If the user navigated elsewhere, retain that selection and show the note only when the new branch is opened.
 
 Success returns the new and source thread IDs. The browser refreshes the list and opens the branch
 through normal navigation, unless the user has navigated elsewhere meanwhile. Creation itself does
@@ -215,3 +215,18 @@ retain the known created ID and direct the user to open it from the list.
 All standalone Web lists, including loaded supplements and archives, filter `ephemeral`. Direct
 open/fork and other direct-target operations also reject temporary threads. This is a Web-only
 boundary, not a restriction on the shared direct-root policy used by fcodex.
+
+### Post-fork list observation and presentation
+
+After a successful Web fork, perform at most one additional `thread/list`: limit 100, created-time order,
+no source/provider filter, two-second timeout, existing connection only. Do not page or retry.
+`list_visibility=found|not_found|check_failed` describes only this observation, never absence from the entire inventory.
+Keep check failures in `visibility_diagnostic`; creation remains successful. Ordinary directory discovery is unchanged;
+refresh failures also belong in the branch runtime details.
+
+Keep naming and missing-list notes as dismissible info attached to the exact new thread in document memory, with
+Copy thread ID and Got it actions. Navigation neither moves the note to another thread nor reopens a dismissed note.
+Do not expire it on a timer. Preserve operation failures and unknown results in their existing prominent presentation.
+These notes are not a persistent index and do not guarantee discovery of empty-preview branches after reload or restart.
+
+Native history revert, Web fork boundaries and cache invalidation follow [history-prompt-edit](history-prompt-edit.md)。

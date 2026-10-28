@@ -12,6 +12,7 @@ export interface RuntimeNoticeItem {
   additionalDetails: string;
   willRetry: boolean;
   turnId: string;
+  recovered?: boolean;
 }
 
 export interface RuntimeNoticePresentation {
@@ -22,6 +23,7 @@ export interface RuntimeNoticePresentation {
 export interface RuntimeNoticeOwner {
   readonly presentation: ComputedRef<RuntimeNoticePresentation>;
   handleEvent(event: FocusProjectionEvent): void;
+  addDiagnostic(threadId: string, message: string): void;
   reset(): void;
 }
 
@@ -93,6 +95,9 @@ export function createRuntimeNoticeOwner(
       return;
     }
     if (event.type !== 'runtime_notice') {
+      for (const retry of retryNotices.value.filter((item) => eventAdvancesRetry(event, item))) {
+        notices.value = boundedAppend(notices.value, { ...retry, willRetry: false, recovered: true });
+      }
       retryNotices.value = retryNotices.value.filter(
         (retry) => !eventAdvancesRetry(event, retry),
       );
@@ -122,5 +127,12 @@ export function createRuntimeNoticeOwner(
     notices.value = boundedAppend(notices.value, item);
   }
 
-  return { presentation, handleEvent, reset };
+  function addDiagnostic(threadId: string, message: string): void {
+    notices.value = boundedAppend(notices.value, {
+      id: `local:${threadId}:${message}`, threadId, method: 'warning', message,
+      additionalDetails: '', willRetry: false, turnId: '',
+    });
+  }
+
+  return { presentation, handleEvent, reset, addDiagnostic };
 }

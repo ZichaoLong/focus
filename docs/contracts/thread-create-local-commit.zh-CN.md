@@ -153,7 +153,7 @@ operational warning 可以报告已知 thread id 与本地失败 stage；它只�
 不修改来源名称，也不为 fcodex 原生 fork 增加命名规则。仅在改名确认成功后更新本地 summary；
 改名被拒绝或结果不明时保留已创建的分支，不重试 fork 或 rename，不把改名失败升级为创建失败。
 成功响应始终携 `name_warning` 字符串：命名确认成功为空，否则提示分支短 ID 与可手动改名。
-浏览器在正常打开结束后显示该提示，保留同时出现的打开错误；若用户已切走，则保留用户选择并仍显示提示。
+浏览器把该提示作为新分支的成功附注，保留同时出现的打开错误；若用户已切走，则保留用户选择，只在打开对应分支时显示附注。
 
 成功返回新 thread id 与来源 id，前端刷新列表并通过正常打开路径选中新分支；若用户期间已导航，则不抢回页面。
 创建本身不改变浏览器 selection 或父线程 writer。新线程的 runtime lease、effective settings 与本地投影
@@ -162,3 +162,18 @@ operational warning 可以报告已知 thread id 与本地失败 stage；它只�
 
 所有浏览器独立列表（含 loaded 补充及归档）过滤 `ephemeral`；直接打开、fork 等 direct-target 操作也拒绝临时
 线程。此限制仅属于 Web，不能移入 fcodex 共用的 direct-root policy。
+
+### 创建后的列表观察与提示
+
+Web fork 成功后最多追加一次 `thread/list` 检查：100 条、创建时间排序、无来源或 provider 过滤、
+2 秒 timeout、只使用现有连接，不翻页、不重试。`list_visibility=found|not_found|check_failed`
+只描述本次观察；一页未命中不证明完整目录不存在。检查异常保留 `visibility_diagnostic`，不改变创建成功。
+普通目录刷新保持原机制；刷新失败同样只进入该分支的运行详情。
+
+未命中时在新分支页使用 info 附注，固定文案为：
+“分支已创建，但本次未在全局列表中找到。发送一条消息通常会使它出现在列表中；若暂不继续对话，请保存线程 ID，以便关闭或重启后重新打开。”
+提供“复制线程 ID”“知道了”。附注按 exact 新线程 ID 保留在当前 document 内存；不定时消失、不因导航重弹，
+关闭后删除。它不是持久线程目录，不承诺 F5 或重启后自动发现空 preview 分支。
+操作失败、结果不明仍使用错误或恢复提示；命名未确认和列表未命中不进入错误横幅。内部技术诊断沿用运行详情。
+
+历史 prompt 编辑的原生回退、Web 历史边界及缓存失效见 [history-prompt-edit](history-prompt-edit.zh-CN.md)。

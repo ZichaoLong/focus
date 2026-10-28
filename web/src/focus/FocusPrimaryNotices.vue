@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
+import { ref } from 'vue';
+import { copyTextToClipboard } from '../lib/clipboard';
 import Banner from '../components/ui/Banner.vue';
 import Button from '../components/ui/Button.vue';
 import FocusPromptDiagnostic from './FocusPromptDiagnostic.vue';
@@ -11,7 +13,7 @@ import type {
   UnknownProcessLocalMutation,
 } from './client-state/thread-mutations';
 import type { UnknownSubmissionDraft } from './mutations/actions';
-import type { FocusLifecycleOperation, FocusLifecycleTargetState } from './types';
+import type { FocusForkResult, FocusHistoryEditPrompt, FocusLifecycleOperation, FocusLifecycleTargetState } from './types';
 
 const props = defineProps<{
   documentReloadRequired: boolean;
@@ -20,10 +22,9 @@ const props = defineProps<{
   backendResetOutcomeUnknown: boolean;
   error: { message: string; diagnostic: string };
   promptResultNotices: readonly PromptResultNotice[];
+  forkNote?: FocusForkResult | null;
+  forkPrompt?: FocusHistoryEditPrompt | null;
   primaryRuntimeErrors: readonly RuntimeNoticeItem[];
-  primaryOperatorWarningCount: number;
-  operatorErrorCount: number;
-  operatorDegradedWithoutDetails: boolean;
   unknownSubmissionDrafts: readonly UnknownSubmissionDraft[];
   unknownProcessLocalMutations: readonly UnknownProcessLocalMutation[];
   unknownLifecycleMutations: readonly UnknownLifecycleMutation[];
@@ -36,6 +37,8 @@ const emit = defineEmits<{
   reload: [];
   reloadProjection: [];
   dismissPromptResultNotice: [mutationId: string];
+  dismissForkNote: [threadId: string];
+  restoreForkPrompt: [];
   openRuntimeDetails: [];
   retryUnknownSubmission: [draft: UnknownSubmissionDraft];
   discardUnknownSubmission: [attemptKey: string];
@@ -45,6 +48,11 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const copyFailedThreadId = ref('');
+async function copyThreadId(): Promise<void> {
+  const threadId = props.forkNote?.thread_id;
+  if (threadId) copyFailedThreadId.value = await copyTextToClipboard(threadId) ? '' : threadId;
+}
 
 function lifecycleOperationLabel(operation: FocusLifecycleOperation): string {
   return t(`focus.lifecycleOperation${operation[0]!.toUpperCase()}${operation.slice(1)}`);
@@ -61,10 +69,10 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
       || projectionStale
       || backendResetOutcomeUnknown
       || error.message
+      || forkNote
+      || forkPrompt
       || promptResultNotices.length > 0
       || primaryRuntimeErrors.length > 0
-      || primaryOperatorWarningCount > 0
-      || operatorDegradedWithoutDetails
       || unknownSubmissionDrafts.length > 0
       || unknownProcessLocalMutations.length > 0
       || unknownLifecycleMutations.length > 0"
@@ -103,20 +111,23 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
       {{ t('focus.backendResetOutcomeUnknown') }}
     </Banner>
 
-    <Banner
-      v-if="primaryOperatorWarningCount > 0 || operatorDegradedWithoutDetails"
-      :variant="operatorErrorCount > 0 ? 'danger' : 'warning'"
-    >
-      <span class="primary-notice-with-actions">
-        <span>
-          {{ operatorDegradedWithoutDetails
-            ? t('focus.operatorStatusDegraded')
-            : t('focus.operatorCorrectnessWarnings', { count: primaryOperatorWarningCount }) }}
+    <Banner v-if="forkNote" variant="info" data-testid="fork-note">
+      <div class="primary-runtime-error">
+        <span v-if="forkNote.list_visibility === 'not_found'">{{ t('focus.forkNotListed') }}</span>
+        <span v-if="forkNote.name_warning">{{ forkNote.name_warning }}</span>
+        <span class="primary-notice-actions">
+          <Button size="sm" variant="secondary" @click="copyThreadId">{{ t('focus.forkCopyId') }}</Button>
+          <Button size="sm" variant="ghost" @click="emit('dismissForkNote', forkNote.thread_id)">{{ t('focus.forkDismiss') }}</Button>
         </span>
-        <Button size="sm" variant="ghost" @click="emit('openRuntimeDetails')">
-          {{ t('focus.runtimeDetailsOpen') }}
-        </Button>
-      </span>
+        <span v-if="copyFailedThreadId === forkNote.thread_id">{{ t('focus.promptDiagnosticCopyFailed') }} {{ forkNote.thread_id }}</span>
+      </div>
+    </Banner>
+    <Banner v-if="forkPrompt" variant="info">
+      <div class="primary-runtime-error">
+        <span>{{ t('focus.forkPromptPending') }}</span>
+        <details><summary>{{ t('focus.originalPrompt') }}</summary><pre style="white-space: pre-wrap">{{ forkPrompt.text }}</pre></details>
+        <Button size="sm" variant="secondary" @click="emit('restoreForkPrompt')">{{ t('focus.restoreForkPrompt') }}</Button>
+      </div>
     </Banner>
 
     <Banner
@@ -240,6 +251,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
     <Banner v-if="error.message" variant="danger">
       <div class="primary-runtime-error">
         <span>{{ error.message }}</span>
+        <Button size="sm" variant="secondary" @click="emit('reloadProjection')">{{ t('focus.reloadProjection') }}</Button>
         <FocusPromptDiagnostic
           v-if="error.diagnostic"
           :key="error.diagnostic"

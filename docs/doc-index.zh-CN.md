@@ -70,6 +70,7 @@
 - [`thread-profile-semantics.zh-CN.md`](./contracts/thread-profile-semantics.zh-CN.md)
 - [`thread-resume-local-commit.zh-CN.md`](./contracts/thread-resume-local-commit.zh-CN.md)
 - [`thread-create-local-commit.zh-CN.md`](./contracts/thread-create-local-commit.zh-CN.md)
+- [`history-prompt-edit.zh-CN.md`](./contracts/history-prompt-edit.zh-CN.md)
 - [`thread-memory-semantics.zh-CN.md`](./contracts/thread-memory-semantics.zh-CN.md)
 - [`feishu-help-navigation.zh-CN.md`](./contracts/feishu-help-navigation.zh-CN.md)
 - [`scheduled-prompts.zh-CN.md`](./contracts/scheduled-prompts.zh-CN.md)
@@ -117,6 +118,7 @@
 ### 验证材料
 
 - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
+- [`history-prompt-edit-2026-10-28.zh-CN.md`](./verification/history-prompt-edit-2026-10-28.zh-CN.md)
 
 ### 历史归档
 

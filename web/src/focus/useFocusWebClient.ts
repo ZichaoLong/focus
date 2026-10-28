@@ -37,6 +37,8 @@ import {
   FocusApiError,
   isStaleWebReadError,
   type FocusMeta,
+  type FocusForkResult,
+  type FocusHistoryEditPrompt,
   type FocusOperatorStatus,
   type FocusOperatorStatusFreshness,
   type FocusUpdateStatus,
@@ -90,6 +92,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // document identity first.
   const documentReloadRequired = ref(false);
   const errorPresentation = ref({ message: '', diagnostic: '' });
+  const forkNotes = ref<Record<string, FocusForkResult>>({});
+  const forkPrompts = ref<Record<string, FocusHistoryEditPrompt>>({});
   let promptErrorLocator: WebPromptResultLocator | null = null;
   const errorMessage = computed(() => errorPresentation.value.message);
   let operatorStatusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -165,6 +169,12 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     navigation,
     settings,
     onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail); promptHistory?.handleDelta(detail); },
+    onHistoryInvalidated: () => {
+      clearHistoryView();
+      promptHistory?.reset();
+      threadInspection.clearToolDetail();
+      threadInspection.clearSearch();
+    },
     transport: {
       hasOpenedEventSocket: () => transportSession.snapshot.value.hasOpenedEventSocket,
       requestProjectionReload: () => transportSession.requestProjectionReload(),
@@ -291,6 +301,12 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const refreshActiveThread = projection.refreshActiveThread;
   async function reloadAll(): Promise<void> {
     await projection.reloadAll();
+    if (!navigation.isDisposed && !snapshotInvalidated.value) {
+      // A fresh snapshot may keep the same revision. Explicitly hydrate the
+      // retired view in that case instead of waiting for a revision watcher.
+      if (transcript.enabled.value && !transcript.loading.value) void transcript.load();
+      promptHistory.refreshVisible();
+    }
     reconcileMaterializedPromptResults();
   }
   const backendReset = createFocusBackendResetTransaction({ api, reloadAll });
@@ -805,21 +821,19 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     void reconcilePromptResultsForThread(threadId);
   }
 
-  async function forkThread(threadId: string): Promise<void> {
+  async function forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<void> {
     const floor = navigation.captureNavigationStateFloor();
-    const result = await forkThreadMutation(threadId);
+    const result = await forkThreadMutation(threadId, edit);
     if (!result) return;
+    if (result.edit_prompt) forkPrompts.value[result.thread_id] = result.edit_prompt;
+    if (result.name_warning || result.list_visibility === 'not_found') {
+      forkNotes.value = { ...forkNotes.value, [result.thread_id]: result };
+    }
+    if (result.visibility_diagnostic) {
+      runtimeNotices.addDiagnostic(result.thread_id, result.visibility_diagnostic);
+    }
     if (navigation.navigationStateFloorIsCurrent(floor)) {
       await selectThread(result.thread_id);
-    }
-    // Normal navigation clears the banner; present naming warnings after opening.
-    if (result.name_warning && !navigation.isDisposed
-      && !authRequired.value && !documentReloadRequired.value) {
-      promptErrorLocator = null;
-      errorPresentation.value = {
-        ...errorPresentation.value,
-        message: [errorPresentation.value.message, result.name_warning].filter(Boolean).join('\n'),
-      };
     }
   }
 
@@ -1058,6 +1072,12 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     documentReloadRequired,
     errorMessage,
     errorPresentation,
+    forkNote: computed(() => forkNotes.value[activeThreadId.value] ?? null),
+    dismissForkNote: (threadId: string) => { delete forkNotes.value[threadId]; },
+    forkPrompt: computed(() => forkPrompts.value[activeThreadId.value] ?? null),
+    consumeForkPrompt: (threadId: string, prompt: FocusHistoryEditPrompt) => {
+      if (forkPrompts.value[threadId] === prompt) delete forkPrompts.value[threadId];
+    },
     promptResultNotices,
     dismissPromptResultNotice,
     unknownSubmissionDraft,

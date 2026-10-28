@@ -7,6 +7,36 @@ from tests.web_runtime.harness import WebRuntimeControllerHarness
 
 
 class WebThreadForkTests(WebRuntimeControllerHarness):
+    def test_visibility_check_is_one_bounded_page_not_inventory_proof(self):
+        for page, cursor, expected in (([], "more", "not_found"), ([], None, "not_found"),
+                                       ([self.fake.summary()], "more", "found")):
+            with self.subTest(cursor=cursor, expected=expected):
+                self.prepare_fork()
+                if page:
+                    page = [replace(page[0], thread_id="fork-1")]
+                check = Mock(return_value=(page, cursor))
+                object.__setattr__(self.controller._thread_create._ports, "list_threads_page", check)
+                result = self.controller.fork_thread("tab-1", "thread-1")
+                self.assertEqual(result["list_visibility"], expected)
+                self.assertEqual(result["visibility_diagnostic"], "")
+                check.assert_called_once_with(
+                    limit=100, sort_key="created_at", source_kinds=[], model_providers=[],
+                    archived=False, timeout=2.0, require_existing_connection=True,
+                )
+                self.fake.fork_thread.assert_called_once()
+
+    def test_visibility_failure_keeps_success_and_diagnostic_without_retry(self):
+        self.prepare_fork()
+        check = Mock(side_effect=TimeoutError("no response"))
+        object.__setattr__(self.controller._thread_create._ports, "list_threads_page", check)
+        with self.assertLogs("bot.web_runtime.thread_create_coordinator", level="WARNING"):
+            result = self.controller.fork_thread("tab-1", "thread-1")
+        self.assertTrue(result["accepted"])
+        self.assertEqual(result["list_visibility"], "check_failed")
+        self.assertIn("TimeoutError", result["visibility_diagnostic"])
+        self.fake.fork_thread.assert_called_once()
+        check.assert_called_once()
+
     def prepare_fork(self, new_id="fork-1"):
         branch = replace(self.fake.summary(), thread_id=new_id, ephemeral=False)
 
@@ -32,7 +62,7 @@ class WebThreadForkTests(WebRuntimeControllerHarness):
         branch = self.prepare_fork()
         result = self.controller.fork_thread("tab-1", "thread-1")
         self.assertEqual(result, {
-            "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1", "name_warning": "",
+            "accepted": True, "thread_id": "fork-1", "source_thread_id": "thread-1", "name_warning": "", "list_visibility": "found", "visibility_diagnostic": "", "edit_prompt": None,
         })
         self.fake.fork_thread.assert_called_once_with("thread-1")
         self.fake.rename_thread.assert_called_once_with("fork-1", "Demo · 分支 fork-1")

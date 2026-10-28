@@ -605,6 +605,7 @@ class FocusRuntime:
             document_registry=WebDocumentRegistry(runtime_context_guard=self._runtime_loop.assert_worker_context),
             interaction_inbox=self._web_interaction_inbox,
             ports=WebRuntimePorts(
+                list_threads_page=self._adapter.list_threads,
                 list_threads=lambda **kwargs: self._adapter.list_threads_all(**kwargs),
                 read_thread=lambda thread_id, include_turns, **kwargs: self._adapter.read_thread(
                     thread_id,

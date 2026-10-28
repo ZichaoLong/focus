@@ -1179,6 +1179,12 @@ export const decodeFocusForkResult: FocusHttpDecoder<FocusForkResult> = (value) 
   if (!isNonEmptyTrimmedString(value.thread_id) || !isNonEmptyTrimmedString(value.source_thread_id)
     || value.thread_id === value.source_thread_id) return null;
   if (!hasString(value, 'name_warning')) return null;
+  if (!isFocusWebWireEnum('fork_list_visibility', value.list_visibility)
+    || !hasString(value, 'visibility_diagnostic')) return null;
+  if (value.edit_prompt !== null && (!isRequiredRecord('history_edit_prompt', value.edit_prompt)
+    || !isNonEmptyTrimmedString(value.edit_prompt.turn_id)
+    || !isNonEmptyTrimmedString(value.edit_prompt.item_id)
+    || !hasString(value.edit_prompt, 'text'))) return null;
   return value as unknown as FocusForkResult;
 };
 

@@ -162,6 +162,7 @@ class WebBackendEpochRetirementReceipt:
 @dataclass(slots=True)
 class WebRuntimePorts:
     list_threads: Callable[..., list[ThreadSummary]]
+    list_threads_page: Callable[..., tuple[list[ThreadSummary], str | None]]
     read_thread: Callable[..., ThreadSnapshot]
     list_models: Callable[[], list[RuntimeModelSummary]]
     runtime_identity: Callable[[], dict[str, Any]]
@@ -414,6 +415,9 @@ class WebRuntimeController:
             runtime_interest=self._runtime_interest,
             projection=projection,
             ports=WebThreadCreatePorts(
+                list_thread_items=ports.list_thread_items,
+                capture_connection_generation=ports.capture_connection_generation,
+                list_threads_page=ports.list_threads_page,
                 create_and_commit_thread=ports.create_and_commit_thread,
                 start_turn=ports.start_turn,
                 read_thread=ports.read_thread,
@@ -760,8 +764,8 @@ class WebRuntimeController:
             **kwargs,
         )
 
-    def fork_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
-        return self._thread_create.fork_thread(client_id, thread_id)
+    def fork_thread(self, client_id: str, thread_id: str, **kwargs: Any) -> dict[str, Any]:
+        return self._thread_create.fork_thread(client_id, thread_id, **kwargs)
 
     def rename_thread(
         self, client_id: str, thread_id: str, *, name: str

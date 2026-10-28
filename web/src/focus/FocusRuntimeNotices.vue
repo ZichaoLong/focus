@@ -27,10 +27,10 @@ const { t } = useI18n();
     <Banner
       v-for="notice in presentation.notices"
       :key="notice.id"
-      :variant="notice.method === 'error' ? 'danger' : 'warning'"
+      :variant="notice.recovered ? 'info' : notice.method === 'error' ? 'danger' : 'warning'"
     >
       <span class="runtime-notice-copy">
-        <strong>{{ t(notice.method === 'error'
+        <strong>{{ t(notice.recovered ? 'focus.runtimeRecovered' : notice.method === 'error'
           ? 'focus.runtimeError'
           : 'focus.runtimeWarning') }}</strong>
         <span>{{ notice.message }}</span>

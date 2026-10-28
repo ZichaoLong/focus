@@ -1,4 +1,13 @@
 export default {
+  runtimeRecovered: 'Progress received after transient error',
+  editAndFork: 'Edit and fork',
+  editAndForkHelp: 'Keep the source and fork before this turn, then restore the prompt to the composer. Supports the first plain-text prompt in each turn.',
+  forkPromptPending: 'Branch created. The original prompt is waiting to be restored. Clear the new branch composer, then restore and edit; nothing has been sent.',
+  originalPrompt: 'View complete original prompt',
+  restoreForkPrompt: 'Restore to composer',
+  forkNotListed: 'The branch was created, but was not found in this global list check. Sending a message usually makes it appear; if you do not continue now, save the thread ID to reopen it after closing or restarting.',
+  forkCopyId: 'Copy thread ID',
+  forkDismiss: 'Got it',
   fileDownloadTitle: 'Download file',
   filePreviewTitle: 'File preview',
   filePreviewClose: 'Close preview',

@@ -468,3 +468,5 @@ Pinned upstream evidence:
 [native side](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/tui/src/app/side.rs),
 [fork subscription](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/request_processors/thread_processor.rs#L5504),
 and [original-connection response consumption](https://github.com/openai/codex/blob/2351d9e1b608e6f9d9a3699b71d7eb39ee41cfa4/codex-rs/app-server/src/outgoing_message.rs#L567).
+
+Native history revert, Web fork boundaries and cache invalidation follow [history-prompt-edit](history-prompt-edit.md)。

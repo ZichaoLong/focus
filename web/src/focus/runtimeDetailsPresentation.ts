@@ -43,7 +43,7 @@ export function projectRuntimeDetailsPresentation(
   input: RuntimeDetailsInput,
 ): RuntimeDetailsPresentation {
   const primaryRuntimeErrors = input.runtimeNotices.notices.filter(
-    (notice) => notice.method === 'error',
+    (notice) => notice.method === 'error' && !notice.recovered,
   );
   const runtimeWarnings = input.runtimeNotices.notices.length - primaryRuntimeErrors.length;
   const primaryAttentionCount = input.operatorStatus.primaryWarningCount

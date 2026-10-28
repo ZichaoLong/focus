@@ -46,6 +46,7 @@ _RECONCILE_NOTIFICATION_METHODS = frozenset(
         "thread/archived",
         "thread/closed",
         "thread/compacted",
+        "thread/reverted",
         "thread/deleted",
         "thread/settings/updated",
         "thread/started",
@@ -361,10 +362,13 @@ class WebRuntimeEventCoordinator:
             # carry no Focus mutation id, so they cannot settle an unknown
             # archive/delete attempt without risking same-operation ABA.
             self._drop_thread_after_lifecycle(thread_id)
+        if method == "thread/reverted" and thread_id:
+            ports.read_model.forget_thread(thread_id)
         if thread_id and method in {
             "thread/closed",
             "thread/archived",
             "thread/deleted",
+            "thread/reverted",
         }:
             self._projection_successors.pop(thread_id, None)
             self._transcript_items.pop(thread_id, None)

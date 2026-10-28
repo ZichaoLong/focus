@@ -170,7 +170,7 @@ export interface FocusMutationActions {
     disposition: FocusMutationDisposition,
   ): void;
   renameThread(threadId: string, name: string): Promise<void>;
-  forkThread(threadId: string): Promise<FocusForkResult | null>;
+  forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult | null>;
   compact(): Promise<void>;
   review(target: Record<string, unknown>): Promise<void>;
   createGoal(objective: string): Promise<void>;
@@ -402,25 +402,47 @@ export function createFocusMutationActions(
     );
   }
 
-  async function forkThread(threadId: string): Promise<FocusForkResult | null> {
+  async function forkThread(threadId: string, edit?: { turn_id: string; item_id: string }): Promise<FocusForkResult | null> {
     if (isDisposed() || options.connection.value !== 'connected'
       || projection.snapshotInvalidated.value || !threadId || actionBusy.value) return null;
     actionBusy.value = true;
     options.clearError();
     try {
-      const result = await api.forkThread(threadId);
+      const result = await (edit ? api.forkThread(threadId, edit) : api.forkThread(threadId));
       if (isDisposed()) return null;
       if (!result.accepted || result.source_thread_id !== threadId || result.thread_id === threadId) {
         throw new Error('Focus could not verify the created branch. Refresh the session list before retrying.');
       }
+      if (edit && (result.edit_prompt?.turn_id !== edit.turn_id || result.edit_prompt.item_id !== edit.item_id)) {
+        throw new Error(`Branch ${result.thread_id} was created, but the original prompt could not be verified. Open it by ID; do not repeat the fork automatically.`);
+      }
       try {
         await projection.refreshThreads();
       } catch (error) {
-        if (!isDisposed()) options.reportError(error);
+        return isDisposed() ? null : {
+          ...result,
+          visibility_diagnostic: [result.visibility_diagnostic,
+            `Branch ${result.thread_id} created; list refresh failed: ${String(error)}`].filter(Boolean).join('\n'),
+        };
       }
       return isDisposed() ? null : result;
     } catch (error) {
-      if (!isDisposed()) options.reportError(error);
+      if (!isDisposed()) {
+        if (error instanceof FocusApiError) {
+          const createdId = error.details.thread_id;
+          if (typeof createdId === 'string' && createdId) {
+            options.reportError(new Error(`${error.message} Thread ID: ${createdId}`));
+          } else if (error.status >= 500) {
+            options.reportError(new Error(
+              `Fork result could not be confirmed. Check opened sessions and the global list before creating again; no automatic retry. ${error.message}`,
+            ));
+          } else options.reportError(error);
+        } else {
+          options.reportError(new Error(
+            `Fork result could not be confirmed. Check opened sessions and the global list before creating again; no automatic retry. ${String(error)}`,
+          ));
+        }
+      }
       return null;
     } finally {
       if (!isDisposed()) actionBusy.value = false;

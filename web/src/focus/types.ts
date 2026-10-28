@@ -688,11 +688,20 @@ export interface FocusRenameResult {
   name: string;
 }
 
+export interface FocusHistoryEditPrompt {
+  turn_id: string;
+  item_id: string;
+  text: string;
+}
+
 export interface FocusForkResult {
   accepted: boolean;
   thread_id: string;
   source_thread_id: string;
   name_warning: string;
+  list_visibility: FocusWebWireEnum<'fork_list_visibility'>;
+  visibility_diagnostic: string;
+  edit_prompt: FocusHistoryEditPrompt | null;
 }
 
 export interface FocusGoalResult extends FocusCoordinates {

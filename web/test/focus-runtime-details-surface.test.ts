@@ -124,7 +124,7 @@ describe('Focus runtime-details presentation', () => {
     expect(runtimePanel).toContain('<FocusOperatorWarnings');
     expect(runtimePanel).toContain('presentation.activeTurnContext');
     expect(primary).toContain('primaryRuntimeErrors');
-    expect(primary).toContain('primaryOperatorWarningCount');
+    expect(primary).not.toContain('primaryOperatorWarningCount');
     expect(primary).toContain('unknownSubmissionDrafts');
     expect(primary).not.toContain('activeTurnContext');
     expect(primary).not.toContain('operatorStatusStale');

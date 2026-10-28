@@ -203,6 +203,10 @@ guards and may not retain parallel key or enum inventories.
   The current directory becomes the instance-wide open set, and action capabilities require `close`.
   Browser-local hiding is removed. Service and browser assets must deploy together.
 
+- v34 requires the one-page fork visibility observation, diagnostics and nullable original-prompt handoff,
+  and accepts exact turn/item IDs in fork bodies. Service and static assets must deploy together;
+  see [historical prompt editing](history-prompt-edit.md).
+
 ## 4. Endpoint and Event Admission
 
 - Every named API endpoint has one catalog record containing a unique name, method,
@@ -418,7 +422,8 @@ guards and may not retain parallel key or enum inventories.
   browser document and is read by the unified Runtime Details presentation. A
   `will_retry=true` retry and an ordinary warning do not enter the primary
   conversation flow. A non-retry error remains prominent in the primary flow
-  and is also retained in Runtime Details. Connection/disconnected state is an
+  and is also retained in Runtime Details. Progress on the same turn retains a recovered retry diagnostic
+  only in the details. Connection/disconnected state is an
   independent fact that merely joins notices in presentation and is not owned by
   the notice owner. A notice is not persisted and owns no turn-completion,
   writer, recovery, or projection-reload fact; a valid notice alone must not
@@ -514,7 +519,7 @@ guards and may not retain parallel key or enum inventories.
   `runtime_queue_delay` and `runtime_task_slow` are explicitly
   `attention=advisory`: they prove observed latency, not a correctness failure
   in a turn, writer, mutation, or external effect, and they acquire no lifecycle
-  authority.
+  authority. Internal operator warnings appear only in Runtime Details and cannot imply that a user operation failed.
 - RuntimeLoop captures only a diagnostic snapshot when a task is enqueued; this
   changes no FIFO, threshold, timeout, call/cancel, or stop semantics.
   `queue_depth_at_enqueue` is the number of tasks already waiting before the new

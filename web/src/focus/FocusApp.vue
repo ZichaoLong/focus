@@ -501,6 +501,20 @@ function handleCopyMessageToComposer(payload: { text: string; attachments?: Turn
   conversationPaneRef.value?.focusComposer();
 }
 
+async function restoreForkPrompt(): Promise<void> {
+  const prompt = client.forkPrompt.value;
+  const threadId = client.activeThreadId.value;
+  const scope = client.composerScopeId.value;
+  if (!prompt || !scope) return;
+  await nextTick();
+  if (client.activeThreadId.value !== threadId || client.composerScopeId.value !== scope
+    || client.forkPrompt.value !== prompt) return;
+  if (conversationPaneRef.value?.loadComposerRecovery(scope, prompt.text, []) === true) {
+    client.consumeForkPrompt(threadId, prompt);
+  }
+}
+watch([client.forkPrompt, client.composerScopeId], () => { void restoreForkPrompt(); }, { flush: 'post' });
+
 function selectDetail(requested: FocusDetailSelection): boolean {
   const next = nextFocusDetailSelection(detailSelection.value, requested);
   if (!next) {
@@ -965,10 +979,9 @@ onUnmounted(() => {
           :backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"
           :error="client.errorPresentation.value"
           :prompt-result-notices="client.promptResultNotices.value"
+          :fork-note="client.forkNote.value"
+          :fork-prompt="client.forkPrompt.value"
           :primary-runtime-errors="runtimeDetailsPresentation.primaryRuntimeErrors"
-          :primary-operator-warning-count="operatorStatusPresentation.primaryWarningCount"
-          :operator-error-count="operatorStatusPresentation.errorWarningCount"
-          :operator-degraded-without-details="operatorStatusPresentation.degradedWithoutDetails"
           :unknown-submission-drafts="client.unknownSubmissionDrafts.value"
           :unknown-process-local-mutations="client.unknownProcessLocalMutations.value"
           :unknown-lifecycle-mutations="client.unknownLifecycleMutations.value"
@@ -978,6 +991,8 @@ onUnmounted(() => {
           @reload="client.reloadDocument"
           @reload-projection="client.reloadAll"
           @dismiss-prompt-result-notice="client.dismissPromptResultNotice($event)"
+          @dismiss-fork-note="client.dismissForkNote($event)"
+          @restore-fork-prompt="restoreForkPrompt"
           @open-runtime-details="openRuntimeDetails"
           @retry-unknown-submission="retryUnknownSubmission"
           @discard-unknown-submission="client.discardUnknownSubmission($event)"
@@ -996,6 +1011,7 @@ onUnmounted(() => {
           :turns="client.turns.value"
           :session-id="client.activeThreadId.value"
           :composer-session-id="client.composerScopeId.value"
+          :history-edit-available="client.connection.value === 'connected' && !client.actionBusy.value"
           :composer-ready="client.scopeReady.value"
           :approvals="client.pendingApprovals.value"
           :tasks="client.tasks.value"
@@ -1071,6 +1087,7 @@ onUnmounted(() => {
           @open-agent="openAgent"
           @search-conversation="openConversationSearch"
           @copy-message-to-composer="handleCopyMessageToComposer"
+          @edit-prompt="client.forkThread(client.activeThreadId.value, $event)"
           @rename-session="(id, title) => client.renameThread(id, title)"
           @archive-session="threadActions?.confirmArchiveThread($event)"
           @fork-session="client.forkThread($event)"

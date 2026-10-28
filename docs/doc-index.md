@@ -87,6 +87,7 @@ Status guidance:
 - [`thread-profile-semantics.md`](./contracts/thread-profile-semantics.md)
 - [`thread-resume-local-commit.md`](./contracts/thread-resume-local-commit.md)
 - [`thread-create-local-commit.md`](./contracts/thread-create-local-commit.md)
+- [`history-prompt-edit.md`](./contracts/history-prompt-edit.md)
 - [`thread-memory-semantics.md`](./contracts/thread-memory-semantics.md)
 - [`feishu-help-navigation.md`](./contracts/feishu-help-navigation.md)
 - [`scheduled-prompts.md`](./contracts/scheduled-prompts.md)
@@ -134,6 +135,7 @@ Status guidance:
 ### Verification
 
 - [`group-chat-manual-test-checklist.zh-CN.md`](./verification/group-chat-manual-test-checklist.zh-CN.md)
+- [`history-prompt-edit-2026-10-28.zh-CN.md`](./verification/history-prompt-edit-2026-10-28.zh-CN.md)
 
 ### Archive
 

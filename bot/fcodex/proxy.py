@@ -341,6 +341,9 @@ def _classify_coordinated_client_response(
     if not _is_usable_client_response(payload, request):
         return None
     if "error" in payload:
+        if request.method == "thread/revert" and payload["error"].get("code") not in {-32600, -32601, -32602}:
+            # Revert can commit before failing to reload the replacement runtime.
+            return "unknown", None
         return "error", None
 
     result = payload.get("result")
@@ -356,7 +359,7 @@ def _classify_coordinated_client_response(
             or (request.method == "thread/fork" and thread["id"] == request.thread_id)
         ):
             return None
-    elif request.method == "thread/resume":
+    elif request.method in {"thread/resume", "thread/revert"}:
         thread = result.get("thread")
         if (
             not isinstance(thread, dict)

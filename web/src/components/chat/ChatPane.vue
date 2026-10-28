@@ -102,6 +102,7 @@ const props = withDefaults(
     toolDiffPanel?: boolean;
     /** Exact per-thread admission for re-fetching omitted tool detail. */
     toolDetailAvailable?: boolean;
+    historyEditAvailable?: boolean;
     toolDetailTarget?: ToolCallData | null;
     downloadFile?: (fileId: string) => Promise<Blob>;
     /**
@@ -303,6 +304,7 @@ const emit = defineEmits<{
   openToolDiff: [tool: ToolCallData];
   /** Copy a message into the composer as a new, unsent follow-up draft. */
   copyMessageToComposer: [payload: { text: string; attachments?: TurnAttachment[] }];
+  editPrompt: [target: { turn_id: string; item_id: string }];
   /** Fetch the next older page of messages (triggered by top sentinel visibility or click). */
   loadOlderMessages: [source: 'sentinel' | 'button'];
   /** Remove a queued message by index. */
@@ -601,7 +603,13 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
             <!-- User input renders verbatim (pre-wrap), never through Markdown -->
             <div v-else class="u-text">{{ turn.text }}</div>
           </div>
-          <div v-if="turn.createdAt || canCopyMessageToComposer(turn) || (turn.itemId && !turn.contentDeferred)" class="u-meta">
+          <div v-if="turn.createdAt || canCopyMessageToComposer(turn) || turn.itemId" class="u-meta">
+            <button v-if="historyEditAvailable && turn.rawTurnId && turn.itemId"
+              type="button" class="u-edit"
+              :aria-label="t('focus.editAndFork')"
+              :title="t('focus.editAndForkHelp')"
+              @click="emit('editPrompt', { turn_id: turn.rawTurnId, item_id: turn.itemId })"
+            >{{ t('focus.editAndFork') }}</button>
             <div v-if="canCopyMessageToComposer(turn)" class="u-edit-wrap">
               <button
                 type="button"

@@ -40,6 +40,7 @@ const props = withDefaults(defineProps<{
    *  False keeps the one Composer/attachment owner mounted, but withholds all
    *  editing, upload, submit, and draft/attachment handoff paths. */
   composerReady?: boolean;
+  historyEditAvailable?: boolean;
   approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
   gitInfo?: { branch: string; ahead: number; behind: number } | null;
   tasks: TaskItem[];
@@ -205,6 +206,7 @@ const emit = defineEmits<{
   refreshGitStatus: [];
   /** Copy a message into the composer as an unsent follow-up draft. */
   copyMessageToComposer: [payload: { text: string; attachments?: TurnAttachment[] }];
+  editPrompt: [target: { turn_id: string; item_id: string }];
   /** Empty-composer workspace picker: start a new conversation elsewhere. */
   selectWorkspace: [workspaceId: string];
   /** Empty-composer workspace picker: create a new workspace. */
@@ -2112,6 +2114,7 @@ defineExpose({
               :loading-newer="historyLoadingDirection === 'newer'"
               :tool-diff-panel="toolDiffPanel !== false"
               :tool-detail-available="toolDetailAvailable" :tool-detail-target="toolDetailTarget"
+              :history-edit-available="historyEditAvailable"
               :download-file="downloadFile"
               :queued="queued"
               @open-file="emit('openFile', $event)"
@@ -2121,6 +2124,7 @@ defineExpose({
               @open-agent="emit('openAgent', $event)"
               @open-tool-diff="emit('openToolDiff', $event)"
               @copy-message-to-composer="handleCopyMessageToComposer"
+              @edit-prompt="emit('editPrompt', $event)"
               @load-older-messages="handleLoadOlderMessages"
               @load-newer-messages="handleLoadNewerMessages"
               @retry-transcript="emit('retryTranscript')"

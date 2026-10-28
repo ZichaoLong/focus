@@ -67,6 +67,9 @@ class _StubAdapter:
     def list_threads_all(self, **_kwargs) -> list[object]:
         return []
 
+    def list_threads(self, **_kwargs):
+        return [], None
+
     def read_thread(self, _thread_id: str, **_kwargs):
         return None
 

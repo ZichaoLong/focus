@@ -169,6 +169,7 @@ class WebRuntimeControllerHarness(unittest.TestCase):
             document_registry=self.document_registry,
             interaction_inbox=self.interaction_inbox,
             ports=WebRuntimePorts(
+                list_threads_page=lambda **kwargs: (self.fake.list_threads(**kwargs), None),
                 list_threads=lambda **kwargs: self.fake.list_threads(**kwargs),
                 read_thread=lambda thread_id,
                 include_turns,

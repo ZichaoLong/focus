@@ -56,6 +56,7 @@ _EXTERNAL_SETTINGS_UNKNOWN_METHODS = frozenset(
         "thread/compact/start",
         "thread/delete",
         "thread/resume",
+        "thread/revert",
         "thread/settings/update",
         "thread/unarchive",
         "turn/start",
@@ -270,6 +271,19 @@ class FcodexOperationService:
         root_thread_id = self._known_root(normalized_thread_id)
         if not root_thread_id:
             return _deny("Focus 正在确认该 thread 是否为直接目标；请稍后重试。")
+
+        if normalized_method == "thread/revert":
+            if (not isinstance(request_params, dict)
+                or set(request_params) != {"threadId", "beforeTurnId"}
+                or request_params.get("threadId") != root_thread_id
+                or not isinstance(request_params.get("beforeTurnId"), str)
+                or not request_params["beforeTurnId"]
+                or request_params["beforeTurnId"].strip() != request_params["beforeTurnId"]):
+                return _deny("thread/revert 需要确切 threadId 与 beforeTurnId；请求未转发。")
+            if not self._live_endpoint_has_connection_source(
+                normalized_participant_id, normalized_connection_id, root_thread_id,
+            ):
+                return _deny("当前 fcodex connection 未 attach 到回退目标；请求未转发。")
 
         if normalized_method == "turn/interrupt":
             interrupt_target = strict_fcodex_interrupt_target(request_params)
@@ -540,7 +554,7 @@ class FcodexOperationService:
             )
 
         trusted_resume = True
-        if normalized_outcome == "success" and request.method == "thread/resume":
+        if normalized_outcome == "success" and request.method in {"thread/resume", "thread/revert"}:
             trusted_resume = fcodex_successful_response_thread_identity(
                 request.method,
                 admitted_thread_id=request.thread_id,
