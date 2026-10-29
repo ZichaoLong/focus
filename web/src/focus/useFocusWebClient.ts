@@ -338,6 +338,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       void refreshOperatorStatus();
     },
     onHandshakeReady: (reconnected) => {
+      void api.promptTimings?.sync();
       // Gateway emits hello only after the document connection transaction.
       // It is the freshness boundary for document-bound action capabilities;
       // WebSocket open alone is not. A newer initial hello will synchronously
@@ -347,6 +348,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       else transportSession.scheduleProjectionRefresh();
     },
     onEvent: (event) => {
+      if (event.type === 'prompt_timing_changed') api.promptTimings?.changed(String(event.detail?.submission_id ?? ''));
       runtimeNotices.handleEvent(event);
       projection.handleEvent(event);
       if (event.type === 'thread_invalidated' && event.thread_id

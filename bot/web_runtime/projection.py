@@ -615,7 +615,8 @@ def project_turns(
                 "no": line_no,
                 "text": "",
                 "attachments": [],
-                "createdAt": created_at,
+                # A later steer shares the raw turn, not its submission time.
+                "createdAt": None,
             }
             used_ids.add(str(current_user["id"]))
             projected.append(current_user)

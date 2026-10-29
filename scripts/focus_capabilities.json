@@ -1793,7 +1793,8 @@
             "tests/test_web_gateway_next_turn_settings.py",
             "tests/test_web_gateway_request_decoder.py",
             "tests/test_web_update_controller.py",
-            "tests/web_runtime/test_thread_history_gateway.py"
+            "tests/web_runtime/test_thread_history_gateway.py",
+            "tests/web_runtime/test_prompt_timing.py"
           ]
         },
         {
@@ -2165,6 +2166,10 @@
         {
           "path": "docs/contracts/thread-create-local-commit.zh-CN.md",
           "heading": "创建后的列表观察与提示"
+        },
+        {
+          "path": "docs/contracts/focus-web-prompt-timing.zh-CN.md",
+          "heading": "持久化、关联与 authority"
         }
       ],
       "focused-test": [
@@ -2213,7 +2218,8 @@
             "tests/test_fcodex_shared_steer.py",
             "tests/web_runtime/test_steer_projection.py",
             "tests/test_codex_app_server_generation_pinned_turns.py",
-            "tests/web_runtime/test_directory_thread_actions.py::WebRuntimeDirectoryThreadActionTests::test_system_error_still_blocks_exclusive_and_lifecycle_actions"
+            "tests/web_runtime/test_directory_thread_actions.py::WebRuntimeDirectoryThreadActionTests::test_system_error_still_blocks_exclusive_and_lifecycle_actions",
+            "tests/web_runtime/test_prompt_timing.py"
           ]
         }
       ],
@@ -2959,6 +2965,101 @@
         "dependency-direction",
         "source-context",
         "web-wire"
+      ]
+    },
+    "focus-web-prompt-timing": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway_prompt_timing.py",
+          "symbol": "WebGatewayPromptTimingMixin"
+        },
+        {
+          "path": "web/src/components/chat/PromptTime.vue",
+          "symbol": "load"
+        },
+        {
+          "path": "web/src/focus/FocusPromptTimingHistory.vue",
+          "symbol": "load"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/stores/web_prompt_timing_store.py",
+          "symbol": "WebPromptTimingStore"
+        },
+        {
+          "path": "bot/web_runtime/prompt_timing.py",
+          "symbol": "WebPromptTimingRecorder"
+        },
+        {
+          "path": "bot/web_runtime/prompt_timing.py",
+          "symbol": "PromptTimingTrace"
+        },
+        {
+          "path": "web/src/focus/promptTimingStore.ts",
+          "symbol": "createPromptTimingStore"
+        },
+        {
+          "path": "web/src/focus/promptTimingTypes.ts",
+          "symbol": "isPromptTimingRecord"
+        },
+        {
+          "path": "bot/web_runtime/transcript_window.py",
+          "symbol": "project_transcript_item"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-prompt-timing.zh-CN.md",
+          "heading": "时间来源与边界"
+        },
+        {
+          "path": "docs/contracts/focus-web-prompt-timing.zh-CN.md",
+          "heading": "持久化、关联与 authority"
+        },
+        {
+          "path": "docs/contracts/focus-web-prompt-timing.zh-CN.md",
+          "heading": "Wire、按需读取与开销"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/web_runtime/test_prompt_timing.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-prompt-timing.test.ts",
+            "web/test/focus-prompt-timing-browser.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_prompt_submission.py",
+            "tests/test_web_gateway.py",
+            "tests/test_web_transcript_window.py",
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-prompt-dispatch-api.test.ts",
+            "web/test/focus_client/owners/focus-projection-sync.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "web-dependency-direction",
+        "web-wire",
+        "web-typecheck"
       ]
     }
   }

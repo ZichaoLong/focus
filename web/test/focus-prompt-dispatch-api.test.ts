@@ -52,7 +52,7 @@ describe('FocusWebApi single-POST prompt', () => {
     await expect(api.readPromptResult('thread-1', MUTATION_ID)).resolves.toEqual(RECEIPT);
 
     const promptCalls = fetchMock.mock.calls.filter(([path]) => (
-      String(path).includes('/prompt')
+      String(path).endsWith('/prompt') || String(path).includes('/prompt-result/')
     ));
     expect(promptCalls).toHaveLength(2);
     expect(promptCalls[0]?.[0]).toBe('/api/threads/thread-1/prompt');

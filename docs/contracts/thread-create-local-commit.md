@@ -164,6 +164,10 @@ runtime authorities.
 Operational warnings may report a known thread id and local stage. They are
 diagnostics, not mutation admission authority.
 
+A Web first prompt may carry the browser UUID/time headers from the [submission-time contract](./focus-web-prompt-timing.md).
+The server derives the user-message identity `focus-web:<UUID>`; without those headers it still generates the identity.
+This metadata association changes neither create/first-prompt effects, unknown classification nor text-only recovery.
+
 ## Regression requirements
 
 Tests must lock down:

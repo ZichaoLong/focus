@@ -59,12 +59,15 @@ pending、是否可以清空当前 Composer 的唯一 browser-local owner。它�
 backend connection generation、active turn 与 route 由 server 在 prepare 时捕获。server 必须从 mutation id 派生
 exact `client_user_message_id = "focus-web:<mutation_id>"`。browser 不得发送或覆盖该值。
 
-browser 对 existing-thread prompt 只可在当前 Tab 的有界 `sessionStorage` 中保存
+用于 result receipt 恢复时，browser 对 existing-thread prompt 只可在当前 Tab 的有界 `sessionStorage` 中保存
 `(thread_id, mutation_id)` locator，以便 F5 后查询。它不得保存这笔 existing-thread prompt 的 payload、attachment
 receipt、recovery bearer、server generation 或 execute continuation。locator 不是 effect authority，不参与
 `canSubmit`，也不能用来构造另一笔 POST。
 若写入 `sessionStorage` 失败，locator 只降级为当前 document 的内存记录，绝不能阻止唯一 POST；明确的可用性成本是：
 若随后丢失原 POST result，F5 后无法继续这项 GET 查询。
+
+独立的[提交时间记录](./focus-web-prompt-timing.zh-CN.md)可在有界 localStorage 与服务端诊断库保存纯时间/观察元数据。
+该存储不保存输入、不恢复 Composer、不创建 effect slot，也不把诊断结果导入本节的 result registry 或 retry authority。
 
 进程内 `WebPromptResultRegistry` 是 exact mutation result receipt 的唯一 owner。registry 按 exact
 `(thread_id, mutation_id)` 索引一条有界 receipt，只保存 identity、route/result coordinates 与状态，不保存 prompt

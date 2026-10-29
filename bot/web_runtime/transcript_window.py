@@ -14,6 +14,7 @@ from typing import Any, Callable
 from bot.adapters.base import ThreadItemsPage
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
+from bot.web_runtime.mutation_recovery import is_web_mutation_id
 from bot.web_runtime.projection import bounded_summary_prompt_text, project_turns
 from bot.web_runtime.reply_metadata import project_reply_metadata
 from bot.web_runtime.transcript_source import decode_transcript_source, encode_transcript_source, exact_item_anchor
@@ -130,6 +131,15 @@ def project_transcript_item(
         turn["id"] = f"{turn_id}:item:{item_id}:{index}"
         turn["rawTurnId"] = turn_id
         turn["itemId"] = item_id
+        if item.get('type') == 'userMessage':
+            timing = project_reply_metadata(item, started_at_ms=started_at_ms, completed_at_ms=completed_at_ms)
+            recorded = timing.get('startedAtMs', timing.get('completedAtMs'))
+            if recorded is not None:
+                turn['codexRecordedAtMs'] = recorded
+            client_id = item.get('clientId')
+            if (isinstance(client_id, str) and client_id.startswith('focus-web:')
+                    and is_web_mutation_id(client_id[len('focus-web:'):])):
+                turn['clientUserMessageId'] = client_id
     header = None
     if not full and item.get("type") not in PROSE_ITEM_TYPES:
         header = _tool_summary(projected, source,

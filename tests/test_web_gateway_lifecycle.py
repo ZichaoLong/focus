@@ -44,6 +44,7 @@ class WebGatewayLifecycleTests(unittest.TestCase):
         gateway._async_stop_completed = False
         gateway._endpoint = "http://127.0.0.1:32100"
         gateway._clear_runtime_store_safely = Mock()
+        gateway._prompt_timings = Mock()
         return gateway
 
     @staticmethod
@@ -77,6 +78,7 @@ class WebGatewayLifecycleTests(unittest.TestCase):
         self.assertIs(gateway._loop, loop)
         self.assertEqual(gateway.endpoint, "http://127.0.0.1:32100")
         gateway._clear_runtime_store_safely.assert_not_called()
+        gateway._prompt_timings.close.assert_not_called()
 
     def test_stop_timeout_retains_inflight_future_and_runtime_handles(self) -> None:
         thread = self._thread(True, True)
@@ -157,6 +159,7 @@ class WebGatewayLifecycleTests(unittest.TestCase):
         self.assertIsNone(gateway._loop)
         self.assertEqual(gateway.endpoint, "")
         gateway._clear_runtime_store_safely.assert_called_once_with()
+        gateway._prompt_timings.close.assert_called_once_with()
 
     def test_retry_after_live_thread_joins_same_thread_without_recleaning(self) -> None:
         thread = self._thread(True, True, True, True, True, True, True, False)
@@ -180,6 +183,7 @@ class WebGatewayLifecycleTests(unittest.TestCase):
         self.assertIsNone(gateway._loop)
         self.assertEqual(gateway.endpoint, "")
         gateway._clear_runtime_store_safely.assert_called_once_with()
+        gateway._prompt_timings.close.assert_called_once_with()
 
 
 if __name__ == "__main__":

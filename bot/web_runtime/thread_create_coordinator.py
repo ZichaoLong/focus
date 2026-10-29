@@ -25,6 +25,7 @@ from bot.web_runtime.operation_service import WebOperationService
 from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.projection import FocusWebProjection
 from bot.web_runtime.contract import WebRuntimeError, new_web_client_user_message_id
+from bot.web_runtime.prompt_timing import PromptTimingTrace, mark_prompt
 from bot.web_runtime.interest import WebRuntimeInterestRegistry
 from bot.web_runtime.direct_thread_target_coordinator import require_web_direct_thread_snapshot
 from bot.web_runtime.lifecycle_coordinator import WebRuntimeLifecycleCoordinator
@@ -173,10 +174,12 @@ class WebThreadCreateCoordinator:
         cwd: str = "",
         attachment_ids: list[str] | None = None,
         intent_generation: int = 0,
+        timing: PromptTimingTrace | None = None,
     ) -> dict[str, Any]:
         """Create a thread, commit its Web owner, and start its first turn."""
 
         self._runtime_context_guard()
+        mark_prompt(timing, 'prepare_started')
         normalized_client_id = require_connected_web_document(
             self._documents,
             client_id,
@@ -281,6 +284,7 @@ class WebThreadCreateCoordinator:
 
         snapshot = created.response
         thread_id = require_web_thread_id(snapshot.summary.thread_id)
+        mark_prompt(timing, 'thread_created', thread_id=thread_id)
         if created.local_result != thread_id:
             raise RuntimeError("thread/create returned a different Web thread identity")
 
@@ -313,7 +317,7 @@ class WebThreadCreateCoordinator:
                 ),
             ) from exc
 
-        client_user_message_id = new_web_client_user_message_id()
+        client_user_message_id = f'focus-web:{timing.submission_id}' if timing else new_web_client_user_message_id()
         try:
             self._workspace.set_attachments_submitted(
                 normalized_attachment_ids,
@@ -323,7 +327,8 @@ class WebThreadCreateCoordinator:
             # This is ordinary upstream-routed input.  Like an existing-thread
             # prompt, it does not read or create a shared main-turn lease; the
             # upstream turn/start call retains its native start-or-steer race.
-            self._ports.start_turn(
+            mark_prompt(timing, 'app_server_rpc_started')
+            response = self._ports.start_turn(
                 thread_id=thread_id,
                 input_items=input_items,
                 cwd=snapshot.summary.cwd or normalized_cwd,
@@ -333,8 +338,12 @@ class WebThreadCreateCoordinator:
                 reasoning_effort=selected_effort or None,
                 client_user_message_id=client_user_message_id,
             )
+            mark_prompt(timing, 'app_server_rpc_returned', result='succeeded',
+                        turn_id=str((response.get('turn') or {}).get('id') or '')
+                        if isinstance(response, dict) and isinstance(response.get('turn'), dict) else '')
         except Exception as exc:
             if self._operations.is_unknown_mutation_error(exc):
+                mark_prompt(timing, 'settled', result='outcome_unknown', reason='turn_submission_unknown')
                 raise WebRuntimeError(
                     "Codex may have accepted this first prompt, but Focus did not receive "
                     "its result. Focus will not replay it automatically; inspect the "
@@ -343,6 +352,7 @@ class WebThreadCreateCoordinator:
                     status=503,
                     details={"thread_id": thread_id, "operation": "prompt"},
                 ) from exc
+            mark_prompt(timing, 'settled', result='known_no_effect', reason='first_prompt_failed')
             raise self._known_first_prompt_failure_error(
                 normalized_attachment_ids,
                 thread_id=thread_id,
@@ -363,6 +373,7 @@ class WebThreadCreateCoordinator:
                 "Started Web turn projection failed: thread=%s",
                 thread_id[:12],
             )
+        mark_prompt(timing, 'settled', result='succeeded')
         return {
             "accepted": True,
             "mode": "started",

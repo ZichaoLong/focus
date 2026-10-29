@@ -558,7 +558,7 @@ class WebThreadReadModel:
                 return None
             turn = self._live_turn(turns, turn_id)
             source = bounded_transcript_item(item) if self.history_mode(thread_id) == "paginated" else item
-            if item.get("type") == "agentMessage":
+            if item.get("type") in {"agentMessage", "userMessage"}:
                 source = {**source, REPLY_METADATA_KEY: notification_reply_metadata(normalized_method, params)}
             self._upsert_turn_item(turn, self._bounded_item_copy(source))
         elif normalized_method == "turn/diff/updated":

@@ -138,6 +138,7 @@ from bot.web_runtime.prompt_submission import (
     WebPromptSubmissionPorts,
 )
 from bot.web_runtime.turn_window import MAX_TURN_WINDOW_LIMIT
+from bot.web_runtime.prompt_timing import PromptTimingTrace
 from bot.web_runtime.writer_workspace_coordinator import (
     WebWriterWorkspaceCoordinator,
     WebWriterWorkspacePorts,
@@ -705,6 +706,7 @@ class WebRuntimeController:
         cwd: str = "",
         attachment_ids: list[str] | None = None,
         intent_generation: int = 0,
+        timing: PromptTimingTrace | None = None,
     ) -> dict[str, Any]:
         return self._thread_create.start_thread(
             client_id,
@@ -712,6 +714,7 @@ class WebRuntimeController:
             cwd=cwd,
             attachment_ids=attachment_ids,
             intent_generation=intent_generation,
+            timing=timing,
         )
 
     def list_threads(
@@ -1260,6 +1263,7 @@ class WebRuntimeController:
         source_scope_generation: int,
         source_attachment_scope: str,
         source_composer_scope_id: str,
+        timing: PromptTimingTrace | None = None,
     ) -> WebPromptPreparation:
         return self._prompt_submissions.prepare_prompt(
             client_id,
@@ -1270,6 +1274,7 @@ class WebRuntimeController:
             source_scope_generation=source_scope_generation,
             source_attachment_scope=source_attachment_scope,
             source_composer_scope_id=source_composer_scope_id,
+            timing=timing,
         )
 
     def run_prepared_prompt(

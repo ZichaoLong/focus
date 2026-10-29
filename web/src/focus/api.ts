@@ -1,4 +1,7 @@
 import { focusPerformance } from './focusPerformance';
+import { createPromptTimingStore, type PromptTimingStore } from './promptTimingStore';
+import { decodePromptTiming, decodePromptTimingList, decodeTimingSync, type BrowserTimingRecord } from './promptTimingTypes';
+import { createWebPromptMutationId } from './webPromptMutation';
 import type {
   FocusExportTurnPage,
   FocusSummaryExportSelection,
@@ -206,6 +209,7 @@ export interface FocusEventHandlers {
 }
 
 export interface FocusWebApiPort {
+  readonly promptTimings?: PromptTimingStore;
   fileInfo(path: string, cwd: string, signal?: AbortSignal): Promise<FocusFileInfo>;
   fileDownloadUrl(path: string, filename: string): string;
   fileContent(path: string, signal: AbortSignal): Promise<Response>;
@@ -321,6 +325,7 @@ export interface FocusWebApiPort {
 }
 
 export class FocusWebApi implements FocusWebApiPort {
+  readonly promptTimings = createPromptTimingStore(this);
   private _clientId = loadClientId();
   private readonly documentIncarnation = newDocumentIncarnation();
   private documentToken = '';
@@ -773,26 +778,30 @@ export class FocusWebApi implements FocusWebApiPort {
     attachmentIds?: string[];
     intentGeneration?: number;
   }): Promise<FocusMutationResult> {
-    return this.request('thread_start', decodeFocusMutationResult, 'thread mutation', {
+    const send = (headers: Record<string, string> = {}) => this.request('thread_start', decodeFocusMutationResult, 'thread mutation', {
       body: {
         text: input.text,
         cwd: input.cwd,
         attachment_ids: input.attachmentIds ?? [],
       },
       intentGeneration: input.intentGeneration ?? 0,
+      headers,
     });
+    const identity = createWebPromptMutationId();
+    return identity ? this.promptTimings.submit(identity, '', send) : send();
   }
 
   submitPrompt(
     threadId: string,
     input: FocusPromptRequest,
   ): Promise<FocusPromptResultReceipt> {
-    return this.request(
+    return this.promptTimings.submit(input.mutationId, threadId, headers => this.request(
       'thread_prompt',
       decodeFocusPromptResultReceipt,
       'prompt result receipt',
       {
         parameters: { thread_id: threadId },
+        headers,
         body: {
           text: input.text,
           attachment_ids: input.attachmentIds,
@@ -803,7 +812,19 @@ export class FocusWebApi implements FocusWebApiPort {
         },
         preEffectFocusErrorCodes: PROMPT_POST_PRE_EFFECT_ERROR_CODES,
       },
-    );
+    ));
+  }
+
+  readPromptTiming(submissionId: string) {
+    return this.request('prompt_timing', decodePromptTiming, 'prompt timing', { parameters: { submission_id: submissionId } });
+  }
+
+  listPromptTimings(threadId: string) {
+    return this.request('prompt_timing_list', decodePromptTimingList, 'prompt timing list', { parameters: { thread_id: threadId } });
+  }
+
+  syncPromptTimings(records: BrowserTimingRecord[]) {
+    return this.request('prompt_timing_sync', decodeTimingSync, 'prompt timing sync', { body: { records } });
   }
 
   readPromptResult(
@@ -1015,7 +1036,7 @@ export class FocusWebApi implements FocusWebApiPort {
       `${protocol}//${window.location.host}${focusWebEndpointPath('events')}?${params.toString()}`,
     );
     socket.addEventListener('open', () => { focusPerformance.record('socket_open'); handlers.open?.(); });
-    socket.addEventListener('close', (event) => { focusPerformance.record('socket_close', { code: event.code }); handlers.close?.(); });
+    socket.addEventListener('close', (event) => { this.promptTimings.disconnected(); focusPerformance.record('socket_close', { code: event.code }); handlers.close?.(); });
     socket.addEventListener('message', (message) => {
       if (message.data === 'pong') return;
       if (typeof message.data !== 'string') {
@@ -1045,6 +1066,7 @@ export class FocusWebApi implements FocusWebApiPort {
       body?: Record<string, unknown>;
       intentGeneration?: number;
       signal?: AbortSignal;
+      headers?: Record<string, string>;
       preEffectFocusErrorCodes?: ReadonlySet<string>;
   } = {},
   ): Promise<T> {
@@ -1053,6 +1075,7 @@ export class FocusWebApi implements FocusWebApiPort {
     const query = options.query?.toString() ?? '';
     const path = `${focusWebEndpointPath(endpointName, options.parameters)}${query ? `?${query}` : ''}`;
     const headers: Record<string, string> = {
+      ...options.headers,
       'X-Focus-Web-Client': this.clientId,
       'X-Focus-Web-Document': this.requireDocumentToken(),
     };

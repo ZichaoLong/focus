@@ -215,7 +215,14 @@ guards and may not retain parallel key or enum inventories.
   Full fork accepts only an empty body and drops `edit_prompt`; original-prompt DTOs require `thread_id`.
   Service and static assets must deploy together.
 
+- v37 adds original browser submission times, per-user-item Codex times, passive diagnostic sync/reads and
+  `prompt_timing_changed`. User rows no longer display whole-turn start time. Service and assets deploy together;
+  see [submission times](focus-web-prompt-timing.md).
+
 ## 4. Endpoint and Event Admission
+
+The two diagnostic GETs and metadata-only POST neither query app-server nor establish result/retry authority.
+Their fields, limits and non-renewing session rule follow the [submission time contract](focus-web-prompt-timing.md#wire-deferred-reads-and-overhead).
 
 - Every named API endpoint has one catalog record containing a unique name, method,
   path, and handler. Gateway registration and browser request construction both read
@@ -243,12 +250,12 @@ guards and may not retain parallel key or enum inventories.
   The official browser only GETs across these boundaries or creates a new id for
   a new gesture. A miss, eviction, retirement, or restart is not known-no-effect
   evidence.
-- `thread_start` may create a first-prompt local record for a known created
+- `thread_start` may create a first-prompt text recovery record for a known created
   thread only from an exact HTTP 503 `turn_submission_unknown` whose error
   details contain exactly `{thread_id, operation}`, where `thread_id` is a
   non-empty string with no surrounding whitespace and `operation="prompt"`.
   Another status, missing or extra field, non-string or padded value, or another
-  operation cannot drive durable browser state or navigation; it remains an
+  operation cannot drive durable text recovery state or navigation; it remains an
   ordinary failed/possibly-sent presentation and is never replayed automatically.
 - Instance-wide Web next-turn settings have two independent catalog records on
   one path: `GET /api/settings/next-turn` reads a complete snapshot, while

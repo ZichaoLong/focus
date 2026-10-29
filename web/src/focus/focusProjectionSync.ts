@@ -1194,7 +1194,7 @@ export function createFocusProjectionSync(
       return;
     }
     applyCoordinates(event);
-    if (event.type === 'runtime_notice') return;
+    if (event.type === 'runtime_notice' || event.type === 'prompt_timing_changed') return;
     if (event.type === 'settings_changed') {
       void options.settings.refresh();
       return;

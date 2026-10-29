@@ -290,6 +290,9 @@ export interface TurnAttachment {
 
 export interface ChatTurn {
   id: string;
+  promptTiming?: { submissionId: string; submittedAtMs: number };
+  codexRecordedAtMs?: number;
+  clientUserMessageId?: string;
   /** Exact upstream coordinates for an independently paged transcript item. */
   rawTurnId?: string;
   itemId?: string;

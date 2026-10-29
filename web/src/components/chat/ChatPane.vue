@@ -10,7 +10,7 @@ import Markdown from './LazyMarkdown.vue';
 import ThinkingBlock from './ThinkingBlock.vue';
 import ActivityNotice from './ActivityNotice.vue';
 import CronNotice from './CronNotice.vue';
-import MessageTime from './MessageTime.vue';
+import PromptTime from './PromptTime.vue';
 import ReplyTime from './ReplyTime.vue';
 import AuthMedia from './AuthMedia.vue';
 import AttachmentChip from './AttachmentChip.vue';
@@ -591,7 +591,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
               <Icon v-if="copiedTurn !== turn.id" name="copy" size="sm" />
               <Icon v-else name="check" size="sm" />
             </button>
-            <MessageTime v-if="turn.createdAt" :time="turn.createdAt" />
+            <PromptTime :turn="turn" />
           </div>
         </div>
         <div
@@ -866,12 +866,15 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
 .u-meta {
   align-self: flex-end;
   display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   justify-content: flex-end;
   align-items: center;
-  max-width: 78%;
+  max-width: 100%;
   margin-top: 2px;
   margin-right: 4px;
 }
+.u-meta:has(.prompt-time-detail) { width: 100%; }
 .u-meta .u-edit {
   min-height: 22px;
   box-sizing: border-box;

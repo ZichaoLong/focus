@@ -157,7 +157,13 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v36 将 Web 历史编辑改为原生 revert：新增只读 `history-prompt` GET 及 `revert` POST，先保留原文再修改同一线程。
   完整 fork 只接受空 body，返回移除 `edit_prompt`；原文 DTO 必填 `thread_id`。服务与静态资源必须同版本部署。
 
+- v37 增加浏览器原提交时间、逐用户条目 Codex 时间、被动诊断同步/读取与 `prompt_timing_changed`。
+  不再以整轮开始时间显示 user 行；服务与静态资源须同版本部署，见[提交时间合同](focus-web-prompt-timing.zh-CN.md)。
+
 ## 4. Endpoint 与 event admission
+
+诊断的两个 GET 与 metadata-only POST 不读取 app-server、不建立 result/retry authority，具体字段、限制与
+非续期规则见[提交时间合同](focus-web-prompt-timing.zh-CN.md#wire按需读取与开销)。
 
 - 每个具名 API endpoint 必须在 catalog 中有唯一 name、method、path 与 handler。Gateway 注册与浏览器 request
   builder 都从该记录读取；不得在两端再抄一份 route 清单。
@@ -177,8 +183,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   miss/eviction/retirement/restart 不是 known-no-effect evidence。
 - `thread_start` 只有在收到 exact HTTP 503 `turn_submission_unknown`，且 error details 恰好是
   `{thread_id, operation}`、其中 `thread_id` 为 non-empty、无首尾空白的 string 且 `operation="prompt"` 时，才可让
-  browser 为已知 created thread 建立 first-prompt local record。其他 status、缺失/额外字段、非 string、空白包裹值或
-  其他 operation 都不得驱动持久 browser state 或导航，仍走普通失败/possibly-sent 展示且绝不自动 replay。
+  browser 为已知 created thread 建立 first-prompt text recovery record。其他 status、缺失/额外字段、非 string、空白包裹值或
+  其他 operation 都不得驱动持久 text recovery state 或导航，仍走普通失败/possibly-sent 展示且绝不自动 replay。
 - instance-wide Web next-turn settings 使用同一路径的两条独立 catalog 记录：
   `GET /api/settings/next-turn` 读取完整 snapshot，`POST` 只提交要修改的 setting 字段并返回 owner commit 后的完整
   snapshot。请求不携 expected generation，也不经过 writer-profile/navigation mutation。

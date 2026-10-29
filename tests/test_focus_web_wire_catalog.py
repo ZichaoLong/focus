@@ -91,7 +91,7 @@ def _focus_typescript_contract_source(root: pathlib.Path) -> str:
     # same public Focus TypeScript contract surface.
     return "\n".join(
         (focus_root / relative_path).read_text(encoding="utf-8")
-        for relative_path in ("types.ts", "threadInspectionTypes.ts")
+        for relative_path in ("types.ts", "threadInspectionTypes.ts", "promptTimingTypes.ts")
     )
 
 
@@ -120,7 +120,7 @@ def _assert_catalog_record(
 
 class FocusWebWireCatalogTests(unittest.TestCase):
     def test_internal_interaction_scope_does_not_cross_v19_wire(self) -> None:
-        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 36)
+        self.assertEqual(FOCUS_WEB_WIRE_VERSION, 37)
         pending = project_pending_request(
             {
                 "request_key": "request-1",
@@ -175,7 +175,7 @@ class FocusWebWireCatalogTests(unittest.TestCase):
         )
 
     def test_every_endpoint_resolves_one_gateway_handler(self) -> None:
-        self.assertEqual(len(FOCUS_WEB_ENDPOINTS), 50)
+        self.assertEqual(len(FOCUS_WEB_ENDPOINTS), 53)
         for endpoint in FOCUS_WEB_ENDPOINTS:
             with self.subTest(endpoint=endpoint.name):
                 self.assertTrue(callable(getattr(WebGateway, endpoint.handler, None)))
@@ -239,7 +239,7 @@ class FocusWebWireCatalogTests(unittest.TestCase):
         )
 
     def test_event_admission_is_closed_and_thread_scope_is_catalogued(self) -> None:
-        self.assertEqual(len(FOCUS_WEB_EVENTS), 15)
+        self.assertEqual(len(FOCUS_WEB_EVENTS), 16)
         self.assertEqual(
             {event.name for event in FOCUS_WEB_EVENTS if event.thread_scoped},
             {
@@ -554,7 +554,7 @@ class FocusWebWireCatalogTests(unittest.TestCase):
         self.assertIn("hasFocusWebRequiredFields", event_source)
         self.assertIn("isFocusWebWireEnum", http_source)
         self.assertIn("isFocusWebWireEnum", event_source)
-        decoder_source = http_source + event_source
+        decoder_source = http_source + event_source + (focus_root / "promptTimingTypes.ts").read_text(encoding="utf-8")
         for record in FOCUS_WEB_RECORDS:
             with self.subTest(record=record.name):
                 self.assertTrue(

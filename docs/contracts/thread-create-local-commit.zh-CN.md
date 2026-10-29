@@ -122,6 +122,10 @@ service status 的 create ledger。machine process proof 与 runtime lease 仍�
 
 operational warning 可以报告已知 thread id 与本地失败 stage；它只是诊断，不是 mutation admission authority。
 
+Web 首 prompt 可携[提交时间合同](./focus-web-prompt-timing.zh-CN.md)的浏览器 UUID/time headers；
+server 从该 UUID 派生 `focus-web:<UUID>` 用户消息 identity。没有 headers 时仍由 server 生成 identity。
+这项元数据关联不改变 create/first-prompt effect、unknown 分类或 text-only 恢复规则。
+
 ## 回归要求
 
 测试必须锁定：

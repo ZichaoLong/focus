@@ -118,6 +118,12 @@ Focus 合成的当前计划与整轮 diff 标记为 live-only，其完整内容�
 cursor、页预算、源内容复制/导出或按 exact turn/item 读取详情的合同。
 分页替换正在点击固定的组头时，释放旧 DOM 的固定，将位置保持交回同一源成员锚点。
 
+## 用户提交时间
+
+user 行不使用整轮 `startedAt` 补时间。可选 `codexRecordedAtMs` 是本条 userMessage 的原生 item 时间，
+`clientUserMessageId` 与 `promptTiming={submissionId,submittedAtMs}` 用于 exact 浏览器提交关联。
+来源、存储、按需详情及缺记录语义遵循[提交时间合同](./focus-web-prompt-timing.zh-CN.md)。
+
 ## 回复时间与长回复
 
 `agentMessage` 展示行及其 text block 携 `reply={state, startedAtMs?, completedAtMs?}`。

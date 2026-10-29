@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 36
+FOCUS_WEB_WIRE_VERSION: Final = 37
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -125,6 +125,9 @@ def _record(
 
 
 FOCUS_WEB_ENDPOINTS: Final = (
+    FocusWebEndpointSpec('prompt_timing', 'GET', '/api/prompt-timings/{submission_id}', '_handle_prompt_timing'),
+    FocusWebEndpointSpec('prompt_timing_sync', 'POST', '/api/prompt-timings', '_handle_prompt_timing_sync'),
+    FocusWebEndpointSpec('prompt_timing_list', 'GET', '/api/threads/{thread_id}/prompt-timings', '_handle_prompt_timing_list'),
     FocusWebEndpointSpec("health", "GET", "/api/health", "_handle_health"),
     FocusWebEndpointSpec(
         "auth_bootstrap",
@@ -396,6 +399,7 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
 FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset({"thread_unknown_mutation"})
 _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
     {
+        'prompt_timing_sync',
         "auth_bootstrap",
         "auth_logout",
         "client_register",
@@ -404,6 +408,7 @@ _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
 )
 
 FOCUS_WEB_EVENTS: Final = (
+    FocusWebEventSpec('prompt_timing_changed'),
     FocusWebEventSpec("backend_disconnected"),
     FocusWebEventSpec("hello"),
     FocusWebEventSpec("mutation_reconciled", thread_scoped=True),
@@ -422,6 +427,8 @@ FOCUS_WEB_EVENTS: Final = (
 )
 
 FOCUS_WEB_ENUMS: Final = (
+    _enum('prompt_timing_result', 'unconfirmed succeeded known_no_effect outcome_unknown'),
+    _enum('prompt_browser_result', 'succeeded known_no_effect outcome_unknown pending'),
     _enum("focus_install_channel", "stable local"),
     _enum("update_target", "stable main"),
     _enum("update_state", "idle checking ready applying succeeded failed unknown"),
@@ -493,6 +500,10 @@ FOCUS_WEB_ENUMS: Final = (
 )
 
 FOCUS_WEB_RECORDS: Final = (
+    _record('prompt_timing', 'PromptTimingRecord',
+            'submission_id thread_id turn_id item_id submitted_at_ms received_at_ms result '
+            'reason_code epoch stages browser updated_at_ms', 'result:prompt_timing_result'),
+    _record('browser_timing', 'BrowserTimingRecord', 'submission_id thread_id submitted_at_ms browser'),
     _record("file_info", "FocusFileInfo", "path name size"),
     _record("coordinates", "FocusCoordinates", "runtime_epoch revision"),
     _record(

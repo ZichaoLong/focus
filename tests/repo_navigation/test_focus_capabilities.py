@@ -80,6 +80,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "focus-web-history-navigation",
                 "focus-web-mutations",
                 "focus-web-next-turn-settings",
+                "focus-web-prompt-timing",
                 "focus-web-request-admission",
                 "focus-web-summary-export",
                 "focus-web-thread-data-export",

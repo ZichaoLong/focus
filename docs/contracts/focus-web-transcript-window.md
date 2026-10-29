@@ -142,6 +142,12 @@ source copy/export or exact turn/item detail reads.
 If paging replaces a header during its click pin, release the detached DOM pin and hand
 position keeping back to the same source-member anchor.
 
+## User submission times
+
+User rows never substitute whole-turn `startedAt`. Optional `codexRecordedAtMs` is the native userMessage item time;
+`clientUserMessageId` and `promptTiming={submissionId,submittedAtMs}` associate exact browser submissions.
+Sources, storage, deferred details and missing observations follow the [submission time contract](./focus-web-prompt-timing.md).
+
 ## Reply times and long replies
 
 `agentMessage` rows and text blocks carry `reply={state, startedAtMs?, completedAtMs?}`.

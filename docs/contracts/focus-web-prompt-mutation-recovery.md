@@ -77,7 +77,7 @@ backend connection generation, active turn, and route during prepare. It derives
 exact `client_user_message_id = "focus-web:<mutation_id>"`; the browser neither sends
 nor overrides that value.
 
-For an existing-thread prompt the browser may save only the
+For result-receipt recovery, the browser may save only the
 `(thread_id, mutation_id)` locator in a bounded current-tab `sessionStorage` map so F5
 can query it. It does not save that prompt's payload, attachment receipt, recovery
 bearer, server generation, or execute continuation. A locator is not effect authority,
@@ -109,6 +109,10 @@ F5/poll uses GET only, and every new submit gesture creates a new mutation id, s
 does not automatically exercise this bounded non-guarantee. Rejecting the same UUID
 after those boundaries would require a durable or unbounded spent-identity authority,
 which this contract explicitly does not provide.
+
+The separate [submission-time record](./focus-web-prompt-timing.md) may persist bounded, payload-free timing/observation
+metadata in localStorage and the diagnostic database. It restores no Composer, acquires no effect slot, and never imports
+diagnostic results into the process-local result registry or retry authority.
 
 ## 3. Single-POST Prepare / Effect / Settle
 

@@ -1,4 +1,5 @@
 import type { ChatTurn, TaskItem, ToolCall, TurnAttachment, TurnBlock } from '../types';
+import { isCanonicalWebMutationId } from './webPromptMutation';
 import type {
   FocusGoal,
   FocusOperatorStatus,
@@ -363,6 +364,12 @@ function isCronTurnData(value: unknown): boolean {
 
 export function isFocusWireChatTurn(value: unknown): value is Record<string, unknown> {
   if (!isFocusWireRecord(value)) return false;
+  if (!optionalProperty(value, 'codexRecordedAtMs', item => isNonNegativeSafeInteger(item) && item <= 8_640_000_000_000_000)) return false;
+  if (!optionalProperty(value, 'clientUserMessageId', item => typeof item === 'string' && item.startsWith('focus-web:') && isCanonicalWebMutationId(item.slice(10)))) return false;
+  if (!optionalProperty(value, 'promptTiming', item => isFocusWireRecord(item)
+    && Object.keys(item).sort().join(',') === 'submissionId,submittedAtMs'
+    && isCanonicalWebMutationId(item.submissionId)
+    && isNonNegativeSafeInteger(item.submittedAtMs) && item.submittedAtMs <= 8_640_000_000_000_000)) return false;
   if (!isTrimmedString(value.id, false)) return false;
   if (!optionalProperty(value, 'rawTurnId', (item) => isTrimmedString(item, false))) return false;
   if (!optionalProperty(value, 'itemId', (item) => isTrimmedString(item, false))) return false;
@@ -664,6 +671,9 @@ function isKnownEventPayload(value: Record<string, unknown>): boolean {
     if (!isTrimmedString(value.thread_id, false)) return false;
   }
   switch (value.type) {
+    case 'prompt_timing_changed':
+      return isFocusWireRecord(value.detail) && Object.keys(value.detail).join(',') === 'submission_id'
+        && isCanonicalWebMutationId(value.detail.submission_id);
     case 'thread_delta':
       return isThreadDeltaDetail(value.detail);
     case 'projection_invalidated':

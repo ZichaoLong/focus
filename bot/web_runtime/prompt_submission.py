@@ -35,6 +35,7 @@ from bot.web_runtime.goal_resume_policy import WebGoalResumePolicy
 from bot.web_runtime.mutation_recovery import is_web_mutation_id
 from bot.web_runtime.operation_service import WebOperationService
 from bot.web_runtime.projection import FocusWebProjection
+from bot.web_runtime.prompt_timing import PromptTimingTrace, mark_prompt
 from bot.web_runtime.thread_mutation_coordinator import (
     require_confirmed_inactive_web_thread,
 )
@@ -497,6 +498,7 @@ class WebPromptPreparation:
     turn_id: str
     _registry_token: object = field(repr=False, compare=False)
     _attempt_token: object | None = field(repr=False, compare=False)
+    timing: PromptTimingTrace | None = field(default=None, repr=False, compare=False)
 
     @property
     def should_execute(self) -> bool:
@@ -564,10 +566,12 @@ class WebPromptSubmissionCoordinator:
         source_scope_generation: int,
         source_attachment_scope: str,
         source_composer_scope_id: str,
+        timing: PromptTimingTrace | None = None,
     ) -> WebPromptPreparation:
         """Freeze exact local facts and install one non-replayable attempt."""
 
         self._runtime_context_guard()
+        mark_prompt(timing, 'prepare_started')
         normalized_client_id = require_connected_web_document(
             self._documents, client_id
         )
@@ -636,6 +640,7 @@ class WebPromptSubmissionCoordinator:
                 turn_id=existing.turn_id,
                 _registry_token=self._results.authority_token,
                 _attempt_token=None,
+                timing=timing,
             )
         self._operations.admit_explicit_web_effect(
             normalized_client_id,
@@ -669,6 +674,7 @@ class WebPromptSubmissionCoordinator:
             turn_id=active_turn_id,
             _registry_token=self._results.authority_token,
             _attempt_token=attempt_token,
+            timing=timing,
         )
 
     def abandon_prompt(self, prepared: WebPromptPreparation) -> bool:
@@ -691,6 +697,7 @@ class WebPromptSubmissionCoordinator:
                 prepared,
             ).projection_dict()
 
+        mark_prompt(prepared.timing, 'worker_started')
         attachment_claim: WebAttachmentSubmissionClaimReceipt | None = None
         status: Literal["succeeded", "known_no_effect", "outcome_unknown"]
         status = "known_no_effect"
@@ -709,11 +716,13 @@ class WebPromptSubmissionCoordinator:
             settings: WebNextTurnSettings | None = None
             if prepared.mode == "start":
                 diagnostic_stage = "thread_read"
+                mark_prompt(prepared.timing, 'metadata_rpc_started')
                 metadata = self._ports.read_thread(
                     prepared.thread_id,
                     False,
                     expected_connection_generation=prepared.connection_generation,
                 )
+                mark_prompt(prepared.timing, 'metadata_rpc_returned')
                 require_web_direct_thread_snapshot(
                     metadata,
                     thread_id=prepared.thread_id,
@@ -731,7 +740,9 @@ class WebPromptSubmissionCoordinator:
                             operation="start a new prompt",
                         )
                     diagnostic_stage = "goal_check"
+                    mark_prompt(prepared.timing, 'goal_rpc_started')
                     goal = self._read_goal_external(prepared)
+                    mark_prompt(prepared.timing, 'goal_rpc_returned')
                     if self._goal_policy.requires_writer_admission(goal):
                         raise WebRuntimeError(
                             "This thread has an active or unreviewed persisted goal.",
@@ -779,6 +790,7 @@ class WebPromptSubmissionCoordinator:
             else:
                 effect_started = True
                 diagnostic_stage = "upstream"
+                mark_prompt(prepared.timing, 'app_server_rpc_started')
                 if prepared.mode == "steer":
                     response = self._ports.steer_turn(
                         thread_id=prepared.thread_id,
@@ -830,6 +842,7 @@ class WebPromptSubmissionCoordinator:
                     if not result_turn_id:
                         status = "outcome_unknown"
                         reason_code = "start_result_turn_missing"
+                mark_prompt(prepared.timing, 'app_server_rpc_returned')
                 if status == "outcome_unknown":
                     pass
                 elif self._operations.upstream_outcome_unknown(response):
@@ -883,6 +896,8 @@ class WebPromptSubmissionCoordinator:
                 observed_thread_status=observed_thread_status,
                 diagnostic_stage=diagnostic_stage,
             )
+        mark_prompt(prepared.timing, 'settled', result=receipt.status,
+                    turn_id=receipt.turn_id, reason=receipt.reason_code)
         if fatal_error is not None:
             raise fatal_error
         return receipt.projection_dict()

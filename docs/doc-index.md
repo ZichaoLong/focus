@@ -110,6 +110,7 @@ Status guidance:
 - [`focus-web-summary-print.md`](./contracts/focus-web-summary-print.md)
 - [`focus-web-reading-mode.md`](./contracts/focus-web-reading-mode.md)
 - [`focus-web-prompt-mutation-recovery.md`](./contracts/focus-web-prompt-mutation-recovery.md)
+- [`focus-web-prompt-timing.md`](./contracts/focus-web-prompt-timing.md)
 - [`fcodex-operation-owner.md`](./contracts/fcodex-operation-owner.md)
 - [`install-artifact-delivery.md`](./contracts/install-artifact-delivery.md)
 - [`focus-web-update.md`](./contracts/focus-web-update.md)

@@ -39,6 +39,9 @@ from bot.network_contract import (
     MIN_WEB_SESSION_TTL_SECONDS,
 )
 from bot.stores.web_gateway_runtime_store import WebGatewayRuntimeStore
+from bot.stores.web_prompt_timing_store import WebPromptTimingStore
+from bot.web_runtime.gateway_prompt_timing import WebGatewayPromptTimingMixin
+from bot.web_runtime.prompt_timing import WebPromptTimingRecorder
 from bot.web_runtime.auth import WebAuthManager, WebAuthSession
 from bot.web_runtime.gateway_request_admission import WebGatewayRequestAdmission
 from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspectionMixin
@@ -193,7 +196,7 @@ class WebGatewayPorts:
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
-class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
+class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin):
     def __init__(
         self,
         *,
@@ -255,6 +258,10 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
         self._client_operation_locks: dict[str, asyncio.Lock] = {}
         self._client_operation_lock_users: dict[str, int] = {}
         self._unsubscribe_projection: Callable[[], None] | None = None
+        self._prompt_timings = WebPromptTimingRecorder(
+            WebPromptTimingStore(data_dir), projection.coordinates()['runtime_epoch'],
+            lambda identity, thread_id: projection.publish('prompt_timing_changed',
+                thread_id=thread_id, detail={'submission_id': identity}))
 
     @property
     def endpoint(self) -> str:
@@ -293,6 +300,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
             loop = self._loop
             thread = self._thread
             if thread is None:
+                self._prompt_timings.close()
                 self._clear_runtime_store_safely()
                 self._loop = None
                 self._endpoint = ""
@@ -324,6 +332,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
 
             # Only a dead producer thread is a shutdown proof.  Discovery and
             # concrete retry handles remain intact on every failure above.
+            self._prompt_timings.close()
             self._clear_runtime_store_safely()
             if self._thread is thread:
                 self._thread = None
@@ -1156,6 +1165,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
     async def _handle_start_thread(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         body = await request_decoder.decode_json_object(request)
+        timing = self._begin_prompt_timing(request, client_id, '')
         return web.json_response(
             await self._document_request_to_thread(
                 self._ports.start_thread,
@@ -1164,6 +1174,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 text=str(body.get("text", "") or ""),
                 cwd=str(body.get("cwd", "") or ""),
                 attachment_ids=request_decoder.decode_attachment_ids(body),
+                **({'timing': timing} if timing else {}),
                 intent_generation=request_decoder.decode_intent_generation(
                     request.headers.get(_INTENT_HEADER, "")
                 ),
@@ -1212,6 +1223,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 code="invalid_submission_scope",
                 status=400,
             )
+        timing = self._begin_prompt_timing(request, client_id, request.match_info['thread_id'], mutation_id)
         return web.json_response(
             await self._staged_document_request_to_thread(
                 self._ports.prepare_prompt,
@@ -1223,6 +1235,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
                 text=text,
                 attachment_ids=request_decoder.decode_attachment_ids(body),
                 mutation_id=mutation_id,
+                **({'timing': timing} if timing else {}),
                 source_scope_generation=request_decoder.decode_safe_integer_field(
                     body,
                     "source_scope_generation",
@@ -1445,15 +1458,16 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
     async def _handle_delete_thread(self, request: web.Request) -> web.Response:
         body = await request_decoder.decode_json_object(request)
         client_id = self._required_client_id(request)
-        return web.json_response(
-            await self._document_request_to_thread(
+        result = await self._document_request_to_thread(
                 self._ports.delete_thread,
                 request,
                 client_id,
                 request.match_info["thread_id"],
                 confirmation=str(body.get("confirmation", "") or ""),
-            )
         )
+        if result.get('upstream_outcome') == 'success':
+            self._prompt_timings.delete_thread(request.match_info['thread_id'])
+        return web.json_response(result)
 
     async def _handle_request_response(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
@@ -1724,6 +1738,10 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
         if loop is None or not loop.is_running():
             return
         payload = dict(event)
+        try:
+            payload = self._prompt_timings.observe_event(payload)
+        except Exception:
+            logger.warning('Prompt timing observation unavailable', exc_info=True)
         loop.call_soon_threadsafe(self._enqueue_projection_event, payload)
 
     async def _document_request_to_thread(
@@ -1792,10 +1810,13 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin):
         prepared = await transaction_runner.prepare_async(
             prepare_under_document_lock
         )
-        return await transaction_runner.execute(
+        result = await transaction_runner.execute(
             prepared,
             execute or self._ports.run_prepared_thread_read,
         )
+        if execute is None and isinstance(result, dict):
+            result = await asyncio.to_thread(self._prompt_timings.enrich, result)
+        return result
 
     @asynccontextmanager
     async def _client_operation(self, client_id: str) -> AsyncIterator[str]:

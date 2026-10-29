@@ -50,12 +50,16 @@ import FocusTransientNotice from './FocusTransientNotice.vue';
 import { projectOperatorStatusPresentation } from './operatorWarningPresentation';
 import { projectRuntimeDetailsPresentation } from './runtimeDetailsPresentation';
 import { useFocusWebClient } from './useFocusWebClient';
+import { promptTimingKey } from '../components/chat/promptTiming';
+import { createPromptTimingReader } from './promptTimingPresentation';
+import FocusPromptTimingHistory from './FocusPromptTimingHistory.vue';
 import type {
   FocusBackendResetPreview, FocusConversationSearchOccurrence, FocusThreadScope,
   FocusThreadToolDetailPayload, FocusToolInspectionLocator,
 } from './types';
 const { t } = useI18n();
 const client = useFocusWebClient();
+if (client.api.promptTimings) provide(promptTimingKey, createPromptTimingReader(client.api.promptTimings, key => String(t(key))));
 const activityFaviconPreference = createFocusDocumentActivityFaviconPreference();
 const composerSendShortcutPreference = createFocusComposerSendShortcutPreference();
 const isNarrowViewport = useNarrowViewport();
@@ -948,6 +952,7 @@ onUnmounted(() => {
       </NarrowTopBar>
 
       <main class="focus-main">
+        <FocusPromptTimingHistory v-if="client.api.promptTimings && !readingMode" :store="client.api.promptTimings" :thread-id="client.activeThreadId.value" />
         <ReadingModeControls
           v-if="readingMode"
           :narrow-viewport="isNarrowViewport"
