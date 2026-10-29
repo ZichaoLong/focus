@@ -18,8 +18,11 @@ export function createPromptTimingReader(store: PromptTimingStore, t: (key: stri
       if (browser?.result && browser.result !== record?.result) add('browserResult', t(`focus.timing.result_${browser.result}`));
     }
     const output = record?.first_output;
+    const outputLabel = output?.status === 'unassociated'
+      && ['steered_input', 'additional_turn_input'].includes(output.reason_code)
+      ? 'output_steered' : `output_${output?.status ?? 'not_recorded'}`;
     add('firstOutput', output?.status === 'observed' ? timingDate(output.at_ms)
-      : t(`focus.timing.output_${output?.status ?? 'not_recorded'}`));
+      : t(`focus.timing.${outputLabel}`));
     add('identity', id);
     const durations: Record<string, number> = {};
     if (browser?.elapsed_ms !== undefined) durations.browser_submit = browser.elapsed_ms;

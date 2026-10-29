@@ -11,6 +11,7 @@ let server: ViteDevServer, browser: Browser, url: string;
 const cacheDir = mkdtempSync(join(tmpdir(), 'focus-timing-browser-'));
 const id = '11111111-1111-4111-8111-111111111111';
 const missingId = '22222222-2222-4222-8222-222222222222';
+const steeredId = '33333333-3333-4333-8333-333333333333';
 beforeAll(async () => {
   server = await createServer({ cacheDir, logLevel: 'error', optimizeDeps: { noDiscovery: true, include: ['vue', 'vue-i18n'] }, server: { host: '127.0.0.1', port: 0 } });
   await server.listen();
@@ -37,6 +38,9 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     first_output: { status: 'pending', reason_code: '' } as PromptFirstOutput,
     updated_at_ms: time + 400, stages: [{ name: 'service_received', at_ms: time + 100, elapsed_ms: 0 },
       { name: 'settled', at_ms: time + 400, elapsed_ms: 300 }], browser: { result: 'succeeded', elapsed_ms: 500 } };
+  const steeredRecord = { ...record, submission_id: steeredId, item_id: 'steered-item',
+    submitted_at_ms: time + 30_000, received_at_ms: time + 30_100,
+    first_output: { status: 'unassociated', reason_code: width === 390 ? 'additional_turn_input' : 'steered_input' } };
   let unavailable = false;
   let events!: WebSocketRoute;
   page.on('pageerror', error => errors.push(error.message));
@@ -58,12 +62,15 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     else if (path.endsWith('/transcript')) payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: 'thread-1', turn_id: null, view: 'transcript', target_pending: false,
       turns: [{ id: 'row', rawTurnId: 'turn', itemId: 'item', role: 'user', no: 1, text: 'Cross-device prompt',
         promptTiming: { submissionId: id, submittedAtMs: time }, codexRecordedAtMs: time + 250 },
-      { id: 'native', rawTurnId: 'turn', itemId: 'native-item', role: 'user', no: 2, text: 'Native prompt', codexRecordedAtMs: time + 10_000 }],
+      { id: 'native', rawTurnId: 'turn', itemId: 'native-item', role: 'user', no: 2, text: 'Native prompt', codexRecordedAtMs: time + 10_000 },
+      { id: 'steered', rawTurnId: 'turn', itemId: 'steered-item', role: 'user', no: 3, text: 'Additional prompt',
+        promptTiming: { submissionId: steeredId, submittedAtMs: time + 30_000 }, codexRecordedAtMs: time + 30_250 }],
       older_cursor: null, newer_cursor: null, full_text: null };
     else if (path === `/api/prompt-timings/${id}`) {
       if (unavailable) { await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: { code: 'prompt_timing_unavailable', message: 'unavailable' } }) }); return; }
       payload = { record };
-    } else if (path === `/api/prompt-timings/${missingId}`) payload = { record: null };
+    } else if (path === `/api/prompt-timings/${steeredId}`) payload = { record: steeredRecord };
+    else if (path === `/api/prompt-timings/${missingId}`) payload = { record: null };
     else if (path.endsWith('/prompt-timings')) payload = { records: [record, { ...record, submission_id: missingId,
       submitted_at_ms: time + 20_000, item_id: '', turn_id: '', result: 'outcome_unknown', stages: [] }] };
     else if (path === '/api/threads/thread-1' || path === '/api/threads/thread-1/open') payload = { ...snapshot('none', 'thread-1', 1), revision: 1, active_turn_context: null, thread: source };
@@ -127,6 +134,15 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     await native.click();
     expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(3);
     expect(requests.filter(path => path.endsWith('/thread-1/prompt-timings'))).toHaveLength(2);
+    await native.click();
+    await page.locator('.u-meta .prompt-time-label').nth(2).click();
+    const steeredDetail = page.locator('.u-meta .prompt-time-detail');
+    await steeredDetail.getByText('Focus received first output: Additional input; no separate timing', { exact: true }).waitFor();
+    expect(await steeredDetail.innerText()).not.toMatch(/Cannot associate|Insufficient association evidence/);
+    await steeredDetail.getByRole('button', { name: 'Copy diagnostic details', exact: true }).click();
+    await steeredDetail.getByRole('button', { name: 'Diagnostic details copied', exact: true }).waitFor();
+    expect(JSON.parse(await page.evaluate(() => Reflect.get(window, 'timingDiagnostic'))).server.first_output).toEqual(steeredRecord.first_output);
+    if (width === 390) await page.screenshot({ path: join(tmpdir(), 'focus-steered-timing-mobile.png'), fullPage: true });
     expect(posts.filter(path => path.endsWith('/prompt') || path === '/api/threads/start')).toEqual([]);
     expect(errors).toEqual([]);
   } catch (error) {

@@ -287,8 +287,10 @@ class WebPromptTimingRecorder:
             trace = self._traces.get(client_id.removeprefix('focus-web:')) if client_id.startswith('focus-web:') else None
             if trace is None or not trace.belongs_to(thread_id):
                 return
-            if observation is None or observation.first_input_item_id != item_id:
+            if observation is None:
                 trace.finish_output('unassociated', 'not_observed_initial_input')
+            elif observation.first_input_item_id != item_id:
+                trace.finish_output('unassociated', 'additional_turn_input')
             elif observation.first_output is not None and not observation.submission_id:
                 trace.finish_output('unassociated', 'output_preceded_input')
             elif trace.bind_output(turn_id, observation.started_at):

@@ -141,6 +141,24 @@ it.each(['not_recorded', 'pending', 'interrupted', 'unassociated', 'not_observed
   },
 );
 
+it.each([
+  ['steered_input', true], ['additional_turn_input', true],
+  ['not_observed_initial_input', false], ['initial_input_not_observed', false],
+  ['output_preceded_input', false], ['turn_started_before_submission', false],
+] as const)('distinguishes additional input from missing output evidence: %s', async (reason, additional) => {
+  const remote = api(), store = createPromptTimingStore(remote);
+  const record: PromptTimingRecord = { submission_id: id, thread_id: 'thread-1', turn_id: 'turn', item_id: 'input',
+    submitted_at_ms: 10_000, received_at_ms: 10_010, result: 'succeeded', reason_code: '', epoch: 'epoch',
+    updated_at_ms: 10_020, browser: {}, stages: [], first_output: { status: 'unassociated', reason_code: reason } };
+  remote.readPromptTiming.mockResolvedValue({ record });
+  const view = await createPromptTimingReader(store, key => key).read(id, 10_015);
+  expect(view.lines).toContainEqual({ label: 'focus.timing.firstOutput',
+    value: additional ? 'focus.timing.output_steered' : 'focus.timing.output_unassociated' });
+  const diagnostic = JSON.parse(view.diagnostic);
+  expect(diagnostic.server.first_output).toEqual(record.first_output);
+  expect(diagnostic.durations_ms).toEqual({});
+});
+
 it('rejects malformed or contradictory first-output evidence', () => {
   const observed = { status: 'observed', at_ms: 10_000, elapsed_ms: 10, turn_id: 'turn', item_id: 'item', kind: 'text' };
   expect(isPromptFirstOutput(observed)).toBe(true);

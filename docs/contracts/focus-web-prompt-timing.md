@@ -35,8 +35,13 @@ start events and output preceding input must not borrow the turn's output. Only 
 with kind, turn/item IDs, wall-clock time and monotonic elapsed within the same trace. Later tokens do not write diagnostics.
 Disconnects, thread close/unload/revert, observation eviction and service stop end pending observations. Saved first output
 survives subsequent disconnects and restarts. Old records show “Not recorded”; a continuing observation without output shows
-“Not yet observed”; gaps show “Observation interrupted”; missing exact submission association shows “Cannot associate”;
-an observed end without output shows “Not observed.” None establishes failure or permission to retry.
+“Not yet observed”; gaps show “Observation interrupted”; missing exact submission association shows “Insufficient association evidence”;
+an observed end without output shows “Not observed.” Explicit `turn/steer` calls (`steered_input`) and exact-clientId
+matches to later user items in an observed new turn (`additional_turn_input`) show “Additional input; no separate timing.”
+This describes the input mode, without claiming acceptance or model processing; submission results remain independent.
+Missing start/initial-input events, a Codex recorded timestamp alone, or `mode=start` cannot establish additional input.
+Existing `steered_input` records use the same wording; older records without sufficient reason evidence are not reclassified.
+Copied diagnostics retain the original status/reason. None of these states establishes failure or permission to retry.
 
 Default details show “Browser submitted”, “Focus received submission”, “Codex recorded input”, “Focus received first output”,
 then the submission ID. Missing first-three timestamps are not invented; the fourth shows its state when no reliable time

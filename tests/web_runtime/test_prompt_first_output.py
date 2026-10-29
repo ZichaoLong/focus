@@ -92,7 +92,8 @@ def test_same_turn_additional_input_cannot_borrow_output_even_when_start_races_t
     user(recorder, SECOND, 'second-input')
     output(recorder)
     assert saved(recorder)['status'] == 'observed'
-    assert saved(recorder, SECOND)['status'] == 'unassociated'
+    assert saved(recorder, SECOND) == {'status': 'unassociated',
+        'reason_code': 'steered_input' if mode == 'steer' else 'additional_turn_input'}
 
 
 def test_new_turn_requires_initial_input_before_any_output(recorder):
@@ -111,7 +112,7 @@ def test_missing_turn_start_foreign_thread_and_history_cannot_invent_first_outpu
     assert saved(recorder)['status'] == 'pending'
     user(recorder)
     output(recorder)
-    assert saved(recorder)['status'] == 'unassociated'
+    assert saved(recorder) == {'status': 'unassociated', 'reason_code': 'not_observed_initial_input'}
 
 
 @pytest.mark.parametrize('cause', ['backend', 'closed', 'notLoaded', 'shutdown'])
