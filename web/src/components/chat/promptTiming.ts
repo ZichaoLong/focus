@@ -1,12 +1,10 @@
-import type { InjectionKey, Ref } from 'vue';
+import type { InjectionKey } from 'vue';
 export interface PromptTimingView {
   submittedAtMs?: number;
   lines: Array<{ label: string; value: string }>;
   diagnostic: string;
 }
 export interface PromptTimingReader {
-  revision: Readonly<Ref<number>>;
-  changedId: Readonly<Ref<string>>;
   local(id: string): { submittedAtMs: number } | undefined;
   read(id: string): Promise<PromptTimingView>;
 }

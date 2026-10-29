@@ -22,9 +22,17 @@ prove model-provider receipt. Stages carry wall-clock milliseconds and monotonic
 Durations use only the latter. The browser also measures its wait for a result or error with a local monotonic clock.
 Scheduling and RPC waits must not be presented as pure network latency.
 
-This implementation does not collect Codex-to-base-URL HTTP/SSE/WebSocket request telemetry. Details explicitly say
-“Not collected.” It cannot separate the sending and receiving directions of that link or infer an exact upstream receipt
-time from the first output.
+This implementation does not collect Codex-to-base-URL HTTP/SSE/WebSocket request telemetry. Details say
+“Codex to model upstream observations: Collection not integrated.” This describes collection capability, not request
+dispatch, delivery or response status, and is not a timestamp that will appear after waiting. It cannot separate the
+sending and receiving directions of that link or infer an exact upstream receipt time from the first output.
+
+Expanded details show only submission time, Codex recorded time, Focus receipt time, server submission result, browser
+wait duration, Focus receipt-to-settlement duration, upstream observation status and submission ID. Absent times and
+durations are omitted. The browser result appears only when it differs from the server result. Missing server records
+show “Server record: Not found” without inferring a delivery outcome. Individual stages, RPC durations, internal reason
+codes and duplicate results are omitted; “Copy diagnostic details” retains the complete server/browser JSON. Clock sources
+and diagnostic boundaries follow this contract without repeating long explanations in the panel.
 
 ## Persistence, association and authority
 
@@ -75,12 +83,15 @@ Wire v37 adds:
   without a message. Both GETs read saved observations, require the current authenticated document, use
   `Cache-Control: no-store`, and never query app-server.
 - Global `prompt_timing_changed` carries only submission id in detail, optionally with thread id. Ordinary projection
-  advances coordinates without reloading the transcript; only an expanded matching detail/list refreshes diagnostics.
+  advances coordinates without reloading the transcript. Only an expanded submission list refreshes automatically;
+  individual details retain the snapshot from their last read.
 - User rows may carry `clientUserMessageId`, `codexRecordedAtMs`, and `promptTiming={submissionId,submittedAtMs}`.
   Ordinary history reads attach summaries in bulk, without per-message GETs.
 
-Details read diagnostics on expansion or explicit refresh and do not poll while closed. Attempts without messages remain
-accessible in the initially collapsed “Submission history.” Each trace holds at most 20 stages; the writer queue holds
+Details read diagnostics on expansion or explicit refresh, do not reread on milestone notifications while open, and do not
+poll while closed. “Refresh” and “Copy diagnostic details” remain available. A failed refresh retains the previous snapshot
+and labels the failure rather than presenting stale data as fresh. Attempts without messages remain accessible in the
+initially collapsed “Submission history.” Each trace holds at most 20 stages; the writer queue holds
 512 entries, memory retains 256 traces and 512 observed item keys. Repeated milestones do not write again. No tokens,
 output text or individual stream deltas are recorded. A normal submission emits at most four diagnostic milestone events.
 An expanded list coalesces events for 250ms, retains 32 entries and limits its height on mobile. Existing connection

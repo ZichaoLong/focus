@@ -92,12 +92,14 @@ it('storage failures and metadata-sync failures leave submission semantics uncha
   expect(store.records.value[1]?.browser.result).toBe('known_no_effect');
 });
 
-it('formats same-clock durations and explicitly leaves upstream receipt unknown', async () => {
+it('summarizes same-clock durations while preserving full diagnostic evidence', async () => {
   const remote = api(), store = createPromptTimingStore(remote);
   const record: PromptTimingRecord = { submission_id: id, thread_id: 'thread-1', turn_id: 'turn', item_id: 'item',
-    submitted_at_ms: 100_000, received_at_ms: 10_000, result: 'succeeded', reason_code: '', epoch: 'epoch', updated_at_ms: 10_030,
-    browser: { elapsed_ms: 500 }, stages: [
+    submitted_at_ms: 100_000, received_at_ms: 10_000, result: 'succeeded', reason_code: 'upstream_acknowledged', epoch: 'epoch', updated_at_ms: 10_030,
+    browser: { result: 'succeeded', elapsed_ms: 500, disconnects: 1, completed_at_ms: 100_500 }, stages: [
       { name: 'service_received', at_ms: 10_000, elapsed_ms: 0 },
+      { name: 'app_server_rpc_started', at_ms: 10_001, elapsed_ms: 1 },
+      { name: 'app_server_rpc_returned', at_ms: 10_020, elapsed_ms: 20 },
       { name: 'settled', at_ms: 9_000, elapsed_ms: 30 },
     ] };
   expect(decodePromptTiming({ record })).toEqual({ record });
@@ -105,6 +107,20 @@ it('formats same-clock durations and explicitly leaves upstream receipt unknown'
   remote.readPromptTiming.mockResolvedValue({ record });
   const view = await createPromptTimingReader(store, key => key).read(id);
   expect(view.lines).toContainEqual({ label: 'focus.timing.serviceElapsed', value: '30 ms' });
-  expect(view.lines).toContainEqual({ label: 'focus.timing.upstream', value: 'focus.timing.notCollected' });
+  expect(view.lines).toContainEqual({ label: 'focus.timing.upstream', value: 'focus.timing.collectionNotIntegrated' });
+  expect(view.lines.map(line => line.label)).toEqual([
+    'focus.timing.serviceReceived', 'focus.timing.result', 'focus.timing.roundTrip',
+    'focus.timing.serviceElapsed', 'focus.timing.upstream', 'focus.timing.identity',
+  ]);
+  expect(JSON.parse(view.diagnostic)).toEqual({ server: record, browser: null });
   expect(view.lines.some(line => line.value === '-90000 ms')).toBe(false);
+
+  record.browser.result = 'outcome_unknown';
+  const conflicting = await createPromptTimingReader(store, key => key).read(id);
+  expect(conflicting.lines).toContainEqual({ label: 'focus.timing.browserResult', value: 'focus.timing.result_outcome_unknown' });
+
+  remote.readPromptTiming.mockResolvedValue({ record: null });
+  const missing = await createPromptTimingReader(store, key => key).read(id);
+  expect(missing.lines).toContainEqual({ label: 'focus.timing.missing', value: 'focus.timing.notFound' });
+  expect(missing.lines.some(line => line.label === 'focus.timing.result')).toBe(false);
 });

@@ -20,8 +20,15 @@ Focus 记录验证请求之后、准备处理之前的 `service_received`，以�
 每项阶段包含 wall-clock 毫秒与同一 trace 的 monotonic elapsed 毫秒。阶段耗时只用后者；浏览器等待结果
 或错误的耗时也使用本机 monotonic 计时。调度等待、RPC 等待都不得宣称为纯网络耗时。
 
-本实现不采集 Codex 到 base URL 的 HTTP/SSE/WebSocket 请求遥测，详情必须显示“尚未采集”。
+本实现不采集 Codex 到 base URL 的 HTTP/SSE/WebSocket 请求遥测，详情显示“Codex 至模型上游观测：未接入采集”。
+这是采集功能状态，不是请求发送、送达或回复状态，也不是等待后会自动补齐的时间。
 它不能判断该链路的发送与回复各用了多久，也不能从首个输出反推精确的上游收件时间。
+
+展开详情只展示提交时间、Codex 记录时间、Focus 收到提交时间、服务端确认提交结果、浏览器等待结果耗时、
+Focus 收到至结算耗时、上游观测状态与提交编号；没有数据的时间和耗时不显示。
+浏览器结果仅在与服务端结果不同时显示。服务端记录缺失显示“服务端记录：未找到”，不推导发送结果。
+阶段时间、各项 RPC 耗时、内部 reason code 和重复结果不逐项显示；“复制诊断详情”仍保留完整的
+server/browser JSON。时钟来源与诊断边界遵循本合同，不在面板中重复长段解释。
 
 ## 持久化、关联与 authority
 
@@ -66,11 +73,13 @@ wire v37 增加：
 - GET `/api/threads/{thread_id}/prompt-timings`：最近 32 条 `{records:PromptTimingRecord[]}`，包括没有生成消息的提交。
   两种 GET 只读已保存记录，要求当前认证 document，使用 `Cache-Control: no-store`，不向 app-server 查询。
 - `prompt_timing_changed`：全局小通知，detail 只有 submission id，可附 thread id；普通投影仅推进 coordinates，
-  不因此重载正文。只有已展开的对应详情/记录列表才刷新诊断。
+  不因此重载正文。只有已展开的提交记录列表才自动刷新；单条详情保留本次读取的快照。
 - user 行可带 `clientUserMessageId`、`codexRecordedAtMs` 与
   `promptTiming={submissionId,submittedAtMs}`。普通历史读取批量附带摘要，不逐消息发 GET。
 
-详情展开、显式刷新时才读诊断；收起后不轮询。无消息的尝试仍能在默认折叠的“提交记录”中查看。
+详情展开、显式刷新时才读诊断；打开期间不随阶段通知重新读取，收起后不轮询。
+“刷新”和“复制诊断详情”按钮保留。刷新失败保留上次快照并标明刷新失败，不将旧数据伪装为最新。
+无消息的尝试仍能在默认折叠的“提交记录”中查看。
 每条 trace 最多 20 个阶段，writer queue 上限 512，内存 trace 上限 256、已观察 item 去重上限 512。
 相同里程碑不重复写，不记录 token、输出正文或每个 stream delta；正常提交最多发布四个诊断里程碑通知。
 已打开的列表对事件做 250ms 合并，只保留最近 32 项并限制手机上的面板高度。

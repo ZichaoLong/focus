@@ -18,7 +18,7 @@ const full = (value: number) => new Date(value).toLocaleString(undefined, { year
 async function load() {
   if (!reader || !id.value || !expanded.value) return;
   const current = ++generation;
-  loading.value = true; error.value = false;
+  loading.value = true; error.value = false; copied.value = false;
   try { const value = await reader.read(id.value); if (current === generation) detail.value = value; }
   catch { if (current === generation) error.value = true; }
   finally { if (current === generation) loading.value = false; }
@@ -29,9 +29,6 @@ function toggle() {
   else { generation += 1; loading.value = false; }
 }
 watch(id, () => { generation += 1; expanded.value = false; detail.value = null; error.value = false; copied.value = false; });
-if (reader) watch(reader.revision, () => {
-  if (expanded.value && reader.changedId.value === id.value) void load();
-});
 onUnmounted(() => { generation += 1; });
 async function copy() { if (detail.value) copied.value = await copyTextToClipboard(detail.value.diagnostic); }
 </script>
@@ -45,10 +42,9 @@ async function copy() { if (detail.value) copied.value = await copyTextToClipboa
     <div v-if="expanded" class="prompt-time-detail">
       <div v-if="submitted !== undefined">{{ t('focus.timing.submitted') }}: {{ full(submitted) }}</div>
       <div v-if="turn.codexRecordedAtMs !== undefined">{{ t('focus.timing.codexRecorded') }}: {{ full(turn.codexRecordedAtMs) }}</div>
-      <p>{{ t('focus.timing.clockHelp') }}</p>
       <div v-for="(line, index) in detail?.lines ?? []" :key="index"><span>{{ line.label }}: </span>{{ line.value }}</div>
-      <p v-if="loading" role="status">{{ t('focus.timing.loading') }}</p>
-      <p v-if="error" role="status">{{ t('focus.timing.loadFailed') }}</p>
+      <p v-if="loading && !detail" role="status">{{ t('focus.timing.loading') }}</p>
+      <p v-if="error" role="status">{{ t(detail ? 'focus.timing.refreshFailed' : 'focus.timing.loadFailed') }}</p>
       <div v-if="reader && id" class="prompt-time-actions">
         <button type="button" :disabled="loading" @click.stop="load">{{ t('focus.timing.refresh') }}</button>
         <button v-if="detail" type="button" @click.stop="copy">{{ t(copied ? 'focus.promptDiagnosticCopied' : 'focus.promptDiagnosticCopy') }}</button>

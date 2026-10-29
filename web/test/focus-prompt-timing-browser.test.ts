@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { chromium, type Browser } from '@playwright/test';
+import { chromium, type Browser, type WebSocketRoute } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,16 +23,23 @@ afterAll(async () => { await browser?.close(); await server?.close(); rmSync(cac
 it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncertain evidence, fits width %s', async width => {
   const page = await browser.newPage({ locale: 'en-US', viewport: { width, height: 900 } });
   page.setDefaultTimeout(15_000);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: {
+      writeText: async (text: string) => { Reflect.set(window, 'timingDiagnostic', text); },
+    } });
+  });
   const errors: string[] = [], requests: string[] = [], posts: string[] = [];
   const time = 1_790_000_000_123;
   const source = { ...thread(), source: 'cli', ephemeral: false, session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
   const record = { submission_id: id, thread_id: 'thread-1', turn_id: 'turn', item_id: 'item',
-    submitted_at_ms: time, received_at_ms: time + 100, result: 'succeeded', reason_code: '', epoch: 'epoch-1',
+    submitted_at_ms: time, received_at_ms: time + 100, result: 'succeeded', reason_code: 'upstream_acknowledged', epoch: 'epoch-1',
     updated_at_ms: time + 400, stages: [{ name: 'service_received', at_ms: time + 100, elapsed_ms: 0 },
-      { name: 'settled', at_ms: time + 400, elapsed_ms: 300 }], browser: { elapsed_ms: 500 } };
+      { name: 'settled', at_ms: time + 400, elapsed_ms: 300 }], browser: { result: 'succeeded', elapsed_ms: 500 } };
   let unavailable = false;
+  let events!: WebSocketRoute;
   page.on('pageerror', error => errors.push(error.message));
   await page.routeWebSocket('**/api/events?*', socket => {
+    events = socket;
     socket.onMessage(message => { if (message === 'ping') socket.send('pong'); });
     setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 })), 20);
   });
@@ -67,24 +74,45 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     await submitted.waitFor();
     expect(requests.filter(path => path.includes('prompt-timings'))).toEqual([]);
     await submitted.click();
-    await page.getByText('Server submission evidence: Codex accepted input', { exact: true }).waitFor();
+    await page.getByText('Server submission result: Codex accepted input', { exact: true }).waitFor();
     expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(1);
-    await page.getByText(/Not collected. These timestamps/).waitFor();
+    await page.getByText('Codex to model upstream observations: Collection not integrated', { exact: true }).waitFor();
     const detail = page.locator('.prompt-time-detail').first();
+    expect(await detail.innerText()).not.toMatch(/upstream_acknowledged|original browser clock|Submission settled|Result observed by the browser/);
     expect(await detail.evaluate(el => el.clientWidth)).toBeGreaterThan(width === 390 ? 300 : 400);
     expect((await detail.boundingBox())!.y).toBeGreaterThan((await submitted.boundingBox())!.y);
     expect(await page.locator('body').evaluate(el => el.scrollWidth <= window.innerWidth)).toBe(true);
     if (width === 390) await page.screenshot({ path: join(tmpdir(), 'focus-prompt-timing-mobile.png'), fullPage: true });
-    unavailable = true;
-    await page.getByRole('button', { name: 'Refresh observations', exact: true }).first().click();
-    await page.getByText(/Server observations are unavailable/).waitFor();
-    await submitted.click();
-    const native = page.getByRole('button', { name: /^Codex recorded/ });
-    await native.click();
-    expect(requests.filter(path => path.includes('prompt-timings'))).toHaveLength(2);
+    await detail.getByRole('button', { name: 'Copy diagnostic details', exact: true }).click();
+    await detail.getByRole('button', { name: 'Diagnostic details copied', exact: true }).waitFor();
+    expect(JSON.parse(await page.evaluate(() => Reflect.get(window, 'timingDiagnostic')))).toEqual({ server: record, browser: null });
+
     await page.locator('summary').filter({ hasText: 'Submission history' }).click();
     await page.getByText('Delivery outcome unknown', { exact: true }).waitFor();
     expect(requests.filter(path => path.endsWith('/thread-1/prompt-timings'))).toHaveLength(1);
+    record.stages[1]!.elapsed_ms = 700;
+    const listRefreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/threads/thread-1/prompt-timings');
+    events.send(JSON.stringify({ type: 'prompt_timing_changed', runtime_epoch: 'epoch-1', revision: 2,
+      thread_id: 'thread-1', detail: { submission_id: id } }));
+    await listRefreshed;
+    expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(1);
+    await detail.getByText('Focus receipt to settlement: 300 ms', { exact: true }).waitFor();
+    await detail.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await detail.getByText('Focus receipt to settlement: 700 ms', { exact: true }).waitFor();
+    expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(2);
+    await detail.getByRole('button', { name: 'Copy diagnostic details', exact: true }).click();
+    await detail.getByRole('button', { name: 'Diagnostic details copied', exact: true }).waitFor();
+    expect(JSON.parse(await page.evaluate(() => Reflect.get(window, 'timingDiagnostic')))).toEqual({ server: record, browser: null });
+
+    unavailable = true;
+    await detail.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await detail.getByText('Refresh failed; showing previous record', { exact: true }).waitFor();
+    await detail.getByText('Focus receipt to settlement: 700 ms', { exact: true }).waitFor();
+    await submitted.click();
+    const native = page.getByRole('button', { name: /^Codex recorded/ });
+    await native.click();
+    expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(3);
+    expect(requests.filter(path => path.endsWith('/thread-1/prompt-timings'))).toHaveLength(2);
     expect(posts.filter(path => path.endsWith('/prompt') || path === '/api/threads/start')).toEqual([]);
     expect(errors).toEqual([]);
   } catch (error) {
