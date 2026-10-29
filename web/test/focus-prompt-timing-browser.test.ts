@@ -72,8 +72,9 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
   });
   try {
     await page.goto(url);
-    const submitted = page.getByRole('button', { name: /^Browser submitted/ }).first();
+    const submitted = page.locator('.u-meta .prompt-time-label').first();
     await submitted.waitFor();
+    expect(await submitted.innerText()).not.toMatch(/Browser submitted|Codex recorded/);
     expect(requests.filter(path => path.includes('prompt-timings'))).toEqual([]);
     await submitted.click();
     await page.getByText('Focus received first output: Not yet observed', { exact: true }).waitFor();
@@ -121,7 +122,8 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     await detail.getByText('Refresh failed; showing previous record', { exact: true }).waitFor();
     await detail.getByText(/Focus received first output:.*2026/).waitFor();
     await submitted.click();
-    const native = page.getByRole('button', { name: /^Codex recorded/ });
+    const native = page.locator('.u-meta .prompt-time-label').nth(1);
+    expect(await native.innerText()).not.toMatch(/Browser submitted|Codex recorded/);
     await native.click();
     expect(requests.filter(path => path === `/api/prompt-timings/${id}`)).toHaveLength(3);
     expect(requests.filter(path => path.endsWith('/thread-1/prompt-timings'))).toHaveLength(2);

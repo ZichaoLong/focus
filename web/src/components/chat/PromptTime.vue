@@ -36,7 +36,6 @@ async function copy() { if (detail.value) copied.value = await copyTextToClipboa
 <template>
   <template v-if="time !== undefined || id">
     <button type="button" class="prompt-time-label" :aria-expanded="expanded" @click.stop="toggle">
-      {{ t(submitted !== undefined ? 'focus.timing.submitted' : 'focus.timing.codexRecorded') }}
       {{ time !== undefined ? formatMessageTime(new Date(time).toISOString(), t('conversation.yesterday')) : t('focus.timing.details') }}
     </button>
     <div v-if="expanded" class="prompt-time-detail">

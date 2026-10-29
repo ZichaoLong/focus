@@ -6,11 +6,11 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 Before the first HTTP yield, the ordinary prompt browser entry records `Date.now()`: the original browser's submission
 initiation time, not proof of delivery. This covers existing-thread input and the first prompt of a new thread.
-The “Browser submitted” label expands to the full local date and milliseconds. The source clock belongs to the original device;
+The main view shows only the time; expanding it reveals the source labels, full local date and milliseconds. The source clock belongs to the original device;
 other devices format it in their own timezone. Subtracting browser and server clocks cannot establish one-way latency.
 
 `codexRecordedAtMs` comes from the per-userMessage `startedAtMs` supplied by app-server, falling back to that item's
-`completedAtMs`. Its label is “Codex recorded input”; it is neither Focus/browser receipt time nor model-provider receipt.
+`completedAtMs`. Its detail label is “Codex recorded input”; it is neither Focus/browser receipt time nor model-provider receipt.
 It can stand alone when browser time is absent. Missing times stay absent. A whole turn's `startedAt` is no longer used
 for user rows, so later steers do not inherit the first input's time. Assistant times keep the
 [transcript window contract](./focus-web-transcript-window.md#reply-times-and-long-replies).

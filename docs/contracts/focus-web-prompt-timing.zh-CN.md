@@ -5,11 +5,11 @@
 ## 时间来源与边界
 
 普通 prompt 的浏览器发送入口在首次 HTTP yield 前记录 `Date.now()`，表示原浏览器发起这次提交的时间，
-不是网络送达证明。包含 existing-thread prompt 与新线程首 prompt。摘要显示“浏览器提交”，点击展开完整本地日期和毫秒。
+不是网络送达证明。包含 existing-thread prompt 与新线程首 prompt。主界面仅显示时间，点击展开时间来源、完整本地日期和毫秒。
 时间由原设备时钟提供；跨设备查看按查看设备时区格式化。不能用它与服务端时钟相减宣称单向网络延迟。
 
 `codexRecordedAtMs` 来自 app-server 提供的逐条 userMessage `startedAtMs`，缺少开始时可用其
-`completedAtMs`，标签为“Codex 记录输入”。它与 Focus 或浏览器的接收时间不同，也不是模型供应商送达证明。
+`completedAtMs`，详情标签为“Codex 记录输入”。它与 Focus 或浏览器的接收时间不同，也不是模型供应商送达证明。
 没有浏览器提交时间时可以单独显示这项来源；两者都没有则不编造时间。整轮 `startedAt` 不再用于 user 行，
 避免同一 turn 内后续 steer 继承第一条 prompt 的时间。assistant 回复起止时间继续遵循
 [有界正文窗口合同](./focus-web-transcript-window.zh-CN.md#回复时间与长回复)。
