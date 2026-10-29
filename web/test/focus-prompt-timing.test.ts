@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { createPromptTimingStore } from '../src/focus/promptTimingStore';
-import { decodePromptTiming, type PromptTimingRecord } from '../src/focus/promptTimingTypes';
+import { decodePromptTiming, isPromptFirstOutput, type PromptTimingRecord } from '../src/focus/promptTimingTypes';
 import { FocusApiError } from '../src/focus/types';
 import { createPromptTimingReader } from '../src/focus/promptTimingPresentation';
 
@@ -92,10 +92,11 @@ it('storage failures and metadata-sync failures leave submission semantics uncha
   expect(store.records.value[1]?.browser.result).toBe('known_no_effect');
 });
 
-it('summarizes same-clock durations while preserving full diagnostic evidence', async () => {
+it('presents event times and keeps same-clock durations only in copied diagnostics', async () => {
   const remote = api(), store = createPromptTimingStore(remote);
   const record: PromptTimingRecord = { submission_id: id, thread_id: 'thread-1', turn_id: 'turn', item_id: 'item',
     submitted_at_ms: 100_000, received_at_ms: 10_000, result: 'succeeded', reason_code: 'upstream_acknowledged', epoch: 'epoch', updated_at_ms: 10_030,
+    first_output: { status: 'observed', at_ms: 9_500, elapsed_ms: 1800, turn_id: 'turn', item_id: 'output', kind: 'thinking' },
     browser: { result: 'succeeded', elapsed_ms: 500, disconnects: 1, completed_at_ms: 100_500 }, stages: [
       { name: 'service_received', at_ms: 10_000, elapsed_ms: 0 },
       { name: 'app_server_rpc_started', at_ms: 10_001, elapsed_ms: 1 },
@@ -105,15 +106,15 @@ it('summarizes same-clock durations while preserving full diagnostic evidence', 
   expect(decodePromptTiming({ record })).toEqual({ record });
   expect(decodePromptTiming({ record: { ...record, result: 'upstream_received' } })).toBe(null);
   remote.readPromptTiming.mockResolvedValue({ record });
-  const view = await createPromptTimingReader(store, key => key).read(id);
-  expect(view.lines).toContainEqual({ label: 'focus.timing.serviceElapsed', value: '30 ms' });
-  expect(view.lines).toContainEqual({ label: 'focus.timing.upstream', value: 'focus.timing.collectionNotIntegrated' });
+  const view = await createPromptTimingReader(store, key => key).read(id, 10_020);
+  expect(view.receivedAtMs).toBe(10_000);
   expect(view.lines.map(line => line.label)).toEqual([
-    'focus.timing.serviceReceived', 'focus.timing.result', 'focus.timing.roundTrip',
-    'focus.timing.serviceElapsed', 'focus.timing.upstream', 'focus.timing.identity',
+    'focus.timing.firstOutput', 'focus.timing.identity',
   ]);
-  expect(JSON.parse(view.diagnostic)).toEqual({ server: record, browser: null });
-  expect(view.lines.some(line => line.value === '-90000 ms')).toBe(false);
+  expect(JSON.parse(view.diagnostic)).toEqual({ server: record, browser: null, codex_recorded_at_ms: 10_020,
+    durations_ms: { browser_submit: 500, input_rpc: 19, focus_submit: 30, focus_first_output: 1800 },
+    model_upstream: { collection: 'not_integrated' } });
+  expect(view.lines.some(line => line.value.endsWith(' ms'))).toBe(false);
 
   record.browser.result = 'outcome_unknown';
   const conflicting = await createPromptTimingReader(store, key => key).read(id);
@@ -122,5 +123,31 @@ it('summarizes same-clock durations while preserving full diagnostic evidence', 
   remote.readPromptTiming.mockResolvedValue({ record: null });
   const missing = await createPromptTimingReader(store, key => key).read(id);
   expect(missing.lines).toContainEqual({ label: 'focus.timing.missing', value: 'focus.timing.notFound' });
+  expect(missing.lines).toContainEqual({ label: 'focus.timing.firstOutput', value: 'focus.timing.output_not_recorded' });
   expect(missing.lines.some(line => line.label === 'focus.timing.result')).toBe(false);
+});
+
+it.each(['not_recorded', 'pending', 'interrupted', 'unassociated', 'not_observed'] as const)(
+  'keeps the %s observation state distinct without inventing a timestamp', async status => {
+    const remote = api(), store = createPromptTimingStore(remote);
+    const record: PromptTimingRecord = { submission_id: id, thread_id: 'thread-1', turn_id: '', item_id: '',
+      submitted_at_ms: 10_000, received_at_ms: 10_010, result: 'unconfirmed', reason_code: '', epoch: 'epoch',
+      updated_at_ms: 10_020, browser: {}, stages: [], first_output: { status, reason_code: '' } };
+    remote.readPromptTiming.mockResolvedValue({ record });
+    expect(decodePromptTiming({ record })).toEqual({ record });
+    const view = await createPromptTimingReader(store, key => key).read(id);
+    expect(view.lines).toContainEqual({ label: 'focus.timing.firstOutput', value: `focus.timing.output_${status}` });
+    expect(JSON.parse(view.diagnostic).durations_ms).toEqual({});
+  },
+);
+
+it('rejects malformed or contradictory first-output evidence', () => {
+  const observed = { status: 'observed', at_ms: 10_000, elapsed_ms: 10, turn_id: 'turn', item_id: 'item', kind: 'text' };
+  expect(isPromptFirstOutput(observed)).toBe(true);
+  for (const invalid of [
+    { ...observed, at_ms: null }, { ...observed, elapsed_ms: -1 }, { ...observed, kind: 'tool_output' },
+    { ...observed, kind: { toString: 'text' } },
+    { ...observed, turn_id: '' }, { ...observed, status: 'pending' }, { status: 'observed' },
+    { status: 'not_recorded', reason_code: '', at_ms: 10_000 },
+  ]) expect(isPromptFirstOutput(invalid)).toBe(false);
 });

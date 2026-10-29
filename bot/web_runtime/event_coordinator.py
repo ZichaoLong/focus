@@ -170,6 +170,7 @@ class WebRuntimeEventPorts:
         None,
     ]
     publish_projection: Callable[..., dict[str, Any]]
+    observe_prompt_notification: Callable[[str, dict[str, Any]], None]
     projection_coordinates: Callable[[], dict[str, Any]]
     schedule_notification_projection: Callable[
         [WebNotificationProjectionReceipt],
@@ -237,6 +238,7 @@ class WebRuntimeEventCoordinator:
             # The ordered server-request coordinator owns canonical settlement.
             return
         ports = self._ports
+        ports.observe_prompt_notification(method, params)
         runtime_notice = project_runtime_notice(method, params)
         if method == "warning":
             if runtime_notice is not None:

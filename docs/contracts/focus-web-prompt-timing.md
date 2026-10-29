@@ -6,11 +6,11 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 Before the first HTTP yield, the ordinary prompt browser entry records `Date.now()`: the original browser's submission
 initiation time, not proof of delivery. This covers existing-thread input and the first prompt of a new thread.
-The “Submitted” label expands to the full local date and milliseconds. The source clock belongs to the original device;
+The “Browser submitted” label expands to the full local date and milliseconds. The source clock belongs to the original device;
 other devices format it in their own timezone. Subtracting browser and server clocks cannot establish one-way latency.
 
 `codexRecordedAtMs` comes from the per-userMessage `startedAtMs` supplied by app-server, falling back to that item's
-`completedAtMs`. Its label is “Codex recorded”; it is neither Focus/browser receipt time nor model-provider receipt.
+`completedAtMs`. Its label is “Codex recorded input”; it is neither Focus/browser receipt time nor model-provider receipt.
 It can stand alone when browser time is absent. Missing times stay absent. A whole turn's `startedAt` is no longer used
 for user rows, so later steers do not inherit the first input's time. Assistant times keep the
 [transcript window contract](./focus-web-transcript-window.md#reply-times-and-long-replies).
@@ -22,17 +22,30 @@ prove model-provider receipt. Stages carry wall-clock milliseconds and monotonic
 Durations use only the latter. The browser also measures its wait for a result or error with a local monotonic clock.
 Scheduling and RPC waits must not be presented as pure network latency.
 
-This implementation does not collect Codex-to-base-URL HTTP/SSE/WebSocket request telemetry. Details say
-“Codex to model upstream observations: Collection not integrated.” This describes collection capability, not request
-dispatch, delivery or response status, and is not a timestamp that will appear after waiting. It cannot separate the
-sending and receiving directions of that link or infer an exact upstream receipt time from the first output.
+“Focus received first output” is the local time when Focus first observes nonempty reasoning or reply text on an existing
+app-server notification in RuntimeLoop. `FocusWebProjection.observe_prompt_notification` supplies an internal passive hook
+before presentation coalescing, without emitting per-token diagnostic wire events. `WebPromptTimingRecorder` alone owns
+the observation. Text/reasoning deltas and the first nonempty text/reasoning in live item or turn notifications qualify;
+empty items, heartbeats, reasoning separators and tool stdout do not. This needs no `response.created` and is not the
+model's original first-token time. Ordinary history reads never reconstruct a first receipt time.
 
-Expanded details show only submission time, Codex recorded time, Focus receipt time, server submission result, browser
-wait duration, Focus receipt-to-settlement duration, upstream observation status and submission ID. Absent times and
-durations are omitted. The browser result appears only when it differs from the server result. Missing server records
-show “Server record: Not found” without inferring a delivery outcome. Individual stages, RPC durations, internal reason
-codes and duplicate results are omitted; “Copy diagnostic details” retains the complete server/browser JSON. Clock sources
-and diagnostic boundaries follow this contract without repeating long explanations in the panel.
+Association requires an actually observed new `turn/started` after the input RPC began, whose first user item's exact
+`clientId` matches this submission and precedes the first output. Additional inputs, native start-or-steer races, missing
+start events and output preceding input must not borrow the turn's output. Only the first qualifying output is saved,
+with kind, turn/item IDs, wall-clock time and monotonic elapsed within the same trace. Later tokens do not write diagnostics.
+Disconnects, thread close/unload/revert, observation eviction and service stop end pending observations. Saved first output
+survives subsequent disconnects and restarts. Old records show “Not recorded”; a continuing observation without output shows
+“Not yet observed”; gaps show “Observation interrupted”; missing exact submission association shows “Cannot associate”;
+an observed end without output shows “Not observed.” None establishes failure or permission to retry.
+
+Default details show “Browser submitted”, “Focus received submission”, “Codex recorded input”, “Focus received first output”,
+then the submission ID. Missing first-three timestamps are not invented; the fourth shows its state when no reliable time
+exists. A Codex recorded timestamp hides redundant submission results; otherwise saved evidence supplies “Focus submission
+result”, with the browser result only when it differs. Missing server records show “Server record: Not found.” The three
+main durations, RPC durations, stage times and internal reason codes appear only in copied diagnostics. The copied JSON
+contains complete server/browser evidence, available `codex_recorded_at_ms`, same-clock `durations_ms`, and
+`model_upstream.collection=not_integrated`. Codex-to-base-URL request telemetry remains uncollected; the default panel omits
+that constant capability status and cannot separate the sending and receiving directions of that link.
 
 ## Persistence, association and authority
 
@@ -54,6 +67,12 @@ server derives `client_user_message_id=focus-web:<UUID>`. Association requires t
 the actual `(thread_id, turn_id, item_id)` for history that omits clientId after restart. There is no matching by text,
 position or nearby time, and a copied clientId in a fork does not bind the original thread.
 
+Diagnostic schema v2 adds `first_output` JSON. An in-place v1 column migration defaults old rows to `not_recorded` without
+changing original submission times or associations. Only new submissions begin observation. Reading `pending` from an old
+process or lost local observation context returns `interrupted`, not a claim that observation continues. An accepted input
+without an exact initial-input association in the current process shows `unassociated`; subsequent actual events may supply
+the association. Reads inspect diagnostic context only, never restoring subscriptions, querying app-server or replaying input.
+
 The database is not a durable execution ledger, idempotency guarantee or retry authority. The existing
 [single-POST/result receipt contract](./focus-web-prompt-mutation-recovery.md) and Composer settlement remain authoritative.
 `unconfirmed` means no settled observation; `outcome_unknown` means the observed outcome was unknown; `succeeded` means
@@ -71,7 +90,7 @@ data or exceeding 64 entries evicts local records.
 
 ## Wire, deferred reads and overhead
 
-Wire v37 adds:
+Wire v37 introduced these interfaces; v38 requires `first_output` in diagnostic records. Service and assets deploy together:
 
 - Optional `X-Focus-Prompt-Id` and `X-Focus-Submitted-At` headers on prompt and new-thread POSTs. Existing-thread identity
   must equal the body mutation id. The prompt body and effect admission are unchanged.
@@ -79,6 +98,9 @@ Wire v37 adds:
   Browser fields are limited to `completed_at_ms,elapsed_ms,result,disconnects`. This metadata-only route calls no runtime
   effect port, does not renew auth sessions, and uses existing document authentication and Origin/CSRF rules.
 - GET `/api/prompt-timings/{submission_id}` returns `{record:PromptTimingRecord|null}`.
+- `first_output.status` is `not_recorded|pending|observed|interrupted|unassociated|not_observed`.
+  `observed` has exactly `status,at_ms,elapsed_ms,turn_id,item_id,kind`, where `kind=text|thinking`;
+  other states have exactly `status,reason_code`. Browser sync cannot submit or overwrite this server field.
 - GET `/api/threads/{thread_id}/prompt-timings` returns the latest 32 `{records:PromptTimingRecord[]}`, including attempts
   without a message. Both GETs read saved observations, require the current authenticated document, use
   `Cache-Control: no-store`, and never query app-server.
@@ -93,13 +115,14 @@ poll while closed. “Refresh” and “Copy diagnostic details” remain availa
 and labels the failure rather than presenting stale data as fresh. Attempts without messages remain accessible in the
 initially collapsed “Submission history.” Each trace holds at most 20 stages; the writer queue holds
 512 entries, memory retains 256 traces and 512 observed item keys. Repeated milestones do not write again. No tokens,
-output text or individual stream deltas are recorded. A normal submission emits at most four diagnostic milestone events.
+output text or individual stream deltas are recorded. First-output context retains at most 256 turns. A normal submission
+emits at most four submission milestones and one first-output observation result notification.
 An expanded list coalesces events for 250ms, retains 32 entries and limits its height on mobile. Existing connection
 heartbeats, operator status and mutation-result queries retain their rules; no per-prompt app-server polling is added.
 
 ## Verification and upstream evidence
 
-Core coverage is in `tests/web_runtime/test_prompt_timing.py`, `web/test/focus-prompt-timing.test.ts` and
+Core coverage is in `tests/web_runtime/test_prompt_timing.py`, `tests/web_runtime/test_prompt_first_output.py`, `web/test/focus-prompt-timing.test.ts` and
 `web/test/focus-prompt-timing-browser.test.ts`, alongside existing prompt-authority, Gateway, transcript and wire guards.
 It covers unavailable local storage, lost responses, F5, cross-document sync, cross-device association, duplicate identity,
 fork isolation, restart, corrupt storage, distinct times within one turn, mobile expansion, deferred GETs and no replay.

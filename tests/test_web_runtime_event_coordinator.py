@@ -119,6 +119,7 @@ class WebRuntimeEventCoordinatorTests(unittest.TestCase):
                 callbacks.publish_interaction_changes
             ),
             publish_projection=callbacks.publish_projection,
+            observe_prompt_notification=Mock(name='observe_prompt_notification'),
             projection_coordinates=callbacks.projection_coordinates,
             schedule_notification_projection=(
                 callbacks.schedule_notification_projection

@@ -19,7 +19,7 @@ async function load() {
   if (!reader || !id.value || !expanded.value) return;
   const current = ++generation;
   loading.value = true; error.value = false; copied.value = false;
-  try { const value = await reader.read(id.value); if (current === generation) detail.value = value; }
+  try { const value = await reader.read(id.value, props.turn.codexRecordedAtMs); if (current === generation) detail.value = value; }
   catch { if (current === generation) error.value = true; }
   finally { if (current === generation) loading.value = false; }
 }
@@ -41,8 +41,10 @@ async function copy() { if (detail.value) copied.value = await copyTextToClipboa
     </button>
     <div v-if="expanded" class="prompt-time-detail">
       <div v-if="submitted !== undefined">{{ t('focus.timing.submitted') }}: {{ full(submitted) }}</div>
+      <div v-if="detail?.receivedAtMs !== undefined">{{ t('focus.timing.serviceReceived') }}: {{ full(detail.receivedAtMs) }}</div>
       <div v-if="turn.codexRecordedAtMs !== undefined">{{ t('focus.timing.codexRecorded') }}: {{ full(turn.codexRecordedAtMs) }}</div>
       <div v-for="(line, index) in detail?.lines ?? []" :key="index"><span>{{ line.label }}: </span>{{ line.value }}</div>
+      <div v-if="!id">{{ t('focus.timing.firstOutput') }}: {{ t('focus.timing.output_not_recorded') }}</div>
       <p v-if="loading && !detail" role="status">{{ t('focus.timing.loading') }}</p>
       <p v-if="error" role="status">{{ t(detail ? 'focus.timing.refreshFailed' : 'focus.timing.loadFailed') }}</p>
       <div v-if="reader && id" class="prompt-time-actions">

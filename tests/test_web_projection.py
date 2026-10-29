@@ -382,6 +382,28 @@ class FocusWebProjectionTests(unittest.TestCase):
         self.assertEqual(first["runtime_epoch"], second["runtime_epoch"])
         self.assertEqual([event["revision"] for event in seen], [1, 2])
 
+    def test_prompt_observation_is_passive_isolated_and_unsubscribable(self):
+        projection = FocusWebProjection()
+        seen = []
+        wire = []
+        projection.subscribe(wire.append)
+        unsubscribe = projection.subscribe_prompt_observations(lambda method, params: seen.append((method, params)))
+
+        def fail(method, params):
+            raise RuntimeError('diagnostics unavailable')
+
+        remove_failure = projection.subscribe_prompt_observations(fail)
+        params = {'threadId': 'thread', 'turnId': 'turn', 'itemId': 'item', 'delta': 'text'}
+        with self.assertLogs('bot.web_runtime.projection', level='WARNING'):
+            projection.observe_prompt_notification('item/agentMessage/delta', params)
+        self.assertEqual(seen, [('item/agentMessage/delta', params)])
+        self.assertEqual(wire, [])
+        self.assertEqual(projection.coordinates()['revision'], 0)
+        unsubscribe()
+        remove_failure()
+        projection.observe_prompt_notification('item/agentMessage/delta', params)
+        self.assertEqual(len(seen), 1)
+
     def test_faulty_listener_does_not_block_other_listeners_or_publish(self):
         projection = FocusWebProjection()
         seen: list[dict] = []

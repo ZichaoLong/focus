@@ -327,7 +327,7 @@ class WebThreadCreateCoordinator:
             # This is ordinary upstream-routed input.  Like an existing-thread
             # prompt, it does not read or create a shared main-turn lease; the
             # upstream turn/start call retains its native start-or-steer race.
-            mark_prompt(timing, 'app_server_rpc_started')
+            mark_prompt(timing, 'app_server_rpc_started', input_mode='start')
             response = self._ports.start_turn(
                 thread_id=thread_id,
                 input_items=input_items,

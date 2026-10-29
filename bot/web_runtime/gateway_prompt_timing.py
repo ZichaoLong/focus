@@ -72,7 +72,7 @@ class WebGatewayPromptTimingMixin:
         if not is_web_mutation_id(identity):
             raise WebRuntimeError('Invalid timing identity.', code='invalid_prompt_timing')
         try:
-            result = await asyncio.to_thread(self._prompt_timings.store.detail, identity)
+            result = await asyncio.to_thread(self._prompt_timings.detail, identity)
         except Exception as exc:
             raise WebRuntimeError('Timing storage unavailable.', code='prompt_timing_unavailable', status=503) from exc
         return web.json_response({'record': result}, headers={'Cache-Control': 'no-store'})
@@ -80,7 +80,7 @@ class WebGatewayPromptTimingMixin:
     async def _handle_prompt_timing_list(self, request: web.Request) -> web.Response:
         self._required_client_id(request)
         try:
-            result = await asyncio.to_thread(self._prompt_timings.store.recent, request.match_info['thread_id'])
+            result = await asyncio.to_thread(self._prompt_timings.recent, request.match_info['thread_id'])
         except Exception as exc:
             raise WebRuntimeError('Timing storage unavailable.', code='prompt_timing_unavailable', status=503) from exc
         return web.json_response({'records': result}, headers={'Cache-Control': 'no-store'})

@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 37
+FOCUS_WEB_WIRE_VERSION: Final = 38
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -427,6 +427,7 @@ FOCUS_WEB_EVENTS: Final = (
 )
 
 FOCUS_WEB_ENUMS: Final = (
+    _enum('prompt_first_output_status', 'not_recorded pending observed interrupted unassociated not_observed'),
     _enum('prompt_timing_result', 'unconfirmed succeeded known_no_effect outcome_unknown'),
     _enum('prompt_browser_result', 'succeeded known_no_effect outcome_unknown pending'),
     _enum("focus_install_channel", "stable local"),
@@ -502,7 +503,11 @@ FOCUS_WEB_ENUMS: Final = (
 FOCUS_WEB_RECORDS: Final = (
     _record('prompt_timing', 'PromptTimingRecord',
             'submission_id thread_id turn_id item_id submitted_at_ms received_at_ms result '
-            'reason_code epoch stages browser updated_at_ms', 'result:prompt_timing_result'),
+            'reason_code epoch stages browser first_output updated_at_ms', 'result:prompt_timing_result'),
+    _record('prompt_first_output_observed', 'PromptFirstOutputObserved',
+            'status at_ms elapsed_ms turn_id item_id kind', 'status:prompt_first_output_status'),
+    _record('prompt_first_output_unavailable', 'PromptFirstOutputUnavailable',
+            'status reason_code', 'status:prompt_first_output_status'),
     _record('browser_timing', 'BrowserTimingRecord', 'submission_id thread_id submitted_at_ms browser'),
     _record("file_info", "FocusFileInfo", "path name size"),
     _record("coordinates", "FocusCoordinates", "runtime_epoch revision"),

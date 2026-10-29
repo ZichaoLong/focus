@@ -567,6 +567,7 @@ class WebRuntimeController:
                 attachment_url_for_id=self._workspace.attachment_url,
                 publish_interaction_changes=self._publish_interaction_changes,
                 publish_projection=projection.publish,
+                observe_prompt_notification=projection.observe_prompt_notification,
                 projection_coordinates=projection.coordinates,
                 schedule_notification_projection=(
                     ports.schedule_notification_projection

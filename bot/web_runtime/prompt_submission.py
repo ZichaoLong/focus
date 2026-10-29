@@ -790,7 +790,7 @@ class WebPromptSubmissionCoordinator:
             else:
                 effect_started = True
                 diagnostic_stage = "upstream"
-                mark_prompt(prepared.timing, 'app_server_rpc_started')
+                mark_prompt(prepared.timing, 'app_server_rpc_started', input_mode=prepared.mode)
                 if prepared.mode == "steer":
                     response = self._ports.steer_turn(
                         thread_id=prepared.thread_id,

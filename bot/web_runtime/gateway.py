@@ -258,6 +258,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
         self._client_operation_locks: dict[str, asyncio.Lock] = {}
         self._client_operation_lock_users: dict[str, int] = {}
         self._unsubscribe_projection: Callable[[], None] | None = None
+        self._unsubscribe_prompt_observations: Callable[[], None] | None = None
         self._prompt_timings = WebPromptTimingRecorder(
             WebPromptTimingStore(data_dir), projection.coordinates()['runtime_epoch'],
             lambda identity, thread_id: projection.publish('prompt_timing_changed',
@@ -496,9 +497,15 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
         self._unsubscribe_projection = self._projection.subscribe(
             self._on_projection_event
         )
+        self._unsubscribe_prompt_observations = self._projection.subscribe_prompt_observations(
+            self._prompt_timings.observe_notification
+        )
         logger.info("Focus Web Gateway listening on %s", self._endpoint)
 
     async def _stop_async(self) -> None:
+        if self._unsubscribe_prompt_observations is not None:
+            self._unsubscribe_prompt_observations()
+            self._unsubscribe_prompt_observations = None
         if self._unsubscribe_projection is not None:
             self._unsubscribe_projection()
             self._unsubscribe_projection = None

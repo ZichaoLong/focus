@@ -26,7 +26,7 @@ class WebPromptTimingStore:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with closing(sqlite3.connect(self.path, timeout=0.25)) as db, db:
                 version = db.execute("PRAGMA user_version").fetchone()[0]
-                if version not in (0, 1):
+                if version not in (0, 1, 2):
                     raise ValueError("Unsupported prompt timing schema")
                 if version == 0:
                     db.execute("""CREATE TABLE IF NOT EXISTS submissions (
@@ -41,6 +41,11 @@ class WebPromptTimingStore:
                     db.execute("CREATE INDEX IF NOT EXISTS submission_item ON submissions(thread_id,turn_id,item_id)")
                     db.execute("CREATE INDEX IF NOT EXISTS submission_thread ON submissions(thread_id,submitted_at_ms)")
                     db.execute("PRAGMA user_version=1")
+                    version = 1
+                if version == 1:
+                    db.execute("""ALTER TABLE submissions ADD COLUMN first_output TEXT NOT NULL
+                        DEFAULT '{"status":"not_recorded","reason_code":""}'""")
+                    db.execute("PRAGMA user_version=2")
                 self.path.chmod(0o600)
                 db.row_factory = sqlite3.Row
                 yield db
@@ -50,16 +55,18 @@ class WebPromptTimingStore:
             # A browser-only row is not service evidence. Only this observed
             # request may establish the service identity, time and write token.
             cursor = db.execute("""INSERT INTO submissions
-                (id,client_id,thread_id,submitted_at_ms,received_at_ms,epoch,observation_id,updated_at_ms)
-                VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+                (id,client_id,thread_id,submitted_at_ms,received_at_ms,epoch,observation_id,updated_at_ms,first_output)
+                VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
                 client_id=excluded.client_id, thread_id=excluded.thread_id,
                 received_at_ms=excluded.received_at_ms, epoch=excluded.epoch,
-                observation_id=excluded.observation_id, updated_at_ms=excluded.updated_at_ms
+                observation_id=excluded.observation_id, updated_at_ms=excluded.updated_at_ms,
+                first_output=excluded.first_output
                 WHERE submissions.received_at_ms IS NULL
                 AND submissions.submitted_at_ms=excluded.submitted_at_ms
                 AND (submissions.thread_id=excluded.thread_id OR submissions.thread_id='')""",
                 (value['submission_id'], value['client_id'], value['thread_id'], value['submitted_at_ms'],
-                 value['received_at_ms'], value['epoch'], value['observation_id'], value['received_at_ms']))
+                 value['received_at_ms'], value['epoch'], value['observation_id'], value['received_at_ms'],
+                 json.dumps(value['first_output'])))
             return cursor.rowcount == 1
 
     def update(self, value: dict[str, Any]) -> bool:
@@ -67,10 +74,10 @@ class WebPromptTimingStore:
             cursor = db.execute("""UPDATE submissions SET thread_id=?,
                 turn_id=CASE WHEN ?!='' THEN ? ELSE turn_id END,
                 result=CASE WHEN result='succeeded' THEN result ELSE ? END,
-                reason_code=?, stages=?, updated_at_ms=?
+                reason_code=?, stages=?, updated_at_ms=?, first_output=?
                 WHERE id=? AND observation_id=?""",
                 (value['thread_id'], value['turn_id'], value['turn_id'], value['result'],
-                 value['reason_code'], json.dumps(value['stages']), value['updated_at_ms'],
+                 value['reason_code'], json.dumps(value['stages']), value['updated_at_ms'], json.dumps(value['first_output']),
                  value['submission_id'], value['observation_id']))
             return cursor.rowcount == 1
 
@@ -99,6 +106,7 @@ class WebPromptTimingStore:
         result.pop('observation_id')
         result['stages'] = json.loads(result['stages'])
         result['browser'] = json.loads(result['browser'])
+        result['first_output'] = json.loads(result['first_output'])
         return result
 
     def detail(self, submission_id: str) -> dict[str, Any] | None:

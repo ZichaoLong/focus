@@ -5,11 +5,11 @@
 ## 时间来源与边界
 
 普通 prompt 的浏览器发送入口在首次 HTTP yield 前记录 `Date.now()`，表示原浏览器发起这次提交的时间，
-不是网络送达证明。包含 existing-thread prompt 与新线程首 prompt。摘要显示“提交”，点击展开完整本地日期和毫秒。
+不是网络送达证明。包含 existing-thread prompt 与新线程首 prompt。摘要显示“浏览器提交”，点击展开完整本地日期和毫秒。
 时间由原设备时钟提供；跨设备查看按查看设备时区格式化。不能用它与服务端时钟相减宣称单向网络延迟。
 
 `codexRecordedAtMs` 来自 app-server 提供的逐条 userMessage `startedAtMs`，缺少开始时可用其
-`completedAtMs`，标签为“Codex 记录”。它与 Focus 或浏览器的接收时间不同，也不是模型供应商送达证明。
+`completedAtMs`，标签为“Codex 记录输入”。它与 Focus 或浏览器的接收时间不同，也不是模型供应商送达证明。
 没有浏览器提交时间时可以单独显示这项来源；两者都没有则不编造时间。整轮 `startedAt` 不再用于 user 行，
 避免同一 turn 内后续 steer 继承第一条 prompt 的时间。assistant 回复起止时间继续遵循
 [有界正文窗口合同](./focus-web-transcript-window.zh-CN.md#回复时间与长回复)。
@@ -20,15 +20,26 @@ Focus 记录验证请求之后、准备处理之前的 `service_received`，以�
 每项阶段包含 wall-clock 毫秒与同一 trace 的 monotonic elapsed 毫秒。阶段耗时只用后者；浏览器等待结果
 或错误的耗时也使用本机 monotonic 计时。调度等待、RPC 等待都不得宣称为纯网络耗时。
 
-本实现不采集 Codex 到 base URL 的 HTTP/SSE/WebSocket 请求遥测，详情显示“Codex 至模型上游观测：未接入采集”。
-这是采集功能状态，不是请求发送、送达或回复状态，也不是等待后会自动补齐的时间。
-它不能判断该链路的发送与回复各用了多久，也不能从首个输出反推精确的上游收件时间。
+“Focus 收到首个输出”是 Focus 在 RuntimeLoop 接收既有 app-server 通知时，首次观察到非空推理或回复正文的
+本机时间。`FocusWebProjection.observe_prompt_notification` 在页面投影合并之前提供内部被动观察入口，
+不发布逐 token 的诊断 wire event；`WebPromptTimingRecorder` 唯一持有观察事实。接受正文/推理 delta，
+以及实时 item 通知或 turn 通知中首次出现的非空正文/推理；空 item、心跳、推理分隔符和工具 stdout 不算。
+它不依赖 `response.created`，也不是模型原始首 token 时刻。普通历史查询不补造首次接收时间。
 
-展开详情只展示提交时间、Codex 记录时间、Focus 收到提交时间、服务端确认提交结果、浏览器等待结果耗时、
-Focus 收到至结算耗时、上游观测状态与提交编号；没有数据的时间和耗时不显示。
-浏览器结果仅在与服务端结果不同时显示。服务端记录缺失显示“服务端记录：未找到”，不推导发送结果。
-阶段时间、各项 RPC 耗时、内部 reason code 和重复结果不逐项显示；“复制诊断详情”仍保留完整的
-server/browser JSON。时钟来源与诊断边界遵循本合同，不在面板中重复长段解释。
+关联要求实际观察到本次输入 RPC 发起后的新 `turn/started`，且该轮第一个 user item 的 exact `clientId`
+对应本次提交，并先于首个输出出现。同轮追加、原生 start-or-steer 竞争、缺少开始事件或先输出后输入均不得
+借用该轮输出。第一条符合条件的输出只保存一次，携带类型、turn/item ID、wall-clock 时间及同 trace 的
+monotonic elapsed；后续 token 不写诊断库。断线、线程关闭/卸载/回退、观察缓存淘汰或服务停止终止未完成观察。
+已保存的首个输出不因重启或后续断线失效。旧记录为“未记录”；持续观察但尚无输出为“尚未观察到”；
+中断为“观察中断”；无法建立本次提交关联为“无法关联”；明确结束且未观察到输出为“未观察到”。
+这些状态不提供发送失败或可重发的证明。
+
+默认详情依次显示“浏览器提交”“Focus 收到提交”“Codex 记录输入”“Focus 收到首个输出”，再显示提交编号；
+缺失的前三项时间不编造，第四项无可靠时间时显示上述状态。已有 Codex 记录时间时隐藏重复提交结果；否则
+按已有证据显示“Focus 提交结果”，浏览器结果与其不同时才额外显示；服务端记录缺失显示“服务端记录：未找到”。
+三个主要耗时、各项 RPC 耗时、阶段时间和内部 reason code 只进入“复制诊断详情”。复制 JSON 包含完整
+server/browser、可用的 `codex_recorded_at_ms`、同源计时的 `durations_ms` 和 `model_upstream.collection=not_integrated`。
+本实现仍不采集 Codex 到 base URL 的请求遥测，不在默认面板固定展示该能力状态，也不能拆分该链路各方向耗时。
 
 ## 持久化、关联与 authority
 
@@ -48,6 +59,11 @@ existing-thread UUID 等于原 `mutation_id`；新线程首 prompt 在浏览器�
 `(thread_id, turn_id, item_id)`，供重启后不再携 clientId 的历史使用。不比较正文、顺序、邻近时间，
 也不把 fork 中复制的 clientId 当作原线程关联。
 
+诊断库 schema v2 为提交增加 `first_output` JSON；v1 原地加列，旧行默认 `not_recorded`，不修改原提交时间或
+关联。新提交才开始被动观察。读取旧进程或已丢失本地观察上下文的 `pending` 时返回 `interrupted`，不假装仍在观察；
+当前进程尚无 exact 首输入关联的已接受提交显示 `unassociated`，后续实际事件可以补齐关联。读取只检查诊断上下文，
+不恢复订阅、不查询 app-server、不重放请求。
+
 此数据库不是 durable execution ledger、幂等保证或 retry authority。现有
 [单 POST 与 result receipt 合同](./focus-web-prompt-mutation-recovery.zh-CN.md)及 Composer 结算不变。
 `unconfirmed` 表示缺少已结算的观察；`outcome_unknown` 表示当时结果未知；`succeeded` 只说明 Codex
@@ -62,7 +78,7 @@ Web 删除后的清理是尽力而为，失败不反转已完成的删除；其�
 
 ## Wire、按需读取与开销
 
-wire v37 增加：
+wire v37 引入以下接口；v38 为诊断记录增加必填的 `first_output`，服务与静态资源同版本部署：
 
 - 普通 prompt POST 和新线程创建 POST 的可选 `X-Focus-Prompt-Id`、`X-Focus-Submitted-At` headers；
   existing-thread identity 必须与 body mutation id 一致。原 prompt body 与 effect admission 不变。
@@ -70,6 +86,9 @@ wire v37 增加：
   browser 只接受 `completed_at_ms,elapsed_ms,result,disconnects`。接口只写元数据，不调用 runtime effect port，
   不延长 auth session。使用现有 document authentication、Origin/CSRF 规则。
 - GET `/api/prompt-timings/{submission_id}`：`{record:PromptTimingRecord|null}`。
+- `first_output.status` 为 `not_recorded|pending|observed|interrupted|unassociated|not_observed`。
+  `observed` 闭合字段为 `status,at_ms,elapsed_ms,turn_id,item_id,kind`，`kind=text|thinking`；
+  其他状态闭合字段为 `status,reason_code`。浏览器同步不能提交或覆盖该服务端字段。
 - GET `/api/threads/{thread_id}/prompt-timings`：最近 32 条 `{records:PromptTimingRecord[]}`，包括没有生成消息的提交。
   两种 GET 只读已保存记录，要求当前认证 document，使用 `Cache-Control: no-store`，不向 app-server 查询。
 - `prompt_timing_changed`：全局小通知，detail 只有 submission id，可附 thread id；普通投影仅推进 coordinates，
@@ -81,13 +100,14 @@ wire v37 增加：
 “刷新”和“复制诊断详情”按钮保留。刷新失败保留上次快照并标明刷新失败，不将旧数据伪装为最新。
 无消息的尝试仍能在默认折叠的“提交记录”中查看。
 每条 trace 最多 20 个阶段，writer queue 上限 512，内存 trace 上限 256、已观察 item 去重上限 512。
-相同里程碑不重复写，不记录 token、输出正文或每个 stream delta；正常提交最多发布四个诊断里程碑通知。
+首输出观察上下文最多保留 256 轮。相同里程碑不重复写，不记录 token、输出正文或每个 stream delta；
+正常提交最多发布四个提交里程碑通知和一个首输出观察结果通知。
 已打开的列表对事件做 250ms 合并，只保留最近 32 项并限制手机上的面板高度。
 已有连接心跳、operator status 与 mutation result 查询保持原规则；此功能不新增按 prompt 的 app-server 轮询。
 
 ## 验证与上游证据
 
-核心回归为 `tests/web_runtime/test_prompt_timing.py`、`web/test/focus-prompt-timing.test.ts` 与
+核心回归为 `tests/web_runtime/test_prompt_timing.py`、`tests/web_runtime/test_prompt_first_output.py`、`web/test/focus-prompt-timing.test.ts` 与
 `web/test/focus-prompt-timing-browser.test.ts`，同时运行既有 prompt authority、Gateway、transcript 和 wire guards。
 覆盖本地存储失败、响应丢失、F5、跨 document 同步、跨设备关联、重复身份、fork 隔离、服务重启、数据库损坏、
 同 turn 的不同时间、手机展开、按需 GET 与不重放请求。

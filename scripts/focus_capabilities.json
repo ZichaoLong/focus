@@ -2980,6 +2980,10 @@
         {
           "path": "web/src/focus/FocusPromptTimingHistory.vue",
           "symbol": "load"
+        },
+        {
+          "path": "bot/web_runtime/projection.py",
+          "symbol": "FocusWebProjection.observe_prompt_notification"
         }
       ],
       "owner": [
@@ -3026,7 +3030,8 @@
         {
           "runner": "pytest",
           "targets": [
-            "tests/web_runtime/test_prompt_timing.py"
+            "tests/web_runtime/test_prompt_timing.py",
+            "tests/web_runtime/test_prompt_first_output.py"
           ]
         },
         {
@@ -3044,7 +3049,9 @@
             "tests/test_web_prompt_submission.py",
             "tests/test_web_gateway.py",
             "tests/test_web_transcript_window.py",
-            "tests/test_focus_web_wire_catalog.py"
+            "tests/test_focus_web_wire_catalog.py",
+            "tests/test_web_projection.py",
+            "tests/test_web_runtime_event_coordinator.py"
           ]
         },
         {

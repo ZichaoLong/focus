@@ -160,6 +160,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v37 增加浏览器原提交时间、逐用户条目 Codex 时间、被动诊断同步/读取与 `prompt_timing_changed`。
   不再以整轮开始时间显示 user 行；服务与静态资源须同版本部署，见[提交时间合同](focus-web-prompt-timing.zh-CN.md)。
 
+- v38 为提交诊断增加必填 `first_output` 观察状态及首次输出证据；详情按事件时间展示，耗时保留在复制诊断中。
+  服务与静态资源须同版本部署，具体状态与关联规则见[提交时间合同](focus-web-prompt-timing.zh-CN.md)。
+
 ## 4. Endpoint 与 event admission
 
 诊断的两个 GET 与 metadata-only POST 不读取 app-server、不建立 result/retry authority，具体字段、限制与

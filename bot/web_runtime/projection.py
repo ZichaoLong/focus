@@ -37,6 +37,7 @@ from bot.web_runtime.tool_output_presentation import (
 )
 
 WebEventListener = Callable[[dict[str, Any]], None]
+PromptObservationListener = Callable[[str, dict[str, Any]], None]
 logger = logging.getLogger(__name__)
 _ATTACHMENT_ENVELOPE_START = "[[focus.attachments.v1]]\n"
 _ATTACHMENT_ENVELOPE_END = "\n[[/focus.attachments.v1]]"
@@ -59,6 +60,27 @@ class FocusWebProjection:
         self._runtime_epoch = str(uuid.uuid4())
         self._revision = 0
         self._listeners: set[WebEventListener] = set()
+        self._prompt_observers: set[PromptObservationListener] = set()
+
+    def subscribe_prompt_observations(self, listener: PromptObservationListener) -> Callable[[], None]:
+        """Observe live notifications before presentation coalescing; no wire event."""
+        with self._lock:
+            self._prompt_observers.add(listener)
+
+        def unsubscribe() -> None:
+            with self._lock:
+                self._prompt_observers.discard(listener)
+
+        return unsubscribe
+
+    def observe_prompt_notification(self, method: str, params: dict[str, Any]) -> None:
+        with self._lock:
+            observers = tuple(self._prompt_observers)
+        for observer in observers:
+            try:
+                observer(method, params)
+            except Exception:
+                logger.warning('Prompt observation failed; notification processing continues', exc_info=True)
 
     def coordinates(self) -> dict[str, Any]:
         with self._lock:

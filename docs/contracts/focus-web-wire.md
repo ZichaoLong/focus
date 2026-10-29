@@ -219,6 +219,10 @@ guards and may not retain parallel key or enum inventories.
   `prompt_timing_changed`. User rows no longer display whole-turn start time. Service and assets deploy together;
   see [submission times](focus-web-prompt-timing.md).
 
+- v38 requires `first_output` observation state/evidence in submission diagnostics. Details display event times;
+  copied diagnostics retain durations. Service and assets deploy together; see [submission times](focus-web-prompt-timing.md)
+  for states and association rules.
+
 ## 4. Endpoint and Event Admission
 
 The two diagnostic GETs and metadata-only POST neither query app-server nor establish result/retry authority.
