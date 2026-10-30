@@ -4,7 +4,7 @@ Attachment ingress domain.
 This domain owns the Feishu-side attachment lifecycle:
 - validate attachment messages
 - download Feishu resources
-- stage them into the current workspace
+- stage new files in the instance's shared private attachment store
 - persist pending attachments until the next prompt consumes them
 """
 
@@ -14,7 +14,6 @@ import mimetypes
 import logging
 import os
 import pathlib
-import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -29,6 +28,8 @@ from bot.input_media_contract import (
 )
 from bot.thread_effective_settings import ThreadEffectiveSettingsRegistry
 from bot.stores.pending_attachment_store import PendingAttachmentRecord, PendingAttachmentStore
+from bot.stores.attachment_store import AttachmentStore
+from bot.data_retention_contract import DataPruneResult
 
 _ATTACHMENT_STAGE_DIRNAME = "_feishu_attachments"
 _DOWNLOADABLE_ATTACHMENT_TYPES = {"image", "file", "audio", "media"}
@@ -86,11 +87,13 @@ class FileMessageDomain:
         store: PendingAttachmentStore,
         ttl_seconds: float,
         effective_settings: ThreadEffectiveSettingsRegistry,
+        attachments: AttachmentStore,
     ) -> None:
         self._ports = ports
         self._store = store
         self._ttl_seconds = max(float(ttl_seconds), 1.0)
         self._effective_settings = effective_settings
+        self._attachments = attachments
 
     def handle_message(self, incoming: IncomingAttachmentMessage) -> None:
         self._cleanup_expired_attachments()
@@ -147,13 +150,14 @@ class FileMessageDomain:
             return
 
         try:
-            staged_path = self._stage_downloaded_attachment(
-                working_dir=working_dir,
-                attachment_type=attachment_type,
-                message_id=incoming.message_id,
-                display_name=incoming.display_name,
-                downloaded_name=downloaded.file_name,
-                content_type=downloaded.content_type,
+            staged = self._attachments.stage_feishu(
+                client_id=incoming.sender_id,
+                scope_key=f"feishu:{incoming.chat_id}:{incoming.thread_id}",
+                cwd=str(working_dir),
+                display_name=self._resolve_display_name(
+                    attachment_type=attachment_type, display_name=incoming.display_name,
+                    downloaded_name=downloaded.file_name, content_type=downloaded.content_type),
+                media_type=downloaded.content_type,
                 content=downloaded.content,
             )
         except Exception as exc:
@@ -178,18 +182,24 @@ class FileMessageDomain:
             attachment_type=attachment_type,
             resource_key=incoming.resource_key,
             display_name=display_name,
-            local_path=str(staged_path),
+            local_path=staged.local_path,
             created_at=now,
             expires_at=now + self._ttl_seconds,
+            attachment_id=staged.attachment_id,
+            cwd=str(working_dir.resolve()),
         )
-        self._store.add(record)
+        try:
+            self._store.add(record)
+        except Exception:
+            self._attachments.discard_pending([staged.attachment_id])
+            raise
         pending_count = self._pending_count_for_key(
             sender_id=incoming.sender_id,
             chat_id=incoming.chat_id,
             thread_id=incoming.thread_id,
             now=now,
         )
-        saved_path = display_path(str(staged_path), str(working_dir))
+        saved_path = display_path(staged.local_path, str(working_dir))
         suffix = f"\n当前待消费附件：{pending_count} 个。" if pending_count > 1 else ""
         self._ports.reply_text(
             incoming.chat_id,
@@ -238,6 +248,8 @@ class FileMessageDomain:
                 blocking_text=blocking_text,
             )
 
+        self._attachments.mark_submitted([record.attachment_id for record in attachments if record.attachment_id], submitted=True)
+
         prompt_text = self._compose_prompt_text(text, attachments)
         input_items: list[dict[str, Any]] = [self._text_input_item(prompt_text)]
         for record in attachments:
@@ -251,7 +263,7 @@ class FileMessageDomain:
                         "type": _DEFERRED_LOCAL_IMAGE_INPUT_TYPE,
                         "path": record.local_path,
                         "expectedParent": str(
-                            (working_dir / _ATTACHMENT_STAGE_DIRNAME).resolve()
+                            pathlib.Path(record.local_path).parent.resolve()
                         ),
                     }
                 )
@@ -319,6 +331,7 @@ class FileMessageDomain:
 
     def restore_consumed_attachments(self, records: tuple[PendingAttachmentRecord, ...]) -> None:
         if records:
+            self._attachments.mark_submitted([record.attachment_id for record in records if record.attachment_id], submitted=False)
             self._store.add_many(records)
 
     def invalidate_pending_attachments_for_scope(
@@ -343,6 +356,11 @@ class FileMessageDomain:
     def _cleanup_expired_attachments(self) -> None:
         expired = self._store.cleanup_expired(now=time.time())
         self._delete_local_files(expired)
+
+    def prune_pending(self, *, now: float) -> DataPruneResult:
+        expired = self._store.cleanup_expired(now=now)
+        self._delete_local_files(expired)
+        return DataPruneResult(len(expired))
 
     @staticmethod
     def _compose_prompt_text(text: str, attachments: tuple[PendingAttachmentRecord, ...]) -> str:
@@ -383,6 +401,15 @@ class FileMessageDomain:
         missing_local_file = False
         workspace_mismatch = False
         for record in attachments:
+            if record.attachment_id:
+                if pathlib.Path(record.cwd).resolve() != working_dir.resolve():
+                    workspace_mismatch = True
+                    continue
+                try:
+                    self._attachments.validate_feishu(record.attachment_id, cwd=str(working_dir), local_path=record.local_path)
+                except (ValueError, KeyError, OSError):
+                    missing_local_file = True
+                continue
             local_path = pathlib.Path(record.local_path)
             if (
                 not local_path.exists()
@@ -432,61 +459,6 @@ class FileMessageDomain:
             reply_in_thread=self._ports.message_reply_in_thread(incoming.message_id),
         )
 
-    def _stage_downloaded_attachment(
-        self,
-        *,
-        working_dir: pathlib.Path,
-        attachment_type: str,
-        message_id: str,
-        display_name: str,
-        downloaded_name: str,
-        content_type: str,
-        content: bytes,
-    ) -> pathlib.Path:
-        stage_dir = working_dir / _ATTACHMENT_STAGE_DIRNAME
-        stage_dir.mkdir(parents=True, exist_ok=True)
-        file_name = self._build_staged_file_name(
-            attachment_type=attachment_type,
-            message_id=message_id,
-            display_name=display_name,
-            downloaded_name=downloaded_name,
-            content_type=content_type,
-        )
-        path = stage_dir / file_name
-        original_path = pathlib.Path(file_name)
-        base_stem = original_path.name[: -len("".join(original_path.suffixes))] if original_path.suffixes else original_path.name
-        suffix_text = "".join(original_path.suffixes)
-        suffix = 1
-        while path.exists():
-            path = stage_dir / f"{base_stem}-{suffix}{suffix_text}"
-            suffix += 1
-        path.write_bytes(content)
-        return path.resolve()
-
-    def _build_staged_file_name(
-        self,
-        *,
-        attachment_type: str,
-        message_id: str,
-        display_name: str,
-        downloaded_name: str,
-        content_type: str,
-    ) -> str:
-        resolved_name = self._resolve_display_name(
-            attachment_type=attachment_type,
-            display_name=display_name,
-            downloaded_name=downloaded_name,
-            content_type=content_type,
-        )
-        base_name = pathlib.Path(resolved_name).name
-        stem = pathlib.Path(base_name).stem
-        safe_stem = self._sanitize_file_stem(stem) or attachment_type
-        safe_stem = safe_stem[:80]
-        safe_suffixes = "".join(self._sanitize_suffix(part) for part in pathlib.Path(base_name).suffixes)
-        timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
-        message_suffix = re.sub(r"[^A-Za-z0-9]+", "", str(message_id or ""))[-10:] or "msg"
-        return f"{timestamp}-{message_suffix}-{safe_stem}{safe_suffixes}"
-
     def _resolve_display_name(
         self,
         *,
@@ -507,26 +479,11 @@ class FileMessageDomain:
             extension = ".jpg"
         return f"{attachment_type or 'attachment'}{extension}"
 
-    @staticmethod
-    def _sanitize_file_stem(stem: str) -> str:
-        normalized = str(stem or "").strip().replace("\x00", "")
-        normalized = re.sub(r"[\\/]+", "_", normalized)
-        normalized = "".join(ch if ch.isprintable() else "_" for ch in normalized)
-        normalized = re.sub(r"\s+", "_", normalized)
-        normalized = normalized.strip("._")
-        return normalized
-
-    @staticmethod
-    def _sanitize_suffix(suffix: str) -> str:
-        normalized = str(suffix or "").strip().replace("\x00", "")
-        normalized = re.sub(r"[^A-Za-z0-9.]+", "", normalized)
-        if normalized and not normalized.startswith("."):
-            normalized = "." + normalized
-        return normalized
-
-    @staticmethod
-    def _delete_local_files(records: tuple[PendingAttachmentRecord, ...]) -> None:
+    def _delete_local_files(self, records: tuple[PendingAttachmentRecord, ...]) -> None:
+        self._attachments.discard_pending([record.attachment_id for record in records if record.attachment_id])
         for record in records:
+            if record.attachment_id:
+                continue
             try:
                 os.remove(record.local_path)
             except FileNotFoundError:

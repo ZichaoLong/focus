@@ -1,4 +1,18 @@
 export default {
+  retentionTitle: "数据清理",
+  retentionRecords: "Focus 记录保留期",
+  retentionAttachments: "附件保留期",
+  retentionDays: "{days} 天",
+  retentionDescription: "按所选周期自动清理。立即清理同时处理服务端和本浏览器的过期数据；附件可能因容量上限提前清理。Codex 线程和工作目录文件由原入口管理。",
+  retentionClean: "立即清理过期数据",
+  retentionWorking: "处理中…",
+  retentionUnavailable: "暂时无法读取保留期，请重新打开设置重试。",
+  retentionSaveFailed: "保留期保存失败，请重试。",
+  retentionCleaned: "服务端已清理 {server} 项，本浏览器已清理 {browser} 项。",
+  retentionPartial: "部分数据清理失败，请重试。",
+  retentionCleanFailed: "清理未完成，请重试。",
+  retentionBrowserFailed: "本浏览器清理失败，请检查浏览器存储是否可用。",
+
   timing: {
     submitted: "浏览器提交",
     codexRecorded: "Codex 记录输入",

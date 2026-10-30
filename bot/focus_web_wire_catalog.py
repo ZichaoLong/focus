@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 38
+FOCUS_WEB_WIRE_VERSION: Final = 39
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -185,6 +185,9 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "/api/backend-reset",
         "_handle_backend_reset_execute",
     ),
+    FocusWebEndpointSpec("data_retention_read", "GET", "/api/settings/data-retention", "_handle_data_retention_read"),
+    FocusWebEndpointSpec("data_retention_update", "POST", "/api/settings/data-retention", "_handle_data_retention_update"),
+    FocusWebEndpointSpec("data_prune", "POST", "/api/data/prune", "_handle_data_prune"),
     FocusWebEndpointSpec("profile", "POST", "/api/profile", "_handle_profile_update"),
     FocusWebEndpointSpec(
         "next_turn_settings_read",
@@ -374,6 +377,8 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "backend_reset_execute",
         "profile",
         "next_turn_settings_update",
+        "data_retention_update",
+        "data_prune",
         "attachment_upload",
         "thread_start",
         "thread_open",
@@ -509,6 +514,8 @@ FOCUS_WEB_RECORDS: Final = (
     _record('prompt_first_output_unavailable', 'PromptFirstOutputUnavailable',
             'status reason_code', 'status:prompt_first_output_status'),
     _record('browser_timing', 'BrowserTimingRecord', 'submission_id thread_id submitted_at_ms browser'),
+    _record("data_retention", "FocusDataRetentionPolicy", "records_days attachments_days"),
+    _record("data_prune", "FocusDataPruneResult", "policy results errors records bytes_freed"),
     _record("file_info", "FocusFileInfo", "path name size"),
     _record("coordinates", "FocusCoordinates", "runtime_epoch revision"),
     _record(

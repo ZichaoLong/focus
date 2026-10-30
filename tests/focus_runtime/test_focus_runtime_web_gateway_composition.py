@@ -41,6 +41,7 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
             ingress=lambda: ingress,
             runtime_call=runtime_call,
             operator_status=operator_status,
+            data_retention=lambda: Mock(),
         )
         return (
             gateway,
@@ -459,6 +460,7 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
             ingress=ingress_provider,
             runtime_call=runtime_call,
             operator_status=Mock(),
+            data_retention=lambda: Mock(),
         )
 
         backend_reset_provider.assert_not_called()
@@ -508,6 +510,7 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
                 "ingress": "lambda: self._ingress",
                 "runtime_call": "self._runtime_call",
                 "operator_status": "self._operational_status_snapshot",
+                "data_retention": "lambda: self._data_retention",
             },
         )
         root_names = {
@@ -547,6 +550,7 @@ class FocusRuntimeWebGatewayCompositionTests(unittest.TestCase):
                 "ingress",
                 "runtime_call",
                 "operator_status",
+                "data_retention",
             },
         )
 

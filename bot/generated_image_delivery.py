@@ -92,6 +92,7 @@ class GeneratedImageDeliveryController:
         turn_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        execution_started_at: float = 0.0,
     ) -> int:
         delivered = 0
         for artifact in collect_generated_images(snapshot, turn_id=turn_id):
@@ -113,6 +114,7 @@ class GeneratedImageDeliveryController:
                 thread_id=normalized_thread_id,
                 turn_id=artifact.turn_id,
                 item_id=artifact.item_id,
+                execution_started_at=execution_started_at,
             )
             if claim is None:
                 continue

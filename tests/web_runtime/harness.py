@@ -15,7 +15,7 @@ from bot.jsonrpc_id import jsonrpc_id_key
 from bot.server_request_contract import ServerRequestIdentity, ServerRequestRoutingMode
 from bot.server_request_registry import ServerRequestRegistry
 from bot.stores.interaction_lease_store import InteractionLeaseStore
-from bot.stores.web_attachment_store import WebAttachmentStore
+from bot.stores.attachment_store import AttachmentStore
 from bot.stores.web_next_turn_settings_store import (
     WebNextTurnSettings,
     WebNextTurnSettingsStore,
@@ -53,7 +53,7 @@ class WebRuntimeControllerHarness(unittest.TestCase):
         self.projection = FocusWebProjection()
         self.events: list[dict] = []
         self.projection.subscribe(self.events.append)
-        self.attachment_store = WebAttachmentStore(
+        self.attachment_store = AttachmentStore(
             pathlib.Path(self.temp_dir.name),
             ttl_seconds=300,
         )

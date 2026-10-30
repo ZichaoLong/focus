@@ -174,7 +174,7 @@ control response 报告 `ok: true` 时，`service reset-backend` 必须先验证
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
 | `focusctl [--instance <name>] logs status` | 查看诊断日志目录、各类文件总占用和保留策略 | 只读 | 无 |
-| `focusctl [--instance <name>] logs prune [--dry-run] [--keep-days <n>]` | 按年龄与容量清理诊断日志；默认保留 30 天，`--dry-run` 只预览 | 变更 / 只读预览 | 无 |
+| `focusctl [--instance <name>] logs prune [--dry-run] [--keep-days <n>]` | 按年龄与容量清理诊断日志；默认使用 Focus 记录保留期（初始 30 天），`--dry-run` 只预览 | 变更 / 只读预览 | 无 |
 
 - 单次命令只接受一个实例；省略时采用第 2 节的实例选择规则，实例停止时也可执行。
   `status` 和 `--dry-run` 不创建日志目录或锁文件。
@@ -182,9 +182,10 @@ control response 报告 `ok: true` 时，`service reset-backend` 必须先验证
   `fcodex.log`（512 KiB × 32，共 16 MiB）、`service.stdout.log` 和
   `service.stderr.log`（各 2 MiB × 4）。`fcodex.log` 是逐行 JSON 故障摘要，
   写入时也按 UTC 日期轮转。单次普通日志写入最多保存 64 KiB，超出部分明确标注截断。
-- 写入按容量轮转；服务启动时及每 30 分钟按文件最后写入时间淘汰超过 30 天的备份，
+- 写入按容量轮转；服务启动时及每 30 分钟按文件最后写入时间淘汰超过所选记录保留期的备份，
   同时删除过期的 `fcodex.log`。fcodex 记录器启动时也执行同一清理。
   一份文件内部不逐条重写，保留天数按最后写入时间计算，不是逐条消息的精确 TTL。
+- 保留期来自[数据清理](./data-retention.zh-CN.md)设置；显式 `--keep-days` 只覆盖本次，不修改设置。
 - `--keep-days 0` 可清理全部备份和 fcodex 当前诊断文件；始终保留服务当前的
   `focus.log`、`service.stdout.log`、`service.stderr.log`。这些当前文件由写入方限额轮转。
   负数被拒绝。预览是当时快照，执行时重新核对。

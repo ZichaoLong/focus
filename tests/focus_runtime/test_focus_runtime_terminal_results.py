@@ -484,6 +484,7 @@ class TerminalResultsTests(unittest.TestCase):
         harness.store.has_execution_result.assert_called_once_with(
             execution_message_id=" execution-1 ",
             final_reply_text=" exact raw text ",
+            execution_started_at=0.0,
         )
 
         harness.store.get_by_terminal_result_id.reset_mock()

@@ -854,3 +854,15 @@ export function isStaleThreadProjectionError(
   return isStaleWebReadError(error, expectedCode)
     && error.code !== 'stale_document_read';
 }
+
+export interface FocusDataRetentionPolicy {
+  records_days: 7 | 30 | 90;
+  attachments_days: 7 | 30 | 90;
+}
+export interface FocusDataPruneResult {
+  policy: FocusDataRetentionPolicy;
+  results: Record<string, { records: number; bytes_freed: number }>;
+  errors: Record<string, string>;
+  records: number;
+  bytes_freed: number;
+}

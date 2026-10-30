@@ -20,6 +20,7 @@ from bot.file_lock import (
     open_lock_file,
     release_file_lock,
 )
+from bot.stores.data_retention_store import DataRetentionStore
 
 RETENTION_DAYS = 30
 MAINTENANCE_SECONDS = 30 * 60
@@ -122,9 +123,11 @@ def _prune_candidates(
 
 
 def prune_logs(
-    data_dir: pathlib.Path, *, keep_days: int = RETENTION_DAYS, dry_run: bool = False
+    data_dir: pathlib.Path, *, keep_days: int | None = None, dry_run: bool = False
 ) -> list[LogFile]:
     """Clean closed files, plus expired fcodex files (opened only under our lock)."""
+    if keep_days is None:
+        keep_days = DataRetentionStore(data_dir).load().records_days
     if keep_days < 0:
         raise ValueError("keep-days 必须大于或等于 0。")
     if dry_run or not data_dir.exists():

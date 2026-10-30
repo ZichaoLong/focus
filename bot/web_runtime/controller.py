@@ -43,9 +43,9 @@ from bot.stores.interaction_lease_store import (
 )
 from bot.stores.web_writer_profile_store import WebWriterProfileStore
 from bot.stores.web_next_turn_settings_store import WebNextTurnSettingsStore
-from bot.stores.web_attachment_store import (
-    WebAttachmentDownload,
-    WebAttachmentStore,
+from bot.stores.attachment_store import (
+    AttachmentDownload,
+    AttachmentStore,
 )
 from bot.web_runtime.selection_coordinator import WebSelectionCoordinator
 from bot.web_runtime.next_turn_settings_coordinator import (
@@ -233,7 +233,7 @@ class WebRuntimeController:
         interaction_lease_store: InteractionLeaseStore,
         profile_store: WebWriterProfileStore,
         next_turn_settings_store: WebNextTurnSettingsStore,
-        attachment_store: WebAttachmentStore,
+        attachment_store: AttachmentStore,
         remember_direct_thread_summary: Callable[[ThreadSummary], None],
         effective_settings: ThreadEffectiveSettingsRegistry,
         projection: FocusWebProjection,
@@ -696,7 +696,7 @@ class WebRuntimeController:
             content=content,
         )
 
-    def attachment_download(self, attachment_id: str) -> WebAttachmentDownload:
+    def attachment_download(self, attachment_id: str) -> AttachmentDownload:
         return self._workspace.attachment_download(attachment_id)
 
     def start_thread(
@@ -1572,6 +1572,15 @@ class WebRuntimeController:
         """Read the RuntimeLoop-owned intent floor retained across F5."""
 
         return self._document_registry.intent_generation_floor(client_id)
+
+    def retention_clients(self) -> tuple[str, ...]:
+        self._document_registry.assert_runtime_context()
+        return self._document_registry.client_ids()
+
+    def retention_workspaces(self) -> tuple[str, ...]:
+        self._document_registry.assert_runtime_context()
+        return tuple(view.cwd for view in self._thread_read_model.snapshots()
+                     if view.cwd and self.retains_runtime(view.thread_id))
 
     def client_connected(self, client_id: str) -> None:
         self._lifecycle.client_connected(client_id)

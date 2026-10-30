@@ -223,6 +223,8 @@ guards and may not retain parallel key or enum inventories.
   copied diagnostics retain durations. Service and assets deploy together; see [submission times](focus-web-prompt-timing.md)
   for states and association rules.
 
+- v39 adds instance record/attachment retention settings and cleanup routes; see [data cleanup](./data-retention.md).
+
 ## 4. Endpoint and Event Admission
 
 The two diagnostic GETs and metadata-only POST neither query app-server nor establish result/retry authority.

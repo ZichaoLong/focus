@@ -339,6 +339,9 @@ class FeishuBot(ABC):
     def forget_chat_state_after_destination_loss(self, chat_id: str) -> None:
         self._ingress.forget_chat_state_after_destination_loss(chat_id)
 
+    def prune_group_history(self, before: float, *, protected_chats: tuple[str, ...] = ()):
+        return self._ingress.prune_group_history(before, protected_chats=protected_chats)
+
     def read_interactive_message(
         self,
         message_id: str,

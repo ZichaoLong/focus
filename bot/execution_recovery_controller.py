@@ -587,6 +587,7 @@ class ExecutionRecoveryController:
         if self._has_recorded_terminal_result(
             execution_message_id=target.card_message_id,
             final_reply_text=raw_text,
+            execution_started_at=target.execution_started_at,
         ):
             return True
         published = self._publish_terminal_result(
@@ -922,6 +923,7 @@ class ExecutionRecoveryController:
                     turn_id=target.turn_id,
                     prompt_message_id=target.prompt_message_id,
                     prompt_reply_in_thread=target.prompt_reply_in_thread,
+                    execution_started_at=target.execution_started_at,
                 )
                 or 0
             )
@@ -938,6 +940,9 @@ class ExecutionRecoveryController:
         if target is None or not target.thread_id or not target.card_message_id:
             return
         self._workers.start(lambda: self.run_terminal_execution_reconcile(target))
+
+    def has_retention_work(self) -> bool:
+        return self._workers.has_workers
 
     def shutdown(self, *, timeout: float | None = None) -> None:
         """Stop accepting reconciliation work and wait for every worker."""

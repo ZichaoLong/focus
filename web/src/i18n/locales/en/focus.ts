@@ -1,4 +1,18 @@
 export default {
+  retentionTitle: "Data cleanup",
+  retentionRecords: "Focus record retention",
+  retentionAttachments: "Attachment retention",
+  retentionDays: "{days} days",
+  retentionDescription: "Expired data is cleaned automatically. Clean now also handles this browser. Attachment capacity limits may remove files sooner; Codex threads and workspace files keep their existing management.",
+  retentionClean: "Clean expired data now",
+  retentionWorking: "Working…",
+  retentionUnavailable: "Retention settings are unavailable. Reopen settings to retry.",
+  retentionSaveFailed: "Could not save retention settings. Please retry.",
+  retentionCleaned: "Cleaned {server} server items and {browser} browser items.",
+  retentionPartial: "Some data could not be cleaned. Please retry.",
+  retentionCleanFailed: "Cleanup did not complete. Please retry.",
+  retentionBrowserFailed: "Browser cleanup failed. Check browser storage availability.",
+
   timing: {
     submitted: "Browser submitted",
     codexRecorded: "Codex recorded input",

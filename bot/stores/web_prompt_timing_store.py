@@ -13,12 +13,15 @@ import threading
 import time
 from contextlib import closing, contextmanager
 from typing import Any
+from bot.data_retention_contract import DataPruneResult
+from bot.stores.data_retention_store import DataRetentionStore
 
 
 class WebPromptTimingStore:
     def __init__(self, data_dir: pathlib.Path) -> None:
         self.path = pathlib.Path(data_dir) / "web_prompt_timing.sqlite"
         self._lock = threading.RLock()
+        self._retention = DataRetentionStore(data_dir)
 
     @contextmanager
     def _connection(self):
@@ -83,8 +86,11 @@ class WebPromptTimingStore:
 
     def sync_browser(self, client_id: str, records: list[dict[str, Any]]) -> None:
         now = int(time.time() * 1000)
+        cutoff = now - self._retention.load().records_days * 86_400_000
         with self._connection() as db:
             for record in records:
+                if record['submitted_at_ms'] < cutoff:
+                    continue
                 db.execute("""INSERT INTO submissions
                     (id,client_id,thread_id,submitted_at_ms,browser,updated_at_ms)
                     VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET browser=excluded.browser
@@ -94,9 +100,20 @@ class WebPromptTimingStore:
                          OR json_extract(excluded.browser,'$.completed_at_ms') IS NOT NULL)""",
                     (record['submission_id'], client_id, record['thread_id'], record['submitted_at_ms'],
                      json.dumps(record['browser']), now))
-            # Unassociated attempts have a finite retention period; associated
-            # message timestamps remain available for historical conversations.
-            db.execute("DELETE FROM submissions WHERE item_id='' AND updated_at_ms<?", (now - 90 * 86_400_000,))
+
+    def prune(self, before: float, *, protected_ids: tuple[str, ...] = ()) -> DataPruneResult:
+        if not self.path.exists():
+            return DataPruneResult()
+        with self._lock:
+            size = self.path.stat().st_size
+            with self._connection() as db:
+                candidates = db.execute("SELECT id FROM submissions WHERE updated_at_ms<?", (int(before * 1000),)).fetchall()
+                ids = [(row['id'],) for row in candidates if row['id'] not in protected_ids]
+                db.executemany("DELETE FROM submissions WHERE id=?", ids)
+            if ids:
+                with self._connection() as db:
+                    db.execute("VACUUM")
+            return DataPruneResult(len(ids), max(0, size - self.path.stat().st_size))
 
     @staticmethod
     def _decode(row: sqlite3.Row) -> dict[str, Any]:

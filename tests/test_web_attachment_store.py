@@ -7,9 +7,9 @@ import uuid
 from dataclasses import replace
 from unittest.mock import patch
 
-from bot.stores.web_attachment_store import (
-    WebAttachmentStore,
-    WebAttachmentSubmissionClaimError,
+from bot.stores.attachment_store import (
+    AttachmentStore,
+    AttachmentSubmissionClaimError,
 )
 
 
@@ -19,7 +19,7 @@ _PNG_1X1 = bytes.fromhex(
 )
 
 
-class WebAttachmentStoreTests(unittest.TestCase):
+class AttachmentStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
@@ -27,7 +27,7 @@ class WebAttachmentStoreTests(unittest.TestCase):
         self.data_dir = root / "data"
         self.workspace = root / "workspace"
         self.workspace.mkdir()
-        self.store = WebAttachmentStore(
+        self.store = AttachmentStore(
             self.data_dir,
             ttl_seconds=60,
             max_bytes=128,
@@ -405,7 +405,7 @@ class WebAttachmentStoreTests(unittest.TestCase):
         )
         clone = replace(receipt)
 
-        other_store = WebAttachmentStore(
+        other_store = AttachmentStore(
             pathlib.Path(self.temp_dir.name) / "other-data",
             ttl_seconds=60,
             max_bytes=128,
@@ -427,9 +427,9 @@ class WebAttachmentStoreTests(unittest.TestCase):
             now=101,
         )
 
-        with self.assertRaisesRegex(WebAttachmentSubmissionClaimError, "another store"):
+        with self.assertRaisesRegex(AttachmentSubmissionClaimError, "another store"):
             self.store.release_submission_claim(foreign_receipt)
-        with self.assertRaisesRegex(WebAttachmentSubmissionClaimError, "forged|exact"):
+        with self.assertRaisesRegex(AttachmentSubmissionClaimError, "forged|exact"):
             self.store.release_submission_claim(clone)
 
         self.store.release_submission_claim(receipt)
@@ -440,7 +440,7 @@ class WebAttachmentStoreTests(unittest.TestCase):
             ).record.submitted
         )
         with self.assertRaisesRegex(
-            WebAttachmentSubmissionClaimError, "already released"
+            AttachmentSubmissionClaimError, "already released"
         ):
             self.store.release_submission_claim(receipt)
 
@@ -538,7 +538,7 @@ class WebAttachmentStoreTests(unittest.TestCase):
                 self.store.rollback_submission_claim(receipt, now=102)
 
         with self.assertRaisesRegex(
-            WebAttachmentSubmissionClaimError, "already released"
+            AttachmentSubmissionClaimError, "already released"
         ):
             self.store.release_submission_claim(receipt)
         self.assertTrue(
@@ -568,7 +568,7 @@ class WebAttachmentStoreTests(unittest.TestCase):
                 self.store.rollback_submission_claim(receipt, now=102)
 
         with self.assertRaisesRegex(
-            WebAttachmentSubmissionClaimError, "already released"
+            AttachmentSubmissionClaimError, "already released"
         ):
             self.store.release_submission_claim(receipt)
         self.store.delete_scope("thread:one")

@@ -78,6 +78,8 @@ Status guidance:
 
 ### Contracts
 
+- [Focus data cleanup](./contracts/data-retention.md)
+
 - [`focusctl-command-matrix.md`](./contracts/focusctl-command-matrix.md)
 - [`feishu-command-matrix.md`](./contracts/feishu-command-matrix.md)
 - [`feishu-thread-lifecycle.md`](./contracts/feishu-thread-lifecycle.md)

@@ -163,6 +163,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v38 为提交诊断增加必填 `first_output` 观察状态及首次输出证据；详情按事件时间展示，耗时保留在复制诊断中。
   服务与静态资源须同版本部署，具体状态与关联规则见[提交时间合同](focus-web-prompt-timing.zh-CN.md)。
 
+- v39 新增实例记录/附件保留期读写和立即清理接口，详见[数据清理合同](./data-retention.zh-CN.md)。
+
 ## 4. Endpoint 与 event admission
 
 诊断的两个 GET 与 metadata-only POST 不读取 app-server、不建立 result/retry authority，具体字段、限制与

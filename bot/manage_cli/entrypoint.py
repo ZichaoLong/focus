@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 from bot.env_file import ensure_env_template
-from bot.diagnostic_logs import RETENTION_DAYS
 from bot.instance_layout import resolve_instance_paths, validate_instance_name
 from bot.platform_paths import default_config_root, default_log_file, is_windows
 from bot.service_manager import ServiceManagerError
@@ -251,7 +250,7 @@ def _build_parser() -> argparse.ArgumentParser:
     logs_actions.add_parser("status", help="只读查看各类诊断日志的位置、大小及保留策略。")
     prune_parser = logs_actions.add_parser("prune", help="按保留策略清理旧诊断日志。")
     prune_parser.add_argument("--dry-run", action="store_true", help="只列出候选文件，不修改文件。")
-    prune_parser.add_argument("--keep-days", type=int, default=RETENTION_DAYS,
+    prune_parser.add_argument("--keep-days", type=int, default=None,
                               help="保留天数；0 清理备份及 fcodex 诊断，保留服务当前日志。")
 
     config_parser = subparsers.add_parser(
@@ -450,7 +449,7 @@ def main(argv: list[str] | None = None) -> None:
             raise SystemExit(handle_logs(
                 instance_name, args.logs_action,
                 dry_run=getattr(args, "dry_run", False),
-                keep_days=getattr(args, "keep_days", RETENTION_DAYS),
+                keep_days=getattr(args, "keep_days", None),
             ))
         if args.command == "config":
             raise SystemExit(

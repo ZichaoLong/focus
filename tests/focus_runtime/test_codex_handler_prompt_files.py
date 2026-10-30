@@ -249,7 +249,7 @@ class CodexHandlerPromptFileTests(CodexHandlerHarness):
 
         self.assertIn("已保存到本地", bot.replies[-1][1])
         self.assertEqual(handler._adapter.start_turn_calls, [])
-        staged_files = sorted((workspace / "_feishu_attachments").iterdir())
+        staged_files = sorted((handler._data_dir / "web_attachment_cache").iterdir())
         self.assertEqual(len(staged_files), 1)
         self.assertEqual(staged_files[0].read_bytes(), b"spec-content")
 
@@ -302,7 +302,7 @@ class CodexHandlerPromptFileTests(CodexHandlerHarness):
 
         input_items = handler._adapter.start_turn_calls[-1]["input_items"]
         self.assertEqual([item["type"] for item in input_items], ["text"])
-        staged_path = str(next((workspace / "_feishu_attachments").iterdir()))
+        staged_path = str(next((handler._data_dir / "web_attachment_cache").iterdir()))
         self.assertIn(staged_path, input_items[0]["text"])
 
     def test_unknown_effective_model_keeps_feishu_image_as_path_only(self) -> None:
@@ -536,7 +536,7 @@ class CodexHandlerPromptFileTests(CodexHandlerHarness):
         handler.handle_attachment_message("ou_user", "c1", "m-file-1", "file", "file-key-1", "one.txt")
         handler.handle_attachment_message("ou_user", "c1", "m-file-2", "file", "file-key-2", "two.txt")
 
-        staged_files = sorted((workspace / "_feishu_attachments").iterdir())
+        staged_files = sorted((handler._data_dir / "web_attachment_cache").iterdir())
         staged_files[0].unlink()
 
         handler.handle_message("ou_user", "c1", "请处理附件", message_id="m-text")

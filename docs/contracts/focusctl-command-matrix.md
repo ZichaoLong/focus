@@ -201,7 +201,7 @@ the machine-wide instance overview.
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
 | `focusctl [--instance <name>] logs status` | Show diagnostic directory, usage by file family and retention | read-only | none |
-| `focusctl [--instance <name>] logs prune [--dry-run] [--keep-days <n>]` | Prune diagnostic logs by age and capacity; keep 30 days by default, preview only with `--dry-run` | mutating / read-only preview | none |
+| `focusctl [--instance <name>] logs prune [--dry-run] [--keep-days <n>]` | Prune diagnostic logs by age and capacity; use the Focus record period (initially 30 days), preview only with `--dry-run` | mutating / read-only preview | none |
 
 - Each invocation accepts one instance, using section 2's selection rules when
   omitted, and works with a stopped instance. Status and dry-run create neither
@@ -212,9 +212,10 @@ the machine-wide instance overview.
   JSON-lines failure summaries and also rotates on a UTC date change at write
   time. An ordinary append keeps at most 64 KiB, marking excess text as truncated.
 - Writes rotate by capacity. Service startup and a 30-minute in-process timer
-  prune backups last written over 30 days ago, plus expired current `fcodex.log`.
+  prune backups older than the selected record period, plus expired current `fcodex.log`.
   fcodex recorder startup runs the same cleanup. Retention uses each file's last
   write time, without rewriting individual entries; it is not an exact per-event TTL.
+- Retention comes from [data cleanup](./data-retention.md) settings; explicit `--keep-days` overrides only this run.
 - `--keep-days 0` clears all backups and the current fcodex diagnostic file.
   Current service `focus.log`, `service.stdout.log`, and `service.stderr.log`
   remain; their writers own bounded rotation. Negative ages are rejected.

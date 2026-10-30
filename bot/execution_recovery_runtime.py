@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, ContextManager, Literal, Protocol, TypeAlias
 
@@ -213,6 +214,7 @@ class TerminalReconcileTarget:
     cancelled: bool
     elapsed: int
     terminal_page_receipts: tuple[TerminalExecutionPageReceipt, ...] = ()
+    execution_started_at: float = 0.0
 
     def __post_init__(self) -> None:
         if (
@@ -856,6 +858,8 @@ class ExecutionRecoveryRuntimeTransitions:
             binding=session.binding,
             thread_id=thread_id,
             turn_id=turn_id,
+            # Runtime execution clocks are monotonic; durable retention uses UTC.
+            execution_started_at=time.time() - max(0.0, time.monotonic() - started_at) if started_at else 0.0,
             card_message_id=card_message_id,
             prompt_message_id=(
                 session.execution.current_prompt_message_id.strip()

@@ -12,6 +12,7 @@ import pathlib
 from collections.abc import Callable
 from typing import Any
 
+from bot.data_retention import DataRetentionService
 from bot.instance_layout import global_data_dir
 from bot.service_runtime_lifecycle import ServiceRuntimeIngressDispatcher
 from bot.web_runtime.backend_reset_controller import WebBackendResetController
@@ -31,6 +32,7 @@ def compose_web_gateway(
     ingress: Callable[[], ServiceRuntimeIngressDispatcher],
     runtime_call: Callable[..., Any],
     operator_status: Callable[[], dict[str, Any]],
+    data_retention: Callable[[], DataRetentionService],
 ) -> WebGateway:
     """Build the Gateway without exposing its port catalog to the root."""
 
@@ -52,6 +54,9 @@ def compose_web_gateway(
         ports=WebGatewayPorts(
             meta=lambda client_id: runtime_call(web_runtime.meta, client_id),
             operator_status=operator_status,
+            data_retention_read=lambda: ingress().run_external_transaction(data_retention().policy),
+            data_retention_update=lambda changes: ingress().run_external_transaction(data_retention().update, changes),
+            data_prune=lambda: ingress().run_external_transaction(data_retention().prune),
             backend_reset_preview=lambda: runtime_call(backend_reset().preview),
             backend_reset_execute=lambda **kwargs: runtime_call(
                 backend_reset().execute,

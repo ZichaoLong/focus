@@ -28,6 +28,7 @@ import {
   createFocusNavigationProfile,
 } from './focusNavigationProfile';
 import { createWebNextTurnSettings } from './client-state/web-next-turn-settings';
+import { createDataRetention } from './client-state/data-retention';
 import { createBrowserTurnWindow } from './client-state/browser-turn-window';
 import { createThreadInspection } from './client-state/thread-inspection';
 import { createRuntimeNoticeOwner } from './client-state/runtime-notices';
@@ -66,6 +67,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const operatorStatus = ref<FocusOperatorStatus | null>(null);
   const operatorStatusFreshness = ref<FocusOperatorStatusFreshness>('loading');
   const operatorStatusStale = computed(() => operatorStatusFreshness.value === 'stale');
+  const dataRetention = createDataRetention(api);
   const initialized = ref(false);
   const loading = ref(false);
   const summaryExporting = ref(false);
@@ -980,6 +982,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       intentClock.rebase(api.intentGenerationFloor);
       navigation.registerClient(api.clientId);
       projection.installInitialMeta(initialMeta);
+      dataRetention.start();
       mutationActions.installInitialState(initialMeta);
       // Runtime health is an independent, ephemeral projection. It must not
       // hold the durable thread shell or event connection behind its deadline.
@@ -1014,6 +1017,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     backendReset.dispose();
     mutationActions.dispose();
     settings.dispose();
+    dataRetention.dispose();
     threadInspection.dispose();
     historyNavigation.dispose();
     promptHistory.dispose();
@@ -1123,6 +1127,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     composerThinking,
     approvalPolicy,
     permissionsProfileId,
+    dataRetention,
     nextTurnSettings: settings.snapshot,
     workspacesView,
     workspaceGroups,

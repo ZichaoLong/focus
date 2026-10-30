@@ -7,6 +7,7 @@ import {
   ref,
   watch,
 } from 'vue';
+import { touchDraft, protectDraft } from '../lib/dataRetention';
 import { draftStorageKey, safeGetString, safeRemove, safeSetString } from '../lib/storage';
 
 export interface ComposerDraftDeps {
@@ -29,12 +30,15 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
   const { sessionId } = deps;
 
   function loadDraft(sid: string | undefined): string {
-    return safeGetString(draftStorageKey(sid)) ?? '';
+    const key = draftStorageKey(sid);
+    touchDraft(key);
+    return safeGetString(key) ?? '';
   }
   function saveDraft(sid: string | undefined, value: string): void {
     const key = draftStorageKey(sid);
     if (value) safeSetString(key, value);
     else safeRemove(key);
+    touchDraft(key, !!value);
   }
 
   const text = ref(loadDraft(sessionId()));
@@ -42,6 +46,7 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
   let pendingSave: { sessionId: string | undefined; value: string } | null = null;
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
   let restoringSessionDraft = false;
+  let releaseDraftProtection: (() => void) | null = null;
 
   function flushDraft(): void {
     if (saveTimer !== null) {
@@ -90,6 +95,10 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
     (newSid, oldSid) => {
       if (newSid === oldSid) return;
       flushDraft();
+      if (releaseDraftProtection) {
+        releaseDraftProtection();
+        releaseDraftProtection = protectDraft(draftStorageKey(newSid));
+      }
       restoringSessionDraft = true;
       text.value = loadDraft(newSid);
       restoringSessionDraft = false;
@@ -140,12 +149,17 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
   // The composable is also exercised as a plain state owner in unit tests.
   // Register browser lifecycle hooks only when it actually belongs to a Vue
   // component instance.
+  let retentionHeartbeat: ReturnType<typeof setInterval> | null = null;
   if (getCurrentInstance()) {
     onMounted(() => {
+      releaseDraftProtection = protectDraft(draftStorageKey(sessionId()));
+      retentionHeartbeat = setInterval(() => touchDraft(draftStorageKey(sessionId())), 60_000);
       window.addEventListener('pagehide', onPageHide);
       document.addEventListener('visibilitychange', onVisibilityChange);
     });
     onBeforeUnmount(() => {
+      releaseDraftProtection?.();
+      if (retentionHeartbeat !== null) clearInterval(retentionHeartbeat);
       flushDraft();
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);

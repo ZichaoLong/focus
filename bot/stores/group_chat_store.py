@@ -12,6 +12,7 @@ import time
 from typing import Any, TypedDict
 
 from bot.feishu_types import BoundaryState, GroupChatStoreData, GroupMessageEntry, GroupState
+from bot.data_retention_contract import DataPruneResult
 
 DEFAULT_GROUP_MODE = "assistant"
 GROUP_MODES = {"mention_only", "assistant", "all"}
@@ -279,6 +280,40 @@ class GroupChatStore:
 
     def log_path(self, chat_id: str) -> pathlib.Path:
         return self._log_path(chat_id)
+
+    def prune(self, before: float, *, protected_chats: tuple[str, ...] = ()) -> DataPruneResult:
+        """Compact owned logs without resetting group activation or sequence boundaries."""
+        removed = freed = 0
+        with self._lock:
+            data = self._read_all()
+            for chat_id in data["groups"]:
+                if chat_id in protected_chats:
+                    continue
+                path = self._log_path(chat_id)
+                if not path.is_file() or path.is_symlink():
+                    continue
+                size = path.stat().st_size
+                temporary = path.with_suffix(".jsonl.tmp")
+                count = 0
+                try:
+                    with path.open(encoding="utf-8") as source, temporary.open("w", encoding="utf-8") as target:
+                        for line in source:
+                            try:
+                                row = json.loads(line)
+                                stamp = row.get("created_at") if isinstance(row, dict) else None
+                            except ValueError:
+                                stamp = None
+                            if type(stamp) is int and 0 < stamp < before * 1000:
+                                count += 1
+                            else:
+                                target.write(line)
+                    if count:
+                        os.replace(temporary, path)
+                        removed += count
+                        freed += max(0, size - path.stat().st_size)
+                finally:
+                    temporary.unlink(missing_ok=True)
+        return DataPruneResult(removed, freed)
 
     def clear_chat(self, chat_id: str) -> bool:
         normalized_chat_id = str(chat_id or "").strip()

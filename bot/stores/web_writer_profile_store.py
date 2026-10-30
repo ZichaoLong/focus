@@ -9,6 +9,7 @@ import threading
 import time
 from dataclasses import asdict, dataclass, replace
 from typing import Any
+from bot.data_retention_contract import DataPruneResult
 
 _SCHEMA_VERSION = 3
 _MIN_SCOPE_GENERATION = 1
@@ -110,6 +111,21 @@ class WebWriterProfileStore:
             profiles = self._read_all()
             if profiles.pop(normalized_client_id, None) is not None:
                 self._write_all(profiles)
+
+    def prune(self, before: float, *, protected_clients: tuple[str, ...] = ()) -> DataPruneResult:
+        with self._lock:
+            profiles = self._read_all()
+            now = time.time()
+            # Connected documents count as activity even without navigation changes.
+            kept = {key: replace(value, updated_at=now) if key in protected_clients else value
+                    for key, value in profiles.items()
+                    if key in protected_clients or value.updated_at >= before}
+            removed = len(profiles) - len(kept)
+            size = self._path().stat().st_size if self._path().exists() else 0
+            if kept != profiles:
+                self._write_all(kept)
+            remaining = self._path().stat().st_size if self._path().exists() else 0
+            return DataPruneResult(removed, max(0, size - remaining))
 
     def clear_selected_thread(
         self,

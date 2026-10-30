@@ -106,6 +106,7 @@ class ServiceRuntimeActivationPorts:
     register_instance_runtime: Callable[[], None]
     restore_runtime_leases: Callable[[], None]
     start_web_gateway: Callable[[], None]
+    start_data_retention: Callable[[], None] = lambda: None
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,7 @@ class ServiceRuntimeShutdownPorts:
     stop_runtime_loop: Callable[[], None]
     stop_adapter: Callable[[], None]
     release_machine_authority: Callable[[], None]
+    stop_data_retention: Callable[[], None] = lambda: None
 
 
 class ServiceRuntimeIngressDispatcher:
@@ -603,6 +605,7 @@ class ServiceRuntimeLifecycle:
         ports.register_instance_runtime()
         ports.restore_runtime_leases()
         ports.start_web_gateway()
+        ports.start_data_retention()
 
     def _shutdown_after_lease(
         self,
@@ -632,6 +635,9 @@ class ServiceRuntimeLifecycle:
                 stage,
             )
             raise ServiceRuntimeShutdownError(stage, tuple(failures))
+
+        stop_resource("data_retention", "data retention worker", ports.stop_data_retention)
+        require_stage("data retention producer barrier")
 
         # Close and join execution-recovery admission before cancelling the
         # timers it can register.  A failed join must not let timer

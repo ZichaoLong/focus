@@ -271,6 +271,9 @@ class FeishuIngressController:
         self._process_cache.forget_chat(normalized_chat_id)
         self._forward_aggregator.forget_chat(normalized_chat_id)
 
+    def prune_group_history(self, before: float, *, protected_chats: tuple[str, ...] = ()):
+        return self._group_store.prune(before, protected_chats=protected_chats)
+
     def _display_name_for_sender_identity(
         self,
         *,

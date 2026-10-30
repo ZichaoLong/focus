@@ -2,7 +2,7 @@ import { shallowRef } from 'vue';
 import { FocusApiError } from './types';
 import { isBrowserTimingRecord, type BrowserTimingRecord, type PromptTimingRecord } from './promptTimingTypes';
 
-const KEY = 'focus-web.prompt-timings.v1';
+import { TIMING_STORAGE_KEY as KEY, activeTimingIds, retainedTimestamp } from '../lib/dataRetention';
 const LIMIT = 64;
 type LocalRecord = BrowserTimingRecord & { clientId: string; synced: boolean; version: number };
 interface TimingApi {
@@ -37,7 +37,8 @@ export function createPromptTimingStore(api: TimingApi) {
       if (!previous || value.version > previous.version
         || (value.version === previous.version && (value.synced || !previous.synced))) merged.set(value.submission_id, value);
     }
-    records.value = [...merged.values()].sort((a, b) => a.submitted_at_ms - b.submitted_at_ms).slice(-LIMIT);
+    records.value = [...merged.values()].filter(row => activeTimingIds.has(row.submission_id)
+      || retainedTimestamp(row.submitted_at_ms)).sort((a, b) => a.submitted_at_ms - b.submitted_at_ms).slice(-LIMIT);
   }
   function save(row: LocalRecord) {
     merge(row);
@@ -72,6 +73,7 @@ export function createPromptTimingStore(api: TimingApi) {
     const row: LocalRecord = { submission_id: id, thread_id: threadId, submitted_at_ms: previous?.submitted_at_ms ?? Date.now(),
       browser: {}, clientId: api.clientId, synced: false, version: (previous?.version ?? 0) + 1 };
     const start = performance.now(), disconnectStart = disconnected;
+    activeTimingIds.add(id);
     save(row);
     try {
       const result = await send({ 'X-Focus-Prompt-Id': id, 'X-Focus-Submitted-At': String(row.submitted_at_ms) });
@@ -83,6 +85,7 @@ export function createPromptTimingStore(api: TimingApi) {
       if (error instanceof FocusApiError && typeof error.details?.thread_id === 'string') row.thread_id = error.details.thread_id;
       throw error;
     } finally {
+      activeTimingIds.delete(id);
       row.browser.completed_at_ms = Date.now();
       row.browser.elapsed_ms = Math.min(86_400_000, Math.max(0, Math.round(performance.now() - start)));
       row.browser.disconnects = disconnected - disconnectStart;
@@ -96,7 +99,7 @@ export function createPromptTimingStore(api: TimingApi) {
     records, durable, revision, changedId, submit, sync,
     disconnected() { disconnected += 1; },
     changed(id: string) { changedId.value = id; revision.value += 1; },
-    local(id: string) { return records.value.find(row => row.submission_id === id); },
+    local(id: string) { merge(); return records.value.find(row => row.submission_id === id); },
     read: (id: string) => api.readPromptTiming(id),
     list: (threadId: string) => api.listPromptTimings(threadId),
   };

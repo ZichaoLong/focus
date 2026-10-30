@@ -7,6 +7,8 @@ import Select from '../components/ui/Select.vue';
 import Button from '../components/ui/Button.vue';
 import Banner from '../components/ui/Banner.vue';
 import Icon from '../components/ui/Icon.vue';
+import FocusDataRetentionSettings from './FocusDataRetentionSettings.vue';
+import type { DataRetentionOwner } from './client-state/data-retention';
 import FocusUpdateProgress from './FocusUpdateProgress.vue';
 import {
   isComposerSendShortcut,
@@ -25,6 +27,7 @@ import type {
 
 const props = defineProps<{
   open: boolean;
+  dataRetention?: DataRetentionOwner;
   colorScheme: ColorScheme;
   turnWindowLimit: number;
   activityFaviconEnabled: boolean;
@@ -94,6 +97,7 @@ const copiedOperationId = ref(false);
 watch(
   () => props.open,
   (open, wasOpen) => {
+    if (open && !wasOpen) void props.dataRetention?.refresh();
     if (!open) {
       deleteTarget.value = '';
       deleteConfirmation.value = '';
@@ -343,6 +347,7 @@ function setComposerSendShortcut(value: string): void {
           </Select>
         </section>
         <div class="next-turn-note">{{ t('focus.nextTurnSettings') }}</div>
+        <FocusDataRetentionSettings v-if="dataRetention" :owner="dataRetention" />
       </template>
 
       <section v-else-if="section === 'archived'" class="archived-panel">

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import logging
 import os
 import pathlib
 import threading
 from dataclasses import asdict, dataclass
+from bot.data_retention_contract import DataPruneResult
 
 _SCHEMA_VERSION = 2
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ class TerminalResultStore:
     def __init__(self, data_dir: pathlib.Path) -> None:
         self._data_dir = pathlib.Path(data_dir)
         self._lock = threading.Lock()
+        self._pruned_before = 0.0
 
     def upsert(self, record: TerminalResultRecord) -> None:
         normalized = self._normalize_record(record)
@@ -102,21 +105,38 @@ class TerminalResultStore:
             logger.warning("terminal result store latest_for_thread failed: %s", exc)
         return ""
 
-    def has_execution_result(self, *, execution_message_id: str, final_reply_text: str) -> bool:
+    def has_execution_result(self, *, execution_message_id: str, final_reply_text: str,
+                             execution_started_at: float = 0.0) -> bool:
         normalized_execution_message_id = str(execution_message_id or "").strip()
         text = str(final_reply_text or "")
         if not normalized_execution_message_id or not text:
             return False
         try:
             with self._lock:
+                records = self._read_all()
+                if self._pruned_before and execution_started_at <= self._pruned_before:
+                    return True
                 return any(
                     item.execution_message_id == normalized_execution_message_id
                     and item.final_reply_text == text
-                    for item in self._read_all()
+                    for item in records
                 )
         except Exception as exc:
             logger.warning("terminal result store has_execution_result failed: %s", exc)
-            return False
+            # An unreadable retirement watermark cannot authorize a resend.
+            return True
+        return False
+
+    def prune(self, before: float) -> DataPruneResult:
+        with self._lock:
+            records = self._read_all()
+            kept = [item for item in records if item.recorded_at >= before]
+            if len(kept) == len(records):
+                return DataPruneResult()
+            size = self._file_path().stat().st_size
+            self._pruned_before = max(self._pruned_before, before)
+            self._write_all(kept)
+            return DataPruneResult(len(records) - len(kept), max(0, size - self._file_path().stat().st_size))
 
     def list_all(self) -> tuple[TerminalResultRecord, ...]:
         try:
@@ -140,6 +160,10 @@ class TerminalResultStore:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise RuntimeError("terminal_results.json 格式损坏：顶层必须是对象。")
+        floor = raw.get("pruned_before", 0.0)
+        if type(floor) not in (int, float) or not math.isfinite(floor) or floor < 0:
+            raise RuntimeError("invalid terminal result retirement watermark")
+        self._pruned_before = max(self._pruned_before, floor)
         schema_version = int(raw.get("schema_version", 0) or 0)
         if schema_version == 1:
             raw_items = raw.get("results")
@@ -160,6 +184,7 @@ class TerminalResultStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema_version": _SCHEMA_VERSION,
+            "pruned_before": self._pruned_before,
             "results": [asdict(record) for record in records],
         }
         tmp_path = path.with_suffix(".json.tmp")

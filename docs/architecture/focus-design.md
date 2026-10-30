@@ -305,7 +305,7 @@ topology, wrapper, cwd proxy, credential, and platform-containment boundaries.
 | What is the input order for one Feishu binding? | `FeishuExecutionQueueController` | main-turn writer or backend residency |
 | What content and page ranges are displayed for an execution? | `ExecutionTranscript` and `ExecutionPageLedger`, each for its presentation facts | turn completion, FIFO, or thread lifecycle authority |
 | Is a Feishu destination authoritatively lost? | `FeishuDestinationLossStore` and `FeishuDestinationLivenessCoordinator` | generic timeout, unknown send error, main-turn state |
-| What are Web's durable navigation workspace/selection and attachments? | `WebWriterProfileStore` and `WebAttachmentStore`; the latter also owns process-local exact file pins for in-flight submissions | browser components, read models, event sockets, next-turn settings |
+| What are Web's durable navigation workspace/selection and attachments? | `WebWriterProfileStore` and `AttachmentStore`; the latter also owns process-local exact file pins for in-flight submissions | browser components, read models, event sockets, next-turn settings |
 | What are the instance-wide Web next-turn settings? | `WebNextTurnSettingsStore`; `WebNextTurnSettingsCoordinator` closes the mutation/projection transaction | `WebWriterProfileStore`, selection/navigation generation, main-turn leases, thread effective settings, browser overlays/events |
 | What are a Web document, runtime interest, read model, and prompt-result evidence? | `WebDocumentRegistry`, `WebRuntimeInterestRegistry`, `WebThreadReadModel`, and `WebPromptResultRegistry`, independently | each other's projection; none is a durable writer or replay authority |
 | Who owns canonical Web-triggered subscription and runtime cleanup? | `WebRuntimeLifecycleCoordinator` owns the per-thread cleanup flight and exact local rechecks; `ThreadRuntimeAuthority` owns the same-thread resume/start/unsubscribe effect fence; the thread-runtime lease owner alone performs full-record holder CAS | an `fcodex` connection, read cache, or the background worker thread |
@@ -497,6 +497,9 @@ extend a writer, or spread a local delivery unknown into a later turn.
 runtime; capability owners below that package must not import the composition root.
 New behavior belongs in an existing owner, or must first explain why no existing
 boundary can own the new fact.
+
+`DataRetentionService` schedules existing history owners; `DataRetentionStore` owns the retention preference.
+New Feishu/Web files share `AttachmentStore`. See [data cleanup](../contracts/data-retention.md) for scope and persistence.
 
 ## 7. Evolution Rules
 

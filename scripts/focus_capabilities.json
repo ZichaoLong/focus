@@ -127,6 +127,10 @@
         {
           "path": "docs/contracts/fcodex-operation-owner.zh-CN.md",
           "heading": "没有 root target 的 client request"
+        },
+        {
+          "path": "docs/contracts/data-retention.zh-CN.md",
+          "heading": "2. 原规则与新规则"
         }
       ],
       "focused-test": [
@@ -2106,8 +2110,8 @@
           "symbol": "WebOperationService.resolve_unknown_mutation"
         },
         {
-          "path": "bot/stores/web_attachment_store.py",
-          "symbol": "WebAttachmentStore.claim_pending_submission"
+          "path": "bot/stores/attachment_store.py",
+          "symbol": "AttachmentStore.claim_pending_submission"
         },
         {
           "path": "bot/web_runtime/thread_create_coordinator.py",
@@ -3067,6 +3071,99 @@
         "web-dependency-direction",
         "web-wire",
         "web-typecheck"
+      ]
+    },
+    "data-retention": {
+      "entry": [
+        {
+          "path": "web/src/focus/FocusDataRetentionSettings.vue",
+          "symbol": "setPeriod"
+        },
+        {
+          "path": "bot/web_runtime/gateway_data_retention.py",
+          "symbol": "WebGatewayDataRetentionMixin"
+        },
+        {
+          "path": "bot/focus_runtime/data_retention_composition.py",
+          "symbol": "compose_data_retention"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/data_retention.py",
+          "symbol": "DataRetentionService"
+        },
+        {
+          "path": "bot/stores/data_retention_store.py",
+          "symbol": "DataRetentionStore"
+        },
+        {
+          "path": "bot/stores/attachment_store.py",
+          "symbol": "AttachmentStore"
+        },
+        {
+          "path": "web/src/focus/client-state/data-retention.ts",
+          "symbol": "createDataRetention"
+        },
+        {
+          "path": "web/src/lib/dataRetention.ts",
+          "symbol": "pruneBrowserData"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/data-retention.zh-CN.md",
+          "heading": "1. 管理入口与边界"
+        },
+        {
+          "path": "docs/contracts/data-retention.zh-CN.md",
+          "heading": "3. 唯一 owner、持久化与重启"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_data_retention.py",
+            "tests/test_web_gateway_data_retention.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/data-retention.test.ts",
+            "web/test/data-retention-browser.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_attachment_store.py",
+            "tests/focus_runtime/test_codex_handler_prompt_files.py",
+            "tests/test_service_runtime_lifecycle.py",
+            "tests/test_execution_recovery_runtime.py",
+            "tests/test_execution_recovery_controller.py",
+            "tests/test_generated_image_delivery.py",
+            "tests/web_runtime/test_prompt_timing.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/input-history.test.ts",
+            "web/test/composer-draft.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "import-cycles",
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck",
+        "web-wire"
       ]
     }
   }

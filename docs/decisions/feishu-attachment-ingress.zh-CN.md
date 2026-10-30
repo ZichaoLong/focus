@@ -169,25 +169,15 @@ pending 附件必须有 TTL。
 
 ### 6.1 保存位置
 
-所有可下载附件统一保存到当前工作目录下的固定子目录：
-
-- `_feishu_attachments/`
+所有新附件保存到实例私有缓存，与 Web 共用 `AttachmentStore`，周期和容量由
+[数据清理合同](../contracts/data-retention.zh-CN.md)统一规定。元数据保留原 cwd 约束。
+历史 `cwd/_feishu_attachments/` 不迁移，旧 pending 绝对路径仍可消费。
 
 Focus service 当前始终在同一主机拉起并拥有 app-server，因此 Focus 暂存路径与 backend
 看到的是同一个本机文件系统；这是当前产品边界的固定事实，不再由一项 deployment-mode
 布尔值在运行时分支判断。`focusctl` / `fcodex` 的 attached client 只连接这个已运行的本机
 backend，不改变附件交付边界。若未来重新引入外部 backend，必须先另行设计可靠文件传输事务，
 不能恢复一个仅靠 URL 或 mode 字符串推断 shared filesystem 的弱分支。
-
-不直接散落到工作目录根下。
-
-这样做是为了：
-
-- 降低对仓库根目录的污染
-- 让用户更容易理解这些文件来自飞书入口
-- 使清理与排障有稳定路径
-
-如果宿主本身是 git 仓库，建议把该目录一并加入仓库自己的 `.gitignore`。
 
 ### 6.2 文件命名
 
@@ -224,7 +214,7 @@ backend，不改变附件交付边界。若未来重新引入外部 backend，�
 - 如果 pending 附件尚未消费前工作目录已经变化，这批 pending 附件必须失效，
   不能再被重绑定到新的工作区中
 - 这里的“失效”只指失去自动消费资格，不等于删除原工作区里的本地文件
-- 已下载文件仍保留在原工作区，供人工排查、手工复用或显式路径引用
+- 历史工作区文件保留；私有缓存文件仍按 pending TTL / 附件保留期清理
 
 ## 7. Codex 输入合同
 
@@ -232,7 +222,7 @@ backend，不改变附件交付边界。若未来重新引入外部 backend，�
 
 图片附件在启动 turn 时始终保留受控本地路径；只有同时证明以下全部事实时，才额外提升为 `localImage`：
 
-1. 暂存文件仍是预期 `_feishu_attachments/` 目录下的普通、非 symlink 文件
+1. 暂存文件仍是受管私有缓存（历史项为原 `_feishu_attachments/`）中的普通、非 symlink 文件
 2. 当前字节匹配共享 native-image 签名；飞书消息类型、文件扩展名与 Content-Type 都不能单独作为证据
 3. 当前 thread effective model 来自成功的 `thread/start` 或 `thread/resume` response、
    `thread/settings/updated`，或来自 `turnId` 与当前权威 active turn 一致的 `model/rerouted`；
@@ -336,7 +326,7 @@ content-addressed handoff 或上游 descriptor/upload 合同；所以暂存目�
 2. 已抽出统一的消息资源下载能力，能区分：
    - `type=image`
    - `type=file`
-3. 已把附件统一保存到 `cwd/_feishu_attachments/`
+3. 新附件已改存实例私有缓存，历史工作区路径保持不变
 4. 已引入 pending attachment 状态，并按 `sender + chat + thread` 隔离
 5. 附件消息只下载与确认，不直接启动 turn
 6. 后续文本消息消费 pending 附件集合
@@ -363,11 +353,12 @@ content-addressed handoff 或上游 descriptor/upload 合同；所以暂存目�
 - `bot/adapters/codex_app_server.py`
 - `bot/prompt_turn_entry_controller.py`
 - `bot/stores/pending_attachment_store.py`
+- `bot/stores/attachment_store.py`
 
 当前仓库已经按本文边界落地第一阶段附件入口：
 
 - 支持 `image`、`file`、`audio`、`media`
-- 附件先下载到 `cwd/_feishu_attachments/`
+- 新附件先下载到实例私有缓存
 - 后续同一 `sender + chat + thread` 语义下的文本消息消费 pending 附件
 - 受控本地路径始终注入 turn 文本；只有签名通过且权威 effective model 明确支持 image 时，图片才提升为 `localImage`
 - 支持 TTL 过期清理与回归测试覆盖

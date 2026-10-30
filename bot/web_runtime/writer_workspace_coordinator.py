@@ -20,11 +20,11 @@ from bot.adapters.base import RuntimeModelSummary, ThreadSnapshot
 from bot.input_media_contract import model_supports_input
 from bot.thread_effective_settings import ThreadEffectiveSettingsRegistry
 from bot.runtime_loop import RuntimeContextGuard
-from bot.stores.web_attachment_store import (
-    WebAttachmentDownload,
-    WebAttachmentRecord,
-    WebAttachmentSubmissionClaimReceipt,
-    WebAttachmentStore,
+from bot.stores.attachment_store import (
+    AttachmentDownload,
+    AttachmentRecord,
+    AttachmentSubmissionClaimReceipt,
+    AttachmentStore,
 )
 from bot.stores.web_writer_profile_store import (
     WebWriterProfile,
@@ -157,7 +157,7 @@ class WebWriterWorkspaceCoordinator:
         self,
         *,
         profile_store: WebWriterProfileStore,
-        attachment_store: WebAttachmentStore,
+        attachment_store: AttachmentStore,
         documents: WebDocumentRegistry,
         selection: WebSelectionCoordinator,
         read_model: WebThreadReadModel,
@@ -580,7 +580,7 @@ class WebWriterWorkspaceCoordinator:
             ),
         }
 
-    def attachment_download(self, attachment_id: str) -> WebAttachmentDownload:
+    def attachment_download(self, attachment_id: str) -> AttachmentDownload:
         self._runtime_context_guard()
         try:
             download = self._attachments.download(attachment_id=attachment_id)
@@ -767,7 +767,7 @@ class WebWriterWorkspaceCoordinator:
         *,
         scope_key: str,
         attachment_ids: list[str],
-    ) -> tuple[WebAttachmentRecord, ...]:
+    ) -> tuple[AttachmentRecord, ...]:
         self._runtime_context_guard()
         if not attachment_ids:
             return ()
@@ -787,7 +787,7 @@ class WebWriterWorkspaceCoordinator:
     def prompt_input_items(
         self,
         text: str,
-        attachments: tuple[WebAttachmentRecord, ...],
+        attachments: tuple[AttachmentRecord, ...],
         *,
         thread_id: str,
         requested_model: str = "",
@@ -803,7 +803,7 @@ class WebWriterWorkspaceCoordinator:
     def prompt_input_items_external(
         self,
         text: str,
-        attachments: tuple[WebAttachmentRecord, ...],
+        attachments: tuple[AttachmentRecord, ...],
         *,
         thread_id: str,
         requested_model: str = "",
@@ -873,8 +873,8 @@ class WebWriterWorkspaceCoordinator:
         scope_key: str,
         attachment_ids: list[str],
     ) -> tuple[
-        tuple[WebAttachmentRecord, ...],
-        WebAttachmentSubmissionClaimReceipt | None,
+        tuple[AttachmentRecord, ...],
+        AttachmentSubmissionClaimReceipt | None,
     ]:
         """Atomically mark and pin one prompt's exact attachment set off-loop."""
 
@@ -895,7 +895,7 @@ class WebWriterWorkspaceCoordinator:
 
     def release_prompt_attachment_claim_external(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt | None,
+        receipt: AttachmentSubmissionClaimReceipt | None,
     ) -> None:
         """Keep submitted metadata while releasing one exact file pin."""
 
@@ -904,7 +904,7 @@ class WebWriterWorkspaceCoordinator:
 
     def rollback_prompt_attachment_claim_external(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt | None,
+        receipt: AttachmentSubmissionClaimReceipt | None,
     ) -> tuple[str, ...]:
         """Reopen one exact attachment set after authoritative no-effect."""
 

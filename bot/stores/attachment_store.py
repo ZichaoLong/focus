@@ -1,9 +1,14 @@
-"""Persistent staged attachments for one Focus Web instance."""
+"""Private attachments shared by Focus Web and Feishu in one instance.
+
+Existing cache names remain stable so previously submitted paths keep working.
+See docs/contracts/data-retention.zh-CN.md.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import pathlib
@@ -12,7 +17,9 @@ import stat
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field, replace
+from bot.data_retention_contract import DataPruneResult
 
 from bot.input_media_contract import (
     detect_native_media_type,
@@ -46,7 +53,7 @@ _DEFAULT_RETAINED_MAX_COUNT = 1024
 
 
 @dataclass(frozen=True, slots=True)
-class WebAttachmentRecord:
+class AttachmentRecord:
     attachment_id: str
     client_id: str
     scope_key: str
@@ -64,16 +71,18 @@ class WebAttachmentRecord:
     expires_at: float
     submitted: bool = False
     source_path: str = ""
+    channel: str = "web"
+    retained_at: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)
-class WebAttachmentDownload:
-    record: WebAttachmentRecord
+class AttachmentDownload:
+    record: AttachmentRecord
     content: bytes
 
 
 @dataclass(frozen=True, slots=True, eq=False)
-class WebAttachmentSubmissionClaimReceipt:
+class AttachmentSubmissionClaimReceipt:
     """Opaque process-local receipt for one exact attachment submission claim."""
 
     _store_token: object = field(repr=False)
@@ -81,16 +90,16 @@ class WebAttachmentSubmissionClaimReceipt:
 
 
 @dataclass(frozen=True, slots=True)
-class _WebAttachmentSubmissionClaimState:
-    receipt: WebAttachmentSubmissionClaimReceipt
-    records: tuple[WebAttachmentRecord, ...]
+class _AttachmentSubmissionClaimState:
+    receipt: AttachmentSubmissionClaimReceipt
+    records: tuple[AttachmentRecord, ...]
 
 
-class WebAttachmentSubmissionClaimError(RuntimeError):
+class AttachmentSubmissionClaimError(RuntimeError):
     """A claim receipt is stale, forged, or owned by another attachment store."""
 
 
-class WebAttachmentStore:
+class AttachmentStore:
     def __init__(
         self,
         data_dir: pathlib.Path,
@@ -101,6 +110,8 @@ class WebAttachmentStore:
         retained_ttl_seconds: float = _DEFAULT_RETAINED_TTL_SECONDS,
         retained_max_bytes: int = _DEFAULT_RETAINED_MAX_BYTES,
         retained_max_count: int = _DEFAULT_RETAINED_MAX_COUNT,
+        retained_days: Callable[[], int] | None = None,
+        scheduled_retention: bool = False,
     ) -> None:
         self._data_dir = pathlib.Path(data_dir).expanduser()
         self._ttl_seconds = max(float(ttl_seconds), 60.0)
@@ -109,11 +120,23 @@ class WebAttachmentStore:
         self._retained_ttl_seconds = max(float(retained_ttl_seconds), self._ttl_seconds)
         self._retained_max_bytes = max(int(retained_max_bytes), self._max_bytes)
         self._retained_max_count = max(int(retained_max_count), self._max_count)
+        self._retained_days = retained_days
+        self._scheduled_retention = scheduled_retention
         self._lock = threading.Lock()
         self._submission_claim_store_token = object()
-        self._submission_claims: dict[object, _WebAttachmentSubmissionClaimState] = {}
+        self._submission_claims: dict[object, _AttachmentSubmissionClaimState] = {}
         self._submission_claim_tokens_by_cache_name: dict[str, set[object]] = {}
         self._deferred_unlink_cache_names: set[str] = set()
+
+    def _retained_seconds(self) -> float:
+        return self._retained_days() * 86400 if self._retained_days else self._retained_ttl_seconds
+
+    def stage_feishu(self, *, client_id: str, scope_key: str, cwd: str,
+                     display_name: str, media_type: str, content: bytes) -> AttachmentRecord:
+        """Keep Feishu's file types while sharing private bytes and retention."""
+        return self._stage(client_id=client_id, scope_key=scope_key, cwd=cwd,
+                           display_name=display_name, media_type=media_type,
+                           content=content, channel="feishu")
 
     @property
     def max_bytes(self) -> int:
@@ -133,20 +156,26 @@ class WebAttachmentStore:
         media_type: str,
         content: bytes,
         now: float | None = None,
-    ) -> WebAttachmentRecord:
+    ) -> AttachmentRecord:
+        return self._stage(client_id=client_id, scope_key=scope_key, cwd=cwd,
+                           display_name=display_name, media_type=media_type, content=content, now=now)
+
+    def _stage(self, *, client_id: str, scope_key: str, cwd: str, display_name: str,
+               media_type: str, content: bytes, now: float | None = None,
+               channel: str = "web") -> AttachmentRecord:
         normalized_client_id = self._require_text(client_id, "client_id", max_length=128)
         normalized_scope = self._require_text(scope_key, "scope_key", max_length=4096)
         normalized_name = self._safe_name(display_name)
         normalized_media_type = self._normalized_media_type(media_type)
         payload = bytes(content)
-        if not payload:
+        if channel == "web" and not payload:
             raise ValueError("Attachment is empty.")
-        if len(payload) > self._max_bytes:
+        if channel == "web" and len(payload) > self._max_bytes:
             raise ValueError(f"Attachment exceeds the {self._max_bytes}-byte limit.")
-        normalized_media_type = self.validate_native_input(
-            normalized_media_type,
-            payload,
-        )
+        if channel == "web":
+            normalized_media_type = self.validate_native_input(normalized_media_type, payload)
+        else:
+            normalized_media_type = detect_native_media_type(payload) or "application/octet-stream"
         workspace = pathlib.Path(self._require_text(cwd, "cwd", max_length=4096)).expanduser()
         if not workspace.is_dir():
             raise ValueError("Attachment workspace does not exist or is not a directory.")
@@ -165,11 +194,11 @@ class WebAttachmentStore:
                 and item.scope_key == normalized_scope
                 and not item.submitted
             )
-            if pending_count >= self._max_count:
+            if channel == "web" and pending_count >= self._max_count:
                 raise ValueError(f"A draft can contain at most {self._max_count} attachments.")
             try:
                 file_metadata = self._write_private_cache_file(cache_name, payload)
-                record = WebAttachmentRecord(
+                record = AttachmentRecord(
                     attachment_id=attachment_id,
                     client_id=normalized_client_id,
                     scope_key=normalized_scope,
@@ -185,6 +214,7 @@ class WebAttachmentStore:
                     created_at=timestamp,
                     last_accessed_at=timestamp,
                     expires_at=timestamp + self._ttl_seconds,
+                    channel=channel,
                 )
                 records[attachment_id] = record
                 self._write_all(records)
@@ -200,7 +230,7 @@ class WebAttachmentStore:
         scope_key: str,
         attachment_ids: list[str],
         now: float | None = None,
-    ) -> tuple[WebAttachmentRecord, ...]:
+    ) -> tuple[AttachmentRecord, ...]:
         normalized_client_id = self._require_text(client_id, "client_id", max_length=128)
         normalized_scope = self._require_text(scope_key, "scope_key", max_length=4096)
         normalized_ids = [self._require_id(value) for value in attachment_ids]
@@ -211,7 +241,7 @@ class WebAttachmentStore:
         timestamp = time.time() if now is None else float(now)
         with self._lock:
             records = self._cleanup_locked(self._read_all(), now=timestamp)
-            resolved: list[WebAttachmentRecord] = []
+            resolved: list[AttachmentRecord] = []
             for attachment_id in normalized_ids:
                 record = records.get(attachment_id)
                 if record is None:
@@ -242,7 +272,7 @@ class WebAttachmentStore:
         cwd: str,
         local_path: str,
         now: float | None = None,
-    ) -> WebAttachmentRecord:
+    ) -> AttachmentRecord:
         """Copy an app-server media path into the private authenticated cache."""
 
         workspace = pathlib.Path(
@@ -286,7 +316,7 @@ class WebAttachmentStore:
             attachment_id = str(uuid.uuid4())
             cache_name = f"{attachment_id}-{self._safe_name(source_name)}"
             file_metadata = self._write_private_cache_file(cache_name, payload)
-            record = WebAttachmentRecord(
+            record = AttachmentRecord(
                 attachment_id=attachment_id,
                 client_id="focus-web-projection",
                 scope_key=observed_scope,
@@ -301,7 +331,8 @@ class WebAttachmentStore:
                 file_inode=int(file_metadata.st_ino),
                 created_at=timestamp,
                 last_accessed_at=timestamp,
-                expires_at=timestamp + self._retained_ttl_seconds,
+                expires_at=timestamp + self._retained_seconds(),
+                retained_at=timestamp,
                 submitted=True,
                 source_path=normalized_source_path,
             )
@@ -344,10 +375,11 @@ class WebAttachmentStore:
                 records[attachment_id] = replace(
                     record,
                     submitted=bool(submitted),
+                    retained_at=timestamp if submitted else 0.0,
                     scope_key=normalized_scope or record.scope_key,
                     last_accessed_at=timestamp,
                     expires_at=timestamp + (
-                        self._retained_ttl_seconds if submitted else self._ttl_seconds
+                        self._retained_seconds() if submitted else self._ttl_seconds
                     ),
                 )
             self._write_all(self._cleanup_locked(records, now=timestamp))
@@ -360,8 +392,8 @@ class WebAttachmentStore:
         attachment_ids: list[str],
         now: float | None = None,
     ) -> tuple[
-        tuple[WebAttachmentRecord, ...],
-        WebAttachmentSubmissionClaimReceipt,
+        tuple[AttachmentRecord, ...],
+        AttachmentSubmissionClaimReceipt,
     ]:
         """Atomically consume pending records and pin their exact cache bytes.
 
@@ -385,7 +417,7 @@ class WebAttachmentStore:
         timestamp = time.time() if now is None else float(now)
         with self._lock:
             records = self._cleanup_locked(self._read_all(), now=timestamp)
-            claimed_records: list[WebAttachmentRecord] = []
+            claimed_records: list[AttachmentRecord] = []
             updated = dict(records)
             for attachment_id in normalized_ids:
                 record = records.get(attachment_id)
@@ -405,7 +437,8 @@ class WebAttachmentStore:
                     record,
                     submitted=True,
                     last_accessed_at=timestamp,
-                    expires_at=timestamp + self._retained_ttl_seconds,
+                    expires_at=timestamp + self._retained_seconds(),
+                    retained_at=timestamp,
                 )
                 updated[attachment_id] = claimed
                 claimed_records.append(claimed)
@@ -418,11 +451,11 @@ class WebAttachmentStore:
                 raise ValueError("Attachment cache capacity was exhausted.")
 
             receipt_token = object()
-            receipt = WebAttachmentSubmissionClaimReceipt(
+            receipt = AttachmentSubmissionClaimReceipt(
                 _store_token=self._submission_claim_store_token,
                 _receipt_token=receipt_token,
             )
-            state = _WebAttachmentSubmissionClaimState(
+            state = _AttachmentSubmissionClaimState(
                 receipt=receipt,
                 records=tuple(claimed_records),
             )
@@ -443,7 +476,7 @@ class WebAttachmentStore:
 
     def release_submission_claim(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt,
+        receipt: AttachmentSubmissionClaimReceipt,
     ) -> None:
         """Keep submitted metadata and release one exact claim's file pins."""
 
@@ -452,7 +485,7 @@ class WebAttachmentStore:
 
     def rollback_submission_claim(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt,
+        receipt: AttachmentSubmissionClaimReceipt,
         *,
         now: float | None = None,
     ) -> tuple[str, ...]:
@@ -468,7 +501,7 @@ class WebAttachmentStore:
             state = self._require_submission_claim_locked(receipt)
             try:
                 records = self._read_all()
-                current_records: list[WebAttachmentRecord] = []
+                current_records: list[AttachmentRecord] = []
                 for claimed in state.records:
                     current = records.get(claimed.attachment_id)
                     if current is None or (
@@ -481,7 +514,7 @@ class WebAttachmentStore:
                         # concurrent cleanup or scope change.
                         return ()
                     if not self._same_cache_identity(current, claimed):
-                        raise WebAttachmentSubmissionClaimError(
+                        raise AttachmentSubmissionClaimError(
                             "Web attachment submission claim no longer matches its exact cache record."
                         )
                     self._validate_submission_cache_record(current)
@@ -508,10 +541,10 @@ class WebAttachmentStore:
     def delete_scope(self, scope_key: str) -> list[str]:
         normalized_scope = self._require_text(scope_key, "scope_key", max_length=4096)
         removed: list[str] = []
-        removed_records: list[WebAttachmentRecord] = []
+        removed_records: list[AttachmentRecord] = []
         with self._lock:
             records = self._read_all()
-            retained: dict[str, WebAttachmentRecord] = {}
+            retained: dict[str, AttachmentRecord] = {}
             for attachment_id, record in records.items():
                 if record.scope_key != normalized_scope:
                     retained[attachment_id] = record
@@ -542,10 +575,10 @@ class WebAttachmentStore:
             max_length=4096,
         )
         removed: list[str] = []
-        removed_records: list[WebAttachmentRecord] = []
+        removed_records: list[AttachmentRecord] = []
         with self._lock:
             records = self._read_all()
-            retained: dict[str, WebAttachmentRecord] = {}
+            retained: dict[str, AttachmentRecord] = {}
             for attachment_id, record in records.items():
                 if (
                     record.client_id != normalized_client_id
@@ -647,7 +680,7 @@ class WebAttachmentStore:
         *,
         attachment_id: str,
         now: float | None = None,
-    ) -> WebAttachmentDownload:
+    ) -> AttachmentDownload:
         normalized_id = self._require_id(attachment_id)
         timestamp = time.time() if now is None else float(now)
         with self._lock:
@@ -659,7 +692,7 @@ class WebAttachmentStore:
             touched = replace(record, last_accessed_at=timestamp)
             records[normalized_id] = touched
             self._write_all(records)
-            return WebAttachmentDownload(record=touched, content=content)
+            return AttachmentDownload(record=touched, content=content)
 
     def attachment_id_for_path(self, local_path: str, *, now: float | None = None) -> str:
         raw_path = str(local_path or "").strip()
@@ -679,6 +712,77 @@ class WebAttachmentStore:
     def _path(self) -> pathlib.Path:
         return self._data_dir / "web_attachments.json"
 
+    def validate_feishu(self, attachment_id: str, *, cwd: str, local_path: str) -> None:
+        with self._lock:
+            record = self._read_all().get(self._require_id(attachment_id))
+            if (record is None or record.channel != "feishu"
+                    or pathlib.Path(record.cwd).resolve() != pathlib.Path(cwd).resolve()
+                    or record.local_path != local_path):
+                raise ValueError("Attachment belongs to another workspace or is unavailable.")
+            self._validate_cache_record(record)
+
+    def discard_pending(self, attachment_ids: list[str]) -> None:
+        with self._lock:
+            records = self._read_all()
+            removed = [records.pop(key) for key in attachment_ids
+                       if key in records and not records[key].submitted]
+            if removed:
+                self._write_all(records)
+                for record in removed:
+                    self._retire_cache_name_locked(record.cache_name)
+
+    def prune(self, *, now: float, protected_cwds: tuple[str, ...] = ()) -> DataPruneResult:
+        with self._lock:
+            records = self._read_all()
+            retained, retired = self._cleanup_plan_locked(records, now=now, protected_cwds=protected_cwds, scheduled=True)
+            if retained != records:
+                self._write_all(retained)
+            freed = 0
+            for name in retired:
+                path = self._cache_path(name)
+                size = path.lstat().st_size if path.is_file() and not path.is_symlink() else 0
+                self._retire_cache_name_locked(name)
+                if not self._cache_path(name).exists():
+                    freed += size
+            orphaned, orphan_bytes = self._prune_orphaned_cache_locked(retained, now=now)
+            return DataPruneResult(len(records) - len(retained) + orphaned, freed + orphan_bytes)
+
+    def _prune_orphaned_cache_locked(self, records: dict[str, AttachmentRecord], *, now: float) -> tuple[int, int]:
+        # A crash after metadata retirement can leave bytes without an index.
+        # Only this private flat directory is eligible; live claims remain pins.
+        if self._cache_dir().is_symlink():
+            raise ValueError("Attachment cache is not a private directory.")
+        if not self._cache_dir().exists():
+            return 0, 0
+        owned = {record.cache_name for record in records.values()} | set(self._submission_claim_tokens_by_cache_name)
+        removed = freed = 0
+        cache_fd = self._open_cache_dir_fd() if os.name == "posix" else None
+        try:
+            names = os.listdir(cache_fd) if cache_fd is not None else os.listdir(self._cache_dir())
+            for name in names:
+                if name in owned:
+                    continue
+                try:
+                    uuid.UUID(name[:36])
+                    if len(name) < 38 or name[36] != "-":
+                        continue
+                    metadata = (os.stat(name, dir_fd=cache_fd, follow_symlinks=False) if cache_fd is not None
+                                else self._cache_path(name).lstat())
+                    if not stat.S_ISREG(metadata.st_mode) or metadata.st_mtime >= now - self._ttl_seconds:
+                        continue
+                    if cache_fd is not None:
+                        os.unlink(name, dir_fd=cache_fd)
+                    else:
+                        self._unlink_cache_name(name)
+                    removed += 1
+                    freed += metadata.st_size
+                except (ValueError, FileNotFoundError):
+                    continue
+        finally:
+            if cache_fd is not None:
+                os.close(cache_fd)
+        return removed, freed
+
     def _cache_dir(self) -> pathlib.Path:
         return self._data_dir / _CACHE_DIRNAME
 
@@ -686,7 +790,7 @@ class WebAttachmentStore:
         normalized = self._safe_cache_name(cache_name)
         return self._cache_dir() / normalized
 
-    def _read_all(self) -> dict[str, WebAttachmentRecord]:
+    def _read_all(self) -> dict[str, AttachmentRecord]:
         path = self._path()
         if not path.exists():
             return {}
@@ -709,13 +813,13 @@ class WebAttachmentStore:
         entries = raw.get("attachments")
         if not isinstance(entries, dict):
             raise RuntimeError("invalid web_attachments.json attachments")
-        records: dict[str, WebAttachmentRecord] = {}
+        records: dict[str, AttachmentRecord] = {}
         for attachment_id, value in entries.items():
             if not isinstance(value, dict):
                 raise RuntimeError("invalid web attachment entry")
             try:
                 cache_name = self._safe_cache_name(value.get("cache_name"))
-                record = WebAttachmentRecord(
+                record = AttachmentRecord(
                     attachment_id=self._require_id(str(attachment_id)),
                     client_id=self._require_text(value.get("client_id"), "client_id", max_length=128),
                     scope_key=self._require_text(value.get("scope_key"), "scope_key", max_length=4096),
@@ -736,9 +840,15 @@ class WebAttachmentStore:
                     expires_at=max(float(value.get("expires_at") or 0.0), 0.0),
                     submitted=bool(value.get("submitted", False)),
                     source_path=str(value.get("source_path", "") or ""),
+                    channel=str(value.get("channel", "web")),
+                    retained_at=float(value.get("retained_at", 0.0)),
                 )
             except (TypeError, ValueError) as exc:
                 raise RuntimeError("invalid web attachment entry") from exc
+            if (record.channel not in {"web", "feishu"}
+                    or any(not math.isfinite(value) or value < 0 for value in
+                           (record.retained_at, record.created_at, record.last_accessed_at, record.expires_at))):
+                raise RuntimeError("invalid attachment retention metadata")
             records[record.attachment_id] = record
         return records
 
@@ -765,7 +875,7 @@ class WebAttachmentStore:
                 return False
         return True
 
-    def _write_all(self, records: dict[str, WebAttachmentRecord]) -> None:
+    def _write_all(self, records: dict[str, AttachmentRecord]) -> None:
         path = self._path()
         if not records:
             try:
@@ -792,10 +902,10 @@ class WebAttachmentStore:
 
     def _cleanup_locked(
         self,
-        records: dict[str, WebAttachmentRecord],
+        records: dict[str, AttachmentRecord],
         *,
         now: float,
-    ) -> dict[str, WebAttachmentRecord]:
+    ) -> dict[str, AttachmentRecord]:
         retained, retired_cache_names = self._cleanup_plan_locked(records, now=now)
         if retired_cache_names:
             # Metadata is the logical authority. Commit retirement before a
@@ -808,19 +918,26 @@ class WebAttachmentStore:
 
     def _cleanup_plan_locked(
         self,
-        records: dict[str, WebAttachmentRecord],
+        records: dict[str, AttachmentRecord],
         *,
         now: float,
-    ) -> tuple[dict[str, WebAttachmentRecord], tuple[str, ...]]:
-        retained: dict[str, WebAttachmentRecord] = {}
+        protected_cwds: tuple[str, ...] = (),
+        scheduled: bool = False,
+    ) -> tuple[dict[str, AttachmentRecord], tuple[str, ...]]:
+        retained: dict[str, AttachmentRecord] = {}
         retired_cache_names: list[str] = []
         for attachment_id, record in records.items():
+            if record.submitted and self._retained_days is not None:
+                base = record.retained_at or max(record.created_at, record.expires_at - self._retained_ttl_seconds)
+                record = replace(record, retained_at=base, expires_at=base + self._retained_seconds())
             try:
                 self._validate_cache_record(record)
             except (KeyError, ValueError):
                 retired_cache_names.append(record.cache_name)
                 continue
-            if record.expires_at > now:
+            if (record.expires_at > now
+                    or (record.submitted and (record.cwd in protected_cwds
+                        or (self._scheduled_retention and not scheduled)))):
                 retained[attachment_id] = record
                 continue
             retired_cache_names.append(record.cache_name)
@@ -832,6 +949,9 @@ class WebAttachmentStore:
         retained_bytes = sum(record.size for record in submitted)
         retained_count = len(submitted)
         for record in submitted:
+            if (record.cwd in protected_cwds
+                    or (self._scheduled_retention and (not scheduled or record.retained_at >= now - 60))):
+                continue
             if (
                 retained_bytes <= self._retained_max_bytes
                 and retained_count <= self._retained_max_count
@@ -845,25 +965,25 @@ class WebAttachmentStore:
 
     def _require_submission_claim_locked(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt,
-    ) -> _WebAttachmentSubmissionClaimState:
+        receipt: AttachmentSubmissionClaimReceipt,
+    ) -> _AttachmentSubmissionClaimState:
         if (
-            not isinstance(receipt, WebAttachmentSubmissionClaimReceipt)
+            not isinstance(receipt, AttachmentSubmissionClaimReceipt)
             or receipt._store_token is not self._submission_claim_store_token
         ):
-            raise WebAttachmentSubmissionClaimError(
+            raise AttachmentSubmissionClaimError(
                 "Web attachment submission claim belongs to another store or has an invalid type."
             )
         state = self._submission_claims.get(receipt._receipt_token)
         if state is None or state.receipt is not receipt:
-            raise WebAttachmentSubmissionClaimError(
+            raise AttachmentSubmissionClaimError(
                 "Web attachment submission claim was already released, forged, or is not exact."
             )
         return state
 
     def _release_submission_claim_locked(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt,
+        receipt: AttachmentSubmissionClaimReceipt,
     ) -> None:
         state = self._require_submission_claim_locked(receipt)
         cache_names = tuple(record.cache_name for record in state.records)
@@ -892,7 +1012,7 @@ class WebAttachmentStore:
             return
         self._unlink_cache_name(cache_name)
 
-    def _validate_submission_cache_record(self, record: WebAttachmentRecord) -> None:
+    def _validate_submission_cache_record(self, record: AttachmentRecord) -> None:
         self._validate_cache_record(record)
         if self.is_native_input_media_type(record.media_type):
             self.validate_native_input(
@@ -902,8 +1022,8 @@ class WebAttachmentStore:
 
     @staticmethod
     def _same_cache_identity(
-        current: WebAttachmentRecord,
-        claimed: WebAttachmentRecord,
+        current: AttachmentRecord,
+        claimed: AttachmentRecord,
     ) -> bool:
         return (
             current.attachment_id == claimed.attachment_id
@@ -958,7 +1078,7 @@ class WebAttachmentStore:
                 os.close(fd)
             os.close(cache_fd)
 
-    def _read_cache_record(self, record: WebAttachmentRecord) -> bytes:
+    def _read_cache_record(self, record: AttachmentRecord) -> bytes:
         fd = self._open_cache_record_fd(record)
         try:
             chunks: list[bytes] = []
@@ -978,11 +1098,11 @@ class WebAttachmentStore:
         finally:
             os.close(fd)
 
-    def _validate_cache_record(self, record: WebAttachmentRecord) -> None:
+    def _validate_cache_record(self, record: AttachmentRecord) -> None:
         fd = self._open_cache_record_fd(record)
         os.close(fd)
 
-    def _open_cache_record_fd(self, record: WebAttachmentRecord) -> int:
+    def _open_cache_record_fd(self, record: AttachmentRecord) -> int:
         normalized = self._safe_cache_name(record.cache_name)
         if os.name != "posix":
             path = self._cache_path(normalized)

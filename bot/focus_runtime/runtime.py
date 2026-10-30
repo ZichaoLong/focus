@@ -79,6 +79,8 @@ from bot.focus_runtime.service_authority import ServiceRuntimeAuthority
 from bot.focus_runtime.terminal_results import TerminalResults
 from bot.focus_runtime.thread_targets import CodexThreadTargetService
 from bot.focus_runtime.web_gateway_composition import compose_web_gateway
+from bot.focus_runtime.data_retention_composition import compose_data_retention
+from bot.stores.data_retention_store import DataRetentionStore
 from bot.service_runtime_lifecycle import (
     ServiceRuntimeActivationPorts,
     ServiceRuntimeIngressDispatcher,
@@ -205,7 +207,7 @@ from bot.stores.service_instance_lease import (
     ServiceInstanceLeaseError,
 )
 from bot.stores.thread_runtime_lease_store import ThreadRuntimeLeaseStore
-from bot.stores.web_attachment_store import WebAttachmentStore
+from bot.stores.attachment_store import AttachmentStore
 from bot.stores.web_next_turn_settings_store import (
     WebNextTurnSettings,
     WebNextTurnSettingsStore,
@@ -316,9 +318,12 @@ class FocusRuntime:
         self._mirror_watchdog_seconds = cfg.mirror_watchdog_seconds
         self._compact_start_timeout_seconds = cfg.compact_start_timeout_seconds
         self._attachment_ttl_seconds = cfg.attachment_ttl_seconds
-        self._web_attachment_store = WebAttachmentStore(
+        self._data_retention_store = DataRetentionStore(self._data_dir)
+        self._web_attachment_store = AttachmentStore(
             self._data_dir,
             ttl_seconds=self._attachment_ttl_seconds,
+            retained_days=lambda: self._data_retention_store.load().attachments_days,
+            scheduled_retention=True,
         )
         web_static_dir_raw = cfg.web_static_dir.strip()
         self._web_config = WebGatewayConfig(
@@ -935,6 +940,7 @@ class FocusRuntime:
             ingress=lambda: self._ingress,
             runtime_call=self._runtime_call,
             operator_status=self._operational_status_snapshot,
+            data_retention=lambda: self._data_retention,
         )
         feishu_surface: FeishuSurface
         self._settings_domain = CodexSettingsDomain(
@@ -994,8 +1000,26 @@ class FocusRuntime:
                 message_reply_in_thread=feishu_platform.message_reply_in_thread,
             ),
             store=self._pending_attachment_store,
+            attachments=self._web_attachment_store,
             ttl_seconds=self._attachment_ttl_seconds,
             effective_settings=self._effective_settings,
+        )
+        def retention_sessions():
+            with self._lock:
+                return self._binding_runtime.binding_session_inventory_locked()
+
+        self._data_retention = compose_data_retention(
+            data_dir=self._data_dir, policy=self._data_retention_store,
+            sessions=lambda: self._runtime_call(retention_sessions),
+            recovery_active=lambda: self._runtime_call(self._execution_recovery.has_retention_work),
+            web_cwds=lambda: self._runtime_call(self._web_runtime.retention_workspaces),
+            prune_profiles=lambda before: self._runtime_call(
+                lambda: self._web_writer_profile_store.prune(
+                    before, protected_clients=self._web_runtime.retention_clients())),
+            prune_timings=self._web_gateway.prune_prompt_timings,
+            prune_groups=lambda *args, **kwargs: feishu_platform.bot.prune_group_history(*args, **kwargs),
+            attachments=self._web_attachment_store, files=self._file_message_domain,
+            terminal_results=terminal_result_store, image_deliveries=self._generated_image_delivery_store,
         )
         self._thread_access_policy = ThreadAccessPolicy(
             lock=self._lock,
@@ -1629,8 +1653,11 @@ class FocusRuntime:
                     self._restore_service_thread_runtime_leases
                 ),
                 start_web_gateway=lambda: self._web_gateway.start(),
+                start_data_retention=lambda: self._data_retention.start(
+                    lambda: self._ingress.run_external_transaction(self._data_retention.prune)),
             ),
             shutdown=ServiceRuntimeShutdownPorts(
+                stop_data_retention=self._data_retention.stop,
                 cancel_frontend_timers=binding_coordinator.cancel_frontend_runtime_timers,
                 web_is_running=lambda: bool(self._web_gateway.endpoint),
                 prepare_web_shutdown=lambda: self._runtime_call(
@@ -2113,6 +2140,7 @@ class FocusRuntime:
         turn_id: str = "",
         prompt_message_id: str = "",
         prompt_reply_in_thread: bool = False,
+        execution_started_at: float = 0.0,
     ) -> int:
         return self._generated_image_delivery.deliver_snapshot_images(
             sender_id=sender_id,
@@ -2122,6 +2150,7 @@ class FocusRuntime:
             turn_id=turn_id,
             prompt_message_id=prompt_message_id,
             prompt_reply_in_thread=prompt_reply_in_thread,
+            execution_started_at=execution_started_at,
         )
 
     def _mark_runtime_degraded(self, sender_id: str, chat_id: str, *, reason: str) -> None:

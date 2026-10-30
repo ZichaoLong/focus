@@ -17,7 +17,7 @@ from bot.codex_protocol.client import (
     CodexRpcTransportError,
 )
 from bot.runtime_loop import RuntimeLoop
-from bot.stores.web_attachment_store import WebAttachmentStore
+from bot.stores.attachment_store import AttachmentStore
 from bot.stores.web_next_turn_settings_store import WebNextTurnSettings
 from bot.stores.web_writer_profile_store import WebWriterProfile, WebWriterProfileStore
 from bot.thread_effective_settings import ThreadEffectiveSettingsRegistry
@@ -1032,7 +1032,7 @@ class WebPromptSubmissionTests(unittest.TestCase):
             backend = _Backend()
             workspace = WebWriterWorkspaceCoordinator(
                 profile_store=profiles,
-                attachment_store=WebAttachmentStore(data_dir, ttl_seconds=300),
+                attachment_store=AttachmentStore(data_dir, ttl_seconds=300),
                 documents=documents,
                 selection=WebSelectionCoordinator(
                     profile_store=profiles,

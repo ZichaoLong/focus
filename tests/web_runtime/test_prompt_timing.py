@@ -4,6 +4,7 @@ from __future__ import annotations
 import copy
 import pathlib
 import uuid
+import time
 from dataclasses import replace
 
 import pytest
@@ -18,7 +19,7 @@ from bot.web_runtime.transcript_window import project_transcript_item
 from tests.web_runtime.gateway_harness import WebGatewayHarness
 from tests.web_runtime.harness import WebRuntimeControllerHarness
 
-STAMP = 1_790_000_000_123
+STAMP = int(time.time() * 1000)
 IDENTITY = '11111111-1111-4111-8111-111111111111'
 
 

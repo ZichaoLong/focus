@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 from bot.adapters.base import ThreadSummary
 from bot.thread_effective_settings import ThreadEffectiveSettingsRegistry
-from bot.stores.web_attachment_store import WebAttachmentStore
+from bot.stores.attachment_store import AttachmentStore
 from bot.stores.web_writer_profile_store import WebWriterProfileStore
 from bot.web_runtime.document_registry import WebDocumentRegistry
 from bot.web_runtime.projection import FocusWebProjection
@@ -36,7 +36,7 @@ class WebWriterWorkspaceCoordinatorTests(unittest.TestCase):
         self.fake = _FakeRuntime()
         self.fake.cwd = str(self.workspace)
         self.profiles = WebWriterProfileStore(self.data_dir)
-        self.attachments = WebAttachmentStore(self.data_dir, ttl_seconds=300)
+        self.attachments = AttachmentStore(self.data_dir, ttl_seconds=300)
         self.documents = WebDocumentRegistry(runtime_context_guard=lambda: None)
         self.documents.mark_connected("tab-1")
         self.runtime_interest = WebRuntimeInterestRegistry()

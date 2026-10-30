@@ -1,3 +1,5 @@
+import { decodeDataRetention, decodeDataPrune } from './dataRetentionDecoder';
+import type { FocusDataRetentionPolicy, FocusDataPruneResult } from './types';
 import { focusPerformance } from './focusPerformance';
 import { createPromptTimingStore, type PromptTimingStore } from './promptTimingStore';
 import { decodePromptTiming, decodePromptTimingList, decodeTimingSync, type BrowserTimingRecord } from './promptTimingTypes';
@@ -231,6 +233,9 @@ export interface FocusWebApiPort {
   updateProfile(changes: Partial<Pick<FocusWriterProfile,
     'selected_thread_id' | 'working_dir'
   >>, intentGeneration?: number): Promise<FocusWriterProfileResult>;
+  readDataRetention?(): Promise<FocusDataRetentionPolicy>;
+  updateDataRetention?(changes: Partial<FocusDataRetentionPolicy>): Promise<FocusDataRetentionPolicy>;
+  pruneData?(): Promise<FocusDataPruneResult>;
   readNextTurnSettings(): Promise<FocusNextTurnSettingsResult>;
   updateNextTurnSettings(
     changes: Partial<Omit<FocusNextTurnSettings, 'generation'>>,
@@ -499,6 +504,18 @@ export class FocusWebApi implements FocusWebApiPort {
       body: changes,
       intentGeneration,
     });
+  }
+
+  readDataRetention(): Promise<FocusDataRetentionPolicy> {
+    return this.request('data_retention_read', decodeDataRetention, 'data retention');
+  }
+
+  updateDataRetention(changes: Partial<FocusDataRetentionPolicy>): Promise<FocusDataRetentionPolicy> {
+    return this.request('data_retention_update', decodeDataRetention, 'data retention', { body: changes });
+  }
+
+  pruneData(): Promise<FocusDataPruneResult> {
+    return this.request('data_prune', decodeDataPrune, 'data cleanup', { body: {} });
   }
 
   readNextTurnSettings(): Promise<FocusNextTurnSettingsResult> {

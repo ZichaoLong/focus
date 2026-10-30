@@ -211,10 +211,9 @@ Once expired:
 
 ### 6.1 Save Location
 
-All downloadable attachments are staged under a fixed subdirectory beneath the
-current working directory:
-
-- `_feishu_attachments/`
+New attachments enter the instance private cache shared with Web through `AttachmentStore`.
+[Data cleanup](../contracts/data-retention.md) defines retention and capacity; metadata preserves cwd constraints.
+Historical `cwd/_feishu_attachments/` files are not migrated, and legacy pending absolute paths remain consumable.
 
 The Focus service now always launches and owns its app-server on the same host,
 so Focus staging paths and the backend share one local filesystem. This is a
@@ -224,17 +223,6 @@ local backend and do not change attachment delivery. If an external backend is
 ever reintroduced, it first needs a separately designed reliable file-transfer
 transaction; a URL or mode string must not be restored as shared-filesystem
 proof.
-
-They should not be scattered directly into the workspace root.
-
-Reasons:
-
-- reduce pollution of the repository root
-- make it obvious which files came from Feishu ingress
-- give cleanup and debugging one stable path
-
-If the host workspace is itself a git repository, that repository should also
-ignore this directory in its own `.gitignore`.
 
 ### 6.2 File Naming
 
@@ -275,8 +263,7 @@ Corollary:
   workspace
 - this invalidation only removes automatic-consumption eligibility; it does not
   imply deletion of already-staged local files from the original workspace
-- staged files remain in that original workspace for manual inspection,
-  deliberate reuse, or explicit path-based prompts
+- historical workspace files remain; private cache files still follow pending TTL / attachment retention
 
 ## 7. Codex Input Contract
 
@@ -286,8 +273,8 @@ When a turn starts, image attachments always keep their controlled local path.
 They are additionally elevated to `localImage` only when all of these facts are
 proved:
 
-1. the staged file is still a regular, non-symlink file under the expected
-   `_feishu_attachments/` directory
+1. the staged file is still a regular, non-symlink file in the managed private cache
+   (legacy entries use the original `_feishu_attachments/` directory)
 2. its current bytes match one of the shared native-image signatures; Feishu
    message type, filename extension, and Content-Type are not sufficient
 3. the current thread effective model comes from a successful `thread/start`
@@ -407,7 +394,7 @@ The current first-stage implementation covers:
 2. uses one unified message-resource downloader that handles:
    - `type=image`
    - `type=file`
-3. stages attachments under `cwd/_feishu_attachments/`
+3. stages new attachments in the instance private cache while preserving historical workspace paths
 4. keeps pending-attachment state keyed by `sender + chat + thread`
 5. keeps attachment messages as download-and-confirm only, without starting a turn
 6. lets a later text message consume the pending attachment set
@@ -436,11 +423,12 @@ The current implementation mainly lives in:
 - `bot/adapters/codex_app_server.py`
 - `bot/prompt_turn_entry_controller.py`
 - `bot/stores/pending_attachment_store.py`
+- `bot/stores/attachment_store.py`
 
 The repository now implements the first-stage attachment ingress described here:
 
 - supports `image`, `file`, `audio`, and `media`
-- stages attachments under `cwd/_feishu_attachments/`
+- stages new attachments in the instance private cache while preserving historical workspace paths
 - consumes pending attachments on a later text message with the same
   `sender + chat + thread` semantics
 - always injects controlled local-path text and conditionally upgrades a

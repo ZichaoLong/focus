@@ -88,10 +88,10 @@ prove no delivery. Details introduce no resend action.
 Missing storage is created lazily. Lock contention, corruption, unknown schemas and queue overload degrade diagnostics
 without blocking input or transcript installation. Failed queries return unavailable, not a misleading empty success.
 Corrupt files are not automatically replaced. Manually deleting this diagnostic database loses only display evidence.
-Associated message times remain until best-effort cleanup after confirmed Web thread deletion. Unassociated entries older
-than 90 days are removed during subsequent metadata sync. Cleanup failure does not reverse completed deletion; another
-device's unsynced local entry may later upload as a browser observation. Browser retention is independent: clearing site
-data or exceeding 64 entries evicts local records.
+All diagnostic entries follow the [Focus record period](./data-retention.md), using latest server update or browser submission time.
+Active traces and in-flight browser submissions are protected. The server rejects browser observations older than the current period.
+Confirmed Web thread deletion still performs best-effort diagnostic cleanup; failure does not reverse thread deletion.
+The browser's 64-entry cap remains, and clearing site storage also removes local records.
 
 ## Wire, deferred reads and overhead
 

@@ -22,7 +22,7 @@ from bot.codex_protocol.client import (
 )
 from bot.runtime_loop import RuntimeContextGuard
 from bot.runtime_state import BACKEND_THREAD_STATUS_SYSTEM_ERROR
-from bot.stores.web_attachment_store import WebAttachmentSubmissionClaimReceipt
+from bot.stores.attachment_store import AttachmentSubmissionClaimReceipt
 from bot.stores.web_next_turn_settings_store import WebNextTurnSettings
 from bot.thread_runtime_authority import ThreadStartBlockedByUnsubscribe
 from bot.web_runtime.contract import WebRuntimeError
@@ -698,7 +698,7 @@ class WebPromptSubmissionCoordinator:
             ).projection_dict()
 
         mark_prompt(prepared.timing, 'worker_started')
-        attachment_claim: WebAttachmentSubmissionClaimReceipt | None = None
+        attachment_claim: AttachmentSubmissionClaimReceipt | None = None
         status: Literal["succeeded", "known_no_effect", "outcome_unknown"]
         status = "known_no_effect"
         reason_code = "submission_rejected"
@@ -1109,7 +1109,7 @@ class WebPromptSubmissionCoordinator:
 
     def _settle_attachment_claim(
         self,
-        receipt: WebAttachmentSubmissionClaimReceipt | None,
+        receipt: AttachmentSubmissionClaimReceipt | None,
         *,
         known_no_effect: bool,
         expected_attachment_count: int,

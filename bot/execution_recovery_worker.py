@@ -21,6 +21,11 @@ class ExecutionRecoveryWorkerRegistry:
         self._stop = threading.Event()
 
     @property
+    def has_workers(self) -> bool:
+        with self._lock:
+            return bool(self._workers)
+
+    @property
     def stop_requested(self) -> bool:
         return self._stop.is_set()
 

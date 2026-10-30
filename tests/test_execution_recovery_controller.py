@@ -211,7 +211,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
                 recorded_terminal_results.add((str(source_execution_message_id or "").strip(), str(final_reply_text or ""))),
                 True,
             )[-1],
-            has_recorded_terminal_result=lambda *, execution_message_id, final_reply_text: (
+            has_recorded_terminal_result=lambda *, execution_message_id, final_reply_text, execution_started_at=0: (
                 str(execution_message_id or "").strip(),
                 str(final_reply_text or ""),
             ) in recorded_terminal_results,
@@ -1555,7 +1555,7 @@ class ExecutionRecoveryControllerTests(unittest.TestCase):
             "fallback answer"
         )
         snapshots.append(_ThreadNotFound("thread not found"))
-        controller._has_recorded_terminal_result = lambda *, execution_message_id, final_reply_text: (
+        controller._has_recorded_terminal_result = lambda *, execution_message_id, final_reply_text, execution_started_at=0: (
             execution_message_id == "card-1" and final_reply_text == "fallback answer"
         )
 

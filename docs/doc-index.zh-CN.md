@@ -61,6 +61,8 @@
 
 ### 功能合同
 
+- [Focus 数据清理](./contracts/data-retention.zh-CN.md)
+
 - [`focusctl-command-matrix.zh-CN.md`](./contracts/focusctl-command-matrix.zh-CN.md)
 - [`feishu-command-matrix.zh-CN.md`](./contracts/feishu-command-matrix.zh-CN.md)
 - [`feishu-thread-lifecycle.zh-CN.md`](./contracts/feishu-thread-lifecycle.zh-CN.md)

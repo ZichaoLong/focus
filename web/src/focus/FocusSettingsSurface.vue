@@ -27,6 +27,7 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>();
 <template>
   <FocusSettingsDialog
     :open="props.open"
+    :data-retention="props.client.dataRetention"
     :color-scheme="props.colorScheme"
     :turn-window-limit="props.client.turnWindowLimit.value"
     :activity-favicon-enabled="props.activityFaviconEnabled"

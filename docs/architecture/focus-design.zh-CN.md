@@ -230,7 +230,7 @@ unsubscribe send 前与 holder release 前分别重验，最后也只在原 gene
 | 同一 Feishu binding 的输入顺序是什么？ | `FeishuExecutionQueueController` | main-turn writer 或 backend residency |
 | execution 内容与页面范围是什么？ | `ExecutionTranscript` 与 `ExecutionPageLedger` 各持自己的展示事实 | turn completion、FIFO 或 thread lifecycle authority |
 | Feishu destination 是否已可靠丢失？ | `FeishuDestinationLossStore` 与 `FeishuDestinationLivenessCoordinator` | 一般 timeout、未知发送错误、main-turn 状态 |
-| Web 的 durable navigation workspace/selection 与 attachment 是什么？ | `WebWriterProfileStore` 与 `WebAttachmentStore`；后者另持有在途 submission 的 process-local exact file pin | browser component、read model、event socket、next-turn settings |
+| Web 的 durable navigation workspace/selection 与 attachment 是什么？ | `WebWriterProfileStore` 与 `AttachmentStore`；后者另持有在途 submission 的 process-local exact file pin | browser component、read model、event socket、next-turn settings |
 | instance-wide Web next-turn settings 是什么？ | `WebNextTurnSettingsStore`；mutation/projection transaction 由 `WebNextTurnSettingsCoordinator` 收口 | `WebWriterProfileStore`、selection/navigation generation、main-turn lease、thread effective settings、browser overlay/event |
 | Web document、runtime interest、read model 与 prompt result evidence 是什么？ | `WebDocumentRegistry`、`WebRuntimeInterestRegistry`、`WebThreadReadModel`、`WebPromptResultRegistry` 各自独占 | 彼此之间的 projection；任何一项都不是 durable writer 或 replay authority |
 | canonical Web-triggered subscription/runtime cleanup 由谁持有？ | `WebRuntimeLifecycleCoordinator` 持有 per-thread cleanup flight 与 exact local recheck；`ThreadRuntimeAuthority` 持有 same-thread resume/start/unsubscribe effect fence；thread-runtime lease owner 独占 full-record holder CAS | `fcodex` connection、read cache 或 background worker thread |
@@ -360,6 +360,9 @@ Feishu execution page、terminal result、generated image、Web projection 和 d
 domain-fact owner。
 `bot/focus_runtime/__init__.py` package root 保持为空且不 re-export runtime；该 package 下的 capability owner 不得
 反向 import composition root。新增行为应进入现有 owner，或先明确新事实为何不能由现有边界承担。
+
+实例历史清理由 `DataRetentionService` 编排原 store 执行，`DataRetentionStore` 唯一拥有保留期设置；
+新飞书/Web 文件共用 `AttachmentStore`。范围与持久化边界见[数据清理](../contracts/data-retention.zh-CN.md)。
 
 ## 7. 演进规则
 

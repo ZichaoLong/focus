@@ -142,7 +142,7 @@ describe('useComposerDraft', () => {
     setSid('s2');
     await vi.runAllTimersAsync();
 
-    expect(storageSpy).toHaveBeenCalledTimes(1);
+    expect(storageSpy.mock.calls.filter(([key]) => key.startsWith('kimi-web.draft.'))).toHaveLength(1);
     expect(storageSpy).toHaveBeenCalledWith(draftStorageKey('s1'), 'draft-s1');
     expect(text.value).toBe('draft-s2');
   });
@@ -179,7 +179,7 @@ describe('useComposerDraft', () => {
     await vi.advanceTimersByTimeAsync(249);
     expect(storageSpy).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(1);
-    expect(storageSpy).toHaveBeenCalledTimes(1);
+    expect(storageSpy.mock.calls.filter(([key]) => key.startsWith('kimi-web.draft.'))).toHaveLength(1);
     expect(globalThis.localStorage.getItem(draftStorageKey('s1'))).toBe('hello');
   });
 

@@ -193,10 +193,12 @@ class TerminalResults:
         *,
         execution_message_id: str,
         final_reply_text: str,
+        execution_started_at: float = 0.0,
     ) -> bool:
         return self._store.has_execution_result(
             execution_message_id=execution_message_id,
             final_reply_text=final_reply_text,
+            execution_started_at=execution_started_at,
         )
 
     def publish_terminal_result(

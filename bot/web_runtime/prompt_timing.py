@@ -207,6 +207,14 @@ class WebPromptTimingRecorder:
         if updated and self._changed and notify:
             self._changed(snapshot['submission_id'], snapshot['thread_id'])
 
+    def prune(self, before: float):
+        # Active traces remain protected while writes drain outside RuntimeLoop.
+        with self._lock:
+            protected = tuple(key for key, trace in self._traces.items()
+                              if trace._value['result'] == 'unconfirmed'
+                              or trace._value['first_output']['status'] == 'pending')
+        return self.store.prune(before, protected_ids=protected)
+
     def detail(self, submission_id: str) -> dict[str, Any] | None:
         record = self.store.detail(submission_id)
         return self._read_observation(record) if record else None

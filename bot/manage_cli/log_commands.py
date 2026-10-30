@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from bot.diagnostic_logs import LOG_POLICIES, RETENTION_DAYS, log_inventory, prune_logs
+from bot.diagnostic_logs import LOG_POLICIES, log_inventory, prune_logs
+from bot.stores.data_retention_store import DataRetentionStore
 from bot.instance_layout import (
     global_data_dir,
     require_instance_exists,
@@ -19,9 +20,9 @@ def handle_logs(
     action: str,
     *,
     dry_run: bool = False,
-    keep_days: int = RETENTION_DAYS,
+    keep_days: int | None = None,
 ) -> int:
-    if keep_days < 0:
+    if keep_days is not None and keep_days < 0:
         raise ValueError("keep-days 必须大于或等于 0。")
     # An explicit local inventory needs no live registry. With no registry
     # directory there can be no running-instance selection to consult either.
@@ -33,6 +34,8 @@ def handle_logs(
             preferred_running_instance=current_cli_instance_name()
         )
     data_dir = target.data_dir
+    if keep_days is None:
+        keep_days = DataRetentionStore(data_dir).load().records_days
     print(f"instance: {target.instance_name}\nlogs: {data_dir}")
     if action == "status":
         try:
@@ -44,7 +47,7 @@ def handle_logs(
             print(
                 f"{policy.name}: {size} bytes / {policy.max_bytes * (policy.backups + 1)} bytes"
             )
-        print(f"retention: {RETENTION_DAYS} days (按文件最后写入时间)")
+        print(f"retention: {keep_days} days (按文件最后写入时间)")
         print("只统计 Focus 诊断日志；不包含会话数据、Codex 日志数据库或系统 journal。")
         return 0
     try:

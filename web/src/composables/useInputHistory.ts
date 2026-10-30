@@ -18,7 +18,8 @@
 // cursor, and the textarea caret/selection work needed to apply a recalled
 // entry.
 
-import { computed, nextTick, ref, watch, type Ref } from 'vue';
+import { nextTick, ref, watch, type Ref } from 'vue';
+import { recordHistoryTime } from '../lib/dataRetention';
 import { STORAGE_KEYS, safeGetJson, safeSetJson } from '../lib/storage';
 
 /** Cap each session's persisted history so storage can't grow without bound. */
@@ -40,7 +41,9 @@ export interface InputHistoryDeps {
  * (pre per-session) into the current session on first sight. Migration is
  * one-shot: once a sessioned map is written, the array branch never runs again.
  */
-function loadMap(sessionId: string | undefined): Record<string, string[]> {
+function loadMap(sessionId: string | undefined, fallback: Record<string, string[]> = {}): Record<string, string[]> {
+  try { globalThis.localStorage.getItem(STORAGE_KEYS.inputHistory); }
+  catch { return fallback; }
   const raw = safeGetJson<unknown>(STORAGE_KEYS.inputHistory);
   if (Array.isArray(raw)) {
     const list = raw.filter((s): s is string => typeof s === 'string' && s.length > 0);
@@ -62,7 +65,10 @@ export function useInputHistory(deps: InputHistoryDeps) {
   const { text, textareaRef, autosize, sessionId } = deps;
 
   const historyMap = ref<Record<string, string[]>>(loadMap(sessionId()));
-  const currentList = computed(() => historyMap.value[sessionId() ?? ''] ?? []);
+  function currentList(): string[] {
+    historyMap.value = loadMap(sessionId(), historyMap.value);
+    return historyMap.value[sessionId() ?? ''] ?? [];
+  }
   // -1 = browsing nothing (live draft). Otherwise an index into currentList.
   let historyIndex = -1;
   let draftBeforeHistory = '';
@@ -74,12 +80,13 @@ export function useInputHistory(deps: InputHistoryDeps) {
     if (!sid) return;
     const trimmed = entry.trim();
     if (!trimmed) return;
-    const list = historyMap.value[sid] ?? [];
+    const list = currentList();
     // Skip consecutive duplicates so repeated sends don't pad the history.
     if (list.at(-1) === trimmed) return;
     const next = [...list, trimmed];
     const capped = next.length > MAX_HISTORY ? next.slice(-MAX_HISTORY) : next;
     historyMap.value = { ...historyMap.value, [sid]: capped };
+    recordHistoryTime(sid, list, capped);
     safeSetJson(STORAGE_KEYS.inputHistory, historyMap.value);
   }
 
@@ -104,7 +111,7 @@ export function useInputHistory(deps: InputHistoryDeps) {
   }
 
   function recallOlder(): void {
-    const list = currentList.value;
+    const list = currentList();
     if (list.length === 0) return;
     if (historyIndex === -1) {
       draftBeforeHistory = text.value;
@@ -119,7 +126,7 @@ export function useInputHistory(deps: InputHistoryDeps) {
 
   function recallNewer(): void {
     if (historyIndex === -1) return;
-    const list = currentList.value;
+    const list = currentList();
     if (historyIndex < list.length - 1) {
       historyIndex += 1;
       applyHistoryText(list[historyIndex]!);
@@ -138,7 +145,7 @@ export function useInputHistory(deps: InputHistoryDeps) {
   }
 
   function hasHistory(): boolean {
-    return currentList.value.length > 0;
+    return currentList().length > 0;
   }
 
   // Switching sessions: drop the browsing cursor so a recall in the new session

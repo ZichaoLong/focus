@@ -21,6 +21,8 @@ class PendingAttachmentRecord:
     local_path: str
     created_at: float
     expires_at: float
+    attachment_id: str = ""
+    cwd: str = ""
 
 
 class PendingAttachmentStore:
@@ -103,7 +105,11 @@ class PendingAttachmentStore:
                 )
                 if record.expires_at <= now:
                     expired.append(record)
-                elif is_target and pathlib.Path(record.local_path).expanduser().parent.resolve() != expected_parent:
+                elif is_target and (
+                    pathlib.Path(record.cwd).expanduser().resolve() != expected_parent.parent
+                    if record.attachment_id else
+                    pathlib.Path(record.local_path).expanduser().parent.resolve() != expected_parent
+                ):
                     invalidated.append(record)
                 else:
                     remaining.append(record)
@@ -184,6 +190,8 @@ class PendingAttachmentStore:
             local_path=str(record.local_path or "").strip(),
             created_at=float(record.created_at),
             expires_at=float(record.expires_at),
+            attachment_id=str(record.attachment_id),
+            cwd=str(record.cwd),
         )
 
     @classmethod
@@ -203,6 +211,8 @@ class PendingAttachmentStore:
                     local_path=str(raw["local_path"]),
                     created_at=float(raw["created_at"]),
                     expires_at=float(raw["expires_at"]),
+                    attachment_id=str(raw.get("attachment_id", "")),
+                    cwd=str(raw.get("cwd", "")),
                 )
             )
         except (KeyError, TypeError, ValueError) as exc:

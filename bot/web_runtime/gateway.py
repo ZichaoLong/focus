@@ -40,6 +40,7 @@ from bot.network_contract import (
 )
 from bot.stores.web_gateway_runtime_store import WebGatewayRuntimeStore
 from bot.stores.web_prompt_timing_store import WebPromptTimingStore
+from bot.web_runtime.gateway_data_retention import WebGatewayDataRetentionMixin
 from bot.web_runtime.gateway_prompt_timing import WebGatewayPromptTimingMixin
 from bot.web_runtime.prompt_timing import WebPromptTimingRecorder
 from bot.web_runtime.auth import WebAuthManager, WebAuthSession
@@ -190,13 +191,17 @@ class WebGatewayPorts:
     client_disconnected: Callable[[str], None]
     # The update owner is optional for legacy embedders/tests that construct a
     # Gateway without the managed installer surface.
+    data_retention_read: Callable[[], dict[str, Any]] | None = None
+    data_retention_update: Callable[..., dict[str, Any]] | None = None
+    data_prune: Callable[[], dict[str, Any]] | None = None
     update_status: Callable[[], dict[str, Any]] | None = None
     update_source: Callable[[str, str], dict[str, Any]] | None = None
     update_check: Callable[[str, str], dict[str, Any]] | None = None
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
-class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin):
+class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,
+                 WebGatewayDataRetentionMixin):
     def __init__(
         self,
         *,
@@ -263,6 +268,9 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
             WebPromptTimingStore(data_dir), projection.coordinates()['runtime_epoch'],
             lambda identity, thread_id: projection.publish('prompt_timing_changed',
                 thread_id=thread_id, detail={'submission_id': identity}))
+
+    def prune_prompt_timings(self, before: float):
+        return self._prompt_timings.prune(before)
 
     @property
     def endpoint(self) -> str:

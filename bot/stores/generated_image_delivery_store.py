@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import pathlib
 import threading
 from dataclasses import asdict, dataclass
+from bot.data_retention_contract import DataPruneResult
 
 _SCHEMA_VERSION = 1
 DeliveryKey = tuple[str, str, str, str, str]
@@ -27,6 +29,7 @@ class GeneratedImageDeliveryStore:
         self._data_dir = pathlib.Path(data_dir)
         self._lock = threading.Lock()
         self._claimed_keys: set[DeliveryKey] = set()
+        self._pruned_before = 0.0
 
     def claim_delivery(
         self,
@@ -36,6 +39,7 @@ class GeneratedImageDeliveryStore:
         thread_id: str,
         turn_id: str,
         item_id: str,
+        execution_started_at: float = 0.0,
     ) -> DeliveryKey | None:
         key = self._delivery_key(
             sender_id=sender_id,
@@ -47,9 +51,12 @@ class GeneratedImageDeliveryStore:
         if key is None:
             return None
         with self._lock:
+            records = self._read_all()
+            if self._pruned_before and execution_started_at <= self._pruned_before:
+                return None
             if key in self._claimed_keys:
                 return None
-            if any(self._record_key(record) == key for record in self._read_all()):
+            if any(self._record_key(record) == key for record in records):
                 return None
             self._claimed_keys.add(key)
             return key
@@ -88,6 +95,17 @@ class GeneratedImageDeliveryStore:
     def _file_path(self) -> pathlib.Path:
         return self._data_dir / "generated_image_deliveries.json"
 
+    def prune(self, before: float) -> DataPruneResult:
+        with self._lock:
+            records = self._read_all()
+            kept = [row for row in records if row.delivered_at >= before or self._record_key(row) in self._claimed_keys]
+            if len(kept) == len(records):
+                return DataPruneResult()
+            size = self._file_path().stat().st_size
+            self._pruned_before = max(self._pruned_before, before)
+            self._write_all(kept)
+            return DataPruneResult(len(records) - len(kept), max(0, size - self._file_path().stat().st_size))
+
     def _read_all(self) -> list[GeneratedImageDeliveryRecord]:
         path = self._file_path()
         if not path.exists():
@@ -95,6 +113,10 @@ class GeneratedImageDeliveryStore:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if not isinstance(raw, dict):
             raise RuntimeError("generated_image_deliveries.json 格式损坏：顶层必须是对象。")
+        floor = raw.get("pruned_before", 0.0)
+        if type(floor) not in (int, float) or not math.isfinite(floor) or floor < 0:
+            raise RuntimeError("invalid image delivery retirement watermark")
+        self._pruned_before = max(self._pruned_before, floor)
         schema_version = int(raw.get("schema_version", 0) or 0)
         if schema_version != _SCHEMA_VERSION:
             raise RuntimeError(
@@ -110,6 +132,7 @@ class GeneratedImageDeliveryStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema_version": _SCHEMA_VERSION,
+            "pruned_before": self._pruned_before,
             "deliveries": [asdict(record) for record in records],
         }
         tmp_path = path.with_suffix(".json.tmp")

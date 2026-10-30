@@ -920,7 +920,7 @@ class CodexHandlerHelpActionTests(CodexHandlerHarness):
         )
 
         handler.handle_attachment_message("ou_user", "c1", "m-file", "file", "file-key", "spec.pdf")
-        staged_file = next((workspace / "_feishu_attachments").iterdir())
+        staged_file = next((handler._data_dir / "web_attachment_cache").iterdir())
 
         handler.handle_message("ou_user", "c1", f"/cd {workspace_2}")
 
