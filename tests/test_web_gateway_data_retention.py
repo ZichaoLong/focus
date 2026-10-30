@@ -1,5 +1,6 @@
 import asyncio
 import threading
+import yaml
 
 from bot.data_retention import DataRetentionService
 from bot.data_retention_contract import DataPruneResult
@@ -10,7 +11,7 @@ from tests.web_runtime.gateway_harness import WebGatewayHarness
 class DataRetentionGatewayTests(WebGatewayHarness):
     async def asyncSetUp(self):
         await super().asyncSetUp()
-        self.owner = DataRetentionService(DataRetentionStore(self.root), {'test': lambda *_: DataPruneResult(2, 10)})
+        self.owner = DataRetentionService(DataRetentionStore(self.root, config_dir=self.root / 'config'), {'test': lambda *_: DataPruneResult(2, 10)})
         self.gateway._ports.data_retention_read = self.owner.policy
         self.gateway._ports.data_retention_update = self.owner.update
         self.gateway._ports.data_prune = self.owner.prune
@@ -30,6 +31,13 @@ class DataRetentionGatewayTests(WebGatewayHarness):
         async with self.session.post(f'{self.endpoint}/api/settings/data-retention', headers=headers, json={'records_days': 90}) as response:
             assert response.status == 200
             assert await response.json() == {'records_days': 90, 'attachments_days': 30}
+        config_path = self.root / 'config' / 'codex.yaml'
+        assert yaml.safe_load(config_path.read_text()) == {'records_retention_days': 90}
+        assert not (self.root / 'data_retention.json').exists()
+        # A CLI update reaches an already-running Web client through the same YAML owner.
+        DataRetentionStore(self.root, config_dir=config_path.parent).update({'attachments_days': 7})
+        async with self.session.get(f'{self.endpoint}/api/settings/data-retention', headers=headers) as response:
+            assert await response.json() == {'records_days': 90, 'attachments_days': 7}
         no_csrf = {key: value for key, value in headers.items() if key != 'X-Focus-Web-Csrf'}
         async with self.session.post(f'{self.endpoint}/api/data/prune', headers=no_csrf, json={}) as response:
             assert response.status == 403

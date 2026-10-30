@@ -21,6 +21,12 @@ from bot.fcodex.diagnostics import FcodexDiagnostics
 from bot.file_lock import acquire_file_lock, open_lock_file, release_file_lock
 
 
+@pytest.fixture(autouse=True)
+def isolated_retention_config(tmp_path, monkeypatch):
+    monkeypatch.setenv("FOCUS_CONFIG_ROOT", str(tmp_path / "config"))
+    monkeypatch.setenv("FOCUS_INSTANCE", "default")
+
+
 def test_rotation_bounds_files_and_keeps_newest_records(tmp_path):
     policy = LogPolicy("fcodex.log", 64, 2)
     with patch("bot.diagnostic_logs.LOG_POLICIES", (policy,)):

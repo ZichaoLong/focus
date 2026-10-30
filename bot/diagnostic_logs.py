@@ -22,7 +22,6 @@ from bot.file_lock import (
 )
 from bot.stores.data_retention_store import DataRetentionStore
 
-RETENTION_DAYS = 30
 MAINTENANCE_SECONDS = 30 * 60
 _MAX_RECORD_BYTES = 64 * 1024
 
@@ -123,11 +122,12 @@ def _prune_candidates(
 
 
 def prune_logs(
-    data_dir: pathlib.Path, *, keep_days: int | None = None, dry_run: bool = False
+    data_dir: pathlib.Path, *, keep_days: int | None = None, dry_run: bool = False,
+    config_dir: pathlib.Path | None = None,
 ) -> list[LogFile]:
     """Clean closed files, plus expired fcodex files (opened only under our lock)."""
     if keep_days is None:
-        keep_days = DataRetentionStore(data_dir).load().records_days
+        keep_days = DataRetentionStore(data_dir, config_dir=config_dir).load().records_days
     if keep_days < 0:
         raise ValueError("keep-days 必须大于或等于 0。")
     if dry_run or not data_dir.exists():
@@ -202,13 +202,13 @@ class DiagnosticLogHandler(logging.Handler):
             pass
 
 
-def start_log_maintenance(data_dir: pathlib.Path) -> threading.Event:
+def start_log_maintenance(data_dir: pathlib.Path, *, config_dir: pathlib.Path | None = None) -> threading.Event:
     """Run inside the existing service; returning the stop event also aids teardown."""
     stopped = threading.Event()
 
     def sweep() -> None:
         try:
-            prune_logs(data_dir)
+            prune_logs(data_dir, config_dir=config_dir)
         except Exception:
             pass
 

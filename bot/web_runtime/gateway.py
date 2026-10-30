@@ -40,6 +40,7 @@ from bot.network_contract import (
 )
 from bot.stores.web_gateway_runtime_store import WebGatewayRuntimeStore
 from bot.stores.web_prompt_timing_store import WebPromptTimingStore
+from bot.data_retention_contract import DEFAULT_RETENTION_DAYS
 from bot.web_runtime.gateway_data_retention import WebGatewayDataRetentionMixin
 from bot.web_runtime.gateway_prompt_timing import WebGatewayPromptTimingMixin
 from bot.web_runtime.prompt_timing import WebPromptTimingRecorder
@@ -265,7 +266,10 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
         self._unsubscribe_projection: Callable[[], None] | None = None
         self._unsubscribe_prompt_observations: Callable[[], None] | None = None
         self._prompt_timings = WebPromptTimingRecorder(
-            WebPromptTimingStore(data_dir), projection.coordinates()['runtime_epoch'],
+            WebPromptTimingStore(data_dir, retained_days=lambda: (
+                self._ports.data_retention_read()['records_days']
+                if self._ports.data_retention_read is not None else DEFAULT_RETENTION_DAYS)),
+            projection.coordinates()['runtime_epoch'],
             lambda identity, thread_id: projection.publish('prompt_timing_changed',
                 thread_id=thread_id, detail={'submission_id': identity}))
 

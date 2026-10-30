@@ -23,19 +23,19 @@ NOW = 200 * DAY
 
 
 def test_policy_defaults_atomic_partial_updates_and_corruption(tmp_path):
-    store = DataRetentionStore(tmp_path)
+    store = DataRetentionStore(tmp_path, config_dir=tmp_path / 'config')
     assert store.load() == DataRetentionPolicy()
     assert not (tmp_path / 'data_retention.json').exists()
     with ThreadPoolExecutor(2) as pool:
-        results = [pool.submit(DataRetentionStore(tmp_path).update, change)
+        results = [pool.submit(DataRetentionStore(tmp_path, config_dir=tmp_path / 'config').update, change)
                    for change in ({'records_days': 7}, {'attachments_days': 90})]
         for result in results:
             result.result()
-    assert DataRetentionStore(tmp_path).load() == DataRetentionPolicy(7, 90)
+    assert DataRetentionStore(tmp_path, config_dir=tmp_path / 'config').load() == DataRetentionPolicy(7, 90)
     for changes in ({'records_days': True}, {'records_days': 7.0}, {'records_days': 14}, {}, {'unknown': 30}):
         with pytest.raises(ValueError):
             store.update(changes)
-    (tmp_path / 'data_retention.json').write_text('{broken')
+    (tmp_path / 'config' / 'codex.yaml').write_text('{broken')
     called = []
     service = DataRetentionService(store, {'test': lambda *_: called.append(True)})
     with pytest.raises(ValueError):
@@ -44,7 +44,7 @@ def test_policy_defaults_atomic_partial_updates_and_corruption(tmp_path):
 
 
 def test_cleanup_reports_partial_failure_and_uses_updated_policy(tmp_path):
-    store = DataRetentionStore(tmp_path)
+    store = DataRetentionStore(tmp_path, config_dir=tmp_path / 'config')
     def success(policy, now):
         assert (policy.records_days, now) == (90, NOW)
         return DataPruneResult(3, 50)
@@ -117,7 +117,7 @@ def test_shared_attachment_policy_protects_active_cwd_and_never_touches_legacy_f
     legacy = workspace / '_feishu_attachments' / 'legacy.txt'
     legacy.parent.mkdir()
     legacy.write_text('user owned')
-    policy = DataRetentionStore(tmp_path / 'data')
+    policy = DataRetentionStore(tmp_path / 'data', config_dir=tmp_path / 'config')
     store = AttachmentStore(tmp_path / 'data', ttl_seconds=1800, retained_days=lambda: policy.load().attachments_days,
                             scheduled_retention=True)
     with patch('bot.stores.attachment_store.time.time', return_value=NOW-10*DAY):
@@ -218,7 +218,7 @@ def test_active_execution_monotonic_clock_is_converted_and_delivery_recovery_def
     recovering = [False]
     files = Mock(prune_pending=Mock(return_value=DataPruneResult()))
     service = compose_data_retention(
-        data_dir=tmp_path, policy=DataRetentionStore(tmp_path), sessions=lambda: (active,),
+        data_dir=tmp_path, policy=DataRetentionStore(tmp_path, config_dir=tmp_path / 'config'), sessions=lambda: (active,),
         web_cwds=lambda: (), recovery_active=lambda: recovering[0],
         prune_profiles=lambda _: DataPruneResult(), prune_timings=lambda _: DataPruneResult(),
         prune_groups=lambda *_, **__: DataPruneResult(), files=files,

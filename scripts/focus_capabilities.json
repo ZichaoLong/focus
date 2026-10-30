@@ -3086,6 +3086,14 @@
         {
           "path": "bot/focus_runtime/data_retention_composition.py",
           "symbol": "compose_data_retention"
+        },
+        {
+          "path": "bot/manage_cli/data_commands.py",
+          "symbol": "handle_data"
+        },
+        {
+          "path": "bot/focus_runtime/runtime.py",
+          "symbol": "FocusRuntime._handle_service_control_request"
         }
       ],
       "owner": [
@@ -3108,6 +3116,10 @@
         {
           "path": "web/src/lib/dataRetention.ts",
           "symbol": "pruneBrowserData"
+        },
+        {
+          "path": "bot/codex_config.py",
+          "symbol": "CodexConfig"
         }
       ],
       "contract": [
@@ -3118,6 +3130,10 @@
         {
           "path": "docs/contracts/data-retention.zh-CN.md",
           "heading": "3. 唯一 owner、持久化与重启"
+        },
+        {
+          "path": "docs/contracts/focusctl-command-matrix.zh-CN.md",
+          "heading": "4.3.2 `data`"
         }
       ],
       "focused-test": [
@@ -3125,7 +3141,9 @@
           "runner": "pytest",
           "targets": [
             "tests/test_data_retention.py",
-            "tests/test_web_gateway_data_retention.py"
+            "tests/test_web_gateway_data_retention.py",
+            "tests/test_data_retention_config.py",
+            "tests/manage_cli/test_data.py"
           ]
         },
         {
@@ -3146,7 +3164,12 @@
             "tests/test_execution_recovery_runtime.py",
             "tests/test_execution_recovery_controller.py",
             "tests/test_generated_image_delivery.py",
-            "tests/web_runtime/test_prompt_timing.py"
+            "tests/web_runtime/test_prompt_timing.py",
+            "tests/test_codex_config.py",
+            "tests/test_focusctl.py",
+            "tests/test_shell_completion.py",
+            "tests/manage_cli/test_logs.py",
+            "tests/test_diagnostic_logs.py"
           ]
         },
         {

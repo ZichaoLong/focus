@@ -50,7 +50,7 @@ from bot.binding_runtime_contract import (
 from bot.binding_runtime_manager import BindingRuntimeManager
 from bot.feishu_binding_transition import FeishuBindingTransitionOwner
 from bot.codex_config import CodexConfig
-from bot.config import load_config_file
+from bot.config import config_dir as current_config_dir, load_config_file
 from bot.constants import resolve_working_dir
 from bot.instance_layout import current_instance_name, global_data_dir
 from bot.focus_runtime.runtime_identity import RuntimeIdentityProjection
@@ -318,7 +318,8 @@ class FocusRuntime:
         self._mirror_watchdog_seconds = cfg.mirror_watchdog_seconds
         self._compact_start_timeout_seconds = cfg.compact_start_timeout_seconds
         self._attachment_ttl_seconds = cfg.attachment_ttl_seconds
-        self._data_retention_store = DataRetentionStore(self._data_dir)
+        self._data_retention_store = DataRetentionStore(
+            self._data_dir, config_dir=self._config_dir or current_config_dir())
         self._web_attachment_store = AttachmentStore(
             self._data_dir,
             ttl_seconds=self._attachment_ttl_seconds,
@@ -2224,6 +2225,12 @@ class FocusRuntime:
 
     def _handle_service_control_request(self, method: str, params: dict[str, Any]) -> Any:
         normalized_method = str(method or "").strip()
+        if normalized_method == "data/prune":
+            if params:
+                raise ValueError("Data cleanup takes no options.")
+            # The same lifecycle receipt and sweep owner as Web/automatic
+            # cleanup; run blocking file work outside RuntimeLoop.
+            return self._ingress.run_external_transaction(self._data_retention.prune)
         if normalized_method == "thread/loaded/list":
             if self._service_runtime_lifecycle.offline_maintenance_prepared:
                 raise RuntimeError(

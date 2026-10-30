@@ -41,6 +41,7 @@ FOCUSCTL_RESOURCE_SPECS: tuple[FocusctlResourceSpec, ...] = (
     FocusctlResourceSpec("instance", "manage", "管理本机实例；list 提供 service/runtime 总览"),
     FocusctlResourceSpec("service", "service", "管理后台服务、日志、自启动与 backend 恢复动作"),
     FocusctlResourceSpec("logs", "manage", "查看诊断日志占用或清理旧诊断日志"),
+    FocusctlResourceSpec("data", "manage", "管理记录和附件保留期、清理服务端过期数据"),
     FocusctlResourceSpec("binding", "runtime", "查看、恢复、暂停或清理 Feishu binding"),
     FocusctlResourceSpec("prompt", "runtime", "向既有 binding 合成提交 prompt"),
     FocusctlResourceSpec("thread", "runtime", "查看或管理 Codex thread"),
@@ -208,6 +209,9 @@ def _print_help() -> None:
         "  focusctl service status\n"
         "  focusctl logs status\n"
         "  focusctl logs prune --dry-run\n"
+        "  focusctl data status\n"
+        "  focusctl data retention --records-days 30 --attachments-days 30\n"
+        "  focusctl data prune\n"
         "  focusctl service autostart enable\n"
         "  focusctl binding list\n"
         "  focusctl binding clear-stale --dry-run\n"

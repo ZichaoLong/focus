@@ -233,6 +233,21 @@ the machine-wide instance overview.
   configuration, bindings, leases and runtime data are excluded. No cron or
   separate cleanup service is required. Existing `service log` viewing remains.
 
+### 4.3.2 `data`
+
+| Command | Purpose | Type | Feishu counterpart |
+| --- | --- | --- | --- |
+| `focusctl [--instance <name>] data status` | Display effective record/attachment periods and the codex.yaml path | read; may migrate legacy config once | none |
+| `focusctl [--instance <name>] data retention [--records-days <7\|30\|90>] [--attachments-days <7\|30\|90>]` | Update at least one period, preserving unspecified fields | mutating | none |
+| `focusctl [--instance <name>] data prune` | Ask the running service to clean expired data with current periods and report per-owner results/failures | mutating | none |
+
+All three commands work without Web and accept one instance. `status`/`retention` work while stopped; the instance's
+`codex.yaml` is the sole source, both periods default to 30 days, and Web shares these values without restart.
+`prune` uses authenticated local control and service ingress, rejects shutdown/maintenance, and never deletes files
+offline. Its scope matches Web's server cleanup, excluding browser-local data. Success/partial failure/error exit
+codes are 0/1/2. Unknown request outcomes return 2 without automatic retry. See [data cleanup](./data-retention.md)
+for migration, scope and protections.
+
 ### 4.4 `binding`
 
 | Command | Purpose | Type | Feishu counterpart |

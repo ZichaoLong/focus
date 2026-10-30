@@ -198,6 +198,19 @@ control response 报告 `ok: true` 时，`service reset-backend` 必须先验证
 - 不清理 Codex 日志数据库、系统 journal、会话/群消息历史、配置、binding、lease 或
   runtime 数据。不需要额外 cron 或独立后台清理服务。现有 `service log` 查看功能保留。
 
+### 4.3.2 `data`
+
+| 命令 | 作用 | 类型 | 飞书对应 |
+| --- | --- | --- | --- |
+| `focusctl [--instance <name>] data status` | 显示有效记录/附件保留期及 codex.yaml 路径 | 读取；首次可迁移旧配置 | 无 |
+| `focusctl [--instance <name>] data retention [--records-days <7\|30\|90>] [--attachments-days <7\|30\|90>]` | 至少修改一个保留期，未指定项不变 | 变更 | 无 |
+| `focusctl [--instance <name>] data prune` | 请求运行中的服务立即按当前周期清理过期数据，输出各类结果和失败 | 变更 | 无 |
+
+三个命令均不依赖 Web；只接受单个实例。`status`/`retention` 可停服执行，唯一配置源为实例 `codex.yaml`，
+默认均 30 天，与 Web 读写一致，无需重启。`prune` 经本机认证控制面和服务 ingress 执行，停止/maintenance 时拒绝，
+不离线直接删文件；范围等同 Web 的服务端清理，不触及浏览器本地数据。成功/部分失败/错误退出码分别为 0/1/2，
+请求结果未知时返回 2 且不自动重试。配置迁移、保留范围和保护规则见[数据清理](./data-retention.zh-CN.md)。
+
 ### 4.4 `binding`
 
 | 命令 | 作用 | 类型 | 飞书对应 |

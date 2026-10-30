@@ -12,16 +12,16 @@ import sqlite3
 import threading
 import time
 from contextlib import closing, contextmanager
+from collections.abc import Callable
 from typing import Any
-from bot.data_retention_contract import DataPruneResult
-from bot.stores.data_retention_store import DataRetentionStore
+from bot.data_retention_contract import DataPruneResult, DEFAULT_RETENTION_DAYS
 
 
 class WebPromptTimingStore:
-    def __init__(self, data_dir: pathlib.Path) -> None:
+    def __init__(self, data_dir: pathlib.Path, *, retained_days: Callable[[], int] = lambda: DEFAULT_RETENTION_DAYS) -> None:
         self.path = pathlib.Path(data_dir) / "web_prompt_timing.sqlite"
         self._lock = threading.RLock()
-        self._retention = DataRetentionStore(data_dir)
+        self._retained_days = retained_days
 
     @contextmanager
     def _connection(self):
@@ -86,7 +86,7 @@ class WebPromptTimingStore:
 
     def sync_browser(self, client_id: str, records: list[dict[str, Any]]) -> None:
         now = int(time.time() * 1000)
-        cutoff = now - self._retention.load().records_days * 86_400_000
+        cutoff = now - self._retained_days() * 86_400_000
         with self._connection() as db:
             for record in records:
                 if record['submitted_at_ms'] < cutoff:

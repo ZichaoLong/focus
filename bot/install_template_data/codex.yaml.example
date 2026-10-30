@@ -118,6 +118,14 @@ web_enabled: true
 # /resume 成功后是否发送历史预览卡片；默认值：true
 # show_history_preview_on_resume: true
 
+# Focus 自管历史记录保留天数；可选：7、30、90；默认值：30
+# Web 设置和 focusctl data retention 共同读写这里；修改后无需重启。
+# records_retention_days: 30
+
+# 已提交 Web 附件及新飞书附件保留天数；可选：7、30、90；默认值：30
+# 历史工作区附件不在此范围；立即清理使用 focusctl data prune 或 Web 设置。
+# attachments_retention_days: 30
+
 # 飞书附件 pending 状态的过期秒数；默认值：1800（30 分钟）
 # 说明：附件会先下载到实例私有附件缓存，等待同一发送者、会话及工作目录内的下一条文本消费。
 # 说明：到期后不会再自动绑定到后续文本，且本地暂存文件会被清理。

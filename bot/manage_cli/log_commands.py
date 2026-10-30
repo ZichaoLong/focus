@@ -35,7 +35,9 @@ def handle_logs(
         )
     data_dir = target.data_dir
     if keep_days is None:
-        keep_days = DataRetentionStore(data_dir).load().records_days
+        keep_days = DataRetentionStore(
+            data_dir, config_dir=resolve_instance_paths(target.instance_name).config_dir,
+        ).load().records_days
     print(f"instance: {target.instance_name}\nlogs: {data_dir}")
     if action == "status":
         try:

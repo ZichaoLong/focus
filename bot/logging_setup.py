@@ -8,6 +8,7 @@ import logging
 import pathlib
 
 from bot.diagnostic_logs import DiagnosticLogHandler, start_log_maintenance
+from bot.config import config_dir
 from bot.platform_paths import default_log_file
 
 
@@ -27,5 +28,5 @@ def configure_logging(*, data_dir: pathlib.Path | str | None = None) -> pathlib.
     file_handler = DiagnosticLogHandler(log_path.parent)
     file_handler.setFormatter(formatter)
     root_logger.addHandler(file_handler)
-    start_log_maintenance(log_path.parent)
+    start_log_maintenance(log_path.parent, config_dir=config_dir())
     return log_path

@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, fields
 from typing import Any, Mapping
 
 from bot.approval_policy import SUPPORTED_APPROVAL_POLICIES, normalize_approval_policy
+from bot.data_retention_contract import DEFAULT_RETENTION_DAYS, RETENTION_DAY_OPTIONS
 from bot.constants import (
     DEFAULT_APP_SERVER_URL,
     DEFAULT_HISTORY_PREVIEW_ROUNDS,
@@ -143,6 +144,13 @@ def _number(
     return parsed
 
 
+def _retention_days(config: Mapping[str, Any], key: str) -> int:
+    value = _integer(config, key, DEFAULT_RETENTION_DAYS)
+    if value not in RETENTION_DAY_OPTIONS:
+        raise ValueError(f"codex.yaml 配置 `{key}` 必须是 7、30 或 90 天")
+    return value
+
+
 def _source_kinds(
     config: Mapping[str, Any],
     default: tuple[str, ...],
@@ -201,6 +209,8 @@ class CodexConfig:
     history_preview_rounds: int = DEFAULT_HISTORY_PREVIEW_ROUNDS
     show_history_preview_on_resume: bool = True
     attachment_ttl_seconds: float = 1800.0
+    records_retention_days: int = DEFAULT_RETENTION_DAYS
+    attachments_retention_days: int = DEFAULT_RETENTION_DAYS
     mirror_watchdog_seconds: float = 8.0
     compact_start_timeout_seconds: float = 60.0
     stream_patch_interval_ms: int = DEFAULT_STREAM_PATCH_INTERVAL_MS
@@ -472,6 +482,8 @@ class CodexConfig:
                 minimum=0,
                 exclusive_minimum=True,
             ),
+            records_retention_days=_retention_days(config, "records_retention_days"),
+            attachments_retention_days=_retention_days(config, "attachments_retention_days"),
             mirror_watchdog_seconds=_number(
                 config,
                 "mirror_watchdog_seconds",

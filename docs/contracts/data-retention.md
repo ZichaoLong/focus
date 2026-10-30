@@ -7,7 +7,29 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/dat
 Focus Web settings exposes three controls: **Focus record retention**, **Attachment retention**, and
 **Clean expired data now**. Each period independently offers 7 / 30 / 90 days, defaults to 30, persists per instance,
 and takes effect without restart. Clean now applies the same expiry rules; it does not clear all data.
-Results distinguish server and current-browser item counts, including partial failures.
+The sole configuration source is the instance's `codex.yaml`:
+
+```yaml
+records_retention_days: 30
+attachments_retention_days: 30
+```
+
+Without Web, use the following commands. Each accepts one `--instance <name>` with normal focusctl selection:
+
+```bash
+focusctl data status
+focusctl data retention --records-days 30 --attachments-days 30
+focusctl data prune
+```
+
+`status` displays effective periods and the config path; `retention` accepts either period independently.
+Both work while stopped. Web, CLI and manual YAML edits share this file; settings reads and automatic/manual sweeps
+reload it without restart. `prune` requests the running Focus service through its authenticated local control plane,
+independent of Web. A stopped/unreachable service returns an error; the CLI never deletes history directly.
+The CLI cleans server data only; browsers clean their own local storage. Exit codes: 0 for success, 1 for partial owner
+failure, 2 for invalid input/configuration, service errors or unknown outcomes. Unknown outcomes are not retried.
+
+Web results distinguish server and current-browser item counts, including partial failures.
 Server maintenance runs every 30 minutes, first running 30 minutes after startup; diagnostics also retain their startup sweep.
 Browser maintenance runs after fetching current server policy, every 30 minutes, and on manual cleanup.
 Other browsers clean their own storage when next opened. Opening settings refreshes policy. A shorter period takes effect
@@ -47,12 +69,25 @@ One corrupt owner reports failure without blocking other owners.
 
 ## 3. Ownership, persistence and restart
 
-`DataRetentionStore` owns instance `data_retention.json`, schema 1, closed `records_days,attachments_days` fields.
-Missing means defaults; corruption/unknown schemas neither overwrite settings nor authorize deletion. A cross-process
-lock and private atomic writes serialize partial updates. Deleting the file resets preferences and the next sweep uses
-defaults. Persistence preserves the choice across restart. `DataRetentionService` serializes updates/sweeps and owns the
-periodic worker; existing stores remain the data owners. Service ingress receipts fence manual/automatic sweeps.
-Shutdown stops the worker before releasing service authority; a failed join retains authority.
+`CodexConfig` owns the strict `records_retention_days,attachments_retention_days` schema. `DataRetentionStore` owns
+reads/writes of these YAML fields; API/CLI `records_days,attachments_days` are projections. Missing fields use defaults;
+invalid YAML/values neither overwrite settings nor authorize deletion. A cross-process `codex.yaml.lock` and private
+atomic writes prevent lost partial Web/CLI updates. Other explicit values survive updates; YAML is reserialized and
+comments/formatting are not preserved. There is no second policy file or long-lived in-memory copy. Removing a field
+restores that field's default on the next read.
+
+Legacy `data_retention.json` (schema 1) is migrated on first settings access: fill only fields not explicitly present
+in YAML, atomically commit YAML, then delete the JSON. Interrupted migration is retryable. Both explicit YAML fields
+form the commit checkpoint: stale or even corrupt JSON cannot override them and is retired. If fields still need
+migration but JSON is corrupt/unknown-schema, migration and cleanup fail without modifying the source; basic conversation
+startup remains available. Explicitly replacing both periods through the CLI needs no legacy inference, so it can commit
+YAML and retire a corrupt old file. After migration JSON is no longer read or written. The first status/diagnostic policy read
+may perform this migration.
+
+`DataRetentionService` serializes service-side updates/sweeps and owns the periodic worker; existing stores remain data
+owners. Web, CLI and automatic cleanup use this same service owner under an ingress receipt covering the whole sweep.
+Control requests keep blocking file work outside RuntimeLoop. Shutdown/offline maintenance rejects new sweeps; shutdown
+stops the worker before releasing service authority, and a failed join retains authority.
 
 `AttachmentStore` owns shared files, retaining physical `web_attachments.json` schema 2 and `web_attachment_cache` names
 so existing absolute Web paths stay valid. Optional `channel,retained_at` fields distinguish new records; old entries are
@@ -87,6 +122,6 @@ intent. Returned settings are committed values. Cleanup returns `policy,results,
 not empty successes and byte counts describe released file bytes. `bot/focus_web_wire_catalog.py` owns endpoints, DTOs and
 session-activity classification. Service and static assets deploy together.
 
-Regression entries: `tests/test_data_retention.py`, `tests/test_web_gateway_data_retention.py`,
+Regression entries: `tests/test_data_retention_config.py`, `tests/manage_cli/test_data.py`, `tests/test_data_retention.py`, `tests/test_web_gateway_data_retention.py`,
 `tests/test_web_attachment_store.py`, `tests/focus_runtime/test_codex_handler_prompt_files.py`,
 `web/test/data-retention.test.ts`, `web/test/data-retention-browser.test.ts`.

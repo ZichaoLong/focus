@@ -6,7 +6,27 @@
 
 Focus Web 的设置页提供三个控件：**Focus 记录保留期**、**附件保留期**、**立即清理过期数据**。
 两个保留期独立选择 7 / 30 / 90 天，默认均为 30 天，按实例保存，无需重启。
-立即清理执行同一到期规则；不是清空所有数据。显示服务端与当前浏览器的清理项数，部分失败明确提示。
+唯一配置源是该实例的 `codex.yaml`：
+
+```yaml
+records_retention_days: 30
+attachments_retention_days: 30
+```
+
+没有 Web 时使用以下命令，均支持单个 `--instance <name>`，实例选择沿用 focusctl 规则：
+
+```bash
+focusctl data status
+focusctl data retention --records-days 30 --attachments-days 30
+focusctl data prune
+```
+
+`status` 显示有效保留期和配置路径；`retention` 可只传一个周期，另一个不变，二者停服时也可使用。
+Web、CLI 与手工修改 YAML 使用同一份配置；设置读取、自动和手动清理会重新读取，不需要重启。
+`prune` 通过已认证的本机 control plane 请求运行中的 Focus 服务，完全不依赖 Web。
+停服或控制面不可用时返回错误，不在 CLI 进程自行删除历史。CLI 只清理服务端数据；浏览器本地数据由浏览器处理。
+清理完成返回 0，部分 owner 失败返回 1，参数/配置/服务错误或请求结果未知返回 2；结果未知时不自动重试。
+Web 的立即清理执行同一到期规则；不是清空所有数据。显示服务端与当前浏览器的清理项数，部分失败明确提示。
 自动清理每 30 分钟运行，首轮在服务启动后 30 分钟；诊断日志另沿用启动时清理。
 浏览器在取得服务器当前策略后、每 30 分钟及手动清理时执行本地清理；其他浏览器在各自下次打开后处理。
 设置打开时刷新策略。缩短保留期在下一次清理生效，延长保留期不会恢复已经删除的数据。
@@ -44,11 +64,21 @@ Codex 线程数据仍仅通过 Codex archive/delete 接口管理。配置、绑�
 
 ## 3. 唯一 owner、持久化与重启
 
-`DataRetentionStore` 唯一拥有实例 `data_retention.json`：schema 1，闭合 `records_days,attachments_days`。
-缺失使用默认值；损坏或未知 schema 不覆盖、不授权自动删除。跨进程文件锁及私有原子写入防止部分更新丢失。
-删除此文件只重置偏好，下一轮清理按默认值执行。持久化是为了重启后保持用户选择。
-`DataRetentionService` 只串行化策略更新/清理并持有周期 worker；各数据仍由原 store 删除。
-服务 ingress receipt 覆盖整次手动/自动清理；退出先停止 worker，未证明 join 时不能释放服务 authority。
+`CodexConfig` 定义 `records_retention_days`、`attachments_retention_days` 的严格 schema，
+`DataRetentionStore` 是这两个 YAML 字段的读写 owner，API/CLI 中的 `records_days,attachments_days` 只是投影。
+缺失字段使用默认值；损坏 YAML 或非法值不覆盖、不授权自动删除。跨进程 `codex.yaml.lock` 与私有原子写入
+防止 Web/CLI 部分更新相互丢失；更新保留其他显式配置值，重新序列化 YAML mapping，不承诺保留注释和排版。
+不保留第二份策略文件或长期内存副本；删除某字段会在下一次读取时恢复该字段默认值。
+
+旧实例的 `data_retention.json`（schema 1）在首次访问设置时自动迁移：只补入 YAML 尚未显式设置的字段，
+先原子提交 YAML，再删除旧 JSON。迁移中断可安全重试；两个 YAML 字段均已明确时，它们是提交检查点，
+过时甚至损坏的 JSON 都不得覆盖，直接移除旧文件。仍需补入字段但旧 JSON 损坏/未知 schema 时，拒绝迁移与清理，
+保留原文件供修复；不影响基本对话启动。用户通过 CLI 明确重设两个周期时，无需从旧文件推导值，可直接提交 YAML 并移除损坏旧文件。
+迁移完成后不再读取或写入 JSON。首次 status/日志策略读取也可能触发该次迁移。
+
+`DataRetentionService` 串行化服务内策略更新/清理并持有周期 worker；各数据仍由原 store 删除。
+Web、CLI 和自动清理使用同一 service owner，服务 ingress receipt 覆盖整次清理；control request 不在 RuntimeLoop 上
+执行阻塞文件操作。停服/离线 maintenance 拒绝新的清理；退出先停止 worker，未证明 join 时不能释放服务 authority。
 
 `AttachmentStore` 是两个入口共享的唯一文件 owner；保留已有 `web_attachments.json` schema 2 及
 `web_attachment_cache` 物理名称，旧 Web 绝对路径不变。新增可选 `channel`、`retained_at`；
@@ -79,6 +109,6 @@ Wire v39：GET/POST `/api/settings/data-retention` 读取或部分更新两个�
 清理响应包含 `policy,results,errors,records,bytes_freed`，各 owner 的失败不伪装为空成功；字节数仅统计已释放的文件字节。
 固定 DTO、端点与会话活动分类由 `bot/focus_web_wire_catalog.py` 定义。服务端与静态资源同版本部署。
 
-回归入口：`tests/test_data_retention.py`、`tests/test_web_gateway_data_retention.py`、
+回归入口：`tests/test_data_retention_config.py`、`tests/manage_cli/test_data.py`、`tests/test_data_retention.py`、`tests/test_web_gateway_data_retention.py`、
 `tests/test_web_attachment_store.py`、`tests/focus_runtime/test_codex_handler_prompt_files.py`、
 `web/test/data-retention.test.ts`、`web/test/data-retention-browser.test.ts`。

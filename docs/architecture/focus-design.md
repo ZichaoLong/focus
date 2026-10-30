@@ -498,7 +498,7 @@ runtime; capability owners below that package must not import the composition ro
 New behavior belongs in an existing owner, or must first explain why no existing
 boundary can own the new fact.
 
-`DataRetentionService` schedules existing history owners; `DataRetentionStore` owns the retention preference.
+`DataRetentionService` schedules existing history owners; `DataRetentionStore` reads/writes retention in the instance codex.yaml, the sole source shared by Web, CLI and automatic cleanup.
 New Feishu/Web files share `AttachmentStore`. See [data cleanup](../contracts/data-retention.md) for scope and persistence.
 
 ## 7. Evolution Rules

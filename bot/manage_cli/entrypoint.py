@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 from bot.env_file import ensure_env_template
+from bot.data_retention_contract import RETENTION_DAY_OPTIONS
 from bot.instance_layout import resolve_instance_paths, validate_instance_name
 from bot.platform_paths import default_config_root, default_log_file, is_windows
 from bot.service_manager import ServiceManagerError
@@ -21,6 +22,7 @@ from bot.managed_skills.workspace_lifecycle import (
 
 from .errors import InstallLifecycleError
 from .log_commands import handle_logs
+from .data_commands import handle_data
 from .install_surface import (
     _handle_bootstrap_install,
     _handle_migrate_from_feishu_codex,
@@ -245,6 +247,14 @@ def _build_parser() -> argparse.ArgumentParser:
         "--lines", type=int, default=40, help="启动时先输出的历史日志行数。"
     )
 
+    data_parser = subparsers.add_parser("data", help="管理数据保留期或清理服务端过期数据；无需 Web。")
+    data_actions = data_parser.add_subparsers(dest="data_action", required=True)
+    data_actions.add_parser("status", help="查看 codex.yaml 中的有效保留期；可停服使用。")
+    retention_parser = data_actions.add_parser("retention", help="修改 codex.yaml 中的保留期；无需重启。")
+    retention_parser.add_argument("--records-days", type=int, choices=RETENTION_DAY_OPTIONS)
+    retention_parser.add_argument("--attachments-days", type=int, choices=RETENTION_DAY_OPTIONS)
+    data_actions.add_parser("prune", help="请运行中的 Focus 服务立即清理过期数据；不清理浏览器数据。")
+
     logs_parser = subparsers.add_parser("logs", help="查看诊断日志占用或清理旧日志。")
     logs_actions = logs_parser.add_subparsers(dest="logs_action", required=True)
     logs_actions.add_parser("status", help="只读查看各类诊断日志的位置、大小及保留策略。")
@@ -441,6 +451,16 @@ def main(argv: list[str] | None = None) -> None:
                     lines=args.lines,
                 )
             )
+        if args.command == "data":
+            instance_name = (
+                _single_requested_instance(requested_instances, command_label="data")
+                if requested_instances else ""
+            )
+            raise SystemExit(handle_data(
+                instance_name, args.data_action,
+                records_days=getattr(args, "records_days", None),
+                attachments_days=getattr(args, "attachments_days", None),
+            ))
         if args.command == "logs":
             instance_name = (
                 _single_requested_instance(requested_instances, command_label="logs")

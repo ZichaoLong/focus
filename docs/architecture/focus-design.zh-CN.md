@@ -361,7 +361,7 @@ domain-fact owner。
 `bot/focus_runtime/__init__.py` package root 保持为空且不 re-export runtime；该 package 下的 capability owner 不得
 反向 import composition root。新增行为应进入现有 owner，或先明确新事实为何不能由现有边界承担。
 
-实例历史清理由 `DataRetentionService` 编排原 store 执行，`DataRetentionStore` 唯一拥有保留期设置；
+实例历史清理由 `DataRetentionService` 编排原 store 执行，`DataRetentionStore` 统一读写实例 `codex.yaml` 中的保留期设置，Web/CLI/自动清理共用该唯一配置源；
 新飞书/Web 文件共用 `AttachmentStore`。范围与持久化边界见[数据清理](../contracts/data-retention.zh-CN.md)。
 
 ## 7. 演进规则
