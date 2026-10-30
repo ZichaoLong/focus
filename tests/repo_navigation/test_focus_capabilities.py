@@ -160,6 +160,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/components/chat/transcriptScrollAnchor.ts",
                     "restoreTranscriptScrollAnchor",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/toolGroupPresentation.ts",
+                    "isEmptyAssistantTurn",
+                ),
             ),
         )
 

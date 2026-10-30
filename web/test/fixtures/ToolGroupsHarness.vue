@@ -2,6 +2,7 @@
 import { nextTick, provide, shallowRef } from 'vue';
 import ConversationPane from '../../src/components/chat/ConversationPane.vue';
 import { TranscriptPageWindow } from '../../src/focus/transcriptPageWindow';
+import { appendTranscriptDelta } from '../../src/focus/transcriptItems';
 import type { ChatTurn, ConversationStatus } from '../../src/types';
 import type { FocusTranscriptPage } from '../../src/focus/types';
 
@@ -55,6 +56,24 @@ async function reset(kind: 'working' | 'replied' | 'large' | 'split' | 'paged') 
 }
 Object.assign(window, { toolGroupFixture: {
   reset,
+  async placeholders(kind: 'text' | 'thinking', text: string) {
+    const next = cache.rows.filter(row => !row.itemId?.startsWith('empty-'));
+    const placeholders: ChatTurn[] = Array.from({ length: 4 }, (_, index) => {
+      const itemId = `empty-${index}`;
+      return { id: `turn:item:${itemId}:0`, rawTurnId: 'turn', itemId, role: 'assistant', no: 0,
+        text: kind === 'text' ? text : '',
+        blocks: [kind === 'text' ? { kind, text, itemId } : { kind, thinking: text, itemId }],
+        ...(kind === 'text' ? { reply: { state: 'generating' as const, startedAtMs: 1 } } : {}),
+      };
+    });
+    next.splice(next.findIndex(row => row.itemId === 'c'), 0, ...placeholders);
+    cache.update(next, 'newer', protectedRow); publish(); await nextTick();
+  },
+  async streamPlaceholder(kind: 'text' | 'thinking', delta: string) {
+    const next = cache.rows.map(row => row.itemId === 'empty-0'
+      ? appendTranscriptDelta(row, { kind, turn_id: 'turn', item_id: 'empty-0', delta })! : row);
+    cache.update(next, 'newer', protectedRow); publish(); await nextTick();
+  },
   async reasoning(text: string) {
     const next = cache.rows.filter(row => row.itemId !== 'reasoning');
     next.splice(next.findIndex(row => row.itemId === 'c'), 0, reasoning(text));
@@ -65,7 +84,7 @@ Object.assign(window, { toolGroupFixture: {
   },
   async navigateAway() { cache.replace(page([user('away')]), false); publish(); await nextTick(); },
   async revisitTool() { cache.replace(page([tool('c'), user('tail')]), false); publish(); await nextTick(); },
-  async reply() { cache.update([...cache.rows, reply()], 'newer', protectedRow); publish(); await nextTick(); },
+  async reply(paragraphs = 18) { cache.update([...cache.rows, reply('reply', paragraphs)], 'newer', protectedRow); publish(); await nextTick(); },
   async prepend() { cache.extend(page([reply('older'), tool('a'), tool('b')]), 'older', protectedRow); publish(); await nextTick(); },
   async evictOlder() {
     for (let index = 0; index < 7; index++) cache.extend(page([reply(`newer-${index}`, 1)]), 'newer', protectedRow);

@@ -1107,6 +1107,10 @@
         {
           "path": "bot/web_runtime/event_coordinator.py",
           "symbol": "WebRuntimeEventCoordinator.handle_notification"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "isEmptyAssistantTurn"
         }
       ],
       "contract": [
@@ -1510,6 +1514,10 @@
         {
           "path": "web/src/components/toolGroupPresentation.ts",
           "symbol": "createToolGroupExpansion"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "isEmptyAssistantTurn"
         }
       ],
       "contract": [

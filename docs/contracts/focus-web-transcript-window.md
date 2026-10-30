@@ -116,6 +116,14 @@ tools without a later reply start expanded; a lone tool without a retained expan
 stays standalone until a later reply makes it foldable. Headers summarize count and status,
 preferring running, then error, then done.
 
+Tool grouping and transcript rows share the same blank-assistant-content predicate.
+Items containing only blank text/reasoning retain their source-row identity for later
+stream deltas, but mount no content and occupy no height, margins or offscreen placeholder
+space. Metadata such as timestamps does not make an empty item visible. Real content
+restores presentation and measurement under the same identity. Clearing content discards
+its old measurement; folding tools still retains valid measurements. User messages, tools
+and other semantic items are not hidden based on blank prose.
+
 Explicit expansion/collapse overrides the default. Retain choices by stable source-row
 identity across prepends, leader changes, splits and merges. The most recent choice wins
 when differently toggled groups join and propagates to new members. Evicted members lose

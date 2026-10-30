@@ -20,6 +20,14 @@ export interface TranscriptToolGroups {
   readonly members: ReadonlyMap<string, TranscriptToolGroup>;
 }
 
+/** Empty stream targets keep their identity without taking up transcript space. */
+export function isEmptyAssistantTurn(turn: ChatTurn): boolean {
+  return turn.role === 'assistant' && !turn.tools?.length && (turn.blocks
+    ? turn.blocks.every(block => (block.kind === 'text' && !block.text.trim())
+      || (block.kind === 'thinking' && !block.thinking.trim()))
+    : !turn.text.trim() && !turn.thinking?.trim());
+}
+
 /** Annotate source rows without replacing, reparenting, or copying their content. */
 export function projectTranscriptToolGroups(turns: readonly ChatTurn[]): TranscriptToolGroups {
   const leaders = new Map<string, TranscriptToolGroup>();
@@ -55,10 +63,7 @@ export function projectTranscriptToolGroups(turns: readonly ChatTurn[]): Transcr
     if (turn.role === 'assistant' && turn.contentDeferred && turn.tools?.length) {
       if (!run.length) runStart = index;
       run.push(turn);
-    } else if (!(turn.role === 'assistant' && (turn.blocks
-      ? turn.blocks.every(block => (block.kind === 'text' && !block.text.trim())
-        || (block.kind === 'thinking' && !block.thinking.trim()))
-      : !turn.text.trim() && !turn.thinking?.trim() && !turn.tools?.length))) {
+    } else if (!isEmptyAssistantTurn(turn)) {
       flush();
     }
   });

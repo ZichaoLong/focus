@@ -8,11 +8,13 @@ declare global {
   interface Window {
     toolGroupFixture: {
       reset(kind: FixtureKind): Promise<void>;
+      placeholders(kind: 'text' | 'thinking', text: string): Promise<void>;
+      streamPlaceholder(kind: 'text' | 'thinking', delta: string): Promise<void>;
       reasoning(text: string): Promise<void>;
       evictFirstPage(): Promise<void>;
       navigateAway(): Promise<void>;
       revisitTool(): Promise<void>;
-      reply(): Promise<void>;
+      reply(paragraphs?: number): Promise<void>;
       prepend(): Promise<void>;
       evictOlder(): Promise<void>;
       readonly details: string[];
@@ -72,6 +74,66 @@ async function browseTo(page: Page, selector: string) {
 }
 
 describe('tool groups in the real conversation scroll owner', () => {
+  it.each([1000, 390].flatMap(width => (['text', 'thinking'] as const).flatMap(kind =>
+    ['', '\n\n'].map(text => ({ width, kind, text })),
+  )))('keeps blank $kind rows out of layout at width $width (text=$text)', async ({ width, kind, text }) => {
+    await fixture('working', async page => {
+      await page.setViewportSize({ width, height: 600 });
+      await page.locator(tool('c')).waitFor();
+      const gap = async (before: string, after: string) => page.evaluate(({ before, after }) =>
+        document.querySelector(after)!.getBoundingClientRect().top
+        - document.querySelector(before)!.getBoundingClientRect().bottom, { before, after });
+      const originalGap = await gap(row('b'), row('c'));
+      await page.evaluate(({ kind, text }) => window.toolGroupFixture.placeholders(kind, text), { kind, text });
+      expect(await page.locator('.transcript-row').count()).toBe(6);
+      expect(await gap(row('b'), row('c'))).toBeCloseTo(originalGap, 1);
+      const emptyHeights = () => page.locator('.transcript-row[data-turn-id*="empty-"]').evaluateAll(elements =>
+        elements.map(element => element.getBoundingClientRect().height));
+      expect(await emptyHeights()).toEqual([0, 0, 0, 0]);
+
+      await page.evaluate(() => window.toolGroupFixture.reply(80));
+      await page.waitForFunction(() => !document.querySelector('[data-scroll-anchor-id]'));
+      await page.locator(`${row('reply')} .msg`).waitFor();
+      expect(await gap('.transcript-tool-group', row('reply'))).toBeCloseTo(originalGap, 1);
+      expect(await emptyHeights()).toEqual([0, 0, 0, 0]);
+      await browseTop(page);
+      await page.locator(head('b')).click();
+      await page.locator(tool('c')).waitFor();
+      expect(await gap(row('b'), row('c'))).toBeCloseTo(originalGap, 1);
+
+      await page.locator('.panes').hover();
+      await page.mouse.wheel(0, 100_000);
+      await page.locator(tool('c')).waitFor({ state: 'detached' });
+      expect(await emptyHeights()).toEqual([0, 0, 0, 0]);
+      await browseTop(page);
+      await page.locator(tool('c')).waitFor();
+      expect(await gap(row('b'), row('c'))).toBeCloseTo(originalGap, 1);
+      await page.evaluate(() => window.toolGroupFixture.prepend());
+      await page.locator(tool('c')).waitFor();
+      expect(await gap(row('b'), row('c'))).toBeCloseTo(originalGap, 1);
+      expect(await emptyHeights()).toEqual([0, 0, 0, 0]);
+    });
+  }, 30_000);
+
+  it.each(['text', 'thinking'] as const)('reveals streamed %s in the same placeholder and hides it when cleared', async kind => {
+    await fixture('working', async page => {
+      await page.evaluate(kind => window.toolGroupFixture.placeholders(kind, '\n\n'), kind);
+      const placeholder = await page.locator(row('empty-0')).elementHandle();
+      expect(await placeholder!.evaluate(element => element.getBoundingClientRect().height)).toBe(0);
+      await page.evaluate(kind => window.toolGroupFixture.streamPlaceholder(kind, 'New visible content.'), kind);
+      await page.locator(row('empty-0')).getByText('New visible content.', { exact: false }).waitFor();
+      expect(await placeholder!.evaluate(element => element.isConnected && element.getBoundingClientRect().height > 0)).toBe(true);
+      expect(await page.locator(row('empty-0')).count()).toBe(1);
+
+      await page.evaluate(kind => window.toolGroupFixture.placeholders(kind, ''), kind);
+      expect(await placeholder!.evaluate(element => element.isConnected && element.getBoundingClientRect().height === 0)).toBe(true);
+      expect(await page.locator('.tool-group-head').count()).toBe(1);
+      await page.evaluate(kind => window.toolGroupFixture.streamPlaceholder(kind, 'Visible again.'), kind);
+      await page.locator(row('empty-0')).getByText('Visible again.', { exact: false }).waitFor();
+      expect(await placeholder!.evaluate(element => element.isConnected && element.getBoundingClientRect().height > 0)).toBe(true);
+    });
+  }, 30_000);
+
   it.each([false, true])('preserves controls and the latest choice through singleton splits and merges (open=%s)', async open => {
     await fixture('split', async page => {
       await browseTop(page);

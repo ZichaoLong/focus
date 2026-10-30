@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatTurn } from '../src/types';
-import { createToolGroupExpansion, projectTranscriptToolGroups, toolGroupMember, type ToolGroup } from '../src/components/toolGroupPresentation';
+import { createToolGroupExpansion, isEmptyAssistantTurn, projectTranscriptToolGroups, toolGroupMember, type ToolGroup } from '../src/components/toolGroupPresentation';
 
 function tool(id: string, rawTurnId = 'turn'): ChatTurn {
   const value = { id, name: 'Shell', arg: `echo ${id}`, status: 'ok' as const };
@@ -14,6 +14,21 @@ function prose(id: string, text: string, kind: 'text' | 'thinking' = 'text'): Ch
 function group(members: string[], collapsedByDefault = true): ToolGroup { return { members, collapsedByDefault }; }
 
 describe('transcript tool group presentation', () => {
+  it('ignores blank prose and reply metadata without hiding tools or other roles', () => {
+    const blank: ChatTurn = { ...prose('empty', ' \n '),
+      blocks: [{ kind: 'text', text: ' \n ' }, { kind: 'thinking', thinking: '\n\n' }],
+      reply: { state: 'generating', startedAtMs: 1 } };
+    expect(isEmptyAssistantTurn(blank)).toBe(true);
+    expect(isEmptyAssistantTurn({ ...blank, blocks: undefined, thinking: '\n' })).toBe(true);
+    expect(isEmptyAssistantTurn({ ...tool('a'), blocks: [] })).toBe(false);
+    expect(isEmptyAssistantTurn({ ...tool('a'), tools: undefined })).toBe(false);
+    for (const role of ['user', 'compaction', 'cron'] as const) {
+      expect(isEmptyAssistantTurn({ ...blank, role })).toBe(false);
+    }
+    expect(isEmptyAssistantTurn(prose('reasoning', 'Checking', 'thinking'))).toBe(false);
+    expect(isEmptyAssistantTurn(prose('reply', 'Reply'))).toBe(false);
+  });
+
   it('annotates independent source rows and seals them only after visible replies', () => {
     const rows = [tool('a'), prose('empty', '', 'thinking'), tool('b')];
     const initial = projectTranscriptToolGroups(rows);
