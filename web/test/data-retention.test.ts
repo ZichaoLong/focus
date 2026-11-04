@@ -6,6 +6,7 @@ import type { FocusWebApiPort } from '../src/focus/api';
 import { useInputHistory } from '../src/composables/useInputHistory';
 import { STORAGE_KEYS, draftStorageKey } from '../src/lib/storage';
 import { pruneBrowserData, setBrowserRetentionDays, protectDraft, touchDraft, recordHistoryTime, TIMING_STORAGE_KEY } from '../src/lib/dataRetention';
+import { createPromptTimingStore } from '../src/focus/promptTimingStore';
 
 const day = 86_400_000, now = 200 * day;
 function memoryStorage(): Storage {
@@ -60,6 +61,50 @@ it('uses the selected period for browser timing observations and fails visibly o
   expect(pruneBrowserData()).toBe(1);
   vi.stubGlobal('localStorage', { getItem: () => { throw new Error('unavailable'); } });
   expect(() => pruneBrowserData()).toThrow();
+});
+
+function timingApi() {
+  return { clientId: 'doc', syncPromptTimings: vi.fn(async () => ({ accepted: true })),
+    readPromptTiming: vi.fn(async () => ({ record: null })), listPromptTimings: vi.fn(async () => ({ records: [] })) };
+}
+
+it('filters expired timing lookups and drops stale evidence at the next sync or submission', async () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const saved = JSON.stringify([{ submission_id: id, thread_id: 'thread', submitted_at_ms: now - 8 * day,
+    browser: {}, clientId: 'old-doc', synced: false, version: 1 }]);
+  localStorage.setItem(TIMING_STORAGE_KEY, saved);
+  const remote = timingApi(), store = createPromptTimingStore(remote);
+  expect(store.local(id)?.submitted_at_ms).toBe(now - 8 * day);
+  setBrowserRetentionDays(7);
+  expect(store.local(id)).toBeUndefined();
+  expect(localStorage.getItem(TIMING_STORAGE_KEY)).toBe(saved);
+  await store.sync();
+  expect(remote.syncPromptTimings).not.toHaveBeenCalled();
+  expect(store.records.value).toEqual([]);
+  const freshId = '22222222-2222-4222-8222-222222222222';
+  await store.submit(freshId, 'thread', async () => ({ status: 'succeeded' }));
+  await store.sync();
+  expect(store.local(id)).toBeUndefined();
+  expect(store.local(freshId)?.browser.result).toBe('succeeded');
+  expect(JSON.parse(localStorage.getItem(TIMING_STORAGE_KEY)!).map((row: { submission_id: string }) => row.submission_id)).toEqual([freshId]);
+});
+
+it('keeps in-flight timing evidence available across expiry until the submission settles', async () => {
+  setBrowserRetentionDays(7);
+  vi.setSystemTime(now - 8 * day);
+  const id = '11111111-1111-4111-8111-111111111111';
+  const remote = timingApi(), store = createPromptTimingStore(remote);
+  let finish!: (result: { status: string }) => void;
+  const pending = store.submit(id, 'thread', () => new Promise<{ status: string }>(resolve => { finish = resolve; }));
+  try {
+    vi.setSystemTime(now);
+    expect(store.local(id)?.submitted_at_ms).toBe(now - 8 * day);
+    expect(pruneBrowserData()).toBe(0);
+  } finally { finish({ status: 'succeeded' }); await pending; }
+  await store.sync();
+  expect(store.local(id)).toBeUndefined();
+  expect(JSON.parse(localStorage.getItem(TIMING_STORAGE_KEY)!)).toEqual([]);
+  expect(remote.syncPromptTimings).not.toHaveBeenCalled();
 });
 
 it('rejects invalid retention and cleanup responses', () => {

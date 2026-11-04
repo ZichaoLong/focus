@@ -149,3 +149,88 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
     throw new Error(`${String(error)}\nBrowser errors: ${JSON.stringify(errors)}\nRequests: ${JSON.stringify(requests)}\nPage: ${(await page.locator('body').innerText()).slice(0, 4000)}`);
   } finally { await page.close(); }
 }, 45_000);
+
+it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ width, navigate }))))(
+  'keeps old prompts without submission times interactive after $navigate navigation at width $width', async ({ width, navigate }) => {
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width, height: 900 } });
+    page.setDefaultTimeout(10_000);
+    const errors: string[] = [], timingReads: string[] = [], historyReads: string[] = [];
+    const time = 1_790_000_000_123;
+    const source = { ...thread(), source: 'cli', ephemeral: false, session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
+    const oldPrompts = [id, missingId].map((submissionId, index) => ({
+      id: `old-${index}`, rawTurnId: `old-turn-${index}`, itemId: `old-item-${index}`, role: 'user', no: index + 1,
+      text: `Old prompt ${index + 1}`, clientUserMessageId: `focus-web:${submissionId}`, codexRecordedAtMs: time + index * 1000,
+    }));
+    const latestPrompt = { id: 'latest', rawTurnId: 'latest-turn', itemId: 'latest-item', role: 'user', no: 3,
+      text: 'Latest prompt', promptTiming: { submissionId: steeredId, submittedAtMs: time + 2000 } };
+    const reply = (id: string) => ({ id, rawTurnId: `${id}-turn`, itemId: `${id}-item`, role: 'assistant', no: 1,
+      text: Array.from({ length: 40 }, (_, index) => `Reply paragraph ${index + 1}.`).join('\n\n') });
+    page.on('pageerror', error => errors.push(error.message));
+    await page.routeWebSocket('**/api/events?*', socket => {
+      socket.onMessage(message => { if (message === 'ping') socket.send('pong'); });
+      setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 })), 20);
+    });
+    await page.route('**/api/**', async route => {
+      const request = route.request(), { pathname: path, searchParams: query } = new URL(request.url());
+      let payload: unknown;
+      if (path === '/api/client/register') payload = registration();
+      else if (path === '/api/meta') payload = { ...meta, revision: 1,
+        writer_profile: { selected_thread_id: 'thread-1', working_dir: '/work', scope_generation: 1 } };
+      else if (path === '/api/settings/next-turn') payload = { runtime_epoch: 'epoch-1', revision: 1, next_turn_settings: meta.next_turn_settings };
+      else if (path === '/api/operator-status') payload = { status: 'ok', observed_at: 1, poll_after_seconds: 60, warnings: [], runtime_loop: {} };
+      else if (path === '/api/threads') payload = { runtime_epoch: 'epoch-1', revision: 1, scope: query.get('scope') ?? 'global', archived: false, limit: 100, truncated: false, threads: [source] };
+      else if (path.endsWith('/transcript')) {
+        const prompts = query.get('view') === 'prompts';
+        const old = query.get('item_id')?.startsWith('old-item') || query.get('cursor') === 'older';
+        if (!prompts) historyReads.push(old ? 'old' : 'latest');
+        payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: 'thread-1', turn_id: query.get('turn_id'),
+          view: prompts ? 'prompts' : 'transcript', target_pending: false,
+          turns: prompts ? [...oldPrompts, latestPrompt] : old ? [...oldPrompts, reply('old-reply')] : [latestPrompt, reply('latest-reply')],
+          older_cursor: prompts || old ? null : 'older', newer_cursor: old ? 'newer' : null, full_text: null };
+      } else if (path.startsWith('/api/prompt-timings/')) { timingReads.push(path); payload = { record: null }; }
+      else if (path === '/api/threads/thread-1' || path === '/api/threads/thread-1/open') payload = {
+        ...snapshot('none', 'thread-1', 1), revision: 1, active_turn_context: null, thread: source,
+      };
+      else { await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: { code: 'unavailable', message: path } }) }); return; }
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(payload) });
+    });
+    try {
+      await page.goto(url);
+      const pane = page.locator('.panes');
+      await page.locator('.transcript-row[data-turn-id="latest-reply"] .md').waitFor();
+      await page.locator('textarea:visible').first().fill('Draft survives history navigation');
+      if (navigate === 'prompt') {
+        await page.getByRole('button', { name: 'Prompt history', exact: true }).click();
+        await page.getByRole('menuitem', { name: /Old prompt 1/ }).click();
+      } else {
+        await pane.hover();
+        await page.mouse.wheel(0, -10_000);
+        await expect.poll(() => historyReads.includes('old')).toBe(true);
+        await page.locator('.transcript-row[data-turn-id="old-0"]').waitFor({ state: 'attached' });
+        await page.mouse.wheel(0, -10_000);
+      }
+      const first = page.locator('.transcript-row[data-turn-id="old-0"] .prompt-time-label');
+      await first.waitFor();
+      await page.locator('.transcript-row[data-turn-id="old-1"] .prompt-time-label').waitFor();
+      expect(historyReads).toContain('old');
+      expect(timingReads).toEqual([]);
+      await first.click();
+      const detail = page.locator('.prompt-time-detail');
+      await detail.getByText(/Codex recorded input:/).waitFor();
+      await expect.poll(() => timingReads).toEqual([`/api/prompt-timings/${id}`]);
+      expect(await detail.innerText()).not.toContain('Browser submitted:');
+      await first.click();
+      await pane.hover();
+      const top = await pane.evaluate(element => element.scrollTop);
+      await page.mouse.wheel(0, 160);
+      await expect.poll(() => pane.evaluate(element => element.scrollTop)).toBeGreaterThan(top);
+      await page.getByRole('button', { name: 'Prompt history', exact: true }).click();
+      await page.getByRole('menuitem', { name: /Latest prompt/ }).click();
+      await page.locator('.transcript-row[data-turn-id="latest"] .prompt-time-label').waitFor();
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft survives history navigation');
+      expect(errors).toEqual([]);
+    } catch (error) {
+      throw new Error(`${String(error)}\nBrowser errors: ${JSON.stringify(errors)}\nHistory reads: ${JSON.stringify(historyReads)}\nPage: ${(await page.locator('body').innerText()).slice(-4000)}`);
+    } finally { await page.close(); }
+  }, 45_000,
+);

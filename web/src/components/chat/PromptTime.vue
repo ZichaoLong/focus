@@ -9,7 +9,8 @@ const props = defineProps<{ turn: Pick<ChatTurn, 'promptTiming' | 'codexRecorded
 const { t } = useI18n();
 const reader = inject(promptTimingKey, null);
 const id = computed(() => props.turn.promptTiming?.submissionId ?? props.turn.clientUserMessageId?.slice(10) ?? '');
-const submitted = computed(() => props.turn.promptTiming?.submittedAtMs ?? reader?.local(id.value)?.submittedAtMs ?? detail.value?.submittedAtMs);
+const submitted = computed(() => props.turn.promptTiming?.submittedAtMs
+  ?? (id.value ? reader?.local(id.value)?.submittedAtMs : undefined) ?? detail.value?.submittedAtMs);
 const time = computed(() => submitted.value ?? props.turn.codexRecordedAtMs);
 const expanded = ref(false), loading = ref(false), error = ref(false), copied = ref(false);
 const detail = ref<PromptTimingView | null>(null);

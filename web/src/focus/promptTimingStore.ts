@@ -99,7 +99,9 @@ export function createPromptTimingStore(api: TimingApi) {
     records, durable, revision, changedId, submit, sync,
     disconnected() { disconnected += 1; },
     changed(id: string) { changedId.value = id; revision.value += 1; },
-    local(id: string) { merge(); return records.value.find(row => row.submission_id === id); },
+    // Called from computed readers: expiry filtering must not publish state.
+    local(id: string) { return records.value.find(row => row.submission_id === id
+      && (activeTimingIds.has(row.submission_id) || retainedTimestamp(row.submitted_at_ms))); },
     read: (id: string) => api.readPromptTiming(id),
     list: (threadId: string) => api.listPromptTimings(threadId),
   };

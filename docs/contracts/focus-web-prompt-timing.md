@@ -61,6 +61,11 @@ degrades to memory with a visible hint and never blocks input. Completion, conne
 metadata. Incomplete attempts left by reload and records from replaced documents are also eligible. Incomplete is not
 failed and does not invent a received result.
 
+Local timing lookups during rendering only read current records and filter by retention, preserving in-flight submissions.
+They do not reread storage, merge records or publish reactive updates. Submission, sync and other state-update entry points
+perform merging and expiry eviction, preventing old messages without submission times from repeatedly rerendering each
+other. Messages without a submission ID do not query local submission records.
+
 `WebPromptTimingStore` owns `data_dir/web_prompt_timing.sqlite` on the service machine solely to preserve display evidence
 across pages, devices and process restarts. `WebPromptTimingRecorder` writes Focus observations on a separate bounded
 worker; the Gateway sync interface writes browser fields only. Ordinary transcript reads may persist an actually

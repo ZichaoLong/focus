@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { watch } from 'vue';
 import { createPromptTimingStore } from '../src/focus/promptTimingStore';
 import { decodePromptTiming, isPromptFirstOutput, type PromptTimingRecord } from '../src/focus/promptTimingTypes';
 import { FocusApiError } from '../src/focus/types';
@@ -16,6 +17,18 @@ beforeEach(() => {
   vi.stubGlobal('localStorage', { getItem: (k: string) => values.get(k) ?? null, setItem: (k: string, v: string) => values.set(k, v) });
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+it('reads missing local evidence without notifying other timing readers', () => {
+  const store = createPromptTimingStore(api());
+  const changed = vi.fn();
+  const stop = watch(store.records, changed, { flush: 'sync' });
+  const reader = createPromptTimingReader(store, key => key);
+  try {
+    expect(reader.local(id)).toBeUndefined();
+    expect(reader.local('22222222-2222-4222-8222-222222222222')).toBeUndefined();
+    expect(changed).not.toHaveBeenCalled();
+  } finally { stop(); }
+});
 
 it('captures before fetch, retains unknown outcome after reload, and syncs metadata only', async () => {
   const remote = api(), store = createPromptTimingStore(remote);
