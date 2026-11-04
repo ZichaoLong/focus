@@ -48,6 +48,11 @@ that prompt for editing. That turn and all later turns leave the current history
 a running ordinary turn can be interrupted. File changes and goal state keep upstream semantics. Full fork in the session list remains
 an independent operation that preserves the source history.
 
+The button help must explain that this turn and later history leave the current thread and Focus provides no undo. To preserve
+the full history, fork the session first, then revert and edit in the new branch. This describes Focus's available operations;
+it neither claims immediate physical deletion of old upstream rollouts nor promises permanent retention or recovery of those records.
+Keep the warnings about interrupting running work, unchanged files, and support for only the first plain-text prompt in each turn.
+
 First GET `/api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`. The server reads the selected turn's first userMessage through
 generation-pinned `thread/items/list`, checks the actual item ID, and returns `{thread_id,turn_id,item_id,text}`. The read is limited to
 five seconds and advancing cursors. Never infer coordinates or original text from display numbers, synthetic IDs or clipped previews.

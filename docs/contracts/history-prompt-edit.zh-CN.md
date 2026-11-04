@@ -50,6 +50,10 @@ revert 的内部 reload 不调用 resume 的 idle-goal continuation；goal 的�
 供用户编辑。目标轮及其后续轮不再属于该线程的当前有效历史；其他打开该线程的前端同样受影响，运行中的普通 turn
 可能被中断。文件改动和 goal 状态遵循上游，不由 Focus 回滚或取消。线程列表的完整 fork 是独立操作，仍保留来源历史。
 
+按钮提示应明确：此轮及后续历史将从当前线程移除，Focus 不提供撤销；如需保留完整历史，应先分叉会话，
+再在新分支中回退并编辑。这描述的是 Focus 的操作能力，不表示上游立即物理删除旧 rollout，也不承诺底层
+记录永久保留或可恢复。提示继续说明可能中断运行中的工作、不回滚文件及每轮首条纯文本 prompt 的限制。
+
 浏览器先请求 `GET /api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`。
 服务通过同一 connection generation 的 `thread/items/list` 读取目标轮首条 `userMessage`，核对真实 item ID 并返回
 `{thread_id,turn_id,item_id,text}`。读取最多 5 秒，cursor 必须前进；不使用显示序号、synthetic ID 或截断 preview。

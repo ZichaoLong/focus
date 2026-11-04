@@ -47,7 +47,7 @@ export default {
   },
   runtimeRecovered: '瞬时异常后已收到后续进展',
   revertAndEdit: '回退并编辑',
-  revertAndEditHelp: '将当前线程回退到此轮之前，并恢复原 prompt。此轮及后续历史将被移出，可能中断正在运行的工作，不回滚文件。仅支持每轮首条纯文本 prompt。',
+  revertAndEditHelp: '将当前线程回退到此轮之前，并恢复原 prompt。此轮及后续历史将从当前线程移除，Focus 不提供撤销。如需保留完整历史，请先分叉会话，再在新分支中回退并编辑。可能中断正在运行的工作，不回滚文件。仅支持每轮首条纯文本 prompt。',
   historyEditPromptPending: '原 prompt 已保留。请确认当前历史，再清空输入框并恢复编辑；尚未发送。',
   originalPrompt: '查看完整原 prompt',
   restoreHistoryEditPrompt: '恢复到输入框',

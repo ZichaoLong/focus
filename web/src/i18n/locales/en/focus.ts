@@ -47,7 +47,7 @@ export default {
   },
   runtimeRecovered: 'Progress received after transient error',
   revertAndEdit: 'Revert and edit',
-  revertAndEditHelp: 'Revert this conversation before this turn and restore its prompt. Removes this turn and later history, may interrupt running work, and does not undo file changes. Supports the first plain-text prompt in each turn.',
+  revertAndEditHelp: 'Revert this conversation before this turn and restore its prompt. This turn and later history are removed from the current thread; Focus does not provide undo. To preserve the full history, fork the session first, then revert and edit in the new branch. May interrupt running work and does not undo file changes. Supports the first plain-text prompt in each turn.',
   historyEditPromptPending: 'The original prompt is retained. Check the current history, then clear the composer to restore and edit it. Nothing has been sent.',
   originalPrompt: 'View complete original prompt',
   restoreHistoryEditPrompt: 'Restore to composer',
