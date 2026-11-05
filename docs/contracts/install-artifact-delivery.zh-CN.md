@@ -101,12 +101,25 @@ checkout 源码或另一旧 Release。
 
 ## 5. 安装事务与网络边界
 
+目标 wheel 中的 `bot/installation/python-runtime.json` 是完整 CPython 与 uv 下载工具版本的
+唯一 policy。`bot/installation/python_runtime.py` 在取得停服 admission 前，准备并验证
+`<data-root>/.python/cpython-<python-version>-uv-<uv-version>/` 下的完整运行时。uv 负责平台选择、
+下载校验和解包；Focus 不复用外部 Python 的标准库，也不在应用阶段下载解释器。受管 `.venv`
+由该解释器显式创建，并校验 `sys.base_prefix` 与标准库都位于专属目录。
+
+匹配固定版本的 uv 可复用 PATH 中的工具；否则仅在临时 bootstrap 环境中下载对应 uv wheel，
+取出其可执行文件，使用后删除。uv 不是 Focus 运行依赖。HTTP(S) 代理、package index 和证书
+authority 继续生效；`PYTHON*`、`UV_*` 和 uv 配置文件不能改变运行时的版本、构建或安装根目录。
+现有完整运行时可离线复用；不完整的运行时拒绝原地修复，以免影响仍引用它的进程。
+`.python` 与可重建的 `.venv`、可清理的更新 staging 相互独立；`uninstall` 保留此运行时缓存，
+`purge` 随 data root 删除它。目标缺少该 policy 时在停服前拒绝，不能悄悄回退到系统/Conda Python。
+
 远端 Release 查询、channel manifest 与 bundle 下载，以及本地或远端 bundle 的完整验证，都发生在 Focus
 取得 offline-maintenance admission、停止 service 或修改受管 `.venv` 之前。前置阶段失败时，当前安装和
 service 状态保持不变。
 
 验证成功后，安装器才进入既有受管安装事务：核验所有实例 idle，每次删除并重建 Focus 专有的
-CPython 3.11+ `.venv`，再以 bundle 内 `requirements.lock` 为 constraint 对已验证 wheel 执行 force
+由专属 CPython 创建的 `.venv`，再以 bundle 内 `requirements.lock` 为 constraint 对已验证 wheel 执行 force
 reinstall。pip 和安装后的一致性检查均由隔离解释器运行，且安装子进程不继承 `PYTHON*` 导入设置；系统、
 Conda、用户 site-packages、当前目录和 `PYTHONPATH` 中的包不属于受管环境。安装器保留用户的 index、proxy
 和证书 authority，但在写入依赖前拒绝有效的 pip `target`、`prefix`、`root` 或 `user` 配置，避免把包
@@ -125,7 +138,7 @@ GitHub latest Release 或 wheel version 反推 channel/build。
 
 stable 需要访问 GitHub；标准 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` 会由 Python 网络栈使用。
 `--artifact` 只消除 Focus bundle 的 GitHub 下载，pip 仍可能按自身 index、proxy、证书和 cache 配置下载
-第三方依赖。bundle 不含 Python 解释器、第三方 wheelhouse 或第三方 artifact hashes，因此用户可以先单独
+第三方依赖，尚未准备的专属 Python/uv 也可能需要联网。bundle 不含 Python 解释器、第三方 wheelhouse 或第三方 artifact hashes，因此用户可以先单独
 下载 ZIP 再转移到目标机，但本项目不承诺完整零网络安装。
 
 ## 6. 构建与发布是两件事

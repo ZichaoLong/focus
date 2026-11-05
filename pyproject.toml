@@ -29,6 +29,7 @@ include = ["bot*"]
 version = {attr = "bot.version.__version__"}
 
 [tool.setuptools.package-data]
+"bot.installation" = ["python-runtime.json"]
 "bot.install_template_data" = ["*.example"]
 "bot.web_assets" = ["dist/**", "THIRD_PARTY_NOTICES.md"]
 "bot.managed_skills.feishu_send_image" = ["skill/SKILL.md", "skill/agents/openai.yaml"]

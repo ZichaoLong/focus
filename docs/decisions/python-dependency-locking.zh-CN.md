@@ -51,7 +51,8 @@ bash scripts/lock-python-dependencies.sh --upgrade
 忽略 transitive diff。脚本拒绝其他参数，并把稳定的仓库入口写入生成文件头，避免默认模式与升级模式
 仅因命令行头不同而产生伪漂移。
 
-`uv` 只是生成工具，不是 Focus 的运行依赖。开发机缺少精确版本时，脚本会在写 lock 前失败；CI 负责
+这里固定的 `uv` 版本只用于生成依赖锁，不是 Focus 的运行依赖；专属 Python 的下载工具版本由安装 policy 独立固定。
+开发机缺少精确版本时，脚本会在写 lock 前失败；CI 负责
 安装同一精确版本并执行默认模式。
 
 ## 4. 安装与 CI 边界
@@ -77,15 +78,15 @@ staging 目录固定到同一临时 root；它不删除或改写 checkout-local 
 archive metadata，payload authority 仍是 source manifest 中的路径与字节。安装器只消费 bundle 中已经验证的
 wheel，不保留第二条源码安装路径。
 
-公开安装入口的 bootstrap Python 必须是带 `venv` / `ensurepip` 的 CPython 3.11+。调用者的系统
-Python / Conda 环境不需要预装 pip package、Focus 运行依赖、`setuptools` 或 `wheel`；安装器在机器级
-FOCUS data root 的固定 `.venv` 中引导 pip 并安装这些内容。该目录完全由 Focus 所有，并在每次安装或 repair
-时重建；因此已删除的旧依赖、手工安装的外来包、开放 system site-packages 的配置和 `.pth` 注入都不会被
-带入新环境。本次选定的 CPython 3.11+ 只提供解释器、标准库与 `venv` / `ensurepip` bootstrap，不授权读取其
-系统、Conda 或用户 package。Unix 入口会 probe 候选解释器的实现与版本，
-也接受 `FOCUS_INSTALL_PYTHON=/path/to/python` 显式指定。若 `venv` 创建阶段的 ensurepip subprocess
-失败，安装器会提示 Debian/Ubuntu 常见的 `python3-venv` / versioned venv package；权限、磁盘空间等
-文件系统错误保持原始异常，不伪装成缺少 ensurepip。
+公开安装入口的 bootstrap Python 必须是带 `venv` / `ensurepip` 的 CPython 3.11+，不需要预装
+Focus 依赖。Unix 入口 probe 候选解释器，也接受 `FOCUS_INSTALL_PYTHON=/path/to/python`。
+该解释器只负责引导安装；停服前按目标 wheel 的 policy 准备完整专属 CPython，正式 `.venv`
+由专属解释器创建。解释器、标准库及后续更新不再依赖 bootstrap Python 的保留；完整运行时的
+版本、目录、工具与网络边界见 [安装制品合同](../contracts/install-artifact-delivery.zh-CN.md#5-安装事务与网络边界)。
+机器级 Focus data root 的固定 `.venv` 在每次安装或 repair 时重建，因此旧依赖、外来 package、
+system site-packages 和 `.pth` 注入不会带入新环境。安装入口不得在将被替换的生产 `.venv` 内执行；
+浏览器更新在已经验证的独立 preflight 环境中执行安装。旧安装的两步迁移见
+[浏览器更新合同](../contracts/focus-web-update.zh-CN.md#3-应用重启与结果)。
 
 `bot/public_command_contract.py` 是四个稳定公开入口（`focus`、`focusd`、`focusctl`、`fcodex`）的命令名与
 Python module catalog。`bot/managed_python.py` 是已安装 module 的唯一隔离 argv 投影：wrapper、completion

@@ -1790,6 +1790,10 @@
         {
           "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
           "heading": "实时更新、预算与重同步"
+        },
+        {
+          "path": "docs/contracts/focus-web-update.zh-CN.md",
+          "heading": "2. 检查与预检"
         }
       ],
       "focused-test": [
@@ -1806,7 +1810,8 @@
             "tests/test_web_gateway_request_decoder.py",
             "tests/test_web_update_controller.py",
             "tests/web_runtime/test_thread_history_gateway.py",
-            "tests/web_runtime/test_prompt_timing.py"
+            "tests/web_runtime/test_prompt_timing.py",
+            "tests/test_web_update_worker.py"
           ]
         },
         {
@@ -3195,6 +3200,69 @@
         "web-dependency-direction",
         "web-typecheck",
         "web-wire"
+      ]
+    },
+    "focus-installation": {
+      "entry": [
+        {
+          "path": "bot/installation/installer.py",
+          "symbol": "main"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/installation/installer.py",
+          "symbol": "install_bundle_body"
+        },
+        {
+          "path": "bot/installation/python_runtime.py",
+          "symbol": "ensure_python"
+        },
+        {
+          "path": "bot/installation/python_runtime.py",
+          "symbol": "runtime_policy"
+        },
+        {
+          "path": "bot/installation/offline.py",
+          "symbol": "install_offline"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/install-artifact-delivery.zh-CN.md",
+          "heading": "5. 安装事务与网络边界"
+        },
+        {
+          "path": "docs/decisions/python-dependency-locking.zh-CN.md",
+          "heading": "4. 安装与 CI 边界"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_install.py",
+            "tests/test_python_runtime.py",
+            "tests/test_web_update_worker.py",
+            "tests/build_support/test_install_bundle.py",
+            "tests/build_support/test_python_distribution.py"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_install_lifecycle.py",
+            "tests/test_web_update_controller.py",
+            "tests/test_managed_python.py"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "import-cycles",
+        "source-context"
       ]
     }
   }

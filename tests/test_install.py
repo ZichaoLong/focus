@@ -40,6 +40,15 @@ class InstallTests(unittest.TestCase):
         )
         self.transaction_factory = self.transaction_patcher.start()
         self.addCleanup(self.transaction_patcher.stop)
+        self.runtime_python = pathlib.Path("/focus-test-python")
+        for target, value in (
+            ("runtime_policy", object()),
+            ("ensure_python", self.runtime_python),
+            ("verify_python", {}),
+        ):
+            patcher = patch(f"bot.installation.installer.{target}", return_value=value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     @staticmethod
     def _write_fake_python(path: pathlib.Path, *, supported: bool) -> None:
@@ -237,17 +246,14 @@ class InstallTests(unittest.TestCase):
         self.assertIn("FOCUS_INSTALL_PYTHON", result.stderr)
         self.assertIn("CPython 3.11+", result.stderr)
 
-    def test_recreate_venv_explains_ensurepip_bootstrap_failure(self) -> None:
+    def test_recreate_venv_propagates_dedicated_runtime_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
             failure = subprocess.CalledProcessError(1, ["python", "-m", "ensurepip"])
-            with patch("bot.installation.installer.venv.EnvBuilder.create", side_effect=failure):
-                with self.assertRaises(SystemExit) as raised:
-                    install._recreate_venv(venv_dir)
-        self.assertIs(raised.exception.__cause__, failure)
-        self.assertIn("venv/ensurepip", str(raised.exception))
-        self.assertIn("Debian/Ubuntu", str(raised.exception))
-        self.assertIn("python3-venv", str(raised.exception))
+            with patch("bot.installation.installer.create_venv", side_effect=failure):
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    install._recreate_venv(venv_dir, self.runtime_python)
+        self.assertIs(raised.exception, failure)
 
     def test_recreate_venv_does_not_relabel_filesystem_failures(self) -> None:
         for failure in (
@@ -257,19 +263,18 @@ class InstallTests(unittest.TestCase):
             with self.subTest(errno=failure.errno):
                 with tempfile.TemporaryDirectory() as tmpdir:
                     venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
-                    with patch("bot.installation.installer.venv.EnvBuilder.create", side_effect=failure):
+                    with patch("bot.installation.installer.create_venv", side_effect=failure):
                         with self.assertRaises(type(failure)) as raised:
-                            install._recreate_venv(venv_dir)
+                            install._recreate_venv(venv_dir, self.runtime_python)
                 self.assertIs(raised.exception, failure)
 
-    def test_recreate_venv_explicitly_disables_system_site_packages(self) -> None:
+    def test_recreate_venv_uses_the_prepared_interpreter(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             venv_dir = pathlib.Path(tmpdir) / "data" / ".venv"
-            with patch("bot.installation.installer.venv.EnvBuilder") as builder:
-                install._recreate_venv(venv_dir)
+            with patch("bot.installation.installer.create_venv") as create:
+                install._recreate_venv(venv_dir, self.runtime_python)
 
-        builder.assert_called_once_with(with_pip=True, system_site_packages=False)
-        builder.return_value.create.assert_called_once_with(venv_dir)
+        create.assert_called_once_with(self.runtime_python, venv_dir)
 
     def test_venv_python_probe_requires_cpython_311_or_newer(self) -> None:
         venv_dir = pathlib.Path("/tmp/focus-venv")
@@ -488,7 +493,8 @@ class InstallTests(unittest.TestCase):
             stale_payload = venv_dir / "foreign-package.pth"
             stale_payload.write_text("/opt/ascend/python\n", encoding="utf-8")
 
-            def recreate(target: pathlib.Path) -> None:
+            def recreate(target: pathlib.Path, python: pathlib.Path) -> None:
+                self.assertEqual(python, self.runtime_python)
                 install_steps.append("recreate")
                 shutil.rmtree(target)
                 target.mkdir(parents=True)
@@ -574,6 +580,17 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(installed_build.build_id, "build-1")
         self.assertEqual(installed_build.source_revision, "a" * 40)
 
+    def test_runtime_preparation_failure_happens_before_service_admission(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            bundle = self._bundle(pathlib.Path(raw))
+            with patch("bot.installation.installer._resolved_install_bundle", return_value=self._yield_bundle(bundle)):
+                with patch("bot.installation.installer.ensure_python", side_effect=RuntimeError("runtime download failed")):
+                    with patch("bot.installation.installer._recreate_venv") as recreate:
+                        with self.assertRaisesRegex(RuntimeError, "runtime download failed"):
+                            install.main(["--artifact", "focus.zip"])
+        recreate.assert_not_called()
+        self.transaction_factory.assert_not_called()
+
     def test_main_rejects_rebuilt_venv_with_incompatible_python(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = pathlib.Path(tmpdir)
@@ -581,7 +598,8 @@ class InstallTests(unittest.TestCase):
             data_root = root / "data"
             venv_python = install._venv_python_path(data_root / ".venv")
 
-            def recreate(target: pathlib.Path) -> None:
+            def recreate(target: pathlib.Path, python: pathlib.Path) -> None:
+                self.assertEqual(python, self.runtime_python)
                 target.mkdir(parents=True)
                 (target / "pyvenv.cfg").write_text(
                     "home = /old-python\n",
@@ -611,7 +629,7 @@ class InstallTests(unittest.TestCase):
             installed_build_after_failure = read_installed_build_identity(
                 data_root / "_global"
             )
-        recreate_venv.assert_called_once_with(data_root / ".venv")
+        recreate_venv.assert_called_once_with(data_root / ".venv", self.runtime_python)
         pip_install.assert_not_called()
         self.assertEqual(self.install_transaction.events, ["enter", "abort"])
         self.assertIsNone(installed_build_after_failure)

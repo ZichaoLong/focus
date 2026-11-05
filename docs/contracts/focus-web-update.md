@@ -36,6 +36,14 @@ before any shutdown:
 - free bytes, inodes, temporary-directory, and bundle-staging checks; and
 - Focus wheel, dependency-lock, and source-revision consistency checks.
 
+Python preflight reads the target wheel's complete-runtime policy and prepares
+that version in the permanent `.python` cache. Dependency downloads, offline trial
+installation, `pip check`, core-module imports, and CLI startup checks all use the
+target Python. Its base interpreter and standard library must belong to Focus;
+compatibility with the old environment is not sufficient evidence. Only then is
+the operation `ready`, with `python_runtime` in the existing `preflight` object.
+Runtime-cache preparation failures do not change the old service.
+
 At the start of each check, the updater resolves one Node/npm toolchain and reuses
 that validated pair for every Web command in the check. Resolution prefers an
 explicit stable toolchain path (`FOCUS_NODE_BIN`/`FOCUS_NPM_BIN`) and the updater
@@ -80,6 +88,21 @@ An `unknown` apply operation remains blocked for manual inspection and cannot be
 by a new check.
 
 ## 3. Apply, restart, and result
+
+The apply transient unit runs from the `preflight-venv` containing the tested
+target Focus, not the production `.venv` it will replace. Before shutdown it
+revalidates the bundle digest, wheelhouse, dedicated runtime, and execution
+environment. Production `.venv` is created with that same target Python; apply
+does not download runtimes or resolve another interpreter. An old `ready` record
+without dedicated-Python preflight evidence requires a fresh check.
+
+The first browser update of a legacy installation still runs the old updater: it
+installs the new code while preserving the original Python. New-version startup
+therefore does not require migration to have finished. After reloading the page,
+check and apply the same full commit again; the new updater performs migration.
+Do not add network migration to service startup, bootstrap-install, or the old
+updater's stopped-service phase. After the second update, cold starts and later
+updates rely on the dedicated Python rather than the original bootstrap Python.
 
 `POST /api/update/apply` requires the ready operation id (shown separately and copyable in
 the browser) and a second user confirmation.

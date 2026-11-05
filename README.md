@@ -34,7 +34,7 @@
 
 ### 安装环境
 
-- 带 `venv` / `ensurepip` 的 CPython 3.11+
+- 带 `venv` / `ensurepip` 的 CPython 3.11+，作为首次安装或修复的 bootstrap；安装后使用 Focus 专属 Python
 - Linux 使用可用的 `systemd --user`，macOS 使用 launchd，Windows 使用 Task Scheduler
 - 本机已安装 `codex` CLI，且 `codex --help` 可正常执行
 - 已在飞书开放平台创建应用，拿到 `app_id` 与 `app_secret`
@@ -51,6 +51,12 @@ bash install.sh
 默认从本仓库 GitHub Releases 下载最新 stable bundle。已下载或本地 bundle
 （`--artifact`，无需解压）以及代理边界见 `bash install.sh --help`。
 如需指定解释器，可执行 `FOCUS_INSTALL_PYTHON=/path/to/python3.13 bash install.sh`。
+
+该变量选择安装器的 bootstrap Python。安装器会在停服前准备一份完整的专属 CPython，
+存放在 Focus data root 的 `.python/`，再用它重建 `.venv`；日常运行不依赖 bootstrap
+Python 的解释器或标准库。目标版本和下载工具版本由 wheel 内的 `python-runtime.json` 固定。
+旧安装通过浏览器迁移时，对同一提交更新两次：第一次安装新更新器并刷新页面，第二次执行
+专属 Python 的预检和迁移。两次都应等待所有 Focus 实例空闲后再应用。
 
 需要安装当前源码 workspace，而不是 GitHub Release 时，在首次 clone、
 `web/package-lock.json` 变化或 `node_modules` 缺失后先执行一次 `npm --prefix web ci --include=dev`，

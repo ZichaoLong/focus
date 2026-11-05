@@ -72,6 +72,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "feishu-interaction-approvals",
                 "feishu-settings-cards",
                 "feishu-turn-steer",
+                "focus-installation",
                 "focus-runtime",
                 "focus-web-browser-open",
                 "focus-web-client-state",

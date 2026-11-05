@@ -120,14 +120,35 @@ selected source or explicitly chooses another one.
 
 ## 5. Install Transaction and Network Boundary
 
+`bot/installation/python-runtime.json` in the target wheel is the sole policy for
+the complete CPython and uv download-tool versions. Before shutdown admission,
+`bot/installation/python_runtime.py` prepares and verifies the full runtime under
+`<data-root>/.python/cpython-<python-version>-uv-<uv-version>/`. uv owns platform
+selection, download verification, and extraction. Focus does not reuse an external
+Python standard library or download an interpreter during apply. The managed `.venv`
+is explicitly created with this interpreter; its `sys.base_prefix` and standard
+library must both be inside the dedicated directory.
+
+An exact-version uv from PATH may be reused. Otherwise a temporary bootstrap
+environment downloads its pinned wheel, extracts the executable, and removes the
+tool afterward. uv is not a Focus runtime dependency. HTTP(S) proxies, package
+indexes, and certificate authority remain effective; `PYTHON*`, `UV_*`, and uv
+configuration files cannot redirect the runtime version, build, or installation
+root. Complete existing runtimes can be reused offline. Incomplete runtimes are
+not repaired in place while another process may still reference them. `.python`
+is independent of both replaceable `.venv` and disposable update staging.
+`uninstall` preserves this runtime cache; `purge` removes it with the data root.
+A target without the policy is rejected before shutdown, without a system/Conda
+Python fallback.
+
 Remote Release lookup, channel-manifest and bundle download, and complete validation
 of either a local or remote bundle all finish before Focus acquires offline-maintenance
 admission, stops a service, or mutates the managed `.venv`. A preflight failure
 leaves the current installation and service state unchanged.
 
 Only after validation does the installer enter the existing managed transaction:
-it proves all instances idle, deletes and rebuilds the Focus-exclusive CPython
-3.11+ `.venv` on every install, then force-reinstalls the validated wheel under
+it proves all instances idle, deletes and rebuilds the Focus-exclusive `.venv`
+with the dedicated CPython on every install, then force-reinstalls the validated wheel under
 the bundled `requirements.lock` constraint. Both pip and the post-install
 consistency check run under an isolated interpreter, and install subprocesses do
 not inherit `PYTHON*` import settings. Packages from the system, Conda, user site,
@@ -158,7 +179,8 @@ directory, GitHub's latest Release, or the wheel version.
 
 Remote channels require GitHub access. Python networking honors standard
 `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY`. `--artifact` removes only the Focus
-bundle's GitHub download; pip can still download third-party dependencies according
+bundle's GitHub download; an unprepared dedicated Python/uv may still need network
+access, and pip can still download third-party dependencies according
 to its configured index, proxy, certificates, and cache. The bundle contains no
 Python interpreter, third-party wheelhouse, or third-party artifact hashes. A user
 may download the ZIP elsewhere and transfer it to the target machine, but Focus

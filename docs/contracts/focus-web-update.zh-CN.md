@@ -33,6 +33,11 @@
 - 目标文件系统的可用字节、inode、临时目录和 bundle staging 空间；
 - bundle 中的 Focus wheel、依赖锁和 source revision 一致性。
 
+Python 预检读取目标 wheel 的完整运行时 policy，并在固定 `.python` 缓存中准备该版本；
+所有依赖下载、离线试安装、`pip check`、关键模块导入与 CLI 启动检查都使用这份目标 Python。
+标准库与基础解释器必须位于 Focus 专属目录，不能以当前旧环境的 wheel 兼容性代替证明。
+预检成功才写入 `ready`，并在既有 `preflight` 中记录 `python_runtime`；缓存准备失败不改变旧服务。
+
 每次 check 开始时，updater 只解析一次 Node/npm 工具链，并在该次 check 的所有
 Web 命令中复用同一对已验证的可执行文件。解析优先使用 updater 明确收到的稳定
 工具链路径（`FOCUS_NODE_BIN`/`FOCUS_NPM_BIN`）和 PATH，其次才使用 fnm/nvm 的稳定默认 alias；不会读取或执行 shell
@@ -72,6 +77,16 @@ Stable 下载阶段在响应提供大小时报告已收/总字节；Git/npm/pip 
 明确拒绝应用。该 updater 由既有 managed install transaction 证明所有实例 idle，
 关闭 ingress，停服，安装已验证 bundle，再启动原先运行的实例并等待 service 状态。
 更新会影响本机所有 Focus 实例。
+
+apply transient unit 使用已经试安装目标 Focus 的 `preflight-venv`，而不是即将被重建的
+生产 `.venv`。停服前重新校验 bundle digest、wheelhouse、专属运行时和执行环境，再由同一
+目标 Python 创建生产 `.venv`；apply 不重新下载运行时，也不解析另一个 Python。旧 `ready`
+记录缺少专属 Python 预检证据时必须重新检查。
+
+旧安装的第一次浏览器更新仍由旧更新器执行，因此只安装新代码并保持原 Python 可用；新版
+启动不强制要求迁移已完成。刷新页面后，对同一个完整 commit 再检查并应用一次，新更新器
+才执行上述迁移。不得在服务启动、bootstrap-install 或第一次旧更新器的停服阶段补做网络迁移。
+完成第二次更新后，冷启动和后续更新应只依赖专属 Python；原 bootstrap Python 不再是运行依赖。
 
 预检失败不会停服。停服后安装或启动失败不会自动回滚，也不会自动重试 unknown；
 operation 会记录 `failed` 或 `unknown`，已停止的 service 可能保持离线，操作者需

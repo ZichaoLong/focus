@@ -15,7 +15,14 @@ from types import SimpleNamespace
 from bot.installation import installer
 from bot.installation.install_bundle import validate_install_bundle
 from bot.installation.node_toolchain import resolve_node_toolchain
-from bot.installation.offline import seal_wheelhouse, verify_wheelhouse
+from bot.installation.offline import install_offline, seal_wheelhouse, verify_wheelhouse
+from bot.installation.python_runtime import (
+    create_venv,
+    ensure_python,
+    existing_python,
+    runtime_policy,
+    verify_python,
+)
 from bot.installation.update import UpdateJournal
 from bot.installation.update_process import UpdateError, run
 from bot.manage_cli.install_surface import create_managed_install_transaction
@@ -196,18 +203,27 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
             web_status = "passed"
         report("bundle_validate", "Validating the prepared Focus bundle")
         validated = validate_install_bundle(bundle, extraction_dir=root / "validated")
-        report("python_preflight", "Creating the offline Python preflight environment")
+        report("python_preflight", "Preparing the complete dedicated Focus Python runtime")
+        policy = runtime_policy(validated.wheel_path)
+        runtime_python = ensure_python(policy, default_data_root())
         preflight_venv = root / "preflight-venv"
-        run([getattr(sys, "_base_executable", sys.executable), "-m", "venv", str(preflight_venv)], cwd=root, label="preflight Python")
+        create_venv(runtime_python, preflight_venv)
         python = _venv_python(preflight_venv)
         wheelhouse = root / "wheelhouse"
         wheelhouse.mkdir()
         report("dependency_download", "Downloading the locked Python dependencies")
-        run([str(python), "-I", "-m", "pip", "download", "--disable-pip-version-check", "--dest", str(wheelhouse),
+        run([str(python), "-I", "-m", "pip", "download", "--disable-pip-version-check", "--only-binary=:all:", "--dest", str(wheelhouse),
              "--constraint", str(validated.dependency_lock_path), str(validated.wheel_path)], cwd=root, label="dependency download")
         report("wheelhouse_verify", "Verifying the offline dependency wheelhouse")
         seal_wheelhouse(wheelhouse)
         offline_req, expanded, wheel_inodes = verify_wheelhouse(wheelhouse)
+        report("python_preflight", "Testing the offline install and startup with dedicated Focus Python")
+        install_offline(python, offline_req)
+        installer._run_pip_check(python)
+        runtime_info = verify_python(python, policy, default_data_root())
+        run([str(python), "-I", "-c",
+             "import bot.focus_runtime.runtime; import bot.web_runtime.gateway"], cwd=root, label="Focus runtime import check")
+        run([str(python), "-I", "-m", "bot.focusctl", "--help"], cwd=root, label="Focus CLI startup check")
         report("final_disk_check", "Rechecking staged disk and inode capacity")
         _disk((journal.root, default_data_root()), staged=bundle.stat().st_size + expanded)
         digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
@@ -219,6 +235,7 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
                        preflight={"target": target, "git": git_status, "node": node_preflight.get("status", "skipped"),
                                   "npm": node_preflight.get("status", "skipped"), "web_build": web_status,
                                   "pip": "passed", "disk": "passed", "node_toolchain": node_preflight,
+                                  "python_runtime": runtime_info,
                                   "free_bytes": disk["free_bytes"], "free_inodes": disk["free_inodes"], "wheelhouse_files": wheel_inodes},
                        bundle_sha256=digest, staging_dir=str(root), bundle_path=str(bundle),
                        wheelhouse_path=str(wheelhouse), offline_requirements=str(offline_req), installation_started=False)
@@ -240,8 +257,17 @@ def _apply(journal: UpdateJournal, operation: dict) -> None:
         requirements = pathlib.Path(operation["offline_requirements"])
         if not bundle.is_file() or bundle.is_symlink() or not wheelhouse.is_dir() or wheelhouse.is_symlink() or not requirements.is_file():
             raise UpdateError("prepared offline update files are missing")
+        if hashlib.sha256(bundle.read_bytes()).hexdigest() != operation["bundle_sha256"]:
+            raise UpdateError("Prepared Focus bundle changed; check the update again")
         validated = validate_install_bundle(bundle, extraction_dir=bundle.parent / "worker-validated")
         verify_wheelhouse(wheelhouse)
+        policy = runtime_policy(validated.wheel_path)
+        runtime_python = existing_python(policy, default_data_root())
+        preflight_venv = journal.directory(operation["operation_id"]) / "preflight-venv"
+        if pathlib.Path(sys.prefix).resolve() != preflight_venv.resolve():
+            raise UpdateError("Update apply must run from its prepared independent environment")
+        verify_python(pathlib.Path(sys.executable), policy, default_data_root())
+        installer._run_pip_check(pathlib.Path(sys.executable))
         report("apply_prepare", "Checking instance idleness before shutdown")
         transaction = create_managed_install_transaction(operation="web-update")
         transaction.prepare()
@@ -250,7 +276,7 @@ def _apply(journal: UpdateJournal, operation: dict) -> None:
                        message="All instances are idle; installing the exact prepared bundle offline",
                        installation_started=started, phase="apply_install",
                        phase_started_at=time.time(), last_progress_at=time.time(), progress=None)
-        installer.install_bundle_body(validated, offline_requirements=requirements)
+        installer.install_bundle_body(validated, runtime_python=runtime_python, offline_requirements=requirements)
         report("apply_restart", "Restarting the Focus services")
         transaction.complete()
         journal.settle(operation["operation_id"], "applying", state="succeeded",

@@ -55,7 +55,8 @@ substitute for reviewing the transitive changes. The script rejects other argume
 entry point into each generated header, avoiding a false diff caused only by switching between default and upgrade
 mode.
 
-`uv` is a generation tool, not a Focus runtime dependency. If the exact version is unavailable locally, the script
+The `uv` version pinned here only generates dependency locks; it is not a Focus runtime dependency.
+The install policy independently pins the dedicated-Python download tool. If the exact lock-tool version is unavailable locally, the script
 fails before writing a lock. CI installs that same exact version and runs default mode.
 
 ## 4. Installer and CI Boundary
@@ -93,17 +94,19 @@ policy. This changes archive metadata only; source-manifest paths and bytes rema
 the payload authority. The installer consumes only the already-validated wheel in
 the bundle and retains no source-install path.
 
-The bootstrap interpreter for the public installer must be CPython 3.11+ with `venv` / `ensurepip`. The caller's
-system Python or Conda environment does not need preinstalled pip packages, Focus runtime dependencies, `setuptools`,
-or `wheel`; the installer bootstraps pip and installs them into the fixed `.venv` under the machine-level Focus data
-root. Focus owns that directory completely and rebuilds it on every install or repair, so removed dependencies,
-manually installed foreign packages, system-site exposure, and `.pth` injection do not enter the new environment.
-The selected CPython 3.11+ supplies only the interpreter, standard library, and `venv` / `ensurepip` bootstrap; it does
-not authorize reading packages from its system, Conda, or user environment. The Unix entry point probes candidate
-implementation and version, and accepts an explicit
-`FOCUS_INSTALL_PYTHON=/path/to/python`. If the ensurepip subprocess fails while creating the venv, the installer points
-to the common Debian/Ubuntu `python3-venv` or versioned venv package. Permission, disk-space, and other filesystem errors
-retain their original exception instead of being relabeled as a missing ensurepip component.
+The public installer needs a CPython 3.11+ bootstrap with `venv` / `ensurepip`, without
+preinstalled Focus dependencies. The Unix entry probes candidates and accepts
+`FOCUS_INSTALL_PYTHON=/path/to/python`. This interpreter only bootstraps installation.
+Before shutdown, the installer prepares complete dedicated CPython according to the
+target wheel's policy and uses it to create production `.venv`. The interpreter, standard
+library, and future updates no longer require the original bootstrap Python. Version,
+directory, tool, and network rules are defined by the
+[install-artifact contract](../contracts/install-artifact-delivery.md#5-install-transaction-and-network-boundary).
+The fixed machine-level `.venv` is rebuilt on each install or repair, excluding old
+dependencies, foreign packages, system site-packages, and `.pth` injection. Installation
+must not run from the production `.venv` being replaced; browser apply uses its verified
+independent preflight environment. Legacy two-step migration is defined by the
+[browser-update contract](../contracts/focus-web-update.md#3-apply-restart-and-result).
 
 `bot/public_command_contract.py` is the command-name/module catalog for the four stable public surfaces (`focus`,
 `focusd`, `focusctl`, and `fcodex`). `bot/managed_python.py` is the sole isolated argv projection for installed modules:

@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 from bot.installation.update_process import UpdateError, UpdateLaunchOutcomeUnknown
+from bot.installation.python_runtime import venv_python
 
 
 # Keep the updater independent from the Focus service cgroup without dropping
@@ -65,9 +66,19 @@ def launch_update_worker(journal, operation_id: str, mode: str) -> None:
     systemd_run = shutil.which("systemd-run")
     if not systemd_run:
         raise UpdateError("systemd-run is unavailable; update was not started")
-    unit = journal.read()["unit"]
+    operation = journal.read()
+    unit = operation["unit"]
     if not unit or mode not in {"check", "apply"}:
         raise UpdateError("invalid update worker launch")
+    python = sys.executable
+    if mode == "apply":
+        if not operation.get("preflight", {}).get("python_runtime"):
+            raise UpdateError("This update needs a fresh check with dedicated Python before applying")
+        root = journal.directory(operation_id)
+        prepared = venv_python(root / "preflight-venv")
+        if not prepared.is_file() or not prepared.resolve().is_relative_to(root.resolve()):
+            raise UpdateError("Prepared independent updater is missing; check the update again")
+        python = str(prepared)
     setenv_args = [
         f"--setenv={name}={os.environ[name]}"
         for name in _FORWARDED_ENVIRONMENT
@@ -87,7 +98,7 @@ def launch_update_worker(journal, operation_id: str, mode: str) -> None:
         "--property=Type=oneshot",
         "--property=KillMode=process",
         "--",
-        sys.executable,
+        python,
         "-I",
         "-m",
         "bot.installation.update_worker",

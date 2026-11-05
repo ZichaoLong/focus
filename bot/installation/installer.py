@@ -16,10 +16,15 @@ import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
-import venv
 from collections.abc import Iterator
 from typing import Any, Callable
 
+from bot.installation.python_runtime import (
+    create_venv,
+    ensure_python,
+    runtime_policy,
+    verify_python,
+)
 
 _GITHUB_REPOSITORY = "ZichaoLong/focus"
 _GITHUB_API_ROOT = f"https://api.github.com/repos/{_GITHUB_REPOSITORY}"
@@ -45,6 +50,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "bundle 是 GitHub Release 可下载的 Focus ZIP 制品，包含 Focus wheel（含 Web）、\n"
             "Python 依赖锁和校验 manifest；它不包含 Python 解释器或第三方依赖 wheelhouse。\n"
             "因此 --artifact 不下载 Focus 制品，但 pip 仍可能按用户配置联网解析依赖。\n"
+            "安装前会准备 Focus 专属的完整 CPython；缺少固定版本 uv 时会临时下载该工具。\n"
+            "解释器和标准库保存在 data root 的 .python 中，不依赖 bootstrap Python 的后续保留。\n"
             "HTTP_PROXY、HTTPS_PROXY、NO_PROXY 以及 pip 的 index/证书配置会继续生效。\n"
             "安装事务每次重建 Focus 专用 .venv，不使用系统、Conda 或 PYTHONPATH 中的包；\n"
             "会改写安装目标的 pip target/prefix/root/user 配置将被明确拒绝。\n"
@@ -113,19 +120,11 @@ def _venv_uses_supported_python(venv_dir: pathlib.Path) -> bool:
     return result.returncode == 0
 
 
-def _recreate_venv(venv_dir: pathlib.Path) -> None:
+def _recreate_venv(venv_dir: pathlib.Path, python: pathlib.Path) -> None:
     if venv_dir.exists():
         shutil.rmtree(venv_dir)
     venv_dir.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        venv.EnvBuilder(with_pip=True, system_site_packages=False).create(venv_dir)
-    except subprocess.CalledProcessError as exc:
-        versioned_package = f"python{sys.version_info.major}.{sys.version_info.minor}-venv"
-        raise SystemExit(
-            "创建受管 .venv 时无法引导 pip；当前 Python 可能缺少 venv/ensurepip 组件。"
-            "Debian/Ubuntu 通常需要安装 `python3-venv` 或与解释器匹配的 "
-            f"`{versioned_package}`。target={venv_dir} exit_code={exc.returncode}"
-        ) from exc
+    create_venv(python, venv_dir)
 
 
 def _run_checked(command: list[str], *, env: dict[str, str] | None = None) -> None:
@@ -491,6 +490,7 @@ def _managed_install_transaction():
 def install_bundle_body(
     bundle: Any,
     *,
+    runtime_python: pathlib.Path,
     migrate: bool = False,
     offline_requirements: pathlib.Path | None = None,
 ) -> None:
@@ -503,13 +503,17 @@ def install_bundle_body(
     from bot.platform_paths import default_data_root
 
     venv_dir = default_data_root() / ".venv"
+    policy = runtime_policy(bundle.wheel_path)
+    verify_python(runtime_python, policy, default_data_root())
+    if pathlib.Path(sys.prefix).resolve() == venv_dir.resolve():
+        raise RuntimeError("Installer must run outside the Focus environment being replaced")
     installed_build = InstalledBuildIdentity(
         version=bundle.metadata.version,
         channel=bundle.metadata.channel,
         build_id=bundle.metadata.build_id,
         source_revision=bundle.metadata.source_revision,
     )
-    _recreate_venv(venv_dir)
+    _recreate_venv(venv_dir, runtime_python)
     venv_python = _venv_python_path(venv_dir)
     if not venv_python.exists():
         raise SystemExit(f"受管 .venv 不完整，缺少解释器：{venv_python}")
@@ -523,6 +527,7 @@ def install_bundle_body(
             "新建的 Focus 受管 .venv 缺少 pip；"
             "请确认当前 Python 带有可用的 venv/ensurepip 组件。"
         )
+    verify_python(venv_python, policy, default_data_root())
     _reject_pip_destination_overrides(venv_python)
     if offline_requirements is None:
         _run_pip_install(
@@ -552,11 +557,15 @@ def main(argv: list[str] | None = None) -> None:
     _ensure_supported_python()
     with _resolved_install_bundle(args) as bundle:
         from bot.install_lifecycle import ManagedInstallLifecycleError
+        from bot.platform_paths import default_data_root
 
+        if pathlib.Path(sys.prefix).resolve() == (default_data_root() / ".venv").resolve():
+            raise SystemExit("请从外部 bootstrap Python 运行 install.sh，或使用浏览器更新。")
+        runtime_python = ensure_python(runtime_policy(bundle.wheel_path), default_data_root())
         try:
             transaction = _managed_install_transaction()
             with transaction:
-                install_bundle_body(bundle, migrate=args.migrate_from_feishu_codex)
+                install_bundle_body(bundle, runtime_python=runtime_python, migrate=args.migrate_from_feishu_codex)
         except ManagedInstallLifecycleError as exc:
             raise SystemExit(str(exc)) from exc
 
