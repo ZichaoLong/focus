@@ -117,7 +117,7 @@ class RuntimeAdminCliPresentationTests(unittest.TestCase):
                 thread_id="thread-1",
                 cwd="/tmp/项目一",
                 name="修复对齐",
-                preview="",
+                preview="首条消息",
                 created_at=0,
                 updated_at=0,
                 source="cli",
@@ -127,7 +127,29 @@ class RuntimeAdminCliPresentationTests(unittest.TestCase):
             ThreadSummary(
                 thread_id="thread-22",
                 cwd="/tmp/demo",
-                name="ascii title",
+                name="CANN",
+                preview="CANN",
+                created_at=0,
+                updated_at=0,
+                source="cli",
+                status="idle",
+                model_provider=None,
+            ),
+            ThreadSummary(
+                thread_id="thread-333",
+                cwd="/tmp/demo",
+                name="",
+                preview="CANN",
+                created_at=0,
+                updated_at=0,
+                source="cli",
+                status="idle",
+                model_provider=None,
+            ),
+            ThreadSummary(
+                thread_id="thread-4444",
+                cwd="/tmp/demo",
+                name="",
                 preview="",
                 created_at=0,
                 updated_at=0,
@@ -154,11 +176,17 @@ class RuntimeAdminCliPresentationTests(unittest.TestCase):
         lines = stdout.getvalue().splitlines()
         self.assertNotIn("\t", "\n".join(lines))
         header = ["THREAD_ID", "PROVIDER", "CWD", "TITLE"]
-        row1 = ["thread-1", "openai", "/tmp/项目一", "修复对齐"]
-        row2 = ["thread-22", "-", "/tmp/demo", "ascii title"]
+        rows = [
+            ["thread-1", "openai", "/tmp/项目一", "修复对齐"],
+            ["thread-22", "-", "/tmp/demo", "CANN"],
+            ["thread-333", "-", "/tmp/demo", "[preview] CANN"],
+            ["thread-4444", "-", "/tmp/demo", "（无标题）"],
+        ]
+        self.assertEqual(len(lines), len(rows) + 1)
         header_starts = self._visual_cell_starts(lines[0], header)
-        self.assertEqual(self._visual_cell_starts(lines[1], row1), header_starts)
-        self.assertEqual(self._visual_cell_starts(lines[2], row2), header_starts)
+        for line, row in zip(lines[1:], rows, strict=True):
+            self.assertEqual(self._visual_cell_starts(line, row), header_starts)
+            self.assertTrue(line.endswith(row[-1]))
 
     def test_thread_list_collapses_and_truncates_long_multiline_titles(self) -> None:
         title = "第一行\n第二行 " + ("很长" * 60)
@@ -192,8 +220,10 @@ class RuntimeAdminCliPresentationTests(unittest.TestCase):
         self.assertEqual(result, 0)
         lines = stdout.getvalue().splitlines()
         self.assertEqual(len(lines), 2)
-        self.assertIn("第一行 第二行", lines[1])
+        self.assertIn("[preview] 第一行 第二行", lines[1])
         self.assertTrue(lines[1].endswith("…"))
+        displayed_title = lines[1][lines[1].index("[preview]"):]
+        self.assertLessEqual(_terminal_display_width(displayed_title), 80)
 
     def test_thread_list_archived_forwards_archived_filter(self) -> None:
         class _FakeAdapter:

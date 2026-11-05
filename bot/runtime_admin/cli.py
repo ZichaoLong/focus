@@ -749,12 +749,15 @@ def _print_thread_list(
         return 0
     rows: list[list[str]] = []
     for item in threads:
+        title = item.title
+        if not item.name and item.preview:
+            title = f"[preview] {title}"
         rows.append(
             [
                 item.thread_id,
                 str(item.model_provider or "-"),
                 display_path(item.cwd),
-                _truncate_display_text(item.title, max_width=_THREAD_LIST_TITLE_MAX_WIDTH),
+                _truncate_display_text(title, max_width=_THREAD_LIST_TITLE_MAX_WIDTH),
             ]
         )
     for line in _render_table(["THREAD_ID", "PROVIDER", "CWD", "TITLE"], rows):

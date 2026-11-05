@@ -270,6 +270,11 @@ binding-local `current_thread_title`，也不会显示 thread preview。
 
 ### 4.6 `thread`
 
+`thread list` 的 `TITLE` 列优先显示上游 `thread.name`；没有名称时，显示带 `[preview] `
+前缀的 `thread.preview`，例如 `[preview] CANN`。两者都为空时显示 `（无标题）`。
+每条标题折叠为单行，并按最多 80 个终端显示列截断，前缀计入该宽度。前缀仅用于列表
+展示，不写回线程名称；按名称定位线程仍精确匹配原始 `thread.name`。
+
 | 命令 | 作用 | 类型 | 飞书对应 |
 | --- | --- | --- | --- |
 | `focusctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>] [--archived]` | 浏览 persisted thread；默认按当前目录过滤，`--archived` 改为浏览归档线程 | 只读 | 飞书 `/threads` 的目标发现面；飞书当前不提供 archived inventory |

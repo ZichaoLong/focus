@@ -312,6 +312,13 @@ Notes:
 
 ### 4.6 `thread`
 
+The `TITLE` column in `thread list` prefers the upstream `thread.name`. When no
+name is set, it displays `thread.preview` with a `[preview] ` prefix, such as
+`[preview] CANN`. If both are empty, it displays `（无标题）`. Each value is collapsed
+to a single line and truncated to at most 80 terminal display columns, including
+the prefix. The prefix is presentation-only and is not written to the thread
+name; name-based targeting still matches the raw `thread.name` exactly.
+
 | Command | Purpose | Type | Feishu counterpart |
 | --- | --- | --- | --- |
 | `focusctl [--instance <name>] thread list [--scope cwd\|global] [--cwd <path>] [--archived]` | Browse persisted threads; default is current-directory scope, while `--archived` browses archived threads | read-only | target-discovery counterpart of Feishu `/threads`; Feishu currently has no archived inventory |
