@@ -12,6 +12,10 @@ export type ConfirmOptions = {
   message?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** Initial focus and Enter on non-interactive dialog content. */
+  defaultAction?: 'confirm' | 'cancel';
+  /** Cancel this pending confirmation when its originating context expires. */
+  signal?: AbortSignal;
   /**
    * When present, confirmation requires typing this exact value. This only
    * guards against accidental UI activation; it is not an authorization
@@ -71,12 +75,22 @@ function confirm(options: ConfirmOptions): Promise<boolean> {
   // A confirmed action is still in flight: a second dialog can't supersede the
   // busy one (it would inherit the global busy state and open inert), so the
   // new request resolves unconfirmed instead.
-  if (busy.value) return Promise.resolve(false);
+  if (busy.value || options.signal?.aborted) return Promise.resolve(false);
   // If a confirm is already open, treat it as cancelled before showing the new
   // one so its caller isn't left hanging.
   if (current.value) settle(false);
   return new Promise<boolean>((resolve, reject) => {
-    current.value = { ...options, resolve, reject };
+    let request: typeof current.value = null;
+    const cancel = () => { if (current.value === request) settle(false); };
+    const cleanup = () => options.signal?.removeEventListener('abort', cancel);
+    current.value = {
+      ...options,
+      resolve: (ok) => { cleanup(); resolve(ok); },
+      reject: (error) => { cleanup(); reject(error); },
+    };
+    request = current.value;
+    options.signal?.addEventListener('abort', cancel, { once: true });
+    if (options.signal?.aborted) cancel();
   });
 }
 

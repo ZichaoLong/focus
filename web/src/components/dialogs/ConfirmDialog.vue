@@ -15,6 +15,7 @@ const props = withDefaults(defineProps<{
   message?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  defaultAction?: 'confirm' | 'cancel';
   /** Require the user to type this exact value before confirming. */
   confirmationText?: string;
   confirmationLabel?: string;
@@ -24,6 +25,7 @@ const props = withDefaults(defineProps<{
   loading?: boolean;
 }>(), {
   variant: 'danger',
+  defaultAction: 'confirm',
 });
 
 const emit = defineEmits<{
@@ -61,8 +63,8 @@ function onKeydown(event: KeyboardEvent): void {
   if (event.key !== 'Enter' || !props.open || props.loading) return;
   // Preserve native Enter semantics for interactive controls (buttons, links,
   // form fields) so tabbing to Cancel / Close and pressing Enter does not
-  // accidentally confirm the dialog. Only treat Enter as confirm when focus is
-  // on a non-interactive part of the dialog.
+  // accidentally confirm the dialog. Use the requested default action only
+  // when focus is on a non-interactive part of the dialog.
   const target = event.target as HTMLElement | null;
   if (
     target instanceof HTMLButtonElement ||
@@ -74,7 +76,8 @@ function onKeydown(event: KeyboardEvent): void {
     return;
   }
   event.preventDefault();
-  if (typedConfirmationMatches()) emit('confirm');
+  if (props.defaultAction === 'cancel') onCancel();
+  else if (typedConfirmationMatches()) emit('confirm');
 }
 
 function onConfirmationKeydown(event: KeyboardEvent): void {
@@ -100,7 +103,7 @@ onBeforeUnmount(() => {
     :open="open"
     :title="title"
     height="auto"
-    :initial-focus="requiresTypedConfirmation() ? '.confirm-dialog__input' : '.confirm-dialog__confirm'"
+    :initial-focus="requiresTypedConfirmation() ? '.confirm-dialog__input' : `.confirm-dialog__${defaultAction}`"
     :close-on-esc="!loading"
     :close-on-overlay="!loading"
     @update:open="emit('update:open', $event)"
@@ -121,7 +124,7 @@ onBeforeUnmount(() => {
       />
     </label>
     <template #foot>
-      <Button variant="secondary" :disabled="loading" @click="onCancel">
+      <Button class="confirm-dialog__cancel" variant="secondary" :disabled="loading" @click="onCancel">
         {{ cancelLabel ?? t('common.cancel') }}
       </Button>
       <Button
@@ -140,6 +143,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .confirm-dialog__message {
   margin: 0;
+  white-space: pre-line;
   font-size: var(--text-base);
   line-height: var(--leading-normal);
   color: var(--color-text-muted);

@@ -500,6 +500,39 @@ async function confirmProcessLocalMutationDiscard(
   if (approved) await client.discardUnknownProcessLocalMutation(threadId);
 }
 
+let historyEditConfirmation: AbortController | null = null;
+async function confirmHistoryEditPrompt(target: { turn_id: string; item_id: string }): Promise<void> {
+  const threadId = client.activeThreadId.value;
+  const scope = client.composerScopeId.value;
+  if (historyEditConfirmation || !threadId || !scope || client.connection.value !== 'connected'
+    || client.actionBusy.value || client.historyEditPrompt.value) return;
+  const originalTarget = { ...target };
+  const controller = new AbortController();
+  historyEditConfirmation = controller;
+  const stopWatching = watch(
+    [client.activeThreadId, client.composerScopeId, client.connection, client.runtimeEpoch],
+    () => controller.abort(), { flush: 'sync' },
+  );
+  let approved = false;
+  try {
+    approved = await confirm({
+      title: t('focus.revertAndEditConfirmTitle'),
+      message: t('focus.revertAndEditConfirmMessage'),
+      confirmLabel: t('focus.revertAndEditConfirmAction'),
+      cancelLabel: t('focus.cancel'),
+      defaultAction: 'cancel',
+      variant: 'danger',
+      signal: controller.signal,
+    });
+  } finally {
+    stopWatching();
+    historyEditConfirmation = null;
+  }
+  if (!approved || controller.signal.aborted || client.activeThreadId.value !== threadId
+    || client.composerScopeId.value !== scope) return;
+  await client.editPrompt(threadId, originalTarget);
+}
+
 async function restoreHistoryEditPrompt(): Promise<void> {
   const prompt = client.historyEditPrompt.value;
   const threadId = client.activeThreadId.value;
@@ -798,6 +831,7 @@ watch(detailOpen, (open) => {
 }, { flush: 'sync' });
 
 onUnmounted(() => {
+  historyEditConfirmation?.abort();
   client.dispose();
   viewport.value?.dispose();
 });
@@ -1088,7 +1122,7 @@ onUnmounted(() => {
           @open-tool-diff="openToolDiff"
           @open-agent="openAgent"
           @search-conversation="openConversationSearch"
-          @edit-prompt="client.editPrompt(client.activeThreadId.value, $event)"
+          @edit-prompt="confirmHistoryEditPrompt"
           @rename-session="(id, title) => client.renameThread(id, title)"
           @archive-session="threadActions?.confirmArchiveThread($event)"
           @fork-session="client.forkThread($event)"

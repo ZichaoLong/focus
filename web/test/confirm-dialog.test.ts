@@ -65,6 +65,39 @@ describe('useConfirmDialog', () => {
     await expect(second).resolves.toBe(true);
   });
 
+  it('cancels an expired pending context and rejects an already expired request', async () => {
+    const controller = new AbortController();
+    const pending = confirm({ title: 'Revert?', signal: controller.signal });
+    controller.abort();
+    await expect(pending).resolves.toBe(false);
+    expect(current.value).toBeNull();
+    await expect(confirm({ title: 'Expired', signal: controller.signal })).resolves.toBe(false);
+    expect(current.value).toBeNull();
+  });
+
+  it('does not cancel a newer dialog when a superseded context expires', async () => {
+    const controller = new AbortController();
+    const first = confirm({ title: 'Revert?', signal: controller.signal });
+    const second = confirm({ title: 'Archive?' });
+    controller.abort();
+    await expect(first).resolves.toBe(false);
+    expect(current.value?.title).toBe('Archive?');
+    await runAction();
+    await expect(second).resolves.toBe(true);
+  });
+
+  it('does not treat expiration as cancellation of an already confirmed action', async () => {
+    const controller = new AbortController();
+    const action = deferred();
+    const pending = confirm({ title: 'Revert?', signal: controller.signal, action: () => action.promise });
+    void runAction();
+    controller.abort();
+    expect(busy.value).toBe(true);
+    expect(current.value?.title).toBe('Revert?');
+    action.resolve();
+    await expect(pending).resolves.toBe(true);
+  });
+
   it('keeps the dialog open (busy) while the action runs, then closes', async () => {
     const action = deferred();
     let ran = false;

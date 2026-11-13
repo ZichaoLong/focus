@@ -54,7 +54,12 @@ revert 的内部 reload 不调用 resume 的 idle-goal continuation；goal 的�
 再在新分支中回退并编辑。这描述的是 Focus 的操作能力，不表示上游立即物理删除旧 rollout，也不承诺底层
 记录永久保留或可恢复。提示继续说明可能中断运行中的工作、不回滚文件及每轮首条纯文本 prompt 的限制。
 
-浏览器先请求 `GET /api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`。
+点击按钮只打开确认弹窗，说明历史移除、可能中断工作、不回滚文件，以及先分叉保留历史的建议。
+初始焦点放在“取消”。取消、Esc、点击遮罩或在非交互内容上按 Enter 均关闭弹窗，不读取原 prompt，也不回退历史；
+只有明确确认才开始准备。等待确认期间，来源线程、Composer scope、连接状态或 runtime epoch 改变即取消确认；
+切回原线程也不能恢复旧确认。重复点击不得产生多个待确认操作或重复回退请求。
+
+确认后，浏览器先请求 `GET /api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`。
 服务通过同一 connection generation 的 `thread/items/list` 读取目标轮首条 `userMessage`，核对真实 item ID 并返回
 `{thread_id,turn_id,item_id,text}`。读取最多 5 秒，cursor 必须前进；不使用显示序号、synthetic ID 或截断 preview。
 这一读取不修改历史，也不创建持久 prepare 记录、token 或第二份历史。
@@ -91,7 +96,8 @@ token usage 和在途 transcript projection，发布 `thread_invalidated`。不�
 
 ## 验证边界
 
-必须验证 exact boundary、同一 ID、继承历史、首轮空历史、附件/补充消息的明确拒绝、先保留原文再 mutation、
+必须验证准备前确认、键盘默认取消、关闭弹窗无副作用、上下文变化取消确认、重复点击保护，
+以及 exact boundary、同一 ID、继承历史、首轮空历史、附件/补充消息的明确拒绝、先保留原文再 mutation、
 跨线程导航与草稿不覆盖、foreign lease、断线/unknown 不重试，以及 reverted 后缓存刷新。
 上游真实版本的既有隔离证据见 [验证记录](../verification/history-prompt-edit-2026-10-28.zh-CN.md)；
 当前 Web 路径由 `test_history_prompt_edit.py`、`test_history_edit_gateway.py`、`test_codex_thread_revert.py`

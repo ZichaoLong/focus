@@ -2033,6 +2033,10 @@
           "symbol": "retryUnknownSubmission"
         },
         {
+          "path": "web/src/focus/FocusApp.vue",
+          "symbol": "confirmHistoryEditPrompt"
+        },
+        {
           "path": "web/src/focus/mutations/actions.ts",
           "symbol": "createFocusMutationActions"
         },
@@ -2061,6 +2065,14 @@
         {
           "path": "web/src/components/chat/composerSendShortcut.ts",
           "symbol": "composerKeyRequestsSubmit"
+        },
+        {
+          "path": "web/src/composables/useConfirmDialog.ts",
+          "symbol": "useConfirmDialog"
+        },
+        {
+          "path": "web/src/components/dialogs/ConfirmDialog.vue",
+          "symbol": "onKeydown"
         },
         {
           "path": "web/src/components/chat/composerSubmission.ts",
@@ -2237,6 +2249,12 @@
             "tests/test_codex_app_server_generation_pinned_turns.py",
             "tests/web_runtime/test_directory_thread_actions.py::WebRuntimeDirectoryThreadActionTests::test_system_error_still_blocks_exclusive_and_lifecycle_actions",
             "tests/web_runtime/test_prompt_timing.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/confirm-dialog.test.ts"
           ]
         }
       ],

@@ -20,10 +20,14 @@ afterAll(async () => {
   await browser?.close(); await server?.close();
   rmSync(cacheDir, { recursive: true, force: true });
 });
-it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and single-effect semantics: %s', async mode => {
-  const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1280, height: 900 } });
+const cases = ['direct', 'navigate', 'lost', 'draft', 'cancel-button', 'cancel-escape',
+  'cancel-overlay', 'cancel-enter', 'cancel-panel-enter', 'navigate-confirm', 'disconnect-confirm', 'duplicate']
+  .map(mode => ({ mode, width: 1280 }))
+  .concat(['direct', 'cancel-button', 'cancel-escape'].map(mode => ({ mode, width: 390 })));
+it.each(cases)('confirms history editing and preserves exact IDs and drafts: $mode at width $width', async ({ mode, width }) => {
+  const page = await browser.newPage({ locale: 'en-US', viewport: { width, height: 900 } });
   page.setDefaultTimeout(15_000);
-  const errors: string[] = [], posts: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const errors: string[] = [], reads: string[] = [], posts: Array<{ path: string; body: Record<string, unknown> }> = [];
   const original = 'Original full prompt\n' + 'unclipped input '.repeat(1000);
   const rows = [{ id: 'display-is-not-an-id', rawTurnId: 'real-turn-early', itemId: 'real-item', role: 'user', no: 99, text: 'TRUNCATED PREVIEW' }];
   const source = { ...thread(), name: 'Source', title: 'Source', source: 'cli', ephemeral: false, session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
@@ -32,8 +36,10 @@ it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and
   let finishRevert = () => {};
   const revertGate = new Promise<void>(resolve => { finishRevert = resolve; });
   let reverted = false, revision = 1;
+  let disconnect = () => {};
   page.on('pageerror', error => errors.push(error.message));
   await page.routeWebSocket('**/api/events?*', socket => {
+    disconnect = () => socket.close({ code: 1011, reason: 'Connection lost during confirmation' });
     socket.onMessage(message => { if (message === 'ping') socket.send('pong'); });
     setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 })), 20);
   });
@@ -48,6 +54,7 @@ it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and
     else if (path === '/api/operator-status') payload = { status: 'ok', observed_at: 1, poll_after_seconds: 60, warnings: [], runtime_loop: {} };
     else if (path === '/api/threads') payload = { runtime_epoch: 'epoch-1', revision, scope: query.get('scope') ?? 'global', archived: false, limit: 100, truncated: false, threads: [source, other] };
     else if (path.endsWith('/history-prompt')) {
+      reads.push(path);
       expect(request.method()).toBe('GET');
       expect(query.get('turn_id')).toBe('real-turn-early');
       expect(query.get('item_id')).toBe('real-item');
@@ -55,7 +62,7 @@ it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and
     } else if (path.endsWith('/revert')) {
       reverted = true; revision += 1;
       if (mode === 'lost') { await route.abort('connectionreset'); return; }
-      if (mode === 'navigate') await revertGate;
+      if (mode === 'navigate' || mode === 'duplicate') await revertGate;
       payload = { accepted: true, thread_id: 'thread-1' };
     } else if (path.endsWith('/transcript')) {
       const id = path.split('/')[3]!;
@@ -75,8 +82,73 @@ it.each(['direct', 'navigate', 'lost', 'draft'])('preserves exact IDs, draft and
     const edit = page.getByRole('button', { name: 'Revert and edit', exact: true });
     await edit.waitFor();
     expect(await edit.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
-    if (mode === 'lost' || mode === 'draft') await page.locator('textarea:visible').first().fill('Draft to retain');
-    await edit.click();
+    if (mode === 'lost' || mode === 'draft' || mode.startsWith('cancel-') || mode.endsWith('-confirm')) {
+      await page.locator('textarea:visible').first().fill('Draft to retain');
+    }
+    if (mode === 'duplicate') {
+      await edit.evaluate(el => { (el as HTMLButtonElement).click(); (el as HTMLButtonElement).click(); });
+    } else await edit.click();
+    const dialog = page.getByRole('dialog', { name: 'Revert and edit this message?', exact: true });
+    await dialog.waitFor();
+    const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
+    await expect.poll(() => cancel.evaluate(el => el === document.activeElement)).toBe(true);
+    expect(await dialog.innerText()).toContain('Focus provides no undo');
+    expect(await dialog.innerText()).toContain('fork the session first');
+    expect(reads).toEqual([]);
+    expect(posts.filter(p => p.path.endsWith('/revert'))).toEqual([]);
+
+    if (mode.startsWith('cancel-')) {
+      if (mode === 'cancel-button') await cancel.click();
+      else if (mode === 'cancel-escape') await page.keyboard.press('Escape');
+      else if (mode === 'cancel-overlay') await page.locator('.ui-dialog__overlay').click({ position: { x: 5, y: 5 } });
+      else {
+        if (mode === 'cancel-panel-enter') await dialog.focus();
+        await page.keyboard.press('Enter');
+      }
+      await dialog.waitFor({ state: 'hidden' });
+      expect(reads).toEqual([]);
+      expect(posts.filter(p => p.path.endsWith('/revert') || p.path.endsWith('/prompt'))).toEqual([]);
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft to retain');
+      expect(await page.getByText('TRUNCATED PREVIEW', { exact: true }).count()).toBe(1);
+      expect(errors).toEqual([]);
+      return;
+    }
+    if (mode === 'disconnect-confirm') {
+      disconnect();
+      await dialog.waitFor({ state: 'hidden' });
+      expect(reads).toEqual([]);
+      expect(posts.filter(p => p.path.endsWith('/revert') || p.path.endsWith('/prompt'))).toEqual([]);
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft to retain');
+      expect(errors).toEqual([]);
+      return;
+    }
+    if (mode === 'navigate-confirm') {
+      // Drive the real navigation handler while the modal blocks pointer input,
+      // simulating an external context change during confirmation.
+      await page.getByText('Other', { exact: true }).first().evaluate(el => (el as HTMLElement).click());
+      await dialog.waitFor({ state: 'hidden' });
+      await page.waitForURL('**thread=other*');
+      await page.waitForFunction(() => !document.body.innerText.includes('TRUNCATED PREVIEW'));
+      await page.getByText('Source', { exact: true }).first().click();
+      await page.waitForURL('**thread=thread-1*');
+      await edit.waitFor();
+      expect(await dialog.count()).toBe(0);
+      expect(reads).toEqual([]);
+      expect(posts.filter(p => p.path.endsWith('/revert'))).toEqual([]);
+      // Navigation starts a new writer-scope generation; the earlier draft
+      // remains stored under its original scope instead of crossing into it.
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('');
+      expect(await page.evaluate(() => Object.values(localStorage).includes('Draft to retain'))).toBe(true);
+      expect(errors).toEqual([]);
+      return;
+    }
+    const confirm = dialog.getByRole('button', { name: 'Confirm revert and edit', exact: true });
+    if (mode === 'duplicate') {
+      await confirm.evaluate(el => { (el as HTMLButtonElement).click(); (el as HTMLButtonElement).click(); });
+      await expect.poll(() => posts.filter(p => p.path.endsWith('/revert')).length).toBe(1);
+      expect(reads).toHaveLength(1);
+      finishRevert();
+    } else await confirm.click();
     if (mode === 'lost') {
       await page.getByText(/Revert result could not be confirmed/).first().waitFor();
       expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft to retain');

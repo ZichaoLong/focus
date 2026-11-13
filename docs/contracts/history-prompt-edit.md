@@ -53,7 +53,13 @@ the full history, fork the session first, then revert and edit in the new branch
 it neither claims immediate physical deletion of old upstream rollouts nor promises permanent retention or recovery of those records.
 Keep the warnings about interrupting running work, unchanged files, and support for only the first plain-text prompt in each turn.
 
-First GET `/api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`. The server reads the selected turn's first userMessage through
+Clicking the button only opens a confirmation dialog with the history-loss, interruption, unchanged-files and fork-first warnings.
+Cancel has initial focus. Cancel, Esc, an overlay click or Enter on non-interactive dialog content dismisses it without reading the
+original prompt or reverting history. Only explicitly confirming starts preparation. A change to the originating thread, composer scope,
+connection or runtime epoch cancels the pending confirmation; returning to the original thread cannot revive it. Repeated clicks must
+not create multiple pending confirmations or duplicate revert requests.
+
+After confirmation, GET `/api/threads/{thread_id}/history-prompt?turn_id=...&item_id=...`. The server reads the selected turn's first userMessage through
 generation-pinned `thread/items/list`, checks the actual item ID, and returns `{thread_id,turn_id,item_id,text}`. The read is limited to
 five seconds and advancing cursors. Never infer coordinates or original text from display numbers, synthetic IDs or clipped previews.
 Preparation does not mutate history or introduce a persistent prepare token, journal or history copy.
@@ -94,7 +100,8 @@ Late reads or old events cannot reinstall removed history.
 
 ## Verification
 
-Cover exact boundaries, same IDs, inherited history, empty first-turn history, attachment/supplement refusal, original retention before
+Cover confirmation before preparation, default-cancel keyboard behavior, dismissal without effects, context invalidation, duplicate clicks,
+exact boundaries, same IDs, inherited history, empty first-turn history, attachment/supplement refusal, original retention before
 mutation, navigation and draft safety, foreign leases, unknown/disconnect without replay, and history cache invalidation.
 Existing upstream isolation evidence is recorded in `../verification/history-prompt-edit-2026-10-28.zh-CN.md`. The current Web path is
 covered by `test_history_prompt_edit.py`, `test_history_edit_gateway.py`, `test_codex_thread_revert.py` and `focus-history-edit*.test.ts`.

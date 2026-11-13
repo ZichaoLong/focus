@@ -21,6 +21,7 @@ function onConfirm(): void {
     :message="current?.message"
     :confirm-label="current?.confirmLabel"
     :cancel-label="current?.cancelLabel"
+    :default-action="current?.defaultAction"
     :confirmation-text="current?.confirmationText"
     :confirmation-label="current?.confirmationLabel"
     :confirmation-placeholder="current?.confirmationPlaceholder"
