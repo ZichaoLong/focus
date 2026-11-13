@@ -419,6 +419,7 @@
     "test/focus-transport-session.test.ts",
     "test/focus-turn-window-settings-surface.test.ts",
     "test/focus-update-api.test.ts",
+    "test/focus-update-cancel-browser.test.ts",
     "test/focus-viewport.test.ts",
     "test/focus-workspace-draft-surface.test.ts",
     "test/focus_client/context-usage.test.ts",

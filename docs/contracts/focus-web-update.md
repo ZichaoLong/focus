@@ -36,8 +36,10 @@ before any shutdown:
 - free bytes, inodes, temporary-directory, and bundle-staging checks; and
 - Focus wheel, dependency-lock, and source-revision consistency checks.
 
-Python preflight reads the target wheel's complete-runtime policy and prepares
-that version in the permanent `.python` cache. Dependency downloads, offline trial
+Python preflight reads the target wheel's complete-runtime policy. Missing runtimes are downloaded into this operation's
+staging tree, verified for interpreter and standard-library ownership, then atomically published into the shared `.python`
+cache. Interrupted downloads remain operation-owned; they must not overwrite, delete or repair an existing shared runtime
+in place. Dependency downloads, offline trial
 installation, `pip check`, core-module imports, and CLI startup checks all use the
 target Python. Its base interpreter and standard library must belong to Focus;
 compatibility with the old environment is not sufficient evidence. Only then is
@@ -69,6 +71,24 @@ reopening it reads the same journal. Multiple browser tabs can still race, so th
 single-flight refusal remains required. When that refusal is received, the browser reads
 the current status and explains that another operation is active instead of submitting a
 second check.
+
+Preparation offers **Cancel preparation**, retaining the separate main/stable check buttons.
+`POST /api/update/cancel` accepts only exact `{operation_id}` under the existing authentication, same-origin, CSRF and
+document admission. Cancellation targets only that ID's check unit; it does not stop Focus services or cancel an applying
+or uncertain installation. To cover a race with check completion, cancellation also admits the same unapplied `ready`
+operation. An operation already admitted to apply rejects cancellation.
+
+Under the same journal lock, cancellation first records `cancelling`, fencing late worker ready/failed publication and apply,
+then asks systemd to stop the entire check cgroup. Check units use `KillMode=control-group` and a bounded stop timeout,
+including Git/npm/pip/uv descendants that create their own sessions. The browser shows cancellation progress and keeps
+polling. New checks, source changes and apply remain blocked until the unit is confirmed inactive/failed with no queued systemd job and this operation's
+staging is removed. Only then does the journal become `cancelled`. Published shared Python runtimes and the installed
+Focus are preserved.
+
+Repeated cancellation of the same ID creates no second task; an old ID cannot cancel a newer check. An uncertain stop
+request or unit state, or failed cleanup, leaves the operation `cancelling`, retains staging and admission blocking, and
+reports an error with explicit cancellation retry. A lost HTTP response triggers journal reads, never automatic POST replay
+or a new check. Closing the panel, reloading the page or restarting the service continues observing the same journal.
 
 The updater persists a bounded fixed `phase`, phase-start time, last-real-progress time,
 and optional byte progress in the journal. Stable download phases report received/total
@@ -121,7 +141,7 @@ consume the new static assets.
 ## 4. Wire and lifecycle
 
 `GET /api/update` returns the machine-level source and operation journal, including target
-and operation id. Source, check,
+and operation id. Source, check, cancel
 and apply are authenticated same-origin, CSRF-protected user actions and renew the current
 Web session. The journal does not own thread, writer, approval, or recovery authority.
 Transport loss during the update is a service lifecycle effect, not proof of installation

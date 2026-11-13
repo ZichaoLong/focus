@@ -121,6 +121,31 @@ class WebUpdateWorkerTests(unittest.TestCase):
         self.existing.assert_called_once_with(self.policy, self.data)
         self.assertEqual(self.body.call_args.kwargs["runtime_python"], self.python)
 
+    def test_cancel_fences_late_ready_publication_and_leaves_cleanup_to_controller(self) -> None:
+        original_disk = worker._disk.side_effect
+        checks = 0
+
+        def cancel_at_final_disk_check(*args, **kwargs):
+            nonlocal checks
+            checks += 1
+            if checks == 2:
+                self.journal.settle("a" * 32, "checking", state="cancelling", phase="cancelling")
+            return {"free_bytes": 10**10, "free_inodes": 100000}
+
+        worker._disk.side_effect = cancel_at_final_disk_check
+        try:
+            worker._check(self.journal, self.operation)
+        finally:
+            worker._disk.side_effect = original_disk
+        observed = self.journal.read()
+        self.assertEqual(observed["state"], "cancelling")
+        self.assertEqual(observed["bundle_path"], "")
+        self.assertFalse(observed["installation_started"])
+        self.assertTrue(self.journal.directory("a" * 32).exists())
+        self.ensure.assert_called_once_with(self.policy, self.data, staging_root=self.journal.directory("a" * 32))
+        self.factory.assert_not_called()
+        self.body.assert_not_called()
+
     def test_missing_runtime_is_rejected_before_shutdown_without_downloading(self) -> None:
         operation = self._ready()
         self.existing.side_effect = PythonRuntimeError("missing prepared runtime")

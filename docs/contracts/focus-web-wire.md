@@ -224,6 +224,8 @@ guards and may not retain parallel key or enum inventories.
   for states and association rules.
 
 - v39 adds instance record/attachment retention settings and cleanup routes; see [data cleanup](./data-retention.md).
+- v40 adds exact-operation `POST /api/update/cancel` and the closed update state/phase values `cancelling` and `cancelled`;
+  behavior is defined by the [browser update contract](./focus-web-update.md).
 
 ## 4. Endpoint and Event Admission
 

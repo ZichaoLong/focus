@@ -326,6 +326,10 @@ function testApi(intentGenerationFloor = 0) {
       currentUpdateStatus = updateStatus('checking', target);
       return structuredClone(currentUpdateStatus);
     }),
+    cancelUpdate: vi.fn(async () => {
+      currentUpdateStatus = updateStatus('cancelling', currentUpdateStatus.target);
+      return structuredClone(currentUpdateStatus);
+    }),
     applyUpdate: vi.fn(async () => {
       currentUpdateStatus = updateStatus('applying');
       return structuredClone(currentUpdateStatus);
@@ -596,6 +600,62 @@ describe('useFocusWebClient runtime notice routing', () => {
 });
 
 describe('useFocusWebClient update operation state', () => {
+  it('waits for confirmed cancellation before enabling a different target', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    await client.checkUpdate('stable', '');
+    const id = client.updateStatus.value!.operation_id;
+    await client.cancelUpdate('wrong-operation');
+    expect(fake.api.cancelUpdate).not.toHaveBeenCalled();
+    await client.cancelUpdate(id);
+    expect(fake.api.cancelUpdate).toHaveBeenCalledWith(id);
+    expect(client.updateStatus.value?.state).toBe('cancelling');
+    expect(client.updateActionsDisabled.value).toBe(true);
+    await client.checkUpdate('main', '');
+    expect(fake.api.checkUpdate).toHaveBeenCalledOnce();
+    vi.mocked(fake.api.updateStatus).mockResolvedValueOnce(updateStatus('cancelled', 'stable'));
+    await client.refreshUpdateStatus();
+    expect(client.updateActionsDisabled.value).toBe(false);
+    await client.checkUpdate('main', '');
+    expect(fake.api.checkUpdate).toHaveBeenCalledTimes(2);
+    expect(fake.api.applyUpdate).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
+  it('reconciles a lost cancel response without replay and blocks on stale status', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    await client.checkUpdate('stable', '');
+    vi.mocked(fake.api.cancelUpdate).mockRejectedValueOnce(new Error('response lost'));
+    vi.mocked(fake.api.updateStatus).mockRejectedValueOnce(new Error('offline'));
+    await client.cancelUpdate(client.updateStatus.value!.operation_id);
+    expect(client.updateStatusStale.value).toBe(true);
+    expect(client.updateActionsDisabled.value).toBe(true);
+    expect(fake.api.cancelUpdate).toHaveBeenCalledOnce();
+    vi.mocked(fake.api.updateStatus).mockResolvedValueOnce(updateStatus('cancelled', 'stable'));
+    await client.refreshUpdateStatus();
+    expect(client.updateStatusStale.value).toBe(false);
+    expect(client.updateActionsDisabled.value).toBe(false);
+    expect(fake.api.cancelUpdate).toHaveBeenCalledOnce();
+    client.dispose();
+  });
+
+  it('does not expose cancellation to an applying operation', async () => {
+    stubBrowser();
+    const fake = testApi();
+    const client = useFocusWebClient(fake.api);
+    await client.load();
+    vi.mocked(fake.api.updateStatus).mockResolvedValueOnce(updateStatus('applying'));
+    await client.refreshUpdateStatus();
+    await client.cancelUpdate(client.updateStatus.value!.operation_id);
+    expect(fake.api.cancelUpdate).not.toHaveBeenCalled();
+    client.dispose();
+  });
+
   it('keeps update actions disabled while a background check is still running', async () => {
     stubBrowser();
     const fake = testApi();

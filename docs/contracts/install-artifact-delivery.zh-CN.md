@@ -104,7 +104,9 @@ checkout 源码或另一旧 Release。
 目标 wheel 中的 `bot/installation/python-runtime.json` 是完整 CPython 与 uv 下载工具版本的
 唯一 policy。`bot/installation/python_runtime.py` 在取得停服 admission 前，准备并验证
 `<data-root>/.python/cpython-<python-version>-uv-<uv-version>/` 下的完整运行时。uv 负责平台选择、
-下载校验和解包；Focus 不复用外部 Python 的标准库，也不在应用阶段下载解释器。受管 `.venv`
+下载校验和解包；Focus 不复用外部 Python 的标准库，也不在应用阶段下载解释器。
+缺少的完整运行时先在临时目录下载并验证，再以目录 rename 原子发布；Web 更新的临时目录位于本次
+operation staging 中，因此取消后可清理半成品，且不会破坏已有的共用运行时。受管 `.venv`
 由该解释器显式创建，并校验 `sys.base_prefix` 与标准库都位于专属目录。
 
 匹配固定版本的 uv 可复用 PATH 中的工具；否则仅在临时 bootstrap 环境中下载对应 uv wheel，

@@ -77,6 +77,7 @@ const emit = defineEmits<{
   refreshUpdate: [];
   configureUpdateSource: [url: string];
   checkUpdate: [target: FocusUpdateTarget, commit: string];
+  cancelUpdate: [operationId: string];
   applyUpdate: [operationId: string];
 }>();
 
@@ -528,6 +529,15 @@ function setComposerSendShortcut(value: string): void {
                 @click="emit('checkUpdate', 'stable', '')"
               >
                 {{ t('focus.updateCheckStable') }}
+              </Button>
+              <Button
+                v-if="updateStatus?.state === 'checking' || updateStatus?.state === 'cancelling'"
+                size="sm"
+                variant="secondary"
+                :disabled="updateBusy || updateLoading || updateStatusStale || updateStatus.installation_started || (updateStatus.state === 'cancelling' && !updateStatus.error)"
+                @click="emit('cancelUpdate', updateStatus.operation_id)"
+              >
+                {{ t(updateStatus.state === 'cancelling' ? (updateStatus.error ? 'focus.updateCancelRetry' : 'focus.updateState_cancelling') : 'focus.updateCancel') }}
               </Button>
               <Button
                 v-if="updateStatus?.state === 'ready' && updateStatus.operation_id"

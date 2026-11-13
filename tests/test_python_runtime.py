@@ -69,26 +69,76 @@ class PythonRuntimeTests(unittest.TestCase):
                     with self.assertRaisesRegex(runtime.PythonRuntimeError, "outside"):
                         runtime.verify_python(pathlib.Path("python"), self.policy, root)
 
-    def test_prepare_downloads_only_to_the_versioned_owned_root(self) -> None:
+    def test_prepare_publishes_only_a_verified_runtime_from_operation_staging(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = pathlib.Path(raw)
+            operation = root / "operation"
+            operation.mkdir()
             calls = []
 
             def run(command, **kwargs):
                 calls.append(command)
                 if "install" in command:
-                    self._python(root)
+                    staged = pathlib.Path(command[command.index("--install-dir") + 1])
+                    self.assertTrue(staged.is_relative_to(operation))
+                    self._python(staged.parent.parent)
                     return ""
-                return self._observation(root)
+                python = pathlib.Path(command[0])
+                base = python.parent if os.name == "nt" else python.parent.parent
+                if base.is_relative_to(operation):
+                    self.assertFalse(self.policy.directory(root).exists())
+                return json.dumps({"implementation": "cpython", "version": self.policy.python_version,
+                                   "base_prefix": str(base), "stdlib": str(base / "lib"), "executable": str(python)})
 
             with patch.object(runtime, "_uv", return_value=contextlib.nullcontext(pathlib.Path("pinned-uv"))):
                 with patch.object(runtime, "_run", side_effect=run):
-                    runtime.ensure_python(self.policy, root)
+                    installed = runtime.ensure_python(self.policy, root, staging_root=operation)
             command = calls[0]
             self.assertIn("--no-bin", command)
             self.assertIn("--no-registry", command)
-            self.assertEqual(command[command.index("--install-dir") + 1], str(self.policy.directory(root.resolve())))
             self.assertEqual(command[-1], f"cpython-{self.policy.python_version}")
+            self.assertTrue(installed.is_relative_to(self.policy.directory(root)))
+            self.assertTrue(installed.is_file())
+            self.assertEqual(list(operation.iterdir()), [])
+            self.assertEqual(len(calls), 3)  # download, staged probe, published probe
+
+    def test_interrupted_download_cannot_leave_a_partial_shared_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+            operation = root / "operation"
+            operation.mkdir()
+
+            def interrupt(command, **kwargs):
+                staged = pathlib.Path(command[command.index("--install-dir") + 1])
+                (staged / f"cpython-{self.policy.python_version}-partial").mkdir()
+                raise KeyboardInterrupt()
+
+            with patch.object(runtime, "_uv", return_value=contextlib.nullcontext(pathlib.Path("uv"))):
+                with patch.object(runtime, "_run", side_effect=interrupt):
+                    with self.assertRaises(KeyboardInterrupt):
+                        runtime.ensure_python(self.policy, root, staging_root=operation)
+            self.assertFalse(self.policy.directory(root).exists())
+            self.assertEqual(list(operation.iterdir()), [])
+
+    def test_concurrent_publication_does_not_replace_an_existing_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as raw:
+            root = pathlib.Path(raw)
+
+            def run(command, **kwargs):
+                if "install" in command:
+                    staged = pathlib.Path(command[command.index("--install-dir") + 1])
+                    self._python(staged.parent.parent).write_text("candidate")
+                    self._python(root).write_text("concurrent winner")
+                    return ""
+                python = pathlib.Path(command[0])
+                base = python.parent if os.name == "nt" else python.parent.parent
+                return json.dumps({"implementation": "cpython", "version": self.policy.python_version,
+                                   "base_prefix": str(base), "stdlib": str(base / "lib"), "executable": str(python)})
+
+            with patch.object(runtime, "_uv", return_value=contextlib.nullcontext(pathlib.Path("uv"))):
+                with patch.object(runtime, "_run", side_effect=run):
+                    installed = runtime.ensure_python(self.policy, root)
+            self.assertEqual(installed.read_text(), "concurrent winner")
 
     def test_apply_never_downloads_missing_python(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

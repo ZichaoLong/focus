@@ -34,6 +34,8 @@
 - bundle 中的 Focus wheel、依赖锁和 source revision 一致性。
 
 Python 预检读取目标 wheel 的完整运行时 policy，并在固定 `.python` 缓存中准备该版本；
+缺少的运行时先下载到本次 operation 的 staging，完成解释器与标准库验证后再原子发布到共用缓存；
+取消或下载中断留下的半成品只属于该 operation，不能覆盖、删除或原地修补已有运行时。
 所有依赖下载、离线试安装、`pip check`、关键模块导入与 CLI 启动检查都使用这份目标 Python。
 标准库与基础解释器必须位于 Focus 专属目录，不能以当前旧环境的 wheel 兼容性代替证明。
 预检成功才写入 `ready`，并在既有 `preflight` 中记录 `python_runtime`；缓存准备失败不改变旧服务。
@@ -57,6 +59,21 @@ index 与证书环境，以及 Focus 根目录；不会把 provider/API 凭据�
 检查另一个目标、修改更新源和应用其它 operation 都必须禁用。关闭“关于”面板不会取消操作，
 重新打开后应先读取同一份 journal。多个浏览器标签页仍可能同时发起请求，因此后端的 single-flight
 拒绝必须保留；收到该拒绝时，浏览器应读取当前状态并说明已有操作，而不是重发第二个检查。
+
+准备期间提供“取消准备”，main/stable 两个检查按钮保持独立。`POST /api/update/cancel` 只接受
+exact `{operation_id}`，复用认证、同源、CSRF 与 document admission。取消只作用于该 ID 的 check unit，
+不停止 Focus service，也不取消 `applying` 或结果不明的安装。为处理点击与准备完成的竞争，同一个尚未
+应用的 `ready` operation 也可接受取消；进入 apply 的操作必须拒绝取消。
+
+取消先在同一 journal 锁下写入 `cancelling`，阻止迟到 worker 发布 ready/failed 或开始应用，再请求
+systemd 停止该检查的整个 cgroup。check unit 使用 `KillMode=control-group` 和有界停止超时，包含自行
+创建 session 的 Git/npm/pip/uv 子进程。浏览器显示“正在取消”并继续轮询；该状态仍禁止新的检查、
+修改更新源与应用。只有确认 unit 已 inactive/failed、没有排队的 systemd job，且本 operation staging 清理完成后，才记录
+`cancelled` 并允许另一个检查。已发布的共用 `.python` 缓存与当前安装均保留。
+
+重复取消同一 ID 不产生第二个任务，旧 ID 不能取消新检查。取消请求或 unit 状态不明、清理失败时
+保持 `cancelling`，保留 staging 与阻断条件并显示错误；允许用户显式重试取消。HTTP response 丢失时
+浏览器只读取 journal，不自动重发取消或开始下一次检查。关闭面板、重载页面或服务重启后继续观察同一 journal。
 
 updater 在 journal 中持久化受限的固定 `phase`、阶段开始时间、最近实际进展时间和可选字节进度。
 Stable 下载阶段在响应提供大小时报告已收/总字节；Git/npm/pip 的原始输出不进入浏览器或公共 journal，
@@ -96,8 +113,8 @@ service 恢复后完整 reload document，才能使用新的静态资源。
 ## 4. Wire 与生命周期
 
 `GET /api/update` 返回 machine-level source 与当前 operation journal（含 target 与 operation id）；source、
-check、apply 都是 authenticated same-origin、CSRF 保护的用户动作，并续期当前
-Web session。journal 不授予 thread、writer、approval 或 recovery authority；
+check、cancel、apply 都是 authenticated same-origin、CSRF 保护的用户动作，并续期当前 Web session。
+journal 不授予 thread、writer、approval 或 recovery authority；
 更新期间连接断开只是 service lifecycle 的结果，不得把断线当作安装成功。
 
 ## 5. 维护闭环

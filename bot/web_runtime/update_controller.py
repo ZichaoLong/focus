@@ -12,4 +12,4 @@ from bot.installation.update import (  # noqa: F401
     validate_source as validate_update_source_url,
 )
 
-UPDATE_STATES = frozenset({"idle", "checking", "ready", "applying", "succeeded", "failed", "unknown"})
+UPDATE_STATES = frozenset({"idle", "checking", "cancelling", "cancelled", "ready", "applying", "succeeded", "failed", "unknown"})

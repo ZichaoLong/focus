@@ -164,6 +164,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   服务与静态资源须同版本部署，具体状态与关联规则见[提交时间合同](focus-web-prompt-timing.zh-CN.md)。
 
 - v39 新增实例记录/附件保留期读写和立即清理接口，详见[数据清理合同](./data-retention.zh-CN.md)。
+- v40 新增 exact operation 的 `POST /api/update/cancel`，扩展更新状态与阶段的封闭词汇
+  `cancelling`、`cancelled`；行为见[浏览器更新合同](./focus-web-update.zh-CN.md)。
 
 ## 4. Endpoint 与 event admission
 

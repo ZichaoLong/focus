@@ -1686,6 +1686,10 @@
         {
           "path": "bot/web_runtime/gateway.py",
           "symbol": "WebGateway._staged_document_request_to_thread"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_update_cancel"
         }
       ],
       "owner": [
@@ -1776,6 +1780,14 @@
         {
           "path": "web/src/focus/projectionEventDecoder.ts",
           "symbol": "decodeFocusRuntimeNoticeDetail"
+        },
+        {
+          "path": "bot/installation/update.py",
+          "symbol": "stop_check_worker"
+        },
+        {
+          "path": "web/src/focus/useFocusWebClient.ts",
+          "symbol": "useFocusWebClient"
         }
       ],
       "contract": [
@@ -1811,13 +1823,17 @@
             "tests/test_web_update_controller.py",
             "tests/web_runtime/test_thread_history_gateway.py",
             "tests/web_runtime/test_prompt_timing.py",
-            "tests/test_web_update_worker.py"
+            "tests/test_web_update_worker.py",
+            "tests/test_web_update_cancel.py",
+            "tests/web_runtime/test_update_cancel_gateway.py"
           ]
         },
         {
           "runner": "vitest",
           "targets": [
-            "web/test/focus-update-api.test.ts"
+            "web/test/focus-update-api.test.ts",
+            "web/test/focus-update-cancel-browser.test.ts",
+            "web/test/focus_client/owners/use-focus-web-client.test.ts"
           ]
         }
       ],
@@ -3273,7 +3289,8 @@
           "targets": [
             "tests/test_install_lifecycle.py",
             "tests/test_web_update_controller.py",
-            "tests/test_managed_python.py"
+            "tests/test_managed_python.py",
+            "tests/test_web_update_cancel.py"
           ]
         }
       ],

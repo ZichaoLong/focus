@@ -74,6 +74,7 @@ const emit = defineEmits<{ 'update:open': [value: boolean] }>();
     @refresh-update="props.client.refreshUpdateStatus"
     @configure-update-source="props.confirmUpdateSource"
     @check-update="(target, commit) => props.client.checkUpdate(target, commit)"
+    @cancel-update="props.client.cancelUpdate($event)"
     @apply-update="props.confirmFocusUpdate"
   />
 </template>

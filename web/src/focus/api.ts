@@ -224,6 +224,7 @@ export interface FocusWebApiPort {
   updateStatus(): Promise<FocusUpdateStatus>;
   configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus>;
   checkUpdate(target: FocusUpdateTarget, commit: string): Promise<FocusUpdateStatus>;
+  cancelUpdate(operationId: string): Promise<FocusUpdateStatus>;
   applyUpdate(operationId: string, confirmation: string): Promise<FocusUpdateStatus>;
   backendResetPreview(): Promise<FocusBackendResetPreview>;
   backendResetExecute(input: {
@@ -457,6 +458,15 @@ export class FocusWebApi implements FocusWebApiPort {
       decodeFocusUpdateStatus,
       'update check',
       { body: { target, commit } },
+    );
+  }
+
+  cancelUpdate(operationId: string): Promise<FocusUpdateStatus> {
+    return this.request(
+      'update_cancel',
+      decodeFocusUpdateStatus,
+      'cancel update preparation',
+      { body: { operation_id: operationId } },
     );
   }
 

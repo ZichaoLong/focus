@@ -26,12 +26,14 @@ from bot.platform_paths import default_data_root
 
 DEFAULT_SOURCE = "https://github.com/ZichaoLong/focus.git"
 UPDATE_TARGETS = frozenset({"stable", "main"})
-STATES = {"idle", "checking", "ready", "applying", "succeeded", "failed", "unknown"}
+STATES = {"idle", "checking", "cancelling", "cancelled", "ready", "applying", "succeeded", "failed", "unknown"}
 UPDATE_SCHEMA = "focus-web-update-3"
 UPDATE_PHASES = frozenset(
     {
         "idle",
         "starting",
+        "cancelling",
+        "cancelled",
         "disk_preflight",
         "release_metadata",
         "release_download",
@@ -127,6 +129,8 @@ def _phase_for_state(state: object) -> str:
         return {
             "idle": "idle",
             "checking": "starting",
+            "cancelling": "cancelling",
+            "cancelled": "cancelled",
             "ready": "ready",
             "applying": "apply_validate",
             "succeeded": "succeeded",
@@ -266,11 +270,18 @@ class UpdateJournal:
 
 def unit_active(unit: str) -> bool | None:
     try:
-        result = subprocess.run(["systemctl", "--user", "show", unit, "--property=ActiveState", "--value"],
+        result = subprocess.run(["systemctl", "--user", "show", unit, "--property=ActiveState", "--property=Job"],
                                 capture_output=True, text=True, timeout=5, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
-    state = result.stdout.strip()
+    observed = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    if result.returncode or "Job" not in observed:
+        return None
+    # An inactive unit with a queued start/stop job is not proof that its work
+    # has ended. Do not release single-flight admission until that job settles.
+    if observed["Job"]:
+        return True
+    state = observed.get("ActiveState", "")
     if state in {"active", "activating", "reloading", "deactivating"}:
         return True
     if state in {"inactive", "failed"}:
@@ -292,6 +303,19 @@ def launch_worker(journal: UpdateJournal, operation_id: str, mode: str) -> None:
     launch_update_worker(journal, operation_id, mode)
 
 
+def stop_check_worker(unit: str) -> None:
+    """Queue a stop of the check's complete cgroup; observation confirms completion."""
+    try:
+        result = subprocess.run(
+            ["systemctl", "--user", "stop", "--no-block", unit],
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise UpdateError("Could not confirm the cancellation request; refresh status or retry cancellation") from exc
+    if result.returncode:
+        raise UpdateError("Could not stop the update check; refresh status or retry cancellation")
+
+
 class FocusUpdateController:
     def __init__(self, *, global_data_root: pathlib.Path):
         self.journal = UpdateJournal(global_data_root)
@@ -307,6 +331,26 @@ class FocusUpdateController:
 
     def _snapshot(self) -> dict:
         value = self.journal.read()
+        if value["state"] == "cancelling":
+            active = unit_active(value["unit"])
+            if active is False:
+                try:
+                    self._remove_staging(value)
+                except (OSError, UpdateError):
+                    value["error"] = "Check stopped, but staging cleanup failed; refresh status or retry cancellation"
+                else:
+                    now = time.time()
+                    value.update(
+                        state="cancelled", phase="cancelled", phase_started_at=now,
+                        last_progress_at=now, progress=None, error="", preflight={},
+                        message="Update preparation cancelled; the installed Focus is unchanged",
+                        bundle_sha256="", staging_dir="", bundle_path="", wheelhouse_path="",
+                        offline_requirements="",
+                    )
+                self.journal.write(value)
+            elif active is None and not value["error"]:
+                value["error"] = "Cannot confirm that the check has stopped; preparation remains blocked"
+                self.journal.write(value)
         if value["state"] in {"checking", "applying"} and time.time() - value["updated_at"] > 30:
             active = unit_active(value["unit"])
             if active is False:
@@ -368,7 +412,7 @@ class FocusUpdateController:
             raise UpdateError("Changing the source requires explicit confirmation")
         with self.journal.locked():
             current = self.journal.read()
-            if current["state"] in {"checking", "applying"} or (
+            if current["state"] in {"checking", "cancelling", "applying"} or (
                 current["state"] == "unknown"
                 and not self._recoverable_unknown_check(current)
             ):
@@ -402,7 +446,7 @@ class FocusUpdateController:
             raise UpdateError(reason)
         with self.journal.locked():
             current = self.journal.read()
-            if current["state"] in {"checking", "applying"} or (
+            if current["state"] in {"checking", "cancelling", "applying"} or (
                 current["state"] == "unknown"
                 and not self._recoverable_unknown_check(current)
             ):
@@ -432,6 +476,32 @@ class FocusUpdateController:
                 now = time.time()
                 value.update(state="failed", error=str(exc) or "Updater could not be started",
                              phase="failed", phase_started_at=now, last_progress_at=now, progress=None)
+                self.journal.write(value)
+            return self._snapshot()
+
+    def cancel_check(self, operation_id: str) -> dict:
+        if reason := unavailable_reason():
+            raise UpdateError(reason)
+        with self.journal.locked():
+            value = self.journal.read()
+            if (not operation_id or operation_id != value["operation_id"]
+                    or value["state"] not in {"checking", "ready", "cancelling", "cancelled"}
+                    or value["installation_started"]
+                    or value["unit"] != f"focus-update-{operation_id}-check.service"):
+                raise UpdateError("Only the exact update preparation can be cancelled; installation cannot be cancelled")
+            if value["state"] == "cancelled" or (value["state"] == "cancelling" and not value["error"]):
+                return self._snapshot()
+            now = time.time()
+            value.update(state="cancelling", phase="cancelling", phase_started_at=now,
+                         last_progress_at=now, progress=None, error="",
+                         message="Stopping update preparation; waiting for the check and its child processes to exit")
+            # This exact-state transition fences ready publication and apply,
+            # including a check which finishes just as the user cancels it.
+            self.journal.write(value)
+            try:
+                stop_check_worker(value["unit"])
+            except UpdateError as exc:
+                value["error"] = str(exc)
                 self.journal.write(value)
             return self._snapshot()
 

@@ -70,6 +70,7 @@ The Markdown formula and code copy components and their copy regression
 tests are Focus-owned additions, explicitly listed in `focus_owned_files`.
 The shared Markdown parser configuration and CJK emphasis regression tests
 are also Focus-owned additions.
+The update-preparation cancellation browser regressions are Focus-owned additions.
 `ToolGroupHeader.vue` is extracted from the Kimi-derived `ToolGroup.vue`; both
 retain that upstream source attribution. The tool-group projection/expansion
 owner and its unit/browser regressions are Focus-owned additions.

@@ -68,6 +68,7 @@ const heading = computed(() => {
   if (props.status?.state === 'checking') {
     return t('focus.updateChecking', { target: props.status.target });
   }
+  if (props.status?.state === 'cancelling') return t('focus.updateCancelling');
   if (props.status?.state === 'applying') {
     return t(props.status.installation_started ? 'focus.updateInstalling' : 'focus.updateRechecking');
   }

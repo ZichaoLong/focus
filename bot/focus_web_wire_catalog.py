@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 39
+FOCUS_WEB_WIRE_VERSION: Final = 40
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -160,6 +160,12 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "POST",
         "/api/update/check",
         "_handle_update_check",
+    ),
+    FocusWebEndpointSpec(
+        "update_cancel",
+        "POST",
+        "/api/update/cancel",
+        "_handle_update_cancel",
     ),
     FocusWebEndpointSpec(
         "update_apply",
@@ -398,6 +404,7 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "request_respond",
         "update_source",
         "update_check",
+        "update_cancel",
         "update_apply",
     }
 )
@@ -437,13 +444,13 @@ FOCUS_WEB_ENUMS: Final = (
     _enum('prompt_browser_result', 'succeeded known_no_effect outcome_unknown pending'),
     _enum("focus_install_channel", "stable local"),
     _enum("update_target", "stable main"),
-    _enum("update_state", "idle checking ready applying succeeded failed unknown"),
+    _enum("update_state", "idle checking cancelling cancelled ready applying succeeded failed unknown"),
     _enum(
         "update_phase",
         "idle starting disk_preflight release_metadata release_download release_verify "
         "source_clone source_revision node_preflight npm_install web_build bundle_build "
         "bundle_validate python_preflight dependency_download wheelhouse_verify final_disk_check "
-        "apply_validate apply_prepare apply_install apply_restart ready succeeded failed unknown",
+        "apply_validate apply_prepare apply_install apply_restart cancelling cancelled ready succeeded failed unknown",
     ),
     _enum("update_progress_unit", "bytes"),
     _enum("thread_scope", "current global"),

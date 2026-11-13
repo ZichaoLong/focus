@@ -125,7 +125,9 @@ the complete CPython and uv download-tool versions. Before shutdown admission,
 `bot/installation/python_runtime.py` prepares and verifies the full runtime under
 `<data-root>/.python/cpython-<python-version>-uv-<uv-version>/`. uv owns platform
 selection, download verification, and extraction. Focus does not reuse an external
-Python standard library or download an interpreter during apply. The managed `.venv`
+Python standard library or download an interpreter during apply. Missing runtimes are downloaded and verified in a
+temporary directory, then published by an atomic directory rename. For Web updates the temporary directory belongs to
+the operation staging, so cancellation can remove partial downloads without damaging shared runtimes. The managed `.venv`
 is explicitly created with this interpreter; its `sys.base_prefix` and standard
 library must both be inside the dedicated directory.
 

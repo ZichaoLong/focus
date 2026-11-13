@@ -162,24 +162,44 @@ def _uv(policy: PythonRuntimePolicy, data_root: pathlib.Path) -> Iterator[pathli
         yield tool
 
 
-def ensure_python(policy: PythonRuntimePolicy, data_root: pathlib.Path) -> pathlib.Path:
+def ensure_python(
+    policy: PythonRuntimePolicy, data_root: pathlib.Path, *, staging_root: pathlib.Path | None = None,
+) -> pathlib.Path:
     """Download missing runtimes before service admission; never repair a live runtime in place."""
     data_root = data_root.resolve()
     root = policy.directory(data_root)
     if (data_root / ".python").is_symlink() or root.is_symlink():
         raise PythonRuntimeError("Dedicated Python root must not be a symbolic link")
-    root.mkdir(parents=True, exist_ok=True)
     python = _find_python(root, policy)
-    if python is None:
-        with _uv(policy, data_root) as tool:
+    if python is not None:
+        verify_python(python, policy, data_root)
+        return python
+    data_root.mkdir(parents=True, exist_ok=True)
+    # Abrupt cancellation may leave partial downloads, but only in the caller's
+    # staging tree. Publish a complete, probed runtime in one directory rename;
+    # never edit or delete a shared runtime that another installation uses.
+    with tempfile.TemporaryDirectory(prefix="python-prepare-", dir=staging_root or data_root) as raw:
+        staging = pathlib.Path(raw)
+        prepared = policy.directory(staging)
+        prepared.mkdir(parents=True)
+        with _uv(policy, staging) as tool:
             _run([str(tool), "--no-config", "--no-cache", "--system-certs", "python", "install",
-                  "--install-dir", str(root), "--no-bin", "--no-registry",
+                  "--install-dir", str(prepared), "--no-bin", "--no-registry",
                   f"cpython-{policy.python_version}"], label="Dedicated CPython download")
-        python = _find_python(root, policy)
+        python = _find_python(prepared, policy)
         if python is None:
             raise PythonRuntimeError("uv did not produce the requested CPython installation")
-    verify_python(python, policy, data_root)
-    return python
+        verify_python(python, policy, staging)
+        if (data_root / ".python").is_symlink() or root.is_symlink():
+            raise PythonRuntimeError("Dedicated Python root must not be a symbolic link")
+        root.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            prepared.rename(root)
+        except OSError:
+            # A concurrent installer may have published this exact version.
+            # Reuse only a fully verified winner, without replacing its files.
+            return existing_python(policy, data_root)
+    return existing_python(policy, data_root)
 
 
 def existing_python(policy: PythonRuntimePolicy, data_root: pathlib.Path) -> pathlib.Path:

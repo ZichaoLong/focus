@@ -205,7 +205,7 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
         validated = validate_install_bundle(bundle, extraction_dir=root / "validated")
         report("python_preflight", "Preparing the complete dedicated Focus Python runtime")
         policy = runtime_policy(validated.wheel_path)
-        runtime_python = ensure_python(policy, default_data_root())
+        runtime_python = ensure_python(policy, default_data_root(), staging_root=root)
         preflight_venv = root / "preflight-venv"
         create_venv(runtime_python, preflight_venv)
         python = _venv_python(preflight_venv)
@@ -240,9 +240,14 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
                        bundle_sha256=digest, staging_dir=str(root), bundle_path=str(bundle),
                        wheelhouse_path=str(wheelhouse), offline_requirements=str(offline_req), installation_started=False)
     except BaseException as exc:
-        journal.settle(operation["operation_id"], "checking", state="failed",
-                       message="Update check failed; the old Focus installation is unchanged", error=str(exc)[:16384],
-                       phase="failed", phase_started_at=time.time(), last_progress_at=time.time(), progress=None)
+        try:
+            journal.settle(operation["operation_id"], "checking", state="failed",
+                           message="Update check failed; the old Focus installation is unchanged", error=str(exc)[:16384],
+                           phase="failed", phase_started_at=time.time(), last_progress_at=time.time(), progress=None)
+        except UpdateError:
+            # Cancellation owns cleanup after the entire worker cgroup exits.
+            # A late worker must neither publish ready/failed nor reopen admission.
+            return
         shutil.rmtree(root, ignore_errors=True)
 
 

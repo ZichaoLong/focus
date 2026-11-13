@@ -299,5 +299,10 @@ def compose_web_gateway(
                 if update_controller is not None
                 else None
             ),
+            update_cancel=(
+                update_controller.cancel_check
+                if update_controller is not None
+                else None
+            ),
         ),
     )

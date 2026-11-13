@@ -261,6 +261,8 @@ class UpdateLauncherTests(unittest.TestCase):
         self.assertIn("--no-block", command)
         self.assertIn("--user", command)
         self.assertIn("focus-update-test-check", command)
+        self.assertIn("--property=KillMode=control-group", command)
+        self.assertIn("--property=TimeoutStopSec=10s", command)
 
 
 class NodeToolchainTests(unittest.TestCase):

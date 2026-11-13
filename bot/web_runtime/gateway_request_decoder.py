@@ -309,6 +309,17 @@ def decode_update_check_request(body: dict[str, Any]) -> tuple[str, str]:
     return str(body["target"]), body["commit"]
 
 
+def decode_update_cancel_request(body: dict[str, Any]) -> str:
+    operation_id = body.get("operation_id")
+    if (set(body) != {"operation_id"} or not isinstance(operation_id, str)
+            or re.fullmatch(r"[0-9a-f]{32}", operation_id) is None):
+        raise WebRuntimeError(
+            "取消准备请求必须包含 exact operation_id。",
+            code="invalid_update_cancel_request", status=400,
+        )
+    return operation_id
+
+
 def decode_update_apply_request(body: dict[str, Any]) -> tuple[str, str]:
     if (
         set(body) != {"operation_id", "confirmation"}

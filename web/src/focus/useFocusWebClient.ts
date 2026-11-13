@@ -80,7 +80,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const updateObservedAt = ref(0);
   const updateApplyStarted = ref(false);
   const updateOperationActive = computed(() => (
-    updateStatus.value?.state === 'checking' || updateStatus.value?.state === 'applying'
+    updateStatus.value?.state === 'checking' || updateStatus.value?.state === 'cancelling'
+    || updateStatus.value?.state === 'applying'
     || updateApplyStarted.value
   ));
   const updateActionsDisabled = computed(() => (
@@ -636,7 +637,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearUpdatePoll();
     if (navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
     const state = updateStatus.value?.state;
-    if (state !== 'checking' && state !== 'applying' && !updateApplyStarted.value) return;
+    if (state !== 'checking' && state !== 'cancelling' && state !== 'applying' && !updateApplyStarted.value) return;
     updatePollTimer = setTimeout(() => {
       updatePollTimer = null;
       void refreshUpdateStatus({ silent: true });
@@ -759,6 +760,35 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       await reconcileUpdateRejection(error);
     } finally {
       updateBusy.value = false;
+    }
+  }
+
+  async function cancelUpdate(operationId: string): Promise<void> {
+    const operation = updateStatus.value;
+    if (updateBusy.value || updateLoading.value || updateStatusStale.value
+      || navigation.isDisposed || authRequired.value || documentReloadRequired.value
+      || !operation || operation.operation_id !== operationId || operation.installation_started
+      || (operation.state !== 'checking' && !(operation.state === 'cancelling' && operation.error))) return;
+    clearUpdatePoll();
+    updateBusy.value = true;
+    updateNotice.value = '';
+    clearError();
+    try {
+      const observed = await api.cancelUpdate(operationId);
+      if (!navigation.isDisposed) installUpdateStatus(observed);
+    } catch (error) {
+      // A lost response cannot prove cancellation. Read the journal, without
+      // replaying the POST or enabling a competing check from stale state.
+      updateStatusStale.value = true;
+      if (error instanceof FocusApiError && error.status === 409 && error.code === 'update_rejected') {
+        await reconcileUpdateRejection(error);
+      } else {
+        if (!reportFatalError(error)) reportError(error);
+        await readUpdateStatus({ silent: true });
+      }
+    } finally {
+      updateBusy.value = false;
+      scheduleUpdatePoll();
     }
   }
 
@@ -1165,6 +1195,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     refreshUpdateStatus,
     configureUpdateSource,
     checkUpdate,
+    cancelUpdate,
     applyUpdate,
     executeBackendReset,
     selectThread,
