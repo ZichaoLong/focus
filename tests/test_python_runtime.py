@@ -97,7 +97,7 @@ class PythonRuntimeTests(unittest.TestCase):
             self.assertIn("--no-bin", command)
             self.assertIn("--no-registry", command)
             self.assertEqual(command[-1], f"cpython-{self.policy.python_version}")
-            self.assertTrue(installed.is_relative_to(self.policy.directory(root)))
+            self.assertTrue(installed.is_relative_to(self.policy.directory(root.resolve())))
             self.assertTrue(installed.is_file())
             self.assertEqual(list(operation.iterdir()), [])
             self.assertEqual(len(calls), 3)  # download, staged probe, published probe
