@@ -97,6 +97,7 @@ export interface FocusProjectionTransportPort {
 export interface FocusProjectionSyncOptions {
   onTranscriptDelta?(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail): void;
   onHistoryInvalidated?(): void;
+  onProjectionReload?(): void;
   api: FocusWebApiPort;
   intentClock: ClientIntentClock;
   turnWindowLimit: Readonly<Ref<number>>;
@@ -1332,9 +1333,10 @@ export function createFocusProjectionSync(
     if (options.navigation.isDisposed) return;
     flushPendingStreamEvents();
     if (reloadPromise) return reloadPromise;
-    // A reconnect or event gap may have hidden thread/reverted. Retire the
-    // browsing window, prompt locators and detail reads before the fresh base.
-    options.onHistoryInvalidated?.();
+    // A reconnect may have hidden thread/reverted. Retire cursor/detail reads;
+    // a retained visible anchor must be revalidated against the fresh base.
+    if (options.onProjectionReload) options.onProjectionReload();
+    else options.onHistoryInvalidated?.();
     if (!snapshotInvalidated.value) options.transport.resetProjectionReloadBackoff();
     options.transport.cancelProjectionReloadRetry();
     snapshotInvalidated.value = true;

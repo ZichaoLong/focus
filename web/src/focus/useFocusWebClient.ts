@@ -178,6 +178,13 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       threadInspection.clearToolDetail();
       threadInspection.clearSearch();
     },
+    onProjectionReload: () => {
+      if (transcript?.enabled.value) transcript.prepareReload();
+      else clearHistoryView();
+      promptHistory?.reset();
+      threadInspection.clearToolDetail();
+      threadInspection.clearSearch();
+    },
     transport: {
       hasOpenedEventSocket: () => transportSession.snapshot.value.hasOpenedEventSocket,
       requestProjectionReload: () => transportSession.requestProjectionReload(),
@@ -307,7 +314,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (!navigation.isDisposed && !snapshotInvalidated.value) {
       // A fresh snapshot may keep the same revision. Explicitly hydrate the
       // retired view in that case instead of waiting for a revision watcher.
-      if (transcript.enabled.value && !transcript.loading.value) void transcript.load();
+      if (transcript.enabled.value && !transcript.loading.value) void transcript.resumeAfterReload();
       promptHistory.refreshVisible();
     }
     reconcileMaterializedPromptResults();
@@ -320,8 +327,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       && meta.value !== null
     ),
     openEventSocket: (handlers) => api.connectEvents(handlers),
-    probeEventAccess: async () => {
-      await api.meta();
+    probeEventAccess: async (signal) => {
+      await api.meta(signal);
     },
     onHandshakeProbeError: (error) => {
       if (requiresDocumentReload(error)) {

@@ -949,3 +949,23 @@ every record and enum, and catalog conformance of representative Python DTOs. Wh
 Node toolchain exists, frontend tests, typecheck, style, provenance, notices, and build
 also run. A missing toolchain is recorded as unverified by the environment, never as a
 pass.
+
+## Browser connection recovery
+
+`focusTransportSession.ts` solely owns sockets, reconnect backoff, handshake/access-probe deadlines and browser recovery
+listeners. Foreground visibility, online and BFCache restoration coalesce over 200ms. A connection with an admitted `hello`
+first sends the existing text `ping`; a `pong` from that socket within five seconds preserves it, otherwise it is closed and
+reconnected. A disconnected transport reconnects immediately; an ongoing handshake keeps its deadline. Hidden pages do
+not start wake checks and normal foreground reading adds no periodic client heartbeat. Online is a recovery hint, not
+proof of connectivity, authentication or writer authority.
+
+Each connection must receive `hello` within 15 seconds; socket open alone is insufficient. A handshake timeout or close
+before `hello` probes metadata with the same document identity. The cancellable probe has a five-second deadline and
+continues the existing 1/2/4/8/10-second backoff even if fetch ignores cancellation. Synchronous socket creation failure also
+retries. Replacement, suspend and dispose cancel old probes/deadlines; late responses/events from old generations cannot
+change the current connection or authentication state. Dispose removes the recovery listeners.
+
+Recovery rebuilds transport and rereads bounded state without document registration, page reload or replaying prompts,
+approvals or other mutations. `401` and `document_replaced/document_unregistered` still stop retry and require the existing
+explicit recovery action. Server disconnect grace and session lifetimes are unchanged. Reading mode, drafts and verified
+transcript reading anchors survive; see the reading-mode and transcript-window contracts.

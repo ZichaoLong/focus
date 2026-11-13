@@ -208,6 +208,7 @@ export interface FocusEventHandlers {
   invalid?: () => void;
   open?: () => void;
   close?: () => void;
+  pong?: () => void;
 }
 
 export interface FocusWebApiPort {
@@ -219,7 +220,7 @@ export interface FocusWebApiPort {
   readonly documentReceipt: string;
   readonly intentGenerationFloor: number;
   initialize(): Promise<FocusMeta>;
-  meta(): Promise<FocusMeta>;
+  meta(signal?: AbortSignal): Promise<FocusMeta>;
   operatorStatus(): Promise<FocusOperatorStatus>;
   updateStatus(): Promise<FocusUpdateStatus>;
   configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus>;
@@ -409,8 +410,9 @@ export class FocusWebApi implements FocusWebApiPort {
     return this.meta();
   }
 
-  async meta(): Promise<FocusMeta> {
-    const result = await this.request('meta', decodeFocusMeta, 'metadata');
+  async meta(signal?: AbortSignal): Promise<FocusMeta> {
+    const result = await this.request('meta', decodeFocusMeta, 'metadata', { signal });
+    signal?.throwIfAborted();
     this.csrfToken = result.csrf_token;
     return result;
   }
@@ -1065,7 +1067,7 @@ export class FocusWebApi implements FocusWebApiPort {
     socket.addEventListener('open', () => { focusPerformance.record('socket_open'); handlers.open?.(); });
     socket.addEventListener('close', (event) => { this.promptTimings.disconnected(); focusPerformance.record('socket_close', { code: event.code }); handlers.close?.(); });
     socket.addEventListener('message', (message) => {
-      if (message.data === 'pong') return;
+      if (message.data === 'pong') { handlers.pong?.(); return; }
       if (typeof message.data !== 'string') {
         handlers.invalid?.();
         return;

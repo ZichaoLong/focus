@@ -9,6 +9,8 @@ import {
 interface TestSocket {
   handlers: FocusEventHandlers;
   close: ReturnType<typeof vi.fn>;
+  send: ReturnType<typeof vi.fn>;
+  readyState: number;
 }
 
 function transportFixture(overrides: Partial<FocusTransportSessionCallbacks> = {}) {
@@ -22,7 +24,7 @@ function transportFixture(overrides: Partial<FocusTransportSessionCallbacks> = {
   const callbacks: FocusTransportSessionCallbacks = {
     mayConnect: () => true,
     openEventSocket: (handlers) => {
-      const socket: TestSocket = { handlers, close: vi.fn() };
+      const socket: TestSocket = { handlers, close: vi.fn(), send: vi.fn(), readyState: 1 };
       sockets.push(socket);
       return socket as unknown as WebSocket;
     },
@@ -56,10 +58,13 @@ function transportFixture(overrides: Partial<FocusTransportSessionCallbacks> = {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.stubGlobal('window', new EventTarget());
+  vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
 });
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.unstubAllGlobals();
 });
 
 describe('Focus transport session', () => {
@@ -121,7 +126,7 @@ describe('Focus transport session', () => {
     expect(fixture.handshakeReady).toHaveBeenCalledWith(false);
   });
 
-  it('probes an unopened handshake and honors a fail-closed stop disposition', async () => {
+  it.each([false, true])('probes an incomplete handshake and stops recovery after fatal rejection (open=%s)', async opened => {
     const probeError = new Error('document capability replaced');
     const probeEventAccess = vi.fn(async () => {
       throw probeError;
@@ -136,6 +141,7 @@ describe('Focus transport session', () => {
     });
 
     fixture.session.connect();
+    if (opened) fixture.sockets[0]?.handlers.open?.();
     fixture.sockets[0]?.handlers.close?.();
     await Promise.resolve();
     await Promise.resolve();
@@ -144,8 +150,11 @@ describe('Focus transport session', () => {
     expect(probeErrors).toEqual([probeError]);
     expect(fixture.session.snapshot.value.connection).toBe('disconnected');
     expect(fixture.session.snapshot.value.reconnectScheduled).toBe(false);
+    window.dispatchEvent(new Event('online'));
+    document.dispatchEvent(new Event('visibilitychange'));
     await vi.advanceTimersByTimeAsync(30_000);
     expect(fixture.sockets).toHaveLength(1);
+    fixture.session.dispose();
   });
 
   it('rejects open, close, invalid, and event callbacks from a replaced generation', () => {
@@ -190,14 +199,152 @@ describe('Focus transport session', () => {
 
     fixture.session.connect();
     fixture.sockets[1]?.handlers.open?.();
+    fixture.sockets[1]?.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 });
     releaseProbe();
     await Promise.resolve();
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(30_000);
 
     expect(fixture.sockets).toHaveLength(2);
-    expect(fixture.session.snapshot.value.connection).toBe('connecting');
+    expect(fixture.session.snapshot.value.connection).toBe('connected');
     expect(fixture.session.snapshot.value.reconnectScheduled).toBe(false);
+  });
+
+  it.each([false, true])('retries a handshake which never finishes (socket open=%s)', async opened => {
+    const fixture = transportFixture();
+    fixture.session.connect();
+    if (opened) fixture.sockets[0]?.handlers.open?.();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(fixture.sockets[0]?.close).toHaveBeenCalledOnce();
+    expect(fixture.session.snapshot.value.reconnectScheduled).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fixture.sockets).toHaveLength(2);
+    fixture.session.dispose();
+  });
+
+  it('aborts a stalled access probe and ignores its late fatal response', async () => {
+    let signal!: AbortSignal;
+    let rejectProbe!: (error: Error) => void;
+    const onHandshakeProbeError = vi.fn((): FocusHandshakeProbeDisposition => 'stop');
+    const fixture = transportFixture({
+      probeEventAccess: value => { signal = value; return new Promise((_, reject) => { rejectProbe = reject; }); },
+      onHandshakeProbeError,
+    });
+    fixture.session.connect();
+    fixture.sockets[0]?.handlers.close?.();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(signal.aborted).toBe(true);
+    expect(fixture.session.snapshot.value.reconnectScheduled).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    fixture.sockets[1]?.handlers.open?.();
+    fixture.sockets[1]?.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 });
+    rejectProbe(new Error('old document rejected'));
+    await Promise.resolve();
+    expect(onHandshakeProbeError).not.toHaveBeenCalled();
+    expect(fixture.session.snapshot.value.connection).toBe('connected');
+    fixture.session.dispose();
+  });
+
+  it('ignores a rejected probe after wake starts a replacement connection', async () => {
+    let rejectProbe!: (error: Error) => void;
+    const onHandshakeProbeError = vi.fn((): FocusHandshakeProbeDisposition => 'stop');
+    const fixture = transportFixture({
+      probeEventAccess: () => new Promise((_, reject) => { rejectProbe = reject; }), onHandshakeProbeError,
+    });
+    fixture.session.connect();
+    fixture.sockets[0]?.handlers.close?.();
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(200);
+    fixture.sockets[1]?.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 });
+    rejectProbe(new Error('obsolete access rejection'));
+    await Promise.resolve();
+    expect(onHandshakeProbeError).not.toHaveBeenCalled();
+    expect(fixture.session.snapshot.value.connection).toBe('connected');
+    fixture.session.dispose();
+  });
+
+  it('does not extend a pending handshake deadline on repeated wake signals', async () => {
+    const fixture = transportFixture();
+    fixture.session.connect();
+    for (let second = 0; second < 15; second++) {
+      window.dispatchEvent(new Event('online'));
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(fixture.sockets).toHaveLength(1);
+    expect(fixture.sockets[0]?.close).toHaveBeenCalledOnce();
+    expect(fixture.session.snapshot.value.reconnectScheduled).toBe(true);
+    fixture.session.dispose();
+  });
+
+  it('retries a synchronous socket creation failure', async () => {
+    const fixture = transportFixture();
+    vi.spyOn(fixture.callbacks, 'openEventSocket').mockImplementationOnce(() => { throw new Error('network unavailable'); });
+    fixture.session.connect();
+    expect(fixture.session.snapshot.value.reconnectScheduled).toBe(true);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(fixture.sockets).toHaveLength(1);
+    fixture.session.dispose();
+  });
+
+  it('coalesces wake signals and keeps a healthy socket without a projection reload', async () => {
+    const fixture = transportFixture();
+    fixture.session.connect();
+    const socket = fixture.sockets[0]!;
+    socket.handlers.open?.();
+    socket.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(socket.send).toHaveBeenCalledExactlyOnceWith('ping');
+    socket.handlers.pong?.();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fixture.sockets).toHaveLength(1);
+    expect(fixture.reloadProjection).not.toHaveBeenCalled();
+    expect(socket.close).not.toHaveBeenCalled();
+    fixture.session.dispose();
+  });
+
+  it('replaces a silent broken socket after returning to the foreground', async () => {
+    const fixture = transportFixture();
+    fixture.session.connect();
+    const old = fixture.sockets[0]!;
+    old.handlers.open?.();
+    old.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 });
+    Object.assign(document, { visibilityState: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(180_000);
+    expect(old.send).not.toHaveBeenCalled();
+    Object.assign(document, { visibilityState: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(5_200);
+    expect(old.close).toHaveBeenCalledOnce();
+    expect(fixture.sockets).toHaveLength(2);
+    old.handlers.pong?.();
+    old.handlers.close?.();
+    old.handlers.event({ type: 'hello', runtime_epoch: 'old', revision: 99 });
+    expect(fixture.session.snapshot.value.connection).toBe('connecting');
+    fixture.sockets[1]?.handlers.open?.();
+    fixture.sockets[1]?.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 });
+    expect(fixture.handshakeReady).toHaveBeenLastCalledWith(true);
+    fixture.session.dispose();
+  });
+
+  it.each(['suspend', 'dispose'] as const)('cancels checks and ignores wake events after %s', async action => {
+    let signal!: AbortSignal;
+    const fixture = transportFixture({ probeEventAccess: value => { signal = value; return new Promise(() => {}); } });
+    fixture.session.connect();
+    fixture.sockets[0]?.handlers.close?.();
+    fixture.session[action]();
+    expect(signal.aborted).toBe(true);
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fixture.sockets).toHaveLength(1);
+    expect(vi.getTimerCount()).toBe(0);
+    fixture.session.dispose();
   });
 
   it('coalesces projection refreshes and owns projection retry backoff', async () => {

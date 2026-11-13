@@ -8,6 +8,10 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 10_000;
 const INITIAL_PROJECTION_RETRY_DELAY_MS = 250;
 const MAX_PROJECTION_RETRY_DELAY_MS = 10_000;
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+const ACCESS_PROBE_TIMEOUT_MS = 5_000;
+const WAKE_CHECK_DELAY_MS = 200;
+const WAKE_PONG_TIMEOUT_MS = 5_000;
 
 export type FocusTransportConnectionState = 'connecting' | 'connected' | 'disconnected';
 export type FocusHandshakeProbeDisposition = 'retry' | 'stop';
@@ -23,7 +27,7 @@ export interface FocusTransportSessionSnapshot {
 export interface FocusTransportSessionCallbacks {
   mayConnect(): boolean;
   openEventSocket(handlers: FocusEventHandlers): WebSocket;
-  probeEventAccess(): Promise<void>;
+  probeEventAccess(signal: AbortSignal): Promise<void>;
   onHandshakeProbeError(error: unknown): FocusHandshakeProbeDisposition;
   onConnectionError(error: unknown): void;
   onSocketOpened(): void;
@@ -78,6 +82,40 @@ export function createFocusTransportSession(
   let reconnectAttempt = 0;
   let projectionReloadRetryAttempt = 0;
   let hasCompletedHandshake = false;
+  let suspended = false;
+  let handshakeTimer: ReturnType<typeof setTimeout> | null = null;
+  let wakeTimer: ReturnType<typeof setTimeout> | null = null;
+  let pongTimer: ReturnType<typeof setTimeout> | null = null;
+  let accessProbe: { controller: AbortController; timer: ReturnType<typeof setTimeout> } | null = null;
+  const browser = typeof window === 'undefined' ? null : window;
+  const page = typeof document === 'undefined' ? null : document;
+
+  function cancelAccessProbe(): void {
+    const probe = accessProbe;
+    accessProbe = null;
+    if (!probe) return;
+    clearTimeout(probe.timer);
+    probe.controller.abort();
+  }
+
+  function clearSocketTimers(): void {
+    if (handshakeTimer !== null) clearTimeout(handshakeTimer);
+    handshakeTimer = null;
+    if (pongTimer !== null) clearTimeout(pongTimer);
+    pongTimer = null;
+  }
+
+  function retireSocket(expectedGeneration: number): boolean {
+    if (expectedGeneration !== socketGeneration) return false;
+    const previous = socket;
+    socket = null;
+    clearSocketTimers();
+    cancelProjectionReadTimers();
+    updateSnapshot({ connection: 'disconnected' });
+    // Clear the owner before close: delayed callbacks cannot retire its successor.
+    previous?.close();
+    return true;
+  }
 
   function updateSnapshot(changes: Partial<FocusTransportSessionSnapshot>): void {
     mutableSnapshot.value = { ...mutableSnapshot.value, ...changes };
@@ -100,6 +138,7 @@ export function createFocusTransportSession(
   function scheduleReconnect(expectedGeneration: number): void {
     if (
       mutableSnapshot.value.disposed
+      || suspended
       || !callbacks.mayConnect()
       || socket !== null
       || expectedGeneration !== socketGeneration
@@ -120,25 +159,33 @@ export function createFocusTransportSession(
   }
 
   function handleUnopenedSocketClose(expectedGeneration: number): void {
-    void (async () => {
-      try {
-        await callbacks.probeEventAccess();
-      } catch (error) {
-        if (callbacks.onHandshakeProbeError(error) === 'stop') return;
+    cancelAccessProbe();
+    const controller = new AbortController();
+    const current = () => accessProbe?.controller === controller
+      && !mutableSnapshot.value.disposed && !suspended && callbacks.mayConnect()
+      && socket === null && expectedGeneration === socketGeneration;
+    const finish = (error?: unknown) => {
+      if (!current()) return;
+      cancelAccessProbe();
+      if (error !== undefined && callbacks.onHandshakeProbeError(error) === 'stop') {
+        suspend();
+        return;
       }
-      if (
-        mutableSnapshot.value.disposed
-        || !callbacks.mayConnect()
-        || socket !== null
-        || expectedGeneration !== socketGeneration
-      ) return;
       scheduleReconnect(expectedGeneration);
-    })();
+    };
+    accessProbe = { controller, timer: setTimeout(() => finish(), ACCESS_PROBE_TIMEOUT_MS) };
+    try {
+      // The deadline advances recovery even if a fetch implementation ignores abort.
+      void callbacks.probeEventAccess(controller.signal).then(() => finish(), finish);
+    } catch (error) { finish(error); }
   }
 
   function connect(): void {
     if (mutableSnapshot.value.disposed || !callbacks.mayConnect()) return;
+    suspended = false;
     cancelReconnect();
+    cancelAccessProbe();
+    clearSocketTimers();
     socketGeneration += 1;
     const generation = socketGeneration;
     const previousSocket = socket;
@@ -147,12 +194,10 @@ export function createFocusTransportSession(
     updateSnapshot({ connection: 'connecting' });
     try {
       let nextSocket: WebSocket;
-      let socketOpened = false;
       let socketHandshakeReady = false;
       nextSocket = callbacks.openEventSocket({
         open: () => {
           if (socket !== nextSocket || generation !== socketGeneration) return;
-          socketOpened = true;
           updateSnapshot({
             hasOpenedEventSocket: true,
           });
@@ -160,11 +205,9 @@ export function createFocusTransportSession(
         },
         close: () => {
           if (socket !== nextSocket || generation !== socketGeneration) return;
-          socket = null;
-          cancelProjectionReadTimers();
-          updateSnapshot({ connection: 'disconnected' });
+          retireSocket(generation);
           if (mutableSnapshot.value.disposed || !callbacks.mayConnect()) return;
-          if (socketOpened) scheduleReconnect(generation);
+          if (socketHandshakeReady) scheduleReconnect(generation);
           else handleUnopenedSocketClose(generation);
         },
         invalid: () => {
@@ -172,10 +215,17 @@ export function createFocusTransportSession(
             callbacks.onInvalidEvent();
           }
         },
+        pong: () => {
+          if (socket !== nextSocket || generation !== socketGeneration) return;
+          if (pongTimer !== null) clearTimeout(pongTimer);
+          pongTimer = null;
+        },
         event: (event) => {
           if (socket === nextSocket && generation === socketGeneration) {
             if (event.type === 'hello' && !socketHandshakeReady) {
               socketHandshakeReady = true;
+              if (handshakeTimer !== null) clearTimeout(handshakeTimer);
+              handshakeTimer = null;
               reconnectAttempt = 0;
               updateSnapshot({ connection: 'connected' });
               const reconnected = hasCompletedHandshake;
@@ -191,11 +241,56 @@ export function createFocusTransportSession(
         },
       });
       socket = nextSocket;
+      handshakeTimer = setTimeout(() => {
+        handshakeTimer = null;
+        if (!retireSocket(generation)) return;
+        handleUnopenedSocketClose(generation);
+      }, HANDSHAKE_TIMEOUT_MS);
     } catch (error) {
       callbacks.onConnectionError(error);
       updateSnapshot({ connection: 'disconnected' });
+      scheduleReconnect(generation);
     }
   }
+
+  function checkAfterWake(): void {
+    wakeTimer = null;
+    if (mutableSnapshot.value.disposed || suspended || socketGeneration === 0
+      || page?.visibilityState === 'hidden' || !callbacks.mayConnect()) return;
+    if (mutableSnapshot.value.connection === 'connecting') return; // Already has a handshake deadline.
+    if (!socket || socket.readyState !== 1) { connect(); return; }
+    if (pongTimer !== null) return;
+    const generation = socketGeneration;
+    pongTimer = setTimeout(() => {
+      pongTimer = null;
+      if (retireSocket(generation)) connect();
+    }, WAKE_PONG_TIMEOUT_MS);
+    try { socket.send('ping'); }
+    catch { if (retireSocket(generation)) connect(); }
+  }
+
+  function scheduleWakeCheck(): void {
+    if (wakeTimer !== null || mutableSnapshot.value.disposed || suspended
+      || socketGeneration === 0 || page?.visibilityState === 'hidden' || !callbacks.mayConnect()) return;
+    wakeTimer = setTimeout(checkAfterWake, WAKE_CHECK_DELAY_MS);
+  }
+
+  function visibilityChanged(): void {
+    if (page?.visibilityState !== 'hidden') { scheduleWakeCheck(); return; }
+    if (wakeTimer !== null) clearTimeout(wakeTimer);
+    wakeTimer = null;
+    // A frozen background document cannot reliably observe a pong deadline.
+    if (pongTimer !== null) clearTimeout(pongTimer);
+    pongTimer = null;
+  }
+
+  function pageShown(event: PageTransitionEvent): void {
+    if (event.persisted) scheduleWakeCheck();
+  }
+
+  browser?.addEventListener?.('online', scheduleWakeCheck);
+  browser?.addEventListener?.('pageshow', pageShown);
+  page?.addEventListener?.('visibilitychange', visibilityChanged);
 
   function cancelProjectionReadTimers(): void {
     if (projectionRefreshTimer !== null) {
@@ -209,9 +304,14 @@ export function createFocusTransportSession(
   }
 
   function suspend(): void {
+    suspended = true;
     socketGeneration += 1;
     cancelReconnect();
     cancelProjectionReloadRetry();
+    cancelAccessProbe();
+    clearSocketTimers();
+    if (wakeTimer !== null) clearTimeout(wakeTimer);
+    wakeTimer = null;
     const currentSocket = socket;
     socket = null;
     currentSocket?.close();
@@ -283,6 +383,9 @@ export function createFocusTransportSession(
     if (mutableSnapshot.value.disposed) return;
     updateSnapshot({ disposed: true });
     suspend();
+    browser?.removeEventListener?.('online', scheduleWakeCheck);
+    browser?.removeEventListener?.('pageshow', pageShown);
+    page?.removeEventListener?.('visibilitychange', visibilityChanged);
   }
 
   return {

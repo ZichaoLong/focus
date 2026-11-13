@@ -278,6 +278,23 @@ describe('FocusWebApi bootstrap', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('passes cancellation to metadata probes and rejects a late response after abort', async () => {
+    window.location.hash = '';
+    const fetchMock = vi.fn(async (path: string, _options?: RequestInit) => new Response(
+      JSON.stringify(path === '/api/client/register' ? registration() : meta), { status: 200 },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    const api = new FocusWebApi(); await api.initialize();
+    let resolve!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise(done => { resolve = done; }));
+    const controller = new AbortController();
+    const reading = api.meta(controller.signal);
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.signal).toBe(controller.signal);
+    controller.abort();
+    resolve(new Response(JSON.stringify({ ...meta, csrf_token: 'late-csrf' }), { status: 200 }));
+    await expect(reading).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
   it('retains the in-memory bootstrap token across a transient fetch failure', async () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new TypeError('network unavailable'))
@@ -1423,7 +1440,12 @@ describe('FocusWebApi projection events', () => {
     await api.initialize();
     const event = vi.fn();
     const invalid = vi.fn();
-    const socket = api.connectEvents({ event, invalid }) as unknown as TestWebSocket;
+    const pong = vi.fn();
+    const socket = api.connectEvents({ event, invalid, pong }) as unknown as TestWebSocket;
+    socket.message('pong');
+    expect(pong).toHaveBeenCalledOnce();
+    expect(event).not.toHaveBeenCalled();
+    expect(invalid).not.toHaveBeenCalled();
 
     for (const frame of [
       '{',

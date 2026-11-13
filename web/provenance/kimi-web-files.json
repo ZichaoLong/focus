@@ -403,6 +403,7 @@
     "test/focus-prompt-timing-browser.test.ts",
     "test/focus-prompt-timing.test.ts",
     "test/focus-reading-mode-surface.test.ts",
+    "test/focus-reconnect-browser.test.ts",
     "test/focus-response-capability.test.ts",
     "test/focus-runtime-details-surface.test.ts",
     "test/focus-runtime-identity-decoder.test.ts",

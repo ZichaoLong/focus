@@ -610,3 +610,20 @@ subscriber 和 runtime-holder 证据安全清理。它不 stop、archive、delet
 required field 与 TypeScript interface 一致、每个 record/enum 被 production decoder 消费，以及代表性 Python DTO
 满足 catalog。存在 Node 工具链时还必须运行 frontend test、typecheck、style、provenance、notices 与 build；缺少工具链
 只能记为环境未验证，不能记为通过。
+
+## 浏览器连接恢复
+
+`focusTransportSession.ts` 是 WebSocket、重连退避、握手/访问检查期限和页面恢复监听的唯一 owner。
+回到可见前台、网络恢复或从 BFCache 恢复时，合并 200ms 内的信号；已完成 `hello` 的连接先发既有
+文本 `ping`，5 秒内收到同一 socket 的 `pong` 则保留连接，否则关闭旧连接并重连。未连接时立即恢复
+连接；正在握手时保留其既有期限。后台页面不主动发送唤醒检查，普通前台阅读也不持续发送客户端心跳。
+浏览器的 online 信号只触发检查，不是连接、认证或 writer authority 的证明。
+
+每次连接必须在 15 秒内完成 `hello`；打开 socket 本身不算成功。握手超时或未完成握手即关闭时，使用
+同一 document 的 GET metadata 检查访问权限；该检查 5 秒超时且可取消，即使底层 fetch 未响应取消也
+必须继续现有的 1/2/4/8/10 秒重连退避。同步建连失败也进入退避。新连接、suspend 和 dispose 取消旧
+检查与期限；旧 generation 的迟到 response/event 不得改变新连接或认证状态。dispose 移除恢复监听。
+
+恢复只重建传输并重读有界状态，不重新注册 document、不 reload 整个页面、不重发 prompt、审批或其他
+mutation。`401` 与 `document_replaced/document_unregistered` 仍停止重试并要求既有显式恢复操作；
+不改变服务端断线宽限期与 session 寿命。阅读模式、草稿和可验证的正文阅读锚点保留，见阅读模式与正文窗口合同。

@@ -21,6 +21,9 @@ consume it when the selected conversation becomes eligible for reading mode.
 - A new-chat page with no selected session does not offer reading mode.
 - Reading mode survives session switches; temporary absence of content during
   loading does not cause an exit.
+- With valid document access, foreground checks and reconnection preserve reading mode and drafts. Keep the mode during
+  transcript reconciliation and revalidate the visible reading anchor. A document discarded and reloaded by the browser
+  still starts in normal mode as a new page.
 - A settled empty conversation returns to normal mode instead of an empty
   reading page.
 - Opening a new-chat page, requesting input, or losing document access exits

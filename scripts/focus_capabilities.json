@@ -828,6 +828,14 @@
         {
           "path": "web/src/focus/focusTranscript.ts",
           "symbol": "createFocusTranscript"
+        },
+        {
+          "path": "web/src/focus/focusTransportSession.ts",
+          "symbol": "createFocusTransportSession"
+        },
+        {
+          "path": "web/src/focus/api.ts",
+          "symbol": "FocusWebApi"
         }
       ],
       "contract": [
@@ -854,6 +862,14 @@
         {
           "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
           "heading": "实时更新、预算与重同步"
+        },
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "浏览器连接恢复"
+        },
+        {
+          "path": "docs/contracts/focus-web-reading-mode.zh-CN.md",
+          "heading": "状态边界"
         }
       ],
       "focused-test": [
@@ -873,7 +889,11 @@
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/focus-document-activity-favicon.test.ts",
             "web/test/focus-document-title.test.ts",
-            "web/test/focus_client/prompt-result-reconciliation.test.ts"
+            "web/test/focus_client/prompt-result-reconciliation.test.ts",
+            "web/test/focus-transport-session.test.ts",
+            "web/test/focus-api.test.ts",
+            "web/test/focus_client/owners/focus-transcript.test.ts",
+            "web/test/focus-reconnect-browser.test.ts"
           ]
         }
       ],

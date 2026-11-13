@@ -1,7 +1,7 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import type { ChatTurn, ToolCall } from '../types';
 import type { FocusWebApiPort } from './api';
-import { type FocusProjectionEvent, type FocusThreadDeltaDetail,
+import { FocusApiError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
   type FocusThreadSnapshot, type FocusTranscriptQuery } from './types';
 import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
@@ -57,6 +57,7 @@ export function createFocusTranscript(options: {
   let fullController: AbortController | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
+  let awaitingProjection = false;
   let activeMode = 'head';
   const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
@@ -91,6 +92,7 @@ export function createFocusTranscript(options: {
   function cancelTarget() { if (activeMode === 'target' && loading.value) cancel(); }
 
   function reset() {
+    awaitingProjection = false;
     cancel();
     closeFull();
     turns.value = [];
@@ -105,8 +107,36 @@ export function createFocusTranscript(options: {
     automaticAttempts = 0;
   }
 
+  function prepareReload() {
+    cancel();
+    closeFull();
+    awaitingProjection = true;
+    // Keep rendered rows/viewport while control state is replaced, but retire
+    // all cursors and revision evidence: a missed revert may have removed them.
+    cache.clear();
+    edges.value = { ...edges.value, older: null, newer: null };
+    rowReadRevisions.clear();
+    eventRevision = tailReadRevision = -1;
+  }
+
+  function resumeAfterReload() {
+    awaitingProjection = false;
+    const anchor = following ? undefined : turns.value.find(row => row.id === protectedRow) ?? turns.value[0];
+    if (anchor?.rawTurnId && anchor.itemId) {
+      return load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore');
+    }
+    return load({}, 'sync');
+  }
+
+  function reloadWithoutAnchor() {
+    // An authoritative read removed the anchor. Do not retain reverted rows.
+    turns.value = [];
+    cache.clear(); publishWindow(); protectedRow = null; following = true;
+    return load();
+  }
+
   function scheduleHead() {
-    if (historical.value || disposed || options.isDisposed() || automaticAttempts >= 3) return;
+    if (awaitingProjection || historical.value || disposed || options.isDisposed() || automaticAttempts >= 3) return;
     pendingHead = true;
     if (loading.value || refreshTimer !== null) return;
     refreshTimer = setTimeout(() => {
@@ -185,7 +215,7 @@ export function createFocusTranscript(options: {
   }
 
   function handleDelta(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail) {
-    if (!enabled.value || disposed || event.thread_id !== options.activeThreadId.value
+    if (awaitingProjection || !enabled.value || disposed || event.thread_id !== options.activeThreadId.value
       || event.runtime_epoch !== options.snapshot.value?.runtime_epoch) return;
     if (loading.value) {
       if (overflowed) return;
@@ -200,8 +230,8 @@ export function createFocusTranscript(options: {
     applyDelta(event, detail);
   }
 
-  async function load(query: FocusTranscriptQuery = {}, mode: 'head' | 'sync' | 'older' | 'newer' | 'target' = 'head', automatic = false): Promise<boolean> {
-    if (!enabled.value || disposed || options.isDisposed()) return false;
+  async function load(query: FocusTranscriptQuery = {}, mode: 'head' | 'sync' | 'older' | 'newer' | 'target' | 'restore' = 'head', automatic = false): Promise<boolean> {
+    if (awaitingProjection || !enabled.value || disposed || options.isDisposed()) return false;
     if (refreshTimer !== null) clearTimeout(refreshTimer);
     refreshTimer = null;
     pendingHead = false;
@@ -244,6 +274,9 @@ export function createFocusTranscript(options: {
       if (query.cursor && (mode === 'older' ? result.older_cursor : result.newer_cursor) === query.cursor) {
         throw new Error('Transcript cursor did not advance.');
       }
+      if (mode === 'restore' && !result.turns.some(turn => turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
+        return await reloadWithoutAnchor();
+      }
       if (mode === 'target' && query.item_id && !result.turns.some(turn =>
         turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
         throw new Error('Transcript target was not found.');
@@ -274,6 +307,9 @@ export function createFocusTranscript(options: {
     } catch (failure) {
       if (current()) {
         if (options.reportFatalError?.(failure)) return false;
+        if (mode === 'restore' && failure instanceof FocusApiError && failure.code === 'transcript_item_missing') {
+          return await reloadWithoutAnchor();
+        }
         error.value = failure instanceof Error ? failure.message : String(failure);
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
       }
@@ -349,7 +385,7 @@ export function createFocusTranscript(options: {
 
   const stopIdentity = watch(identity, reset, { flush: 'sync' });
   const stopSnapshot = watch([enabled, () => options.snapshot.value?.revision], () => {
-    if (!enabled.value) return;
+    if (awaitingProjection || !enabled.value) return;
     if (historical.value) unseenNewer.value = true;
     else if (loading.value) scheduleHead();
     else void load({}, 'sync');
@@ -359,5 +395,5 @@ export function createFocusTranscript(options: {
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
     fullText, fullTool, fullLoading, fullError, openFull, closeFull,
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
-    handleDelta, load, older, newer, locate, updateViewport, cancelTarget, reset, dispose };
+    handleDelta, load, older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload, reset, dispose };
 }

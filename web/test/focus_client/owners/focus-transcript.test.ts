@@ -44,6 +44,64 @@ function harness(initial = page()) {
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it('retires cursors but retains and revalidates the visible reading anchor after reconnect', async () => {
+    const h = harness(page([row(1), row(2), row(3)])); await settle();
+    h.owner.updateViewport(row(2).id, false);
+    const originalRows = h.owner.turns.value;
+    h.owner.prepareReload();
+    expect(h.owner.turns.value).toBe(originalRows);
+    expect(h.owner.hasOlder.value).toBe(false);
+    expect(await h.owner.older()).toBe(false);
+    h.event(2, { method: 'item/started', item_turns: [row(99)] });
+    h.state.value = { ...h.state.value!, revision: 2 };
+    await settle();
+    expect(h.read).toHaveBeenCalledOnce();
+    const pending = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(pending.promise);
+    const resumed = h.owner.resumeAfterReload();
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { turn_id: 'turn-1', item_id: 'item-2', direction: 'asc' }, expect.any(AbortSignal));
+    expect(h.owner.turns.value).toBe(originalRows);
+    pending.resolve(page([row(2, 'revalidated'), row(3)], { turn_id: 'turn-1', revision: 2 }));
+    expect(await resumed).toBe(true);
+    expect(h.owner.turns.value.map(row => row.text)).toEqual(['revalidated', '3']);
+    expect(h.owner.historical.value).toBe(true);
+  });
+
+  it.each(['empty', 'missing'] as const)('discards an anchor removed while offline and reads current history: %s', async response => {
+    const h = harness(); await settle(); h.owner.updateViewport(row(1).id, false);
+    h.owner.prepareReload();
+    if (response === 'missing') h.read.mockRejectedValueOnce(new FocusApiError('This message is no longer available.',
+      { status: 404, code: 'transcript_item_missing' }));
+    else h.read.mockResolvedValueOnce(page([], { turn_id: 'turn-1', revision: 2 }));
+    h.read.mockResolvedValueOnce(page([row(9)], { revision: 2, newer_cursor: null }));
+    expect(await h.owner.resumeAfterReload()).toBe(true);
+    expect(h.owner.turns.value.map(row => row.itemId)).toEqual(['item-9']);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', {}, expect.any(AbortSignal));
+  });
+
+  it('keeps a failed anchor read visibly unsynchronized without treating it as deletion', async () => {
+    const h = harness(); await settle(); h.owner.updateViewport(row(1).id, false);
+    const originalRows = h.owner.turns.value;
+    h.owner.prepareReload();
+    h.read.mockRejectedValueOnce(new TypeError('Network unavailable'));
+    expect(await h.owner.resumeAfterReload()).toBe(false);
+    expect(h.owner.turns.value).toBe(originalRows);
+    expect(h.owner.error.value).toBe('Network unavailable');
+    expect(h.read).toHaveBeenCalledTimes(2);
+  });
+
+  it('cannot restore a reading anchor into a different thread', async () => {
+    const h = harness(); await settle(); h.owner.updateViewport(row(1).id, false);
+    h.owner.prepareReload();
+    const pending = deferred<FocusTranscriptPage>(); h.read.mockReturnValueOnce(pending.promise);
+    const resumed = h.owner.resumeAfterReload();
+    const signal = h.read.mock.calls.at(-1)?.[2];
+    h.threadId.value = 'thread-2'; await settle();
+    pending.resolve(page([row(1)], { turn_id: 'turn-1' }));
+    expect(await resumed).toBe(false);
+    expect(signal?.aborted).toBe(true);
+    expect(h.owner.turns.value).toEqual([]);
+  });
+
   it('carries precise reply timing through deltas and a delayed start skeleton', async () => {
     const h = harness(); await settle();
     h.event(2, { method: 'item/agentMessage/delta', stream_delta: { kind: 'text', turn_id: 'turn-1', item_id: 'item-1', delta: 'stream' } });

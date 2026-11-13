@@ -236,6 +236,14 @@ no overlap, retain the window and expose the real gap for contiguous boundary pa
 never concatenate disjoint pages. If limiting the live tail would evict the visible anchor,
 stop extending that page and expose its newer boundary instead of displacing the reader.
 
+Reconnection or composite control-state recovery immediately retires old cursors, revision evidence, prompt-index and
+detail reads, but may retain rendered body rows to avoid emptying the DOM and exiting reading mode. After control recovery,
+a reader away from the tail rereads and verifies the visible exact turn/item anchor; the existing scroll owner preserves
+its pixel offset. A following reader reloads the bounded tail. Failed reads retain a synchronization error, never treating
+old body content as proof of current state. If an authoritative result no longer contains the anchor, discard old body rows
+and load the current tail rather than restoring reverted content. Thread, epoch/access changes and explicit history
+invalidation still clear the old window; late recovery cannot overwrite a new target.
+
 Both automatic directions require actual user movement toward the respective edge, within
 about 300px of the scroll container boundary. Allow only one body request at a time. Consume
 scroll intent on admission, without chaining reads from observers, layout changes, Prompt
