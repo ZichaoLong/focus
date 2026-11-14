@@ -21,6 +21,7 @@ import Pill from '../ui/Pill.vue';
 
 const props = withDefaults(defineProps<{
   sessionId?: string;
+  sessionTitle?: string;
   /** Confirmed writer-scope readiness; independent from running/starting. */
   composerReady?: boolean;
   running?: boolean;
@@ -186,6 +187,7 @@ defineExpose({
     :class="[
       narrowViewport ? 'align-narrow' : 'align-center',
       { 'composer-hidden': surfaceMode === 'hidden' && !pendingQuestion && !pendingApproval },
+      { 'mobile-editor-expanded': narrowViewport && surfaceMode === 'expanded' && !pendingQuestion && !pendingApproval },
     ]"
     @click.stop
   >
@@ -298,6 +300,7 @@ defineExpose({
       v-show="!pendingQuestion && !pendingApproval"
       ref="composerRef"
       :session-id="sessionId"
+      :session-title="sessionTitle"
       :composer-ready="composerReady"
       :running="running"
       :interrupt-enabled="interruptEnabled"
@@ -363,6 +366,15 @@ defineExpose({
 .chat-dock.align-center { margin-left: auto; margin-right: auto; }
 .chat-dock.align-left { margin-left: 0; margin-right: auto; }
 .chat-dock.align-narrow { max-width: none; }
+
+.chat-dock.mobile-editor-expanded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.chat-dock.mobile-editor-expanded .dock-work-panel,
+.chat-dock.mobile-editor-expanded .dock-workbar { display: none; }
 
 .dock-work-panel {
   position: absolute;

@@ -911,6 +911,68 @@
         "web-typecheck"
       ]
     },
+    "focus-web-composer": {
+      "entry": [
+        {
+          "path": "web/src/components/chat/Composer.vue",
+          "symbol": "toggleExpand"
+        }
+      ],
+      "owner": [
+        {
+          "path": "web/src/composables/useComposerDraft.ts",
+          "symbol": "useComposerDraft"
+        },
+        {
+          "path": "web/src/focus/focusComposerSubmission.ts",
+          "symbol": "dispatchFocusComposerPayload"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-composer.zh-CN.md",
+          "heading": "展示状态与唯一 owner"
+        },
+        {
+          "path": "docs/contracts/focus-web-composer.zh-CN.md",
+          "heading": "窄屏展开编辑"
+        },
+        {
+          "path": "docs/contracts/focus-web-reading-mode.zh-CN.md",
+          "heading": "视口校准、合成与诊断"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-mobile-editor-browser.test.ts",
+            "web/test/focus-composer-input-surface.test.ts",
+            "web/test/focus-composer-send-shortcut.test.ts",
+            "web/test/composer-draft.test.ts",
+            "web/test/focus-viewport.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus_client/owners/focus-composer-submission.test.ts",
+            "web/test/input-history.test.ts",
+            "web/test/transcript-scroll-anchor.test.ts",
+            "web/test/focus-reconnect-browser.test.ts",
+            "web/test/focus-reading-mode-surface.test.ts",
+            "web/test/conversation-history-navigation-surface.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck"
+      ]
+    },
     "focus-web-context-usage": {
       "entry": [
         {

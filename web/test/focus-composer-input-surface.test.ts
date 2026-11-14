@@ -105,10 +105,6 @@ describe('Focus Composer input surface', () => {
 
     expect(narrowStyles).toContain('min-height: min(96px, 16dvh);');
     expect(narrowStyles).toContain('max-height: min(96px, 16dvh);');
-    expect(narrowStyles).toContain(`.composer.expanded .ph {
-    min-height: min(280px, 34dvh);
-    max-height: min(280px, 34dvh);
-  }`);
     expect(composer).toContain('v-if="narrowViewport || expanded || isGrown"');
     expect(composer).toContain('max-height: calc(100vh / 4);');
     expect(composer).toContain('overflow-y: auto;');
@@ -225,7 +221,7 @@ describe('Focus Composer input surface', () => {
     expect(dock).toContain("'composer-hidden': surfaceMode === 'hidden'");
     expect(dock).toContain('padding-bottom: max(var(--space-3), var(--safe-bottom));');
     expect(composer).toContain('id="composer-input"');
-    expect(composer.match(/aria-controls="composer-input"/gu)).toHaveLength(2);
+    expect(composer.match(/aria-controls="composer-input"/gu)).toHaveLength(3);
     expect(pane).toContain('aria-controls="composer-input"');
     expect(composer).toContain(':aria-label="t(\'composer.inputLabel\')"');
     expect(composer).toContain(`.expand-btn,

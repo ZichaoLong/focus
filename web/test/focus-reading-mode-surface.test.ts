@@ -58,16 +58,16 @@ describe('Focus page-level reading mode surface', () => {
     expect(app).toContain("'reading-mode': readingMode");
     expect(app).toMatch(/<Sidebar\s+v-show="!readingMode"/u);
     expect(app).toContain('v-show="!sidebarCollapsed && !readingMode"');
-    expect(app).toMatch(/<NarrowTopBar\s+v-else\s+v-show="!readingMode"/u);
+    expect(app).toMatch(/<NarrowTopBar\s+v-else\s+v-show="!readingMode && !mobileEditorExpanded"/u);
     expect(between(app, '<NarrowTopBar', '</NarrowTopBar>'))
       .toContain('class="runtime-details-narrow-trigger"');
     expect(app).toMatch(/<FocusPrimaryNotices\s+v-if="!readingMode"/u);
     expect(app).toContain('<FocusTransientNotice ref="transientNotice" :reading-mode="readingMode" />');
 
-    expect(pane).toContain("<section class=\"con\" :class=\"{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }\">");
+    expect(pane).toContain("<section class=\"con\" :class=\"{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode,");
     expect(pane).toMatch(/<ChatHeader[\s\S]*?v-show="!readingMode"/u);
     expect(pane).toMatch(/<ConversationToc\s+v-if="conversationToc"/u);
-    expect(pane).toContain(':inline-visible="!readingMode"');
+    expect(pane).toContain(':inline-visible="!readingMode && !mobileEditorExpanded"');
     expect(pane).toMatch(/<ChatDock\s+v-if="!showTargetlessComposer"\s+v-show="!readingMode"/u);
     expect(pane).toContain(':surface-mode="readingMode ? \'hidden\' : composerSurfaceMode"');
     expect(pane).not.toContain('.con.reading-mode :deep(.chat)');
@@ -80,7 +80,7 @@ describe('Focus page-level reading mode surface', () => {
 
     expect(pane).toContain('<ChatPane');
     expect(pane).toContain('@open-tool-diff="emit(\'openToolDiff\', $event)"');
-    expect(pane).toContain('v-if="showPill || viewingHistory || promptNavigationActive"');
+    expect(pane).toContain('v-if="!mobileEditorExpanded && (showPill || viewingHistory || promptNavigationActive)"');
     expect(pane).toContain(':style="{ bottom: `${readingMode ? 12 : dockHeight + 12}px` }"');
     expect(app).toContain('<aside\n        v-if="detailOpen"');
     expect(app).not.toContain('v-if="detailOpen && !readingMode"');

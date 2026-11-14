@@ -66,6 +66,9 @@ it.each([
   });
   try {
     await page.goto(url);
+    // fill() can write beneath the loading overlay before the initial thread
+    // selection has settled; real users cannot edit that covered input yet.
+    await page.locator('.gload').waitFor({ state: 'hidden' });
     const origin = await page.evaluate(() => performance.timeOrigin);
     await page.locator('textarea:visible').first().fill('Keep my unsent draft');
     await page.locator('[data-reading-mode-toggle][aria-label="Enter reading mode"]:visible').click();

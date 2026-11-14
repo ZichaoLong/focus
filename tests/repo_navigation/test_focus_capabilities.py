@@ -76,6 +76,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "focus-runtime",
                 "focus-web-browser-open",
                 "focus-web-client-state",
+                "focus-web-composer",
                 "focus-web-context-usage",
                 "focus-web-file-download",
                 "focus-web-gateway-wire",

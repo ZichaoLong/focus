@@ -94,6 +94,7 @@
 - [`focus-web-summary-export.zh-CN.md`](./contracts/focus-web-summary-export.zh-CN.md)
 - [`focus-web-summary-print.zh-CN.md`](./contracts/focus-web-summary-print.zh-CN.md)
 - [`focus-web-reading-mode.zh-CN.md`](./contracts/focus-web-reading-mode.zh-CN.md)
+- [`focus-web-composer.zh-CN.md`](./contracts/focus-web-composer.zh-CN.md)
 - [`focus-web-prompt-mutation-recovery.zh-CN.md`](./contracts/focus-web-prompt-mutation-recovery.zh-CN.md)
 - [`focus-web-prompt-timing.zh-CN.md`](./contracts/focus-web-prompt-timing.zh-CN.md)
 - [`fcodex-operation-owner.zh-CN.md`](./contracts/fcodex-operation-owner.zh-CN.md)

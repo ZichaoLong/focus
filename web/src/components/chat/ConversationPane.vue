@@ -225,6 +225,7 @@ const emit = defineEmits<{
   goalSession: [id: string];
   enterReadingMode: [];
   exitReadingMode: [];
+  mobileEditorExpandedChange: [expanded: boolean];
 }>();
 
 // One attachment owner spans both mutually exclusive Composer render sites.
@@ -264,6 +265,7 @@ const showTargetlessComposer = computed(() => (
 // Composer render sites, every imperative edit/focus entry, and the floating
 // restore action that must remain reachable while the Composer is hidden.
 const composerSurfaceMode = ref<ComposerSurfaceMode>('compact');
+const editorTranscriptHeight = ref(0);
 const composerHasDraft = ref(false);
 const narrowComposerActionsRef = ref<HTMLElement | null>(null);
 const allowComposerHide = computed(() => (
@@ -295,7 +297,7 @@ watch(() => props.narrowViewport, () => {
 }, { flush: 'sync' });
 
 watch(allowComposerHide, (allowed) => {
-  if (!allowed) setComposerSurfaceMode('compact');
+  if (!allowed && composerSurfaceMode.value === 'hidden') setComposerSurfaceMode('compact');
 });
 
 // File drag/paste is document-scoped in the shared attachment owner. Reveal at
@@ -607,6 +609,10 @@ const approvalBusy = computed<boolean>(() => {
   return !!props.pendingApprovalActions?.[a.approvalId];
 });
 
+const mobileEditorExpanded = computed(() => props.narrowViewport === true
+  && composerSurfaceMode.value === 'expanded' && !props.readingMode
+  && !pendingQuestion.value && !pendingApproval.value);
+
 const showComposerRestore = computed(() => (
   allowComposerHide.value
   && !props.readingMode
@@ -721,6 +727,19 @@ function armNewerHistory(): void {
   }
 }
 watch(following, reportTranscriptViewport, { flush: 'sync' });
+watch(mobileEditorExpanded, async expanded => {
+  const pane = panesRef.value;
+  if (expanded && pane && !showTargetlessComposer.value) {
+    // Keep the hidden transcript at its current size so opening the editor or
+    // keyboard cannot clamp its scroll position. Reuse the existing scroll owner.
+    editorTranscriptHeight.value = pane.getBoundingClientRect().height;
+    if (!following.value && !promptNavigation.ownsScroll()) transcriptAnchor = currentTranscriptAnchor(pane);
+  }
+  emit('mobileEditorExpandedChange', expanded);
+  const fence = captureScrollWriteFence();
+  await nextTick();
+  if (!expanded && scrollWriteFenceIsCurrent(fence)) restoreReadingAnchor();
+}, { flush: 'sync' });
 watch(() => props.turns, async () => {
   const pane = panesRef.value;
   if (!props.continuousTranscript || !pane || promptNavigation.ownsScroll()
@@ -1813,6 +1832,7 @@ onUnmounted(() => {
   window.removeEventListener('pointercancel', finishScrollbarDrag);
   window.removeEventListener('blur', onWindowBlur);
   window.removeEventListener('keydown', onWindowKeydown, true);
+  emit('mobileEditorExpandedChange', false);
 });
 
 function focusComposer(): void {
@@ -1857,7 +1877,8 @@ defineExpose({
 </script>
 
 <template>
-  <section class="con" :class="{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode }">
+  <section class="con" :class="{ 'narrow-viewport': narrowViewport, 'reading-mode': readingMode,
+    'mobile-editor-expanded': mobileEditorExpanded, 'targetless-editor': showTargetlessComposer }">
     <!-- Chat context header: workspace/session, git status, open-in-editor,
          session actions, and PR. Hidden without an active session context. -->
     <ChatHeader
@@ -1898,7 +1919,7 @@ defineExpose({
       :items="displayedConversationTocItems"
       :active-turn-id="activeTurnId"
       :narrow-viewport="narrowViewport"
-      :inline-visible="!readingMode"
+      :inline-visible="!readingMode && !mobileEditorExpanded"
       :session-loading="sessionLoading"
       :occluded="tocOccludedByTable"
       :truncated="conversationTocTruncated"
@@ -1951,7 +1972,10 @@ defineExpose({
           'continuous-transcript': continuousTranscript,
           'prompt-navigation-active': promptNavigationActive,
           'prompt-navigation-resolving': promptNavigationResolving,
+          'editor-transcript-hidden': mobileEditorExpanded && !showTargetlessComposer,
         }"
+        :style="mobileEditorExpanded && !showTargetlessComposer ? { height: `${editorTranscriptHeight}px` } : undefined"
+        :inert="mobileEditorExpanded && !showTargetlessComposer"
         @scroll.passive="onPanesScroll"
         @scrollend.passive="onPanesScrollEnd"
         @wheel.passive="onPanesWheel"
@@ -2029,6 +2053,7 @@ defineExpose({
               ref="emptyComposerRef"
               class="empty-composer"
               :session-id="composerSessionId ?? sessionId"
+              :session-title="sessionTitle"
               :composer-ready="composerReady"
               :running="running"
               :interrupt-enabled="interruptEnabled"
@@ -2163,6 +2188,7 @@ defineExpose({
         :composer-capabilities="composerCapabilities"
         :defer-submit-clear="deferSubmitClear"
         :surface-mode="readingMode ? 'hidden' : composerSurfaceMode"
+        :session-title="sessionTitle"
         :allow-hide="allowComposerHide && !readingMode"
         @toggle-dock-panel="toggleDockPanel($event)"
         @close-dock-panel="closeDockPanel()"
@@ -2195,7 +2221,7 @@ defineExpose({
     <!-- "New messages" pill — only visible when scrolled up and new content arrives. -->
     <Transition name="pill">
       <button
-        v-if="showPill || viewingHistory || promptNavigationActive"
+        v-if="!mobileEditorExpanded && (showPill || viewingHistory || promptNavigationActive)"
         class="newmsg-pill"
         :style="{ bottom: `${readingMode ? 12 : dockHeight + 12}px` }"
         :aria-label="t('conversation.jumpToLatestAria')"
@@ -2292,6 +2318,26 @@ defineExpose({
   min-height: 0;
   position: relative;
 }
+
+.panes.editor-transcript-hidden {
+  position: absolute;
+  width: 100%;
+  flex: none;
+  visibility: hidden;
+  pointer-events: none;
+}
+.mobile-editor-expanded.targetless-editor .panes {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.mobile-editor-expanded.targetless-editor .content-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.mobile-editor-expanded .empty-spacer,
+.mobile-editor-expanded .empty-hint { display: none; }
+.mobile-editor-expanded .empty-composer { flex: 1; min-height: 0; }
 
 /* Chat reading column max-width + alignment. */
 .content-wrap {

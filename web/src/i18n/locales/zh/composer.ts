@@ -26,6 +26,8 @@ export default {
   interruptTitle: '中断当前操作',
   expandTitle: '展开输入框进行多行编辑',
   collapseTitle: '收拢为四行输入框',
+  collapseEditor: '收起',
+  newConversation: '新对话',
   hideInput: '隐藏输入框',
   showInput: '显示输入框',
   continueInput: '继续输入',

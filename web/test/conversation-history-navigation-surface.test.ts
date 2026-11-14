@@ -110,7 +110,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(toc).toContain('watch(() => props.inlineVisible !== false');
     expect(toc).toContain('@click="openCompactDialog"');
     expect(pane).toContain('ref="conversationTocRef"');
-    expect(pane).toContain(':inline-visible="!readingMode"');
+    expect(pane).toContain(':inline-visible="!readingMode && !mobileEditorExpanded"');
     expect(pane).toContain('conversationTocRef.value?.openCompactDialog();');
     expect(pane).toContain('openPromptHistory,');
   });
@@ -476,7 +476,7 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(settle).toBeGreaterThan(scroll);
     expect(pane).toContain('viewingHistory?: boolean;');
     expect(app).toContain(':viewing-history="client.viewingHistory.value"');
-    expect(pane).toContain('v-if="showPill || viewingHistory || promptNavigationActive"');
+    expect(pane).toContain('v-if="!mobileEditorExpanded && (showPill || viewingHistory || promptNavigationActive)"');
     expect(pane).toContain('@click="handleReturnToLiveTail"');
   });
 

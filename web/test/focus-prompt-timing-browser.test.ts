@@ -79,6 +79,7 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
   });
   try {
     await page.goto(url);
+    await page.locator('.gload').waitFor({ state: 'hidden' });
     const submitted = page.locator('.u-meta .prompt-time-label').first();
     await submitted.waitFor();
     expect(await submitted.innerText()).not.toMatch(/Browser submitted|Codex recorded/);
@@ -196,6 +197,9 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
     });
     try {
       await page.goto(url);
+      // Initial selection can still replace the transcript under the loading
+      // overlay; start user navigation only once that visible boundary clears.
+      await page.locator('.gload').waitFor({ state: 'hidden' });
       const pane = page.locator('.panes');
       await page.locator('.transcript-row[data-turn-id="latest-reply"] .md').waitFor();
       await page.locator('textarea:visible').first().fill('Draft survives history navigation');

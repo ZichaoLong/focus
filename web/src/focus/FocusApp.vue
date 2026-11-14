@@ -77,6 +77,9 @@ const detailPanelLoadState = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 let detailPanelLoadPromise: Promise<void> | null = null;
 const detailOpen = computed(() => detailSelection.value !== null);
 const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(null);
+// Derived from ConversationPane's existing surface mode; the shell only lends
+// the editor its navigation space and retains notices/interaction authority.
+const mobileEditorExpanded = ref(false);
 const transientNotice = ref<InstanceType<typeof FocusTransientNotice> | null>(null);
 const { colorScheme, setColorScheme } = useAppearance();
 const { confirm } = useConfirmDialog();
@@ -953,7 +956,7 @@ onUnmounted(() => {
 
       <NarrowTopBar
         v-else
-        v-show="!readingMode"
+        v-show="!readingMode && !mobileEditorExpanded"
         :workspace="client.visibleWorkspace.value"
         :session-id="client.activeThreadId.value"
         :session-title="activeSessionTitle"
@@ -986,7 +989,8 @@ onUnmounted(() => {
       </NarrowTopBar>
 
       <main class="focus-main">
-        <FocusPromptTimingHistory v-if="client.api.promptTimings && !readingMode" :store="client.api.promptTimings" :thread-id="client.activeThreadId.value" />
+        <FocusPromptTimingHistory v-if="client.api.promptTimings && !readingMode" v-show="!mobileEditorExpanded"
+          :store="client.api.promptTimings" :thread-id="client.activeThreadId.value" />
         <ReadingModeControls
           v-if="readingMode"
           :narrow-viewport="isNarrowViewport"
@@ -1132,6 +1136,7 @@ onUnmounted(() => {
           @goal-session="showGoalDialog = true"
           @enter-reading-mode="enterReadingMode"
           @exit-reading-mode="exitReadingMode"
+          @mobile-editor-expanded-change="mobileEditorExpanded = $event"
         />
       </main>
 

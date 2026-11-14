@@ -60,6 +60,7 @@ const props = withDefaults(defineProps<{
   starting?: boolean;
   /** Active session id — scopes the persisted unsent draft (per session). */
   sessionId?: string;
+  sessionTitle?: string;
   /** Confirmed writer-scope readiness; pending navigation keeps the draft mounted but inert. */
   composerReady?: boolean;
   searchFiles?: (q: string) => Promise<FileItem[]>;
@@ -184,6 +185,7 @@ let submissionOwnerMounted = true;
 // textarea newline semantics. It auto-collapses after a successful send.
 // ---------------------------------------------------------------------------
 const expanded = computed(() => props.surfaceMode === 'expanded');
+const mobileExpanded = computed(() => props.narrowViewport && expanded.value);
 
 function requestSurfaceMode(mode: ComposerSurfaceMode): void {
   if (mode === props.surfaceMode) return;
@@ -191,6 +193,9 @@ function requestSurfaceMode(mode: ComposerSurfaceMode): void {
 }
 
 function toggleExpand(): void {
+  const input = textareaRef.value;
+  // Collapsing a mobile editor with its keyboard dismissed must not reopen it.
+  const refocus = !mobileExpanded.value || document.activeElement === input;
   requestSurfaceMode(expanded.value ? 'compact' : 'expanded');
   // Re-fit the textarea after the min/max-height swap between modes, then
   // recompute growth against the *post-toggle* resting height. Without this,
@@ -205,7 +210,7 @@ function toggleExpand(): void {
     // Return focus to the textarea so the user can keep typing right away;
     // otherwise focus stays on the toggle button and the next Enter would
     // activate it again instead of reaching the submit boundary.
-    textareaRef.value?.focus();
+    if (refocus) textareaRef.value?.focus({ preventScroll: true });
   });
 }
 
@@ -983,12 +988,22 @@ function selectModel(modelId: string): void {
     :class="{
       'drag-over': composerReady && isDragOver,
       expanded,
+      'mobile-expanded': mobileExpanded,
       'surface-hidden': surfaceMode === 'hidden',
     }"
     @dragover="handleDragOver"
     @dragleave="handleDragLeave"
     @drop="handleDrop"
   >
+    <div v-if="mobileExpanded" class="expanded-editor-header">
+      <span class="expanded-editor-title">{{ sessionTitle || t('composer.newConversation') }}</span>
+      <button class="expanded-editor-collapse" type="button"
+        :aria-label="t('composer.collapseTitle')" aria-controls="composer-input" aria-expanded="true"
+        @pointerdown.prevent @click="toggleExpand">
+        <Icon name="collapse" size="sm" />
+        <span>{{ t('composer.collapseEditor') }}</span>
+      </button>
+    </div>
     <!-- Attachment chips (above the input row) -->
     <div v-if="attachments.length > 0" class="att-strip">
       <AttachmentChip
@@ -1060,7 +1075,7 @@ function selectModel(modelId: string): void {
             @compositionend="handleCompositionEnd"
             @input="handleInput"
           />
-          <div class="composer-surface-actions">
+          <div v-show="!mobileExpanded" class="composer-surface-actions">
             <button
               v-if="narrowViewport || expanded || isGrown"
               class="expand-btn"
@@ -1068,6 +1083,7 @@ function selectModel(modelId: string): void {
               aria-controls="composer-input"
               :aria-expanded="expanded"
               :aria-label="expanded ? t('composer.collapseTitle') : t('composer.expandTitle')"
+              @pointerdown.prevent
               @click="toggleExpand"
             >
               <Icon v-if="expanded" name="collapse" size="sm" />
@@ -1400,6 +1416,80 @@ function selectModel(modelId: string): void {
   display: none;
 }
 
+/* Keep the same editor mounted while the pane lends it the whole visible page.
+   The shell's existing visualViewport owner handles keyboard/chrome resizing. */
+.composer.mobile-expanded {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: var(--safe-top) max(12px, var(--safe-right)) max(8px, var(--safe-bottom)) max(12px, var(--safe-left));
+}
+.expanded-editor-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-height: 44px;
+}
+.expanded-editor-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-size);
+  color: var(--color-text-muted);
+}
+.expanded-editor-collapse {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  min-height: 44px;
+  min-width: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.expanded-editor-collapse:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+.composer.mobile-expanded .composer-card,
+.composer.mobile-expanded .cin-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.composer.mobile-expanded .input-row {
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.composer.expanded.mobile-expanded .ph {
+  min-height: 0;
+  max-height: none;
+  /* The draft autosizer may set an inline height. In this layout the row,
+     rather than the text length, owns the editor's height. */
+  height: 100% !important;
+  margin-bottom: 0;
+}
+.composer.mobile-expanded .toolbar { flex: none; }
+.composer.mobile-expanded .att-strip {
+  flex: none;
+  max-height: 15%;
+  overflow-y: auto;
+}
+.composer.mobile-expanded :deep(.slash-menu[role="listbox"]),
+.composer.mobile-expanded :deep(.mention-menu[role="listbox"]) {
+  top: var(--space-2);
+  bottom: auto;
+  max-height: min(240px, 70%);
+}
+
 .composer.drag-over {
   background: var(--color-accent-soft);
 }
@@ -1603,11 +1693,8 @@ function selectModel(modelId: string): void {
   color: var(--color-text);
 }
 
-/* Expanded editor: a tall composing area at ~70% of a wide viewport —
-   clearly larger than the auto-grow cap, while leaving room for the chat
-   header, bottom toolbar row, and padding. The narrow layout uses a shorter responsive
-   bound below so the conversation remains readable. Content beyond it scrolls
-   internally. */
+/* Wide expansion leaves room for the chat header and toolbar. Mobile expansion
+   fills the available shell height instead, through the flex layout below. */
 .composer.expanded .ph {
   min-height: 70vh;
   max-height: 70vh;
@@ -2418,13 +2505,6 @@ function selectModel(modelId: string): void {
     min-height: min(96px, 16dvh);
     max-height: min(96px, 16dvh);
     overscroll-behavior-y: contain;
-  }
-  /* Even deliberate expansion leaves a substantial reading area in narrow viewports.
-     `dvh` also follows browser chrome and the on-screen keyboard in browsers
-     that resize the dynamic viewport. */
-  .composer.expanded .ph {
-    min-height: min(280px, 34dvh);
-    max-height: min(280px, 34dvh);
   }
   .model-pill,
   .attach-btn {

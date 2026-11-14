@@ -72,6 +72,8 @@ The shared Markdown parser configuration and CJK emphasis regression tests
 are also Focus-owned additions.
 The update-preparation cancellation browser regressions are Focus-owned additions.
 The connection recovery browser regressions are Focus-owned additions.
+The mobile expanded-editor browser regressions are Focus-owned additions; the
+composer and conversation layout retain their recorded Kimi source attribution.
 `ToolGroupHeader.vue` is extracted from the Kimi-derived `ToolGroup.vue`; both
 retain that upstream source attribution. The tool-group projection/expansion
 owner and its unit/browser regressions are Focus-owned additions.

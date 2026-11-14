@@ -26,6 +26,8 @@ export default {
   interruptTitle: 'Interrupt current operation',
   expandTitle: 'Expand input for multi-line editing',
   collapseTitle: 'Return to the four-line input',
+  collapseEditor: 'Collapse',
+  newConversation: 'New conversation',
   hideInput: 'Hide input',
   showInput: 'Show input',
   continueInput: 'Continue input',
