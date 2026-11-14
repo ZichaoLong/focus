@@ -47,7 +47,7 @@
     "src/components/chat/ChatPane.vue": "77e977ca19b360fab42d8d1912324d571e95868e71ef8be1482d4c4cef643206",
     "src/components/chat/Composer.vue": "7a5de82c43ff670943dd02c8c2a54c0ba022d160db8833fbc7b9d16c2421cc7c",
     "src/components/chat/ConversationPane.vue": "d23fe63d3f2191d2d2a32660e2a2bf6fa1d20e04655829594180b4f6ced73b34",
-    "src/components/chat/ConversationToc.vue": "8853b33d2040574c6e364dcd8f28cc8b6c3db169342c4c76a1f516060eb4da58",
+    "src/components/chat/ConversationToc.vue": "19a36acf43a44b982bde9de8c1ec30303934a10e5e7caa3b68d67c415cfc9d76",
     "src/components/chat/CronNotice.vue": null,
     "src/components/chat/DiffLines.vue": "1e7aa51f6de9181fd23c36d8873e26b266cc3d2591039d742ddcd09929391ba3",
     "src/components/chat/GoalStrip.vue": "2610d59e14a0b08bb84fb118fa83ea5884f49626c72825c624e37bc03b96c3ed",

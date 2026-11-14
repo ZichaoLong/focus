@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
     v-if="railVisible"
     ref="navRef"
     class="conversation-toc"
-    :class="{ 'toc-clipped': !fits || occluded }"
+    :class="{ 'toc-clipped': !fits || occluded, 'toc-no-room': !fits }"
     :aria-label="t('conversation.toc')"
     :aria-hidden="fits && !occluded ? undefined : true"
     @pointerenter="emit('visibility', true)"
@@ -463,6 +463,13 @@ onBeforeUnmount(() => {
 .conversation-toc.toc-clipped {
   visibility: hidden;
   pointer-events: none;
+}
+.conversation-toc.toc-no-room {
+  /* Keep the left edge measurable for resize recovery without letting the
+     hidden search button or hover bridge widen the application frame.
+     Table occlusion retains the full rail geometry for its overlap checks. */
+  width: 0;
+  overflow: clip;
 }
 
 .toc-compact-trigger {

@@ -13,6 +13,16 @@ The narrow compact input remains approximately four lines with internal overflow
 keeps the existing approximately 70vh editor. Presentation is not persisted; changing conversation or crossing the narrow/wide
 layout boundary returns to compact, while drafts retain their existing conversation scope.
 
+## Keyboard editing and page boundaries
+
+PgUp and PgDn retain native caret movement and text scrolling in both compact and expanded inputs. They must not scroll
+the application frame horizontally, move the thread sidebar outside the viewport or change the draft text. The fixed
+application frame only clips overflow; each inner panel owns its own scrolling range.
+
+`ConversationToc.vue` retains its navigation node and position measurement when space is insufficient, but hidden content
+and hover targets must not widen the application frame. A wider window reveals the same navigation node again, preserving
+access to Prompt history. Wide-table occlusion retains the original rail dimensions for the existing overlap checks.
+
 ## Narrow expanded editing
 
 Expansion uses the visible page: temporarily hide thread navigation, submission history and transcript, retaining a short
@@ -40,5 +50,6 @@ layout changes must not reauthorize sending the same content.
 
 Browser regressions cover narrow available space, visual viewport height/offset changes, selection, IME submission guards,
 textarea identity, draft and transcript position, failed/successful submission, new conversations and narrow/wide transitions.
+Desktop regressions cover native PgUp/PgDn in compact/expanded inputs, sidebar position and navigation hiding/recovery.
 Desktop narrow viewports and simulated keyboard sizing do not replace real HarmonyOS or other device IME, keyboard animation
 and browser-paint verification.

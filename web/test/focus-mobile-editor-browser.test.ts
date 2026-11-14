@@ -168,6 +168,51 @@ it('keeps the wide expanded editor and visible conversation layout', async () =>
   } finally { await page.close(); }
 }, 45_000);
 
+it.each([1024, 1280, 1550])('keeps the sidebar stationary during native editor paging at %s px', async width => {
+  const { page, errors, submitted } = await openPage(width);
+  try {
+    const input = page.locator('textarea:visible'), app = page.locator('.focus-app');
+    const sidebar = page.locator('.side'), rail = page.locator('.conversation-toc');
+    const railElement = await rail.elementHandle();
+    await expect.poll(() => rail.isVisible()).toBe(width === 1550);
+    for (const expanded of [false, true]) {
+      const text = expanded ? draft : 'A short draft.\n第二行文字。';
+      await input.fill(text);
+      if (expanded) await page.locator('.expand-btn:visible').click();
+      await input.evaluate(el => { el.focus({ preventScroll: true }); el.setSelectionRange(el.value.length, el.value.length); });
+      const before = (await sidebar.boundingBox())!;
+      await input.press('PageUp');
+      await expect.poll(() => input.evaluate(el => el.selectionStart)).toBeLessThan(text.length);
+      const pageUpCaret = await input.evaluate(el => el.selectionStart);
+      // The browser owns caret scrolling; wait for its layout before checking
+      // that the application frame and sidebar stayed in the viewport.
+      await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      expect(await app.evaluate(el => el.scrollLeft)).toBe(0);
+      expect((await sidebar.boundingBox())!.x).toBeCloseTo(before.x, 1);
+      expect((await sidebar.boundingBox())!.width).toBeCloseTo(before.width, 1);
+      expect(await input.inputValue()).toBe(text);
+      if (width !== 1550) {
+        expect(await app.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+      }
+      await input.press('PageDown');
+      await expect.poll(() => input.evaluate(el => el.selectionStart)).toBeGreaterThan(pageUpCaret);
+      expect(await app.evaluate(el => el.scrollLeft)).toBe(0);
+    }
+    // Hiding must retain the measurable rail so a wider window can reveal it.
+    await page.setViewportSize({ width: 1920, height: 844 });
+    await expect.poll(() => rail.isVisible()).toBe(true);
+    expect(await railElement!.evaluate(el => el.isConnected)).toBe(true);
+    await rail.hover();
+    expect((await rail.boundingBox())!.width).toBeGreaterThan(0);
+    await page.setViewportSize({ width: 1024, height: 844 });
+    await expect.poll(() => rail.isVisible()).toBe(false);
+    expect(await app.evaluate(el => el.scrollWidth - el.clientWidth)).toBeLessThanOrEqual(1);
+    expect((await sidebar.boundingBox())!.x).toBe(0);
+    expect(submitted).toEqual([]);
+    expect(errors).toEqual([]);
+  } finally { await page.close(); }
+}, 45_000);
+
 it('yields to an approval and resumes the same expanded draft afterwards', async () => {
   const h = await openPage();
   try {

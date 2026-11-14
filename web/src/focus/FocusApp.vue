@@ -1366,7 +1366,9 @@ onUnmounted(() => {
   min-height: 0;
   display: grid;
   grid-template-columns: auto 0 minmax(0, 1fr) 0 auto;
-  overflow: hidden;
+  /* Inner panes own scrolling. A hidden overflow container can still be
+     scrolled by native textarea paging, shifting the entire sidebar away. */
+  overflow: clip;
   background: var(--color-bg);
   color: var(--color-text);
 }
