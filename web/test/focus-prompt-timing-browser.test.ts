@@ -207,9 +207,15 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
         await page.getByRole('button', { name: 'Prompt history', exact: true }).click();
         await page.getByRole('menuitem', { name: /Old prompt 1/ }).click();
       } else {
+        // Markdown layout and initial tail-follow can finish after the loading
+        // overlay. Start the upward gesture from a settled, scrollable tail so
+        // an older initialization scroll cannot consume its navigation intent.
+        await expect.poll(() => pane.evaluate(el => el.scrollTop), { timeout: 10_000 }).toBeGreaterThan(300);
+        await expect.poll(() => pane.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop), { timeout: 10_000 }).toBeLessThan(2);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         await pane.hover();
         await page.mouse.wheel(0, -10_000);
-        await expect.poll(() => historyReads.includes('old')).toBe(true);
+        await expect.poll(() => historyReads.includes('old'), { timeout: 10_000 }).toBe(true);
         await page.locator('.transcript-row[data-turn-id="old-0"]').waitFor({ state: 'attached' });
         await page.mouse.wheel(0, -10_000);
       }
