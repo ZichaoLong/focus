@@ -212,7 +212,7 @@
     "test/swarm-result.test.ts": null,
     "test/workspace-order.test.ts": null,
     "tsconfig.json": "6b09711eb60c1b8c3a33ab04c96bb6c3038232ca02e5f34c2f73d4d154db9866",
-    "vite.config.ts": "1590a0026e1acc2e468b34643b37bc81486e83054168ea9731c9228ebf79aa96"
+    "vite.config.ts": "0bff8ebe0d4d7a0e19ff39660aad94b05aa8ab114811df25542ba9b4b4099a2e"
   },
   "upstream_path_overrides": {
     "src/components/chat/ToolGroupHeader.vue": "src/components/chat/ToolGroup.vue",
@@ -469,6 +469,7 @@
     "test/markdown-stream-presentation.test.ts",
     "test/prompt-navigation-intent.test.ts",
     "test/reply-time.test.ts",
+    "test/static-compression.test.ts",
     "test/summary-document-title.test.ts",
     "test/summary-print-markdown.test.ts",
     "test/summary-print-window.test.ts",

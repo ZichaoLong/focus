@@ -48,6 +48,7 @@ from bot.web_runtime.auth import WebAuthManager, WebAuthSession
 from bot.web_runtime.gateway_request_admission import WebGatewayRequestAdmission
 from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspectionMixin
 from bot.web_runtime.file_download import WebGatewayFileDownloadMixin
+from bot.web_runtime.static_assets import StaticAssetResponse
 from bot.web_runtime.gateway_external_transaction import (
     WebGatewayExternalTransactionRunner,
 )
@@ -1751,7 +1752,7 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
                 raise web.HTTPNotFound()
             target = static_dir / "index.html"
         content_type, _encoding = mimetypes.guess_type(target.name)
-        response = web.FileResponse(target)
+        response = StaticAssetResponse(target)
         if content_type:
             response.content_type = content_type
         if target.name in _STATIC_NO_STORE_FILENAMES:

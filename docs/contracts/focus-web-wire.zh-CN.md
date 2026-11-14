@@ -596,6 +596,18 @@ subscriber 和 runtime-holder 证据安全清理。它不 stop、archive、delet
 - catalog 只约束 wire admission。Web writer、main-turn owner、request lifecycle 与 mutation unknown 的事实仍归各自
   正式合同和 domain owner。
 
+### 静态资源交付
+
+Web production build 为至少 1 KiB 且压缩后更小的 JS、CSS、HTML 构建输出生成确定性的
+`.gz` 同名副本；原文件及其内容哈希 URL 保留，压缩副本随既有 wheel／安装包交付。
+构建使用 Node 内置 gzip，不增加浏览器或 Python 运行依赖，也不在请求到达时压缩。
+
+`WebGateway._handle_static` 通过 `StaticAssetResponse` 交给 aiohttp 原有文件发送路径。
+接受 gzip 的请求使用对应副本，显式 `gzip;q=0`、更优先的 identity 或缺少副本时发送原文件。
+Content-Type 始终属于原资源；ETag、HEAD 和 Range 使用实际选择的 representation。
+gzip、identity 与 304 响应均携 `Vary: Accept-Encoding`。入口 HTML 及既有 notices 继续
+`no-store`，内容哈希资源继续长期 immutable 缓存。该路径不改变 API JSON 压缩或用户文件下载。
+
 ## 7. 变更与验证纪律
 
 修改本边界时按一个方向执行：

@@ -5,6 +5,7 @@ import { FileSystemIconLoader } from 'unplugin-icons/loaders';
 import { fileURLToPath } from 'node:url';
 import { focusThirdPartyNoticesPlugin } from './scripts/vite-third-party-notices.mjs';
 import { focusBundleBoundaryPlugin } from './scripts/focus-bundle-boundary';
+import { focusStaticCompressionPlugin } from './scripts/focus-static-compression';
 
 const webPort = Number(process.env.WEB_PORT) || 5175;
 const gatewayTarget = process.env.FOCUS_WEB_GATEWAY_URL || 'http://127.0.0.1:8766';
@@ -40,6 +41,7 @@ export default defineConfig({
       },
     }),
     focusThirdPartyNoticesPlugin(),
+    focusStaticCompressionPlugin(),
   ],
   define: {
     __KIMI_WEB_DESKTOP__: JSON.stringify(false),

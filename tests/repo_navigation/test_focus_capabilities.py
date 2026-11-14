@@ -85,6 +85,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "focus-web-next-turn-settings",
                 "focus-web-prompt-timing",
                 "focus-web-request-admission",
+                "focus-web-static-assets",
                 "focus-web-summary-export",
                 "focus-web-thread-data-export",
                 "focus-web-thread-inspection",

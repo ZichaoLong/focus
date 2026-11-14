@@ -1283,6 +1283,62 @@
         "web-typecheck"
       ]
     },
+    "focus-web-static-assets": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_static"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/static_assets.py",
+          "symbol": "StaticAssetResponse"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-web-wire.zh-CN.md",
+          "heading": "静态资源交付"
+        },
+        {
+          "path": "docs/contracts/install-artifact-delivery.zh-CN.md",
+          "heading": "6. 构建与发布是两件事"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/web_runtime/test_static_assets.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/static-compression.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_gateway.py",
+            "tests/web_runtime/test_file_download.py",
+            "tests/build_support/test_python_distribution.py",
+            "tests/build_support/test_install_bundle.py"
+          ]
+        }
+      ],
+      "guard": [
+        "import-cycles",
+        "dependency-direction",
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck"
+      ]
+    },
     "focus-web-summary-export": {
       "entry": [
         {

@@ -149,6 +149,8 @@ stable 需要访问 GitHub；标准 `HTTP_PROXY`、`HTTPS_PROXY`、`NO_PROXY` �
 `python scripts/build_install_bundle.py`。默认生成 `local` bundle 到 ignored 的 `build/install/`；随后通过
 `bash install.sh --artifact <zip>` 或 `./install.ps1 --artifact <zip>` 安装。构建器要求当前 source 中已有
 Web payload 与 `requirements.lock`，并构建、核验一个包含它们的确定性 Focus wheel。
+Web payload 包括构建生成的 gzip 副本；压缩与缓存边界由
+[静态资源交付合同](./focus-web-wire.zh-CN.md#静态资源交付)定义，安装时原样携带，不重新压缩。
 
 Unix 开发者可从任意工作目录执行 `bash /path/to/focus/scripts/install_workspace.sh` 串联上述步骤。该入口不运行
 `npm ci`；调用者须在首次 clone、`web/package-lock.json` 变化或 `node_modules` 缺失时先安装 Web 依赖。

@@ -932,6 +932,23 @@ decode only.
   lifecycle, and mutation-unknown facts remain with their domain owners and formal
   contracts.
 
+### Static Asset Delivery
+
+The production Web build emits deterministic `.gz` siblings for JS, CSS, and HTML
+outputs of at least 1 KiB when compression makes them smaller. Original files and
+their content-hashed URLs remain intact; the existing wheel and install bundle
+carry the siblings. Build-time compression uses Node's built-in gzip, with no new
+browser or Python runtime dependency and no request-time compression.
+
+`WebGateway._handle_static` delegates to aiohttp's existing file transfer through
+`StaticAssetResponse`. Requests accepting gzip receive its sibling; explicit
+`gzip;q=0`, a higher identity preference, or a missing sibling use the original.
+Content-Type belongs to the original asset; ETag, HEAD, and Range describe the
+selected representation. Gzip, identity, and 304 responses all carry
+`Vary: Accept-Encoding`. Entry HTML and existing notices retain `no-store`, while
+content-hashed assets retain long-lived immutable caching. This path does not
+change API JSON compression or user-file downloads.
+
 ## 7. Change and Verification Discipline
 
 Change this boundary in one direction:

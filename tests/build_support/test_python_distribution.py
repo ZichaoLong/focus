@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import pathlib
 import sys
 import tempfile
@@ -24,6 +25,13 @@ class PythonDistributionBuildTests(unittest.TestCase):
         (bot / "__init__.py").write_text("VALUE = 'live'\n", encoding="utf-8")
         (bot / "worker.py").write_text("def run():\n    return 'live'\n", encoding="utf-8")
         (bot / "payload.txt").write_text("current payload\n", encoding="utf-8")
+        web_assets = bot / "web_assets"
+        assets = web_assets / "dist" / "assets"
+        assets.mkdir(parents=True)
+        (web_assets / "__init__.py").write_text("", encoding="utf-8")
+        script = b'console.log("Focus Web");\n' * 100
+        (assets / "app.js").write_bytes(script)
+        (assets / "app.js.gz").write_bytes(gzip.compress(script, mtime=0))
         focus_runtime = bot / "focus_runtime"
         focus_runtime.mkdir()
         (focus_runtime / "__init__.py").write_text("", encoding="utf-8")
@@ -44,7 +52,8 @@ class PythonDistributionBuildTests(unittest.TestCase):
             "include = [\"bot*\"]\n"
             "\n"
             "[tool.setuptools.package-data]\n"
-            "bot = [\"payload.txt\"]\n",
+            "bot = [\"payload.txt\"]\n"
+            "\"bot.web_assets\" = [\"dist/**\"]\n",
             encoding="utf-8",
         )
         (source / "setup.cfg").write_text(
@@ -120,6 +129,10 @@ class PythonDistributionBuildTests(unittest.TestCase):
                 self.assertIn("bot/payload.txt", names)
                 self.assertIn("bot/focus_runtime/__init__.py", names)
                 self.assertIn("bot/focus_runtime/runtime.py", names)
+                self.assertEqual(
+                    gzip.decompress(wheel.read("bot/web_assets/dist/assets/app.js.gz")),
+                    wheel.read("bot/web_assets/dist/assets/app.js"),
+                )
                 self.assertNotIn("bot/focus_runtime.py", names)
             self.assertEqual(checkout_ghost.read_text(encoding="utf-8"), "GHOST = True\n")
             self.assertEqual(

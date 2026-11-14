@@ -196,6 +196,9 @@ ignored `build/install/`; `bash install.sh --artifact <zip>` or
 `./install.ps1 --artifact <zip>` installs it. The builder requires both the Web
 payload and `requirements.lock` in the source and constructs and verifies one
 deterministic Focus wheel containing them.
+The Web payload includes build-generated gzip siblings. Their compression and
+caching boundary follows [Static Asset Delivery](./focus-web-wire.md#static-asset-delivery);
+installation carries them unchanged without recompression.
 
 Unix developers may run `bash /path/to/focus/scripts/install_workspace.sh` from
 any working directory to orchestrate those steps. This entry point does not run
