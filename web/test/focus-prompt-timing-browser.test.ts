@@ -47,7 +47,7 @@ it.each([1280, 390])('defers diagnostic reads, displays cross-device and uncerta
   await page.routeWebSocket('**/api/events?*', socket => {
     events = socket;
     socket.onMessage(message => { if (message === 'ping') socket.send('pong'); });
-    setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 })), 20);
+    setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 })), 20);
   });
   await page.route('**/api/**', async route => {
     const request = route.request(), path = new URL(request.url()).pathname;
@@ -169,7 +169,9 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
     page.on('pageerror', error => errors.push(error.message));
     await page.routeWebSocket('**/api/events?*', socket => {
       socket.onMessage(message => { if (message === 'ping') socket.send('pong'); });
-      setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 })), 20);
+      // Match the HTTP snapshot; a stale hello would start an unrelated
+      // projection reload while this test is trying to navigate history.
+      setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 })), 20);
     });
     await page.route('**/api/**', async route => {
       const request = route.request(), { pathname: path, searchParams: query } = new URL(request.url());
@@ -201,7 +203,7 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
       // overlay; start user navigation only once that visible boundary clears.
       await page.locator('.gload').waitFor({ state: 'hidden' });
       const pane = page.locator('.panes');
-      await page.locator('.transcript-row[data-turn-id="latest-reply"] .md').waitFor();
+      await page.locator('.transcript-row[data-turn-id="latest-reply"] .md').getByText('Reply paragraph 40.', { exact: true }).waitFor();
       await page.locator('textarea:visible').first().fill('Draft survives history navigation');
       if (navigate === 'prompt') {
         await page.getByRole('button', { name: 'Prompt history', exact: true }).click();
@@ -217,7 +219,14 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
         await page.mouse.wheel(0, -10_000);
         await expect.poll(() => historyReads.includes('old'), { timeout: 10_000 }).toBe(true);
         await page.locator('.transcript-row[data-turn-id="old-0"]').waitFor({ state: 'attached' });
+        // The page first installs estimated row heights, then preserves the
+        // current reading anchor as Markdown mounts. Finish that layout before
+        // the next gesture so this test actually reaches the old prompt.
+        await page.locator('.transcript-row[data-turn-id="old-reply"] .md').getByText('Reply paragraph 40.', { exact: true }).waitFor();
+        await expect.poll(() => pane.evaluate(el => el.classList.contains('history-loading'))).toBe(false);
+        await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
         await page.mouse.wheel(0, -10_000);
+        await expect.poll(() => pane.evaluate(el => el.scrollTop), { timeout: 10_000 }).toBeLessThan(2);
       }
       const first = page.locator('.transcript-row[data-turn-id="old-0"] .prompt-time-label');
       await first.waitFor();
@@ -240,7 +249,14 @@ it.each([1280, 390].flatMap(width => ['prompt', 'scroll'].map(navigate => ({ wid
       expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft survives history navigation');
       expect(errors).toEqual([]);
     } catch (error) {
-      throw new Error(`${String(error)}\nBrowser errors: ${JSON.stringify(errors)}\nHistory reads: ${JSON.stringify(historyReads)}\nPage: ${(await page.locator('body').innerText()).slice(-4000)}`);
+      const layout = await page.locator('.panes').evaluate(pane => ({
+        top: pane.scrollTop, height: pane.clientHeight, total: pane.scrollHeight, classes: pane.className,
+        rows: [...pane.querySelectorAll<HTMLElement>('.transcript-row')].map(row => ({
+          id: row.dataset.turnId, top: row.getBoundingClientRect().top, height: row.getBoundingClientRect().height,
+          style: row.getAttribute('style'), children: row.childElementCount,
+        })),
+      }));
+      throw new Error(`${String(error)}\nBrowser errors: ${JSON.stringify(errors)}\nHistory reads: ${JSON.stringify(historyReads)}\nLayout: ${JSON.stringify(layout)}\nPage: ${(await page.locator('body').innerText()).slice(-4000)}`);
     } finally { await page.close(); }
   }, 45_000,
 );
