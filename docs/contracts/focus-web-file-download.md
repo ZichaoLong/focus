@@ -73,12 +73,12 @@ naming, independent document title, cancellation and fallback behavior under the
 The download dialog offers a separate Preview action. Opening a link reads metadata only; loading a
 conversation, scrolling past links or opening file information does not prefetch content. Previews
 reuse the session-authenticated file transfer; the HTML sandbox bootstrap is described below.
-Only one preview is retained, with no persisted content or object URLs, new runtime dependencies or separate service.
+Only one preview is retained, with no persisted content or object URLs, new server runtime dependencies or separate service.
 
 - `filePreview.ts` owns preview requests, cancellation, complete contents and object URL lifetime.
   Closing, replacing or refreshing cancels previous requests and releases their contents. Refresh is
   explicit and reads the current file, without historical snapshots or automatic tracking.
-- Text/code/log/JSON and similar files show complete selectable, copyable read-only text with a
+- Text/code/log/JSON and similar files retain complete selectable, copyable read-only source with a
   line-wrap toggle. Strict UTF-8 and BOM-marked UTF-16 are supported. Unknown formats, binary data and
   unsupported encodings offer download, never silently replacing invalid characters. Text is limited
   to 1 MiB, checked at metadata, Content-Length and actual stream bytes so file growth cannot bypass
@@ -93,17 +93,39 @@ Only one preview is retained, with no persisted content or object URLs, new runt
 - Local links preserve section fragments: `#2-heading` is not line 2. Rendered Markdown locates a
   heading ID or conventional lowercase hyphenated slug and scrolls to it. A missing heading produces
   an explicit notice; source views retain the requested section in file information.
-- Initial image support covers PNG/JPEG/WebP original files, without thumbnails or transcoding.
+- Image support covers PNG/JPEG/WebP/GIF/BMP/ICO/still AVIF original files, without thumbnails or transcoding.
   Transfers are limited to 16 MiB. Before creating a Blob URL or letting the browser decode pixels,
   `filePreviewImage.ts` inspects headers, limiting images to 24 million pixels and 32768 pixels per
   dimension. Invalid/unsupported images fail explicitly and remain downloadable.
+- GIF retains animation, bounded to 1000 frames and 96 million logical-canvas pixels multiplied by
+  frame count. AVIF sequences are unsupported. ICO checks directory and payload dimensions; AVIF
+  checks primary-item associations and image properties rather than trusting small outer declarations.
+- SVG uses the text byte limit, validates its XML root and dimensions, and rejects custom entities.
+  It is displayed only as a Blob image with a source toggle, never inserted into the parent DOM;
+  scripts and external resources are inactive. Image dimension limits apply. Missing dimensions use
+  the viewBox/aspect ratio, or 300×150 when neither exists. Invalid SVG retains its complete source.
+- CSV/TSV defaults to a table with 50 rows per page. Quoting, escaped quotes, multiline cells, empty
+  values and ragged rows are preserved. The first row is data; headers, numbers and dates are not
+  inferred and formulas are never executed. Limits are 200 columns and 100,000 cells; malformed
+  quoting or excessive structure falls back explicitly to complete source.
+- JSON/JSONL/NDJSON/ipynb defaults to a collapsible tree preserving key order, duplicate keys and
+  numeric spelling without large-integer rounding. JSONL validates each record separately and keeps
+  line labels. Limits are 10,000 nodes and depth 64, with 100 children per node page. Invalid or
+  excessive structures retain complete source. Empty JSONL may display an empty collection.
+- Common code/configuration filenames select languages for lazy Shiki highlighting with its JavaScript
+  regex engine below 30,000 characters; larger files retain complete source. Tokens render as text,
+  never as HTML or Markdown. Standalone `.mmd/.mermaid` up to 32 KiB uses the existing strict Mermaid
+  renderer/viewer; its synthetic fences must exceed every backtick run in source to prevent escape
+  into other Markdown. Both offer source toggles. Highlighting load failure explicitly retains the
+  complete code; Mermaid runtime/syntax failure retains the shared renderer's readable source fallback.
 - `ImageViewport.vue` shares fit, 100%, zoom, drag and pinch interactions between images and Mermaid.
   Photos use browser-decoded EXIF-oriented dimensions. The viewer never changes server files.
 - Desktop uses a large dialog and narrow screens use the full viewport. Closing restores conversation
   focus and scroll position. Download and refresh remain available; filename editing and native Save
   As keep their behavior. Closing a nested Mermaid viewer does not also close the file preview.
 - One toolbar contains close, a shrinkable filename, download, the Markdown/HTML source/render toggle,
-  content copy and refresh. Icon actions have text labels and 44px touch targets. Long names use middle
+  content copy and refresh. SVG, structured data, code and Mermaid share the source/render toggle.
+  Icon actions have text labels and 44px touch targets. Long names use middle
   ellipsis, retaining both ends. Tapping the name opens an independently scrollable overlay with the
   complete filename and server path, each separately copyable; desktop hover also reveals the full name.
   Tapping the name again, tapping outside or pressing Escape dismisses the overlay without resizing or
@@ -112,7 +134,34 @@ Only one preview is retained, with no persisted content or object URLs, new runt
   available. Large Markdown shown as source retains a compact source indicator with the reason in the
   overlay. Line location and copy results use temporary notices.
 
-PDF, Office and audio/video have no embedded preview yet. Existing PDF export printing is unaffected.
+Office and audio/video have no embedded preview yet. Existing PDF export printing is unaffected.
+
+## PDF previews
+
+PDF uses the same bounded download interface with a separate 32 MiB limit enforced at metadata,
+Content-Length and actual bytes. Only explicitly opening a PDF loads the pinned `pdfjs-dist` runtime
+and parses in a local worker. It does not use a browser PDF plugin, `object` or attachment-URL iframe.
+One page is displayed at a time, with paging/page-number input, fit-page, zoom and selectable text.
+Scans do not receive OCR. Text extraction failure or more than 10,000 text items per page leaves the
+rendered page visible with an explicit notice. Canvas limits are 12 million pixels, 8192 per edge and
+DPR 2; decoded page images also have a 24-million-pixel limit.
+
+Passwords go only to the current PDF loading task and are not saved. Incorrect passwords can be
+retried; closing cancels the wait. Paging/zoom cancels old rendering. Close, replacement and refresh
+destroy the loading task, worker and Canvas. Download overlays retain the page and zoom. Invalid,
+unsupported or failed runtime loads show an explicit error while download/close/refresh remain
+available, without presenting partially rendered pages as complete. PDF JavaScript, XFA, interactive
+forms, links and attachment actions are disabled; ordinary annotation appearances may be painted.
+
+The PDF.js module and worker load on demand. CMaps, standard fonts and JavaScript JPEG 2000/JBIG2
+decoders ship at versioned local paths, with their license evidence in the third-party inventory.
+`useWasm:false` selects decoding/function-interpreter fallbacks, preserving the parent CSP without
+`unsafe-eval` or `wasm-unsafe-eval`; Wasm ICC color management is not enabled. Deployment/installation
+still needs only the existing Python package and static assets, without Node/npm, native Canvas,
+system PDF tools, a CDN or new ports. Source builds need the locked npm dependency and a Node version
+meeting PDF.js engines. The install bundle and first PDF-view resource download grow; parsing and
+rendering consume client CPU/memory. Clients need a modern browser supported by PDF.js, with download
+available when capabilities are missing; no plugin installation is required.
 
 ## Interactive HTML previews
 

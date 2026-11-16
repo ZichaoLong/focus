@@ -4,12 +4,17 @@ import type { FileDownloadApi } from './fileDownload';
 import { fileDownloadErrorKey } from './fileDownload';
 import type { FocusFileInfo } from './types';
 import { inspectPreviewImage } from './filePreviewImage';
+import { inspectPreviewSvg } from './filePreviewSvg';
+import { parsePreviewTable } from './filePreviewTable';
+import { parsePreviewJson, type PreviewJsonNode } from './filePreviewJson';
+import { CODE_PREVIEW_CHARS, MERMAID_PREVIEW_BYTES, filePreviewLanguage, previewCodeFence } from './filePreviewCode';
 
 export const TEXT_PREVIEW_BYTES = 1024 * 1024;
 export const MARKDOWN_RENDER_BYTES = 128 * 1024;
 export const IMAGE_PREVIEW_BYTES = 16 * 1024 * 1024;
 export const HTML_PREVIEW_BYTES = 8 * 1024 * 1024;
-export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'html';
+export const PDF_PREVIEW_BYTES = 32 * 1024 * 1024;
+export type FilePreviewKind = 'text' | 'markdown' | 'image' | 'html' | 'svg' | 'table' | 'json' | 'code' | 'mermaid' | 'pdf';
 export interface FilePreviewContent {
   kind: FilePreviewKind;
   text: string;
@@ -17,6 +22,12 @@ export interface FilePreviewContent {
   width: number;
   height: number;
   renderMarkdown: boolean;
+  renderedText?: string;
+  language?: string;
+  table?: string[][];
+  json?: PreviewJsonNode;
+  bytes?: Uint8Array<ArrayBuffer>;
+  renderError?: string;
 }
 
 const TEXT_EXTENSIONS = new Set(('txt text log json jsonl ndjson csv tsv yaml yml toml ini cfg conf config '
@@ -30,13 +41,47 @@ export function filePreviewKind(name: string): FilePreviewKind | null {
   const extension = lower.split('.').at(-1) ?? '';
   if (['md', 'markdown', 'mdown'].includes(extension)) return 'markdown';
   if (['html', 'htm'].includes(extension)) return 'html';
-  if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) return 'image';
+  if (extension === 'pdf') return 'pdf';
+  if (extension === 'svg') return 'svg';
+  if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'ico', 'avif'].includes(extension)) return 'image';
+  if (['csv', 'tsv'].includes(extension)) return 'table';
+  if (['json', 'jsonl', 'ndjson', 'ipynb'].includes(extension)) return 'json';
+  if (['mmd', 'mermaid'].includes(extension)) return 'mermaid';
+  if (filePreviewLanguage(name)) return 'code';
   if (TEXT_EXTENSIONS.has(extension) || TEXT_NAMES.has(lower)) return 'text';
   return null;
 }
 
 export function filePreviewLimit(kind: FilePreviewKind): number {
-  return kind === 'image' ? IMAGE_PREVIEW_BYTES : kind === 'html' ? HTML_PREVIEW_BYTES : TEXT_PREVIEW_BYTES;
+  return kind === 'image' ? IMAGE_PREVIEW_BYTES : kind === 'html' ? HTML_PREVIEW_BYTES
+    : kind === 'pdf' ? PDF_PREVIEW_BYTES : TEXT_PREVIEW_BYTES;
+}
+
+function prepareTextPreview(kind: FilePreviewKind, bytes: Uint8Array<ArrayBuffer>, name: string): FilePreviewContent {
+  const text = decodeText(bytes);
+  const content: FilePreviewContent = { kind, text, url: '', width: 0, height: 0,
+    renderMarkdown: kind === 'markdown' && bytes.byteLength <= MARKDOWN_RENDER_BYTES };
+  try {
+    if (kind === 'svg') {
+      Object.assign(content, inspectPreviewSvg(text));
+      // Original bytes retain a possible XML encoding declaration. SVG image
+      // mode cannot run scripts or embed external resources in the parent DOM.
+      content.url = URL.createObjectURL(new Blob([bytes], { type: 'image/svg+xml' }));
+    } else if (kind === 'table') content.table = parsePreviewTable(text, /\.tsv$/i.test(name) ? '\t' : ',');
+    else if (kind === 'json') content.json = parsePreviewJson(text, /\.(jsonl|ndjson)$/i.test(name));
+    else if (kind === 'code' || kind === 'mermaid') {
+      if (kind === 'code' ? text.length >= CODE_PREVIEW_CHARS : bytes.byteLength > MERMAID_PREVIEW_BYTES) {
+        throw new Error('focus.filePreviewRichLarge');
+      }
+      if (kind === 'code') content.language = filePreviewLanguage(name);
+      else content.renderedText = previewCodeFence(text, 'mermaid');
+    }
+  } catch (error) {
+    // Rich-view failure must not discard the complete, already decoded source.
+    content.renderError = error instanceof Error && error.message.startsWith('focus.filePreview')
+      ? error.message : 'focus.filePreviewFailed';
+  }
+  return content;
 }
 
 function decodeText(bytes: Uint8Array): string {
@@ -132,8 +177,9 @@ export function createFilePreview(api: Pick<FileDownloadApi, 'fileContent'>) {
         content.value = { kind, text: '', url: URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: mime })),
           width, height, renderMarkdown: false };
       } else {
-        content.value = { kind, text: decodeText(bytes), url: '', width: 0, height: 0,
-          renderMarkdown: kind === 'markdown' && bytes.byteLength <= MARKDOWN_RENDER_BYTES };
+        content.value = kind === 'pdf'
+          ? { kind, text: '', url: '', width: 0, height: 0, renderMarkdown: false, bytes: bytes as Uint8Array<ArrayBuffer> }
+          : prepareTextPreview(kind, bytes as Uint8Array<ArrayBuffer>, target.name);
       }
     } catch (error) {
       if (!controller.signal.aborted) {

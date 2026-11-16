@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { focusThirdPartyNoticesPlugin } from './scripts/vite-third-party-notices.mjs';
 import { focusBundleBoundaryPlugin } from './scripts/focus-bundle-boundary';
 import { focusStaticCompressionPlugin } from './scripts/focus-static-compression';
+import { focusPdfAssetsPlugin } from './scripts/focus-pdf-assets';
 
 const webPort = Number(process.env.WEB_PORT) || 5175;
 const gatewayTarget = process.env.FOCUS_WEB_GATEWAY_URL || 'http://127.0.0.1:8766';
@@ -30,6 +31,7 @@ const apiProxyOptions = {
 export default defineConfig({
   plugins: [
     vue(),
+    focusPdfAssetsPlugin(),
     focusBundleBoundaryPlugin(),
     Icons({
       compiler: 'vue3',

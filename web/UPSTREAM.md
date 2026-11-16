@@ -80,6 +80,10 @@ retain that upstream source attribution. The tool-group projection/expansion
 owner and its unit/browser regressions are Focus-owned additions.
 The composer scroll browser regression and its fixture are Focus-owned additions;
 the autosizing implementation remains in the Kimi-derived `useComposerDraft.ts`.
+The extended file preview readers, structured views, PDF view and regression
+fixtures are Focus-owned additions. PDF.js is a pinned npm dependency; its worker,
+CMaps, fonts and JavaScript decoders are shipped locally with their upstream
+license evidence included by the notice generator.
 
 This guard is intentionally not part of `npm run build`: build and release
 remain reproducible from checked-in code and license evidence, without a

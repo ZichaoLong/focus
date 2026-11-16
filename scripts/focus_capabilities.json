@@ -2999,6 +2999,10 @@
         {
           "path": "bot/web_runtime/file_download.py",
           "symbol": "WebGatewayFileDownloadMixin"
+        },
+        {
+          "path": "web/src/focus/FocusFileDownloadDialog.vue",
+          "symbol": "showPreview"
         }
       ],
       "owner": [
@@ -3021,6 +3025,14 @@
         {
           "path": "web/src/focus/FocusHtmlPreview.vue",
           "symbol": "load"
+        },
+        {
+          "path": "web/src/focus/filePreviewPdf.ts",
+          "symbol": "loadPreviewPdf"
+        },
+        {
+          "path": "web/src/focus/filePreviewHighlight.ts",
+          "symbol": "highlightPreviewCode"
         }
       ],
       "contract": [
@@ -3039,6 +3051,10 @@
         {
           "path": "docs/contracts/focus-web-file-download.zh-CN.md",
           "heading": "HTML 交互预览"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "PDF 预览"
         }
       ],
       "focused-test": [
@@ -3055,7 +3071,10 @@
             "web/test/file-download-api.test.ts",
             "web/test/file-preview.test.ts",
             "web/test/markdown-file-preview.test.ts",
-            "web/test/html-preview-browser.test.ts"
+            "web/test/html-preview-browser.test.ts",
+            "web/test/file-preview-formats.test.ts",
+            "web/test/file-preview-browser.test.ts",
+            "web/test/pdf-preview-assets.test.ts"
           ]
         }
       ],
@@ -3076,7 +3095,8 @@
             "web/test/markdown-local-images.test.ts",
             "web/test/diagram-viewport.test.ts",
             "web/test/markdown-math-contract.test.ts",
-            "web/test/focus-code-splitting.test.ts"
+            "web/test/focus-code-splitting.test.ts",
+            "web/test/static-compression.test.ts"
           ]
         }
       ],

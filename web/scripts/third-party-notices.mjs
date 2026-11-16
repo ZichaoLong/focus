@@ -18,6 +18,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PDFJS_ASSET_LICENSES } from './pdfjs-assets.mjs';
 
 const SCRIPT_VERSION = 2;
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
@@ -40,6 +41,7 @@ export const NOTICE_FILENAMES = Object.freeze({
 // as ordinary JS module paths.  Keep the reason explicit so a future icon or
 // font replacement cannot disappear from the legal inventory unnoticed.
 const EXPLICIT_ASSET_PACKAGES = Object.freeze([
+  { name: 'pdfjs-dist', reason: 'self-hosted PDF worker, CMaps, standard fonts and JavaScript image decoders' },
   {
     name: '@fontsource-variable/inter',
     reason: 'self-hosted Inter webfont CSS and WOFF2 assets',
@@ -211,7 +213,9 @@ function packageLicenseFiles(packageDir) {
 }
 
 function readPackageLicenseDocuments(packageDir, packageDisplayName) {
-  return packageLicenseFiles(packageDir).map((name) => ({
+  const files = packageLicenseFiles(packageDir);
+  if (packageDisplayName.startsWith('pdfjs-dist@')) files.push(...PDFJS_ASSET_LICENSES);
+  return files.map((name) => ({
     source: `${packageDisplayName}/${name}`,
     text: readText(path.join(packageDir, name)),
   }));

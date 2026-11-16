@@ -12,6 +12,7 @@ it('builds reproducible gzip siblings without changing asset URLs or original by
     name: 'compression-fixtures',
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'assets/tiny.js', source: 'console.log(1)' });
+      this.emitFile({ type: 'asset', fileName: 'assets/pdf.worker.mjs', source: '/* PDF worker */\n'.repeat(200) });
       this.emitFile({ type: 'asset', fileName: 'assets/font.woff2', source: new Uint8Array(2048) });
     },
   });
@@ -36,6 +37,7 @@ it('builds reproducible gzip siblings without changing asset URLs or original by
     expect(siblings).toContain('index.html.gz');
     expect(siblings.some(name => name.endsWith('.js.gz'))).toBe(true);
     expect(siblings.some(name => name.endsWith('.css.gz'))).toBe(true);
+    expect(siblings).toContain('assets/pdf.worker.mjs.gz');
     expect(siblings.some(name => name.endsWith('.map.gz') || name.endsWith('.woff2.gz'))).toBe(false);
     expect(compressed.has('assets/tiny.js.gz')).toBe(false);
     for (const name of siblings) {

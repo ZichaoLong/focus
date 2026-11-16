@@ -1,1 +1,3 @@
 install.ps1 text eol=crlf
+# PDF cross-reference offsets require byte-for-byte fixture preservation.
+web/test/fixtures/file-preview-data/*.pdf binary

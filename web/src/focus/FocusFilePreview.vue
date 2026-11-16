@@ -7,6 +7,10 @@ import Icon from '../components/ui/Icon.vue';
 import IconButton from '../components/ui/IconButton.vue';
 import ImageViewport from '../components/ui/ImageViewport.vue';
 import FocusHtmlPreview from './FocusHtmlPreview.vue';
+import FocusTablePreview from './FocusTablePreview.vue';
+import FocusJsonNode from './FocusJsonNode.vue';
+import FocusPdfPreview from './FocusPdfPreview.vue';
+import FocusCodePreview from './FocusCodePreview.vue';
 import { copyTextToClipboard } from '../lib/clipboard';
 import { canChooseFileDestination } from './browserFileSave';
 import { formatFileSize } from './fileDownload';
@@ -39,8 +43,11 @@ const filenameParts = computed(() => {
 });
 const saveLabel = computed(() => t(canChooseFileDestination() ? 'focus.fileSaveAs' : 'focus.fileDownloadAction'));
 const limit = computed(() => filePreviewLimit(filePreviewKind(props.preview.file.value?.name ?? '') ?? 'text'));
-const showingSource = computed(() => content.value?.kind !== 'image'
-  && (!(content.value?.renderMarkdown || content.value?.kind === 'html') || sourceMode.value));
+const hasSource = computed(() => content.value && !['image', 'pdf'].includes(content.value.kind));
+const canRender = computed(() => content.value && (content.value.renderMarkdown || content.value.kind === 'html'
+  || (content.value.kind === 'svg' && content.value.url) || content.value.renderedText !== undefined
+  || content.value.table || content.value.json || content.value.language));
+const showingSource = computed(() => hasSource.value && (!canRender.value || sourceMode.value));
 
 function showNotice(message: string): void {
   clearTimeout(noticeTimer);
@@ -122,7 +129,7 @@ watch(content, async () => {
   copied.value = null;
   notice.value = '';
   clearTimeout(noticeTimer);
-  if (content.value && content.value.kind !== 'image') await locateLine();
+  if (hasSource.value) await locateLine();
 }, { immediate: true });
 
 watch([markdown, () => props.preview.anchor.value, content], ([root, anchor], _, onCleanup) => {
@@ -172,12 +179,12 @@ onBeforeUnmount(() => {
       <IconButton size="lg" :label="saveLabel" :title="saveLabel" @click="downloadFile"><Icon name="download" /></IconButton>
       <IconButton v-if="content?.kind === 'html'" size="lg" :label="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')"
         :title="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')" @click="toggleFullscreen"><Icon :name="fullscreen ? 'collapse' : 'expand'" /></IconButton>
-      <IconButton v-if="content?.renderMarkdown || content?.kind === 'html'" size="lg" :label="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')"
+      <IconButton v-if="canRender" size="lg" :label="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')"
         :title="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')" :aria-pressed="sourceMode" @click="sourceMode = !sourceMode">
         <Icon :name="sourceMode ? 'file-text' : 'code'" />
       </IconButton>
       <span v-else-if="content?.kind === 'markdown'" class="file-preview-source-badge" :title="t('focus.filePreviewLargeMarkdown')" :aria-label="t('focus.filePreviewLargeMarkdown')" role="img"><Icon name="code" /></span>
-      <IconButton v-if="content && content.kind !== 'image'" size="lg" :label="t('filePreview.copy')" :title="t('filePreview.copy')" @click="copy('content')"><Icon :name="copied === 'content' ? 'check' : 'copy'" /></IconButton>
+      <IconButton v-if="hasSource" size="lg" :label="t('filePreview.copy')" :title="t('filePreview.copy')" @click="copy('content')"><Icon :name="copied === 'content' ? 'check' : 'copy'" /></IconButton>
       <IconButton size="lg" :label="t('focus.filePreviewRefresh')" :title="t('focus.filePreviewRefresh')" :disabled="preview.loading.value" @click="preview.refresh()"><Icon name="refresh" /></IconButton>
     </div>
     <section v-if="infoOpen" :id="infoId" ref="info" class="file-preview-info" role="region" :aria-label="t('focus.filePreviewInfo')" tabindex="-1">
@@ -196,18 +203,25 @@ onBeforeUnmount(() => {
       <p>{{ t('focus.filePreviewCurrent') }}</p>
       <p v-if="preview.anchor.value">{{ t('focus.filePreviewAnchor', { anchor: preview.anchor.value }) }}</p>
       <p v-if="content?.kind === 'html'">{{ t('focus.filePreviewHtmlHelp') }}</p>
-      <p v-if="content?.kind === 'image'">{{ t('filePreview.imageControls') }}</p>
+      <p v-if="content?.kind === 'image' || content?.kind === 'svg'">{{ t('filePreview.imageControls') }}</p>
+      <p v-if="content?.kind === 'svg'">{{ t('focus.filePreviewSvgHelp') }}</p>
+      <p v-if="content?.kind === 'pdf'">{{ t('focus.filePreviewPdfHelp') }}</p>
     </section>
     <p v-if="preview.loading.value" class="file-preview-message" role="status">{{ t('focus.filePreviewLoading', { size: formatFileSize(preview.received.value) }) }}</p>
     <p v-else-if="preview.errorKey.value" class="file-preview-message" role="alert">{{ t(preview.errorKey.value, { limit: formatFileSize(limit) }) }}</p>
     <template v-else-if="content">
-      <ImageViewport v-if="content.kind === 'image'" :key="content.url" class="file-preview-image"
-        :source="content.url" :width="content.width" :height="content.height" :alt="preview.file.value?.name ?? ''" :natural-size="true"
+      <p v-if="content.renderError" class="file-preview-fallback" role="status">{{ t(content.renderError) }} {{ t('focus.filePreviewSourceFallback') }}</p>
+      <ImageViewport v-if="content.kind === 'image' || (content.kind === 'svg' && !showingSource)" :key="content.url" class="file-preview-image"
+        :source="content.url" :width="content.width" :height="content.height" :alt="preview.file.value?.name ?? ''" :natural-size="content.kind === 'image'"
         :help="t('filePreview.imageControls')" :hide-help="true" :failed-text="t('focus.filePreviewImageInvalid')" />
       <textarea v-else-if="showingSource" ref="source" class="file-preview-source" readonly :spellcheck="false"
         :aria-label="t('focus.filePreviewSource')" :wrap="wrapped ? 'soft' : 'off'" :value="content.text" />
       <FocusHtmlPreview v-else-if="content.kind === 'html'" :text="content.text" :anchor="preview.anchor.value" @open-file="emit('openFile', $event)" />
-      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.text" :defer-images="true" :open-file="target => emit('openFile', target)" /></div>
+      <FocusPdfPreview v-else-if="content.kind === 'pdf' && content.bytes" :bytes="content.bytes" />
+      <FocusCodePreview v-else-if="content.language" :text="content.text" :language="content.language" />
+      <FocusTablePreview v-else-if="content.table" :rows="content.table" />
+      <div v-else-if="content.json" class="file-preview-json"><FocusJsonNode :node="content.json" /></div>
+      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.renderedText ?? content.text" :defer-images="true" :open-file="target => emit('openFile', target)" /></div>
     </template>
     <div v-if="notice" class="file-preview-notice" role="status">{{ notice }}</div>
   </section>
@@ -238,6 +252,8 @@ onBeforeUnmount(() => {
   width: max-content; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-line); border-radius: var(--radius-md);
   background: var(--color-surface-raised); box-shadow: var(--shadow-sm); font-size: var(--text-sm); pointer-events: none; }
 .file-preview-message { padding: var(--space-4); }
+.file-preview-fallback { margin: 0; padding: var(--space-2) var(--space-4); font-size: var(--text-sm); color: var(--color-text-muted); }
+.file-preview-json { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-3); }
 .file-preview-source { flex: 1; min-height: 0; width: 100%; resize: none; box-sizing: border-box; border: 0;
   padding: var(--space-4); border-radius: 0; color: var(--color-text); background: var(--color-surface); font: 400 14px/22px var(--font-mono); overscroll-behavior: contain; }
 .file-preview-markdown { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-4); }

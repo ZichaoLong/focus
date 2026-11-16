@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createFilePreview, filePreviewKind, HTML_PREVIEW_BYTES, IMAGE_PREVIEW_BYTES, MARKDOWN_RENDER_BYTES, TEXT_PREVIEW_BYTES } from '../src/focus/filePreview';
-import { inspectPreviewImage, IMAGE_PREVIEW_PIXELS } from '../src/focus/filePreviewImage';
+import { inspectPreviewImage } from '../src/focus/filePreviewImage';
+import { IMAGE_PREVIEW_PIXELS } from '../src/focus/filePreviewImageBounds';
 import { FocusApiError } from '../src/focus/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -36,14 +37,14 @@ describe('on-demand file preview', () => {
     expect(preview.opened.value).toBe(false);
   });
 
-  it.each(['a.pdf', 'a.docx', 'a.mp4', 'a.zip'])('does not read unsupported %s', async name => {
+  it.each(['a.docx', 'a.mp4', 'a.zip'])('does not read unsupported %s', async name => {
     const { api, preview } = setup();
     await preview.open({ ...file, name });
     expect(api.fileContent).not.toHaveBeenCalled();
     expect(preview.errorKey.value).toBe('focus.filePreviewUnsupported');
   });
 
-  it.each(['README', '.gitignore', 'data.jsonl', 'file.py', 'diagram.svg'])('treats %s as source text', name => {
+  it.each(['README', 'LICENSE', 'server.log'])('treats %s as source text', name => {
     expect(filePreviewKind(name)).toBe('text');
   });
 
