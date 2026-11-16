@@ -90,6 +90,8 @@ it('runs exact source in isolation, switches views, supports fullscreen, and adm
     await page.getByRole('button', { name: 'Source / text', exact: true }).click();
     expect(await page.getByRole('textbox', { name: 'Source / text' }).inputValue()).toBe(report);
     await page.getByRole('button', { name: 'Rendered view', exact: true }).click();
+    await frame.locator('#next').click();
+    expect(await frame.locator('#position').textContent()).toBe('2');
     await frame.locator('#notes').click();
     await expect.poll(() => frame.locator('#notes-dialog').evaluate((el: HTMLDialogElement) => el.open)).toBe(true);
     const before = calls.length;
@@ -108,6 +110,10 @@ it('runs exact source in isolation, switches views, supports fullscreen, and adm
     await heading.waitFor();
     await expect.poll(() => page.locator('.file-preview-markdown').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
     expect(calls.filter(call => call.path.endsWith('/download') && call.query.path?.endsWith('.html'))).toHaveLength(1);
+    await page.getByRole('button', { name: 'Back to previous file', exact: true }).click();
+    await frame.getByText('Embedded report', { exact: true }).waitFor();
+    expect(await frame.locator('#position').textContent()).toBe('1');
+    expect(calls.filter(call => call.path.endsWith('/download') && call.query.path?.endsWith('.html'))).toHaveLength(2);
     expect(errors).toEqual([]);
   } catch (error) {
     await page.screenshot({ path: join(cacheDir, 'failure.png') });

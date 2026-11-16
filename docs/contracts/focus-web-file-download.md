@@ -136,6 +136,31 @@ Only one preview is retained, with no persisted content or object URLs, new serv
 
 Office and audio/video have no embedded preview yet. Existing PDF export printing is unaffected.
 
+## Back within file previews
+
+`filePreviewNavigation.ts` owns the transient trail and coordinates the existing download and preview
+owners, without duplicating file contents or request state. Following a local file link from Markdown
+or HTML records the previous resolved absolute path, line/section target and lightweight reading state.
+Only the latest 20 steps are retained; nothing is persisted or written to browser history or the URL.
+
+- With a previous entry, the preview toolbar offers Back to previous file. The target information form
+  also offers Back while loading, on failure, for unsupported types or for oversized files. Returning
+  opens the previous preview directly without requiring another Preview click.
+- Back fetches fresh metadata and current contents, applying the same size and format checks; it is
+  not a historical content snapshot. Markdown/source views attempt to restore scroll position, source
+  mode and wrapping. Restoration briefly follows asynchronous layout changes and yields when the
+  reader scrolls, touches or uses the keyboard. Changed contents or viewport dimensions may shift it.
+- Returning to HTML recreates the sandbox and executes the source, without restoring internal forms,
+  script state or iframe scroll position. Departing documents, Blob URLs, iframes and PDF workers are
+  released through their existing lifetimes rather than accumulating background previews.
+- Close preview and the information form's close button end the entire trail; opening another file
+  from the conversation starts a new trail. A download form over the active preview adds no step, and
+  cancellation/completion still returns to that preview. Toolbar information popovers and Mermaid
+  viewers remain independently dismissible layers rather than file-navigation entries.
+- Repeated Back, opening a new file or closing cancels superseded reads; late metadata or contents
+  cannot reopen stale targets. Phone system Back, browser Back/Forward and navigation gestures retain
+  native browser behavior; their integration is a separate design.
+
 ## PDF previews
 
 PDF uses the same bounded download interface with a separate 32 MiB limit enforced at metadata,

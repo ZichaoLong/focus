@@ -81,6 +81,7 @@ export default {
   filePreviewTitle: '文件预览',
   filePreviewHighlightFailed: '暂时无法高亮，当前显示完整源码。',
   filePreviewClose: '关闭预览',
+  filePreviewBack: '返回上一文件',
   filePreviewInfo: '文件信息',
   filePreviewInfoLabel: '文件信息：{name}',
   filePreviewPath: '服务器路径',

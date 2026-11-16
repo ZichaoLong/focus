@@ -3033,6 +3033,14 @@
         {
           "path": "web/src/focus/filePreviewHighlight.ts",
           "symbol": "highlightPreviewCode"
+        },
+        {
+          "path": "web/src/focus/filePreviewNavigation.ts",
+          "symbol": "createFilePreviewNavigation"
+        },
+        {
+          "path": "web/src/focus/filePreviewViewState.ts",
+          "symbol": "restoreFilePreviewScroll"
         }
       ],
       "contract": [
@@ -3055,6 +3063,10 @@
         {
           "path": "docs/contracts/focus-web-file-download.zh-CN.md",
           "heading": "PDF 预览"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "预览内后退"
         }
       ],
       "focused-test": [
@@ -3074,7 +3086,9 @@
             "web/test/html-preview-browser.test.ts",
             "web/test/file-preview-formats.test.ts",
             "web/test/file-preview-browser.test.ts",
-            "web/test/pdf-preview-assets.test.ts"
+            "web/test/pdf-preview-assets.test.ts",
+            "web/test/file-preview-navigation.test.ts",
+            "web/test/file-preview-navigation-browser.test.ts"
           ]
         }
       ],

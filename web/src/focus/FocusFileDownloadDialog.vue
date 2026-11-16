@@ -5,18 +5,17 @@ import Button from '../components/ui/Button.vue';
 import Dialog from '../components/ui/Dialog.vue';
 import Input from '../components/ui/Input.vue';
 import { useNarrowViewport } from '../composables/useNarrowViewport';
-import type { FilePreviewRequest } from '../types';
 import { createFileDownload, formatFileSize, type FileDownloadApi } from './fileDownload';
 import { createFilePreview, filePreviewKind, filePreviewLimit } from './filePreview';
+import { createFilePreviewNavigation } from './filePreviewNavigation';
 import FocusFilePreview from './FocusFilePreview.vue';
 
 const props = defineProps<{ api: FileDownloadApi }>();
 const { t } = useI18n();
 const download = createFileDownload(props.api);
 const preview = createFilePreview(props.api);
+const navigation = createFilePreviewNavigation(download, preview);
 const narrow = useNarrowViewport();
-const targetLine = ref<number | undefined>();
-const targetAnchor = ref<string | undefined>();
 const previewKind = computed(() => filePreviewKind(download.info.value?.name ?? ''));
 const previewLimit = computed(() => filePreviewLimit(previewKind.value ?? 'text'));
 const notice = ref('');
@@ -28,50 +27,29 @@ watch(download.statusKey, key => {
   notice.value = key;
   noticeTimer = setTimeout(() => { notice.value = ''; }, 4500);
 });
-watch(download.opened, async isOpen => {
-  if (!preview.opened.value) return;
+watch([download.opened, preview.opened], async ([isOpen, previewOpen]) => {
+  if (!previewOpen) return;
   await nextTick();
   document.querySelector<HTMLElement>(isOpen ? '.file-download-form input, .file-download-actions button' : '.file-preview-toolbar button')?.focus({ preventScroll: true });
 });
 
 function open(path: string, cwd: string, line?: number, anchor?: string): Promise<void> {
-  preview.close();
-  targetLine.value = line;
-  targetAnchor.value = anchor;
   notice.value = '';
-  return download.open(path, cwd);
-}
-
-function openLinkedFile(target: FilePreviewRequest): void {
-  const path = preview.file.value?.path ?? '';
-  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-  void open(target.path, path.slice(0, separator + 1), target.line, target.anchor);
+  return navigation.open(path, cwd, line, anchor);
 }
 
 function showPreview(): void {
-  if (!download.info.value) return;
-  void preview.open(download.info.value, targetLine.value, targetAnchor.value);
-  download.close();
-  void nextTick(() => document.querySelector<HTMLElement>('.file-preview-toolbar button')?.focus({ preventScroll: true }));
+  void navigation.showPreview();
 }
 
-function showDownload(): void {
-  if (preview.file.value) void download.open(preview.file.value.path, '');
-}
-
-function close(): void {
-  if (download.opened.value) download.close();
-  else preview.close();
-}
-
-onBeforeUnmount(() => { clearTimeout(noticeTimer); download.close(); preview.close(); });
+onBeforeUnmount(() => { clearTimeout(noticeTimer); navigation.closeAll(); });
 defineExpose({ open });
 </script>
 
 <template>
   <Dialog :open="download.opened.value || preview.opened.value" :title="t(download.opened.value ? 'focus.fileDownloadTitle' : 'focus.filePreviewTitle')"
     :size="download.opened.value ? 'md' : narrow ? 'full' : 'xl'" :height="download.opened.value || narrow ? 'auto' : 'fixed'"
-    :padded="download.opened.value" :show-header="download.opened.value" @update:open="!$event && close()">
+    :padded="download.opened.value" :show-header="download.opened.value" @update:open="!$event && navigation.close()">
     <form v-if="download.opened.value" class="file-download-form" @submit.prevent="download.save">
       <p class="file-download-path">{{ download.path.value }}</p>
       <p v-if="download.loading.value" role="status">{{ t('focus.fileInfoLoading') }}</p>
@@ -89,14 +67,18 @@ defineExpose({ open });
       <p v-if="download.busy.value" role="status">{{ t('focus.fileSaving', { size: formatFileSize(download.received.value) }) }}</p>
       <p v-if="download.errorKey.value" role="alert">{{ t(download.errorKey.value) }}</p>
       <div class="file-download-actions">
-        <Button type="button" variant="secondary" @click="download.close()">{{ t('focus.cancel') }}</Button>
+        <Button v-if="navigation.canGoBack.value && !preview.opened.value" type="button" variant="secondary" @click="navigation.back()">{{ t('focus.filePreviewBack') }}</Button>
+        <Button v-else type="button" variant="secondary" @click="navigation.close()">{{ t('focus.cancel') }}</Button>
         <Button v-if="download.info.value && !preview.opened.value" type="button" variant="secondary" :disabled="download.busy.value || !previewKind || download.info.value.size > previewLimit" @click="showPreview">{{ t('focus.filePreviewAction') }}</Button>
         <Button v-if="download.info.value" type="submit" variant="primary" :disabled="download.busy.value || !download.filename.value">
           {{ t(download.nativePicker.value ? 'focus.fileSaveAs' : 'focus.fileDownloadAction') }}
         </Button>
       </div>
     </form>
-    <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview" @close="close" @download="showDownload" @open-file="openLinkedFile" />
+    <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview"
+      :can-go-back="navigation.canGoBack.value" :restore-view="navigation.restoreView.value"
+      @close="navigation.close()" @back="navigation.back()" @download="navigation.showDownload()"
+      @open-file="navigation.openLinkedFile" @restored="navigation.restored()" />
   </Dialog>
   <Teleport to="body"><div v-if="notice" class="file-download-notice" role="status">{{ t(notice) }}</div></Teleport>
 </template>

@@ -16,9 +16,10 @@ import { canChooseFileDestination } from './browserFileSave';
 import { formatFileSize } from './fileDownload';
 import { filePreviewKind, filePreviewLimit, type FilePreviewState } from './filePreview';
 import { findPreviewHeading } from './filePreviewAnchor';
+import { restoreFilePreviewScroll, type FilePreviewViewState } from './filePreviewViewState';
 
-const props = defineProps<{ preview: FilePreviewState }>();
-const emit = defineEmits<{ close: []; download: []; openFile: [target: FilePreviewRequest] }>();
+const props = defineProps<{ preview: FilePreviewState; canGoBack?: boolean; restoreView?: FilePreviewViewState | null }>();
+const emit = defineEmits<{ close: []; back: []; download: []; restored: []; openFile: [target: FilePreviewRequest, view: FilePreviewViewState] }>();
 const { t } = useI18n();
 const content = computed(() => props.preview.content.value);
 const panel = ref<HTMLElement | null>(null);
@@ -53,6 +54,12 @@ function showNotice(message: string): void {
   clearTimeout(noticeTimer);
   notice.value = message;
   noticeTimer = setTimeout(() => { notice.value = ''; copied.value = null; }, 3500);
+}
+
+function openLinkedFile(target: FilePreviewRequest): void {
+  const scroller = showingSource.value ? source.value : markdown.value;
+  emit('openFile', target, { sourceMode: sourceMode.value, wrapped: wrapped.value,
+    scrollTop: scroller?.scrollTop ?? 0, scrollLeft: scroller?.scrollLeft ?? 0 });
 }
 
 function updateFullscreen(): void { fullscreen.value = document.fullscreenElement === panel.value; }
@@ -124,16 +131,28 @@ async function locateLine(): Promise<void> {
   showNotice(t('focus.filePreviewLine', { line }));
 }
 
-watch(content, async () => {
-  sourceMode.value = !!props.preview.line.value;
+watch(content, async (value, _, onCleanup) => {
+  const saved = props.restoreView;
+  sourceMode.value = saved?.sourceMode ?? !!props.preview.line.value;
+  if (saved) wrapped.value = saved.wrapped;
   copied.value = null;
   notice.value = '';
   clearTimeout(noticeTimer);
-  if (hasSource.value) await locateLine();
+  if (!value) return;
+  if (!saved) { if (hasSource.value) await locateLine(); return; }
+  let current = true;
+  let stop = () => {};
+  onCleanup(() => { current = false; stop(); });
+  await nextTick();
+  if (!current) return;
+  const scroller = showingSource.value ? source.value : markdown.value;
+  const restored = () => { if (current) emit('restored'); };
+  if (scroller) stop = restoreFilePreviewScroll(scroller, saved, restored);
+  else restored();
 }, { immediate: true });
 
 watch([markdown, () => props.preview.anchor.value, content], ([root, anchor], _, onCleanup) => {
-  if (!root || !anchor) return;
+  if (!root || !anchor || props.restoreView) return;
   let observer: MutationObserver | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const locate = () => {
@@ -170,6 +189,7 @@ onBeforeUnmount(() => {
 <template>
   <section ref="panel" class="file-preview" @keydown.esc="onEscape">
     <div class="file-preview-toolbar">
+      <IconButton v-if="canGoBack" size="lg" :label="t('focus.filePreviewBack')" :title="t('focus.filePreviewBack')" @click="emit('back')"><Icon name="arrow-right" class="file-preview-back" /></IconButton>
       <IconButton size="lg" :label="t('focus.filePreviewClose')" :title="t('focus.filePreviewClose')" @click="emit('close')"><Icon name="close" /></IconButton>
       <button ref="infoButton" type="button" class="file-preview-filename" :title="filename"
         :aria-label="t('focus.filePreviewInfoLabel', { name: filename })" :aria-expanded="infoOpen" :aria-controls="infoId" @click="toggleInfo">
@@ -216,12 +236,12 @@ onBeforeUnmount(() => {
         :help="t('filePreview.imageControls')" :hide-help="true" :failed-text="t('focus.filePreviewImageInvalid')" />
       <textarea v-else-if="showingSource" ref="source" class="file-preview-source" readonly :spellcheck="false"
         :aria-label="t('focus.filePreviewSource')" :wrap="wrapped ? 'soft' : 'off'" :value="content.text" />
-      <FocusHtmlPreview v-else-if="content.kind === 'html'" :text="content.text" :anchor="preview.anchor.value" @open-file="emit('openFile', $event)" />
+      <FocusHtmlPreview v-else-if="content.kind === 'html'" :text="content.text" :anchor="preview.anchor.value" @open-file="openLinkedFile" />
       <FocusPdfPreview v-else-if="content.kind === 'pdf' && content.bytes" :bytes="content.bytes" />
       <FocusCodePreview v-else-if="content.language" :text="content.text" :language="content.language" />
       <FocusTablePreview v-else-if="content.table" :rows="content.table" />
       <div v-else-if="content.json" class="file-preview-json"><FocusJsonNode :node="content.json" /></div>
-      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.renderedText ?? content.text" :defer-images="true" :open-file="target => emit('openFile', target)" /></div>
+      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.renderedText ?? content.text" :defer-images="true" :open-file="openLinkedFile" /></div>
     </template>
     <div v-if="notice" class="file-preview-notice" role="status">{{ notice }}</div>
   </section>
@@ -231,6 +251,7 @@ onBeforeUnmount(() => {
 .file-preview { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .file-preview:fullscreen { background: var(--color-surface); }
 .file-preview-toolbar { display: flex; flex: none; align-items: center; padding: 0 var(--space-1); border-bottom: 1px solid var(--color-line); }
+.file-preview-back { transform: rotate(180deg); }
 .file-preview-filename { display: flex; align-items: center; gap: var(--space-1); flex: 1; min-width: 0; height: 44px; padding: 0 var(--space-1);
   border: 0; border-radius: var(--radius-md); background: transparent; color: var(--color-text); font: inherit; cursor: pointer; }
 .file-preview-filename:hover, .file-preview-filename[aria-expanded="true"] { background: color-mix(in srgb, var(--color-text) 8%, transparent); }
