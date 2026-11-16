@@ -167,6 +167,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/components/toolGroupPresentation.ts",
                     "isEmptyAssistantTurn",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/composables/useComposerDraft.ts",
+                    "useComposerDraft",
+                ),
             ),
         )
 

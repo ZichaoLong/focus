@@ -954,6 +954,7 @@
             "web/test/focus-composer-input-surface.test.ts",
             "web/test/focus-composer-send-shortcut.test.ts",
             "web/test/composer-draft.test.ts",
+            "web/test/composer-scroll-browser.test.ts",
             "web/test/focus-viewport.test.ts"
           ]
         }
@@ -1197,6 +1198,10 @@
         {
           "path": "web/src/components/toolGroupPresentation.ts",
           "symbol": "isEmptyAssistantTurn"
+        },
+        {
+          "path": "web/src/composables/useComposerDraft.ts",
+          "symbol": "useComposerDraft"
         }
       ],
       "contract": [
@@ -1227,6 +1232,10 @@
         {
           "path": "docs/contracts/history-prompt-edit.zh-CN.md",
           "heading": "历史变更与缓存"
+        },
+        {
+          "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
+          "heading": "实时更新、预算与重同步"
         }
       ],
       "focused-test": [
@@ -1260,7 +1269,8 @@
             "web/test/markdown-chunks.test.ts",
             "web/test/reply-time.test.ts",
             "web/test/tool-group-presentation.test.ts",
-            "web/test/transcript-tool-groups-browser.test.ts"
+            "web/test/transcript-tool-groups-browser.test.ts",
+            "web/test/composer-scroll-browser.test.ts"
           ]
         }
       ],
@@ -1270,7 +1280,9 @@
           "targets": [
             "web/test/focus_client/owners/focus-projection-sync.test.ts",
             "web/test/focus_client/transport-projection.test.ts",
-            "web/test/focus-mobile-editor-browser.test.ts"
+            "web/test/focus-mobile-editor-browser.test.ts",
+            "web/test/composer-draft.test.ts",
+            "web/test/input-history.test.ts"
           ]
         }
       ],

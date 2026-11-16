@@ -67,12 +67,21 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
   function autosize(): void {
     const el = textareaRef.value;
     if (!el) return;
-    // Reset to measure the natural content height, then fit the box to it.
-    // The resting height and the upper cap live in CSS (`min-height` /
-    // `max-height`); once the content outgrows the cap, `overflow-y: auto`
-    // scrolls internally. This keeps a single source of truth for the bounds.
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+    // Keep the input row occupied while measuring. Otherwise the temporary
+    // collapse grows the sibling transcript viewport and can clamp scrollTop,
+    // even when the textarea ends up exactly as tall as before this keystroke.
+    const row = el.parentElement;
+    const minHeight = row?.style.getPropertyValue('min-height') ?? '';
+    const priority = row?.style.getPropertyPriority('min-height') ?? '';
+    if (row) row.style.minHeight = getComputedStyle(row).height;
+    try {
+      // CSS remains the authority for the resting height, cap and overflow.
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    } finally {
+      // Release the measurement hold so deletion and mode changes can shrink.
+      if (row) row.style.setProperty('min-height', minHeight, priority);
+    }
   }
 
   watch(

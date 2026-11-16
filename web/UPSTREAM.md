@@ -78,6 +78,8 @@ composer and conversation layout retain their recorded Kimi source attribution.
 `ToolGroupHeader.vue` is extracted from the Kimi-derived `ToolGroup.vue`; both
 retain that upstream source attribution. The tool-group projection/expansion
 owner and its unit/browser regressions are Focus-owned additions.
+The composer scroll browser regression and its fixture are Focus-owned additions;
+the autosizing implementation remains in the Kimi-derived `useComposerDraft.ts`.
 
 This guard is intentionally not part of `npm run build`: build and release
 remain reproducible from checked-in code and license evidence, without a

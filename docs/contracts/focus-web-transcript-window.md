@@ -263,6 +263,13 @@ Lifecycle and epoch changes clear comparison caches. The comparison cache retain
 Control refreshes preserve observed collaboration tasks in the bounded cache; cold opens
 do not scan historical body content to rebuild all previous tasks.
 
+`useComposerDraft` owns input autosizing. Preserve the input row's occupied space
+during measurement so a temporary collapse cannot resize the transcript viewport
+or displace its historical reading position. Apply only the final measured height,
+allowing deletion and mode changes to shrink the input normally. Draft editing does
+not resume following in a historical window; when already following the live tail,
+the existing transcript scroll owner handles the final height change.
+
 Socket queues retain the existing default 128-event limit and a 2 MiB byte budget.
 Overflow queues one small `socket_backpressure` invalidation, not a replay of large data;
 it does not itself mean disconnection or prompt failure. Browser control-snapshot buffers
