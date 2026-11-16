@@ -107,7 +107,7 @@ it.each([1280, 1920])('maximizes the preview trail while preserving reading stat
     // Narrow layouts fill the page automatically, without a redundant maximize control.
     await page.setViewportSize({ width: 390, height: 844 });
     await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(390);
-    expect(await page.getByRole('button', { name: 'Restore preview size', exact: true }).count()).toBe(0);
+    await page.getByRole('button', { name: 'Restore preview size', exact: true }).waitFor({ state: 'detached' });
     await page.setViewportSize({ width, height });
     await page.getByRole('button', { name: 'Restore preview size', exact: true }).waitFor();
 
