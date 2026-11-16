@@ -67,7 +67,7 @@ defineExpose({ open });
       <p v-if="download.busy.value" role="status">{{ t('focus.fileSaving', { size: formatFileSize(download.received.value) }) }}</p>
       <p v-if="download.errorKey.value" role="alert">{{ t(download.errorKey.value) }}</p>
       <div class="file-download-actions">
-        <Button v-if="navigation.canGoBack.value && !preview.opened.value" type="button" variant="secondary" @click="navigation.back()">{{ t('focus.filePreviewBack') }}</Button>
+        <Button v-if="navigation.canGoBack.value && !preview.opened.value" type="button" variant="secondary" @click="navigation.back()">{{ t('focus.cancel') }}</Button>
         <Button v-else type="button" variant="secondary" @click="navigation.close()">{{ t('focus.cancel') }}</Button>
         <Button v-if="download.info.value && !preview.opened.value" type="button" variant="secondary" :disabled="download.busy.value || !previewKind || download.info.value.size > previewLimit" @click="showPreview">{{ t('focus.filePreviewAction') }}</Button>
         <Button v-if="download.info.value" type="submit" variant="primary" :disabled="download.busy.value || !download.filename.value">

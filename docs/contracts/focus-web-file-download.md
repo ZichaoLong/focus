@@ -143,9 +143,11 @@ owners, without duplicating file contents or request state. Following a local fi
 or HTML records the previous resolved absolute path, line/section target and lightweight reading state.
 Only the latest 20 steps are retained; nothing is persisted or written to browser history or the URL.
 
-- With a previous entry, the preview toolbar offers Back to previous file. The target information form
-  also offers Back while loading, on failure, for unsupported types or for oversized files. Returning
-  opens the previous preview directly without requiring another Preview click.
+- With a previous entry, the preview toolbar offers Back to previous file. Information forms always
+  offer Cancel: it closes the form when opened from the conversation, or abandons the current action
+  and returns directly to the previous preview when opened from a preview link, without another
+  Preview click. Cancellation remains available while loading, on failure, for unsupported types or
+  for oversized files.
 - Back fetches fresh metadata and current contents, applying the same size and format checks; it is
   not a historical content snapshot. Markdown/source views attempt to restore scroll position, source
   mode and wrapping. Restoration briefly follows asynchronous layout changes and yields when the

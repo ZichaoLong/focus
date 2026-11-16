@@ -69,8 +69,8 @@ it.each([1280, 390])('returns through nested files to the same directory reading
     expect(top).toBeGreaterThan(1000);
     await link(page, 'Open chapter').click();
     expect(reads).toEqual(['/work/docs/catalog.md']);
-    await back(page).waitFor();
-    expect(await back(page).isVisible()).toBe(true);
+    await page.getByRole('button', { name: 'Cancel', exact: true }).waitFor();
+    expect(await page.getByRole('button', { name: 'Cancel', exact: true }).isVisible()).toBe(true);
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
     await page.getByRole('heading', { name: 'Target', exact: true }).waitFor();
     await link(page, 'Open image').scrollIntoViewIfNeeded();
@@ -98,12 +98,12 @@ it.each([1280, 390])('returns through nested files to the same directory reading
   } finally { await page.close(); }
 }, 45_000);
 
-it.each(['Missing file', 'Unsupported file'])('offers a return from %s information without fetching its body', async label => {
+it.each(['Missing file', 'Unsupported file'])('cancels %s information and returns without fetching its body', async label => {
   const page = await browser.newPage();
   try {
     const { errors, reads } = await setup(page);
     await link(page, label).click();
-    await back(page).click();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
     expect(reads).toEqual(['/work/docs/catalog.md', '/work/docs/catalog.md']);
     expect(errors).toEqual([]);
