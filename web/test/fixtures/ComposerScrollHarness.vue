@@ -10,7 +10,8 @@ const status: ConversationStatus = { model: '', modelId: '', ctxUsed: 0, ctxMax:
 const turns: ChatTurn[] = [
   { id: 'prompt', rawTurnId: 'turn', itemId: 'prompt', role: 'user', no: 1, text: 'A saved prompt.' },
   { id: 'reply', rawTurnId: 'turn', itemId: 'reply', role: 'assistant', no: 1,
-    text: Array.from({ length: 60 }, (_, index) => `History paragraph ${index + 1}.`).join('\n\n'),
+    // Enough scroll range without entering markstream's separate node window.
+    text: Array.from({ length: 48 }, (_, index) => `History paragraph ${index + 1}.`).join('\n\n'),
     reply: { state: 'complete' } },
 ];
 </script>

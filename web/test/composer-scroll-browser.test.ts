@@ -30,6 +30,12 @@ async function fixture(width: number, history: boolean, run: (page: Page) => Pro
   try {
     await page.goto(`${url}?${history ? 'history&' : ''}${width < 640 ? 'narrow' : ''}`);
     await page.locator('textarea.ph').waitFor();
+    // Lazy Markdown initially displays a differently sized source placeholder.
+    // Begin composer interactions only after the fixture's real body and fonts
+    // are ready, so that replacement cannot race the reading-position setup.
+    await page.locator('.md').getByText('History paragraph 48.', { exact: true }).waitFor();
+    await page.evaluate(() => document.fonts.ready);
+    await settleLayout(page);
     await page.waitForFunction(() => {
       const pane = document.querySelector('.panes')!;
       return pane.scrollHeight > pane.clientHeight + 1000
@@ -37,6 +43,8 @@ async function fixture(width: number, history: boolean, run: (page: Page) => Pro
     });
     await run(page);
     expect(errors).toEqual([]);
+  } catch (error) {
+    throw new Error(`${String(error)}\nScroll metrics: ${JSON.stringify(await metrics(page))}\nBrowser errors: ${JSON.stringify(errors)}`);
   } finally { await page.close(); }
 }
 
