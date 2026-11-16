@@ -58,6 +58,72 @@ const back = (page: Page) => page.getByRole('button', { name: 'Back to previous 
 // The renderer gives links a destination-based aria-label; match their visible caption.
 const link = (page: Page, label: string) => page.getByRole('link').filter({ hasText: label });
 
+it.each([1280, 1920])('maximizes the preview trail while preserving reading state and normal file forms at width %i', async width => {
+  const height = width === 1280 ? 900 : 1080;
+  const page = await browser.newPage({ viewport: { width, height } });
+  try {
+    const { errors, reads } = await setup(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.evaluate(async el => { await Promise.all(el.getAnimations().map(animation => animation.finished)); });
+    const initial = await dialog.boundingBox();
+    expect(initial!.width).toBeGreaterThan(1000);
+    expect(initial!.width).toBeLessThan(width);
+    expect(initial!.height).toBeGreaterThan(680);
+    const scroller = page.locator('.file-preview-markdown');
+    await scroller.evaluate(el => { el.scrollTop = 600; });
+    const content = await scroller.elementHandle();
+    await page.getByRole('button', { name: 'Maximize preview', exact: true }).click();
+    await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(width);
+    expect((await dialog.boundingBox())!.height).toBe(height);
+    expect(await content!.evaluate(el => el.isConnected && el.scrollTop === 600)).toBe(true);
+    expect(await page.locator('.file-preview-prose').evaluate(el => el.clientWidth)).toBeLessThanOrEqual(760);
+    expect(await page.evaluate(() => document.fullscreenElement)).toBeNull();
+    expect(reads).toHaveLength(1);
+    await page.getByRole('button', { name: 'Restore preview size', exact: true }).click();
+    await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(initial!.width);
+    expect(await content!.evaluate(el => el.isConnected && el.scrollTop === 600)).toBe(true);
+    await page.getByRole('button', { name: 'Maximize preview', exact: true }).click();
+
+    // A download form stays compact; its X returns to the same maximized preview.
+    await page.getByRole('button', { name: /^(Save as…|Download)$/ }).click();
+    expect((await dialog.boundingBox())!.width).toBeLessThan(500);
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.getByRole('button', { name: 'Restore preview size', exact: true }).waitFor();
+    expect(await content!.evaluate(el => el.isConnected && el.scrollTop === 600)).toBe(true);
+    expect(reads).toHaveLength(1);
+
+    await link(page, 'Open chapter').click();
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
+    expect((await dialog.boundingBox())!.width).toBe(width);
+    await link(page, 'Open chapter').click();
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.getByRole('heading', { name: 'Chapter', exact: true }).waitFor();
+    expect((await dialog.boundingBox())!.width).toBe(width);
+    await back(page).click();
+    await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
+    expect((await dialog.boundingBox())!.width).toBe(width);
+
+    // Narrow layouts fill the page automatically, without a redundant maximize control.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(async () => (await dialog.boundingBox())!.width).toBe(390);
+    expect(await page.getByRole('button', { name: 'Restore preview size', exact: true }).count()).toBe(0);
+    await page.setViewportSize({ width, height });
+    await page.getByRole('button', { name: 'Restore preview size', exact: true }).waitFor();
+
+    // An information form opened from a link still closes the entire trail with X.
+    await link(page, 'Open chapter').click();
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    expect(await dialog.count()).toBe(0);
+    await page.getByRole('button', { name: 'Open file', exact: true }).click();
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Maximize preview', exact: true }).waitFor();
+    expect((await dialog.boundingBox())!.width).toBeLessThan(width);
+    expect(errors).toEqual([]);
+  } finally { await page.close(); }
+}, 45_000);
+
 it.each([1280, 390])('returns through nested files to the same directory reading position at width %i', async width => {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   try {

@@ -120,9 +120,22 @@ Only one preview is retained, with no persisted content or object URLs, new serv
   complete code; Mermaid runtime/syntax failure retains the shared renderer's readable source fallback.
 - `ImageViewport.vue` shares fit, 100%, zoom, drag and pinch interactions between images and Mermaid.
   Photos use browser-decoded EXIF-oriented dimensions. The viewer never changes server files.
-- Desktop uses a large dialog and narrow screens use the full viewport. Closing restores conversation
-  focus and scroll position. Download and refresh remain available; filename editing and native Save
-  As keep their behavior. Closing a nested Mermaid viewer does not also close the file preview.
+- Desktop previews default to at most 1120px wide, with height following the visible page and outer
+  margins. Every file type shares Maximize preview / Restore preview size. Maximizing fills the
+  available page, retaining browser chrome without calling the browser fullscreen API. Narrow screens
+  still fill the page automatically and omit the redundant control. Markdown prose keeps a readable
+  line width; standalone tables, code and images use the available width. HTML retains its separate
+  browser fullscreen action.
+- `FocusFileDownloadDialog.vue` owns the current preview's maximized choice. Following file links,
+  cancelling and going back retain it; ending the trail or opening a new conversation file resets it.
+  Information and download forms keep their normal size and close/cancel behavior. Resizing neither
+  refetches files nor recreates renderers, retaining PDF page, manual zoom, table page, expanded nodes
+  and HTML internal state; fit-to-image/page modes adapt to the new size. Scroll and source selection
+  are retained, with scroll positions near the end subject to the new bounds. Returning to another
+  file still refetches it under Back within file previews.
+- Closing restores conversation focus and scroll position. Download and refresh remain available;
+  filename editing and native Save As keep their behavior. Closing a nested Mermaid viewer does not
+  also close the file preview.
 - One toolbar contains close, a shrinkable filename, download, the Markdown/HTML source/render toggle,
   content copy and refresh. SVG, structured data, code and Mermaid share the source/render toggle.
   Icon actions have text labels and 44px touch targets. Long names use middle

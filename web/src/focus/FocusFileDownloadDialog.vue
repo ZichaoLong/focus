@@ -16,6 +16,8 @@ const download = createFileDownload(props.api);
 const preview = createFilePreview(props.api);
 const navigation = createFilePreviewNavigation(download, preview);
 const narrow = useNarrowViewport();
+const maximized = ref(false);
+const fillsViewport = computed(() => narrow.value || maximized.value);
 const previewKind = computed(() => filePreviewKind(download.info.value?.name ?? ''));
 const previewLimit = computed(() => filePreviewLimit(previewKind.value ?? 'text'));
 const notice = ref('');
@@ -28,6 +30,7 @@ watch(download.statusKey, key => {
   noticeTimer = setTimeout(() => { notice.value = ''; }, 4500);
 });
 watch([download.opened, preview.opened], async ([isOpen, previewOpen]) => {
+  if (!isOpen && !previewOpen) maximized.value = false;
   if (!previewOpen) return;
   await nextTick();
   document.querySelector<HTMLElement>(isOpen ? '.file-download-form input, .file-download-actions button' : '.file-preview-toolbar button')?.focus({ preventScroll: true });
@@ -35,6 +38,7 @@ watch([download.opened, preview.opened], async ([isOpen, previewOpen]) => {
 
 function open(path: string, cwd: string, line?: number, anchor?: string): Promise<void> {
   notice.value = '';
+  maximized.value = false;
   return navigation.open(path, cwd, line, anchor);
 }
 
@@ -48,7 +52,7 @@ defineExpose({ open });
 
 <template>
   <Dialog :open="download.opened.value || preview.opened.value" :title="t(download.opened.value ? 'focus.fileDownloadTitle' : 'focus.filePreviewTitle')"
-    :size="download.opened.value ? 'md' : narrow ? 'full' : 'xl'" :height="download.opened.value || narrow ? 'auto' : 'fixed'"
+    :size="download.opened.value ? 'md' : fillsViewport ? 'full' : 'wide'" :height="download.opened.value || fillsViewport ? 'auto' : 'viewport'"
     :padded="download.opened.value" :show-header="download.opened.value" @update:open="!$event && navigation.close()">
     <form v-if="download.opened.value" class="file-download-form" @submit.prevent="download.save">
       <p class="file-download-path">{{ download.path.value }}</p>
@@ -77,6 +81,7 @@ defineExpose({ open });
     </form>
     <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview"
       :can-go-back="navigation.canGoBack.value" :restore-view="navigation.restoreView.value"
+      :can-maximize="!narrow" :maximized="maximized" @toggle-maximized="maximized = !maximized"
       @close="navigation.close()" @back="navigation.back()" @download="navigation.showDownload()"
       @open-file="navigation.openLinkedFile" @restored="navigation.restored()" />
   </Dialog>

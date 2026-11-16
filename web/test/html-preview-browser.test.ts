@@ -68,6 +68,13 @@ it('runs exact source in isolation, switches views, supports fullscreen, and adm
     const { calls, frame } = await setup(page);
     await frame.locator('#next').click();
     expect(await frame.locator('#position').textContent()).toBe('2');
+    const embedded = await page.locator('iframe').elementHandle();
+    for (const name of ['Maximize preview', 'Restore preview size']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      expect(await frame.locator('#position').textContent()).toBe('2');
+      expect(await embedded!.evaluate(el => el.isConnected)).toBe(true);
+    }
+    expect(calls.filter(call => call.path.endsWith('/download'))).toHaveLength(1);
     const isolation = await frame.locator('body').evaluate(() => {
       const result: string[] = [];
       for (const read of [() => parent.document.title, () => document.cookie, () => localStorage.length]) {

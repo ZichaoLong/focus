@@ -54,6 +54,8 @@ import RiCalendarCloseLine from '~icons/ri/calendar-close-line';
 import RiCalendarScheduleLine from '~icons/ri/calendar-schedule-line';
 import RiCalendarTodoLine from '~icons/ri/calendar-todo-line';
 import RiCheckLine from '~icons/ri/check-line';
+import RiCheckboxBlankLine from '~icons/ri/checkbox-blank-line';
+import RiCheckboxMultipleBlankLine from '~icons/ri/checkbox-multiple-blank-line';
 import RiCloseLine from '~icons/ri/close-line';
 import RiCodeLine from '~icons/ri/code-line';
 import RiCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line';
@@ -127,6 +129,8 @@ import RawCalendarCloseLine from '~icons/ri/calendar-close-line?raw';
 import RawCalendarScheduleLine from '~icons/ri/calendar-schedule-line?raw';
 import RawCalendarTodoLine from '~icons/ri/calendar-todo-line?raw';
 import RawCheckLine from '~icons/ri/check-line?raw';
+import RawCheckboxBlankLine from '~icons/ri/checkbox-blank-line?raw';
+import RawCheckboxMultipleBlankLine from '~icons/ri/checkbox-multiple-blank-line?raw';
 import RawCloseLine from '~icons/ri/close-line?raw';
 import RawCodeLine from '~icons/ri/code-line?raw';
 import RawCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line?raw';
@@ -204,6 +208,8 @@ export type IconName =
   | 'panel-expand'
   | 'expand'
   | 'collapse'
+  | 'window-maximize'
+  | 'window-restore'
   | 'list'
   | 'sort'
   | 'grip'
@@ -291,6 +297,8 @@ export const ICONS: Record<IconName, IconEntry> = {
   'panel-expand': entry(TablerSidebarLeftExpand, RawTablerSidebarLeftExpand),
   expand: entry(RiExpandDiagonalLine, RawExpandDiagonalLine),
   collapse: entry(RiCollapseDiagonalLine, RawCollapseDiagonalLine),
+  'window-maximize': entry(RiCheckboxBlankLine, RawCheckboxBlankLine),
+  'window-restore': entry(RiCheckboxMultipleBlankLine, RawCheckboxMultipleBlankLine),
   list: entry(RiListUnordered, RawListUnordered),
   sort: entry(RiSortDesc, RawSortDesc),
   grip: entry(RiDraggable, RawDraggable),
@@ -391,6 +399,8 @@ export const ICON_GROUPS: ReadonlyArray<readonly [string, readonly IconName[]]> 
       'panel-expand',
       'expand',
       'collapse',
+      'window-maximize',
+      'window-restore',
       'list',
       'sort',
       'grip',

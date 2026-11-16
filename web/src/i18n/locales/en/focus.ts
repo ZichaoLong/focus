@@ -82,6 +82,8 @@ export default {
   filePreviewHighlightFailed: 'Highlighting is unavailable. Showing the complete source.',
   filePreviewClose: 'Close preview',
   filePreviewBack: 'Back to previous file',
+  filePreviewMaximize: 'Maximize preview',
+  filePreviewRestore: 'Restore preview size',
   filePreviewInfo: 'File information',
   filePreviewInfoLabel: 'File information: {name}',
   filePreviewPath: 'Server path',

@@ -17,11 +17,11 @@ const props = withDefaults(defineProps<{
   showHeader?: boolean;
   closeOnOverlay?: boolean;
   closeOnEsc?: boolean;
-  /** md 440 (default) · lg 640 · xl content width · full visual viewport. */
-  size?: 'md' | 'lg' | 'xl' | 'full';
-  /** auto (default) = height tracks content up to max-height; fixed = constant
-   *  height so the frame never resizes between tabs/content (body scrolls). */
-  height?: 'auto' | 'fixed';
+  /** md 440 (default) · lg 640 · xl content width · wide 1120 · full visual viewport. */
+  size?: 'md' | 'lg' | 'xl' | 'wide' | 'full';
+  /** auto (default) tracks content; fixed caps at 680px; viewport fills the
+   *  available height with outer margins. Fixed/viewport bodies scroll. */
+  height?: 'auto' | 'fixed' | 'viewport';
   /** When false, the body has no padding so the consumer controls layout
    *  (e.g. a full-bleed side-nav). */
   padded?: boolean;
@@ -144,7 +144,7 @@ onBeforeUnmount(() => {
       <div
         ref="panel"
         class="ui-dialog"
-        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed' }]"
+        :class="[`ui-dialog--${size}`, { 'ui-dialog--flush': !padded, 'ui-dialog--fixed-height': height === 'fixed', 'ui-dialog--viewport-height': height === 'viewport' }]"
         role="dialog"
         aria-modal="true"
         :aria-label="title"
@@ -199,9 +199,11 @@ onBeforeUnmount(() => {
 .ui-dialog--md { width: min(440px, 100%); }
 .ui-dialog--lg { width: min(640px, 100%); }
 .ui-dialog--xl { width: min(var(--p-content-max), 100%); }
+.ui-dialog--wide { width: min(1120px, 100%); }
 .ui-dialog__overlay--full { padding: 0; top: var(--app-top, 0px); bottom: auto; height: var(--app-height, 100dvh); box-sizing: border-box; }
 .ui-dialog--full { width: 100%; height: 100%; max-height: none; border: 0; border-radius: 0; }
 .ui-dialog--fixed-height { height: min(680px, calc(100vh - var(--space-8) * 2)); }
+.ui-dialog--viewport-height { height: calc(var(--app-height, 100dvh) - var(--space-8) * 2); max-height: calc(var(--app-height, 100dvh) - var(--space-8) * 2); }
 .ui-dialog--flush .ui-dialog__body { padding: 0; }
 .ui-dialog__head {
   display: flex;

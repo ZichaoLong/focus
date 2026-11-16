@@ -18,8 +18,8 @@ import { filePreviewKind, filePreviewLimit, type FilePreviewState } from './file
 import { findPreviewHeading } from './filePreviewAnchor';
 import { restoreFilePreviewScroll, type FilePreviewViewState } from './filePreviewViewState';
 
-const props = defineProps<{ preview: FilePreviewState; canGoBack?: boolean; restoreView?: FilePreviewViewState | null }>();
-const emit = defineEmits<{ close: []; back: []; download: []; restored: []; openFile: [target: FilePreviewRequest, view: FilePreviewViewState] }>();
+const props = defineProps<{ preview: FilePreviewState; canGoBack?: boolean; restoreView?: FilePreviewViewState | null; canMaximize?: boolean; maximized?: boolean }>();
+const emit = defineEmits<{ close: []; back: []; download: []; restored: []; toggleMaximized: []; openFile: [target: FilePreviewRequest, view: FilePreviewViewState] }>();
 const { t } = useI18n();
 const content = computed(() => props.preview.content.value);
 const panel = ref<HTMLElement | null>(null);
@@ -197,6 +197,8 @@ onBeforeUnmount(() => {
         <Icon :name="infoOpen ? 'chevron-up' : 'chevron-down'" size="sm" />
       </button>
       <IconButton size="lg" :label="saveLabel" :title="saveLabel" @click="downloadFile"><Icon name="download" /></IconButton>
+      <IconButton v-if="canMaximize && !fullscreen" size="lg" :label="t(maximized ? 'focus.filePreviewRestore' : 'focus.filePreviewMaximize')"
+        :title="t(maximized ? 'focus.filePreviewRestore' : 'focus.filePreviewMaximize')" :aria-pressed="!!maximized" @click="emit('toggleMaximized')"><Icon :name="maximized ? 'window-restore' : 'window-maximize'" /></IconButton>
       <IconButton v-if="content?.kind === 'html'" size="lg" :label="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')"
         :title="t(fullscreen ? 'focus.filePreviewExitFullscreen' : 'focus.filePreviewFullscreen')" @click="toggleFullscreen"><Icon :name="fullscreen ? 'collapse' : 'expand'" /></IconButton>
       <IconButton v-if="canRender" size="lg" :label="t(sourceMode ? 'focus.filePreviewRendered' : 'focus.filePreviewSource')"
@@ -241,7 +243,9 @@ onBeforeUnmount(() => {
       <FocusCodePreview v-else-if="content.language" :text="content.text" :language="content.language" />
       <FocusTablePreview v-else-if="content.table" :rows="content.table" />
       <div v-else-if="content.json" class="file-preview-json"><FocusJsonNode :node="content.json" /></div>
-      <div v-else ref="markdown" class="file-preview-markdown"><LazyMarkdown :text="content.renderedText ?? content.text" :defer-images="true" :open-file="openLinkedFile" /></div>
+      <div v-else ref="markdown" class="file-preview-markdown">
+        <div :class="{ 'file-preview-prose': content.kind === 'markdown' }"><LazyMarkdown :text="content.renderedText ?? content.text" :defer-images="true" :open-file="openLinkedFile" /></div>
+      </div>
     </template>
     <div v-if="notice" class="file-preview-notice" role="status">{{ notice }}</div>
   </section>
@@ -278,5 +282,6 @@ onBeforeUnmount(() => {
 .file-preview-source { flex: 1; min-height: 0; width: 100%; resize: none; box-sizing: border-box; border: 0;
   padding: var(--space-4); border-radius: 0; color: var(--color-text); background: var(--color-surface); font: 400 14px/22px var(--font-mono); overscroll-behavior: contain; }
 .file-preview-markdown { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: var(--space-4); }
+.file-preview-prose { max-width: var(--p-content-max); margin-inline: auto; }
 .file-preview-image { flex: 1; min-height: 0; }
 </style>

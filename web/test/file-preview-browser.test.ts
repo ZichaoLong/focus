@@ -47,6 +47,8 @@ async function fixture(name: string, body: string | Buffer, run: (page: Page, ca
     expect(calls.filter(path => path === '/api/files/download')).toHaveLength(0);
     expect(pdfResources).toHaveLength(0);
     await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    if (width > 640) await page.getByRole('button', { name: 'Maximize preview', exact: true }).waitFor();
+    else expect(await page.getByRole('button', { name: 'Maximize preview', exact: true }).count()).toBe(0);
     await run(page, calls);
     expect(errors).toEqual([]);
     if (!name.endsWith('.pdf')) expect(pdfResources).toHaveLength(0);
@@ -64,21 +66,43 @@ it.each(['gif', 'bmp', 'ico', 'avif'])('decodes and displays a real %s without a
   });
 }, 30_000);
 
-it('keeps SVG script and external images inert while preserving exact source and zoom', async () => {
+it.each([1280, 390])('keeps SVG script and external images inert while preserving exact source and zoom at %i px', async width => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160"><rect width="320" height="160" fill="teal"/><script>window.svgExecuted=true;fetch("https://example.test/script")</script><image href="https://example.test/image.png" width="20" height="20"/></svg>';
   await fixture('diagram.svg', svg, async (page, calls) => {
     await expect.poll(() => page.locator('.image-canvas img').evaluate((el: HTMLImageElement) => el.complete && el.naturalWidth)).toBe(320);
     expect(await page.evaluate(() => Reflect.get(window, 'svgExecuted'))).toBeUndefined();
     await page.getByRole('button', { name: 'Zoom in', exact: true }).click();
+    if (width > 640) {
+      const image = await page.locator('.image-canvas img').elementHandle();
+      const zoom = await page.locator('.image-scale').textContent();
+      await page.getByRole('button', { name: 'Maximize preview', exact: true }).click();
+      expect(await page.locator('.image-scale').textContent()).toBe(zoom);
+      await page.getByRole('button', { name: 'Restore preview size', exact: true }).click();
+      expect(await page.locator('.image-scale').textContent()).toBe(zoom);
+      expect(await image!.evaluate(el => el.isConnected)).toBe(true);
+    }
     await page.getByRole('button', { name: 'Source / text', exact: true }).click();
     expect(await page.getByRole('textbox', { name: 'Source / text' }).inputValue()).toBe(svg);
     await page.getByRole('button', { name: 'Rendered view', exact: true }).click();
     await page.locator('.image-canvas img').waitFor();
     expect(calls.filter(path => path === '/api/files/download')).toHaveLength(1);
-  }, 390);
+  }, width);
 }, 30_000);
 
-it.each(['csv', 'tsv'])('pages the complete %s as literal cells and retains its source', async extension => {
+it('keeps source text scrolling and selection when maximizing and restoring', async () => {
+  const source = Array.from({ length: 300 }, (_, i) => `${i}: ${'long log entry '.repeat(30)}`).join('\n');
+  await fixture('server.log', source, async (page, calls) => {
+    const field = page.getByRole('textbox', { name: 'Source / text' });
+    await field.evaluate((el: HTMLTextAreaElement) => { el.scrollTop = 600; el.scrollLeft = 120; el.setSelectionRange(500, 540); });
+    for (const name of ['Maximize preview', 'Restore preview size']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      expect(await field.evaluate((el: HTMLTextAreaElement) => [el.scrollTop, el.scrollLeft, el.selectionStart, el.selectionEnd])).toEqual([600, 120, 500, 540]);
+    }
+    expect(calls.filter(path => path === '/api/files/download')).toHaveLength(1);
+  });
+}, 30_000);
+
+it.each([['csv', 1280], ['tsv', 390]] as const)('pages the complete %s as literal cells and retains its source at %i px', async (extension, width) => {
   const delimiter = extension === 'csv' ? ',' : '\t';
   const source = ['id' + delimiter + 'value', '001' + delimiter + '"line 1\nline ""2"""',
     ...Array.from({ length: 55 }, (_, i) => `${i + 2}${delimiter}=1+1`)].join('\r\n');
@@ -88,11 +112,17 @@ it.each(['csv', 'tsv'])('pages the complete %s as literal cells and retains its 
     expect(await page.locator('tbody tr').count()).toBe(50);
     await page.getByRole('button', { name: 'Next page', exact: true }).click();
     await page.getByRole('cell', { name: '56', exact: true }).waitFor();
+    if (width > 640) {
+      for (const name of ['Maximize preview', 'Restore preview size']) {
+        await page.getByRole('button', { name, exact: true }).click();
+        expect(await page.getByRole('cell', { name: '56', exact: true }).isVisible()).toBe(true);
+      }
+    }
     await page.getByRole('button', { name: 'Source / text', exact: true }).click();
     // textarea normalizes CRLF for display; the reader/copy action retains it.
     expect(await page.getByRole('textbox', { name: 'Source / text' }).inputValue()).toBe(source.replaceAll('\r\n', '\n'));
     expect(calls.filter(path => path === '/api/files/download')).toHaveLength(1);
-  }, 390);
+  }, width);
 }, 30_000);
 
 it('expands JSON without rounding large numbers, losing duplicate keys or creating HTML', async () => {
@@ -102,6 +132,10 @@ it('expands JSON without rounding large numbers, losing duplicate keys or creati
     expect(await page.locator('.json-key').filter({ hasText: '"n"' }).count()).toBe(2);
     await page.getByRole('button', { name: /"nested"/ }).click();
     await page.locator('.file-preview-json').getByText('true', { exact: true }).waitFor();
+    for (const name of ['Maximize preview', 'Restore preview size']) {
+      await page.getByRole('button', { name, exact: true }).click();
+      expect(await page.locator('.file-preview-json').getByText('true', { exact: true }).isVisible()).toBe(true);
+    }
     expect(await page.locator('.file-preview-json img').count()).toBe(0);
     await page.getByRole('button', { name: 'Source / text', exact: true }).click();
     expect(await page.getByRole('textbox', { name: 'Source / text' }).inputValue()).toBe(source);
@@ -161,9 +195,21 @@ it.each([1280, 390])('renders PDF pixels and selectable text with local assets, 
     await page.getByRole('button', { name: 'Next page', exact: true }).click();
     await page.locator('.pdf-text-layer').getByText('PDF preview page 2', { exact: true }).waitFor();
     expect(await page.getByRole('spinbutton', { name: 'PDF page', exact: true }).inputValue()).toBe('2');
+    if (width > 640) {
+      const worker = page.workers()[0];
+      const zoomedWidth = await page.locator('.pdf-sheet canvas').evaluate((el: HTMLCanvasElement) => el.width);
+      await page.getByRole('button', { name: 'Maximize preview', exact: true }).click();
+      expect(await page.getByRole('spinbutton', { name: 'PDF page', exact: true }).inputValue()).toBe('2');
+      expect(await page.locator('.pdf-sheet canvas').evaluate((el: HTMLCanvasElement) => el.width)).toBe(zoomedWidth);
+      await page.getByRole('button', { name: 'Restore preview size', exact: true }).click();
+      expect(await page.locator('.pdf-sheet canvas').evaluate((el: HTMLCanvasElement) => el.width)).toBe(zoomedWidth);
+      expect(page.workers()[0]).toBe(worker);
+      await page.getByRole('button', { name: 'Maximize preview', exact: true }).click();
+    }
     await page.getByRole('button', { name: /^(Save as…|Download)$/ }).click();
     await page.getByRole('button', { name: 'Cancel', exact: true }).click();
     expect(await page.getByRole('spinbutton', { name: 'PDF page', exact: true }).inputValue()).toBe('2');
+    if (width > 640) expect(await page.getByRole('button', { name: 'Restore preview size', exact: true }).isVisible()).toBe(true);
     expect(calls.filter(path => path === '/api/files/download')).toHaveLength(1);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.getByRole('button', { name: 'Refresh content', exact: true }).click();
