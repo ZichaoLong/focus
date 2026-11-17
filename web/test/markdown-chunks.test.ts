@@ -33,6 +33,17 @@ describe('progressive reply Markdown', () => {
     expect(chunks.flatMap(chunk => chunk.nodes).filter(node => node.type === 'paragraph')).toHaveLength(61);
   });
 
+  it('preserves text labels in table formulas and operators across long-reply chunks', () => {
+    const inline = String.raw`\text{sum：} + \mathrm{log} + |A|`;
+    const block = String.raw`\sum_{i=1}^{n} i`;
+    const source = `| Formula | Notes |\n| --- | --- |\n| \\(${inline}\\) | kept |\n\n${padding}\n\n$$${block}$$`;
+    const chunks = markdownChunks(source);
+    expect(chunks.length).toBeGreaterThan(2);
+    const all = flatten(chunks.flatMap(chunk => chunk.nodes));
+    expect(all.filter(node => node.type === 'math_inline')).toMatchObject([{ content: inline, raw: `\\(${inline}\\)` }]);
+    expect(all.filter(node => node.type === 'math_block')).toMatchObject([{ content: block, raw: `$$${block}$$` }]);
+  });
+
   it.each([false, true])('preserves every original diff line without applying/omitting it (long=%s)', async (long) => {
     const diff = Array.from({ length: 100 }, (_, i) => `${i % 2 ? '+' : '-'}LINE ${i}`).join('\n');
     const source = `\`\`\`diff\n${diff}\n\`\`\``;

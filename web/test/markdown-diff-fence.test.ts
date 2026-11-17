@@ -20,7 +20,6 @@ vi.mock('markstream-vue', () => ({
   getMarkdown: vi.fn(),
   MarkdownRender: { render: () => null },
   setCustomComponents: vi.fn(),
-  normalizeStandaloneBackslashT: vi.fn((value: string) => value),
   setDefaultMathOptions: vi.fn(),
   setKaTeXWorker: vi.fn(),
   setMermaidWorker: vi.fn(),

@@ -1,6 +1,5 @@
 import {
   getMarkdown,
-  normalizeStandaloneBackslashT,
   setDefaultMathOptions,
   type MarkdownIt,
 } from 'markstream-vue';
@@ -145,7 +144,8 @@ function focusInlineMathRule(state: InlineRuleState, silent: boolean): boolean {
   const content = src.slice(pos + INLINE_OPEN.length, end - INLINE_CLOSE.length);
   if (!silent) {
     const token = state.push('math_inline', 'math', 0);
-    token.content = normalizeStandaloneBackslashT(content);
+    // Command guessing can turn text labels such as \text{sum} into invalid TeX.
+    token.content = content;
     token.markup = `${INLINE_OPEN}${INLINE_CLOSE}`;
     token.raw = src.slice(pos, end);
     token.loading = false;
@@ -305,7 +305,7 @@ function focusMathBlockRule(
       const content = contentLines.join('\n');
       if (!content.trim()) return false;
       const token = state.push('math_block', 'math', 0);
-      token.content = normalizeStandaloneBackslashT(content);
+      token.content = content;
       token.markup = delimiter.open === DOLLAR_BLOCK ? DOLLAR_BLOCK : `${BRACKET_OPEN}${BRACKET_CLOSE}`;
       token.raw = `${delimiter.open}${content}${delimiter.close}`;
       token.map = [startLine, line + 1];

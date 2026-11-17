@@ -12,7 +12,7 @@ const props = defineProps<{
 }>();
 const { t } = useI18n();
 // Focus admits only closed \(…\), \[...\], and $$...$$ nodes. Their raw
-// source retains whitespace and escapes that render-time normalization changes.
+// source retains the formula's original whitespace and escapes for copying.
 // Strip only the two-character delimiters; never copy rendered KaTeX DOM text.
 const source = computed(() => props.node.raw.slice(2, -2));
 

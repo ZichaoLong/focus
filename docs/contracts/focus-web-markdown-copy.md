@@ -24,6 +24,13 @@ nodes without adding formula heuristics. Inline math uses same-line closed
 escaped content, single-dollar syntax, prose-position block delimiters, and
 unclosed content remain text.
 
+Math parsing preserves the body inside delimiters without guessing missing
+backslashes or repairing LaTeX content. For example, `\text{sum：}` stays a text
+label, while summation requires `\sum`; source that previously relied on
+automatic completion must spell out the intended commands. Chat, long-reply
+chunks, Markdown file previews and print share this rule. It does not rewrite
+stored messages, copied source or exported Markdown.
+
 Recognized formulas remain copyable while loading or when rendering fails and
 shows source. Unclosed streaming formulas receive a button only once closed and
 parsed. Formula-like ordinary text does not receive an automatic formula button.

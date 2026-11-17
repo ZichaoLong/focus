@@ -66,6 +66,25 @@ it.each(['gif', 'bmp', 'ico', 'avif'])('decodes and displays a real %s without a
   });
 }, 30_000);
 
+it.each([1280, 390])('renders and copies original math labels in Markdown previews at %i px', async width => {
+  const source = readFileSync(resolve('test/fixtures/math-source.md'), 'utf8').trimEnd();
+  const document = `${source}\n\n` + String.raw`Inline \(\text{log：} + \sum_{i=1}^{n} i\)`;
+  await fixture('formula.md', document, async page => {
+    const preview = page.locator('.file-preview-markdown');
+    await expect.poll(() => preview.locator('.katex').count(), { timeout: 15_000 }).toBe(2);
+    expect(await preview.locator('[data-markstream-mode="fallback"],.katex-error').count()).toBe(0);
+    const labels = await preview.locator('.katex-html .text').allTextContents();
+    expect(labels).toContain('sum：');
+    expect(labels).toContain('log：');
+    expect(await preview.locator('.katex-html').allTextContents()).toEqual(expect.arrayContaining([expect.stringContaining('∑')]));
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await preview.getByRole('button', { name: 'Copy LaTeX', exact: true }).first().click();
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(source.slice(2, -2));
+    await page.getByRole('button', { name: 'Source / text', exact: true }).click();
+    expect(await page.getByRole('textbox', { name: 'Source / text' }).inputValue()).toBe(document);
+  }, width);
+}, 30_000);
+
 it.each([1280, 390])('keeps SVG script and external images inert while preserving exact source and zoom at %i px', async width => {
   const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160"><rect width="320" height="160" fill="teal"/><script>window.svgExecuted=true;fetch("https://example.test/script")</script><image href="https://example.test/image.png" width="20" height="20"/></svg>';
   await fixture('diagram.svg', svg, async (page, calls) => {

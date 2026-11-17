@@ -2,6 +2,7 @@ import { renderToString } from '@vue/server-renderer';
 import { createSSRApp, h } from 'vue';
 import { createI18n } from 'vue-i18n';
 import { describe, expect, it } from 'vitest';
+import katex from 'katex';
 import {
   getMarkdown,
   parseMarkdownToStructure,
@@ -88,6 +89,35 @@ describe('Focus Markdown math contract', () => {
       expect(parsed).toHaveLength(1);
       expect(parsed[0]).toMatchObject({ type: 'math_block', raw: source });
     }
+  });
+
+  it.each([
+    String.raw`\text{sum：log sin alpha cdot}`, // Text is not a list of commands.
+    String.raw`\text{outer {sum} and \textbf{log}}`,
+    String.raw`\mathrm{sum} + \operatorname{log}`,
+    String.raw`sum_{i=1}^{n} i + alpha + text{x}`,
+    String.raw`\sum_{i=1}^{n} i + \log x + \alpha`,
+    String.raw`\operatorname{span}{x}`,
+    String.raw`\text{! notice} + n! + \!x`,
+    'x\t+ y',
+    String.raw`\begin{matrix}1 & 2 \\ 3 & 4\end{matrix}`,
+  ])('preserves formula semantics across delimiters and streaming: %s', (content) => {
+    for (const [open, close] of [[String.raw`\(`, String.raw`\)`], [String.raw`\[`, String.raw`\]`], ['$$', '$$']]) {
+      const source = `${open}${content}${close}`;
+      const md = parser();
+      for (const final of [false, true]) {
+        const nodes = flatten(parseMarkdownToStructure(source, md, { final }) as TokenShape[]);
+        const math = nodes.filter(node => node.type === 'math_inline' || node.type === 'math_block');
+        expect(math).toHaveLength(1);
+        expect(math[0]).toMatchObject({ content, raw: source });
+        expect(() => katex.renderToString(math[0]!.content!, { throwOnError: true })).not.toThrow();
+      }
+    }
+  });
+
+  it('does not repair malformed commands or a single backslash before a newline', () => {
+    const content = '\n' + String.raw`\unknowncommand{sum}` + '\\\nlog\n';
+    expect(mathTokens(`$$${content}$$`)).toMatchObject([{ content, raw: `$$${content}$$` }]);
   });
 
   it('keeps every single-dollar form and prose-position double dollars literal', () => {

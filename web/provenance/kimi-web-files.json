@@ -410,6 +410,7 @@
     "test/fixtures/fork-notices.ts",
     "test/fixtures/html-preview.html",
     "test/fixtures/html-preview.ts",
+    "test/fixtures/math-source.md",
     "test/fixtures/tool-groups.html",
     "test/focus-api-test-support.ts",
     "test/focus-api.test.ts",

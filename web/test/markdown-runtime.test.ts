@@ -7,7 +7,6 @@ const markstream = vi.hoisted(() => ({
   disableMermaid: vi.fn(),
   enableKatex: vi.fn(),
   enableMermaid: vi.fn(),
-  normalizeStandaloneBackslashT: vi.fn((value: string) => value),
   setDefaultMathOptions: vi.fn(),
   setKaTeXWorker: vi.fn(),
   setMermaidWorker: vi.fn(),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { renderSummaryPrintMarkdown as render } from '../src/focus/summaryPrintMarkdown';
 
 describe('complete printable Q&A Markdown', () => {
@@ -44,6 +45,21 @@ $$ y^2 $$
     const { html, fallback } = render(String.raw`Broken \(\unknowncommand{x}\).`);
     expect(html).toContain(String.raw`\(\unknowncommand{x}\)`);
     expect(fallback).toBe(true);
+  });
+
+  it('prints aligned text labels and actual operators without guessing commands', () => {
+    const aligned = readFileSync(new URL('./fixtures/math-source.md', import.meta.url), 'utf8');
+    const { html, fallback } = render([
+      aligned,
+      String.raw`\(\text{log：} + \mathrm{sum}\)`,
+      String.raw`$$\sum_{i=1}^n i$$`,
+    ].join('\n\n'));
+    expect(fallback).toBe(false);
+    expect(html.match(/class="summary-math"/g)).toHaveLength(3);
+    expect(html).toContain('<mtext>sum：</mtext>');
+    expect(html).toContain('<mtext>log：</mtext>');
+    expect(html.match(/∑/g)).toHaveLength(2); // MathML and the visible HTML operator.
+    expect(html).not.toContain('summary-source');
   });
 
   it('renders formulas containing pipes without losing table columns or their original source', () => {

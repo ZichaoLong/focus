@@ -1,0 +1,10 @@
+\[
+\begin{aligned}
+\text{sum：}&\quad
+\text{历史}\to\text{固定规则的摘要}
+\to\text{结合当前问题使用},\\
+\text{qry：}&\quad
+\text{当前问题参与历史读取}
+\to\text{形成针对本次问题的摘要}.
+\end{aligned}
+\]
