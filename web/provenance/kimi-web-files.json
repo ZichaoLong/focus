@@ -242,6 +242,7 @@
     "src/components/chat/tool-calls/ToolDetailButton.vue",
     "src/components/chat/tool-calls/useToolPresentation.ts",
     "src/components/chat/transcriptScrollAnchor.ts",
+    "src/components/chat/transcriptVisibility.ts",
     "src/components/toolGroupPresentation.ts",
     "src/components/ui/ImageViewport.vue",
     "src/composables/markdownChunkHeights.ts",
@@ -513,6 +514,8 @@
     "test/tool-output-presentation.test.ts",
     "test/tool-presentation.test.ts",
     "test/transcript-scroll-anchor.test.ts",
-    "test/transcript-tool-groups-browser.test.ts"
+    "test/transcript-tool-groups-browser.test.ts",
+    "test/transcript-visibility-browser.test.ts",
+    "test/transcript-visibility.test.ts"
   ]
 }

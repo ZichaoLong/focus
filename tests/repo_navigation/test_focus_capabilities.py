@@ -171,6 +171,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/composables/useComposerDraft.ts",
                     "useComposerDraft",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/chat/transcriptVisibility.ts",
+                    "observeTranscriptVisibility",
+                ),
             ),
         )
 

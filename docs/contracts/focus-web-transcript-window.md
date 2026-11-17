@@ -190,6 +190,16 @@ Offscreen groups use measured heights retained by the bounded transcript row. Vi
 participate in the existing scroll anchor, whose single owner preserves touch/inertia motion.
 Without IntersectionObserver, the complete reply renders.
 
+Transcript rows and long-reply chunks share intersection delivery in `transcriptVisibility.ts`.
+For each target, the newest timestamp in a notification batch determines visibility. While
+the document is hidden, retain mounted content instead of replacing it with placeholders.
+On foreground or back/forward-cache restoration, reobserve existing targets on the next
+frame and discard pre-restoration notifications. Coalesce recovery events into one pass per
+document; remove listeners and pending callbacks when its final target unmounts. Rechecks
+preserve offscreen virtualization without page reloads, conversation remounts, scroll/draft
+writes, transcript requests or polling. Existing components still own focus/selection
+pinning, folding and height measurement.
+
 Reads use the staged document boundary, without holding the document lock over upstream
 I/O. Settlement requires matching document, selection, backend generation, runtime epoch
 and this thread's read observation. Unrelated global revisions do not invalidate the page;

@@ -1202,6 +1202,10 @@
         {
           "path": "web/src/composables/useComposerDraft.ts",
           "symbol": "useComposerDraft"
+        },
+        {
+          "path": "web/src/components/chat/transcriptVisibility.ts",
+          "symbol": "observeTranscriptVisibility"
         }
       ],
       "contract": [
@@ -1270,7 +1274,9 @@
             "web/test/reply-time.test.ts",
             "web/test/tool-group-presentation.test.ts",
             "web/test/transcript-tool-groups-browser.test.ts",
-            "web/test/composer-scroll-browser.test.ts"
+            "web/test/composer-scroll-browser.test.ts",
+            "web/test/transcript-visibility.test.ts",
+            "web/test/transcript-visibility-browser.test.ts"
           ]
         }
       ],

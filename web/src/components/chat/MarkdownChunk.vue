@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue';
 import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights';
+import { observeTranscriptVisibility } from './transcriptVisibility';
 
 const props = defineProps<{ index: number; characters: number; lines: number }>();
 const heights = inject(markdownChunkHeightsKey, new Map<number, number>());
@@ -8,7 +9,7 @@ const element = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === 'undefined');
 const height = ref(heights.get(props.index) ?? null);
 const estimate = computed(() => Math.max(48, Math.max(props.lines, Math.ceil(props.characters / 50)) * 24));
-let intersection: IntersectionObserver | null = null;
+let stopVisibility: (() => void) | null = null;
 let resize: ResizeObserver | null = null;
 function measure() {
   const el = element.value;
@@ -27,21 +28,18 @@ function pinned() {
 }
 onMounted(() => {
   const el = element.value;
-  if (!el || typeof IntersectionObserver === 'undefined') return;
+  if (!el) return;
   // Reflow visible chunks after a width change; already measured placeholders
   // keep their old height until they enter the viewport and can be measured.
-  intersection = new IntersectionObserver(entries => {
-    const entry = entries[0];
-    if (!entry) return;
-    if (entry.isIntersecting) visible.value = true;
+  stopVisibility = observeTranscriptVisibility(el, isVisible => {
+    if (isVisible) visible.value = true;
     else if (!pinned()) { measure(); visible.value = false; }
-  }, { root: el.closest('.chat-scroll, .panes'), rootMargin: '900px 0px' });
-  intersection.observe(el);
+  });
   if (typeof ResizeObserver !== 'undefined') {
     resize = new ResizeObserver(measure); resize.observe(el);
   }
 });
-onBeforeUnmount(() => { measure(); intersection?.disconnect(); resize?.disconnect(); });
+onBeforeUnmount(() => { measure(); stopVisibility?.(); resize?.disconnect(); });
 </script>
 <template>
   <div ref="element" class="markdown-chunk" :data-transcript-chunk="index"

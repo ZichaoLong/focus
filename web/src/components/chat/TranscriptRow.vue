@@ -4,6 +4,7 @@ import type { ChatTurn } from '../../types';
 import { isEmptyAssistantTurn } from '../toolGroupPresentation';
 import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights';
 import { isTranscriptRowPinned } from './transcriptScrollAnchor';
+import { observeTranscriptVisibility } from './transcriptVisibility';
 
 const props = withDefaults(defineProps<{ turn: ChatTurn; folded?: boolean }>(), { folded: false });
 provide(markdownChunkHeightsKey, new Map());
@@ -16,23 +17,20 @@ const hidden = computed(() => props.folded || empty.value);
 watch(empty, value => { if (value) height.value = null; });
 const estimate = computed(() => Math.min(1200, Math.max(64,
   Math.ceil((props.turn.text.length + (props.turn.thinking?.length ?? 0)) / 45) * 22)));
-let intersection: IntersectionObserver | null = null;
+let stopVisibility: (() => void) | null = null;
 let resize: ResizeObserver | null = null;
 
 onMounted(() => {
   const el = element.value;
-  if (!el || !props.turn.itemId || typeof IntersectionObserver === 'undefined') return;
-  intersection = new IntersectionObserver((entries) => {
-    const entry = entries[0];
-    if (!entry) return;
-    if (entry.isIntersecting) visible.value = true;
+  if (!el || !props.turn.itemId) return;
+  stopVisibility = observeTranscriptVisibility(el, isVisible => {
+    if (isVisible) visible.value = true;
     else if (!isTranscriptRowPinned(el)) {
       const measured = el.getBoundingClientRect().height;
       if (!hidden.value && visible.value && measured > 0) height.value = measured;
       visible.value = false;
     }
-  }, { root: el.closest('.chat-scroll, .panes'), rootMargin: '900px 0px' });
-  intersection.observe(el);
+  });
   if (typeof ResizeObserver !== 'undefined') {
     resize = new ResizeObserver(() => {
       if (!hidden.value && visible.value && el.getBoundingClientRect().height > 0) height.value = el.getBoundingClientRect().height;
@@ -40,7 +38,7 @@ onMounted(() => {
     resize.observe(el);
   }
 });
-onBeforeUnmount(() => { intersection?.disconnect(); resize?.disconnect(); });
+onBeforeUnmount(() => { stopVisibility?.(); resize?.disconnect(); });
 </script>
 <template>
   <div v-if="turn.itemId" ref="element" class="transcript-row turn-anchor"
