@@ -60,6 +60,10 @@ jobs:
           python scripts/check_dependency_direction.py
           bash scripts/check-docs.sh
 
+      - name: Install browser for transcript regressions
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
       - name: Verify Web source
         working-directory: web
         run: |
