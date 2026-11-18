@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/scheduled-prompts.zh-CN.md`.
 
+Scheduled prompts remain Feishu-binding operations. If the target instance disables Feishu, timed prompt send fails explicitly; it neither redirects to Web/fcodex nor replays after re-enabling. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 This document defines the current minimal contract for "continue the same
 Feishu-bound thread at a future time".
 

@@ -9,13 +9,15 @@ from bot.adapters.base import ThreadGoalSummary, ThreadSnapshot, ThreadSummary
 from bot.reason_codes import (
     ReasonedCheck,
 )
-from bot.runtime_admin.controller import (
-    RuntimeAdminController,
+from bot.runtime_admin.application import (
     RuntimeAdminCoordinationPort,
     RuntimeAdminPolicyPort,
     RuntimeAdminPorts,
     RuntimeAdminPresentationPort,
     RuntimeAdminThreadPort,
+)
+from bot.runtime_admin.controller import (
+    RuntimeAdminController,
 )
 from bot.runtime_admin.binding_clear import (
     RuntimeBindingBatchDeactivationReceipt,

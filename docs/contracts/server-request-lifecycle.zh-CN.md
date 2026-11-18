@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/server-request-lifecycle.md`。
 
+关闭飞书时，surface dispatcher 的飞书参与方显式缺席；request 仍由同一 registry/coordinator 管理并路由到合法 Web/fcodex 接收者。全部 surface 拒绝不等于 handled，也不得自动批准；不被保留的 request 撤销 auto-resolution timer。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 ## 1. 目的与上游基线
 
 本文定义 Focus 如何把 Codex app-server request 投影到 Web、飞书与 `fcodex`。

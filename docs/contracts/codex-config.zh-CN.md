@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/codex-config.md`。
 
+`web_enabled` 缺省为 `false`，安装模板也关闭；仅显式 `true` 开启 Web。它与飞书开关独立，变更需重启。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 ## 目的
 
 `codex.yaml` 同时承载 app-server adapter、飞书 handler、Focus Web gateway

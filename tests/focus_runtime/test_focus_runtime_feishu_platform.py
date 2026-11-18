@@ -185,7 +185,7 @@ class FeishuPlatformBoundaryTests(unittest.TestCase):
         self.assertEqual(root_bot_references, set())
         self.assertEqual(
             owner_methods,
-            {"__init__", "bot", "attach"} | _PUBLIC_PLATFORM_METHODS,
+            {"__init__", "bot", "attach", "is_attached"} | _PUBLIC_PLATFORM_METHODS,
         )
         self.assertEqual(len(_PUBLIC_PLATFORM_METHODS), 13)
 
@@ -251,67 +251,21 @@ class FeishuPlatformBoundaryTests(unittest.TestCase):
             ast.dump(
                 ast.parse(
                     "lambda: service_authority.prepare_owned_state("
-                    "feishu_platform.bot.app_id)",
+                    "feishu_platform.bot.app_id if feishu_enabled else '')",
                     mode="eval",
                 ).body,
                 include_attributes=False,
             ),
         )
 
-    def test_start_attaches_then_registers_terminal_resolver_then_starts(
-        self,
-    ) -> None:
+    def test_start_retains_platform_attachment_before_core_activation(self) -> None:
         root = _class_node(_ROOT_PATH, "FocusRuntime")
         start = _method_node(root, "start")
-
-        self.assertGreaterEqual(len(start.body), 4)
-        self.assertEqual(
-            ast.dump(start.body[0], include_attributes=False),
-            ast.dump(
-                ast.parse(
-                    "self._feishu_platform.attach(bot)",
-                    mode="exec",
-                ).body[0],
-                include_attributes=False,
-            ),
-        )
-        self.assertEqual(
-            ast.dump(start.body[1], include_attributes=False),
-            ast.dump(
-                ast.parse(
-                    "set_terminal_result_text_resolver = getattr("
-                    "bot, 'set_terminal_result_text_resolver', None)",
-                    mode="exec",
-                ).body[0],
-                include_attributes=False,
-            ),
-        )
-        self.assertEqual(
-            ast.dump(start.body[2], include_attributes=False),
-            ast.dump(
-                ast.parse(
-                    "if callable(set_terminal_result_text_resolver):\n"
-                    "    set_terminal_result_text_resolver(\n"
-                    "        self._terminal_results.resolve_terminal_result_text\n"
-                    "    )",
-                    mode="exec",
-                ).body[0],
-                include_attributes=False,
-            ),
-        )
-        lifecycle_try = start.body[3]
-        self.assertIsInstance(lifecycle_try, ast.Try)
-        assert isinstance(lifecycle_try, ast.Try)
-        self.assertEqual(
-            ast.dump(lifecycle_try.body[0], include_attributes=False),
-            ast.dump(
-                ast.parse(
-                    "self._service_runtime_lifecycle.start()",
-                    mode="exec",
-                ).body[0],
-                include_attributes=False,
-            ),
-        )
+        attach = next(node for node in ast.walk(start) if isinstance(node, ast.Call)
+                      and isinstance(node.func, ast.Attribute) and node.func.attr == "attach")
+        activate = next(node for node in ast.walk(start) if isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute) and node.func.attr == "start")
+        self.assertLess(attach.lineno, activate.lineno)
 
 
 class FeishuPlatformAttachmentTests(unittest.TestCase):
@@ -320,7 +274,9 @@ class FeishuPlatformAttachmentTests(unittest.TestCase):
         bot_a = object()
         bot_b = object()
 
-        self.assertIsNone(platform.bot)
+        self.assertFalse(platform.is_attached)
+        with self.assertRaisesRegex(RuntimeError, "not attached"):
+            _ = platform.bot
         platform.attach(bot_a)
         self.assertIs(platform.bot, bot_a)
         platform.attach(bot_a)

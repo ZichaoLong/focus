@@ -26,6 +26,7 @@ from bot.reason_codes import (
     DETACH_NOT_APPLICABLE_NO_BINDING,
     DETACH_NOT_APPLICABLE_NO_THREAD,
     PROMPT_DENIED_BINDING_NOT_FOUND,
+    PROMPT_DENIED_FEISHU_DISABLED,
     PROMPT_DENIED_BY_INTERACTION_OWNER,
     PROMPT_DENIED_BY_RUNNING_TURN,
     ReasonedCheck,
@@ -68,7 +69,7 @@ class RuntimeAdminBindingApplicationPorts:
     read_thread: Callable[[str], Any]
     read_thread_for_stale_cleanup: Callable[[str], Any]
     unsubscribe_thread: Callable[[str], None]
-    attach_binding: RuntimeAdminAttachBinding
+    attach_binding: RuntimeAdminAttachBinding | None
     get_thread_goal: Callable[[str], ThreadGoalSummary | None]
     clear_all_stored_bindings: Callable[[], None]
     deactivate_binding_and_invalidate_queue_locked: Callable[
@@ -81,14 +82,14 @@ class RuntimeAdminBindingApplicationPorts:
     release_service_thread_runtime_lease: Callable[[str], None]
     instance_name: Callable[[], str]
     load_thread_runtime_lease: Callable[[str], ThreadRuntimeLease | None]
-    submit_prompt_for_control: Callable[..., dict[str, Any]]
+    submit_prompt_for_control: Callable[..., dict[str, Any]] | None
     prompt_write_denial_check: Callable[..., ReasonedCheck]
     external_control_write_denial_check: Callable[..., ReasonedCheck]
     all_mode_thread_exclusivity_check: Callable[
         [str, str], ReasonedCheck
     ]
     detached_runtime_attach_check: Callable[[str], ReasonedCheck]
-    resolve_binding_chat_display_name: Callable[..., str]
+    resolve_binding_chat_display_name: Callable[..., str] | None
     is_thread_not_found_error: Callable[[Exception], bool]
     is_thread_not_loaded_error: Callable[[Exception], bool]
     invalidate_feishu_execution_queue_locked: Callable[[ChatBindingKey], None]
@@ -289,6 +290,8 @@ class RuntimeAdminBindingApplication:
         chat_id: str,
         refresh_names: bool,
     ) -> str:
+        if self._resolve_binding_chat_display_name is None:
+            return ""
         try:
             return str(
                 self._resolve_binding_chat_display_name(
@@ -454,7 +457,7 @@ class RuntimeAdminBindingApplication:
         return ReasonedCheck.allow()
 
     def detach_check_locked(self, binding: ChatBindingKey) -> ReasonedCheck:
-        snapshot = self._binding_runtime.binding_runtime_snapshot_locked(binding)
+        snapshot = self._binding_runtime.binding_record_snapshot_locked(binding)
         if snapshot is None:
             return ReasonedCheck.deny(
                 DETACH_NOT_APPLICABLE_NO_BINDING,
@@ -560,6 +563,8 @@ class RuntimeAdminBindingApplication:
         synthetic_source: str = "",
         display_mode: str = "silent",
     ) -> dict[str, Any]:
+        if self._attach_binding is None or self._submit_prompt_for_control is None:
+            raise RuntimeError("Feishu is disabled; enable feishu_enabled in system.yaml and restart focusd")
         prompt_text = str(text or "").strip()
         normalized_input_items = list(input_items or [])
         if not prompt_text and not normalized_input_items:
@@ -605,6 +610,8 @@ class RuntimeAdminBindingApplication:
         binding: ChatBindingKey,
         snapshot: Any,
     ) -> ReasonedCheck:
+        if self._submit_prompt_for_control is None:
+            return ReasonedCheck.deny(PROMPT_DENIED_FEISHU_DISABLED, "Feishu is disabled")
         if snapshot is None:
             return ReasonedCheck.deny(
                 PROMPT_DENIED_BINDING_NOT_FOUND,
@@ -748,7 +755,7 @@ class RuntimeAdminBindingApplication:
 
     def binding_thread_id_or_raise(self, binding: ChatBindingKey) -> str:
         with self._lock:
-            snapshot = self._binding_runtime.binding_runtime_snapshot_locked(
+            snapshot = self._binding_runtime.binding_record_snapshot_locked(
                 binding
             )
         if snapshot is None:
@@ -763,7 +770,7 @@ class RuntimeAdminBindingApplication:
     def detach_binding(self, binding: ChatBindingKey) -> dict[str, Any]:
         with self._lock:
             initial_snapshot = (
-                self._binding_runtime.binding_runtime_snapshot_locked(binding)
+                self._binding_runtime.binding_record_snapshot_locked(binding)
             )
         if initial_snapshot is None:
             raise ValueError(
@@ -784,7 +791,7 @@ class RuntimeAdminBindingApplication:
             ):
                 raise ValueError(check.reason_text)
             current_snapshot = (
-                self._binding_runtime.binding_runtime_snapshot_locked(binding)
+                self._binding_runtime.binding_record_snapshot_locked(binding)
             )
             if (
                 current_snapshot is None
@@ -921,6 +928,8 @@ class RuntimeAdminBindingApplication:
         *,
         writer_binding: ChatBindingKey | None = None,
     ) -> dict[str, Any]:
+        if self._attach_binding is None or self._submit_prompt_for_control is None:
+            raise RuntimeError("Feishu is disabled; enable feishu_enabled in system.yaml and restart focusd")
         with self._lock:
             snapshot = self._binding_runtime.binding_runtime_snapshot_locked(
                 binding
@@ -1008,6 +1017,8 @@ class RuntimeAdminBindingApplication:
         *,
         writer_binding: ChatBindingKey | None = None,
     ) -> dict[str, Any]:
+        if self._attach_binding is None or self._submit_prompt_for_control is None:
+            raise RuntimeError("Feishu is disabled; enable feishu_enabled in system.yaml and restart focusd")
         normalized_thread_id = str(thread_id or "").strip()
         verified = self._require_direct_thread_target(
             normalized_thread_id,
@@ -1096,6 +1107,8 @@ class RuntimeAdminBindingApplication:
         *,
         writer_binding: ChatBindingKey | None = None,
     ) -> dict[str, Any]:
+        if self._attach_binding is None or self._submit_prompt_for_control is None:
+            raise RuntimeError("Feishu is disabled; enable feishu_enabled in system.yaml and restart focusd")
         with self._lock:
             inventory = self.binding_inventory_locked()
         detached_by_thread: dict[str, list[str]] = {}

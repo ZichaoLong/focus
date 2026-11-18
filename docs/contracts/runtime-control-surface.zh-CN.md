@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/runtime-control-surface.md`。
 
+关闭飞书时，本地管理由 `RuntimeAdminApplication` 提供。service/binding/thread attach、binding submit-prompt、thread send-image 与在线刷新飞书名称明确拒绝；本地记录查询、detach/clear、thread/goal 管理、reset-backend 与 maintenance 沿用各自准入规则。`focusctl prompt send` 仍是飞书 binding 输入，不成为通用无前端输入。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 本文定义飞书侧控制面的正式语义及其与 Web settings 的边界，刻意不定义一套跨前端共享的 settings 系统。
 
 ## 1. 飞书与 Web 的可写设置族保持分离

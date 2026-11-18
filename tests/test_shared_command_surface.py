@@ -126,7 +126,7 @@ class SharedCommandSurfaceTests(unittest.TestCase):
         adapter_patch.start()
         self.addCleanup(config_patch.stop)
         self.addCleanup(adapter_patch.stop)
-        handler = CodexHandler(data_dir=pathlib.Path(tempdir.name))
+        handler = CodexHandler(data_dir=pathlib.Path(tempdir.name), feishu_enabled=True)
         self.addCleanup(handler.shutdown)
         return handler
 

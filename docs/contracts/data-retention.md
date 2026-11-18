@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/data-retention.zh-CN.md`.
 
+Automatic retention and CLI data prune depend on neither Feishu nor Web. With Feishu disabled, local GroupChatStore and attachment owners prune history files without constructing a bot or querying Feishu. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 ## 1. Controls and scope
 
 Focus Web settings exposes three controls: **Focus record retention**, **Attachment retention**, and

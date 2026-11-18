@@ -115,7 +115,7 @@ class ServiceRuntimeAuthority:
         adapter_ingress_gate: AdapterIngressGate,
         app_server_runtime: AppServerRuntimeStore,
         service_instance_lease: ServiceInstanceLease,
-        feishu_app_connection_lease: FeishuAppConnectionLease,
+        feishu_app_connection_lease: FeishuAppConnectionLease | None,
         instance_registry: InstanceRegistryStore,
         thread_runtime_lease_store: ThreadRuntimeLeaseStore,
         service_control_plane: ServiceControlPlane,
@@ -134,11 +134,12 @@ class ServiceRuntimeAuthority:
         self._thread_runtime_preflight_token = object()
         self._thread_runtime_release_token = object()
 
-    def prepare_owned_state(self, app_id: str) -> None:
-        self._feishu_app_connection_lease.acquire(
-            app_id,
-            instance_name=self._instance_name,
-        )
+    def prepare_owned_state(self, app_id: str = "") -> None:
+        if self._feishu_app_connection_lease is not None:
+            self._feishu_app_connection_lease.acquire(
+                app_id,
+                instance_name=self._instance_name,
+            )
         # Refuse a second backend generation until the previously owned process
         # is proved stopped, then clear this instance's process-bound runtime
         # projections before admitting a replacement generation.
@@ -201,7 +202,8 @@ class ServiceRuntimeAuthority:
             failures.append(("thread runtime holders", exc))
             logger.exception("%s 清理 thread runtime holder 失败", context)
         try:
-            self._feishu_app_connection_lease.release()
+            if self._feishu_app_connection_lease is not None:
+                self._feishu_app_connection_lease.release()
         except Exception as exc:
             failures.append(("Feishu app connection lease", exc))
             logger.exception("%s 释放 Feishu app connection lease 失败", context)

@@ -18,6 +18,7 @@ PROMPT_DENIED_BY_GROUP_ALL_MODE_SHARING = "prompt_denied_by_group_all_mode_shari
 PROMPT_DENIED_BY_OTHER_GROUP_ALL_OWNER = "prompt_denied_by_other_group_all_owner"
 PROMPT_DENIED_BY_INTERACTION_OWNER = "prompt_denied_by_interaction_owner"
 PROMPT_DENIED_BY_LIVE_RUNTIME_OWNER = "prompt_denied_by_live_runtime_owner"
+PROMPT_DENIED_FEISHU_DISABLED = "feishu_disabled"
 PROMPT_DENIED_BINDING_NOT_FOUND = "prompt_denied_binding_not_found"
 
 LIFECYCLE_BLOCKED_BY_LOADED_THREAD = "lifecycle_blocked_by_loaded_thread"

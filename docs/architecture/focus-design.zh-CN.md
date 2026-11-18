@@ -85,7 +85,8 @@ request，并经具名 service、binding、thread port 分派；domain fact 与�
 
 `RuntimeAdminBindingApplication` 统一持有与 surface 无关的 Runtime Admin binding 用例：inventory/read model、
 prompt admission、attach/detach、clear 与 stale cleanup。它只协调既有 binding fact、clear transaction 和 thread
-lifecycle owner，不镜像其状态；`RuntimeAdminController` 只保留飞书命令/卡片展示与公开 binding façade 委托。
+lifecycle owner，不镜像其状态。`RuntimeAdminApplication` 组合本地控制路由、thread/goal 管理与 reset 预检，
+无须飞书展示依赖；`RuntimeAdminController` 是仅在飞书启用时组装的命令/卡片展示子类。
 
 `RuntimeAdminOfflineLifecycle` 统一持有与 surface 无关的 `focusctl` 离线 lifecycle 事务：archive target 解析、
 本地 binding preflight、lifecycle result 校验、archive/unarchive/delete mutation，以及跨实例 binding settlement。
@@ -244,6 +245,11 @@ unsubscribe send 前与 holder release 前分别重验，最后也只在原 gene
 ## 5. 关键生命周期边界
 
 ### 5.1 Service 与 backend
+
+`focusd` 是独立核心宿主，按 [system.yaml 合同](../contracts/system-config.zh-CN.md#前端启用与生命周期)
+选择飞书与 Web；`CodexHandler` 只引用已有 runtime，不再构造或启动核心。
+飞书传输由 `FeishuTransport` 持有，核心 ACTIVE 后启动，producer barrier 之前停止并 join；
+关闭飞书不取得 app lease。无飞书时仍保留管理历史记录所需的本地 owner，但不安装网络路由或展示面。
 
 `ServiceRuntimeLifecycle` 在取得 service lease 后才激活 RuntimeLoop、adapter、control plane、Gateway
 与 worker。停止时先关闭新 ingress，等待已准入 callback，停止 producer，drain RuntimeLoop，最后停止

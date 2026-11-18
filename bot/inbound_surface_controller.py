@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.cards import CommandResult, build_markdown_card, decorate_help_navigation_card, make_card_response
 
@@ -159,7 +162,7 @@ class InboundSurfaceController:
                     route = prefixed_route
                     break
         if route is None:
-            return P2CardActionTriggerResponse()
+            return make_card_response()
         denied = self._check_action_group_guard(
             route,
             is_group_chat=is_group_chat,
@@ -335,7 +338,7 @@ class InboundSurfaceController:
             if help_origin:
                 decorate_help_navigation_card(card, page=help_origin)
             return make_card_response(card=card)
-        return P2CardActionTriggerResponse()
+        return make_card_response()
 
     @staticmethod
     def _decorate_help_origin_response(

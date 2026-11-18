@@ -10,14 +10,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from lark_oapi.api.im.v1 import (
-    CreateMessageRequest,
-    CreateMessageRequestBody,
-    PatchMessageRequest,
-    PatchMessageRequestBody,
-    ReplyMessageRequest,
-    ReplyMessageRequestBody,
-)
 
 from bot.feishu_destination_liveness_contract import (
     FeishuDestinationLossProof,
@@ -338,6 +330,8 @@ class FeishuOutboundGateway:
         *,
         attempt_id: str = "",
     ) -> FeishuOutboundResult:
+        from lark_oapi.api.im.v1 import CreateMessageRequest, CreateMessageRequestBody
+
         outbound_attempt_id = self._attempt_id(attempt_id)
         id_type = self._receive_id_type(chat_id)
         request = (
@@ -438,6 +432,8 @@ class FeishuOutboundGateway:
         *,
         attempt_id: str = "",
     ) -> FeishuOutboundResult:
+        from lark_oapi.api.im.v1 import PatchMessageRequest, PatchMessageRequestBody
+
         outbound_attempt_id = self._attempt_id(attempt_id)
         request = (
             PatchMessageRequest.builder()
@@ -550,6 +546,8 @@ class FeishuOutboundGateway:
         reply_in_thread: bool,
         attempt_id: str = "",
     ) -> FeishuOutboundResult:
+        from lark_oapi.api.im.v1 import ReplyMessageRequest, ReplyMessageRequestBody
+
         outbound_attempt_id = self._attempt_id(attempt_id)
         request = (
             ReplyMessageRequest.builder()

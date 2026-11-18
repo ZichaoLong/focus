@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/server-request-lifecycle.zh-CN.md`.
 
+With Feishu disabled, its dispatcher participant is explicitly absent. The same registry/coordinator retains request authority and routes to eligible Web/fcodex recipients. When no surface retains a request, this cannot count as handled or authorize automatic approval; an unretained request cancels its auto-resolution timer. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 ## 1. Purpose and Upstream Baseline
 
 This contract defines how Focus projects Codex app-server requests to Web,

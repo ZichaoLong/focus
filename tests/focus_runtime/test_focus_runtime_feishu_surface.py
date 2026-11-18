@@ -377,8 +377,8 @@ class FeishuSurfaceBoundaryTests(unittest.TestCase):
         surface_methods = _methods(surface)
         initializer = root_methods["__init__"]
 
-        self.assertEqual(set(root_methods), _ROOT_METHODS)
-        self.assertEqual(len(root_methods), 42)
+        self.assertEqual(set(root_methods), _ROOT_METHODS | {"data_dir", "_stop_feishu_transport"})
+        self.assertEqual(len(root_methods), 44)
         self.assertLessEqual(
             len(_ROOT_PATH.read_text(encoding="utf-8").splitlines()),
             2_450,

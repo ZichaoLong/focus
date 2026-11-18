@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/architecture/focus-shared-backend-runtime.zh-CN.md`.
 
+Feishu and Browser/Gateway are optional and disabled by default. With both off, the same core and focus/fcodex connection remain available. See the [frontend activation contract](../contracts/system-config.md#frontend-activation-and-lifecycle).
+
 This document describes only the current shared-backend topology, wrapper/proxy
 boundary, and runtime owners. Formal contracts define mutation, main-turn,
 create/resume, and server-request semantics.

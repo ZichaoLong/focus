@@ -4,13 +4,16 @@ Codex help domain.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.cards import CommandResult, make_card_response
 from bot.binding_runtime_contract import BindingSessionSnapshot

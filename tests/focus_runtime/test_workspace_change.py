@@ -47,7 +47,7 @@ class CodexHandlerWorkspaceChangeTests(unittest.TestCase):
         self.addCleanup(config_patch.stop)
         self.addCleanup(adapter_patch.stop)
         self.addCleanup(env_patch.stop)
-        handler = CodexHandler(data_dir=data_dir)
+        handler = CodexHandler(data_dir=data_dir, feishu_enabled=True)
         handler._service_runtime_lifecycle._set_phase(ServiceRuntimePhase.ACTIVE)
         handler._service_instance_lease._owner_token = "workspace-change-test"
         self.addCleanup(handler.shutdown)

@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/scheduled-prompts.md`。
 
+调度任务仍面向飞书绑定。目标实例关闭飞书时，定时触发的 prompt send 明确失败，不转交 Web/fcodex，也不在重新启用后补发。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 本文定义当前仓库针对“未来某个时间点继续同一 Feishu 绑定 thread”的正式最小合同。
 
 它覆盖三层：

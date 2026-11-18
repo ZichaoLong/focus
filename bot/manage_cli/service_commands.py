@@ -136,6 +136,10 @@ def _print_service_runtime_summary(summary: _RuntimeStatusSummary) -> None:
     else:
         web_gateway_status = "unavailable"
     print(f"web gateway: {web_gateway_status}")
+    feishu = (result.get("operator_status") or {}).get("feishu") or {}
+    print(f"feishu: {feishu.get('state', 'unavailable')}")
+    if feishu.get("error"):
+        print(f"feishu error: {feishu['error']}")
     print(
         "bindings: "
         f"total={result.get('binding_count', '-')} "

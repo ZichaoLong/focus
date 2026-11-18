@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from dataclasses import dataclass
 from typing import Callable
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.adapters.base import ThreadGoalSummary
 from bot.binding_runtime_contract import BindingSessionSnapshot
@@ -191,7 +194,7 @@ class CodexGoalDomain:
                 return make_card_response(card=result.card)
         except Exception as exc:
             return make_card_response(toast=str(exc) or "goal 操作失败", toast_type="warning")
-        return P2CardActionTriggerResponse()
+        return make_card_response()
 
     def _current_thread(self, sender_id: str, chat_id: str, *, message_id: str = "") -> tuple[str, str]:
         runtime = self._ports.resolve_session(sender_id, chat_id, message_id)

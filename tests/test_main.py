@@ -30,7 +30,7 @@ class MainEntrypointTests(unittest.TestCase):
             config_dir.mkdir()
             data_dir.mkdir()
             (config_dir / "system.yaml").write_text(
-                'app_id: "app-id"\napp_secret: "app-secret"\n',
+                'feishu_enabled: true\napp_id: "app-id"\napp_secret: "app-secret"\n',
                 encoding="utf-8",
             )
             paths = SimpleNamespace(config_dir=config_dir, data_dir=data_dir)
@@ -47,15 +47,21 @@ class MainEntrypointTests(unittest.TestCase):
                                         sys.modules,
                                         {"bot.standalone": SimpleNamespace(CodexBot=bot_cls)},
                                     ):
-                                        main([])
+                                        with patch("bot.focus_runtime.runtime.FocusRuntime") as runtime_cls, \
+                                                patch("bot.__main__.threading.Event"), \
+                                                patch("bot.__main__.signal.signal"):
+                                            main([])
 
         bot_cls.assert_called_once_with(
             system_config=SystemConfig(
+                feishu_enabled=True,
                 app_id="app-id",
                 app_secret="app-secret",
-            )
+            ),
+            runtime=runtime_cls.return_value,
         )
-        bot.start.assert_called_once_with()
+        runtime_cls.return_value.start.assert_called_once_with(bot)
+        runtime_cls.return_value.stop.assert_called_once_with()
 
 
 if __name__ == "__main__":

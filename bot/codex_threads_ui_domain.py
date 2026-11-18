@@ -4,6 +4,8 @@ Codex threads UI domain.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import json
 import logging
 import threading
@@ -12,9 +14,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.adapters.base import ThreadGoalSummary, ThreadSummary
 from bot.binding_runtime_contract import BindingSessionSnapshot

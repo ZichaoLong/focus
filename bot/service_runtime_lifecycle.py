@@ -100,13 +100,14 @@ class ServiceRuntimeActivationPorts:
     start_runtime_loop: Callable[[], None]
     restore_runtime_state: Callable[[], None]
     start_adapter: Callable[[], None]
-    start_destination_liveness_worker: Callable[[], None]
+    start_destination_liveness_worker: Callable[[], None] | None
     start_control_plane: Callable[[], str]
     publish_control_endpoint: Callable[[str], None]
     register_instance_runtime: Callable[[], None]
     restore_runtime_leases: Callable[[], None]
     start_web_gateway: Callable[[], None]
     start_data_retention: Callable[[], None] = lambda: None
+    start_feishu_transport: Callable[[], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -127,6 +128,7 @@ class ServiceRuntimeShutdownPorts:
     stop_adapter: Callable[[], None]
     release_machine_authority: Callable[[], None]
     stop_data_retention: Callable[[], None] = lambda: None
+    stop_feishu_transport: Callable[[], None] | None = None
 
 
 class ServiceRuntimeIngressDispatcher:
@@ -402,8 +404,14 @@ class ServiceRuntimeLifecycle:
             self._set_phase(ServiceRuntimePhase.LEASE_ACQUIRED)
             try:
                 self._activate_after_lease()
+                self._set_phase(ServiceRuntimePhase.ACTIVE)
+                if self._activation.start_feishu_transport is not None:
+                    self._activation.start_feishu_transport()
             except Exception:
-                self._set_phase(ServiceRuntimePhase.STOPPING)
+                with self._condition:
+                    self._phase = ServiceRuntimePhase.STOPPING
+                    while self._active_external_ingress:
+                        self._condition.wait()
                 try:
                     self._shutdown_after_lease(context="startup rollback")
                 except ServiceRuntimeShutdownError:
@@ -416,7 +424,6 @@ class ServiceRuntimeLifecycle:
                         "retaining machine authority"
                     )
                 raise
-            self._set_phase(ServiceRuntimePhase.ACTIVE)
         finally:
             self._leave_operation()
 
@@ -599,7 +606,8 @@ class ServiceRuntimeLifecycle:
         ports.start_runtime_loop()
         ports.restore_runtime_state()
         ports.start_adapter()
-        ports.start_destination_liveness_worker()
+        if ports.start_destination_liveness_worker is not None:
+            ports.start_destination_liveness_worker()
         control_endpoint = ports.start_control_plane()
         ports.publish_control_endpoint(control_endpoint)
         ports.register_instance_runtime()
@@ -638,6 +646,10 @@ class ServiceRuntimeLifecycle:
 
         stop_resource("data_retention", "data retention worker", ports.stop_data_retention)
         require_stage("data retention producer barrier")
+
+        if ports.stop_feishu_transport is not None:
+            stop_resource("feishu_transport", "Feishu callback producer", ports.stop_feishu_transport)
+            require_stage("Feishu transport barrier")
 
         # Close and join execution-recovery admission before cancelling the
         # timers it can register.  A failed join must not let timer

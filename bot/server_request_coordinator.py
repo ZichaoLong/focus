@@ -33,7 +33,7 @@ class ServerRequestCoordinatorPorts:
     remove_web_resolved: Callable[[ServerRequestIdentity], ServerRequestLocalRemoval]
     revoke_web_response_authority: Callable[[ServerRequestIdentity], None]
     remove_fcodex_resolved: Callable[[ServerRequestIdentity], ServerRequestLocalRemoval]
-    remove_feishu_resolved: Callable[[ServerRequestIdentity], ServerRequestLocalRemoval]
+    remove_feishu_resolved: Callable[[ServerRequestIdentity], ServerRequestLocalRemoval] | None
     reconcile_resolved_root: Callable[[str], None]
     invalidate_auto_resolution_epoch: Callable[[], None]
     shutdown_auto_resolution: Callable[[], None]
@@ -451,6 +451,8 @@ class ServerRequestCoordinator:
                 self._ports.remove_fcodex_resolved,
                 self._ports.remove_feishu_resolved,
             ):
+                if remove is None:
+                    continue
                 try:
                     removal = remove(identity)
                 except Exception:

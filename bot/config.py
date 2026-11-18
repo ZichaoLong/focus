@@ -103,7 +103,7 @@ def load_system_config_raw() -> dict[str, Any]:
 
 
 def save_system_config(config: dict[str, Any]) -> Path:
-    SystemConfig.from_dict(config, require_credentials=True)
+    SystemConfig.from_dict(config)
     path = system_config_path()
     rendered = yaml.safe_dump(config, sort_keys=False, allow_unicode=True)
     _atomic_write_text(path, rendered, mode=0o600)
@@ -123,16 +123,9 @@ def ensure_init_token() -> str:
 def load_config(*, directory: Path | None = None) -> SystemConfig:
     """加载并严格校验全局系统配置 (system.yaml)。"""
     path = (directory or config_dir()) / "system.yaml"
-    if not path.exists():
-        raise FileNotFoundError(
-            f"系统配置文件不存在: {path}\n"
-            "请通过 macOS/Linux 的 `bash install.sh` 或 Windows PowerShell 的 `.\\install.ps1` 初始化配置，"
-            "或手动复制 config/system.yaml.example 并填入实际值。"
-        )
-
     config = _load_yaml_file(path)
     try:
-        return SystemConfig.from_dict(config, require_credentials=True)
+        return SystemConfig.from_dict(config)
     except ValueError as exc:
         raise ValueError(f"{path}: {exc}") from exc
 

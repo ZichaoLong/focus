@@ -126,9 +126,9 @@ class BackendResetCoordinator:
         runtime_authority: BackendResetRuntimeAuthority,
         retire_server_requests_after_stop: Callable[[], object],
         retire_web_after_stop: Callable[[], object],
-        retire_feishu_after_stop: Callable[[], object],
-        retire_feishu_root_operations_after_stop: Callable[[], object],
-        dispatch_feishu_card_projection_best_effort: Callable[[], None],
+        retire_feishu_after_stop: Callable[[], object] | None,
+        retire_feishu_root_operations_after_stop: Callable[[], object] | None,
+        dispatch_feishu_card_projection_best_effort: Callable[[], None] | None,
         connect_timeout_seconds: float,
         publish_replacement: Callable[[str], None],
         runtime_context_guard: Callable[[], None],
@@ -136,9 +136,6 @@ class BackendResetCoordinator:
         capabilities = (
             retire_server_requests_after_stop,
             retire_web_after_stop,
-            retire_feishu_after_stop,
-            retire_feishu_root_operations_after_stop,
-            dispatch_feishu_card_projection_best_effort,
             publish_replacement,
             runtime_context_guard,
         )
@@ -146,6 +143,10 @@ class BackendResetCoordinator:
             raise TypeError(
                 "BackendResetCoordinator 需要 publication port 与 RuntimeLoop guard。"
             )
+        feishu = (retire_feishu_after_stop, retire_feishu_root_operations_after_stop,
+                  dispatch_feishu_card_projection_best_effort)
+        if not (all(item is None for item in feishu) or all(callable(item) for item in feishu)):
+            raise TypeError("Feishu reset participants must be all present or all absent")
         # Encode the lifecycle proof in the composition boundary.  An
         # attached client can close only its own websocket; accepting one here
         # would let reset clear machine authority while the old backend keeps
@@ -276,10 +277,12 @@ class BackendResetCoordinator:
             )
         feishu_root_retirement = (
             self._retire_feishu_root_operations_after_stop()
+            if self._retire_feishu_root_operations_after_stop is not None else None
         )
-        feishu_retirement = self._retire_feishu_after_stop()
+        feishu_retirement = self._retire_feishu_after_stop() if self._retire_feishu_after_stop is not None else None
         try:
-            self._dispatch_feishu_card_projection_best_effort()
+            if self._dispatch_feishu_card_projection_best_effort is not None:
+                self._dispatch_feishu_card_projection_best_effort()
         except Exception:
             # This capability is wired to a detached dispatcher, not to
             # Feishu transport itself. Keep an additional defensive boundary

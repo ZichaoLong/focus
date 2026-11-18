@@ -59,7 +59,7 @@ from bot.feishu_types import (
     MentionMember,
     MessageContextPayload,
 )
-from bot.feishu_ws_proxy import configure_feishu_ws_proxy
+from bot.feishu_transport import FeishuTransport
 from bot.group_history_recovery import GroupHistoryRecovery, ListedMessagesPage
 from bot.platform_paths import default_data_root
 from bot.stores.group_chat_store import GroupChatStore
@@ -91,6 +91,7 @@ class FeishuBot(ABC):
         system_config: SystemConfig,
         data_dir: pathlib.Path | None = None,
     ):
+        self._transport: FeishuTransport | None = None
         self.app_id = system_config.app_id
         self.app_secret = system_config.app_secret
         self.request_timeout_seconds = system_config.request_timeout_seconds
@@ -1279,12 +1280,21 @@ class FeishuBot(ABC):
     # ---- 启动 ----
 
     def start(self) -> None:
-        """启动 WebSocket 长连接，开始监听消息"""
-        configure_feishu_ws_proxy(self._feishu_ws_proxy_mode)
-        ws_client = lark.ws.Client(
-            self.app_id, self.app_secret,
+        if self._transport is not None:
+            raise RuntimeError("Feishu transport has already been started")
+        self._transport = FeishuTransport(
+            app_id=self.app_id, app_secret=self.app_secret,
             event_handler=self._event_handler,
-            log_level=lark.LogLevel.INFO,
+            proxy_mode=self._feishu_ws_proxy_mode,
+            timeout=self.request_timeout_seconds,
         )
-        logger.info("机器人启动中，正在连接飞书...")
-        ws_client.start()
+        self._transport.start()
+
+    def stop(self) -> None:
+        if self._transport is not None:
+            self._transport.stop()
+
+    def transport_status(self) -> dict[str, str]:
+        if self._transport is None:
+            return {"state": "stopped", "error": ""}
+        return self._transport.snapshot()

@@ -517,22 +517,19 @@ class FeishuWebSocketProxyTests(unittest.TestCase):
         self.assertEqual(configure_feishu_ws_proxy("env"), "env")
         self.assertIs(lark_ws_client.websockets, self._original_websockets)
 
-    def test_start_applies_configured_feishu_ws_proxy_mode_before_connecting(self) -> None:
-        tempdir = tempfile.TemporaryDirectory()
-        self.addCleanup(tempdir.cleanup)
-        bot = _RecordingBot(pathlib.Path(tempdir.name), system_config={"feishu_ws_proxy": "disabled"})
-        ws_client = Mock()
-
-        with patch("bot.feishu_bot.lark.ws.Client", return_value=ws_client):
-            bot.start()
-
-        ws_client.start.assert_called_once_with()
-        if self._had_ws_connect_kwargs:
-            kwargs = lark_ws_client._ws_connect_kwargs()
-            if self._websockets_supports_proxy():
-                self.assertEqual(kwargs, {"proxy": None})
-        else:
-            self.assertIsNot(lark_ws_client.websockets, self._original_websockets)
+    def test_start_and_stop_are_owned_by_transport(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            bot = _RecordingBot(pathlib.Path(root), system_config={"feishu_ws_proxy": "disabled"})
+            with patch("bot.feishu_bot.FeishuTransport") as transport:
+                bot.start()
+                transport.assert_called_once_with(
+                    app_id=bot.app_id, app_secret=bot.app_secret,
+                    event_handler=bot._event_handler, proxy_mode="disabled",
+                    timeout=bot.request_timeout_seconds,
+                )
+                transport.return_value.start.assert_called_once_with()
+                bot.stop()
+                transport.return_value.stop.assert_called_once_with()
 
 
 class FeishuBotCardProjectionTests(unittest.TestCase):

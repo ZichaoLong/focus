@@ -14,7 +14,13 @@ class FeishuPlatform:
         self._bot: Any = None
 
     @property
+    def is_attached(self) -> bool:
+        return self._bot is not None
+
+    @property
     def bot(self) -> Any:
+        if self._bot is None:
+            raise RuntimeError("Feishu frontend is not attached")
         return self._bot
 
     def attach(self, bot: Any) -> None:

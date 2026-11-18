@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from dataclasses import replace
 
 from bot.interaction_auto_resolution import AutoResolutionTiming
 from bot.server_request_contract import ServerRequestIdentity
@@ -111,6 +112,28 @@ class _Harness:
 
 
 class ServerRequestSurfaceDispatcherTest(unittest.TestCase):
+    def test_absent_feishu_does_not_claim_or_auto_resolve_unrouted_request(self) -> None:
+        harness = _Harness()
+        harness.shared_approval = False
+        harness.timing = AutoResolutionTiming(backend_epoch=1, generation=1, visible_at_ms=0, due_at_ms=1000)
+        dispatcher = ServerRequestSurfaceDispatcher(replace(
+            harness.dispatcher._ports, route_feishu=None, feishu_has_pending=None,
+        ))
+        receipt = dispatcher.dispatch(harness.identity())
+        self.assertEqual(receipt.outcome, "known_not_committed")
+        self.assertNotIn("feishu", harness.events)
+        self.assertTrue(any(event.startswith("cancel:") for event in harness.events))
+
+    def test_shared_approval_still_reaches_web_and_fcodex_without_feishu(self) -> None:
+        harness = _Harness()
+        harness.web_handled = True
+        dispatcher = ServerRequestSurfaceDispatcher(replace(
+            harness.dispatcher._ports, route_feishu=None, feishu_has_pending=None,
+        ))
+        receipt = dispatcher.dispatch(harness.identity(method="item/commandExecution/requestApproval"))
+        self.assertEqual(receipt.outcome, "committed")
+        self.assertEqual(harness.events, ["fcodex", "web"])
+
     def test_surface_claim_requires_literal_retained_receipt(self) -> None:
         self.assertEqual(ServerRequestSurfaceClaim.from_retained(True).outcome, "claimed")
         for value in (False, None, 1, "yes"):

@@ -17,11 +17,33 @@ instance configuration. It does not define `codex.yaml`, persisted Feishu
 binding state, active main-turn leases, or upstream
 `~/.codex/config.toml`.
 
-The current `focusd` process is a combined Feishu service and optional Web
-Gateway; there is no separate Web-only daemon admission mode. Consequently,
-`app_id` and `app_secret` remain required when starting `focusd` even if an
-operator intends to use only its Web Gateway. They are not prerequisites for
-the installation script to create the managed Python environment.
+## Frontend activation and lifecycle
+
+`focusd` always owns one required Codex backend. Feishu and Web are independent, explicitly enabled frontends.
+Both `system.yaml.feishu_enabled` and `codex.yaml.web_enabled` default to `false`, including installation templates.
+A missing file or enable field leaves that frontend disabled; existing credentials never implicitly enable Feishu.
+There is no legacy auto-enable compatibility. Nonempty `app_id` and `app_secret` are required only when
+`feishu_enabled: true`. Supplied values still undergo complete strict schema validation.
+
+| Feishu | Web | Mode |
+| --- | --- | --- |
+| Off | Off | Core, focusctl, focus/fcodex |
+| On | Off | Core and Feishu |
+| Off | On | Core and Web, without Feishu credentials |
+| On | On | Both frontends sharing one core |
+
+Changing either switch requires an instance restart; there is no hot plug or change to bundled dependencies.
+With Feishu off, Focus does not import the Lark SDK, construct its bot or command presentation, acquire its app
+connection lease, or start Feishu connection, destination-liveness, output or recovery workers. Historical bindings
+remain local records for inspection and cleanup, without restoring subscribers, writers, FIFO or network delivery.
+Re-enabling starts from detached bookmarks and never replays the old queue.
+
+When enabled, `FeishuTransport` owns the SDK loop/thread and connects only after core activation. Connection failures
+are independently visible as `enabled`, `state`, and `error` in `service/status.operator_status.feishu`; available Web
+and local management remain usable. Shutdown closes core ingress and drains admitted callbacks, then stops and joins
+the Feishu producer before releasing machine authority. Unconfirmed producer exit retains both app and service leases.
+SDK endpoint discovery uses the configured HTTP timeout.
+
 
 ## Authoritative source and projections
 
@@ -33,7 +55,7 @@ accepted-key inventory, defaults, types, ranges, and normalization rules of
   `bot/install_template_data/system.yaml.example` is the packaged-install
   projection. Tests require their contents to be identical and each documented
   key inventory to equal the schema inventory.
-- The daemon parses the complete document into `SystemConfig` before creating
+- The daemon parses the complete document into `SystemConfig` before conditionally creating
   `CodexBot`.
 - `FeishuBot` consumes values parsed by that schema; it no longer performs its
   own `str()`, `float()`, or `int()` conversions or silently filters list items.
@@ -49,8 +71,9 @@ consumer-side `dict.get()` does not create a supported setting.
 
 | Field | Type and range | Default semantics |
 | --- | --- | --- |
-| `app_id` | Nonempty string after trimming outer whitespace | Required in the file; no runtime default |
-| `app_secret` | Nonempty string after trimming outer whitespace | Required in the file; no runtime default |
+| `feishu_enabled` | YAML boolean | `false`; only explicit `true` enables it |
+| `app_id` | String, with outer whitespace trimmed | Empty; must be nonempty when Feishu is enabled |
+| `app_secret` | String, with outer whitespace trimmed | Empty; must be nonempty when Feishu is enabled |
 | `request_timeout_seconds` | Finite number strictly greater than `0` | `5.0` seconds |
 | `feishu_ws_proxy` | Closed `env` / `disabled` enum, case-normalized | `env` |
 | `admin_open_ids` | List of unique, nonempty strings | Empty list |
@@ -95,7 +118,7 @@ not materialize every default into the file. This is not a schema bypass:
    in-process administrator or bot identity.
 
 Consequently, `/init` cannot preserve and rewrite unknown keys, malformed
-lists, or missing credentials as a side effect.
+lists, or credentials missing while Feishu is enabled as a side effect.
 
 ## Relationship to other fact sources
 

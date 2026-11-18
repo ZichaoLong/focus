@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import argparse
 import signal
-import sys
+import threading
 import warnings
 
 from bot.config import ensure_init_token, load_config
@@ -46,13 +46,27 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config(directory=paths.config_dir)
 
     ensure_init_token()
-    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    from bot.focus_runtime.runtime import FocusRuntime
 
-    _suppress_known_third_party_runtime_warnings()
-    from bot.standalone import CodexBot
+    stopped = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stopped.set())
+    signal.signal(signal.SIGINT, lambda *_: stopped.set())
+    runtime = FocusRuntime(
+        data_dir=paths.data_dir,
+        config_dir=paths.config_dir,
+        feishu_enabled=cfg.feishu_enabled,
+    )
+    try:
+        frontend = None
+        if cfg.feishu_enabled:
+            _suppress_known_third_party_runtime_warnings()
+            from bot.standalone import CodexBot
 
-    bot = CodexBot(system_config=cfg)
-    bot.start()
+            frontend = CodexBot(system_config=cfg, runtime=runtime)
+        runtime.start(frontend)
+        stopped.wait()
+    finally:
+        runtime.stop()
 
 
 if __name__ == "__main__":

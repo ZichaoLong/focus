@@ -4,15 +4,16 @@ FOCUS 飞书卡片构建。
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-    CallBackCard,
-    CallBackToast,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.adapters.base import ThreadGoalSummary
 from bot.card_text_projection import (
@@ -37,6 +38,10 @@ def make_card_response(
     toast_type: str = "info",
 ) -> P2CardActionTriggerResponse:
     """构造卡片动作的响应（可更新卡片 / 弹 toast）"""
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse, CallBackCard, CallBackToast,
+    )
+
     resp = P2CardActionTriggerResponse()
     if toast:
         resp.toast = CallBackToast()

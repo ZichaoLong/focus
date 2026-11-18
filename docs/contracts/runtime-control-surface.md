@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/runtime-control-surface.zh-CN.md`.
 
+With Feishu disabled, `RuntimeAdminApplication` supplies local administration. Service/binding/thread attach, binding submit-prompt, thread send-image and online Feishu name refresh are explicitly rejected. Local record queries, detach/clear, thread/goal management, reset-backend and maintenance retain their admission rules. `focusctl prompt send` remains Feishu binding input, not generic headless input. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 This document defines the formal semantics of the Feishu-side control surface
 and its boundary with Web settings. It deliberately does not define a shared
 cross-frontend settings system.

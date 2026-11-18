@@ -13,7 +13,7 @@ from bot.system_config import DEFAULT_SYSTEM_CONFIG, SystemConfig
 
 class SystemConfigTests(unittest.TestCase):
     def test_defaults_are_owned_by_the_typed_schema(self) -> None:
-        config = SystemConfig.from_dict({}, require_credentials=False)
+        config = SystemConfig.from_dict({})
 
         self.assertEqual(config.request_timeout_seconds, 5.0)
         self.assertEqual(config.feishu_ws_proxy, "env")
@@ -33,11 +33,10 @@ class SystemConfigTests(unittest.TestCase):
         for config in invalid_configs:
             with self.subTest(config=config):
                 with self.assertRaisesRegex(ValueError, "app_id|app_secret"):
-                    SystemConfig.from_dict(config, require_credentials=True)
+                    SystemConfig.from_dict({"feishu_enabled": True, **config})
 
         config = SystemConfig.from_dict(
-            {"app_id": " app-id ", "app_secret": " secret "},
-            require_credentials=True,
+            {"feishu_enabled": True, "app_id": " app-id ", "app_secret": " secret "},
         )
         self.assertEqual(config.app_id, "app-id")
         self.assertEqual(config.app_secret, "secret")
@@ -52,7 +51,7 @@ class SystemConfigTests(unittest.TestCase):
                 }
             )
         with self.assertRaisesRegex(ValueError, "顶层键必须是字符串"):
-            SystemConfig.from_dict({1: "value"}, require_credentials=False)
+            SystemConfig.from_dict({1: "value"})
 
     def test_boolean_and_number_types_are_not_coerced(self) -> None:
         invalid_cases = (
@@ -70,7 +69,7 @@ class SystemConfigTests(unittest.TestCase):
         for raw, field in invalid_cases:
             with self.subTest(raw=raw):
                 with self.assertRaisesRegex(ValueError, field):
-                    SystemConfig.from_dict(raw, require_credentials=False)
+                    SystemConfig.from_dict(raw)
 
     def test_numeric_ranges_are_fail_closed(self) -> None:
         invalid_cases = (
@@ -87,7 +86,7 @@ class SystemConfigTests(unittest.TestCase):
         for raw, field in invalid_cases:
             with self.subTest(raw=raw):
                 with self.assertRaisesRegex(ValueError, field):
-                    SystemConfig.from_dict(raw, require_credentials=False)
+                    SystemConfig.from_dict(raw)
 
         config = SystemConfig.from_dict(
             {
@@ -95,7 +94,6 @@ class SystemConfigTests(unittest.TestCase):
                 "group_history_fetch_limit": 0,
                 "group_history_fetch_lookback_seconds": 0,
             },
-            require_credentials=False,
         )
         self.assertEqual(config.request_timeout_seconds, 0.25)
         self.assertEqual(config.group_history_fetch_limit, 0)
@@ -117,15 +115,13 @@ class SystemConfigTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, field):
                         SystemConfig.from_dict(
                             {field: value},
-                            require_credentials=False,
-                        )
+                                        )
 
         config = SystemConfig.from_dict(
             {
                 "admin_open_ids": [" ou-a ", "ou-b"],
                 "trigger_open_ids": [],
             },
-            require_credentials=False,
         )
         self.assertEqual(config.admin_open_ids, ("ou-a", "ou-b"))
         self.assertEqual(config.trigger_open_ids, ())
@@ -134,12 +130,10 @@ class SystemConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "feishu_ws_proxy"):
             SystemConfig.from_dict(
                 {"feishu_ws_proxy": "container"},
-                require_credentials=False,
-            )
+                )
 
         config = SystemConfig.from_dict(
             {"feishu_ws_proxy": " DISABLED "},
-            require_credentials=False,
         )
         self.assertEqual(config.feishu_ws_proxy, "disabled")
 

@@ -58,6 +58,7 @@ class _BridgeHarness:
         self.runtime_admin = mock.Mock()
         self.feishu_runtime_disconnect = mock.Mock()
         self.bridge = AdapterEventBridge(
+            feishu_enabled=True,
             ingress_gate=self.ingress_gate,
             notification_pipeline=self.notification_pipeline,
             server_requests=self.server_requests,

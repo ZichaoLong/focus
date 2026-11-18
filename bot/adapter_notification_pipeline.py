@@ -38,7 +38,7 @@ class AdapterNotificationPipeline:
     def __init__(
         self,
         *,
-        stages: Mapping[str, NotificationHandler],
+        stages: Mapping[str, NotificationHandler | None],
         assert_runtime_context: Callable[[], None],
     ) -> None:
         supplied = set(stages)
@@ -52,9 +52,15 @@ class AdapterNotificationPipeline:
             if unknown:
                 details.append(f"unknown stages: {', '.join(unknown)}")
             raise ValueError("invalid notification pipeline: " + "; ".join(details))
+        optional = {"feishu_root_operation", "feishu_projection"}
+        if any(stages[name] is None for name in required - optional):
+            raise ValueError("core notification stages cannot be absent")
+        if (stages["feishu_root_operation"] is None) != (stages["feishu_projection"] is None):
+            raise ValueError("Feishu notification stages must participate together")
         self._stages = tuple(
             NotificationStage(name=name, handle=stages[name])
             for name in self.STAGE_ORDER
+            if stages[name] is not None
         )
         self._assert_runtime_context = assert_runtime_context
 

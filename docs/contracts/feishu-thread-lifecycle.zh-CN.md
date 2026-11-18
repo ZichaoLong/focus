@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/feishu-thread-lifecycle.md`。
 
+关闭飞书时，持久化 binding 仅作为 detached 本地记录读取和清理，不 hydrate 活跃 runtime、不恢复订阅或 FIFO。重新启用需要原有显式 attach/输入准入。backend reset 仍先确认旧 backend 停止，再退休核心 epoch；未组装的飞书参与方无需产生伪 retirement receipt。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 本文定义飞书侧当前的线程生命周期合同。它解释了：为什么 Feishu 侧必须遵守和 `focus` / `fcodex`
 相同的 backend 协议合同，但运行时恢复策略不能照搬本地 TUI wrapper。
 

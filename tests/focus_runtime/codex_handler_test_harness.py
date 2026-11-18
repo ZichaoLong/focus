@@ -348,7 +348,7 @@ class CodexHandlerHarness(unittest.TestCase):
         self.addCleanup(config_patch.stop)
         self.addCleanup(adapter_patch.stop)
         self.addCleanup(env_patch.stop)
-        handler = FocusRuntime(data_dir=data_dir)
+        handler = FocusRuntime(data_dir=data_dir, feishu_enabled=True)
         handler._service_runtime_lifecycle._set_phase(ServiceRuntimePhase.ACTIVE)
         # Synthetic unstarted calls need one provisional service generation;
         # start() replaces it through ServiceInstanceLease.

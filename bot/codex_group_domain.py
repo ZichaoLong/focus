@@ -4,13 +4,16 @@ Codex group domain.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.cards import CommandResult, build_group_activation_card, build_group_mode_card, make_card_response
 from bot.feishu_types import GroupActivationSnapshot, MessageContextPayload

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 import bot.codex_handler as codex_handler_module
 from bot.codex_handler import CodexHandler
@@ -15,15 +15,7 @@ from bot.feishu_destination_liveness_contract import (
 class CodexHandlerSurfaceTests(unittest.TestCase):
     def _handler(self) -> tuple[CodexHandler, Mock]:
         runtime = Mock()
-        with patch("bot.codex_handler.FocusRuntime", return_value=runtime) as factory:
-            handler = CodexHandler(
-                data_dir=pathlib.Path("/tmp/focus-data"),
-                config_dir=pathlib.Path("/tmp/focus-config"),
-            )
-        factory.assert_called_once_with(
-            data_dir=pathlib.Path("/tmp/focus-data"),
-            config_dir=pathlib.Path("/tmp/focus-config"),
-        )
+        handler = CodexHandler(runtime=runtime)
         return handler, runtime
 
     def test_handler_owns_only_platform_adapter_and_runtime(self) -> None:
@@ -35,7 +27,7 @@ class CodexHandlerSurfaceTests(unittest.TestCase):
         self.assertEqual(set(vars(handler)), {"bot", "_runtime"})
         self.assertIs(handler.bot, bot)
         self.assertIs(handler.runtime, runtime)
-        runtime.start.assert_called_once_with(bot)
+        runtime.start.assert_not_called()
 
     def test_public_ingress_delegates_without_rebuilding_a_gate(self) -> None:
         handler, runtime = self._handler()

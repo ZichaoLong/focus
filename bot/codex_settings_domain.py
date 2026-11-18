@@ -4,15 +4,18 @@ Codex settings domain.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from secrets import compare_digest
 from typing import Any, Literal
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.adapters.base import RuntimeModelSummary
 from bot.approval_settings_cards import (
@@ -134,7 +137,6 @@ class CodexSettingsDomain:
             config = load_system_config_raw()
             validated_config = SystemConfig.from_dict(
                 config,
-                require_credentials=True,
             )
         except Exception as exc:
             logger.exception("读取初始化配置失败")

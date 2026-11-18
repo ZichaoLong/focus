@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/architecture/focus-shared-backend-runtime.md`。
 
+飞书与 Browser/Gateway 均为可选入口，缺省关闭；两者都关闭时仍保留同一个核心与 focus/fcodex 连接。见 [前端开关合同](../contracts/system-config.zh-CN.md#前端启用与生命周期)。
+
 本文只说明当前 shared-backend 拓扑、wrapper/proxy 边界与 runtime owner。具体 mutation、main turn、
 create/resume 和 server request 语义以正式合同为准。
 

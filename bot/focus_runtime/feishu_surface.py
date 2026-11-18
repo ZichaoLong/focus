@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import logging
 import pathlib
 from typing import Any, ContextManager, TypeAlias
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.adapters.codex_app_server import CodexAppServerAdapter
 from bot.binding_identity import format_binding_id

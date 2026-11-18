@@ -13,9 +13,29 @@
 `codex.yaml`、飞书 binding 持久化状态、active main-turn lease，也不定义
 上游 `~/.codex/config.toml`。
 
-当前 `focusd` 是飞书服务与可选 Web Gateway 的合并进程，没有单独的 Web-only daemon
-准入模式。因此，即使 operator 只打算使用其中的 Web Gateway，启动 `focusd` 时仍要求
-`app_id` 与 `app_secret`；但安装脚本创建受管 Python 环境并不以这两项凭据为前置。
+## 前端启用与生命周期
+
+`focusd` 始终持有一个必需的 Codex backend；飞书与 Web 是互不依赖、分别显式启用的前端。
+`system.yaml.feishu_enabled` 与 `codex.yaml.web_enabled` 都缺省为 `false`，安装模板也保持关闭。
+缺少配置文件或 enable 字段按关闭处理；已有凭据不会隐式启用飞书。不提供旧配置自动启用兼容。
+只有 `feishu_enabled: true` 时，`app_id` 与 `app_secret` 才必须非空。配置值仍按完整 schema 严格校验。
+
+| 飞书 | Web | 运行模式 |
+| --- | --- | --- |
+| 关闭 | 关闭 | 核心、focusctl、focus/fcodex |
+| 开启 | 关闭 | 核心与飞书 |
+| 关闭 | 开启 | 核心与 Web，无需飞书凭据 |
+| 开启 | 开启 | 两个前端共享同一核心 |
+
+切换开关需要重启实例，不做热插拔，也不更改安装包依赖集合。关闭飞书不导入 Lark SDK、不构造机器人与命令展示面，
+不获取应用连接 lease，不启动飞书连接、目的地检测或输出/recovery worker。历史 binding 只作为本地记录读取和清理，
+不恢复 subscriber、writer、FIFO 或网络推送；重新启用仍从 detached bookmark 开始，不能重放旧队列。
+
+启用时，`FeishuTransport` 独占 SDK loop/thread，核心 ACTIVE 后才开放飞书连接；连接故障通过
+`service/status.operator_status.feishu` 的 `enabled`、`state`、`error` 独立显示，不关闭仍可用的 Web/本地管理面。
+停止时先关闭核心 ingress 并等待已准入 callback，再停止/join 飞书 producer，最后释放机器 authority。
+未确认 producer 退出时保留应用与 service lease。SDK endpoint discovery 使用配置的 HTTP timeout。
+
 
 ## 权威源与投影
 
@@ -25,7 +45,7 @@
 - `config/system.yaml.example` 是面向源码安装的可读投影；
   `bot/install_template_data/system.yaml.example` 是安装包投影。测试要求两份内容相同，
   且两者记录的键清单与 schema 完全相等。
-- daemon 入口先把整份文件解析为 `SystemConfig`，之后才创建 `CodexBot`。
+- daemon 入口先把整份文件解析为 `SystemConfig`，之后才按开关创建 `CodexBot`。
 - `FeishuBot` 只消费经过同一 schema 解析的类型值，不再自行调用 `str()`、`float()`、
   `int()` 或静默过滤列表项。
 - runtime admin 读取飞书 HTTP timeout 时也校验完整文件；坏值不会回落默认值后继续。
@@ -37,8 +57,9 @@
 
 | 字段 | 类型与范围 | 缺省语义 |
 | --- | --- | --- |
-| `app_id` | 去除首尾空白后的非空字符串 | 文件中必填，无运行时缺省值 |
-| `app_secret` | 去除首尾空白后的非空字符串 | 文件中必填，无运行时缺省值 |
+| `feishu_enabled` | YAML 布尔值 | `false`；仅显式 `true` 启用 |
+| `app_id` | 去除首尾空白的字符串 | 空字符串；启用飞书时必须非空 |
+| `app_secret` | 去除首尾空白的字符串 | 空字符串；启用飞书时必须非空 |
 | `request_timeout_seconds` | 有限数字，严格大于 `0` | `5.0` 秒 |
 | `feishu_ws_proxy` | 封闭枚举 `env` / `disabled`，大小写规范化 | `env` |
 | `admin_open_ids` | 不重复的非空字符串列表 | 空列表 |
@@ -74,7 +95,7 @@
 3. `save_system_config` 在原子写入前再次校验更新后的完整文档；
 4. 任一校验失败时都不写文件，也不更新进程内管理员或 bot identity。
 
-因此，`/init` 不能顺手把未知键、错误列表或缺失凭证重新保存回去。
+因此，`/init` 不能顺手把未知键、错误列表或启用飞书时的缺失凭证重新保存回去。
 
 ## 与其他事实源的关系
 

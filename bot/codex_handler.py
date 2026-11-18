@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import pathlib
+from typing import TYPE_CHECKING
+
 from typing import Any
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.constants import KEYWORD
 from bot.feishu_destination_liveness_contract import FeishuDestinationLossProof
@@ -20,11 +22,11 @@ class CodexHandler(BotHandler):
 
     def __init__(
         self,
-        data_dir: pathlib.Path | None = None,
-        config_dir: pathlib.Path | None = None,
+        *,
+        runtime: FocusRuntime,
     ) -> None:
         super().__init__()
-        self._runtime = FocusRuntime(data_dir=data_dir, config_dir=config_dir)
+        self._runtime = runtime
 
     @property
     def runtime(self) -> FocusRuntime:
@@ -44,7 +46,6 @@ class CodexHandler(BotHandler):
 
     def on_register(self, bot) -> None:
         super().on_register(bot)
-        self._runtime.start(bot)
 
     def handle_message(
         self,

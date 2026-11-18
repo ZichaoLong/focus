@@ -75,7 +75,8 @@
             "tests/test_managed_app_server_process.py",
             "tests/test_web_mutation_recovery.py",
             "tests/test_web_operation_service.py",
-            "tests/web_runtime/test_backend_reset_retirement.py"
+            "tests/web_runtime/test_backend_reset_retirement.py",
+            "tests/focus_runtime/test_optional_frontends.py"
           ]
         }
       ],
@@ -644,6 +645,10 @@
     "focus-runtime": {
       "entry": [
         {
+          "path": "bot/__main__.py",
+          "symbol": "main"
+        },
+        {
           "path": "bot/focus_runtime/runtime.py",
           "symbol": "FocusRuntime"
         },
@@ -716,6 +721,10 @@
         {
           "path": "bot/thread_runtime_authority.py",
           "symbol": "ThreadRuntimeAuthority.prepare_unsubscribe_thread"
+        },
+        {
+          "path": "bot/feishu_transport.py",
+          "symbol": "FeishuTransport"
         }
       ],
       "contract": [
@@ -734,6 +743,10 @@
         {
           "path": "docs/contracts/thread-resume-local-commit.zh-CN.md",
           "heading": "2. 唯一 resume 事务"
+        },
+        {
+          "path": "docs/contracts/system-config.zh-CN.md",
+          "heading": "前端启用与生命周期"
         }
       ],
       "focused-test": [
@@ -750,7 +763,11 @@
             "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py",
             "tests/test_service_runtime_lifecycle.py",
             "tests/test_thread_runtime_authority.py",
-            "tests/test_web_runtime_lifecycle_coordinator.py"
+            "tests/test_web_runtime_lifecycle_coordinator.py",
+            "tests/focus_runtime/test_optional_frontends.py",
+            "tests/test_feishu_transport.py",
+            "tests/test_main.py",
+            "tests/test_system_config.py"
           ]
         }
       ],
@@ -2956,6 +2973,10 @@
         {
           "path": "bot/runtime_admin/offline_lifecycle.py",
           "symbol": "RuntimeAdminOfflineLifecycle"
+        },
+        {
+          "path": "bot/runtime_admin/application.py",
+          "symbol": "RuntimeAdminApplication"
         }
       ],
       "contract": [
@@ -2987,7 +3008,8 @@
             "tests/focus_runtime/test_codex_handler_runtime_admin.py",
             "tests/runtime_admin/test_binding_attach.py",
             "tests/runtime_admin/test_control_surface.py",
-            "tests/test_shell_completion.py"
+            "tests/test_shell_completion.py",
+            "tests/focus_runtime/test_optional_frontends.py"
           ]
         }
       ],

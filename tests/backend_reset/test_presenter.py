@@ -3,9 +3,9 @@ from __future__ import annotations
 import unittest
 
 from bot.backend_reset.contract import BackendResetPreview, BackendResetResult
+from bot.backend_reset.diagnostics import BackendResetDiagnosticsPorts
 from bot.backend_reset.presenter import (
     BackendResetPresenter,
-    BackendResetPresenterPorts,
 )
 
 
@@ -16,7 +16,7 @@ def _format_ids(values: tuple[str, ...] | list[str]) -> str:
 class BackendResetPresenterTest(unittest.TestCase):
     def setUp(self) -> None:
         self.presenter = BackendResetPresenter(
-            BackendResetPresenterPorts(
+            BackendResetDiagnosticsPorts(
                 instance_name=lambda: "default",
                 format_binding_ids=_format_ids,
                 short_thread_ids=_format_ids,

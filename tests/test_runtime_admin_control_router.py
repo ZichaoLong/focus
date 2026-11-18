@@ -323,19 +323,19 @@ class RuntimeAdminControlRouterTests(unittest.TestCase):
             self.harness.router.handle("unknown/method", {})
         self.assertEqual(self.harness.calls, [])
 
-    def test_controller_facade_contains_only_router_delegation(self) -> None:
+    def test_core_control_facade_checks_availability_then_delegates(self) -> None:
         path = (
             pathlib.Path(__file__).parents[1]
             / "bot"
             / "runtime_admin"
-            / "controller.py"
+            / "application.py"
         )
         module = ast.parse(path.read_text(encoding="utf-8"))
         controller = next(
             node
             for node in module.body
             if isinstance(node, ast.ClassDef)
-            and node.name == "RuntimeAdminController"
+            and node.name == "RuntimeAdminApplication"
         )
         handler = next(
             node
@@ -344,7 +344,8 @@ class RuntimeAdminControlRouterTests(unittest.TestCase):
             and node.name == "handle_service_control_request"
         )
 
-        self.assertEqual(len(handler.body), 1)
+        self.assertIsInstance(handler.body[0], ast.If)
+        self.assertIsInstance(handler.body[-1], ast.Return)
         self.assertIn("_control_router.handle", ast.unparse(handler))
 
 

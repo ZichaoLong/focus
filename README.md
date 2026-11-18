@@ -37,7 +37,7 @@
 - 带 `venv` / `ensurepip` 的 CPython 3.11+，作为首次安装或修复的 bootstrap；安装后使用 Focus 专属 Python
 - Linux 使用可用的 `systemd --user`，macOS 使用 launchd，Windows 使用 Task Scheduler
 - 本机已安装 `codex` CLI，且 `codex --help` 可正常执行
-- 已在飞书开放平台创建应用，拿到 `app_id` 与 `app_secret`
+- 若要启用飞书：已在飞书开放平台创建应用，拿到 `app_id` 与 `app_secret`
 
 ### 1. 安装
 
@@ -186,10 +186,15 @@ focusctl config system --open
 focusctl config env --open
 ```
 
-最小需要填的通常是：
+Codex 是必要依赖；飞书和 Web 都是可选前端，缺省及新安装均关闭：
 
-- `system.yaml` 里的 `app_id`、`app_secret`
-- `focus.env` 里的 provider key 或其他环境变量
+- 只使用 Web：在 `codex.yaml` 设置 `web_enabled: true`，无需飞书凭据。
+- 使用飞书：在 `system.yaml` 设置 `feishu_enabled: true` 并填写 `app_id`、`app_secret`。
+- 两者都启用时共享同一 backend；两者都关闭时仍可使用 `focusctl`、`focus` / `fcodex`。
+- `focus.env` 按 Codex provider 需求填写 key 或其他环境变量。
+
+开关变更需重启。已有飞书配置若缺少 `feishu_enabled: true`，升级后也会关闭飞书。
+完整边界见 [system.yaml 合同](docs/contracts/system-config.zh-CN.md#前端启用与生命周期)。
 
 启动服务：
 
@@ -253,8 +258,8 @@ fcodex --instance corp-a
 focusctl web open
 ```
 
-全新安装默认启用 Web；从 3.0.2 等旧配置升级后若提示未启用，请用
-`focusctl config codex --open` 设置 `web_enabled: true`，再执行 `focusctl service restart`。
+Web 需要显式启用：用 `focusctl config codex --open` 设置 `web_enabled: true`，
+再执行 `focusctl service restart`。仅填飞书凭据不会启用任何前端。
 
 Focus Web 默认只监听 loopback。SSH local forwarding 仍属于 local mode；浏览器若通过
 non-loopback external origin 访问，则必须经过已配置的可信 HTTPS 反向代理。完整的安全边界、

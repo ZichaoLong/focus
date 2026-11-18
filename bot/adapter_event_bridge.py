@@ -28,7 +28,7 @@ from bot.interaction_contract import (
 )
 from bot.interaction_request_controller import InteractionRequestController
 from bot.operation_owner_coordinator import OperationOwnerCoordinator
-from bot.runtime_admin.controller import RuntimeAdminController
+from bot.runtime_admin.application import RuntimeAdminApplication
 from bot.server_request_contract import ServerRequestIdentity, ServerRequestRoutingMode
 from bot.server_request_coordinator import ServerRequestCoordinator
 from bot.server_request_dispatch import (
@@ -72,9 +72,10 @@ class AdapterEventBridge:
         feishu_root_operations: FeishuRootOperationController,
         thread_runtime_authority: ThreadRuntimeAuthority,
         interaction_leases: InteractionLeaseStore,
-        runtime_admin: RuntimeAdminController,
+        runtime_admin: RuntimeAdminApplication,
         feishu_runtime_disconnect: FeishuRuntimeDisconnectProjection,
         ports: AdapterEventBridgePorts,
+        feishu_enabled: bool,
     ) -> None:
         self._ingress_gate = ingress_gate
         self._notification_pipeline = notification_pipeline
@@ -90,6 +91,7 @@ class AdapterEventBridge:
         self._runtime_admin = runtime_admin
         self._feishu_runtime_disconnect = feishu_runtime_disconnect
         self._ports = ports
+        self._feishu_enabled = feishu_enabled
 
     # Adapter thread -> RuntimeLoop ingress.
 
@@ -292,11 +294,8 @@ class AdapterEventBridge:
             generation,
         ):
             return
-        self._interaction_requests.auto_resolve_request(
-            request_key,
-            backend_epoch,
-            generation,
-        )
+        if self._feishu_enabled:
+            self._interaction_requests.auto_resolve_request(request_key, backend_epoch, generation)
 
     def has_pending_interaction_outside_fcodex_for_root(
         self,
@@ -306,7 +305,7 @@ class AdapterEventBridge:
         if not root_id:
             return True
         return (
-            self._interaction_requests.has_pending_request_for_root(root_id)
+            (self._feishu_enabled and self._interaction_requests.has_pending_request_for_root(root_id))
             or self._server_requests.has_pending_request_for_root(root_id)
         )
 
@@ -326,10 +325,10 @@ class AdapterEventBridge:
             root_thread_id
         )
         self._operation_owner.retry_authoritative_cleanups()
-        self._feishu_root_operations.reconcile_notification(
-            "serverRequest/resolved",
-            {"threadId": root_thread_id},
-        )
+        if self._feishu_enabled:
+            self._feishu_root_operations.reconcile_notification(
+                "serverRequest/resolved", {"threadId": root_thread_id},
+            )
 
     # One disconnect ordering boundary; frontend projection is not authority.
 
@@ -339,6 +338,8 @@ class AdapterEventBridge:
         self._thread_runtime_authority.invalidate_connection()
         self._operation_owner.backend_disconnected()
         self._web_runtime.backend_disconnected()
+        if not self._feishu_enabled:
+            return
         affected_bindings = (
             self._feishu_runtime_disconnect.prepare().affected_bindings
         )

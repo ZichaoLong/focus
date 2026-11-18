@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/data-retention.md`。
 
+自动清理与 CLI data prune 都不依赖飞书或 Web。关闭飞书时直接经本地 GroupChatStore 与附件 owner 清理历史文件，不构造机器人，也不查询飞书。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 ## 1. 管理入口与边界
 
 Focus Web 的设置页提供三个控件：**Focus 记录保留期**、**附件保留期**、**立即清理过期数据**。

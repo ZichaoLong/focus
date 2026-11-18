@@ -216,19 +216,19 @@ class RuntimeAdminBindingApplicationTests(unittest.TestCase):
         self.assertEqual(checks, ["thread-1", "thread-1"])
         self.assertEqual(attach_calls, [(binding, "thread-1")])
 
-    def test_controller_binding_facades_only_delegate_to_application(self) -> None:
+    def test_core_binding_facades_only_delegate_to_binding_application(self) -> None:
         path = (
             pathlib.Path(__file__).parents[1]
             / "bot"
             / "runtime_admin"
-            / "controller.py"
+            / "application.py"
         )
         module = ast.parse(path.read_text(encoding="utf-8"))
         controller = next(
             node
             for node in module.body
             if isinstance(node, ast.ClassDef)
-            and node.name == "RuntimeAdminController"
+            and node.name == "RuntimeAdminApplication"
         )
         facade_names = {
             "binding_inventory_locked",

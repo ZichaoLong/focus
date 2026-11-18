@@ -102,7 +102,9 @@ thread ports; domain facts and transactions remain behind those ports.
 `RuntimeAdminBindingApplication` owns the surface-neutral Runtime Admin binding use
 cases: inventory/read models, prompt admission, attach/detach, clear, and stale
 cleanup. It coordinates the existing binding fact, clear-transaction, and thread
-lifecycle owners without mirroring their state; `RuntimeAdminController` only
+lifecycle owners without mirroring their state. `RuntimeAdminApplication` composes local control routing,
+thread/goal management and reset preflight without Feishu presentation dependencies. The optional
+`RuntimeAdminController` presentation subclass only
 presents Feishu commands/cards and delegates its public binding façade.
 
 `RuntimeAdminOfflineLifecycle` owns the surface-neutral `focusctl` offline lifecycle
@@ -320,6 +322,13 @@ must not recreate parallel state machines.
 ## 5. Key Lifecycle Boundaries
 
 ### 5.1 Service and backend
+
+`focusd` is the independent core host, selecting Feishu and Web under the
+[system.yaml contract](../contracts/system-config.md#frontend-activation-and-lifecycle).
+`CodexHandler` references an existing runtime instead of constructing or starting it. `FeishuTransport`
+owns the connection, starts after core activation, and stops/joins before the producer barrier.
+Disabled Feishu acquires no app lease. Local owners needed to maintain historical records remain available,
+while network routes and presentation are absent.
 
 `ServiceRuntimeLifecycle` activates RuntimeLoop, adapter, control plane, Gateway,
 and workers only after acquiring the service lease. Shutdown closes new ingress,

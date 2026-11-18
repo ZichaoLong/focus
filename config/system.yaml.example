@@ -1,5 +1,7 @@
-app_id: "your_feishu_bot_app_id"
-app_secret: "your_feishu_bot_app_secret"
+# 飞书仅在显式启用时启动；缺失此字段也表示关闭。
+feishu_enabled: false
+app_id: ""
+app_secret: ""
 
 # 飞书 HTTP API 请求超时（秒）；默认值：5
 # request_timeout_seconds: 5

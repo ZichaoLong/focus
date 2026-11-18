@@ -123,6 +123,17 @@ _BACKEND_RESET_EFFECT_OWNERS = (
 
 DEFAULT_RULES = (
     DependencyDirectionRule(
+        name="runtime-admin-application-does-not-depend-on-presentation",
+        source=ModuleSelector(exact_modules=(
+            "bot.runtime_admin.application", "bot.backend_reset.diagnostics",
+        )),
+        forbidden=ModuleSelector(exact_modules=(
+            "bot.runtime_admin.controller", "bot.backend_reset.presenter", "bot.cards",
+            "bot.feishu_bot", "bot.feishu_transport", "bot.standalone",
+        )),
+        reason="core administration and reset evidence remain available without Feishu presentation",
+    ),
+    DependencyDirectionRule(
         name="stores-do-not-depend-on-protocol-or-surfaces",
         source=ModuleSelector(packages=("bot.stores",)),
         forbidden=ModuleSelector(

@@ -123,6 +123,7 @@ def _string_list(
 class SystemConfig:
     """Validated, typed projection of the complete ``system.yaml`` surface."""
 
+    feishu_enabled: bool = False
     app_id: str = ""
     app_secret: str = field(default="", repr=False)
     request_timeout_seconds: float = 5.0
@@ -144,8 +145,6 @@ class SystemConfig:
     def from_dict(
         cls,
         config: Mapping[str, Any],
-        *,
-        require_credentials: bool = True,
     ) -> "SystemConfig":
         if not isinstance(config, Mapping):
             raise ValueError(
@@ -166,20 +165,21 @@ class SystemConfig:
             raise ValueError(f"system.yaml 包含未知配置键：{rendered}")
 
         defaults = cls()
+        feishu_enabled = _boolean(config, "feishu_enabled", defaults.feishu_enabled)
 
         app_id = _string(
             config,
             "app_id",
             defaults.app_id,
-            nonempty=require_credentials,
+            nonempty=feishu_enabled,
         )
         app_secret = _string(
             config,
             "app_secret",
             defaults.app_secret,
-            nonempty=require_credentials,
+            nonempty=feishu_enabled,
         )
-        if require_credentials:
+        if feishu_enabled:
             if "app_id" not in config:
                 raise ValueError("system.yaml 配置 `app_id` 不能为空")
             if "app_secret" not in config:
@@ -193,6 +193,7 @@ class SystemConfig:
         )
 
         return cls(
+            feishu_enabled=feishu_enabled,
             app_id=app_id,
             app_secret=app_secret,
             request_timeout_seconds=_number(

@@ -2,14 +2,12 @@
 Codex 机器人适配层。
 """
 
-import os
-from pathlib import Path
-
 from lark_oapi.event.callback.model.p2_card_action_trigger import P2CardActionTriggerResponse
 
 from bot.codex_handler import CodexHandler
 from bot.feishu_destination_liveness_contract import FeishuDestinationLossProof
 from bot.feishu_bot import FeishuBot
+from bot.focus_runtime.runtime import FocusRuntime
 from bot.system_config import SystemConfig
 
 
@@ -20,14 +18,13 @@ class CodexBot(FeishuBot):
         self,
         *,
         system_config: SystemConfig,
+        runtime: FocusRuntime,
     ):
-        config_dir = Path(os.environ["FOCUS_CONFIG_DIR"]) if "FOCUS_CONFIG_DIR" in os.environ else None
-        data_dir = Path(os.environ["FOCUS_DATA_DIR"]) if "FOCUS_DATA_DIR" in os.environ else None
         super().__init__(
-            data_dir=data_dir,
+            data_dir=runtime.data_dir,
             system_config=system_config,
         )
-        self._handler = CodexHandler(data_dir=data_dir, config_dir=config_dir)
+        self._handler = CodexHandler(runtime=runtime)
         self._handler.on_register(self)
 
     def on_message(self, sender_id: str, chat_id: str, text: str, message_id: str = "") -> None:

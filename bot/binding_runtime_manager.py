@@ -1503,6 +1503,11 @@ class BindingRuntimeManager:
             if str(state["current_thread_id"] or "").strip() == normalized_thread_id
         )
 
+    def bound_binding_records_for_thread_locked(self, thread_id: str) -> tuple[BindingRecordSnapshot, ...]:
+        normalized = str(thread_id or "").strip()
+        return tuple(record for record in self.binding_record_inventory_locked()
+                     if normalized and record.thread_id == normalized)
+
     def attached_bindings_for_thread_locked(self, thread_id: str) -> list[ChatBindingKey]:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
@@ -1572,7 +1577,8 @@ class BindingRuntimeManager:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空。")
-        bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
+        records = self.bound_binding_records_for_thread_locked(normalized_thread_id)
+        bound_bindings = [record.binding for record in records]
         if not bound_bindings:
             raise ValueError("当前没有 Feishu 绑定指向该线程。")
         attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
@@ -1658,12 +1664,9 @@ class BindingRuntimeManager:
         unsubscribe_thread_id = normalized_thread_id if plans else ""
         existing_title = ""
         existing_cwd = ""
-        for binding in bound_bindings:
-            state = self._runtime_state_by_binding.get(binding)
-            if state is None:
-                continue
-            existing_title = existing_title or str(state["current_thread_title"] or "").strip()
-            existing_cwd = existing_cwd or str(state["working_dir"] or "").strip()
+        for record in records:
+            existing_title = existing_title or record.thread_title
+            existing_cwd = existing_cwd or record.working_dir
         return DetachThreadResult(
             thread_id=normalized_thread_id,
             thread_title=existing_title,
@@ -1697,7 +1700,8 @@ class BindingRuntimeManager:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空。")
-        bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
+        records = self.bound_binding_records_for_thread_locked(normalized_thread_id)
+        bound_bindings = [record.binding for record in records]
         if not bound_bindings:
             raise ValueError("当前没有 Feishu 绑定指向该线程。")
         attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
@@ -1735,7 +1739,15 @@ class BindingRuntimeManager:
         normalized_disposition = self._normalize_owner_loss_disposition(owner_loss_disposition)
         state = self._runtime_state_by_binding.get(binding)
         if state is None:
-            raise ValueError("当前 binding 不存在。")
+            record = self.binding_record_snapshot_locked(binding)
+            if record is None or not record.thread_id:
+                raise ValueError("当前 binding 不存在或没有绑定 thread。")
+            # A nonresident record has no live Feishu subscription to retire.
+            return DetachBindingResult(
+                thread_id=record.thread_id, thread_title=record.thread_title,
+                working_dir=record.working_dir, binding_id=format_binding_id(binding),
+                changed=False, already_detached=True,
+            )
         thread_id = str(state["current_thread_id"] or "").strip()
         if not thread_id:
             raise ValueError("当前没有绑定 thread。")
@@ -1807,10 +1819,11 @@ class BindingRuntimeManager:
         return snapshot
 
     def binding_status_state_snapshot_locked(self, binding: ChatBindingKey) -> dict[str, Any]:
-        state = self._runtime_state_by_binding.get(binding)
-        if state is None:
+        record = self.binding_record_snapshot_locked(binding)
+        if record is None:
             raise ValueError(f"未找到绑定：{format_binding_id(binding)}")
-        thread_id = str(state["current_thread_id"] or "").strip()
+        state = self._runtime_state_by_binding.get(binding) or {}
+        thread_id = record.thread_id
         binding_state = "bound" if thread_id else self._unbound_binding_state_label(binding)
         return {
             "binding_id": format_binding_id(binding),
@@ -1819,21 +1832,21 @@ class BindingRuntimeManager:
             "chat_id": binding[1],
             "binding_state": binding_state,
             "thread_id": thread_id,
-            "thread_title": str(state["current_thread_title"] or "").strip(),
-            "working_dir": str(state["working_dir"] or "").strip(),
+            "thread_title": record.thread_title,
+            "working_dir": record.working_dir,
             "feishu_runtime_state": (
-                str(state["feishu_runtime_state"] or "").strip() or FEISHU_RUNTIME_NOT_APPLICABLE
+                record.feishu_runtime_state or FEISHU_RUNTIME_NOT_APPLICABLE
             ),
             "interaction_owner": self.interaction_owner_snapshot_locked(
                 thread_id,
                 current_binding=binding,
             ),
-            "running_turn": self.binding_has_inflight_turn_locked(state),
-            "current_turn_id": str(state["current_turn_id"] or "").strip(),
-            "approval_policy": str(state["approval_policy"] or "").strip(),
-            "permissions_profile_id": str(state["permissions_profile_id"] or "").strip(),
-            "model": str(state["model"] or "").strip(),
-            "reasoning_effort": str(state["reasoning_effort"] or "").strip(),
+            "running_turn": record.has_inflight_turn,
+            "current_turn_id": str(state.get("current_turn_id") or "").strip(),
+            "approval_policy": record.approval_policy,
+            "permissions_profile_id": record.permissions_profile_id,
+            "model": record.model,
+            "reasoning_effort": record.reasoning_effort,
             "goal_objective": str(state.get("goal_objective") or "").strip(),
             "goal_status": str(state.get("goal_status") or "").strip(),
             "goal_token_budget": state.get("goal_token_budget"),
@@ -1852,7 +1865,8 @@ class BindingRuntimeManager:
         normalized_thread_id = str(thread_id or "").strip()
         if not normalized_thread_id:
             raise ValueError("thread_id 不能为空。")
-        bound_bindings = self.bound_bindings_for_thread_locked(normalized_thread_id)
+        records = self.bound_binding_records_for_thread_locked(normalized_thread_id)
+        bound_bindings = [record.binding for record in records]
         attached_bindings = self.attached_bindings_for_thread_locked(normalized_thread_id)
         interaction_owner = self.interaction_owner_snapshot_locked(normalized_thread_id)
         detach_available, detach_reason = detach_availability(normalized_thread_id)
@@ -1862,12 +1876,9 @@ class BindingRuntimeManager:
         attached_binding_set = set(attached_bindings)
         existing_title = ""
         existing_cwd = ""
-        for binding in bound_bindings:
-            state = self._runtime_state_by_binding.get(binding)
-            if state is None:
-                continue
-            existing_title = existing_title or str(state["current_thread_title"] or "").strip()
-            existing_cwd = existing_cwd or str(state["working_dir"] or "").strip()
+        for record in records:
+            existing_title = existing_title or record.thread_title
+            existing_cwd = existing_cwd or record.working_dir
         return {
             "thread_id": normalized_thread_id,
             "thread_title": existing_title,

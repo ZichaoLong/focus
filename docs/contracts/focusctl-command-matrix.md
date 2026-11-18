@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/focusctl-command-matrix.zh-CN.md`.
 
+When Feishu is disabled, service/binding/thread attach, prompt send, image send and binding list --refresh-names report that it is disabled. Binding inspection/local cleanup, thread administration, backend reset and data prune retain their existing rules. Service status shows Feishu transport state and the Web endpoint independently. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 This file defines the formal local `focusctl` management surface.
 
 It answers:

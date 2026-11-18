@@ -43,9 +43,9 @@ class ServerRequestSurfaceDispatcherPorts:
         [str, bool], AutoResolutionTiming | None
     ]
     route_web: Callable[[ServerRequestSurfaceOffer], ServerRequestSurfaceClaim]
-    route_feishu: Callable[[ServerRequestSurfaceOffer], ServerRequestSurfaceClaim]
+    route_feishu: Callable[[ServerRequestSurfaceOffer], ServerRequestSurfaceClaim] | None
     web_has_pending: Callable[[str], bool]
-    feishu_has_pending: Callable[[str], bool]
+    feishu_has_pending: Callable[[str], bool] | None
     cancel_auto_resolution: Callable[[str, AutoResolutionTiming], bool]
 
 
@@ -53,7 +53,17 @@ class ServerRequestSurfaceDispatcher:
     """Route shared callbacks to eligible surfaces and other requests to one."""
 
     def __init__(self, ports: ServerRequestSurfaceDispatcherPorts) -> None:
+        if (ports.route_feishu is None) != (ports.feishu_has_pending is None):
+            raise ValueError("Feishu request routing and pending lookup must participate together")
         self._ports = ports
+
+    def _route_feishu(self, offer: ServerRequestSurfaceOffer) -> ServerRequestSurfaceClaim:
+        if self._ports.route_feishu is None:
+            return ServerRequestSurfaceClaim.from_retained(False)
+        return self._ports.route_feishu(offer)
+
+    def _feishu_has_pending(self, request_key: str) -> bool:
+        return bool(self._ports.feishu_has_pending and self._ports.feishu_has_pending(request_key))
 
     def dispatch(
         self,
@@ -119,7 +129,7 @@ class ServerRequestSurfaceDispatcher:
             )
             claim = self._ports.route_web(offer)
             if self._claim_outcome(claim) == "declined":
-                claim = self._ports.route_feishu(offer)
+                claim = self._route_feishu(offer)
         except Exception:
             # The routing outcome may be unknown, but this exact schedule is
             # always safe to revoke.  It must not later manufacture a response
@@ -130,7 +140,7 @@ class ServerRequestSurfaceDispatcher:
         if (
             timing is not None
             and not self._ports.web_has_pending(request_key)
-            and not self._ports.feishu_has_pending(request_key)
+            and not self._feishu_has_pending(request_key)
         ):
             self._ports.cancel_auto_resolution(request_key, timing)
         if self._claim_outcome(claim) != "claimed":
@@ -147,7 +157,7 @@ class ServerRequestSurfaceDispatcher:
         for surface, route in (
             ("fcodex", self._ports.route_fcodex),
             ("web", self._ports.route_web),
-            ("feishu", self._ports.route_feishu),
+            ("feishu", self._route_feishu),
         ):
             try:
                 outcome = self._claim_outcome(route(offer))
@@ -217,7 +227,7 @@ class ServerRequestSurfaceDispatcher:
             if (
                 timing is not None
                 and not self._ports.web_has_pending(request_key)
-                and not self._ports.feishu_has_pending(request_key)
+                and not self._feishu_has_pending(request_key)
             ):
                 self._ports.cancel_auto_resolution(request_key, timing)
             detail = "; ".join(
@@ -241,7 +251,7 @@ class ServerRequestSurfaceDispatcher:
             )
             try:
                 claimed = (
-                    self._claim_outcome(self._ports.route_feishu(feishu_offer))
+                    self._claim_outcome(self._route_feishu(feishu_offer))
                     == "claimed"
                 )
             except Exception:
@@ -252,7 +262,7 @@ class ServerRequestSurfaceDispatcher:
         if (
             timing is not None
             and not self._ports.web_has_pending(request_key)
-            and not self._ports.feishu_has_pending(request_key)
+            and not self._feishu_has_pending(request_key)
         ):
             self._ports.cancel_auto_resolution(request_key, timing)
         if not claimed:

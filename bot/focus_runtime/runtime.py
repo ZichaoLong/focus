@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import atexit
 import logging
 import pathlib
@@ -10,9 +12,10 @@ import time
 from dataclasses import replace
 from typing import Any, Callable
 
-from lark_oapi.event.callback.model.p2_card_action_trigger import (
-    P2CardActionTriggerResponse,
-)
+if TYPE_CHECKING:
+    from lark_oapi.event.callback.model.p2_card_action_trigger import (
+        P2CardActionTriggerResponse,
+    )
 
 from bot.approval_policy import USER_SELECTABLE_APPROVAL_POLICIES
 from bot.adapters.codex_app_server import (
@@ -58,17 +61,8 @@ from bot.stores.instance_registry_store import InstanceRegistryStore
 from bot.codex_protocol.client import (
     CodexRpcProtocolError,
 )
-from bot.codex_goal_domain import CodexGoalDomain, GoalDomainPorts
-from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
-from bot.codex_help_domain import CodexHelpDomain
-from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts
-from bot.codex_settings_domain import (
-    CodexSettingsDomain,
-    SettingsDomainPorts,
-)
 from bot.focus_runtime.binding_coordinator import BindingRuntimeCoordinator
 from bot.focus_runtime.feishu_platform import FeishuPlatform
-from bot.focus_runtime.feishu_surface import FeishuSurface
 from bot.focus_runtime.feishu_thread_session_composition import (
     compose_feishu_thread_sessions,
 )
@@ -108,8 +102,6 @@ from bot.feishu_root_operation_contract import (
     FeishuRootOperationToken,
 )
 from bot.feishu_root_operation_controller import FeishuRootOperationController
-from bot.feishu_continuation_controller import FeishuContinuationController
-from bot.feishu_resume_settlement import FeishuResumeSettlementService
 from bot.feishu_runtime_disconnect_projection import (
     FeishuRuntimeDisconnectProjection,
 )
@@ -163,8 +155,8 @@ from bot.prompt_turn_entry_controller import (
     PromptTurnEntryPorts,
     ThreadSessionPort,
 )
-from bot.runtime_admin.controller import (
-    RuntimeAdminController,
+from bot.runtime_admin.application import (
+    RuntimeAdminApplication,
     RuntimeAdminCoordinationPort,
     RuntimeAdminPolicyPort,
     RuntimeAdminPorts,
@@ -194,6 +186,7 @@ from bot.server_request_surface_dispatcher import (
 from bot.server_request_dispatch import ServerRequestSurfaceClaim
 from bot.interaction_auto_resolution import InteractionAutoResolutionController
 from bot.direct_thread_target_policy import DirectThreadTargetRegistry
+from bot.stores.group_chat_store import GroupChatStore
 from bot.stores.pending_attachment_store import PendingAttachmentStore
 from bot.stores.app_server_runtime_store import AppServerRuntimeStore
 from bot.stores.chat_binding_store import ChatBindingStore
@@ -268,7 +261,25 @@ def _permissions_summary(permissions_profile_id: str) -> str:
 class FocusRuntime:
     """Compose and expose the Focus service runtime owner graph."""
 
-    def __init__(self, data_dir: pathlib.Path | None = None, config_dir: pathlib.Path | None = None):
+    def __init__(self, data_dir: pathlib.Path | None = None, config_dir: pathlib.Path | None = None,
+                 *, feishu_enabled: bool = False):
+        if feishu_enabled:
+            from bot.codex_goal_domain import CodexGoalDomain, GoalDomainPorts
+            from bot.codex_group_domain import CodexGroupDomain, GroupDomainPorts
+            from bot.codex_help_domain import CodexHelpDomain
+            from bot.codex_threads_ui_domain import CodexThreadsUiDomain, ThreadsUiPorts
+            from bot.codex_settings_domain import (
+                CodexSettingsDomain,
+                SettingsDomainPorts,
+            )
+            from bot.focus_runtime.feishu_surface import FeishuSurface
+            from bot.feishu_continuation_controller import FeishuContinuationController
+            from bot.feishu_resume_settlement import FeishuResumeSettlementService
+            from bot.runtime_admin.controller import (
+                RuntimeAdminController,
+            )
+
+        self._feishu_enabled = feishu_enabled
         feishu_platform = FeishuPlatform()
         self._feishu_platform = feishu_platform
         cfg = CodexConfig.from_dict(load_config_file("codex", directory=config_dir))
@@ -298,7 +309,9 @@ class FocusRuntime:
             ),
         )
         self._service_instance_lease = ServiceInstanceLease(self._data_dir)
-        self._feishu_app_connection_lease = FeishuAppConnectionLease(self._global_data_dir)
+        self._feishu_app_connection_lease = (
+            FeishuAppConnectionLease(self._global_data_dir) if feishu_enabled else None
+        )
         self._instance_registry = InstanceRegistryStore(self._global_data_dir)
         self._thread_runtime_lease_store = ThreadRuntimeLeaseStore(self._global_data_dir)
         self._service_control_plane = ServiceControlPlane(
@@ -790,9 +803,9 @@ class FocusRuntime:
             runtime_authority=self._thread_runtime_authority,
             retire_server_requests_after_stop=lambda: self._server_request_coordinator.retire_connection_epoch(),
             retire_web_after_stop=lambda: self._web_runtime.retire_backend_epoch_after_stop(),
-            retire_feishu_after_stop=lambda: self._interaction_requests.retire_backend_epoch_after_stop(),
-            retire_feishu_root_operations_after_stop=lambda: self._feishu_root_operations.retire_backend_epoch_after_stop(),
-            dispatch_feishu_card_projection_best_effort=self._interaction_requests.project_backend_reset_cards_best_effort,
+            retire_feishu_after_stop=(lambda: self._interaction_requests.retire_backend_epoch_after_stop()) if feishu_enabled else None,
+            retire_feishu_root_operations_after_stop=(lambda: self._feishu_root_operations.retire_backend_epoch_after_stop()) if feishu_enabled else None,
+            dispatch_feishu_card_projection_best_effort=self._interaction_requests.project_backend_reset_cards_best_effort if feishu_enabled else None,
             connect_timeout_seconds=self._adapter_config.connect_timeout_seconds,
             publish_replacement=lambda app_server_url: service_authority.register_instance_runtime(app_server_url=app_server_url),
             runtime_context_guard=self._runtime_loop.assert_worker_context,
@@ -834,16 +847,16 @@ class FocusRuntime:
                     lambda method, params: self._operation_owner.notification(method, params)
                 ),
                 "feishu_projection": (
-                    lambda method, params: self._adapter_notifications.handle_notification(
+                    (lambda method, params: self._adapter_notifications.handle_notification(
                         method,
                         params,
-                    )
+                    )) if feishu_enabled else None
                 ),
                 "feishu_root_operation": (
-                    lambda method, params: self._adapter_events.handle_feishu_root_operation_notification(
+                    (lambda method, params: self._adapter_events.handle_feishu_root_operation_notification(
                         method,
                         params,
-                    )
+                    )) if feishu_enabled else None
                 ),
             },
             assert_runtime_context=self._runtime_loop.assert_worker_context,
@@ -878,15 +891,15 @@ class FocusRuntime:
                         routing_mode=offer.mode,
                     )
                 ),
-                route_feishu=lambda offer: ServerRequestSurfaceClaim.from_retained(
+                route_feishu=(lambda offer: ServerRequestSurfaceClaim.from_retained(
                     self._interaction_requests.handle_adapter_request(
                         offer.identity,
                         auto_resolution_timing=offer.auto_resolution_timing,
                         routing_mode=offer.mode,
                     )
-                ),
+                )) if feishu_enabled else None,
                 web_has_pending=self._web_runtime.has_pending_request,
-                feishu_has_pending=self._interaction_requests.has_pending_request,
+                feishu_has_pending=self._interaction_requests.has_pending_request if feishu_enabled else None,
                 cancel_auto_resolution=(
                     lambda request_key, timing: (
                         self._interaction_auto_resolution.cancel_if_matches(
@@ -912,7 +925,7 @@ class FocusRuntime:
                     self._operation_owner.remove_resolved_server_request
                 ),
                 remove_feishu_resolved=(
-                    self._interaction_requests.remove_resolved_server_request
+                    self._interaction_requests.remove_resolved_server_request if feishu_enabled else None
                 ),
                 reconcile_resolved_root=(
                     lambda root_thread_id: self._adapter_events.reconcile_resolved_interaction_root(
@@ -943,50 +956,51 @@ class FocusRuntime:
             operator_status=self._operational_status_snapshot,
             data_retention=lambda: self._data_retention,
         )
-        feishu_surface: FeishuSurface
-        self._settings_domain = CodexSettingsDomain(
-            ports=SettingsDomainPorts(
-                get_message_context=lambda message_id: feishu_platform.bot.get_message_context(message_id),
-                get_sender_display_name=lambda **kwargs: feishu_platform.bot.get_sender_display_name(**kwargs),
-                debug_sender_name_resolution=lambda open_id: feishu_platform.bot.debug_sender_name_resolution(open_id),
-                get_bot_identity_snapshot=lambda: feishu_platform.bot.get_bot_identity_snapshot(),
-                add_admin_open_id=lambda open_id: feishu_platform.bot.add_admin_open_id(open_id),
-                set_configured_bot_open_id=lambda open_id: feishu_platform.bot.set_configured_bot_open_id(open_id),
-                resolve_session=self._binding_runtime.resolve_session,
-                list_models=lambda: self._adapter.list_models(include_hidden=True),
-                update_runtime_settings=binding_coordinator.update_runtime_settings,
-            ),
-            approval_policies=_APPROVAL_POLICIES,
-        )
-        self._group_domain = CodexGroupDomain(
-            ports=GroupDomainPorts(
-                get_sender_display_name=lambda **kwargs: feishu_platform.bot.get_sender_display_name(**kwargs),
-                get_message_context=lambda message_id: feishu_platform.bot.get_message_context(message_id),
-                reply_text=feishu_platform.reply_text,
-                get_group_mode=lambda chat_id: feishu_platform.bot.get_group_mode(chat_id),
-                is_group_admin=lambda open_id: feishu_platform.bot.is_group_admin(open_id=open_id),
-                get_group_activation_snapshot=lambda chat_id: feishu_platform.bot.get_group_activation_snapshot(chat_id),
-                set_group_mode=lambda chat_id, mode: feishu_platform.bot.set_group_mode(chat_id, mode),
-                activate_group_chat=lambda chat_id, activated_by: feishu_platform.bot.activate_group_chat(
-                    chat_id,
-                    activated_by=activated_by,
+        if feishu_enabled:
+            feishu_surface: FeishuSurface
+            self._settings_domain = CodexSettingsDomain(
+                ports=SettingsDomainPorts(
+                    get_message_context=lambda message_id: feishu_platform.bot.get_message_context(message_id),
+                    get_sender_display_name=lambda **kwargs: feishu_platform.bot.get_sender_display_name(**kwargs),
+                    debug_sender_name_resolution=lambda open_id: feishu_platform.bot.debug_sender_name_resolution(open_id),
+                    get_bot_identity_snapshot=lambda: feishu_platform.bot.get_bot_identity_snapshot(),
+                    add_admin_open_id=lambda open_id: feishu_platform.bot.add_admin_open_id(open_id),
+                    set_configured_bot_open_id=lambda open_id: feishu_platform.bot.set_configured_bot_open_id(open_id),
+                    resolve_session=self._binding_runtime.resolve_session,
+                    list_models=lambda: self._adapter.list_models(include_hidden=True),
+                    update_runtime_settings=binding_coordinator.update_runtime_settings,
                 ),
-                deactivate_group_chat=lambda chat_id: feishu_surface.deactivate_group_chat(chat_id),
-                is_group_chat=feishu_platform.is_group_chat,
-                validate_group_mode_change=lambda chat_id, mode, message_id="": feishu_surface.validate_group_mode_change(
-                    chat_id,
-                    mode,
-                    message_id=message_id,
-                ),
+                approval_policies=_APPROVAL_POLICIES,
             )
-        )
-        self._help_domain = CodexHelpDomain(
-            local_thread_safety_rule=_LOCAL_THREAD_SAFETY_RULE,
-            resolve_session=self._binding_runtime.resolve_session,
-            is_group_chat=feishu_platform.is_group_chat,
-            get_group_mode=lambda chat_id: feishu_platform.bot.get_group_mode(chat_id),
-            get_group_activation_snapshot=lambda chat_id: feishu_platform.bot.get_group_activation_snapshot(chat_id),
-        )
+            self._group_domain = CodexGroupDomain(
+                ports=GroupDomainPorts(
+                    get_sender_display_name=lambda **kwargs: feishu_platform.bot.get_sender_display_name(**kwargs),
+                    get_message_context=lambda message_id: feishu_platform.bot.get_message_context(message_id),
+                    reply_text=feishu_platform.reply_text,
+                    get_group_mode=lambda chat_id: feishu_platform.bot.get_group_mode(chat_id),
+                    is_group_admin=lambda open_id: feishu_platform.bot.is_group_admin(open_id=open_id),
+                    get_group_activation_snapshot=lambda chat_id: feishu_platform.bot.get_group_activation_snapshot(chat_id),
+                    set_group_mode=lambda chat_id, mode: feishu_platform.bot.set_group_mode(chat_id, mode),
+                    activate_group_chat=lambda chat_id, activated_by: feishu_platform.bot.activate_group_chat(
+                        chat_id,
+                        activated_by=activated_by,
+                    ),
+                    deactivate_group_chat=lambda chat_id: feishu_surface.deactivate_group_chat(chat_id),
+                    is_group_chat=feishu_platform.is_group_chat,
+                    validate_group_mode_change=lambda chat_id, mode, message_id="": feishu_surface.validate_group_mode_change(
+                        chat_id,
+                        mode,
+                        message_id=message_id,
+                    ),
+                )
+            )
+            self._help_domain = CodexHelpDomain(
+                local_thread_safety_rule=_LOCAL_THREAD_SAFETY_RULE,
+                resolve_session=self._binding_runtime.resolve_session,
+                is_group_chat=feishu_platform.is_group_chat,
+                get_group_mode=lambda chat_id: feishu_platform.bot.get_group_mode(chat_id),
+                get_group_activation_snapshot=lambda chat_id: feishu_platform.bot.get_group_activation_snapshot(chat_id),
+            )
         self._file_message_domain = FileMessageDomain(
             ports=FileMessagePorts(
                 get_message_context=lambda message_id: feishu_platform.bot.get_message_context(message_id),
@@ -1018,7 +1032,10 @@ class FocusRuntime:
                 lambda: self._web_writer_profile_store.prune(
                     before, protected_clients=self._web_runtime.retention_clients())),
             prune_timings=self._web_gateway.prune_prompt_timings,
-            prune_groups=lambda *args, **kwargs: feishu_platform.bot.prune_group_history(*args, **kwargs),
+            prune_groups=(
+                (lambda *args, **kwargs: feishu_platform.bot.prune_group_history(*args, **kwargs))
+                if feishu_enabled else GroupChatStore(self._data_dir).prune
+            ),
             attachments=self._web_attachment_store, files=self._file_message_domain,
             terminal_results=terminal_result_store, image_deliveries=self._generated_image_delivery_store,
         )
@@ -1073,85 +1090,86 @@ class FocusRuntime:
             ),
             runtime_context_guard=self._runtime_loop.assert_worker_context,
         )
-        self._feishu_resume_settlement = FeishuResumeSettlementService.from_root_operations(
-            self._feishu_root_operations,
-            operation_outcome_unknown=self._operation_start_outcome_unknown,
-        )
-        self._feishu_thread_sessions = compose_feishu_thread_sessions(
-            lock=self._lock,
-            adapter=self._adapter,
-            binding_runtime=self._binding_runtime,
-            binding_transitions=self._feishu_binding_transitions,
-            thread_runtime=self._thread_runtime_authority,
-            root_operations=self._feishu_root_operations,
-            warnings=self._operational_warnings,
-            execution_runtime=self._binding_execution_runtime,
-            execution_output=self._execution_output,
-            schedule_active_observer_recovery=self._execution_recovery.schedule_mirror_watchdog_for_session,
-            acquire_runtime_lease=service_authority.ensure_service_thread_runtime_lease,
-            release_runtime_lease=service_authority.release_service_thread_runtime_lease,
-            runtime_interest_retained=self._web_runtime.has_local_runtime_interest,
-            remember_direct_thread_summary=self._direct_thread_targets.remember,
-            is_thread_not_found_error=thread_targets.is_thread_not_found_error,
-            is_transport_disconnect=thread_targets.is_transport_disconnect,
-        )
-        self._feishu_continuation = FeishuContinuationController(
-            lock=self._lock,
-            adapter=self._adapter,
-            binding_runtime=self._binding_runtime,
-            access_policy=self._thread_access_policy,
-            root_operations=self._feishu_root_operations,
-            resume_settlement=self._feishu_resume_settlement,
-            thread_sessions=self._feishu_thread_sessions,
-            thread_runtime_authority=self._thread_runtime_authority,
-            history_preview_rounds=cfg.history_preview_rounds,
-            show_history_preview_on_resume=cfg.show_history_preview_on_resume,
-            thread_list_query_limit=self._thread_list_query_limit,
-            local_thread_safety_rule=_LOCAL_THREAD_SAFETY_RULE,
-            logger=logger,
-        )
-        self._goal_domain = CodexGoalDomain(
-            ports=GoalDomainPorts(
-                resolve_session=self._binding_runtime.resolve_session,
-                get_thread_goal=self._feishu_continuation.get_thread_goal,
-                mutate_goal=self._feishu_continuation.mutate_goal,
-                clear_goal=self._feishu_continuation.clear_goal,
-                thread_mutation_denial_text=(
-                    self._feishu_continuation.prompt_write_denial_text
-                ),
-                attach_current_binding=lambda sender_id, chat_id, message_id="": self._runtime_admin.attach_binding(
-                    binding_coordinator.chat_binding_key(sender_id, chat_id, message_id),
-                    writer_binding=binding_coordinator.chat_binding_key(sender_id, chat_id, message_id),
-                ),
-                update_runtime_goal_projection=self._feishu_continuation.project_goal,
-                submit_to_runtime=self._runtime_submit,
-                resume_goal=self._feishu_continuation.resume_goal,
-                reply_card=feishu_platform.reply_card,
+        if feishu_enabled:
+            self._feishu_resume_settlement = FeishuResumeSettlementService.from_root_operations(
+                self._feishu_root_operations,
+                operation_outcome_unknown=self._operation_start_outcome_unknown,
             )
-        )
-        self._threads_ui_domain = CodexThreadsUiDomain(
-            continuation=self._feishu_continuation,
-            ports=ThreadsUiPorts(
-                submit_to_runtime=self._runtime_submit,
-                resolve_session=self._binding_runtime.resolve_session,
-                is_group_chat=feishu_platform.is_group_chat,
-                is_group_admin_actor=feishu_platform.is_group_admin_actor,
-                rename_bound_thread_title=binding_coordinator.rename_bound_thread_title,
-                reply_text=feishu_platform.reply_text,
-                reply_card=feishu_platform.reply_card,
-                list_visible_current_dir_threads=thread_targets.list_visible_current_dir_threads,
-                read_thread_summary_authoritatively=thread_targets.read_thread_summary_authoritatively,
-                archive_thread_for_control=self._archive_thread_for_control,
-                rename_thread=thread_targets.rename_direct_thread,
-                patch_message=lambda chat_id, message_id, content: feishu_platform.bot.patch_message(
-                    chat_id,
-                    message_id,
-                    content,
-                ).ok,
-                is_thread_not_loaded_error=thread_targets.is_thread_not_loaded_error,
-                threads_initial_limit=self._threads_initial_limit,
-            ),
-        )
+            self._feishu_thread_sessions = compose_feishu_thread_sessions(
+                lock=self._lock,
+                adapter=self._adapter,
+                binding_runtime=self._binding_runtime,
+                binding_transitions=self._feishu_binding_transitions,
+                thread_runtime=self._thread_runtime_authority,
+                root_operations=self._feishu_root_operations,
+                warnings=self._operational_warnings,
+                execution_runtime=self._binding_execution_runtime,
+                execution_output=self._execution_output,
+                schedule_active_observer_recovery=self._execution_recovery.schedule_mirror_watchdog_for_session,
+                acquire_runtime_lease=service_authority.ensure_service_thread_runtime_lease,
+                release_runtime_lease=service_authority.release_service_thread_runtime_lease,
+                runtime_interest_retained=self._web_runtime.has_local_runtime_interest,
+                remember_direct_thread_summary=self._direct_thread_targets.remember,
+                is_thread_not_found_error=thread_targets.is_thread_not_found_error,
+                is_transport_disconnect=thread_targets.is_transport_disconnect,
+            )
+            self._feishu_continuation = FeishuContinuationController(
+                lock=self._lock,
+                adapter=self._adapter,
+                binding_runtime=self._binding_runtime,
+                access_policy=self._thread_access_policy,
+                root_operations=self._feishu_root_operations,
+                resume_settlement=self._feishu_resume_settlement,
+                thread_sessions=self._feishu_thread_sessions,
+                thread_runtime_authority=self._thread_runtime_authority,
+                history_preview_rounds=cfg.history_preview_rounds,
+                show_history_preview_on_resume=cfg.show_history_preview_on_resume,
+                thread_list_query_limit=self._thread_list_query_limit,
+                local_thread_safety_rule=_LOCAL_THREAD_SAFETY_RULE,
+                logger=logger,
+            )
+            self._goal_domain = CodexGoalDomain(
+                ports=GoalDomainPorts(
+                    resolve_session=self._binding_runtime.resolve_session,
+                    get_thread_goal=self._feishu_continuation.get_thread_goal,
+                    mutate_goal=self._feishu_continuation.mutate_goal,
+                    clear_goal=self._feishu_continuation.clear_goal,
+                    thread_mutation_denial_text=(
+                        self._feishu_continuation.prompt_write_denial_text
+                    ),
+                    attach_current_binding=lambda sender_id, chat_id, message_id="": self._runtime_admin.attach_binding(
+                        binding_coordinator.chat_binding_key(sender_id, chat_id, message_id),
+                        writer_binding=binding_coordinator.chat_binding_key(sender_id, chat_id, message_id),
+                    ),
+                    update_runtime_goal_projection=self._feishu_continuation.project_goal,
+                    submit_to_runtime=self._runtime_submit,
+                    resume_goal=self._feishu_continuation.resume_goal,
+                    reply_card=feishu_platform.reply_card,
+                )
+            )
+            self._threads_ui_domain = CodexThreadsUiDomain(
+                continuation=self._feishu_continuation,
+                ports=ThreadsUiPorts(
+                    submit_to_runtime=self._runtime_submit,
+                    resolve_session=self._binding_runtime.resolve_session,
+                    is_group_chat=feishu_platform.is_group_chat,
+                    is_group_admin_actor=feishu_platform.is_group_admin_actor,
+                    rename_bound_thread_title=binding_coordinator.rename_bound_thread_title,
+                    reply_text=feishu_platform.reply_text,
+                    reply_card=feishu_platform.reply_card,
+                    list_visible_current_dir_threads=thread_targets.list_visible_current_dir_threads,
+                    read_thread_summary_authoritatively=thread_targets.read_thread_summary_authoritatively,
+                    archive_thread_for_control=self._archive_thread_for_control,
+                    rename_thread=thread_targets.rename_direct_thread,
+                    patch_message=lambda chat_id, message_id, content: feishu_platform.bot.patch_message(
+                        chat_id,
+                        message_id,
+                        content,
+                    ).ok,
+                    is_thread_not_loaded_error=thread_targets.is_thread_not_loaded_error,
+                    threads_initial_limit=self._threads_initial_limit,
+                ),
+            )
         self._thread_lifecycle = ThreadLifecycleService(
             lock=self._lock,
             binding_runtime=self._binding_runtime,
@@ -1218,7 +1236,8 @@ class FocusRuntime:
                 ),
             ),
         )
-        self._runtime_admin = RuntimeAdminController(
+        admin_type = RuntimeAdminController if feishu_enabled else RuntimeAdminApplication
+        self._runtime_admin = admin_type(
             lock=self._lock,
             binding_runtime=self._binding_runtime,
             interaction_requests=self._interaction_requests,
@@ -1239,15 +1258,11 @@ class FocusRuntime:
                         binding_coordinator.unsubscribe_thread_unless_web_runtime_requires_interest
                     ),
                     attach_binding=(
-                        self._feishu_continuation.attach_binding_for_control
+                        self._feishu_continuation.attach_binding_for_control if feishu_enabled else None
                     ),
                     get_thread_goal=lambda thread_id: self._adapter.get_thread_goal(thread_id),
-                    set_thread_goal=(
-                        self._feishu_continuation.set_thread_goal_for_control
-                    ),
-                    clear_thread_goal=(
-                        self._feishu_continuation.clear_thread_goal_for_control
-                    ),
+                    set_thread_goal=lambda *args, **kwargs: self._adapter.set_thread_goal(*args, **kwargs),
+                    clear_thread_goal=lambda thread_id: self._adapter.clear_thread_goal(thread_id),
                     resolve_thread_target_for_control_params=(
                         thread_targets.resolve_thread_target_for_control_params
                     ),
@@ -1298,7 +1313,7 @@ class FocusRuntime:
                         binding, **kwargs
                     ),
                     resolve_binding_chat_display_name=feishu_platform.resolve_binding_chat_display_name,
-                ),
+                ) if feishu_enabled else None,
             ),
         )
         self._feishu_runtime_disconnect = FeishuRuntimeDisconnectProjection(
@@ -1306,6 +1321,7 @@ class FocusRuntime:
             runtime_context_guard=self._runtime_loop.assert_worker_context,
         )
         self._adapter_events = AdapterEventBridge(
+            feishu_enabled=feishu_enabled,
             ingress_gate=self._adapter_ingress_gate,
             notification_pipeline=self._adapter_notification_pipeline,
             server_requests=self._server_request_coordinator,
@@ -1363,288 +1379,291 @@ class FocusRuntime:
                 ),
             ),
         )
-        self._prompt_turn_entry = PromptTurnEntryController(
-            execution_runtime=self._binding_execution_runtime,
-            ports=PromptTurnEntryPorts(
-                session=ThreadSessionPort(
-                    resolve_session=self._binding_runtime.resolve_session,
-                    clear_thread_binding=lambda sender_id, chat_id, message_id="": binding_coordinator.clear_thread_binding(
-                        sender_id,
-                        chat_id,
-                        message_id=message_id,
+        if feishu_enabled:
+            self._prompt_turn_entry = PromptTurnEntryController(
+                execution_runtime=self._binding_execution_runtime,
+                ports=PromptTurnEntryPorts(
+                    session=ThreadSessionPort(
+                        resolve_session=self._binding_runtime.resolve_session,
+                        clear_thread_binding=lambda sender_id, chat_id, message_id="": binding_coordinator.clear_thread_binding(
+                            sender_id,
+                            chat_id,
+                            message_id=message_id,
+                        ),
+                        reattach_bound_thread=(
+                            self._feishu_thread_sessions.reattach_bound_thread
+                        ),
+                        create_and_bind_thread=(
+                            self._feishu_thread_sessions.create_and_bind_thread
+                        ),
+                        message_reply_in_thread=feishu_platform.message_reply_in_thread,
+                        group_actor_open_id=feishu_platform.group_actor_open_id,
+                        access_policy=self._thread_access_policy,
+                        detached_runtime_attach_check=service_authority.detached_runtime_attach_check,
                     ),
-                    reattach_bound_thread=(
-                        self._feishu_thread_sessions.reattach_bound_thread
+                    root_operation=FeishuRootOperationPort(
+                        admit=self._feishu_root_operations.admit,
+                        arm_continuation=(
+                            self._feishu_root_operations.arm_continuation
+                        ),
+                        await_start_identity=(
+                            self._feishu_root_operations.await_start_identity
+                        ),
+                        accept_prompt_start=(
+                            self._feishu_root_operations.accept_prompt_start
+                        ),
+                        claim_prompt_interrupt_candidate=(
+                            self._feishu_root_operations.claim_prompt_interrupt_candidate
+                        ),
+                        consume_prompt_interrupt_candidate=(
+                            self._feishu_root_operations.consume_prompt_interrupt_candidate
+                        ),
+                        restore_prompt_interrupt_candidate_after_pre_send=(
+                            self._feishu_root_operations.restore_prompt_interrupt_candidate_after_pre_send
+                        ),
+                        settle_known_failure=(
+                            self._feishu_root_operations.settle_known_failure
+                        ),
+                        settle_known_mutation=(
+                            self._feishu_root_operations.settle_known_mutation
+                        ),
+                        acknowledge_continuing=(
+                            self._feishu_root_operations.acknowledge_continuing
+                        ),
+                        mark_outcome_unknown=(
+                            self._feishu_root_operations.mark_outcome_unknown
+                        ),
+                        continuation_may_autostart=(
+                            self._feishu_continuation.resume_may_autostart
+                        ),
                     ),
-                    create_and_bind_thread=(
-                        self._feishu_thread_sessions.create_and_bind_thread
+                    interaction=InteractionPort(
+                        runtime_recovery_reason=thread_targets.runtime_recovery_reason,
+                        operation_outcome_unknown=self._operation_start_outcome_unknown,
+                        is_turn_thread_not_found_error=thread_targets.is_turn_thread_not_found_error,
+                        is_thread_not_found_error=thread_targets.is_thread_not_found_error,
+                        is_pre_send_error=thread_targets.is_pre_send_error,
+                        is_turn_interrupt_rejected_error=(
+                            thread_targets.is_turn_interrupt_rejected_error
+                        ),
+                        start_turn=lambda **kwargs: (
+                            self._thread_runtime_authority.start_turn(**kwargs)
+                        ),
+                        interrupt_running_turn=thread_targets.interrupt_running_turn,
+                        finalize_input_items=self._file_message_domain.finalize_prompt_input,
                     ),
-                    message_reply_in_thread=feishu_platform.message_reply_in_thread,
-                    group_actor_open_id=feishu_platform.group_actor_open_id,
-                    access_policy=self._thread_access_policy,
-                    detached_runtime_attach_check=service_authority.detached_runtime_attach_check,
+                    presentation=PresentationPort(
+                        claim_reserved_execution_card=feishu_platform.claim_reserved_execution_card,
+                        patch_message=lambda chat_id, message_id, content: feishu_platform.bot.patch_message(
+                            chat_id,
+                            message_id,
+                            content,
+                        ),
+                        open_initial_execution_page=(
+                            self._execution_output.open_initial_execution_page
+                        ),
+                        flush_execution_card_for_session=(
+                            self._execution_output.flush_execution_card_for_session
+                        ),
+                        schedule_mirror_watchdog=self._schedule_mirror_watchdog,
+                        reconcile_execution_snapshot=self._reconcile_execution_snapshot,
+                        refresh_terminal_card=(
+                            lambda session: self._terminal_execution.refresh_terminal_card(
+                                session
+                            )
+                        ),
+                        finalize_execution=(
+                            lambda session: self._terminal_execution.finalize(session)
+                        ),
+                        mark_runtime_degraded=self._mark_runtime_degraded,
+                        reply_text=feishu_platform.reply_text,
+                        mirror_watchdog_seconds=lambda: self._mirror_watchdog_seconds,
+                    ),
                 ),
-                root_operation=FeishuRootOperationPort(
-                    admit=self._feishu_root_operations.admit,
-                    arm_continuation=(
-                        self._feishu_root_operations.arm_continuation
+            )
+            self._feishu_compact_execution = FeishuCompactExecutionService(
+                execution_runtime=self._binding_execution_runtime,
+                ports=FeishuCompactExecutionPorts(
+                    runtime=FeishuCompactRuntimePort(
+                        resolve_session=self._binding_runtime.resolve_session,
+                        writer_denial_text=(
+                            lambda binding, chat_id, thread_id, message_id: (
+                                self._thread_access_policy.prompt_write_denial_text(
+                                    binding,
+                                    chat_id,
+                                    thread_id,
+                                    message_id=message_id,
+                                )
+                            )
+                        ),
+                        message_reply_in_thread=(
+                            lambda message_id: feishu_platform.message_reply_in_thread(message_id)
+                        ),
+                        group_actor_open_id=feishu_platform.group_actor_open_id,
                     ),
-                    await_start_identity=(
-                        self._feishu_root_operations.await_start_identity
+                    root_operation=FeishuCompactRootOperationPort(
+                        admit=lambda *args, **kwargs: self._feishu_root_operations.admit(
+                            *args,
+                            **kwargs,
+                        ),
+                        settle_known_failure=(
+                            lambda *args, **kwargs: self._feishu_root_operations.settle_known_failure(
+                                *args,
+                                **kwargs,
+                            )
+                        ),
+                        await_start_identity=(
+                            lambda token: self._feishu_root_operations.await_start_identity(
+                                token
+                            )
+                        ),
+                        mark_start_outcome_unknown=(
+                            lambda *args, **kwargs: self._mark_compact_start_outcome_unknown(
+                                *args,
+                                **kwargs,
+                            )
+                        ),
                     ),
-                    accept_prompt_start=(
-                        self._feishu_root_operations.accept_prompt_start
+                    adapter=FeishuCompactAdapterPort(
+                        compact_thread=lambda thread_id: self._adapter.compact_thread(
+                            thread_id
+                        ),
+                        read_thread=lambda *args, **kwargs: self._adapter.read_thread(
+                            *args,
+                            **kwargs,
+                        ),
+                        operation_start_outcome_unknown=self._operation_start_outcome_unknown,
+                        is_thread_not_loaded_error=thread_targets.is_thread_not_loaded_error,
                     ),
-                    claim_prompt_interrupt_candidate=(
-                        self._feishu_root_operations.claim_prompt_interrupt_candidate
-                    ),
-                    consume_prompt_interrupt_candidate=(
-                        self._feishu_root_operations.consume_prompt_interrupt_candidate
-                    ),
-                    restore_prompt_interrupt_candidate_after_pre_send=(
-                        self._feishu_root_operations.restore_prompt_interrupt_candidate_after_pre_send
-                    ),
-                    settle_known_failure=(
-                        self._feishu_root_operations.settle_known_failure
-                    ),
-                    settle_known_mutation=(
-                        self._feishu_root_operations.settle_known_mutation
-                    ),
-                    acknowledge_continuing=(
-                        self._feishu_root_operations.acknowledge_continuing
-                    ),
-                    mark_outcome_unknown=(
-                        self._feishu_root_operations.mark_outcome_unknown
-                    ),
-                    continuation_may_autostart=(
-                        self._feishu_continuation.resume_may_autostart
+                    presentation=FeishuCompactPresentationPort(
+                        open_initial_execution_page=self._execution_output.open_initial_execution_page,
+                        flush_execution_card_for_session=self._execution_output.flush_execution_card_for_session,
+                        schedule_mirror_watchdog=(
+                            lambda sender_id, chat_id: self._schedule_mirror_watchdog(
+                                sender_id,
+                                chat_id,
+                            )
+                        ),
                     ),
                 ),
-                interaction=InteractionPort(
-                    runtime_recovery_reason=thread_targets.runtime_recovery_reason,
-                    operation_outcome_unknown=self._operation_start_outcome_unknown,
-                    is_turn_thread_not_found_error=thread_targets.is_turn_thread_not_found_error,
-                    is_thread_not_found_error=thread_targets.is_thread_not_found_error,
-                    is_pre_send_error=thread_targets.is_pre_send_error,
-                    is_turn_interrupt_rejected_error=(
-                        thread_targets.is_turn_interrupt_rejected_error
+                runtime_context_guard=self._runtime_loop.assert_worker_context,
+            )
+            self._feishu_execution_queue_service = FeishuExecutionQueueService(
+                queue=self._feishu_execution_queue,
+                ports=FeishuExecutionQueueServicePorts(
+                    lock=self._lock,
+                    ingress_snapshot=binding_coordinator.feishu_queue_ingress_snapshot,
+                    binding_execution_snapshot_locked=(
+                        binding_coordinator.feishu_binding_execution_snapshot_locked
                     ),
-                    start_turn=lambda **kwargs: (
-                        self._thread_runtime_authority.start_turn(**kwargs)
-                    ),
-                    interrupt_running_turn=thread_targets.interrupt_running_turn,
-                    finalize_input_items=self._file_message_domain.finalize_prompt_input,
-                ),
-                presentation=PresentationPort(
-                    claim_reserved_execution_card=feishu_platform.claim_reserved_execution_card,
-                    patch_message=lambda chat_id, message_id, content: feishu_platform.bot.patch_message(
-                        chat_id,
-                        message_id,
-                        content,
-                    ),
-                    open_initial_execution_page=(
-                        self._execution_output.open_initial_execution_page
-                    ),
-                    flush_execution_card_for_session=(
-                        self._execution_output.flush_execution_card_for_session
-                    ),
-                    schedule_mirror_watchdog=self._schedule_mirror_watchdog,
-                    reconcile_execution_snapshot=self._reconcile_execution_snapshot,
-                    refresh_terminal_card=(
-                        lambda session: self._terminal_execution.refresh_terminal_card(
-                            session
+                    binding_execution_active_locked=(
+                        lambda binding: bool(
+                            (
+                                session := self._binding_runtime.resident_session_snapshot_locked(
+                                    binding
+                                )
+                            )
+                            and session.execution.has_execution_anchor
                         )
                     ),
-                    finalize_execution=(
-                        lambda session: self._terminal_execution.finalize(session)
-                    ),
-                    mark_runtime_degraded=self._mark_runtime_degraded,
-                    reply_text=feishu_platform.reply_text,
-                    mirror_watchdog_seconds=lambda: self._mirror_watchdog_seconds,
-                ),
-            ),
-        )
-        self._feishu_compact_execution = FeishuCompactExecutionService(
-            execution_runtime=self._binding_execution_runtime,
-            ports=FeishuCompactExecutionPorts(
-                runtime=FeishuCompactRuntimePort(
-                    resolve_session=self._binding_runtime.resolve_session,
                     writer_denial_text=(
-                        lambda binding, chat_id, thread_id, message_id: (
+                        lambda binding, chat_id, root_thread_id, message_id: (
                             self._thread_access_policy.prompt_write_denial_text(
                                 binding,
                                 chat_id,
-                                thread_id,
+                                root_thread_id,
                                 message_id=message_id,
                             )
                         )
                     ),
-                    message_reply_in_thread=(
-                        lambda message_id: feishu_platform.message_reply_in_thread(message_id)
+                    current_process_local_turn_id=(
+                        self._thread_access_policy.current_process_local_turn_id
                     ),
-                    group_actor_open_id=feishu_platform.group_actor_open_id,
-                ),
-                root_operation=FeishuCompactRootOperationPort(
-                    admit=lambda *args, **kwargs: self._feishu_root_operations.admit(
-                        *args,
-                        **kwargs,
-                    ),
-                    settle_known_failure=(
-                        lambda *args, **kwargs: self._feishu_root_operations.settle_known_failure(
-                            *args,
-                            **kwargs,
-                        )
-                    ),
-                    await_start_identity=(
-                        lambda token: self._feishu_root_operations.await_start_identity(
-                            token
-                        )
-                    ),
-                    mark_start_outcome_unknown=(
-                        lambda *args, **kwargs: self._mark_compact_start_outcome_unknown(
-                            *args,
-                            **kwargs,
-                        )
-                    ),
-                ),
-                adapter=FeishuCompactAdapterPort(
-                    compact_thread=lambda thread_id: self._adapter.compact_thread(
-                        thread_id
-                    ),
-                    read_thread=lambda *args, **kwargs: self._adapter.read_thread(
-                        *args,
-                        **kwargs,
-                    ),
-                    operation_start_outcome_unknown=self._operation_start_outcome_unknown,
-                    is_thread_not_loaded_error=thread_targets.is_thread_not_loaded_error,
-                ),
-                presentation=FeishuCompactPresentationPort(
-                    open_initial_execution_page=self._execution_output.open_initial_execution_page,
-                    flush_execution_card_for_session=self._execution_output.flush_execution_card_for_session,
-                    schedule_mirror_watchdog=(
-                        lambda sender_id, chat_id: self._schedule_mirror_watchdog(
-                            sender_id,
-                            chat_id,
-                        )
-                    ),
-                ),
-            ),
-            runtime_context_guard=self._runtime_loop.assert_worker_context,
-        )
-        self._feishu_execution_queue_service = FeishuExecutionQueueService(
-            queue=self._feishu_execution_queue,
-            ports=FeishuExecutionQueueServicePorts(
-                lock=self._lock,
-                ingress_snapshot=binding_coordinator.feishu_queue_ingress_snapshot,
-                binding_execution_snapshot_locked=(
-                    binding_coordinator.feishu_binding_execution_snapshot_locked
-                ),
-                binding_execution_active_locked=(
-                    lambda binding: bool(
-                        (
-                            session := self._binding_runtime.resident_session_snapshot_locked(
-                                binding
+                    prompt_queue_admission_check=(
+                        lambda binding,
+                        chat_id,
+                        root_thread_id,
+                        turn_id,
+                        message_id,
+                        has_exact_queue_continuity: (
+                            self._thread_access_policy.prompt_queue_admission_check(
+                                binding,
+                                chat_id,
+                                root_thread_id,
+                                turn_id,
+                                message_id=message_id,
+                                has_exact_queue_continuity=(has_exact_queue_continuity),
                             )
                         )
-                        and session.execution.has_execution_anchor
-                    )
-                ),
-                writer_denial_text=(
-                    lambda binding, chat_id, root_thread_id, message_id: (
-                        self._thread_access_policy.prompt_write_denial_text(
-                            binding,
-                            chat_id,
-                            root_thread_id,
-                            message_id=message_id,
+                    ),
+                    start_prompt=lambda *args, **kwargs: (
+                        self._prompt_turn_entry.start_prompt_turn_result(*args, **kwargs)
+                    ),
+                    start_compact=self._feishu_compact_execution.start,
+                    load_message_context=(
+                        lambda message_id: feishu_platform.bot.get_message_context(message_id) or {}
+                    ),
+                    remember_message_context=(
+                        lambda message_id, context: remember_message_context(
+                            feishu_platform.bot,
+                            message_id,
+                            context,
                         )
-                    )
-                ),
-                current_process_local_turn_id=(
-                    self._thread_access_policy.current_process_local_turn_id
-                ),
-                prompt_queue_admission_check=(
-                    lambda binding,
-                    chat_id,
-                    root_thread_id,
-                    turn_id,
-                    message_id,
-                    has_exact_queue_continuity: (
-                        self._thread_access_policy.prompt_queue_admission_check(
-                            binding,
-                            chat_id,
-                            root_thread_id,
-                            turn_id,
-                            message_id=message_id,
-                            has_exact_queue_continuity=(has_exact_queue_continuity),
+                    ),
+                    prepare_queued_prompt_text=(
+                        lambda **kwargs: prepare_queued_prompt_text(
+                            feishu_platform.bot,
+                            **kwargs,
                         )
-                    )
+                    ),
+                    reply_text=feishu_platform.reply_text,
+                    reconcile_terminal=self._feishu_root_operations.reconcile_terminal,
                 ),
-                start_prompt=lambda *args, **kwargs: (
-                    self._prompt_turn_entry.start_prompt_turn_result(*args, **kwargs)
+                runtime_context_guard=self._runtime_loop.assert_worker_context,
+            )
+            self._terminal_execution = FeishuExecutionFinalizationController(
+                binding_runtime=self._binding_runtime,
+                turn_execution=self._turn_execution,
+                execution_output=self._execution_output,
+                runtime_context_guard=self._runtime_loop.assert_worker_context,
+                ports=FeishuExecutionFinalizationPorts(
+                    lock=self._lock,
+                    release_main_turn=binding_coordinator.release_main_turn_for_binding,
+                    drain_execution_queue=self._feishu_execution_queue_service.drain,
                 ),
-                start_compact=self._feishu_compact_execution.start,
-                load_message_context=(
-                    lambda message_id: feishu_platform.bot.get_message_context(message_id) or {}
-                ),
-                remember_message_context=(
-                    lambda message_id, context: remember_message_context(
-                        feishu_platform.bot,
-                        message_id,
-                        context,
-                    )
-                ),
-                prepare_queued_prompt_text=(
-                    lambda **kwargs: prepare_queued_prompt_text(
-                        feishu_platform.bot,
-                        **kwargs,
-                    )
-                ),
-                reply_text=feishu_platform.reply_text,
-                reconcile_terminal=self._feishu_root_operations.reconcile_terminal,
-            ),
-            runtime_context_guard=self._runtime_loop.assert_worker_context,
-        )
-        self._terminal_execution = FeishuExecutionFinalizationController(
-            binding_runtime=self._binding_runtime,
-            turn_execution=self._turn_execution,
-            execution_output=self._execution_output,
-            runtime_context_guard=self._runtime_loop.assert_worker_context,
-            ports=FeishuExecutionFinalizationPorts(
+            )
+            feishu_surface = FeishuSurface(
                 lock=self._lock,
-                release_main_turn=binding_coordinator.release_main_turn_for_binding,
-                drain_execution_queue=self._feishu_execution_queue_service.drain,
-            ),
-        )
-        feishu_surface = FeishuSurface(
-            lock=self._lock,
-            adapter=self._adapter,
-            platform=feishu_platform,
-            binding_runtime=self._binding_runtime,
-            binding_runtime_coordinator=binding_coordinator,
-            thread_access_policy=self._thread_access_policy,
-            direct_thread_targets=self._codex_thread_targets,
-            interaction_requests=self._interaction_requests,
-            feishu_execution_queue_service=self._feishu_execution_queue_service,
-            feishu_thread_sessions=self._feishu_thread_sessions,
-            file_message_domain=self._file_message_domain,
-            prompt_turn_entry=self._prompt_turn_entry,
-            runtime_admin=self._runtime_admin,
-            help_domain=self._help_domain,
-            settings_domain=self._settings_domain,
-            group_domain=self._group_domain,
-            threads_ui_domain=self._threads_ui_domain,
-            goal_domain=self._goal_domain,
-            terminal_results=terminal_results,
-        )
-        self._feishu_surface = feishu_surface
+                adapter=self._adapter,
+                platform=feishu_platform,
+                binding_runtime=self._binding_runtime,
+                binding_runtime_coordinator=binding_coordinator,
+                thread_access_policy=self._thread_access_policy,
+                direct_thread_targets=self._codex_thread_targets,
+                interaction_requests=self._interaction_requests,
+                feishu_execution_queue_service=self._feishu_execution_queue_service,
+                feishu_thread_sessions=self._feishu_thread_sessions,
+                file_message_domain=self._file_message_domain,
+                prompt_turn_entry=self._prompt_turn_entry,
+                runtime_admin=self._runtime_admin,
+                help_domain=self._help_domain,
+                settings_domain=self._settings_domain,
+                group_domain=self._group_domain,
+                threads_ui_domain=self._threads_ui_domain,
+                goal_domain=self._goal_domain,
+                terminal_results=terminal_results,
+            )
+            self._feishu_surface = feishu_surface
         self._service_runtime_lifecycle = ServiceRuntimeLifecycle(
             activation=ServiceRuntimeActivationPorts(
                 acquire_service_lease=lambda: self._service_instance_lease.acquire(),
-                prepare_owned_state=lambda: service_authority.prepare_owned_state(feishu_platform.bot.app_id),
+                prepare_owned_state=lambda: service_authority.prepare_owned_state(
+                    feishu_platform.bot.app_id if feishu_enabled else ""),
+                start_feishu_transport=(lambda: feishu_platform.bot.start()) if feishu_enabled else None,
                 start_runtime_loop=lambda: self._runtime_loop.start(),
                 restore_runtime_state=self._restore_service_runtime_state,
                 start_adapter=lambda: self._adapter.start(),
-                start_destination_liveness_worker=self._destination_liveness.start,
+                start_destination_liveness_worker=self._destination_liveness.start if feishu_enabled else None,
                 start_control_plane=lambda: self._service_control_plane.start(),
                 publish_control_endpoint=lambda endpoint: (
                     self._service_instance_lease.publish_control_endpoint(endpoint)
@@ -1658,6 +1677,7 @@ class FocusRuntime:
                     lambda: self._ingress.run_external_transaction(self._data_retention.prune)),
             ),
             shutdown=ServiceRuntimeShutdownPorts(
+                stop_feishu_transport=self._stop_feishu_transport if feishu_enabled else None,
                 stop_data_retention=self._data_retention.stop,
                 cancel_frontend_timers=binding_coordinator.cancel_frontend_runtime_timers,
                 web_is_running=lambda: bool(self._web_gateway.endpoint),
@@ -1771,6 +1791,11 @@ class FocusRuntime:
         adapter_ingress = self._adapter_ingress_gate.snapshot()
         destination_liveness = self._destination_liveness.snapshot()
         warnings = self._operational_warnings.snapshot(limit=20)
+        feishu_status = (
+            self._feishu_platform.bot.transport_status()
+            if self._feishu_enabled and self._feishu_platform.is_attached
+            else {"state": "disabled" if not self._feishu_enabled else "stopped", "error": ""}
+        )
         adapter_ingress_degraded = bool(
             adapter_ingress.backend_reset_blocked
             or adapter_ingress.cleanup_required
@@ -1788,6 +1813,7 @@ class FocusRuntime:
                     or active_task_over_threshold
                     or adapter_ingress_degraded
                     or destination_liveness.degraded
+                    or (self._feishu_enabled and feishu_status["state"] in {"failed", "reconnecting"})
                 )
                 else "ok"
             ),
@@ -1811,6 +1837,10 @@ class FocusRuntime:
                         else ""
                     )
                 ),
+            },
+            "feishu": {
+                "enabled": self._feishu_enabled,
+                **feishu_status,
             },
             "feishu_destination_liveness": {
                 "worker_running": destination_liveness.worker_running,
@@ -1836,8 +1866,19 @@ class FocusRuntime:
             },
         }
 
-    def start(self, bot) -> None:
-        self._feishu_platform.attach(bot)
+    @property
+    def data_dir(self) -> pathlib.Path:
+        return self._data_dir
+
+    def _stop_feishu_transport(self) -> None:
+        if self._feishu_platform.is_attached:
+            self._feishu_platform.bot.stop()
+
+    def start(self, bot=None) -> None:
+        if self._feishu_enabled != (bot is not None):
+            raise ValueError("Feishu frontend attachment must match feishu_enabled")
+        if bot is not None:
+            self._feishu_platform.attach(bot)
         set_terminal_result_text_resolver = getattr(bot, "set_terminal_result_text_resolver", None)
         if callable(set_terminal_result_text_resolver):
             set_terminal_result_text_resolver(
@@ -1857,7 +1898,8 @@ class FocusRuntime:
         self._runtime_call(self._restore_service_runtime_state_on_runtime)
 
     def _restore_service_runtime_state_on_runtime(self) -> None:
-        self._binding_runtime.hydrate_stored_bindings(replace=True)
+        if self._feishu_enabled:
+            self._binding_runtime.hydrate_stored_bindings(replace=True)
 
     def _schedule_fcodex_participant_expiry(
         self,

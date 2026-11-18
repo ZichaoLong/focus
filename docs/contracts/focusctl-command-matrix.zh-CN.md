@@ -2,6 +2,8 @@
 
 文档角色：中文规范源。英文同步副本：`docs/contracts/focusctl-command-matrix.md`。
 
+关闭飞书后，service/binding/thread attach、prompt send、image send 和 binding list --refresh-names 明确报告未启用。binding 查询与本地清理、thread 管理、backend reset 和 data prune 继续按既有规则工作。service status 分别显示飞书连接状态与 Web 端点。 [前端开关合同](./system-config.zh-CN.md#前端启用与生命周期)
+
 本文定义本地 `focusctl` 管理面的正式命令面。
 
 它只回答：

@@ -2,6 +2,8 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/feishu-thread-lifecycle.zh-CN.md`.
 
+With Feishu disabled, persisted bindings are inspected/cleaned as detached local records without hydrating live runtime, subscribers or FIFO. Re-enabling requires the existing explicit attach/input admission. Backend reset still confirms old backend stop before retiring the core epoch; absent Feishu participants produce no fabricated retirement receipt. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+
 This document defines the current thread lifecycle contract for the Feishu side.
 It explains why Feishu must follow the same backend contract as `focus` /
 `fcodex`, while still using a different runtime recovery model.

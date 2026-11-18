@@ -939,6 +939,15 @@ def _outbound_rejected(
 
 
 class _FakeBot:
+    def start(self) -> None:
+        self.transport_running = True
+
+    def stop(self) -> None:
+        self.transport_running = False
+
+    def transport_status(self) -> dict:
+        return {"state": "connected" if getattr(self, "transport_running", False) else "stopped", "error": ""}
+
     def __init__(self, data_dir: pathlib.Path) -> None:
         del data_dir
         self.app_id = "cli_test_app"
