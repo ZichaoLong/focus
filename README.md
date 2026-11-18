@@ -1,43 +1,34 @@
 # FOCUS
 
-> 说明：本项目最开始来源于 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot)。更准确地说，它是从 `feishu_bot` 中用于“飞书 + Claude Code”的那部分子集能力演进而来，并在此基础上改造成面向 Codex 的实现，最终形成当前的 FOCUS。
-
-**FOCUS - Feishu, Online Codex for Users and Sharing** 把飞书机器人、本地 Codex TUI 和同一个 `codex app-server`
-接到一起。
+**FOCUS - Feishu, Online Codex for Users and Sharing** 让浏览器、终端和飞书机器人接入同一个
+Codex 后端，查看和继续同一线程。Web 默认开启，飞书按需启用；也可以只使用终端。
 
 本项目提供：
 
-- 飞书里的 codex thread 使用入口
-- 本地接入同一 Codex live thread、贡献实时输入与控制的 `focus`
-    - `fcodex` 是 `focus` 的等价别名，强调 Codex TUI thin wrapper 语义
-- 本地查看 / 管理面 `focusctl`
+- 浏览器前端 Focus Web，用于对话、浏览历史和管理线程
+- 终端入口 `focus` / `fcodex`，使用 Codex TUI 接入同一实例的实时线程；两者是等价命令
+- 可选的飞书机器人，在单聊或群聊中使用 Codex
+- 本地管理命令 `focusctl`，用于配置、启停、实例和线程管理
 
-你可以把它理解成一层桥接：
-
-- 飞书会话先绑定到某个 `thread`
-- 这个 `thread` 跑在某个 FOCUS 实例自己的 shared backend 即 `codex app-server` 上
-- 飞书、Web 与 `focus` / `fcodex` 可以连接同一个实例 backend，观察同一个 live thread
-- Web / `fcodex` 的普通输入采用 upstream start-or-steer：空闲时开始新一轮，运行中时补充当前轮；飞书普通输入按 next-turn/FIFO 进入后续轮
-- `model`、`effort`、`permissions` 等由各前端分别保存，不自动同步；飞书和 Web 的设置只在各自下一次符合条件的 start/resume 时带入，steer 不改变当前轮。另一前端之后启动新轮时，可能以自己的值更新这个 thread 的可观察 effective settings
-- 裸 `codex` 仍然可单独使用，裸 `codex` 将使用自己的独立 backend，不在共享线程合同内
+> 本项目源自 [shenman9/feishu_bot](https://github.com/shenman9/feishu_bot) 的“飞书 + Claude Code”功能，并在此基础上演进为面向 Codex 的 FOCUS。
 
 ## 使用入口
 
 | 入口 | 作用 | 什么时候用 |
 | --- | --- | --- |
-| 飞书聊天命令 | 当前 chat binding 的使用入口 | 在飞书里提问、切线程、改当前会话设置 |
-| `focus` / `fcodex` | 本地 Codex TUI，接到同一实例 shared backend | 想在本地观察同一 live thread，并贡献普通 prompt 或 exact-turn 控制 |
-| `focusctl` | 本地管理面 | 配置、启停、实例、binding、thread、prompt、image、清理 |
-| `focusd` | daemon 入口 | 由 service manager 调用，通常不手敲 |
+| Focus Web | 浏览器对话与线程管理 | 本机访问，或经 SSH 转发、可信 HTTPS 反向代理远程访问 |
+| `focus` / `fcodex` | 接入同一实例后端的 Codex TUI | 在终端中查看和继续同一线程 |
+| 飞书聊天命令（可选） | 已绑定线程的聊天入口 | 在飞书里提问、切线程、改当前会话设置 |
+| `focusctl` | 本地管理命令 | 配置、启停、实例、线程、会话绑定与清理 |
+| `focusd` | 后台服务入口 | 由系统服务管理器调用，通常不手敲 |
 
 ## 快速开始
 
 ### 安装环境
 
-- 带 `venv` / `ensurepip` 的 CPython 3.11+，作为首次安装或修复的 bootstrap；安装后使用 Focus 专属 Python
+- 带 `venv` / `ensurepip` 的 CPython 3.11+，用于首次安装或修复；安装后使用 Focus 专属 Python
 - Linux 使用可用的 `systemd --user`，macOS 使用 launchd，Windows 使用 Task Scheduler
-- 本机已安装 `codex` CLI，且 `codex --help` 可正常执行
-- 若要启用飞书：已在飞书开放平台创建应用，拿到 `app_id` 与 `app_secret`
+- 本机已安装 `codex` CLI，`codex --help` 可正常执行，并已配置所需的账号或 provider
 
 ### 1. 安装
 
@@ -48,26 +39,6 @@ cd /path/to/focus
 bash install.sh
 ```
 
-默认从本仓库 GitHub Releases 下载最新 stable bundle。已下载或本地 bundle
-（`--artifact`，无需解压）以及代理边界见 `bash install.sh --help`。
-如需指定解释器，可执行 `FOCUS_INSTALL_PYTHON=/path/to/python3.13 bash install.sh`。
-
-该变量选择安装器的 bootstrap Python。安装器会在停服前准备一份完整的专属 CPython，
-存放在 Focus data root 的 `.python/`，再用它重建 `.venv`；日常运行不依赖 bootstrap
-Python 的解释器或标准库。目标版本和下载工具版本由 wheel 内的 `python-runtime.json` 固定。
-旧安装通过浏览器迁移时，对同一提交更新两次：第一次安装新更新器并刷新页面，第二次执行
-专属 Python 的预检和迁移。两次都应等待所有 Focus 实例空闲后再应用。
-
-需要安装当前源码 workspace，而不是 GitHub Release 时，在首次 clone、
-`web/package-lock.json` 变化或 `node_modules` 缺失后先执行一次 `npm --prefix web ci --include=dev`，
-日常构建和安装只需：
-
-```bash
-bash scripts/install_workspace.sh
-```
-
-该脚本构建 Web 与临时 local bundle，再把准确的 bundle 路径交给正式安装器；它不会发布制品。
-
 Windows PowerShell：
 
 ```powershell
@@ -75,32 +46,97 @@ cd \path\to\focus
 .\install.ps1
 ```
 
-PowerShell 中对应的完整安装帮助为 `.\install.ps1 --help`。
+默认从本仓库 GitHub Releases 下载最新稳定版安装包。完整安装选项见
+`bash install.sh --help` 或 `.\install.ps1 --help`；源码安装见[构建说明](docs/contracts/install-artifact-delivery.zh-CN.md#6-构建与发布是两件事)。
 
 Windows 安装会把 `%LOCALAPPDATA%\focus\bin` 写入当前用户的 `PATH`；
-通常新开一个 PowerShell / cmd 后即可直接发现 `focus`、`focusd`、
-`focusctl`、`fcodex`。
+通常新开一个 PowerShell / cmd 后即可直接发现 `focus`、`focusd`、`focusctl`、`fcodex`。
 Windows 当前不安装 shell completion。
 
 不要使用 `pip install .` 或 `pip install -e .`，这将安装无法被卸载命令 `focusctl uninstall/purge` 覆盖的残留命令入口。
 
-从旧 `feishu-codex` 本地安装迁移时，安装 FOCUS 后执行：
+#### 卸载
+
+- `focusctl uninstall` 删除服务、命令入口、补全脚本与受管 `.venv`，保留配置和其他数据。
+- `focusctl purge` 还会删除受管的配置与数据目录。
+- 两条命令都要求所有实例处于空闲状态。
+
+### 2. 启动服务
+
+如需为 Codex 提供环境变量，可先编辑：
 
 ```bash
-focusctl migrate from-feishu-codex
+focusctl config env --open
 ```
 
-首次安装时也可向 `install.sh` 或 `install.ps1` 传入 `--migrate-from-feishu-codex`。迁移是一次性 transfer；成功后主路径只使用 `focus` 目录、命令和 service。
+启动服务：
 
-**移除**
+```bash
+focusctl service start
+```
 
-- `focusctl uninstall` 会删除 service、wrapper、completion 与受管 `.venv`，但保留配置和其他数据
-- `focusctl purge` 再删除经 marker 核验的受管 config/data 根
-- 二者只在所有实例可证明 idle 时执行
+如需登录后自动启动：
 
-### 2. 配置飞书应用
+```bash
+focusctl service autostart enable
+```
 
-推荐先一次性配好权限、事件与回调。
+### 3. 打开 Web 或终端
+
+#### 浏览器
+
+Web 功能默认开启，在运行 Focus 的机器上执行：
+
+```bash
+focusctl web open
+```
+
+命令会输出认证链接并尝试打开默认浏览器；只需链接时，使用 `focusctl web open --no-browser`。
+
+Focus Web 只监听本机回环地址（loopback），可通过 SSH 本地转发从远程访问。
+浏览器若通过非回环地址（non-loopback external origin）访问，必须经过已配置的可信 HTTPS 反向代理。
+详见 [Focus Web 自部署外部访问](docs/decisions/focus-web-external-access.zh-CN.md)。
+
+#### 终端
+
+在终端中开始对话，或继续已有线程：
+
+```bash
+focus
+focus resume <thread_id|thread_name>
+```
+
+`fcodex` 与 `focus` 等价，可直接替换上述命令中的 `focus`。命名实例的用法见[多实例](#多实例)。
+
+## 配置与管理
+
+Codex 是必要依赖。Web 和飞书可独立开关；两者都关闭时，仍可使用 `focusctl` 和 `focus` / `fcodex`。
+
+- Web 默认开启：用 `focusctl config codex --open` 编辑 `codex.yaml`，将 `web_enabled` 设为 `false` 可关闭，设为 `true` 可开启。
+- 飞书默认关闭：在 `system.yaml` 设置 `feishu_enabled: true` 并填写 `app_id`、`app_secret`。
+- `focus.env` 按 Codex provider 需求填写 key 或其他环境变量。
+
+开关变更后执行 `focusctl service restart`。已有飞书配置若缺少 `feishu_enabled: true`，升级后也会关闭飞书。
+完整边界见 [system.yaml 合同](docs/contracts/system-config.zh-CN.md#前端启用与生命周期)。
+
+本地查看服务与线程：
+
+```bash
+focusctl -h
+focusctl service status
+focusctl thread list
+focusctl thread status --thread-name <name>
+focusctl thread goal --thread-name <name>
+```
+
+`focusctl --instance <name> ...` 选择已创建的命名实例，不会隐式创建实例。
+
+## 可选：接入飞书
+
+如需在飞书中使用 Focus，先在飞书开放平台创建应用，取得 `app_id` 与 `app_secret`，
+再完成下面的权限、事件与初始化步骤。
+
+### 1. 配置飞书应用
 
 #### 权限
 
@@ -172,7 +208,7 @@ focusctl migrate from-feishu-codex
 连接；不要在多台机器或集群中用同一个 `app_id` 并行部署，因为飞书可能把事件投递到
 任意连接，当前版本无法在跨机器场景证明持有 binding 的进程一定收到失联事件。
 
-### 3. 本地启动、配置、初始化
+### 2. 启用飞书
 
 打开系统配置：
 
@@ -180,33 +216,13 @@ focusctl migrate from-feishu-codex
 focusctl config system --open
 ```
 
-按需写入 provider 环境变量：
+在 `system.yaml` 中设置 `feishu_enabled: true`，并填写 `app_id`、`app_secret`，然后重启服务：
 
 ```bash
-focusctl config env --open
+focusctl service restart
 ```
 
-Codex 是必要依赖；飞书和 Web 是独立的可选前端，Web 缺省及新安装开启，飞书缺省关闭：
-
-- 只使用 Web：默认即可使用，无需飞书凭据；在 `codex.yaml` 设置 `web_enabled: false` 可关闭。
-- 使用飞书：在 `system.yaml` 设置 `feishu_enabled: true` 并填写 `app_id`、`app_secret`。
-- 两者都启用时共享同一 backend；两者都关闭时仍可使用 `focusctl`、`focus` / `fcodex`。
-- `focus.env` 按 Codex provider 需求填写 key 或其他环境变量。
-
-开关变更需重启。已有飞书配置若缺少 `feishu_enabled: true`，升级后也会关闭飞书。
-完整边界见 [system.yaml 合同](docs/contracts/system-config.zh-CN.md#前端启用与生命周期)。
-
-启动服务：
-
-```bash
-focusctl service start
-```
-
-如需登录后自动启动：
-
-```bash
-focusctl service autostart enable
-```
+### 3. 初始化管理员
 
 查看初始化口令：
 
@@ -234,70 +250,33 @@ focusctl config init-token
 - 如果想让同一个机器人同时服务多个项目，建议为每个项目单独建一个群聊；每个群聊固定在自己的目录和 thread 上，避免在单聊里反复 `/cd`、`/resume`
 - 群聊里管理员先用 `/group activate` 激活，再按群模式使用
 
-在本地接入同一个 live thread（空闲时经 blank-submission 准入后才可发起下一轮）：
+### 进阶操作
+
+在本地查看飞书绑定，或向绑定到指定线程的飞书会话发送图片：
 
 ```bash
-focus
-focus resume <thread_id|thread_name>
-focus --instance corp-a
-```
-
-或等价的
-
-```bash
-fcodex
-fcodex resume <thread_id|thread_name>
-fcodex --instance corp-a
-```
-
-说明：`--instance <name>` 只接受已创建的命名实例；如未创建，先执行 `focusctl instance create <name>`。
-
-打开本机浏览器前端：
-
-```bash
-focusctl web open
-```
-
-Web 默认开启。若已有配置显式设置了 `web_enabled: false`，用 `focusctl config codex --open`
-改为 `true`，再执行 `focusctl service restart`。飞书仍需单独显式启用。
-
-Focus Web 默认只监听 loopback。SSH local forwarding 仍属于 local mode；浏览器若通过
-non-loopback external origin 访问，则必须经过已配置的可信 HTTPS 反向代理。完整的安全边界、
-配置与部署清单见 [Focus Web 自部署外部访问](docs/decisions/focus-web-external-access.zh-CN.md)。
-
-本地查看 / 管理：
-
-```bash
-focusctl service status
 focusctl binding list
-focusctl thread list
-focusctl thread status --thread-name <name>
-focusctl thread goal --thread-name <name>
 focusctl image send --thread-id <thread_id> --path ./diagram.png
 ```
-
-说明：`focusctl --instance <name> ...` 同样不会隐式创建命名实例。
-
-#### 可选进阶
-
-如果你已经完成基本安装与初始化，再看这部分：
 
 - `focusctl prompt send --binding-id ...` 可向某个既有 Feishu 会话合成发起一轮 prompt；若不同会话各自绑定到不同 thread，它也可作为多个 thread 之间显式协作的控制面入口。
 - `/goal` 用于查看或管理当前 thread 的 goal；常用形态包括 `/goal`、`/goal text`、`/goal set <objective>`、`/goal pause`、`/goal resume`、`/goal clear`。本地查看或排障时，可配合 `focusctl thread goal --thread-name <name>` 一起用。如需让机器人帮助生成 goal 主句，可先用 `/last text` 获取当前会话最近的权威终态文本，方便在手机侧复制后再整理成主句。
 - `focusctl image send` 是 thread-scoped 动作：在 Codex turn 内可依赖自动注入的 `CODEX_THREAD_ID` 把图片发回当前 thread；若目标不是当前 thread，则必须显式提供 `--thread-id` 或 `--thread-name`。
 - 若在 Codex turn 中已经有本地图片文件，可用 `feishu-send-image` skill 调 `focusctl image send`，把图片发回当前 thread 当前 attached 的飞书会话；这个 skill 不负责跨 thread / 手动选目标。
 
-### 5. 多机器人多实例
+## 多实例
 
-如果你希望配置多个飞书应用及机器人，每个机器人对应不同的 FOCUS 实例，可按下面方式创建命名实例：
+如果需要分别配置 Web、终端工作环境或不同的飞书机器人，可以创建命名实例：
 
 ```bash
 focusctl instance create corp-a
-focusctl --instance corp-a config system --open
 focusctl --instance corp-a service start
-focus --instance corp-a
-fcodex --instance corp-a
+focusctl --instance corp-a web open
 ```
+
+终端通过 `focus --instance corp-a` 或 `fcodex --instance corp-a` 接入该实例。
+如需为它启用飞书，使用 `focusctl --instance corp-a config system --open` 编辑该实例的配置，
+再按上面的飞书接入步骤设置；相关 `focusctl` 命令都加上 `--instance corp-a`。
 
 每个实例有自己的：
 
@@ -321,35 +300,44 @@ fcodex --instance corp-a
 
 ## 更多帮助
 
-- 飞书里发送 `/help` 或 `/h`
 - 本地查看 `focus --help` 或 `fcodex --help`
 - 本地查看 `focusctl --help`
-- 深入文档看 [文档索引](docs/doc-index.zh-CN.md)
+- 启用飞书后，在聊天中发送 `/help` 或 `/h`
+- 深入文档看[文档索引](docs/doc-index.zh-CN.md)
 
 ## 一图看懂架构
 
+每个 FOCUS 实例拥有自己的共享后端 `codex app-server`。Web、`focus` / `fcodex` 与启用后的飞书
+可以查看和操作同一条实时线程；飞书会话通过绑定选择线程。
+
+- Web 和终端的普通输入：空闲时开始新一轮，运行中时补充当前轮；飞书普通输入排队进入后续轮。
+- 模型、思考强度和权限等设置由各入口分别保存，不自动同步。从另一入口开始新一轮时，可能应用该入口的设置；运行中补充输入不改变当前轮设置。
+- 直接运行 `codex` 使用独立后端，不接入 Focus 的共享线程。
+
+详细规则见[本地命令与运行时设置合同](docs/contracts/local-command-and-thread-profile-contract.zh-CN.md)。
+
 ```mermaid
 flowchart LR
-  subgraph Feishu["Feishu"]
+  subgraph Feishu["Feishu（可选）"]
     ChatA["单聊 / 群聊 A"]
     ChatB["单聊 / 群聊 B"]
   end
 
-  Web["Focus Web<br/>浏览器"]
-  Work["focus / fcodex<br/>本地 TUI observer / realtime contributor<br/>local permissions"]
+  Web["Focus Web<br/>浏览器（可关闭）"]
+  Work["focus / fcodex<br/>Codex 终端界面"]
   CTL["focusctl<br/>本地管理"]
   Raw["裸 codex"]
   RawBackend["独立 app-server<br/>独立 thread"]
 
-  subgraph Instance["实例 explorer"]
-    BindA["binding A<br/>binding-wise permissions"]
-    BindB["binding B<br/>binding-wise permissions"]
-    Service["FOCUS service<br/>Feishu / Web Gateway"]
-    Backend["shared codex app-server"]
+  subgraph Instance["FOCUS 实例"]
+    BindA["会话绑定 A"]
+    BindB["会话绑定 B"]
+    Service["FOCUS service<br/>核心服务与可选前端"]
+    Backend["共享 codex app-server"]
     Thread["thread"]
   end
 
-  Global["machine-global coordination<br/>ThreadRuntimeLease / instance registry"]
+  Global["机器级协调<br/>实例与线程运行时"]
 
   ChatA --> BindA --> Service
   ChatB --> BindB --> Service
@@ -361,9 +349,3 @@ flowchart LR
   Global -.协调.-> Backend
   Raw --> RawBackend
 ```
-
-这张图只表达 3 件事：
-
-- 飞书会话先绑定 `thread`，Web 也通过同一个实例 service 访问 shared backend
-- `focus` / `fcodex` 连到这个 shared backend，可以观察和操作同一个 live thread
-- 裸 `codex` 使用自己的 backend 与 thread，不进入 Focus 的共享合同
