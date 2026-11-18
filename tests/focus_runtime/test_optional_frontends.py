@@ -9,6 +9,7 @@ import time
 from unittest.mock import Mock
 
 import pytest
+import yaml
 
 from bot.adapters.base import ThreadSummary, ThreadSnapshot
 from bot.binding_identity import format_binding_id
@@ -30,7 +31,15 @@ from tests.focus_runtime.codex_handler_fakes import _FakeAdapter, _FakeBot
 
 
 @pytest.fixture
-def runtime_factory(tmp_path, monkeypatch):
+def web_static_dir(tmp_path):
+    static_dir = tmp_path / "web-static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("Focus Web", encoding="utf-8")
+    return static_dir
+
+
+@pytest.fixture
+def runtime_factory(tmp_path, monkeypatch, web_static_dir):
     runtimes = []
     monkeypatch.setenv("FOCUS_GLOBAL_DATA_DIR", str(tmp_path / "global"))
     monkeypatch.setattr("bot.focus_runtime.runtime.CodexAppServerAdapter", _FakeAdapter)
@@ -40,7 +49,8 @@ def runtime_factory(tmp_path, monkeypatch):
         config = root / "config"
         config.mkdir(parents=True, exist_ok=True)
         (config / "codex.yaml").write_text(
-            f"web_enabled: {str(web).lower()}\n", encoding="utf-8"
+            yaml.safe_dump({"web_enabled": web, "web_static_dir": str(web_static_dir)}),
+            encoding="utf-8",
         )
         runtime = FocusRuntime(data_dir=root, config_dir=config, feishu_enabled=feishu)
         runtimes.append(runtime)
@@ -206,13 +216,14 @@ def test_failed_feishu_stop_retains_authority_until_retry(runtime_factory):
 )
 @pytest.mark.parametrize("web", [False, True])
 def test_fresh_daemon_without_sdk_survives_until_sigterm_and_releases_lease(
-    tmp_path, web
+    tmp_path, web, web_static_dir
 ):
     # A subprocess catches imports hidden by the main pytest process's SDK cache.
     config = tmp_path / "config"
     config.mkdir()
     (config / "codex.yaml").write_text(
-        f"web_enabled: {str(web).lower()}\n", encoding="utf-8"
+        yaml.safe_dump({"web_enabled": web, "web_static_dir": str(web_static_dir)}),
+        encoding="utf-8",
     )
     code = """
 import importlib.abc, os, pathlib, sys
