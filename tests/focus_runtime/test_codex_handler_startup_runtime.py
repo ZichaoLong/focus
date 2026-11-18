@@ -120,7 +120,8 @@ class CodexHandlerStartupRuntimeTests(unittest.TestCase):
         patches = (
             patch(
                 "bot.focus_runtime.runtime.load_config_file",
-                return_value={"mirror_watchdog_seconds": 999999},
+                # Startup/lease tests do not require a Web listener or built assets.
+                return_value={"mirror_watchdog_seconds": 999999, "web_enabled": False},
             ),
             patch("bot.focus_runtime.runtime.CodexAppServerAdapter", adapter_type),
             patch.dict(
