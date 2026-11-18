@@ -22,21 +22,21 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => { await browser?.close(); await server?.close(); rmSync(cacheDir, { recursive: true, force: true }); });
 
-async function fixture(width: number, history: boolean, run: (page: Page) => Promise<void>) {
+async function fixture(width: number, history: boolean, run: (page: Page) => Promise<void>, options: { paging?: boolean } = {}) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   page.setDefaultTimeout(10_000);
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   try {
-    await page.goto(`${url}?${history ? 'history&' : ''}${width < 640 ? 'narrow' : ''}`);
+    await page.goto(`${url}?${history ? 'history&' : ''}${width < 640 ? 'narrow' : ''}${options.paging ? '&paging' : ''}`);
     await page.locator('textarea.ph').waitFor();
     // Lazy Markdown initially displays a differently sized source placeholder.
     // Begin composer interactions only after the fixture's real body and fonts
     // are ready, so that replacement cannot race the reading-position setup.
-    await page.locator('.md').getByText('History paragraph 48.', { exact: true }).waitFor();
+    await page.locator('.md').getByText(options.paging ? 'Short page 2' : 'History paragraph 48.', { exact: true }).waitFor();
     await page.evaluate(() => document.fonts.ready);
     await settleLayout(page);
-    await page.waitForFunction(() => {
+    if (!options.paging) await page.waitForFunction(() => {
       const pane = document.querySelector('.panes')!;
       return pane.scrollHeight > pane.clientHeight + 1000
         && pane.scrollHeight - pane.clientHeight - pane.scrollTop < 1;
@@ -81,6 +81,32 @@ async function browseUp(page: Page, distance: number) {
 const draft = (lines: number) => Array.from({ length: lines }, (_, index) => `Draft line ${index + 1}`).join('\n');
 
 describe('composer sizing in the conversation scroll owner', () => {
+  it('pages in both wheel directions even when the transcript has no scroll range', async () => {
+    await fixture(1280, false, async page => {
+      const requests = () => page.evaluate(() => (window as Window & { pagingRequests: string[] }).pagingRequests);
+      const pane = page.locator('.panes');
+      expect(await pane.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+      await pane.hover();
+      await page.mouse.wheel(0, 60);
+      await expect.poll(requests).toEqual(['newer']);
+      await page.getByText('Short page 3', { exact: true }).waitFor();
+      await settleLayout(page);
+      // A still-visible boundary must not consume additional pages by itself.
+      expect(await requests()).toEqual(['newer']);
+      expect(await pane.evaluate(el => el.scrollHeight - el.clientHeight)).toBeLessThanOrEqual(1);
+      await page.mouse.wheel(0, -60);
+      await expect.poll(requests).toEqual(['newer', 'older']);
+      await page.getByText('Short page 1', { exact: true }).waitFor();
+      await settleLayout(page);
+      await page.mouse.wheel(0, -60);
+      await expect.poll(requests).toEqual(['newer', 'older', 'older']);
+      await page.getByText('Short page 0', { exact: true }).waitFor();
+      await page.locator('.newmsg-pill').click();
+      await expect.poll(requests).toEqual(['newer', 'older', 'older', 'latest']);
+      await page.getByText('Short page 4', { exact: true }).waitFor();
+    }, { paging: true });
+  }, 30_000);
+
   it('keeps arrow keys on the native editing path, even with a legacy recall cache', async () => {
     await fixture(1280, false, async page => {
       await page.evaluate(() => localStorage.setItem('kimi-web.input-history',

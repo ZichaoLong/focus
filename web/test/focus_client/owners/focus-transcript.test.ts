@@ -44,6 +44,28 @@ function harness(initial = page()) {
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it.each([false, true])('revalidates the reading anchor when scrolling interrupts a reconnect tail read (disjoint: %s)', async disjoint => {
+    const h = harness(page([row(1), row(2), row(3)], { newer_cursor: null })); await settle();
+    h.owner.prepareReload();
+    const pending = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(pending.promise);
+    const resumed = h.owner.resumeAfterReload();
+    // The reader stops following after the recovery read starts, while only
+    // the old DOM remains and the authoritative page cache has been retired.
+    h.owner.updateViewport(row(2).id, false);
+    h.read.mockResolvedValueOnce(page([row(2), row(3)], {
+      turn_id: 'turn-1', revision: 2, newer_cursor: disjoint ? 'after-3' : null,
+    }));
+    pending.resolve(page(disjoint ? [row(99)] : [row(1), row(2), row(3)], { revision: 2, newer_cursor: null }));
+    expect(await resumed).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { turn_id: 'turn-1', item_id: 'item-2', direction: 'asc' }, expect.any(AbortSignal));
+    expect(h.owner.turns.value.map(turn => turn.itemId)).toContain('item-2');
+    expect(h.owner.hasNewer.value).toBe(disjoint);
+    h.event(3, { method: 'item/started', item_turns: [row(4)] });
+    expect(h.owner.turns.value.map(turn => turn.itemId)).toEqual(disjoint
+      ? ['item-2', 'item-3'] : ['item-2', 'item-3', 'item-4']);
+  });
+
   it('retires cursors but retains and revalidates the visible reading anchor after reconnect', async () => {
     const h = harness(page([row(1), row(2), row(3)])); await settle();
     h.owner.updateViewport(row(2).id, false);

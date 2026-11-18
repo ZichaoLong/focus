@@ -119,9 +119,13 @@ export function createFocusTranscript(options: {
     eventRevision = tailReadRevision = -1;
   }
 
+  function readingAnchor() {
+    return following ? undefined : turns.value.find(row => row.id === protectedRow) ?? turns.value[0];
+  }
+
   function resumeAfterReload() {
     awaitingProjection = false;
-    const anchor = following ? undefined : turns.value.find(row => row.id === protectedRow) ?? turns.value[0];
+    const anchor = readingAnchor();
     if (anchor?.rawTurnId && anchor.itemId) {
       return load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore');
     }
@@ -271,6 +275,14 @@ export function createFocusTranscript(options: {
         error.value = 'Live updates exceeded the loading buffer. Reload recent messages.';
         return false;
       }
+      // Recovery retains the old DOM but retires its page cache. A reader can
+      // stop following while the tail request is pending; revalidate their
+      // current anchor instead of merging into that empty cache and publishing
+      // an empty transcript. The anchor read also handles a disjoint live tail.
+      const anchor = mode === 'sync' && cache.pageCount === 0 ? readingAnchor() : undefined;
+      if (anchor?.rawTurnId && anchor.itemId) {
+        return await load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore');
+      }
       if (query.cursor && (mode === 'older' ? result.older_cursor : result.newer_cursor) === query.cursor) {
         throw new Error('Transcript cursor did not advance.');
       }
@@ -284,7 +296,7 @@ export function createFocusTranscript(options: {
       if (mode === 'older' || mode === 'newer') {
         lastDirection = mode;
         cache.extend(result, mode, protectedRow);
-      } else if (mode === 'sync' && !following && protectedRow && turns.value.length) {
+      } else if (mode === 'sync' && cache.pageCount > 0 && !following && protectedRow && turns.value.length) {
         cache.refreshTail(result, protectedRow);
       } else {
         lastDirection = 'newer';
