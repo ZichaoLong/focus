@@ -56,7 +56,7 @@ selected record period; `logs prune` uses it by default. Explicit `--keep-days` 
 | Terminal reply details | No age cleanup | Record period from `recorded_at` |
 | Image delivery details | No age cleanup | Record period from `delivered_at`; generated source image remains |
 | Server browser navigation profiles | No age cleanup | Record period from `updated_at`; live documents renewed |
-| Browser input history | 100 entries per scope, no age limit | Per-entry save time plus record period; 100-entry cap remains |
+| Retired browser input recall cache | Per-entry save time plus record period | Remove the cache and its timestamp metadata on the first browser cleanup; conversation Prompt history is unaffected |
 | Browser drafts | Removed on send/clear | Record period from save/edit activity; mounted drafts protected |
 | Server prompt diagnostics | Associated entries until explicit Web deletion, unassociated entries 90 days | Record period from latest diagnostic update for all entries; active traces protected; thread deletion still cleans immediately |
 | Browser prompt diagnostics | 64 entries | Submission time plus record period; cap remains, in-flight submissions protected |

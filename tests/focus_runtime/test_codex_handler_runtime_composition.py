@@ -490,8 +490,8 @@ class CodexHandlerRuntimeCompositionTests(CodexHandlerHarness):
         self.assertIs(handler._feishu_platform.bot, bot)
         self.assertEqual(handler._adapter.start_calls, 1)
 
-    def test_on_register_leaves_web_disabled_for_existing_configs(self) -> None:
-        handler, bot = self._make_handler()
+    def test_on_register_respects_explicit_web_disabled_config(self) -> None:
+        handler, bot = self._make_handler({"web_enabled": False})
 
         _reg(handler, bot)
 

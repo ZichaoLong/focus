@@ -25,16 +25,14 @@ function setup(initialText = '', skills: AppSkill[] = []) {
   const text = ref(initialText);
   const textareaRef = ref(textarea as unknown as HTMLTextAreaElement) as Ref<HTMLTextAreaElement | null>;
   const emitted: string[] = [];
-  const pushed: string[] = [];
   const slash = useSlashMenu({
     text,
     textareaRef,
     autosize: () => {},
     skills: () => skills,
     emitCommand: (cmd) => emitted.push(cmd),
-    historyPush: (entry) => pushed.push(entry),
   });
-  return { text, textarea, emitted, pushed, slash };
+  return { text, textarea, emitted, slash };
 }
 
 describe('useSlashMenu — update', () => {
@@ -106,21 +104,19 @@ describe('useSlashMenu — update', () => {
 });
 
 describe('useSlashMenu — select', () => {
-  it('non-acceptsInput: clears text, pushes history, emits the command', () => {
-    const { text, emitted, pushed, slash } = setup('/new');
+  it('non-acceptsInput: clears text and emits the command', () => {
+    const { text, emitted, slash } = setup('/new');
     slash.select({ name: '/new', desc: '' });
     expect(text.value).toBe('');
-    expect(pushed).toEqual(['/new']);
     expect(emitted).toEqual(['/new']);
     expect(slash.open.value).toBe(false);
   });
 
   it('acceptsInput: keeps the command in the box and does not emit yet', async () => {
-    const { text, emitted, pushed, slash } = setup('/goal');
+    const { text, emitted, slash } = setup('/goal');
     slash.select({ name: '/goal', desc: '', acceptsInput: true });
     expect(text.value).toBe('/goal ');
     expect(emitted).toEqual([]);
-    expect(pushed).toEqual([]);
     expect(slash.open.value).toBe(false);
     await nextTick();
   });

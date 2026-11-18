@@ -92,20 +92,30 @@ compositing remain independent.
 
 The panel explains that these measurements help investigate layout and viewport
 issues, including blank pages, misplaced content, and display problems after
-reading-mode, orientation, or keyboard changes. They do not collect network
+returning to a tab, transcript scrolling, reading-mode, orientation, or keyboard changes. They do not collect network
 requests, application errors, or conversation text. The UI distinguishes not yet
 started, recording, and stopped with retained results; when results exist, the
-start button says “Start recording again”. Sampling follows reading-mode and
-viewport changes rather than a one-time check or continuous polling.
+start button says “Start recording again”. Sampling follows reading-mode,
+viewport, document visibility, and transcript scroll changes rather than a one-time check or continuous polling.
+Even without a viewport size change, hiding a tab, returning to it, and the next
+foreground frame each produce a sample. Transcript scroll events are coalesced
+per animation frame and do not schedule samples in the background. Stopping or
+disposing cancels pending content samples.
 
 Copying or downloading includes the browser identifier, measurements at recording
-start, the last six mode transitions, and the last six viewport changes. New events
+start, the last six mode transitions, the last six viewport changes, the last six
+visibility samples, and the last six transcript scroll samples. New events
 replace the oldest of their kind while the initial snapshot remains. Separate
-limits keep rotation from evicting transition evidence. Records contain
+limits for the four categories keep rotation from evicting transition evidence. Records contain
 only known layout nodes' dimensions (including document and mount roots), scroll
 offsets, visibility and compositing styles, focused tag name, and timestamps.
 Toolbar and transcript center-point hit tests record the hit tag, whether it is
-inside the expected region, and whether a dialog covers it. They never record hit
+inside the expected region, and whether a dialog covers it. `focus-viewport-v3`
+also counts transcript rows, Markdown chunks, renderer containers, and library
+node placeholders separately: total nodes, nodes in view, nodes with child elements
+or empty nodes in view, and maximum empty-node height. In-view geometry uses the
+intersection of the transcript and browser viewport. Child elements indicate DOM
+mounting only, not successful painting. Records never contain hit
 nodes' text, attributes, or selectors, conversation text, drafts, URLs, or credentials.
 They remain in this document's memory, clear on reload, and are never uploaded
 automatically. “Download JSON” saves the complete snapshot available at the click,
@@ -113,6 +123,8 @@ with the same content as copying and a timestamped filename; it is disabled unti
 records exist. Copying and downloading do not change the recording toggle, and
 later sampling does not alter an already generated file. If the download cannot
 start, the panel shows failure feedback and the results remain available to copy.
+To preserve a blank transcript state, stop recording and download before using
+“Latest messages” or reloading to recover the page.
 Measurements distinguish sizing and layout failures but do not
 prove that pixels were painted correctly. Mobile blank-page regression checks
 require normal → reading → normal → reading on the affected device; desktop

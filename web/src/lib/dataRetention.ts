@@ -1,10 +1,10 @@
-/** Browser history timestamps and expiry. Preferences and recovery receipts are excluded. */
+/** Browser draft and timing expiry. Preferences and recovery receipts are excluded. */
 import { STORAGE_KEYS, safeGetJson, safeGetString, safeRemove } from './storage';
 
 const META_KEY = 'focus-web.data-retention.v1';
 export const TIMING_STORAGE_KEY = 'focus-web.prompt-timings.v1';
 const DRAFT_PREFIX = 'kimi-web.draft.';
-interface Metadata { drafts: Record<string, number>; history: Record<string, number[]>; historyDigests: Record<string, string> }
+interface Metadata { drafts: Record<string, number> }
 let recordsDays: number | null = null;
 const activeDrafts = new Map<string, number>();
 export function protectDraft(key: string): () => void {
@@ -19,15 +19,13 @@ export const activeTimingIds = new Set<string>();
 
 function metadata(): Metadata {
   const raw = safeGetJson<Metadata>(META_KEY);
-  if (raw === null) return { drafts: {}, history: {}, historyDigests: {} };
-  if (!raw || typeof raw !== 'object' || !raw.drafts || !raw.history
-    || typeof raw.drafts !== 'object' || typeof raw.history !== 'object'
-    || Object.values(raw.drafts).some(value => !Number.isFinite(value) || value <= 0)
-    || Object.values(raw.history).some(value => !Array.isArray(value)
-      || value.some(stamp => !Number.isFinite(stamp) || stamp <= 0))) {
+  if (raw === null) return { drafts: {} };
+  if (!raw || typeof raw !== 'object' || !raw.drafts
+    || typeof raw.drafts !== 'object'
+    || Object.values(raw.drafts).some(value => !Number.isFinite(value) || value <= 0)) {
     throw new Error('Invalid browser retention metadata');
   }
-  return { ...raw, historyDigests: raw.historyDigests ?? {} };
+  return { drafts: raw.drafts };
 }
 
 export function setBrowserRetentionDays(days: number): void {
@@ -49,30 +47,6 @@ export function touchDraft(key: string, present = true): void {
   } catch { safeRemove(META_KEY); /* Missing timestamps grant migration grace. */ }
 }
 
-// A change marker detects stale metadata from another tab or a failed text write.
-// It is not an authentication or execution authority token.
-function historyDigest(entries: string[]): string {
-  const source = JSON.stringify(entries);
-  let first = 2166136261, second = 5381;
-  for (let index = 0; index < source.length; index += 1) {
-    first = Math.imul(first ^ source.charCodeAt(index), 16777619);
-    second = Math.imul(second, 33) ^ source.charCodeAt(index);
-  }
-  return `${source.length}:${first >>> 0}:${second >>> 0}`;
-}
-
-export function recordHistoryTime(scope: string, previous: string[], next: string[], now = Date.now()): void {
-  try {
-    const meta = metadata();
-    const existing = meta.history[scope];
-    const stamps = existing?.length === previous.length && meta.historyDigests[scope] === historyDigest(previous)
-      ? existing : Array<number>(previous.length).fill(now);
-    meta.history[scope] = [...stamps, now].slice(-100);
-    meta.historyDigests[scope] = historyDigest(next);
-    localStorage.setItem(META_KEY, JSON.stringify(meta));
-  } catch { safeRemove(META_KEY); /* A partial write cannot leave stale expiry authority. */ }
-}
-
 /** Undated data gets a full retention period from first observation after upgrade. */
 export function pruneBrowserData(now = Date.now()): number {
   if (recordsDays === null) return 0;
@@ -91,26 +65,10 @@ export function pruneBrowserData(now = Date.now()): number {
     }
   }
   for (const key of Object.keys(meta.drafts)) if (!drafts.has(key)) delete meta.drafts[key];
-  const raw: unknown = JSON.parse(storage.getItem(STORAGE_KEYS.inputHistory) ?? '{}');
-  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    const history = raw as Record<string, unknown>;
-    for (const [scope, entries] of Object.entries(history)) {
-      if (!Array.isArray(entries) || entries.some(entry => typeof entry !== 'string')) continue;
-      const existing = meta.history[scope];
-      const stamps = existing?.length === entries.length && meta.historyDigests[scope] === historyDigest(entries)
-        ? existing : Array<number>(entries.length).fill(now);
-      const kept: string[] = [], times: number[] = [];
-      entries.forEach((entry: string, index: number) => {
-        if (retainedTimestamp(stamps[index]!, now)) { kept.push(entry); times.push(stamps[index]!); }
-        else removed += 1;
-      });
-      if (kept.length) { history[scope] = kept; meta.history[scope] = times; meta.historyDigests[scope] = historyDigest(kept); }
-      else { delete history[scope]; delete meta.history[scope]; delete meta.historyDigests[scope]; }
-    }
-    for (const key of Object.keys(meta.history)) if (!(key in history)) {
-      delete meta.history[key]; delete meta.historyDigests[key];
-    }
-    storage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify(history));
+  // Retire the former arrow-key recall cache; conversation history is separate.
+  if (storage.getItem(STORAGE_KEYS.inputHistory) !== null) {
+    storage.removeItem(STORAGE_KEYS.inputHistory);
+    removed += 1;
   }
   const timings: unknown = JSON.parse(storage.getItem(TIMING_STORAGE_KEY) ?? '[]');
   if (Array.isArray(timings)) {

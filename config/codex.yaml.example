@@ -22,9 +22,9 @@
 # 它会自动发现当前实际运行的 shared backend 地址。
 # app_server_url: ws://127.0.0.1:8765
 
-# Focus Web；仅显式启用，缺省/新安装均关闭，启用后只监听本机 loopback。
+# Focus Web；缺省/新安装均开启，始终只监听本机 loopback；显式 false 可关闭。
 # 本机/SSH 使用 focusctl web open；外部访问使用 configured trusted HTTPS proxy，不能直接暴露该端口。
-web_enabled: false
+web_enabled: true
 
 # 浏览器标签页使用的部署显示名称；默认值：Focus Web。
 # 打开会话后显示“部署显示名称 · 会话名称”；无会话名称时会话侧使用首条 prompt 预览。

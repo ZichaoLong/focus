@@ -12,6 +12,7 @@ export const focusViewportDiagnosticKey: InjectionKey<Readonly<Ref<FocusViewport
 
 const MAX_TRANSITIONS = 6;
 const MAX_VIEWPORT_CHANGES = 6;
+const MAX_CONTENT_SAMPLES = 6;
 const SETTLE_MS = 250;
 
 function finite(value: number): number | null {
@@ -29,6 +30,9 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
   let viewportFrame = 0;
   let transitionFrame = 0;
   let settleTimer = 0;
+  let contentFrame = 0;
+  let pendingVisibilitySample = false;
+  let pendingScrollSample = false;
 
   function viewport() {
     const visual = view.visualViewport;
@@ -92,6 +96,35 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
         transcript: elementBox(transcript),
       },
       hitTests: { controls: hitTest(controls), transcript: hitTest(transcript) },
+      content: transcriptContent(transcript),
+    };
+  }
+
+  function transcriptContent(transcript: Element | null) {
+    if (!transcript) return null;
+    const viewport = transcript.getBoundingClientRect();
+    const top = Math.max(0, viewport.y), bottom = Math.min(view.innerHeight, viewport.y + viewport.height);
+    const left = Math.max(0, viewport.x), right = Math.min(view.innerWidth, viewport.x + viewport.width);
+    function count(selector: string) {
+      const elements = transcript!.querySelectorAll(selector);
+      let inView = 0, mountedInView = 0, maxEmptyHeight = 0;
+      for (const element of elements) {
+        if (bottom <= top || right <= left) break;
+        const box = element.getBoundingClientRect();
+        if (box.width <= 0 || box.height <= 0 || box.y + box.height <= top
+          || box.y >= bottom || box.x + box.width <= left || box.x >= right) continue;
+        inView += 1;
+        // Child elements distinguish Focus slots from empty placeholders; they
+        // do not prove that a renderer's children contain painted pixels.
+        if (element.childElementCount > 0) mountedInView += 1;
+        else maxEmptyHeight = Math.max(maxEmptyHeight, box.height);
+      }
+      return { total: elements.length, inView, mountedInView, emptyInView: inView - mountedInView,
+        maxEmptyHeight: finite(maxEmptyHeight) };
+    }
+    return {
+      rows: count('.transcript-row'), chunks: count('.markdown-chunk'),
+      renderers: count('.markdown-renderer'), nodeSpacers: count('.node-spacer, .node-placeholder'),
     };
   }
 
@@ -100,7 +133,36 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
   const initial = shallowRef<Sample | null>(null);
   const transitions = shallowRef<Array<{ id: number; from: boolean; to: boolean; samples: Sample[] }>>([]);
   const viewportChanges = shallowRef<Array<{ before: Sample; after: Sample }>>([]);
+  const visibilityChanges = shallowRef<Sample[]>([]);
+  const transcriptScrolls = shallowRef<Sample[]>([]);
   let lastViewport = '';
+
+  function cancelContentSample(): void {
+    if (contentFrame) view.cancelAnimationFrame(contentFrame);
+    contentFrame = 0;
+    pendingVisibilitySample = pendingScrollSample = false;
+  }
+
+  function scheduleContentSample(kind: 'visibility' | 'scroll'): void {
+    if (!diagnosticEnabled.value || disposed || doc.visibilityState === 'hidden') return;
+    if (kind === 'visibility') pendingVisibilitySample = true;
+    else pendingScrollSample = true;
+    if (contentFrame) return;
+    contentFrame = view.requestAnimationFrame(() => {
+      contentFrame = 0;
+      if (pendingVisibilitySample) {
+        visibilityChanges.value = [...visibilityChanges.value.slice(-(MAX_CONTENT_SAMPLES - 1)), capture('visibility-frame')];
+      }
+      if (pendingScrollSample) {
+        transcriptScrolls.value = [...transcriptScrolls.value.slice(-(MAX_CONTENT_SAMPLES - 1)), capture('transcript-scroll')];
+      }
+      pendingVisibilitySample = pendingScrollSample = false;
+    });
+  }
+
+  function onTranscriptScroll(event: Event): void {
+    if ((event.target as Element | null)?.matches?.('.panes.chat-scroll')) scheduleContentSample('scroll');
+  }
 
   function positiveHeight(value: number | undefined): number | undefined {
     return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined;
@@ -182,6 +244,11 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
   }
 
   function onVisibilityChange(): void {
+    if (diagnosticEnabled.value) {
+      visibilityChanges.value = [...visibilityChanges.value.slice(-(MAX_CONTENT_SAMPLES - 1)), capture('visibility-change')];
+      if (doc.visibilityState === 'hidden') cancelContentSample();
+      else scheduleContentSample('visibility');
+    }
     if (doc.visibilityState === 'visible') onViewportChange();
   }
 
@@ -194,21 +261,27 @@ export function createFocusViewport(shell: HTMLElement, readingMode: Readonly<Re
   const diagnostics: FocusViewportDiagnostics = {
     enabled: computed(() => diagnosticEnabled.value),
     report: computed(() => initial.value === null ? '' : JSON.stringify({
-      schema: 'focus-viewport-v2', userAgent: view.navigator.userAgent.slice(0, 512),
+      schema: 'focus-viewport-v3', userAgent: view.navigator.userAgent.slice(0, 512),
       initial: initial.value, transitions: transitions.value, viewportChanges: viewportChanges.value,
+      visibilityChanges: visibilityChanges.value, transcriptScrolls: transcriptScrolls.value,
       performance: focusPerformance.samples.value,
     }, null, 2)),
     start(): void {
       if (disposed || diagnosticEnabled.value) return;
       transitions.value = [];
       viewportChanges.value = [];
+      visibilityChanges.value = [];
+      transcriptScrolls.value = [];
       initial.value = capture('recording-start');
       lastViewport = JSON.stringify(initial.value.viewport);
       diagnosticEnabled.value = true;
+      doc.addEventListener('scroll', onTranscriptScroll, true);
       focusPerformance.start();
     },
     stop(): void {
       diagnosticEnabled.value = false;
+      doc.removeEventListener('scroll', onTranscriptScroll, true);
+      cancelContentSample();
       focusPerformance.stop();
     },
   };

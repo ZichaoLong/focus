@@ -21,6 +21,7 @@ export const STORAGE_KEYS = {
   workspaceOrder: 'kimi-web.workspace-order',
   workspaceNameOverrides: 'kimi-web.workspace-name-overrides',
   workspaceSort: 'kimi-web.workspace-sort',
+  // Active one-time cleanup for retired composer history recall.
   inputHistory: 'kimi-web.input-history',
   // cross-file
   locale: 'kimi-locale',

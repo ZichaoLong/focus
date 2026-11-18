@@ -324,7 +324,9 @@ class CodexHandlerHarness(unittest.TestCase):
             tempdir = tempfile.TemporaryDirectory()
             self.addCleanup(tempdir.cleanup)
             data_dir = pathlib.Path(tempdir.name)
-        effective_cfg = {"mirror_watchdog_seconds": 999999}
+        # Most handler tests exercise Feishu without a browser listener or assets.
+        # Web composition tests explicitly opt in with their own static fixture.
+        effective_cfg = {"mirror_watchdog_seconds": 999999, "web_enabled": False}
         effective_cfg.update(dict(cfg or {}))
         config_patch = patch(
             "bot.focus_runtime.runtime.load_config_file",

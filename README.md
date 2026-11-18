@@ -186,9 +186,9 @@ focusctl config system --open
 focusctl config env --open
 ```
 
-Codex 是必要依赖；飞书和 Web 都是可选前端，缺省及新安装均关闭：
+Codex 是必要依赖；飞书和 Web 是独立的可选前端，Web 缺省及新安装开启，飞书缺省关闭：
 
-- 只使用 Web：在 `codex.yaml` 设置 `web_enabled: true`，无需飞书凭据。
+- 只使用 Web：默认即可使用，无需飞书凭据；在 `codex.yaml` 设置 `web_enabled: false` 可关闭。
 - 使用飞书：在 `system.yaml` 设置 `feishu_enabled: true` 并填写 `app_id`、`app_secret`。
 - 两者都启用时共享同一 backend；两者都关闭时仍可使用 `focusctl`、`focus` / `fcodex`。
 - `focus.env` 按 Codex provider 需求填写 key 或其他环境变量。
@@ -258,8 +258,8 @@ fcodex --instance corp-a
 focusctl web open
 ```
 
-Web 需要显式启用：用 `focusctl config codex --open` 设置 `web_enabled: true`，
-再执行 `focusctl service restart`。仅填飞书凭据不会启用任何前端。
+Web 默认开启。若已有配置显式设置了 `web_enabled: false`，用 `focusctl config codex --open`
+改为 `true`，再执行 `focusctl service restart`。飞书仍需单独显式启用。
 
 Focus Web 默认只监听 loopback。SSH local forwarding 仍属于 local mode；浏览器若通过
 non-loopback external origin 访问，则必须经过已配置的可信 HTTPS 反向代理。完整的安全边界、

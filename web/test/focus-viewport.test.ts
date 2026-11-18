@@ -13,6 +13,7 @@ function fixture() {
   function box(tagName = 'DIV', y = 0, height = 844) {
     const element = {
       tagName,
+      childElementCount: 1,
       scrollTop: 0, scrollLeft: 0, scrollHeight: 844, clientHeight: 844,
       getBoundingClientRect: () => { layoutReads(); return { x: 0, y, width: 390, height }; },
       contains: (target: unknown): boolean => target === element,
@@ -45,8 +46,11 @@ function fixture() {
     })),
   });
   const controls = box('DIV', 0, 50);
+  const content = new Map<string, ReturnType<typeof box>[]>();
   const transcript = Object.assign(box('DIV', 50, 794), {
     scrollTop: 1200, scrollHeight: 4000, textContent: 'PRIVATE CONVERSATION',
+    matches: (selector: string) => selector === '.panes.chat-scroll',
+    querySelectorAll: (selector: string) => content.get(selector) ?? [],
   });
   const doc = Object.assign(new EventTarget(), {
     defaultView: view, documentElement: { ...box(), style }, visibilityState: 'visible',
@@ -69,7 +73,8 @@ function fixture() {
     pending.forEach((callback) => callback(0));
   };
   return {
-    owner, reading, view, visual, doc, shell, transcript, controls, rootStyle, style, frames, flushFrame, layoutReads,
+    owner, reading, view, visual, doc, shell, transcript, controls, rootStyle, style, frames, flushFrame, layoutReads, content, box,
+    scroll(target: object = transcript) { doc.dispatchEvent(Object.defineProperty(new Event('scroll'), 'target', { value: target })); },
     report: () => JSON.parse(owner.diagnostics.report.value),
     async switchMode() {
       reading.value = !reading.value;
@@ -174,7 +179,7 @@ describe('Focus fixed viewport reconciliation', () => {
     const f = setup();
     f.owner.diagnostics.start();
     const initial = f.report().initial;
-    expect(f.report().schema).toBe('focus-viewport-v2');
+    expect(f.report().schema).toBe('focus-viewport-v3');
     expect(initial.boxes.root.opacity).toBe('1');
     expect(initial.hitTests.controls.insideExpected).toBe(true);
     expect(initial.hitTests.transcript.insideExpected).toBe(true);
@@ -195,6 +200,77 @@ describe('Focus fixed viewport reconciliation', () => {
     expect(f.owner.diagnostics.report.value).not.toMatch(/PRIVATE|secret\.test|token=/u);
   });
 
+  it('distinguishes empty visible placeholders at each rendering layer without reading text', () => {
+    const f = setup();
+    const mounted = f.box('DIV', 50, 100);
+    Object.defineProperty(mounted, 'textContent', { get() { throw new Error('Must not read content'); } });
+    const empty = (y: number, height: number) => ({ ...f.box('DIV', y, height), childElementCount: 0 });
+    f.content.set('.transcript-row', [mounted, empty(150, 600), empty(900, 500), empty(-20, 70)]);
+    f.content.set('.markdown-chunk', [f.box('DIV', 100, 75), empty(175, 120)]);
+    f.content.set('.markdown-renderer', [f.box('DIV', 100, 75)]);
+    f.content.set('.node-spacer, .node-placeholder', [empty(175, 120)]);
+    f.owner.diagnostics.start();
+    expect(f.report().initial.content).toEqual({
+      rows: { total: 4, inView: 2, mountedInView: 1, emptyInView: 1, maxEmptyHeight: 600 },
+      chunks: { total: 2, inView: 2, mountedInView: 1, emptyInView: 1, maxEmptyHeight: 120 },
+      renderers: { total: 1, inView: 1, mountedInView: 1, emptyInView: 0, maxEmptyHeight: 0 },
+      nodeSpacers: { total: 1, inView: 1, mountedInView: 0, emptyInView: 1, maxEmptyHeight: 120 },
+    });
+    // A collapsed or offscreen transcript must not count its children as visible.
+    f.transcript.getBoundingClientRect = () => ({ x: 0, y: 50, width: 390, height: 0 });
+    f.scroll();
+    f.flushFrame();
+    expect(f.report().transcriptScrolls[0].content.rows).toMatchObject({ total: 4, inView: 0 });
+    expect(f.owner.diagnostics.report.value).not.toMatch(/PRIVATE|secret\.test|token=/u);
+  });
+
+  it('records a tab return even when viewport dimensions stay unchanged', () => {
+    const f = setup();
+    f.owner.diagnostics.start();
+    f.scroll();
+    f.doc.visibilityState = 'hidden';
+    f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.scroll();
+    expect(f.frames.size).toBe(0);
+    f.doc.visibilityState = 'visible';
+    f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.scroll();
+    f.flushFrame();
+    expect(f.report().viewportChanges).toEqual([]);
+    expect(f.report().visibilityChanges.map((sample: { phase: string; visibility: string }) =>
+      [sample.phase, sample.visibility])).toEqual([
+      ['visibility-change', 'hidden'], ['visibility-change', 'visible'], ['visibility-frame', 'visible'],
+    ]);
+    expect(f.report().transcriptScrolls).toHaveLength(1);
+  });
+
+  it('coalesces transcript scrolling per frame and bounds it separately from tab evidence', () => {
+    const f = setup();
+    f.owner.diagnostics.start();
+    f.scroll(f.controls);
+    expect(f.frames.size).toBe(0);
+    for (let index = 0; index < 8; index += 1) {
+      f.doc.visibilityState = 'hidden';
+      f.doc.dispatchEvent(new Event('visibilitychange'));
+      f.doc.visibilityState = 'visible';
+      f.doc.dispatchEvent(new Event('visibilitychange'));
+      f.flushFrame();
+    }
+    const visibilityChanges = f.report().visibilityChanges;
+    expect(visibilityChanges).toHaveLength(6);
+    for (let index = 0; index < 10; index += 1) {
+      f.transcript.scrollTop = index;
+      f.scroll();
+      f.scroll();
+      expect(f.frames.size).toBe(1);
+      f.flushFrame();
+    }
+    expect(f.report().transcriptScrolls.map((sample: { boxes: { transcript: { scrollTop: number } } }) =>
+      sample.boxes.transcript.scrollTop)).toEqual([4, 5, 6, 7, 8, 9]);
+    expect(f.report().visibilityChanges).toEqual(visibilityChanges);
+    expect(f.report().initial.boxes.transcript.scrollTop).toBe(1200);
+  });
+
   it('defaults to no diagnostic measurements while viewport reconciliation remains active', async () => {
     const f = setup();
     expect(f.owner.diagnostics.enabled.value).toBe(false);
@@ -210,6 +286,12 @@ describe('Focus fixed viewport reconciliation', () => {
     f.view.dispatchEvent(new Event('resize'));
     f.flushFrame();
     expect(f.style.getPropertyValue('--app-height')).toBe('720px');
+    f.scroll();
+    f.doc.visibilityState = 'hidden';
+    f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.doc.visibilityState = 'visible';
+    f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.flushFrame();
     expect(f.layoutReads).not.toHaveBeenCalled();
     expect(f.view.getComputedStyle).not.toHaveBeenCalled();
     expect(f.doc.elementFromPoint).not.toHaveBeenCalled();
@@ -221,6 +303,8 @@ describe('Focus fixed viewport reconciliation', () => {
     f.owner.diagnostics.start();
     expect(f.report().initial.phase).toBe('recording-start');
     await f.switchMode();
+    f.scroll();
+    f.doc.dispatchEvent(new Event('visibilitychange'));
     f.owner.diagnostics.stop();
     const stoppedReport = f.owner.diagnostics.report.value;
     f.layoutReads.mockClear();
@@ -232,6 +316,9 @@ describe('Focus fixed viewport reconciliation', () => {
     f.view.dispatchEvent(new Event('resize'));
     f.flushFrame();
     await f.switchMode();
+    f.scroll();
+    f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.flushFrame();
     expect(f.style.getPropertyValue('--app-height')).toBe('750px');
     expect(f.owner.diagnostics.report.value).toBe(stoppedReport);
     expect(f.layoutReads).not.toHaveBeenCalled();
@@ -243,6 +330,8 @@ describe('Focus fixed viewport reconciliation', () => {
     expect(f.report().initial.reading).toBe(false);
     expect(f.report().transitions).toEqual([]);
     expect(f.report().viewportChanges).toEqual([]);
+    expect(f.report().visibilityChanges).toEqual([]);
+    expect(f.report().transcriptScrolls).toEqual([]);
     f.layoutReads.mockClear();
     f.flushFrame();
     await vi.advanceTimersByTimeAsync(250);
@@ -269,6 +358,7 @@ describe('Focus fixed viewport reconciliation', () => {
     f.reading.value = true;
     await nextTick();
     f.view.dispatchEvent(new Event('resize'));
+    f.scroll();
     f.owner.dispose();
     await nextTick();
     f.flushFrame();
@@ -279,6 +369,7 @@ describe('Focus fixed viewport reconciliation', () => {
     f.view.dispatchEvent(new Event('pageshow'));
     f.visual.dispatchEvent(new Event('scroll'));
     f.doc.dispatchEvent(new Event('visibilitychange'));
+    f.scroll();
     f.reading.value = false;
     await nextTick();
     expect(f.frames.size).toBe(0);

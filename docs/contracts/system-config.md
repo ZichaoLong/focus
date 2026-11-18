@@ -19,10 +19,10 @@ binding state, active main-turn leases, or upstream
 
 ## Frontend activation and lifecycle
 
-`focusd` always owns one required Codex backend. Feishu and Web are independent, explicitly enabled frontends.
-Both `system.yaml.feishu_enabled` and `codex.yaml.web_enabled` default to `false`, including installation templates.
-A missing file or enable field leaves that frontend disabled; existing credentials never implicitly enable Feishu.
-There is no legacy auto-enable compatibility. Nonempty `app_id` and `app_secret` are required only when
+`focusd` always owns one required Codex backend. Feishu and Web are independent optional frontends.
+`system.yaml.feishu_enabled` defaults to `false`; `codex.yaml.web_enabled` defaults to `true`. Installation templates use the same defaults.
+A missing file or enable field uses that frontend's default. Explicit `false` disables it, and upgrades preserve existing explicit values.
+Existing credentials never implicitly enable Feishu; there is no legacy Feishu auto-enable compatibility. Nonempty `app_id` and `app_secret` are required only when
 `feishu_enabled: true`. Supplied values still undergo complete strict schema validation.
 
 | Feishu | Web | Mode |

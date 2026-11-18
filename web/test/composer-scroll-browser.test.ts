@@ -81,6 +81,29 @@ async function browseUp(page: Page, distance: number) {
 const draft = (lines: number) => Array.from({ length: lines }, (_, index) => `Draft line ${index + 1}`).join('\n');
 
 describe('composer sizing in the conversation scroll owner', () => {
+  it('keeps arrow keys on the native editing path, even with a legacy recall cache', async () => {
+    await fixture(1280, false, async page => {
+      await page.evaluate(() => localStorage.setItem('kimi-web.input-history',
+        JSON.stringify({ 'composer-scroll': ['previous prompt'] })));
+      const input = page.locator('textarea.ph');
+      for (const expanded of [false, true]) {
+        await input.fill(draft(8));
+        if (expanded) await page.locator('.expand-btn').click();
+        await input.focus();
+        await input.press('Control+Home');
+        await input.press('ArrowUp');
+        expect(await input.inputValue()).toBe(draft(8));
+        expect(await input.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBe(0);
+        await input.press('ArrowDown');
+        expect(await input.inputValue()).toBe(draft(8));
+        expect(await input.evaluate((element: HTMLTextAreaElement) => element.selectionStart)).toBeGreaterThan(0);
+        await input.fill('');
+        await input.press('ArrowUp');
+        expect(await input.inputValue()).toBe('');
+      }
+    });
+  }, 30_000);
+
   it.each([1, 8, 20])('preserves history while typing in a %s-line draft', async lines => {
     await fixture(1280, true, async page => {
       const input = page.locator('textarea.ph');

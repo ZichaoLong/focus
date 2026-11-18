@@ -374,7 +374,7 @@ class InstallTemplateTests(unittest.TestCase):
         self.assertEqual(
             yaml.safe_load("\n".join(active_lines)),
             {
-                "web_enabled": False,
+                "web_enabled": True,
                 "codex_command": "/stable/node /stable/codex",
             },
         )

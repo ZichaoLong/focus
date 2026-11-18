@@ -15,9 +15,10 @@
 
 ## 前端启用与生命周期
 
-`focusd` 始终持有一个必需的 Codex backend；飞书与 Web 是互不依赖、分别显式启用的前端。
-`system.yaml.feishu_enabled` 与 `codex.yaml.web_enabled` 都缺省为 `false`，安装模板也保持关闭。
-缺少配置文件或 enable 字段按关闭处理；已有凭据不会隐式启用飞书。不提供旧配置自动启用兼容。
+`focusd` 始终持有一个必需的 Codex backend；飞书与 Web 是互不依赖的可选前端。
+`system.yaml.feishu_enabled` 缺省为 `false`；`codex.yaml.web_enabled` 缺省为 `true`，安装模板与各自缺省值一致。
+缺少配置文件或 enable 字段时使用各自缺省值；显式 `false` 关闭对应前端，升级不覆盖已有显式值。
+已有凭据不会隐式启用飞书，不提供旧飞书配置自动启用兼容。
 只有 `feishu_enabled: true` 时，`app_id` 与 `app_secret` 才必须非空。配置值仍按完整 schema 严格校验。
 
 | 飞书 | Web | 运行模式 |

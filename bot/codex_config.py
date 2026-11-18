@@ -183,7 +183,7 @@ class CodexConfig:
     default_working_dir: str = ""
     codex_command: str = "codex"
     app_server_url: str = DEFAULT_APP_SERVER_URL
-    web_enabled: bool = False
+    web_enabled: bool = True
     web_display_name: str = "Focus Web"
     web_host: str = "127.0.0.1"
     web_port: int = 0

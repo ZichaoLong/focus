@@ -48,8 +48,11 @@ def runtime_factory(tmp_path, monkeypatch, web_static_dir):
         root = data_dir or tmp_path / str(len(runtimes))
         config = root / "config"
         config.mkdir(parents=True, exist_ok=True)
+        values = {"web_static_dir": str(web_static_dir)}
+        if web is not None:
+            values["web_enabled"] = web
         (config / "codex.yaml").write_text(
-            yaml.safe_dump({"web_enabled": web, "web_static_dir": str(web_static_dir)}),
+            yaml.safe_dump(values),
             encoding="utf-8",
         )
         runtime = FocusRuntime(data_dir=root, config_dir=config, feishu_enabled=feishu)
@@ -86,6 +89,15 @@ def test_four_modes_have_one_core_and_only_selected_ingress(
     assert runtime._adapter.stop_calls == 1
     if bot:
         assert not bot.transport_running
+
+
+def test_missing_web_flag_starts_web_without_feishu(runtime_factory):
+    runtime, _ = runtime_factory(web=None)
+    runtime.start()
+    status = control_request(runtime.data_dir, "service/status", {})
+    assert status["web_gateway_url"].startswith("http://127.0.0.1:")
+    assert status["operator_status"]["feishu"]["enabled"] is False
+    assert not hasattr(runtime, "_feishu_surface")
 
 
 def test_credentials_do_not_enable_feishu_and_flags_are_strict():

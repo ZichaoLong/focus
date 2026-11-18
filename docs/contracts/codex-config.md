@@ -2,7 +2,7 @@
 
 Document role: synchronized English peer. Canonical Chinese: `docs/contracts/codex-config.zh-CN.md`.
 
-`web_enabled` defaults to `false`, including installation templates. Only explicit `true` enables Web; it is independent of Feishu and changes require a restart. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
+`web_enabled` defaults to `true`, including installation templates. Explicit `false` disables Web; upgrades preserve existing explicit values. It is independent of Feishu and changes require a restart. [frontend activation contract](./system-config.md#frontend-activation-and-lifecycle)
 
 ## Purpose
 

@@ -14,8 +14,6 @@ export interface SlashMenuDeps {
   skills: () => AppSkill[];
   /** Emit a chosen slash command up to the parent. */
   emitCommand: (cmd: string) => void;
-  /** Record a sent command for ↑/↓ recall. */
-  historyPush: (entry: string) => void;
   /**
    * Synchronously clear the persisted draft when a bare command is chosen.
    * Mirrors the explicit clear in Composer's submit/steer paths so a draft
@@ -28,12 +26,12 @@ export interface SlashMenuDeps {
  * `/` slash-command menu: filtering, keyboard navigation state, and selection.
  *
  * The composer keeps the keydown orchestration (arrow keys, Enter/Tab, Escape)
- * because it also juggles the mention menu and history recall; this composable
+ * because it also juggles the mention menu; this composable
  * owns the menu's open/items/active state, the filter logic, and what happens
  * when an item is chosen.
  */
 export function useSlashMenu(deps: SlashMenuDeps) {
-  const { text, textareaRef, autosize, skills, emitCommand, historyPush, clearDraft } = deps;
+  const { text, textareaRef, autosize, skills, emitCommand, clearDraft } = deps;
 
   const open = ref(false);
   const items = ref<SlashCommand[]>([]);
@@ -68,10 +66,6 @@ export function useSlashMenu(deps: SlashMenuDeps) {
     }
     text.value = '';
     clearDraft?.();
-    // Menu-selected bare commands (e.g. /model, /login) reach here directly and
-    // never go through handleSubmit, so record them for recall too. acceptsInput
-    // commands are pushed later by handleSubmit together with their argument.
-    historyPush(item.name);
     emitCommand(item.name);
   }
 

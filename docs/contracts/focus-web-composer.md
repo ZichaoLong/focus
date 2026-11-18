@@ -15,9 +15,11 @@ layout boundary returns to compact, while drafts retain their existing conversat
 
 ## Keyboard editing and page boundaries
 
-PgUp and PgDn retain native caret movement and text scrolling in both compact and expanded inputs. They must not scroll
+ArrowUp, ArrowDown, PgUp and PgDn retain native caret movement and text scrolling in both compact and expanded inputs. They must not scroll
 the application frame horizontally, move the thread sidebar outside the viewport or change the draft text. The fixed
 application frame only clips overflow; each inner panel owns its own scrolling range.
+The composer does not store or recall sent input, including when the caret reaches the start of the text.
+ArrowUp/ArrowDown still select items while a slash or file suggestion menu is open. Use the existing Prompt history button to find and copy prior prompts.
 
 `ConversationToc.vue` retains its navigation node and position measurement when space is insufficient, but hidden content
 and hover targets must not widen the application frame. A wider window reveals the same navigation node again, preserving

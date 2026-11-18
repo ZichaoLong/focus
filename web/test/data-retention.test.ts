@@ -1,11 +1,9 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { ref } from 'vue';
 import { createDataRetention } from '../src/focus/client-state/data-retention';
 import { decodeDataRetention, decodeDataPrune } from '../src/focus/dataRetentionDecoder';
 import type { FocusWebApiPort } from '../src/focus/api';
-import { useInputHistory } from '../src/composables/useInputHistory';
 import { STORAGE_KEYS, draftStorageKey } from '../src/lib/storage';
-import { pruneBrowserData, setBrowserRetentionDays, protectDraft, touchDraft, recordHistoryTime, TIMING_STORAGE_KEY } from '../src/lib/dataRetention';
+import { pruneBrowserData, setBrowserRetentionDays, protectDraft, touchDraft, TIMING_STORAGE_KEY } from '../src/lib/dataRetention';
 import { createPromptTimingStore } from '../src/focus/promptTimingStore';
 
 const day = 86_400_000, now = 200 * day;
@@ -18,28 +16,29 @@ function memoryStorage(): Storage {
 beforeEach(() => { vi.stubGlobal('localStorage', memoryStorage()); vi.useFakeTimers(); vi.setSystemTime(now); setBrowserRetentionDays(30); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-it('gives undated drafts and history migration grace, preserving preferences', () => {
+it('gives undated drafts migration grace, preserving preferences', () => {
   localStorage.setItem(draftStorageKey('old'), 'draft');
-  localStorage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify({ scope: ['legacy'] }));
   localStorage.setItem(STORAGE_KEYS.colorScheme, 'dark');
   expect(pruneBrowserData()).toBe(0);
   expect(pruneBrowserData(now + 30 * day)).toBe(0);
-  expect(pruneBrowserData(now + 30 * day + 1)).toBe(2);
+  expect(pruneBrowserData(now + 30 * day + 1)).toBe(1);
   expect(localStorage.getItem(draftStorageKey('old'))).toBeNull();
   expect(localStorage.getItem(STORAGE_KEYS.colorScheme)).toBe('dark');
 });
 
-it('prunes individual history entries without letting a mounted composer resurrect them', () => {
-  localStorage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify({ scope: ['old'] }));
-  recordHistoryTime('scope', [], ['old'], now - 31 * day);
-  const text = ref('');
-  const history = useInputHistory({ text, textareaRef: ref(null), autosize: () => {}, sessionId: () => 'scope' });
-  history.push('fresh');
+it('retires input recall storage and metadata while preserving draft expiry', () => {
+  const key = draftStorageKey('recent');
+  localStorage.setItem(key, 'unsent draft');
+  localStorage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify({ scope: ['old prompt'] }));
+  localStorage.setItem('focus-web.data-retention.v1', JSON.stringify({
+    drafts: { [key]: now - day }, history: { scope: [now] }, historyDigests: { scope: 'legacy' },
+  }));
   expect(pruneBrowserData()).toBe(1);
-  history.recallOlder(); expect(text.value).toBe('fresh');
-  history.recallOlder(); expect(text.value).toBe('fresh');
-  history.push('later');
-  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.inputHistory)!)).toEqual({ scope: ['fresh', 'later'] });
+  expect(localStorage.getItem(STORAGE_KEYS.inputHistory)).toBeNull();
+  expect(localStorage.getItem(key)).toBe('unsent draft');
+  expect(JSON.parse(localStorage.getItem('focus-web.data-retention.v1')!)).toEqual({ drafts: { [key]: now - day } });
+  expect(pruneBrowserData()).toBe(0);
+  expect(pruneBrowserData(now + 30 * day)).toBe(1);
 });
 
 it('preserves a mounted draft while idle drafts expire', () => {
@@ -132,15 +131,6 @@ it('does not sweep browser data until the server policy arrives; reports partial
   await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
   expect(api.readDataRetention).toHaveBeenCalledTimes(1);
 });
-
-it('does not use stale timestamps for equal-length replacement history', () => {
-  localStorage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify({ scope: ['old'] }));
-  recordHistoryTime('scope', [], ['old'], now - 31 * day);
-  localStorage.setItem(STORAGE_KEYS.inputHistory, JSON.stringify({ scope: ['fresh replacement'] }));
-  expect(pruneBrowserData()).toBe(0);
-  expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.inputHistory)!).scope).toEqual(['fresh replacement']);
-});
-
 
 it('a quota failure cannot leave an old deletion timestamp on a freshly saved draft', () => {
   const key = draftStorageKey('fresh');

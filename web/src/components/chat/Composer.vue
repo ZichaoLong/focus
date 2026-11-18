@@ -17,7 +17,6 @@ import {
   modelThinkingAvailability,
   segmentsFor,
 } from '../../lib/modelThinking';
-import { useInputHistory } from '../../composables/useInputHistory';
 import { useSlashMenu } from '../../composables/useSlashMenu';
 import { useMentionMenu } from '../../composables/useMentionMenu';
 import { useComposerDraft } from '../../composables/useComposerDraft';
@@ -250,16 +249,9 @@ watch(text, () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sent-message history recall (shell-style ↑/↓). See useInputHistory for the
-// implementation; the composer keeps the keydown orchestration (which also
-// juggles the slash and mention menus).
-// ---------------------------------------------------------------------------
-const history = useInputHistory({ text, textareaRef, autosize, sessionId: () => props.sessionId });
-
-// ---------------------------------------------------------------------------
 // Slash-command menu — see useSlashMenu for the implementation. The composer
 // keeps the keydown orchestration (arrow keys / Enter / Escape) because it also
-// juggles the mention menu and history recall.
+// juggles the mention menu.
 // ---------------------------------------------------------------------------
 const attachmentUpload = props.attachmentUpload ?? useAttachmentUpload({
   uploadImage: () => props.composerReady ? props.uploadImage : undefined,
@@ -279,14 +271,12 @@ const {
   autosize,
   skills: () => props.skills,
   emitCommand: (cmd) => emit('command', cmd),
-  historyPush: (entry) => history.push(entry),
   clearDraft,
 });
 
 // ---------------------------------------------------------------------------
 // @-mention menu — see useMentionMenu for the implementation. The composer
-// keeps the keydown orchestration because it also juggles the slash menu and
-// history recall.
+// keeps the keydown orchestration because it also juggles the slash menu.
 // ---------------------------------------------------------------------------
 const {
   open: mentionOpen,
@@ -307,8 +297,6 @@ const {
 // ---------------------------------------------------------------------------
 
 function handleInput(): void {
-  // Manual typing leaves history-browsing mode — the text is now a fresh draft.
-  history.resetBrowsing();
   if (capabilities.value.commands) updateSlashMenu();
   else slashOpen.value = false;
   updateMentionMenu();
@@ -421,9 +409,6 @@ function handleSubmit(): void {
   const readyAttachments = attachments.value.filter((a) => !a.uploading && !a.error && a.fileId);
 
   if (!trimmed && readyAttachments.length === 0) return;
-
-  // Record commands and prompts for recall; image-only sends remain absent.
-  history.push(trimmed);
 
   // If it's a known slash command, keep the optional tail as command input
   // instead of submitting it as normal chat text. This covers `/goal <task>`,
@@ -572,36 +557,6 @@ function handleKeydown(e: KeyboardEvent): void {
     if (e.key === 'Escape') {
       e.preventDefault();
       mentionOpen.value = false;
-      return;
-    }
-  }
-
-  // History recall (shell-style ↑/↓) — see useInputHistory for the machinery.
-  //
-  // Disabled entirely in the expanded editor: that mode is for composing long
-  // multi-line text, so the arrows always move the caret within the draft and
-  // never jump to a previous message.
-  //
-  // ENTERING history: a plain ArrowUp only recalls when the caret is at the
-  // very start of the text, so editing a multi-line draft with the arrows
-  // still works — ArrowUp moves the caret within the draft until it reaches
-  // the top, instead of jumping to a previous message mid-navigation.
-  // ONCE BROWSING, the arrows walk history directly, regardless of where the
-  // caret landed — a recalled multi-line entry leaves the caret at its end, and
-  // the old "must be at the start" gate then trapped it there, so further
-  // ArrowUp did nothing ("only one step back"). Walking freely while browsing
-  // fixes that; typing exits history (handleInput resets browsing), after which
-  // the arrows move the caret normally again.
-  if (!expanded.value && !slashOpen.value && !mentionOpen.value && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey) {
-    const browsing = history.isBrowsing();
-    if (e.key === 'ArrowUp' && history.hasHistory() && (browsing || history.caretAtTextStart())) {
-      e.preventDefault();
-      history.recallOlder();
-      return;
-    }
-    if (e.key === 'ArrowDown' && browsing) {
-      e.preventDefault();
-      history.recallNewer();
       return;
     }
   }
