@@ -3,8 +3,12 @@ import { i18n } from '../../src/i18n';
 import '../../src/style.css';
 import FocusFileDownloadDialog from '../../src/focus/FocusFileDownloadDialog.vue';
 import { FocusWebApi } from '../../src/focus/api';
+import { installMobileNavigation, negotiateMobileHost } from '../../src/lib/mobileHost';
+import { backFromDialog } from '../../src/composables/dialogStack';
 
 i18n.global.locale.value = 'en';
+await negotiateMobileHost();
+installMobileNavigation(backFromDialog);
 const api = new FocusWebApi();
 await api.initialize();
 const name = new URLSearchParams(location.search).get('file') || 'sample.pdf';

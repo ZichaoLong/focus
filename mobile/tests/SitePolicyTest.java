@@ -16,6 +16,10 @@ public final class SitePolicyTest {
         expect(!Site.root("https://focus.example/preview", origin));
         expect(Site.root("https://focus.example/?thread=t", origin));
         expect(Site.entry("http://[::1]:8123").equals("http://[::1]:8123"));
+        expect(Site.httpsPage("https://example.org:8443/article?q=read#section"));
+        expect(!Site.httpsPage("https://user:pass@example.org/"));
+        expect(!Site.httpsPage("file:///data/local"));
+        expect(!Site.httpsPage("http://localhost/article"));
         for (String url : new String[]{"http://10.0.0.1", "http://localhost.example", "http://127.0.0.1@other",
                                       "https://focus.example/path", "https://focus.example/#token=example"}) {
             try { Site.entry(url); throw new AssertionError(url); }

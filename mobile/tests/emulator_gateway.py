@@ -27,7 +27,7 @@ def port():
         return sock.getsockname()[1]
 
 
-def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, https_count):
+def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, https_count, navigation):
     if not (ROOT / "bot/web_assets/dist/focus-connect.txt").is_file():
         raise SystemExit("Build web/ before running the emulator fixture")
     prefix = "https://10.0.2.2:"
@@ -39,6 +39,10 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
     previous = json.loads(state.read_text()) if state.exists() else []
     sample = lab / "sample.txt"
     sample.write_bytes(b"Focus mobile transfer\n" * 8000)
+    guest = prefix + str(port()) if navigation else ""
+    catalog = lab / "navigation.md"
+    if navigation:
+        catalog.write_text(f"# Navigation catalog\n\n[Open child](sample.txt)\n\n[Open article]({guest}/jump)\n")
     gateway_options = {"static_dir": ROOT / "bot/web_assets/dist", "disconnect_grace_seconds": disconnect_grace}
     if session_lifetime is not None:
         gateway_options.update(session_ttl_seconds=session_lifetime, session_max_lifetime_seconds=session_lifetime)
@@ -57,6 +61,8 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
             ]} for n in range(12)
         ]
         runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Download sample]({sample})"
+        if navigation:
+            runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Navigation catalog]({catalog})\n\n[Open article]({guest}/jump)"
         controller = runtime.controller
         retention = DataRetentionService(DataRetentionStore(runtime.workspace.parent, config_dir=runtime.workspace.parent / "config"), {})
         for tid in ("thread-1", "thread-2"):
@@ -89,6 +95,8 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
         gateway.start()
         gateways.append(gateway)
         config += [origin + " {", "bind 127.0.0.1", f'tls "{lab / "server.pem"}" "{lab / "server.key"}"']
+        if navigation:
+            config.append(f"redir /test-sso {guest}/signin-{index} 302")
         password = ""
         if index == 0 or (index == 1 and second_basic):
             password = old.get("password") or secrets.token_hex(6)
@@ -102,6 +110,18 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
                    "header_up X-Focus-Trusted-Proxy-Proof " + proof, "header_up X-Focus-Trusted-Proxy-Identity test",
                    "}", "}"]
         entries.append({"origin": origin, "password": password})
+    if navigation:
+        config += [guest + " {", "bind 127.0.0.1", f'tls "{lab / "server.pem"}" "{lab / "server.key"}"',
+                   "redir /jump /article 302", "route /article {",
+                   "@credential header Authorization *", 'respond @credential "Unexpected credentials" 403',
+                   "@cookie header Cookie *", 'respond @cookie "Unexpected cookies" 403',
+                   'respond "External article" 200', "}"]
+        for index, entry in enumerate(entries[:https_count]):
+            config += [f"header /signin-{index} Content-Type text/html",
+                       f'respond /signin-{index} `<a href="/return-{index}">Continue to Focus</a>`',
+                       f"redir /return-{index} {entry['origin']}/?focusApp=1&thread=thread-1 302"]
+        config += ["}"]
+        (lab / "guest-origin.txt").write_text(guest)
     path = lab / "Caddyfile"
     path.write_text("\n".join(config) + "\n")
     env = dict(os.environ, XDG_CONFIG_HOME=str(lab), XDG_DATA_HOME=str(lab))
@@ -126,5 +146,6 @@ if __name__ == "__main__":
     parser.add_argument("--second-basic", action="store_true", help="challenge the second HTTPS entry with a different password")
     parser.add_argument("--https-count", type=int, choices=range(2, 7), default=2,
                         help="number of HTTPS entries for page retention and LRU tests")
+    parser.add_argument("--navigation", action="store_true", help="add an isolated redirected article, sign-in round trip and nested file")
     args = parser.parse_args()
-    serve(args.lab.resolve(), args.disconnect_grace, args.basic_forward_port, args.session_lifetime, args.second_basic, args.https_count)
+    serve(args.lab.resolve(), args.disconnect_grace, args.basic_forward_port, args.session_lifetime, args.second_basic, args.https_count, args.navigation)

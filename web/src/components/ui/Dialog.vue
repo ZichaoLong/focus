@@ -4,7 +4,7 @@
      Includes focus trap, Esc-to-close, and optional overlay-click-to-close. -->
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { openDialogCount } from '../../composables/dialogStack';
+import { trackDialog } from '../../composables/dialogStack';
 import IconButton from './IconButton.vue';
 import Icon from './Icon.vue';
 
@@ -17,6 +17,7 @@ const props = withDefaults(defineProps<{
   showHeader?: boolean;
   closeOnOverlay?: boolean;
   closeOnEsc?: boolean;
+  systemBack?: () => void;
   /** md 440 (default) · lg 640 · xl content width · wide 1120 · full visual viewport. */
   size?: 'md' | 'lg' | 'xl' | 'wide' | 'full';
   /** auto (default) tracks content; fixed caps at 680px; viewport fills the
@@ -51,6 +52,11 @@ const FOCUSABLE =
 function close() {
   emit('update:open', false);
   emit('close');
+}
+
+function systemBack(): void {
+  if (props.systemBack) props.systemBack();
+  else if (props.closeOnEsc) close();
 }
 
 function focusables(): HTMLElement[] {
@@ -106,14 +112,14 @@ watch(
   () => props.open,
   async (isOpen) => {
     if (isOpen) {
-      openDialogCount.value += 1;
+      trackDialog(systemBack, true);
       previouslyFocused = document.activeElement;
       await nextTick();
       const initial = resolveInitialFocus();
       const list = focusables();
       (initial ?? list[0] ?? panel.value)?.focus();
     } else {
-      openDialogCount.value = Math.max(0, openDialogCount.value - 1);
+      trackDialog(systemBack, false);
       if (previouslyFocused instanceof HTMLElement) {
         previouslyFocused.focus();
         previouslyFocused = null;
@@ -134,7 +140,7 @@ onBeforeUnmount(() => {
   if (typeof window !== 'undefined') window.removeEventListener('keydown', onKeydown);
   // Release this dialog's slot if it unmounts while still open (e.g. the
   // parent v-if's it away before `open` flips to false).
-  if (props.open) openDialogCount.value = Math.max(0, openDialogCount.value - 1);
+  trackDialog(systemBack, false);
 });
 </script>
 

@@ -33,6 +33,11 @@ final class Site {
         try { return origin(url).equals(origin); } catch (RuntimeException e) { return false; }
     }
 
+    static boolean httpsPage(String url) {
+        try { return origin(url).startsWith("https://"); }
+        catch (RuntimeException invalid) { return false; }
+    }
+
     static boolean root(String url, String origin) {
         return url != null && sameOrigin(url, origin) && "/".equals(URI.create(url).getRawPath());
     }

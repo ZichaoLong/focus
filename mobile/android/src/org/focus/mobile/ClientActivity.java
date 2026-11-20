@@ -39,6 +39,7 @@ public class ClientActivity extends Activity {
     private PageSlots pages;
     private ApkUpdate apkUpdate;
     private String switchTarget = "";
+    private Object pendingBack;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable retry = () -> { if (foreground && retryNeeded) openProbe(false); };
 
@@ -109,7 +110,7 @@ public class ClientActivity extends Activity {
     }
 
     private void retireView() {
-        generation++; ticket = "";
+        generation++; ticket = ""; pendingBack = null;
         if (apkUpdate != null) apkUpdate.cancel();
         if (files != null) files.cancel();
         if (web != null) { frame.removeView(web); web.stopLoading(); web.destroy(); web = null; }
@@ -164,8 +165,12 @@ public class ClientActivity extends Activity {
                 }
                 if (!req.isForMainFrame()) return false;
                 if (Site.sameOrigin(url, origin)) return false;
-                if (sso && "https".equals(req.getUrl().getScheme())) return false;
-                if (req.hasGesture() && ("https".equals(req.getUrl().getScheme()) || "http".equals(req.getUrl().getScheme()))) {
+                if (Site.httpsPage(url)) {
+                    if (sso) return false;
+                    if (req.hasGesture() && !req.isRedirect()) openExternal(url);
+                    return true;
+                }
+                if (req.hasGesture() && !req.isRedirect() && "http".equals(req.getUrl().getScheme()) && req.getUrl().getUserInfo() == null) {
                     try { startActivity(new Intent(Intent.ACTION_VIEW, req.getUrl())); } catch (ActivityNotFoundException ignored) {}
                 }
                 return true;
@@ -177,7 +182,7 @@ public class ClientActivity extends Activity {
             }
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
-                ticket = ""; files.cancel(); apkUpdate.cancel(); drawer.dismiss();
+                ticket = ""; pendingBack = null; files.cancel(); apkUpdate.cancel(); drawer.dismiss();
                 switcher.setVisibility(View.VISIBLE);
                 if (!selected) main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
@@ -240,7 +245,9 @@ public class ClientActivity extends Activity {
                 if (!selected || epoch != generation || ticket.isEmpty() || !Site.root(v.getUrl(), origin)
                     || !Site.root(url, origin) || !msg.startsWith(prefix)) { result.cancel(); return true; }
                 String op = msg.substring(prefix.length());
-                if ("instances".equals(op)) {
+                if ("external".equals(op)) {
+                    result.confirm(openExternal(value) ? "ok" : "error");
+                } else if ("instances".equals(op)) {
                     result.confirm("ok"); main.post(() -> { if (epoch == generation) showDrawer(value); });
                 } else if ("apk-save".equals(op)) {
                     apkUpdate.save(files, result);
@@ -350,7 +357,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','android-update'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -359,11 +366,16 @@ public class ClientActivity extends Activity {
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
     @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
-    @Override protected void onPause() { foreground = false; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onPause() { foreground = false; pendingBack = null; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onStop() {
+        super.onStop();
+        if (!selected && !isFinishing()) moveTaskToBack(true);
+    }
     private void pickInstance() { showDrawer(""); }
 
     private void showDrawer(String theme) {
         if (!selected || switching) return;
+        pendingBack = null;
         try {
             JSONArray sites = new JSONArray(getSharedPreferences("instances", MODE_PRIVATE).getString("list", "[]"));
             boolean dark = "dark".equals(theme) || (theme.isEmpty() && (getResources().getConfiguration().uiMode & 48) == 32);
@@ -438,7 +450,31 @@ public class ClientActivity extends Activity {
         super.onTrimMemory(level);
         if (!selected && !switching && level != TRIM_MEMORY_UI_HIDDEN && level >= TRIM_MEMORY_RUNNING_LOW) retireView();
     }
-    @Override public void onBackPressed() { if (drawer != null && drawer.dismiss()) return; if (web != null && !probe && web.canGoBack()) web.goBack(); else pickInstance(); }
+    private boolean openExternal(String url) {
+        if (!selected || !foreground || switching || !Site.httpsPage(url) || Site.sameOrigin(url, origin)) return false;
+        startActivity(new Intent(this, ExternalPageActivity.class).setData(Uri.parse(url)));
+        return true;
+    }
+
+    private void browserBack() {
+        if (web != null && !probe && web.canGoBack()) web.goBack();
+        else moveTaskToBack(true);
+    }
+
+    @Override public void onBackPressed() {
+        if ((drawer != null && drawer.dismiss()) || !selected || switching || pendingBack != null) return;
+        if (web == null || probe || ticket.isEmpty() || !Site.root(web.getUrl(), origin)) { browserBack(); return; }
+        Object press = new Object(); pendingBack = press;
+        // 0 is a confirmed older document. An absent/stale reply must never perform a second action.
+        String script = "if(!window.__focusMobile){0}else if(window.__focusMobile.ticket===" + JSONObject.quote(ticket)
+            + "){typeof window.__focusBack==='function'?window.__focusBack():0}";
+        web.evaluateJavascript(script, reply -> {
+            if (pendingBack != press) return;
+            pendingBack = null;
+            if ("false".equals(reply)) moveTaskToBack(true);
+            else if ("0".equals(reply)) browserBack();
+        });
+    }
     @Override protected void onActivityResult(int code, int result, Intent data) { super.onActivityResult(code,result,data); if (code == ApkUpdate.INSTALL_PERMISSION) apkUpdate.permissionResult(); else files.result(code,result,data); }
     void releaseTask() { selected = false; retireView(); finishAndRemoveTask(); }
 

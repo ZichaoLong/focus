@@ -78,7 +78,10 @@ struct Index {
     if (this.editing) { this.editing = false; return true; }
     if (this.authSite) { this.authSite = ''; this.authLink = ''; return true; }
     if (this.managing) { this.managing = ''; return true; }
-    return this.returnToPage();
+    if (!this.returnToPage()) {
+      this.ctx().moveAbilityToBackground().catch(() => { this.message = '系统未能将 Focus 移到后台'; });
+    }
+    return true;
   }
 
   private returnToPage(): boolean {
@@ -146,60 +149,78 @@ struct Index {
   manager() {
     Scroll() {
       Column({ space: 12 }) {
-        Text(this.editing ? '实例入口' : 'Focus 实例').fontSize(26).fontWeight(FontWeight.Bold)
+        if (!this.editing && this.sites.some((item: Site) => item.id === this.returnId)) {
+          Button('返回对话').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.returnToPage())
+        }
+        Row({ space: 8 }) {
+          Text(this.editing ? (this.editingId ? '编辑实例' : '添加实例') : '管理实例')
+            .fontSize(26).fontWeight(FontWeight.Bold).layoutWeight(1)
+          if (!this.editing) { Button('添加实例').onClick(() => this.edit(new Site())) }
+        }.width('100%').margin({ bottom: 8 })
         if (this.editing) {
-          TextInput({ placeholder: '名称', text: this.label }).onChange(v => this.label = v)
-          TextInput({ placeholder: 'https://focus.example', text: this.address }).onChange(v => this.address = v)
-          Row() {
-            Checkbox().select(this.sso).onChange(v => this.sso = v)
-            Text('网页登录 / SSO（允许 HTTPS 登录跳转）')
-          }
-          Row({ space: 8 }) {
-            Button('取消').onClick(() => this.editing = false)
-            Button('保存').onClick(() => this.save())
-          }
-        } else {
-          if (this.sites.some((item: Site) => item.id === this.returnId)) {
-            Button('返回对话').onClick(() => this.returnToPage())
-          }
+          Column({ space: 10 }) {
+            Text('实例名称').fontWeight(FontWeight.Medium)
+            TextInput({ placeholder: '名称', text: this.label }).onChange(v => this.label = v)
+            Text('访问地址').fontWeight(FontWeight.Medium)
+            TextInput({ placeholder: 'https://focus.example', text: this.address }).onChange(v => this.address = v)
+            Row({ space: 8 }) {
+              Checkbox().select(this.sso).accessibilityText('允许跨站登录').onChange(v => this.sso = v)
+              Text('允许跨站登录（SSO）').onClick(() => { this.sso = !this.sso; })
+            }
+            Text('仅在入口需要跳到其他网站登录时开启。HTTP Basic 会在连接时询问。')
+              .fontSize(14).fontColor($r('sys.color.ohos_id_color_text_secondary'))
+          }.alignItems(HorizontalAlign.Start).width('100%').padding(16).borderRadius(16)
+            .backgroundColor($r('sys.color.ohos_id_color_list_card_bg'))
           Row({ space: 12 }) {
-            Text('保留实例页面数')
-            Select([{ value: '1' }, { value: '2' }, { value: '3' }, { value: '4' }, { value: '5' }])
-              .selected(this.pageLimit - 1).value(this.pageLimit.toString()).onSelect((index: number) => this.setPageLimit(index + 1))
-          }
-          Button('添加实例').onClick(() => this.edit(new Site()))
+            Button('取消').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.editing = false)
+            Button('保存').onClick(() => this.save())
+          }.width('100%').justifyContent(FlexAlign.End)
+        } else {
+          if (!this.sites.length) { Text('添加 Focus 的访问地址以开始使用。').fontSize(15) }
           ForEach(this.sites, (site: Site) => {
-            Column({ space: 6 }) {
-              Row({ space: 6 }) {
-                Button(site.name).layoutWeight(1).onClick(() => this.open(site))
-                Button('⋮').accessibilityText('管理 ' + site.name).onClick(() => {
+            Column({ space: 8 }) {
+              Row() {
+                Column({ space: 4 }) {
+                  if (site.id === this.returnId) { Text('当前实例').fontSize(12).fontColor($r('sys.color.ohos_id_color_emphasize')) }
+                  Text(site.name).fontSize(18).fontWeight(FontWeight.Medium)
+                  Text(site.origin).fontSize(14).fontColor($r('sys.color.ohos_id_color_text_secondary'))
+                }.alignItems(HorizontalAlign.Start).layoutWeight(1).onClick(() => this.open(site))
+                Button('⋮').buttonStyle(ButtonStyleMode.TEXTUAL).accessibilityText('管理 ' + site.name).onClick(() => {
                   this.managing = this.managing === site.id ? '' : site.id;
+                  this.authSite = ''; this.authLink = ''; this.message = '';
                 })
-              }
-              Text(site.origin).fontSize(14)
+              }.width('100%')
               if (this.managing === site.id) {
-                Button('重新连接').onClick(() => this.open(site, '', true))
-                Row({ space: 8 }) {
-                  Button('编辑').fontSize(13).onClick(() => this.edit(site))
-                  Button('删除').fontSize(13).onClick(() => this.remove(site))
-                  Button('通路检查').fontSize(13).onClick(() => router.pushUrl({ url: 'pages/Probe', params: site }))
-                  Button('授权链接').fontSize(13).onClick(() => { this.authSite = site.id; this.authLink = ''; })
+                Divider()
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  Button('重新连接').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.open(site, '', true))
+                  Button('编辑').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.edit(site))
+                  Button('通路检查').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => router.pushUrl({ url: 'pages/Probe', params: site }))
+                  Button('使用 Focus 授权链接').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => { this.authSite = site.id; this.authLink = ''; })
+                  Button('删除').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.remove(site))
                 }
               }
               if (this.authSite === site.id) {
-                TextInput({ placeholder: '同一入口的 Focus 授权链接' }).onChange(v => this.authLink = v)
+                Text('仅在 Focus 提示需要授权时，粘贴这个实例签发的链接。').fontSize(14)
+                TextInput({ placeholder: '同一入口的 Focus 授权链接', text: this.authLink }).onChange(v => this.authLink = v)
                 Button('打开一次').onClick(() => {
                   if (focusRoot(this.authLink, site.origin) && new url.URL(this.authLink).hash.startsWith('#token=')) {
                     this.open(site, this.authLink); this.authLink = ''; this.authSite = '';
                   } else this.message = '需要同一入口的授权链接';
                 })
               }
-            }.width('100%').padding({ top: 10, bottom: 12 })
+            }.width('100%').padding(16).borderRadius(16).alignItems(HorizontalAlign.Start)
+              .backgroundColor($r('sys.color.ohos_id_color_list_card_bg'))
           }, (site: Site) => site.id)
+          Row({ space: 12 }) {
+            Text('保留实例页面数').layoutWeight(1)
+            Select([{ value: '1' }, { value: '2' }, { value: '3' }, { value: '4' }, { value: '5' }])
+              .selected(this.pageLimit - 1).value(this.pageLimit.toString()).onSelect((index: number) => this.setPageLimit(index + 1))
+          }.width('100%').padding(14).margin({ top: 8 }).borderRadius(14).backgroundColor($r('sys.color.ohos_id_color_list_card_bg'))
         }
         if (this.message) { Text(this.message).fontColor('#a83b26') }
-      }.width('100%').padding(16)
-    }.width('100%').height('100%')
+      }.width('100%').padding(20).alignItems(HorizontalAlign.Start)
+    }.width('100%').height('100%').backgroundColor($r('sys.color.ohos_id_color_background'))
   }
 
   @Builder
@@ -228,7 +249,7 @@ struct Index {
         Text('管理实例').width('100%').padding(12).onClick(() => this.selectEntry(''))
         Text('关于 Focus Mobile').width('100%').padding(12).onClick(() => {
           this.drawerOpen = false;
-          AlertDialog.show({ title: 'Focus Mobile 1.3.0', message: 'HarmonyOS · ArkWeb' });
+          AlertDialog.show({ title: 'Focus Mobile 1.4.0', message: 'HarmonyOS · ArkWeb' });
         })
       }.width('82%').constraintSize({ maxWidth: 328 }).height('100%').padding(14)
         .foregroundColor(this.drawerDark ? '#f1f1ed' : '#242523')

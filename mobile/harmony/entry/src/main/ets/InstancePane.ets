@@ -1,9 +1,10 @@
 import { webview } from '@kit.ArkWeb';
+import { router } from '@kit.ArkUI';
 import { KeyboardAvoidMode as WindowKeyboardAvoidMode } from '@ohos.arkui.UIContext';
 import { common } from '@kit.AbilityKit';
 import { util, url } from '@kit.ArkTS';
 import { print } from '@kit.BasicServicesKit';
-import { Site, Login, savedLogin, rememberLogin, forgetLogin, basicRealm, sitePrefs, siteOrigin, focusRoot } from './Sites';
+import { Site, Login, savedLogin, rememberLogin, forgetLogin, basicRealm, sitePrefs, siteOrigin, focusRoot, httpsOrigin } from './Sites';
 import { FileExchange } from './FileExchange';
 
 export class InstanceTab {
@@ -49,6 +50,8 @@ export struct InstancePane {
   private rendererFailures: number = 0;
   private lastReauth: number = 0;
   private gone: boolean = false;
+  private backRequest: number = 0;
+  private pendingBack: number = 0;
   private ctx(): common.UIAbilityContext { return getContext(this) as common.UIAbilityContext; }
   private probeUrl(): string { return this.site.origin + '/focus-connect.txt'; }
 
@@ -63,6 +66,7 @@ export struct InstancePane {
   }
 
   private resetView(phase: string, address: string): void {
+    this.pendingBack = 0;
     clearTimeout(this.retry);
     this.webChrome = false; this.files.cancel(); this.ticket = ''; this.loginForm = false;
     this.handler?.cancel(); this.handler = undefined; this.password = '';
@@ -108,6 +112,7 @@ export struct InstancePane {
   }
 
   private foregroundChanged(): void {
+    this.pendingBack = 0;
     clearTimeout(this.retry);
     if (!this.active) return;
     this.signal(this.foreground ? 'resume' : 'pause');
@@ -123,7 +128,7 @@ export struct InstancePane {
       'const url=new URL(location.href);if(!url.searchParams.has("focusApp") && !url.searchParams.has("print") && !url.hash){' +
       'url.searchParams.set("focusApp","1");location.replace(url.href)}else{' +
       'window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
-      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
+      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer","navigation"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
     this.controller.runJavaScript(script).catch(() => {});
   }
 
@@ -209,12 +214,24 @@ export struct InstancePane {
     }
     if (!req.isMainFrame()) return false;
     try {
-      if (siteOrigin(address) === this.site.origin || this.site.sso && address.startsWith('https://')) return false;
+      const origin = siteOrigin(address);
+      if (origin === this.site.origin) return false;
+      if (origin.startsWith('https://')) {
+        if (this.site.sso) return false;
+        if (req.isRequestGesture() && !req.isRedirect()) void this.openExternal(address);
+        return true;
+      }
     } catch {}
-    if (req.isRequestGesture() && /^https?:\/\//i.test(address)) {
+    if (req.isRequestGesture() && !req.isRedirect() && /^http:\/\//i.test(address)) {
       this.ctx().startAbility({ action: 'ohos.want.action.viewData', uri: address }).catch(() => {});
     }
     return true;
+  }
+
+  private openExternal(address: string): Promise<void> {
+    this.pendingBack = 0;
+    return router.pushUrl({ url: 'pages/ExternalPage', params: { address: address } })
+      .catch(() => { this.message = '无法打开外部网页'; });
   }
 
   private filePrompt(event: OnPromptEvent, epoch: number): boolean {
@@ -225,6 +242,11 @@ export struct InstancePane {
       event.result.handleCancel(); return true;
     }
     const op = event.message.slice(prefix.length);
+    if (op === 'external') {
+      const origin = httpsOrigin(event.value);
+      if (!this.foreground || !origin || origin === this.site.origin) { event.result.handleCancel(); return true; }
+      event.result.handlePromptConfirm('ok'); void this.openExternal(event.value); return true;
+    }
     if (op === 'instances') {
       event.result.handlePromptConfirm('ok');
       setTimeout(() => { if (epoch === this.epoch && this.active) this.showDrawer(event.value); }, 0);
@@ -261,6 +283,7 @@ export struct InstancePane {
 
   private leave(): void {
     if (!this.active || this.leaving) return;
+    this.pendingBack = 0;
     this.leaving = true;
     this.signal('pause');
     const epoch = this.epoch;
@@ -291,9 +314,31 @@ export struct InstancePane {
     }
   }
 
-  private back(): void {
+  private leaveToSystem(): void {
+    this.ctx().moveAbilityToBackground().catch(() => { this.message = '系统未能将 Focus 移到后台'; });
+  }
+
+  private browserBack(): void {
     if (this.phase === 'page' && this.controller.accessBackward()) this.controller.backward();
-    else this.showDrawer('');
+    else this.leaveToSystem();
+  }
+
+  private back(): void {
+    if (!this.active || this.leaving || this.gone || this.pendingBack) return;
+    if (this.loginForm) { this.block('已取消认证。'); return; }
+    if (this.phase !== 'page' || !this.ticket || !focusRoot(this.controller.getUrl(), this.site.origin)) {
+      this.browserBack(); return;
+    }
+    const press = ++this.backRequest;
+    this.pendingBack = press;
+    const script = 'if(!window.__focusMobile){0}else if(window.__focusMobile.ticket===' + JSON.stringify(this.ticket) +
+      '){typeof window.__focusBack==="function"?window.__focusBack():0}';
+    this.controller.runJavaScript(script).then(result => {
+      if (this.pendingBack !== press || this.gone) return;
+      this.pendingBack = 0;
+      if (result === 'false') this.leaveToSystem();
+      else if (result === '0') this.browserBack();
+    }).catch(() => { if (this.pendingBack === press) this.pendingBack = 0; });
   }
   aboutToDisappear(): void {
     this.gone = true; this.epoch++; clearTimeout(this.retry);
@@ -316,7 +361,7 @@ export struct InstancePane {
         return null;
       })
       .onPageBegin(() => { if (epoch === this.epoch) {
-        this.ticket = ''; this.webChrome = false; this.files.cancel();
+        this.ticket = ''; this.webChrome = false; this.pendingBack = 0; this.files.cancel();
         if (!this.active) this.leavePage(false);
       } })
       .onProgressChange(e => {

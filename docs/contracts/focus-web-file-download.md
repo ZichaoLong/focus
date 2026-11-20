@@ -173,8 +173,9 @@ Only the latest 20 steps are retained; nothing is persisted or written to browse
   cancellation/completion still returns to that preview. Toolbar information popovers and Mermaid
   viewers remain independently dismissible layers rather than file-navigation entries.
 - Repeated Back, opening a new file or closing cancels superseded reads; late metadata or contents
-  cannot reopen stale targets. Phone system Back, browser Back/Forward and navigation gestures retain
-  native browser behavior; their integration is a separate design.
+  cannot reopen stale targets. With the negotiated mobile `navigation` feature, system Back dismisses
+  the top popover, diagram or download form, then reuses previous-file navigation. The first file closes
+  to the conversation. Browser history remains untouched. Ordinary browser Back/Forward and gestures use browser defaults.
 
 ## PDF previews
 

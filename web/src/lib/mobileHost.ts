@@ -13,6 +13,7 @@ declare global { interface Window {
   __focusMobile?: MobileOffer;
   __focusCanRebuild?: () => boolean;
   __focusSetTabActive?: (active: boolean) => boolean;
+  __focusBack?: () => boolean;
 } }
 
 let host: MobileOffer | undefined;
@@ -47,6 +48,27 @@ export async function negotiateMobileHost(): Promise<void> {
 
 export function hasMobileFeature(feature: string): boolean {
   return host?.features.includes(feature) === true;
+}
+
+/** Only actual link activations in the negotiated top document use the guest browser. */
+export function installMobileNavigation(back: () => boolean): () => void {
+  if (!host || !hasMobileFeature('navigation')) return () => {};
+  const ticket = host.ticket;
+  function openLink(event: MouseEvent): void {
+    if (!event.isTrusted || event.defaultPrevented || event.button !== 0 || !(event.target instanceof Element)) return;
+    const link = event.target.closest('a[href]');
+    if (!(link instanceof HTMLAnchorElement) || link.hasAttribute('download') || link.protocol !== 'https:'
+      || link.origin === location.origin || link.username || link.password) return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.prompt('focus/1/' + ticket + '/external', link.href);
+  }
+  window.__focusBack = back;
+  document.addEventListener('click', openLink, true);
+  return () => {
+    document.removeEventListener('click', openLink, true);
+    if (window.__focusBack === back) delete window.__focusBack;
+  };
 }
 
 export function mobileInstanceName(): string {

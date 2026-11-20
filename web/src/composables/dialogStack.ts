@@ -1,10 +1,14 @@
-import { ref } from 'vue';
+// Opening order also applies to teleported viewers and dialogs whose iframe has focus.
+const openDialogs = new Set<() => void>();
 
-/**
- * Number of design-system `Dialog` instances currently open. FocusApp.vue's
- * capture-phase Escape handler reads this so any open dialog — including ones
- * whose open state lives outside FocusApp.vue (e.g. the sidebar session search) —
- * owns Escape over the background side panel. Incremented/decremented by
- * `Dialog.vue` as `open` flips.
- */
-export const openDialogCount = ref(0);
+export function trackDialog(back: () => void, open: boolean): void {
+  if (open) openDialogs.add(back);
+  else openDialogs.delete(back);
+}
+
+export function backFromDialog(): boolean {
+  const top = Array.from(openDialogs).at(-1);
+  if (!top) return false;
+  top();
+  return true;
+}

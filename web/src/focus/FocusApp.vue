@@ -46,7 +46,8 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
-import { hasMobileFeature, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
+import { hasMobileFeature, installMobileNavigation, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
+import { backFromDialog } from '../composables/dialogStack';
 import { createFocusViewport, focusViewportDiagnosticKey } from './focusViewport';
 import FocusThreadActions from './FocusThreadActions.vue';
 import FocusTransientNotice from './FocusTransientNotice.vue';
@@ -813,8 +814,20 @@ async function submitReview(target: Record<string, unknown>): Promise<void> {
 const focusShell = ref<HTMLElement | null>(null);
 const viewport = shallowRef<ReturnType<typeof createFocusViewport> | null>(null);
 provide(focusViewportDiagnosticKey, computed(() => viewport.value?.diagnostics ?? null));
+let releaseNavigation: (() => void) | undefined;
+
+function mobileBack(): boolean {
+  if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  else if (mobilePrintPreview.value) closeMobilePrintPreview();
+  else if (backFromDialog()) return true;
+  else if (detailOpen.value) closeDetail();
+  else if (mobileEditorExpanded.value) conversationPaneRef.value?.collapseEditor();
+  else return false;
+  return true;
+}
 
 onMounted(() => {
+  releaseNavigation = installMobileNavigation(mobileBack);
   loadSidebarCollapsed();
   if (focusShell.value) viewport.value = createFocusViewport(focusShell.value, readingMode);
   if (hasMobileFeature('android-update')) window.addEventListener('focus-host-about', openMobileAbout);
@@ -862,6 +875,7 @@ watch(detailOpen, (open) => {
 }, { flush: 'sync' });
 
 onUnmounted(() => {
+  releaseNavigation?.();
   window.removeEventListener('focus-host-about', openMobileAbout);
   window.removeEventListener('focus-host-ready', syncHostChrome);
   historyEditConfirmation?.abort();

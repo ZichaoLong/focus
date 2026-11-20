@@ -3,6 +3,7 @@ package org.focus.mobile;
 import android.app.Activity;
 import android.view.View;
 import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.*;
 
 final class Views {
@@ -23,6 +24,18 @@ final class Views {
                 v.setPadding(pads.left, pads.top, pads.right, pads.bottom);
                 return WindowInsets.CONSUMED;
             });
+        }
+    }
+
+    static void systemBars(Activity a, boolean dark, int color) {
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            int light = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+            a.getWindow().getInsetsController().setSystemBarsAppearance(dark ? 0 : light, light);
+        } else {
+            a.getWindow().setStatusBarColor(color); a.getWindow().setNavigationBarColor(color);
+            int light = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+            View decor = a.getWindow().getDecorView();
+            decor.setSystemUiVisibility((decor.getSystemUiVisibility() & ~light) | (dark ? 0 : light));
         }
     }
 

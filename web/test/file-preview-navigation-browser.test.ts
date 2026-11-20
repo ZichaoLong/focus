@@ -19,7 +19,7 @@ beforeAll(async () => {
 }, 60_000);
 afterAll(async () => { await browser?.close(); await server?.close(); rmSync(cacheDir, { recursive: true, force: true }); });
 
-async function setup(page: Page) {
+async function setup(page: Page, mobile = false) {
   page.setDefaultTimeout(15_000);
   const errors: string[] = [], reads: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -32,6 +32,8 @@ async function setup(page: Page) {
     ['/work/docs/sample.pdf', readFileSync(resolve('test/fixtures/file-preview-data/sample.pdf'))],
     ['/work/docs/archive.zip', 'not previewable'],
   ]);
+  if (mobile) files.set('/work/docs/catalog.md', files.get('/work/docs/catalog.md')
+    + '\n\n[Guest article](https://guest.example/article)\n\n```mermaid\nflowchart LR\n  A --> B\n```');
   await page.route('**/test/fixtures/file-preview.html?*', async route => {
     const response = await route.fetch();
     await route.fulfill({ response, headers: { ...response.headers(), 'Content-Security-Policy': csp } });
@@ -47,7 +49,18 @@ async function setup(page: Page) {
     else if (u.pathname === '/api/files/download') { reads.push(path); await route.fulfill({ contentType: 'application/octet-stream', body }); }
     else await route.fulfill({ status: 404, json: {} });
   });
-  await page.goto(url);
+  if (mobile) {
+    const root = new URL('/?focusApp=1&file=docs/catalog.md', url).href;
+    await page.addInitScript(() => {
+      window.__focusMobile = { version: 1, instance: '167cd970-48fd-4171-9952-cc61c304a106',
+        ticket: 'a1e39586-8f3c-4645-83a3-166aba3b67e2', features: ['navigation'] };
+    });
+    await page.route(root, async route => {
+      const response = await route.fetch({ url });
+      await route.fulfill({ response, body: (await response.text()).replace('./file-preview.ts', '/test/fixtures/file-preview.ts') });
+    });
+    await page.goto(root);
+  } else await page.goto(url);
   await page.getByRole('button', { name: 'Open file', exact: true }).click();
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await page.getByText('END CATALOG', { exact: true }).waitFor();
@@ -57,6 +70,43 @@ async function setup(page: Page) {
 const back = (page: Page) => page.getByRole('button', { name: 'Back to previous file', exact: true });
 // The renderer gives links a destination-based aria-label; match their visible caption.
 const link = (page: Page, label: string) => page.getByRole('link').filter({ hasText: label });
+
+it('consumes one mobile Back per preview layer and opens activated HTTPS links outside the source document', async () => {
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    const { errors } = await setup(page, true);
+    const systemBack = () => page.evaluate(() => window.__focusBack?.());
+    await link(page, 'Open PDF').click();
+    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.locator('.pdf-text-layer span').first().waitFor();
+    await page.locator('.file-preview-filename').click();
+    expect(await systemBack()).toBe(true);
+    expect(await page.locator('.file-preview-filename').getAttribute('aria-expanded')).toBe('false');
+    await page.getByRole('button', { name: /^(Save as…|Download)$/ }).click();
+    await page.locator('.file-download-form').waitFor();
+    expect(await systemBack()).toBe(true);
+    await page.locator('.pdf-text-layer span').first().waitFor();
+    expect(await systemBack()).toBe(true);
+    await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
+    await page.locator('.md-mermaid').getByRole('button', { name: 'Open', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Mermaid' }).waitFor();
+    expect(await systemBack()).toBe(true);
+    await page.getByRole('dialog', { name: 'Mermaid' }).waitFor({ state: 'detached' });
+    expect(await page.getByRole('heading', { name: 'Catalog', exact: true }).isVisible()).toBe(true);
+    await link(page, 'Missing file').click();
+    await page.locator('.file-download-form [role=alert]').waitFor();
+    expect(await systemBack()).toBe(true);
+    await page.getByRole('heading', { name: 'Catalog', exact: true }).waitFor();
+    const requests: string[] = [];
+    page.on('dialog', async dialog => { requests.push(dialog.message() + ' ' + dialog.defaultValue()); await dialog.accept('ok'); });
+    await link(page, 'Guest article').click();
+    expect(requests).toEqual(['focus/1/a1e39586-8f3c-4645-83a3-166aba3b67e2/external https://guest.example/article']);
+    expect(await systemBack()).toBe(true);
+    await page.locator('.file-preview').waitFor({ state: 'detached' });
+    expect(await systemBack()).toBe(false);
+    expect(errors).toEqual([]);
+  } finally { await page.close(); }
+}, 45_000);
 
 it.each([1280, 1920])('maximizes the preview trail while preserving reading state and normal file forms at width %i', async width => {
   const height = width === 1280 ? 900 : 1080;

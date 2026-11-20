@@ -1928,6 +1928,7 @@ function rebindComposerAttachmentsForSession(
 }
 
 defineExpose({
+  collapseEditor: () => setComposerSurfaceMode('compact'),
   checkpointReading,
   loadComposerForEdit,
   loadComposerRecovery,

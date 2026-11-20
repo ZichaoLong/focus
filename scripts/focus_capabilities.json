@@ -873,6 +873,14 @@
         {
           "path": "web/src/components/chat/readingBookmark.ts",
           "symbol": "threadReading"
+        },
+        {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "installMobileNavigation"
+        },
+        {
+          "path": "web/src/composables/dialogStack.ts",
+          "symbol": "backFromDialog"
         }
       ],
       "contract": [
@@ -3125,6 +3133,10 @@
         {
           "path": "web/src/lib/mobileHost.ts",
           "symbol": "saveMobileFile"
+        },
+        {
+          "path": "web/src/focus/FocusFileDownloadDialog.vue",
+          "symbol": "systemBack"
         }
       ],
       "contract": [

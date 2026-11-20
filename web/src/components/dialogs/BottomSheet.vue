@@ -5,6 +5,7 @@
 <!-- look (tokened scrim, surface-raised panel, UI font). -->
 <script setup lang="ts">
 import { onUnmounted, watch } from 'vue';
+import { trackDialog } from '../../composables/dialogStack';
 import { useI18n } from 'vue-i18n';
 
 const { t } = useI18n();
@@ -38,6 +39,7 @@ watch(
   () => props.modelValue,
   (open) => {
     if (typeof document === 'undefined') return;
+    trackDialog(close, open);
     if (open) document.addEventListener('keydown', onKeydown);
     else document.removeEventListener('keydown', onKeydown);
   },
@@ -45,6 +47,7 @@ watch(
 );
 
 onUnmounted(() => {
+  trackDialog(close, false);
   if (typeof document !== 'undefined') document.removeEventListener('keydown', onKeydown);
 });
 </script>

@@ -33,6 +33,13 @@ export function focusRoot(address: string, origin: string): boolean {
   catch { return false; }
 }
 
+export function httpsOrigin(address: string): string {
+  try {
+    const origin = siteOrigin(address);
+    return origin.startsWith('https://') ? origin : '';
+  } catch { return ''; }
+}
+
 export function sitePrefs(context: common.UIAbilityContext): preferences.Preferences {
   return preferences.getPreferencesSync(context, { name: 'instances' });
 }

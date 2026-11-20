@@ -80,10 +80,13 @@ async function downloadFile(): Promise<void> {
 }
 onMounted(() => document.addEventListener('fullscreenchange', updateFullscreen));
 
-function closeInfo(): void {
+function closeInfo(): boolean {
+  if (!infoOpen.value) return false;
   infoOpen.value = false;
   infoButton.value?.focus({ preventScroll: true });
+  return true;
 }
+defineExpose({ closeInfo });
 
 async function toggleInfo(): Promise<void> {
   if (infoOpen.value) { closeInfo(); return; }

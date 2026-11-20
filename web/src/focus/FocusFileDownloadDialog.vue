@@ -17,6 +17,7 @@ const preview = createFilePreview(props.api);
 const navigation = createFilePreviewNavigation(download, preview);
 const narrow = useNarrowViewport();
 const maximized = ref(false);
+const viewer = ref<InstanceType<typeof FocusFilePreview> | null>(null);
 const fillsViewport = computed(() => narrow.value || maximized.value);
 const previewKind = computed(() => filePreviewKind(download.info.value?.name ?? ''));
 const previewLimit = computed(() => filePreviewLimit(previewKind.value ?? 'text'));
@@ -46,6 +47,13 @@ function showPreview(): void {
   void navigation.showPreview();
 }
 
+function systemBack(): void {
+  if (download.opened.value && preview.opened.value) navigation.close();
+  else if (!download.opened.value && viewer.value?.closeInfo()) return;
+  else if (navigation.canGoBack.value) void navigation.back();
+  else navigation.close();
+}
+
 onBeforeUnmount(() => { clearTimeout(noticeTimer); navigation.closeAll(); });
 defineExpose({ open });
 </script>
@@ -53,7 +61,7 @@ defineExpose({ open });
 <template>
   <Dialog :open="download.opened.value || preview.opened.value" :title="t(download.opened.value ? 'focus.fileDownloadTitle' : 'focus.filePreviewTitle')"
     :size="download.opened.value ? 'md' : fillsViewport ? 'full' : 'wide'" :height="download.opened.value || fillsViewport ? 'auto' : 'viewport'"
-    :padded="download.opened.value" :show-header="download.opened.value" @update:open="!$event && navigation.close()">
+    :padded="download.opened.value" :show-header="download.opened.value" :system-back="systemBack" @update:open="!$event && navigation.close()">
     <form v-if="download.opened.value" class="file-download-form" @submit.prevent="download.save">
       <p class="file-download-path">{{ download.path.value }}</p>
       <p v-if="download.loading.value" role="status">{{ t('focus.fileInfoLoading') }}</p>
@@ -79,7 +87,7 @@ defineExpose({ open });
         </Button>
       </div>
     </form>
-    <FocusFilePreview v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview"
+    <FocusFilePreview ref="viewer" v-if="preview.opened.value" v-show="!download.opened.value" :preview="preview"
       :can-go-back="navigation.canGoBack.value" :restore-view="navigation.restoreView.value"
       :can-maximize="!narrow" :maximized="maximized" @toggle-maximized="maximized = !maximized"
       @close="navigation.close()" @back="navigation.back()" @download="navigation.showDownload()"

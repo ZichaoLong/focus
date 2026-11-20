@@ -136,7 +136,7 @@ function selectTab(tabId: string): void {
 </script>
 
 <template>
-  <Dialog :open="true" :close-on-esc="false" :title="t('model.title')" size="xl" height="fixed" @close="emit('close')">
+  <Dialog :open="true" :close-on-esc="false" :system-back="() => emit('close')" :title="t('model.title')" size="xl" height="fixed" @close="emit('close')">
     <div ref="dialogRef" class="mp">
       <!-- Search -->
       <div class="search-wrap">

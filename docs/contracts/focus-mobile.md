@@ -31,9 +31,11 @@ protocol version and feature list and dispatches `focus-host-ready`. Unknown ver
   `finish` copies the staged file to the selected destination. `abort` releases staging. Success returns `ok`.
   Cancellation or failure stops the write. Existing authenticated Web reads supply the contents. HTML uploads use the system picker and the existing Web uploader.
 - `print` accepts a ticket-bound print request with a job name up to 255 characters. Web lays out the prepared, complete Q&A preview. The shell passes the current WebView to the system print service. The content stays in document memory.
+- `navigation` lets the negotiated top document forward activated cross-origin HTTPS content links to the ticket-bound `external` operation. The host validates the URL, rejects embedded credentials and opens an on-demand guest view above the source page. It displays the current origin and offers the system browser. Android uses a separate process and data directory, ArkWeb a private browsing context. Guest pages receive no Focus bridge, instance credentials or instance browsing data. One system Back closes the entire guest view. Entry sign-in redirects use the instance WebView under its SSO policy.
+- System UI, native drawers and the guest view handle Back first. At the active Focus root, the host checks the document ticket and calls `__focusBack()`. Web reports synchronously whether it handled one layer. File previews reuse previous-file navigation and cancellation, closing the first file to the conversation. An unhandled root Back backgrounds the app with the selected instance. Older documents can use WebView history before backgrounding. Replaced documents, inactive tabs and uncertain asynchronous replies cannot cause a second Back. Ordinary browsers use their own navigation.
 
 Top-level navigation and teardown revoke the ticket. Parking suspends its use until the same document is selected again. External documents and sandboxed HTML previews receive no bridge.
-The protocol accepts no arbitrary URLs, paths, scripts or business retries. Push registration and notification permissions require separate capabilities.
+Guest URLs only open in the separate browsing context. The protocol accepts no arbitrary authenticated requests, paths, scripts or business retries. Push registration and notification permissions require separate capabilities.
 
 ## Instance drawer and Android distribution
 
