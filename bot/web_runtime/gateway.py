@@ -2111,7 +2111,11 @@ class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, W
         ):
             raise WebRuntimeError(
                 "This browser document was replaced or is no longer registered.",
-                code="document_replaced",
+                code=(
+                    "document_replaced"
+                    if document is not None and document.session_token == session.session_token
+                    else "document_unregistered"
+                ),
                 status=409,
             )
         self._bind_client_session(session, normalized_client_id)

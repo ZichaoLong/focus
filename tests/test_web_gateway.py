@@ -1143,6 +1143,13 @@ class WebGatewayTests(WebGatewayHarness):
             lambda: reloaded_document["client_id"] not in self.gateway._client_documents
         )
 
+        async with self.session.get(
+            f"{self.endpoint}/api/meta",
+            headers=self._client_headers(reloaded_document, include_origin=False, include_csrf=False),
+        ) as stale:
+            self.assertEqual(stale.status, 409)
+            self.assertEqual((await stale.json())["error"]["code"], "document_unregistered")
+
         after_grace_document = await self._register_document(
             resume_client_id=reloaded_document["client_id"],
             incarnation_id="after-grace-document",
@@ -1842,7 +1849,7 @@ class WebGatewayTests(WebGatewayHarness):
         ) as response:
             self.assertEqual(response.status, 409)
             payload = await response.json()
-        self.assertEqual(payload["error"]["code"], "document_replaced")
+        self.assertEqual(payload["error"]["code"], "document_unregistered")
 
         async with second_session.get(
             f"{self.endpoint}/api/threads",

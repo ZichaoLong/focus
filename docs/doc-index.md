@@ -103,6 +103,7 @@ Status guidance:
 - [`server-request-lifecycle.md`](./contracts/server-request-lifecycle.md)
 - [`codex-app-server-schema-drift.md`](./contracts/codex-app-server-schema-drift.md)
 - [`focus-web-wire.md`](./contracts/focus-web-wire.md)
+- [Focus mobile containers and host negotiation](./contracts/focus-mobile.md)
 - [`focus-web-transcript-window.md`](./contracts/focus-web-transcript-window.md)
 - [`focus-web-markdown-copy.md`](./contracts/focus-web-markdown-copy.md)
 - [`focus-web-markdown-rendering.md`](./contracts/focus-web-markdown-rendering.md)

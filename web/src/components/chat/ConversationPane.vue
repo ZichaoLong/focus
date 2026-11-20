@@ -1,5 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/ConversationPane.vue -->
 <script setup lang="ts">
+import { presentationScope } from '../../lib/mobileHost';
+import { readReadingBookmark, saveReadingBookmark } from './readingBookmark';
 import { canScrollVertically, captureTranscriptScrollAnchor, restoreTranscriptScrollAnchor, type TranscriptScrollAnchor } from './transcriptScrollAnchor';
 import type { SummaryExportRequest } from '../../types';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
@@ -33,6 +35,7 @@ const { t } = useI18n();
 const props = withDefaults(defineProps<{
   turns: ChatTurn[];
   sessionId?: string;
+  restoreReadingItem?: (turn: string, item: string) => Promise<string | null>;
   /** Draft/attachment scope for the composer. It may differ from sessionId
    *  while composing a new thread in a workspace. */
   composerSessionId?: string;
@@ -714,6 +717,37 @@ function currentTranscriptAnchor(pane: HTMLElement): TranscriptScrollAnchor | nu
   return transcriptAnchor?.scrollTop === pane.scrollTop
     ? transcriptAnchor : captureTranscriptScrollAnchor(pane);
 }
+let bookmark = props.restoreReadingItem ? readReadingBookmark() : null;
+let savingBookmark: ReturnType<typeof setTimeout> | undefined;
+function checkpointReading(): void {
+  clearTimeout(savingBookmark);
+  savingBookmark = undefined;
+  const pane = panesRef.value;
+  if (!props.restoreReadingItem || !pane || !props.composerSessionId || !props.turns.length || props.sessionLoading || bookmark) return;
+  if (following.value && !props.hasNewerMessages) { saveReadingBookmark(null); return; }
+  const anchor = currentTranscriptAnchor(pane);
+  const row = anchor && props.turns.find(turn => turn.id === anchor.id);
+  if (anchor && row) saveReadingBookmark({ scope: presentationScope(props.composerSessionId)!, turn: row.rawTurnId ?? '', item: row.itemId ?? '', anchor });
+}
+watch(() => [props.composerSessionId, props.turns, props.sessionLoading] as const, async () => {
+  if (!bookmark || !props.composerSessionId || props.sessionLoading || !props.turns.length) return;
+  const saved = bookmark;
+  bookmark = null;
+  if (saved.scope !== presentationScope(props.composerSessionId)) return;
+  const fence = claimOrdinaryScrollAuthority();
+  if (!props.turns.some(row => row.id === saved.anchor.id) && saved.turn && saved.item) {
+    if (!await props.restoreReadingItem?.(saved.turn, saved.item)) return;
+  }
+  await nextTick();
+  const pane = panesRef.value;
+  if (!pane || !scrollWriteFenceIsCurrent(fence) || presentationScope(props.composerSessionId) !== saved.scope) return;
+  if (restoreTranscriptScrollAnchor(pane, saved.anchor, { preserveScrollMotion: false })) {
+    following.value = false;
+    transcriptAnchor = saved.anchor;
+    lastScrollTop = pane.scrollTop;
+    reportTranscriptViewport();
+  }
+}, { flush: 'post' });
 function reportTranscriptViewport(): void {
   const pane = panesRef.value;
   if (!props.continuousTranscript || !pane) return;
@@ -801,6 +835,7 @@ function hasUserActionFollowLock(): boolean {
 }
 
 function onPanesScroll(): void {
+  if (props.restoreReadingItem && savingBookmark === undefined) savingBookmark = setTimeout(checkpointReading, 500);
   scheduleTocTableHitTest();
   reportTranscriptViewport();
   const el = panesRef.value;
@@ -1754,6 +1789,7 @@ function onContentMutated(): void {
 
 function onVisibilityChange(): void {
   if (typeof document === 'undefined') return;
+  if (document.visibilityState === 'hidden') checkpointReading();
   if (document.visibilityState === 'visible' && following.value) {
     scheduleStableFollow();
   }
@@ -1808,6 +1844,8 @@ onMounted(() => {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
     window.visualViewport?.addEventListener('resize', onVisualViewportResize);
+    window.addEventListener('pagehide', checkpointReading);
+    window.addEventListener('focus-host-pause', checkpointReading);
     window.addEventListener('pointerup', finishScrollbarDrag);
     window.addEventListener('pointercancel', finishScrollbarDrag);
     window.addEventListener('blur', onWindowBlur);
@@ -1828,6 +1866,9 @@ onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange);
   }
   window.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+  clearTimeout(savingBookmark);
+  window.removeEventListener('pagehide', checkpointReading);
+  window.removeEventListener('focus-host-pause', checkpointReading);
   window.removeEventListener('pointerup', finishScrollbarDrag);
   window.removeEventListener('pointercancel', finishScrollbarDrag);
   window.removeEventListener('blur', onWindowBlur);

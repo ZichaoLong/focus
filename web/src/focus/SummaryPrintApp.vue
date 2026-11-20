@@ -1,14 +1,17 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
+import { printMobileSummary } from '../lib/mobileHost';
 import { normalizeSummaryTitle, summaryDocumentBody } from './summaryDocumentTitle';
-import { receiveSummaryPrint } from './summaryPrintWindow';
+import { receiveSummaryPrint, type PrintPayload } from './summaryPrintWindow';
 import { renderSummaryPrintMarkdown } from './summaryPrintMarkdown';
 import { prepareSummaryPrint } from './summaryPrintPreparation';
 import 'katex/dist/katex.min.css';
 import './summaryPrint.css';
 
 const { t } = useI18n();
+const props = defineProps<{ preview?: { content: PrintPayload | null } }>();
+defineEmits<{ close: [] }>();
 const content = ref<HTMLElement>();
 const html = ref('');
 const rawSource = ref('');
@@ -16,10 +19,13 @@ const documentTitle = ref('');
 const printedTitle = computed(() => normalizeSummaryTitle(documentTitle.value));
 const status = ref<'loading' | 'ready' | 'error'>('loading');
 const fallback = ref(false);
+const printFailed = ref(false);
+let jobName = 'Focus';
 let dispose = () => {};
 
 async function render(markdown: string, suggestedFilename: string, title: string): Promise<void> {
-  document.title = suggestedFilename.replace(/\.pdf$/i, '') || 'Focus — Q&A';
+  jobName = suggestedFilename.replace(/\.pdf$/i, '') || 'Focus — Q&A';
+  if (!props.preview) document.title = jobName;
   documentTitle.value = normalizeSummaryTitle(title);
   const body = summaryDocumentBody(markdown);
   try {
@@ -44,15 +50,25 @@ async function render(markdown: string, suggestedFilename: string, title: string
 }
 
 function print(): void {
-  if (status.value === 'ready') window.print();
+  if (status.value !== 'ready') return;
+  if (props.preview) printFailed.value = !printMobileSummary(jobName);
+  else window.print();
 }
 
 onMounted(() => {
-  document.title = 'Focus — Q&A';
   document.documentElement.classList.add('summary-print-page');
+  if (props.preview) {
+    document.documentElement.classList.add('summary-mobile-print');
+    dispose = watch(() => props.preview?.content, payload => {
+      if (payload && 'markdown' in payload) void render(payload.markdown, payload.suggestedFilename, payload.documentTitle);
+      else if (payload) status.value = 'error';
+    }, { immediate: true });
+    return;
+  }
+  document.title = 'Focus — Q&A';
   dispose = receiveSummaryPrint((markdown, filename, title) => { void render(markdown, filename, title); }, () => { status.value = 'error'; });
 });
-onUnmounted(() => { dispose(); document.documentElement.classList.remove('summary-print-page'); });
+onUnmounted(() => { dispose(); document.documentElement.classList.remove('summary-print-page', 'summary-mobile-print'); });
 </script>
 
 <template>
@@ -61,6 +77,7 @@ onUnmounted(() => { dispose(); document.documentElement.classList.remove('summar
       <div class="summary-print-actions">
         <h1>{{ t('focus.printSummary') }}</h1>
         <button type="button" :disabled="status !== 'ready'" @click="print">{{ t('focus.printButton') }}</button>
+        <button v-if="preview" type="button" @click="$emit('close')">{{ t('focus.closePrintPreview') }}</button>
       </div>
       <div v-if="status === 'ready'" class="summary-title-editor">
         <label for="summary-document-title">{{ t('focus.exportDocumentTitle') }}</label>
@@ -69,7 +86,8 @@ onUnmounted(() => { dispose(); document.documentElement.classList.remove('summar
       </div>
       <p>{{ t('focus.printScope') }}</p>
       <p>{{ t('focus.printHelp') }}</p>
-      <p>{{ t('focus.printMobileHelp') }}</p>
+      <p v-if="!preview">{{ t('focus.printMobileHelp') }}</p>
+      <p v-if="printFailed" role="status">{{ t('focus.printSystemUnavailable') }}</p>
       <p v-if="fallback" role="status">{{ t('focus.printFallback') }}</p>
     </header>
     <p v-if="status !== 'ready'" class="summary-print-status" role="status">

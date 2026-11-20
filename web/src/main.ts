@@ -1,3 +1,4 @@
+import { negotiateMobileHost } from './lib/mobileHost';
 import { createApp } from 'vue';
 import i18n from './i18n';
 import { installClientErrorCapture } from './debug/trace';
@@ -11,6 +12,7 @@ import './style.css';
 installClientErrorCapture();
 
 // A print preview is a standalone document, not another active Focus client.
+await negotiateMobileHost();
 const app = new URLSearchParams(window.location.search).get('print') === 'summary'
   ? await import('./focus/SummaryPrintApp.vue')
   : await import('./focus/FocusApp.vue');

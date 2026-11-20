@@ -17,6 +17,7 @@ import type { FocusForkResult, FocusHistoryEditPrompt, FocusLifecycleOperation, 
 
 const props = defineProps<{
   documentReloadRequired: boolean;
+  documentUnregistered?: boolean;
   projectionStale: boolean;
   projectionReloading: boolean;
   backendResetOutcomeUnknown: boolean;
@@ -80,7 +81,7 @@ function lifecycleStateLabel(state: FocusLifecycleTargetState): string {
   >
     <Banner v-if="documentReloadRequired" variant="danger">
       <span class="primary-notice-with-actions">
-        <span>{{ t('focus.documentReplaced') }}</span>
+        <span>{{ t(documentUnregistered ? 'focus.documentUnregistered' : 'focus.documentReplaced') }}</span>
         <Button size="sm" variant="secondary" @click="emit('reload')">
           {{ t('focus.reloadPage') }}
         </Button>

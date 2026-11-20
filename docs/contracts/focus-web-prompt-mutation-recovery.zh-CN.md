@@ -204,6 +204,9 @@ terminal status。
 
 ## 5. Composer settlement 与 browser 恢复边界
 
+普通 tab 使用 sessionStorage。协商 resume 的单实例移动窗口用实例隔离的持久存储保存相同的 GET locator 和既有 text-only recovery record。新 document 继续执行原有的 schema、writer 与结果核验。
+
+
 Composer 在 POST 前不清空 text/chips。terminal safety result 到达时：
 
 - `succeeded`：commit exact `ComposerSubmission` 并清空仍匹配的 press-time payload；

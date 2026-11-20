@@ -1,3 +1,4 @@
+import { cancelMobileFile, saveMobileFile } from '../lib/mobileHost';
 import { computed, ref, shallowRef } from 'vue';
 import type { FocusWebApiPort } from './api';
 import { canChooseFileDestination, chooseFileDestination, saveFileResponse } from './browserFileSave';
@@ -92,8 +93,10 @@ export function createFileDownload(api: FileDownloadApi) {
     errorKey.value = '';
     statusKey.value = '';
     received.value = 0;
+    let nativeSaveOpen = false;
     try {
       const destination = nativePicker.value ? await chooseFileDestination(saveName) : { kind: 'download' as const };
+      nativeSaveOpen = destination?.kind === 'mobile';
       if (destination === null || controller.signal.aborted) return;
       if (destination.kind === 'download') {
         if (nativePicker.value) {
@@ -116,9 +119,13 @@ export function createFileDownload(api: FileDownloadApi) {
         statusKey.value = 'focus.fileDownloadHandedOff';
       } else {
         const response = await api.fileContent(target.path, controller.signal);
-        await saveFileResponse(destination.handle, response, controller.signal, (bytes) => {
+        const progress = (bytes: number) => {
           if (!controller.signal.aborted) received.value = bytes;
-        });
+        };
+        if (destination.kind === 'mobile') {
+          await saveMobileFile(response, controller.signal, progress);
+          nativeSaveOpen = false;
+        } else await saveFileResponse(destination.handle, response, controller.signal, progress);
         if (!controller.signal.aborted) {
           close();
           statusKey.value = 'focus.fileSaved';
@@ -127,6 +134,7 @@ export function createFileDownload(api: FileDownloadApi) {
     } catch (error) {
       if (!controller.signal.aborted) errorKey.value = fileDownloadErrorKey(error);
     } finally {
+      if (nativeSaveOpen) cancelMobileFile();
       if (!controller.signal.aborted) busy.value = false;
     }
   }

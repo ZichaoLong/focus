@@ -9,6 +9,44 @@ import { FakeApi, installFocusClientTestHooks, snapshot, thread } from './suppor
 installFocusClientTestHooks();
 
 describe('Focus Web client', () => {
+  it.each([
+    ['document_unregistered', 409, false, 1],
+    ['unauthorized', 401, false, 1],
+    ['document_replaced', 409, false, 0],
+    ['http_401', 401, false, 0],
+    ['document_unregistered', 409, true, 0],
+  ] as const)('handles %s (HTTP %s, update busy %s) without sending a business command', async (code, status, busy, count) => {
+    const reload = vi.fn();
+    vi.stubGlobal('window', { location: { href: 'https://focus.test/', reload } });
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const api = new FakeApi();
+    const client = useFocusWebClient(api);
+    await client.load();
+    client.updateBusy.value = busy;
+    api.operatorStatusError = new FocusApiError(code, { status, code });
+    await client.refreshOperatorStatus();
+    expect(reload).toHaveBeenCalledTimes(count);
+    expect(client.outerAuthRequired.value).toBe(code === 'http_401');
+    expect(api.submitPromptCalls).toEqual([]);
+    expect(api.interruptCalls).toEqual([]);
+    expect(api.unknownResolutionCalls).toEqual([]);
+    client.dispose();
+  });
+
+  it('retries the initial network read when the entry becomes reachable', async () => {
+    const api = new FakeApi();
+    api.initializeError = new TypeError('Failed to fetch');
+    const initialize = vi.spyOn(api, 'initialize');
+    const client = useFocusWebClient(api);
+    await client.load();
+    expect(client.authRequired.value).toBe(false);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(initialize).toHaveBeenCalledTimes(2);
+    expect(client.snapshot.value?.thread.id).toBe('thread-1');
+    expect(api.submitPromptCalls).toEqual([]);
+    client.dispose();
+  });
+
   it('continues initial target recovery after a stale thread directory read', async () => {
     const api = new FakeApi();
     const originalListThreads = api.listThreads.bind(api);

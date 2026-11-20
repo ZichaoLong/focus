@@ -1,3 +1,4 @@
+import { recoveryStorage } from '../lib/mobileHost';
 import { decodeDataRetention, decodeDataPrune } from './dataRetentionDecoder';
 import type { FocusDataRetentionPolicy, FocusDataPruneResult } from './types';
 import { focusPerformance } from './focusPerformance';
@@ -123,7 +124,7 @@ function newDocumentIncarnation(): string {
 
 function loadClientId(): string {
   try {
-    return sessionStorage.getItem(CLIENT_STORAGE_KEY)?.trim() ?? '';
+    return recoveryStorage().getItem(CLIENT_STORAGE_KEY)?.trim() ?? '';
   } catch {
     return '';
   }
@@ -131,7 +132,7 @@ function loadClientId(): string {
 
 function storeClientId(value: string): void {
   try {
-    sessionStorage.setItem(CLIENT_STORAGE_KEY, value);
+    recoveryStorage().setItem(CLIENT_STORAGE_KEY, value);
   } catch {
     // The current document remains usable; a later reload receives a fresh
     // server-issued identity when browser session storage is unavailable.
@@ -158,6 +159,9 @@ async function errorFromResponse(
   } catch {
     // A proxy or browser may replace the JSON body. Preserve the HTTP status.
   }
+  // Focus session rejection has no HTTP authentication challenge. A proxy can
+  // return its own JSON error body even when its schema resembles Focus.
+  if (response.status === 401 && response.headers.has('WWW-Authenticate')) body = null;
   const code = body?.error.code ?? `http_${response.status}`;
   const message = body?.error.message || response.statusText || 'Focus Web request failed.';
   const effectEvidence = options.preEffectFocusErrorCodes?.has(code) === true

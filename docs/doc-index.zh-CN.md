@@ -86,6 +86,7 @@
 - [`server-request-lifecycle.zh-CN.md`](./contracts/server-request-lifecycle.zh-CN.md)
 - [`codex-app-server-schema-drift.zh-CN.md`](./contracts/codex-app-server-schema-drift.zh-CN.md)
 - [`focus-web-wire.zh-CN.md`](./contracts/focus-web-wire.zh-CN.md)
+- [Focus 移动容器与能力协商](./contracts/focus-mobile.zh-CN.md)
 - [`focus-web-transcript-window.zh-CN.md`](./contracts/focus-web-transcript-window.zh-CN.md)
 - [`focus-web-markdown-copy.zh-CN.md`](./contracts/focus-web-markdown-copy.zh-CN.md)
 - [`focus-web-markdown-rendering.zh-CN.md`](./contracts/focus-web-markdown-rendering.zh-CN.md)

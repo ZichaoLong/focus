@@ -982,7 +982,12 @@ continues the existing 1/2/4/8/10-second backoff even if fetch ignores cancellat
 retries. Replacement, suspend and dispose cancel old probes/deadlines; late responses/events from old generations cannot
 change the current connection or authentication state. Dispose removes the recovery listeners.
 
-Recovery rebuilds transport and rereads bounded state without document registration, page reload or replaying prompts,
-approvals or other mutations. `401` and `document_replaced/document_unregistered` still stop retry and require the existing
-explicit recovery action. Server disconnect grace and session lifetimes are unchanged. Reading mode, drafts and verified
-transcript reading anchors survive; see the reading-mode and transcript-window contracts.
+Connection recovery keeps the document and rereads bounded state. A negotiated native foreground signal uses the same
+wake check. A missing registration returns `document_unregistered`. A replaced capability in the same session returns
+`document_replaced`. Both and Focus `401 unauthorized` stop the old transport. A previously initialized visible page may
+reload once after a lost registration or expired Focus session. A persisted allowance limits this to once per minute.
+Pending submissions, locked approvals, unknown memory-only actions, updates and resets retain explicit recovery.
+A replaced document requires explicit refresh. Initial registration rejection displays the existing authorization instructions.
+The browser or shell handles outer HTTP challenges. Initial transient network and 5xx errors back off while visible.
+Recovery registers identity, reads the target and reconciles evidence. It never resubmits business actions.
+See the [mobile container contract](./focus-mobile.md) for reading continuity.

@@ -117,11 +117,10 @@ extra authority and never replays an effect automatically.
 The external page URL is the bookmarkable configured origin and contains no
 fragment token. `focusctl web open` and runtime discovery continue to publish
 only the local loopback endpoint; neither publishes the external origin, proof,
-or label. If a live session expires or the service restarts, this contract only
-guarantees that an explicit page reload or reopening the bookmark can register
-again through the proxy. It does not promise unattended silent refresh and
-never replays a mutation, steer, approval, or another request whose effect may
-already have occurred.
+or label. After session expiry or a service restart, an established page may rebuild the document through
+the trusted proxy according to the [bounded connection recovery contract](../contracts/focus-web-wire.md#browser-connection-recovery).
+Initial denial, competing documents and uncertain local operations retain the explicit recovery surface and bookmark.
+Recovery never replays business operations.
 
 The authentication-required surface must reload the whole document as its
 explicit recovery action; it must not call ordinary load again inside a stale
@@ -212,7 +211,7 @@ effect.
   match the loaded external authority. `403 Invalid trusted proxy
   proof/identity` or a cross-origin rejection means that the proof, label, or
   browser `Origin` failed admission. If an established page later receives
-  `401`, explicitly reload the whole document as required by section 4.
+  `401`, recover the document as specified in section 4.
 - Diagnose in this order: the proxy upstream targets the correct instance's
   fixed loopback port; external `Host` remains exact; a browser-supplied
   `Origin` is forwarded unchanged; client-supplied Focus headers are removed;

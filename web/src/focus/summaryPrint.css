@@ -12,6 +12,9 @@ html.summary-print-page,
 
 .summary-print-page #app { position: static; inset: auto; }
 
+/* The mobile adapter paginates the current WebView for the system print job. */
+.summary-mobile-print body > :not(#focus-mobile-print) { display: none !important; }
+
 .summary-print { padding: 24px; font-size: 15px; line-height: 1.6; }
 .summary-print-toolbar { max-width: 900px; margin: 0 auto 24px; }
 .summary-print-actions { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }

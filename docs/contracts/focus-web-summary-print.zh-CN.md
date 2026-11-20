@@ -40,6 +40,8 @@ PDF 消费者不新增 PDF endpoint、服务端浏览器依赖、外部转换服
 
 ## 打印与生命周期
 
+协商移动宿主 `print` 能力时，Web 在当前 document 内存中把同一份完整导出交给 `SummaryPrintApp`。预览独占可见页面和打印布局，系统打印面板使用原生网页容器的打印适配器。关闭预览或系统返回均回到原线程。刷新后须重新导出。[移动宿主合同](focus-mobile.zh-CN.md)
+
 `summaryPrintWindow.ts` 在范围弹窗的确认点击内同步打开同源 `?print=summary` 页面，以避免
 异步读取后才打开窗口造成拦截。弹窗被拦截时提示允许本站弹窗再重试，保留范围选项，并不启动导出。
 预览只接收 exact opener、origin 和一次性 rendezvous ID 匹配的内容；发送方也校验

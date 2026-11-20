@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, shallowRef, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, provide, ref, shallowRef, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import Sidebar from '../components/Sidebar.vue';
 import ResizeHandle from '../components/ResizeHandle.vue';
@@ -27,6 +27,7 @@ import FocusPrimaryNotices from './FocusPrimaryNotices.vue';
 import FocusReviewDialog from './FocusReviewDialog.vue';
 import FocusFullContentDialog from './FocusFullContentDialog.vue';
 import FocusFileDownloadDialog from './FocusFileDownloadDialog.vue';
+import { closeMobilePrintPreview, mobilePrintPreview } from './summaryPrintWindow';
 import FocusSettingsSurface from './FocusSettingsSurface.vue';
 import { executeCdCommand, parseCdCommand } from './cdCommand';
 import { createFocusDocumentActivityFaviconPreference, syncFocusDocumentActivityFavicon } from './documentActivityFavicon';
@@ -708,6 +709,7 @@ function showUnsupported(): void {
 }
 const threadActions = ref<InstanceType<typeof FocusThreadActions> | null>(null);
 const fileDownloadDialog = ref<InstanceType<typeof FocusFileDownloadDialog> | null>(null);
+const SummaryPrintApp = defineAsyncComponent(() => import('./SummaryPrintApp.vue'));
 async function confirmBackendReset(preview: FocusBackendResetPreview): Promise<void> {
   const force = preview.status === 'force-only';
   let refusedBeforePost = false;
@@ -846,8 +848,8 @@ onUnmounted(() => {
       <div class="auth-page-inner">
         <div class="focus-lockup"><span>F</span><strong>Focus Web</strong></div>
         <div class="auth-copy">
-          <h1>{{ t('focus.authTitle') }}</h1>
-          <p>{{ t('focus.authMessage') }}</p>
+          <h1>{{ t(client.outerAuthRequired.value ? 'focus.outerAuthTitle' : 'focus.authTitle') }}</h1>
+          <p>{{ t(client.outerAuthRequired.value ? 'focus.outerAuthMessage' : 'focus.authMessage') }}</p>
         </div>
         <Button variant="primary" @click="client.reloadDocument">
           <Icon name="refresh" size="md" />
@@ -1014,6 +1016,7 @@ onUnmounted(() => {
         <FocusPrimaryNotices
           v-if="!readingMode"
           :document-reload-required="client.documentReloadRequired.value"
+          :document-unregistered="client.documentFailure.value === 'document_unregistered'"
           :projection-stale="client.snapshotInvalidated.value"
           :projection-reloading="client.reloadInFlight.value"
           :backend-reset-outcome-unknown="client.backendResetOutcomeUnknown.value"
@@ -1075,6 +1078,7 @@ onUnmounted(() => {
           :has-newer-messages="client.transcript.hasNewer.value"
           :continuous-transcript="client.transcript.enabled.value"
           :update-transcript-viewport="client.transcript.updateViewport"
+          :restore-reading-item="client.transcript.locate"
           :load-newer-messages="client.transcript.newer"
           @open-full-content="openTranscriptTool"
           @retry-transcript="client.transcript.load()"
@@ -1336,6 +1340,11 @@ onUnmounted(() => {
       :notify="showTransientNotice"
     />
     <FocusFileDownloadDialog ref="fileDownloadDialog" :api="client.api" />
+    <Teleport v-if="mobilePrintPreview" to="body">
+      <div id="focus-mobile-print">
+        <SummaryPrintApp :preview="mobilePrintPreview" @close="closeMobilePrintPreview" />
+      </div>
+    </Teleport>
     <ConfirmDialogHost />
 
     <Transition name="gload-fade">

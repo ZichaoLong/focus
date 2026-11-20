@@ -80,6 +80,8 @@ menus vary with platform and browser version; do not promise universal mobile
 one-click downloads. Users can adjust landscape or scale for wide tables and
 long formulas; fonts and browsers need not produce identical pixels.
 
+With the negotiated mobile `print` capability, Web hands the complete export to `SummaryPrintApp` in the current document's memory. The preview occupies the visible and printable layout. The shell uses the WebView's system print adapter. Closing the preview or going back returns to the conversation. A reload requires a new export. [Mobile host contract](focus-mobile.md)
+
 ## Verification boundaries
 
 Unit tests cover complete code, math grammar and fallback, safe escaping, full

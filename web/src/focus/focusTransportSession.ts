@@ -1,3 +1,4 @@
+import { hasMobileFeature } from '../lib/mobileHost';
 import { computed, shallowRef, type ComputedRef } from 'vue';
 import type { FocusEventHandlers } from './api';
 import type { FocusProjectionEvent } from './types';
@@ -288,6 +289,7 @@ export function createFocusTransportSession(
     if (event.persisted) scheduleWakeCheck();
   }
 
+  if (hasMobileFeature('wake')) browser?.addEventListener?.('focus-host-resume', scheduleWakeCheck);
   browser?.addEventListener?.('online', scheduleWakeCheck);
   browser?.addEventListener?.('pageshow', pageShown);
   page?.addEventListener?.('visibilitychange', visibilityChanged);
@@ -383,6 +385,7 @@ export function createFocusTransportSession(
     if (mutableSnapshot.value.disposed) return;
     updateSnapshot({ disposed: true });
     suspend();
+    browser?.removeEventListener?.('focus-host-resume', scheduleWakeCheck);
     browser?.removeEventListener?.('online', scheduleWakeCheck);
     browser?.removeEventListener?.('pageshow', pageShown);
     page?.removeEventListener?.('visibilitychange', visibilityChanged);

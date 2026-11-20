@@ -1,3 +1,5 @@
+import { documentReloadDelay, isFocusSessionRejection, reserveDocumentReload } from './documentRecovery';
+import { checkpointThread, hasMobileFeature, recoveryStorage } from '../lib/mobileHost';
 import { computed, ref } from 'vue';
 import { i18n } from '../i18n';
 import { FocusWebApi, type FocusWebApiPort } from './api';
@@ -89,11 +91,13 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     || updateStatusStale.value || updateStatus.value?.state === 'unknown'
   ));
   const authRequired = ref(false);
+  const outerAuthRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
   // retrying that stale capability: a browser reload must register a fresh
   // document identity first.
-  const documentReloadRequired = ref(false);
+  const documentFailure = ref<'document_replaced' | 'document_unregistered' | null>(null);
+  const documentReloadRequired = computed(() => documentFailure.value !== null);
   const errorPresentation = ref({ message: '', diagnostic: '' });
   const forkNotes = ref<Record<string, FocusForkResult>>({});
   const historyEdits = ref<Record<string, { prompt: FocusHistoryEditPrompt; restoreAutomatically: boolean }>>({});
@@ -133,7 +137,10 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     defaultWorkspace: () => projection.meta.value?.default_working_dir ?? '',
     clearSnapshot: () => projection.clearSnapshot(),
     clearHistoryView: () => clearHistoryView(),
-    updateThreadQuery,
+    updateThreadQuery(threadId) {
+      updateThreadQuery(threadId);
+      if (initialized.value) checkpointThread(threadId);
+    },
     reportError,
     clearError,
     setNavigationLoading: (value) => {
@@ -332,11 +339,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     },
     onHandshakeProbeError: (error) => {
       if (requiresDocumentReload(error)) {
-        requireDocumentReload();
+        requireDocumentReload(error);
         return 'stop';
       }
       if (error instanceof FocusApiError && error.status === 401) {
-        requireAuthentication();
+        requireAuthentication(!isFocusSessionRejection(error));
         return 'stop';
       }
       return 'retry';
@@ -431,9 +438,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       } catch (error) {
         if (transportSession.snapshot.value.disposed) return;
         if (requiresDocumentReload(error)) {
-          requireDocumentReload();
+          requireDocumentReload(error);
         } else if (error instanceof FocusApiError && error.status === 401) {
-          requireAuthentication();
+          requireAuthentication(!isFocusSessionRejection(error));
         } else {
           // Keep the last successful warning projection visible. A failed
           // health read is uncertainty, never proof that old warnings
@@ -568,11 +575,39 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     return submitMutation(...parameters);
   }
 
-  function requireAuthentication(): void {
+  let recoverablePage = false;
+  let accessReloadTimer: ReturnType<typeof setTimeout> | undefined;
+  function canRebuildPage(): boolean {
+    return !navigation.isDisposed && typeof document !== 'undefined' && document.visibilityState === 'visible'
+      && !starting.value && !actionBusy.value && !Object.keys(mutationBusyByThread.value).length
+      && !unknownProcessLocalMutations.value.length && !unknownLifecycleMutations.value.length
+      && !Object.keys(pendingApprovalActions.value).length && !Object.keys(pendingQuestionActions.value).length
+      && !backendReset.executing.value && !backendReset.outcomeUnknown.value && !updateBusy.value && !updateOperationActive.value;
+  }
+  if (hasMobileFeature('resume')) window.__focusCanRebuild = canRebuildPage;
+
+  function recoverDocumentIfIdle(): void {
+    clearTimeout(accessReloadTimer);
+    if (!recoverablePage || !meta.value || !canRebuildPage()) return;
+    const delay = documentReloadDelay();
+    if (delay === null) return;
+    if (delay > 0) {
+      accessReloadTimer = setTimeout(recoverDocumentIfIdle, delay);
+      return;
+    }
+    if (!reserveDocumentReload()) return;
+    recoverablePage = false;
+    reloadDocument();
+  }
+
+  function requireAuthentication(outer = false): void {
+    outerAuthRequired.value = outer;
+    recoverablePage = !outer;
     authRequired.value = true;
     clearError();
     clearOperatorStatusTimer();
     transportSession.suspend();
+    recoverDocumentIfIdle();
   }
 
   function requiresDocumentReload(error: unknown): boolean {
@@ -580,11 +615,13 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       && (error.code === 'document_replaced' || error.code === 'document_unregistered');
   }
 
-  function requireDocumentReload(): void {
-    documentReloadRequired.value = true;
+  function requireDocumentReload(error: unknown): void {
+    recoverablePage = error instanceof FocusApiError && error.code === 'document_unregistered';
+    documentFailure.value = recoverablePage ? 'document_unregistered' : 'document_replaced';
     clearError();
     clearOperatorStatusTimer();
     transportSession.suspend();
+    recoverDocumentIfIdle();
   }
 
   function reportFatalError(error: unknown): boolean {
@@ -601,11 +638,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     // when it reaches this shared presentation boundary.
     if (isStaleWebReadError(error)) return;
     if (requiresDocumentReload(error)) {
-      requireDocumentReload();
+      requireDocumentReload(error);
       return;
     }
     if (error instanceof FocusApiError && error.status === 401) {
-      requireAuthentication();
+      requireAuthentication(!isFocusSessionRejection(error));
       return;
     }
     promptErrorLocator = error instanceof FocusPromptError ? error.locator : null;
@@ -698,7 +735,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       if (updateApplyStarted.value) {
         const elapsed = Date.now() - updateApplyStartedAt;
         const knownNewProcess = error instanceof FocusApiError
-          && (error.status === 401 || error.code === 'document_unregistered' || error.code === 'document_replaced');
+          && (isFocusSessionRejection(error) || error.code === 'document_unregistered' || error.code === 'document_replaced');
         if (knownNewProcess) {
           if (updateReloadTimer === null) {
             updateReloadTimer = setTimeout(() => {
@@ -1004,12 +1041,29 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const setApprovalPolicy = settings.setApprovalPolicy;
   const setPermissionsProfile = settings.setPermissionsProfile;
 
+  let initialRetry: ReturnType<typeof setTimeout> | undefined;
+  let initialDelay = 1000;
+  let initialReadFailed = false;
+  function wakeDocument(): void {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (recoverablePage) recoverDocumentIfIdle();
+    else if (initialReadFailed && !loading.value) void load();
+  }
+  window.addEventListener?.('online', wakeDocument);
+  window.addEventListener?.('focus-host-resume', wakeDocument);
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', wakeDocument);
+
   async function load(): Promise<void> {
-    if (navigation.isDisposed) return;
+    if (navigation.isDisposed || loading.value) return;
+    clearTimeout(initialRetry);
+    initialReadFailed = false;
     // Capture the deep link before initial durable-profile convergence may
     // replace browser history with that profile's target.
-    const requestedThreadId = new URL(window.location.href)
+    let requestedThreadId = new URL(window.location.href)
       .searchParams.get(THREAD_QUERY_KEY)?.trim() ?? '';
+    if (!requestedThreadId && hasMobileFeature('resume')) {
+      try { requestedThreadId = recoveryStorage().getItem('focus-web.last-thread') ?? ''; } catch { /* private storage */ }
+    }
     loading.value = true;
     authRequired.value = false;
     clearError();
@@ -1035,9 +1089,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
         persistedThreadId: initialMeta.writer_profile.selected_thread_id.trim(),
       });
       if (navigation.isDisposed) return;
+      checkpointThread(navigation.activeThreadId.value);
+      initialDelay = 1000;
       transportSession.connect();
     } catch (error) {
-      if (!navigation.isDisposed) reportError(error);
+      if (navigation.isDisposed) return;
+      reportError(error);
+      if (!authRequired.value && !documentReloadRequired.value
+        && (error instanceof TypeError || (error instanceof FocusApiError && error.status >= 500))) {
+        initialReadFailed = true;
+        initialRetry = setTimeout(wakeDocument, initialDelay);
+        initialDelay = Math.min(initialDelay * 2, 30_000);
+      }
     } finally {
       if (!navigation.isDisposed) {
         initialized.value = true;
@@ -1047,6 +1110,12 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   function dispose(): void {
+    if (window.__focusCanRebuild === canRebuildPage) delete window.__focusCanRebuild;
+    clearTimeout(accessReloadTimer);
+    clearTimeout(initialRetry);
+    window.removeEventListener?.('online', wakeDocument);
+    window.removeEventListener?.('focus-host-resume', wakeDocument);
+    if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', wakeDocument);
     // The document is leaving; pending stream deltas no longer have a visible
     // consumer. Cancel their presentation callbacks instead of doing one last
     // Markdown/DOM pass during teardown.
@@ -1137,7 +1206,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     actionBusy,
     mutationBusyByThread,
     authRequired,
+    outerAuthRequired,
     documentReloadRequired,
+    documentFailure,
     errorMessage,
     errorPresentation,
     forkNote: computed(() => forkNotes.value[activeThreadId.value] ?? null),

@@ -1,3 +1,4 @@
+import { recoveryStorage } from '../lib/mobileHost';
 import { computed, ref } from 'vue';
 import type { ComputedRef } from 'vue';
 
@@ -138,7 +139,7 @@ function decodeDrafts(raw: string, clientId: string): UnknownSubmissionDraft[] {
 
 function readDrafts(clientId: string): UnknownSubmissionDraft[] {
   try {
-    return decodeDrafts(sessionStorage.getItem(STORAGE_KEY) ?? '', clientId);
+    return decodeDrafts(recoveryStorage().getItem(STORAGE_KEY) ?? '', clientId);
   } catch {
     return [corruptDraft(clientId)];
   }
@@ -166,9 +167,9 @@ export function createUnknownSubmissionDraftStore(): UnknownSubmissionDraftStore
     const serialized = JSON.stringify({ schemaVersion: STORE_VERSION, attempts });
     let persisted = false;
     try {
-      if (attempts.length === 0) sessionStorage.removeItem(STORAGE_KEY);
-      else sessionStorage.setItem(STORAGE_KEY, serialized);
-      const readback = sessionStorage.getItem(STORAGE_KEY);
+      if (attempts.length === 0) recoveryStorage().removeItem(STORAGE_KEY);
+      else recoveryStorage().setItem(STORAGE_KEY, serialized);
+      const readback = recoveryStorage().getItem(STORAGE_KEY);
       persisted = attempts.length === 0 ? readback === null : readback === serialized;
     } catch {
       persisted = false;

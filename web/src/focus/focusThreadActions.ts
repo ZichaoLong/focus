@@ -1,3 +1,4 @@
+import { cancelMobileFile, saveMobileFile } from '../lib/mobileHost';
 import { chooseFileDestination, type FileDestination } from './browserFileSave';
 import type { SummaryExportRequest } from '../types';
 import type { FocusSummaryExportSelection } from './types';
@@ -46,6 +47,7 @@ export interface FocusThreadActionsOptions {
 }
 
 async function saveExportBlob(destination: FileDestination, blob: Blob, filename: string): Promise<void> {
+  if (destination.kind === 'mobile') return saveMobileFile(new Response(blob));
   if (destination.kind === 'download') {
     downloadBlob(blob, filename);
     return;
@@ -80,6 +82,7 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
       notify(translate(messageKeys.busy));
       return;
     }
+    let nativeSaveOpen = false;
     exportPending = true;
     try {
       const title = options.getThreadTitle(threadId);
@@ -98,6 +101,7 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
       const destination = await chooseFileDestination(filename, format === 'markdown'
         ? [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
         : [{ description: 'JSON Lines', accept: { 'application/x-ndjson': ['.jsonl'] } }]);
+      nativeSaveOpen = destination?.kind === 'mobile';
       if (destination === null) return;
       if (client.summaryExporting.value || client.threadDataExporting.value) {
         notify(translate(messageKeys.busy));
@@ -113,10 +117,12 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
         ? new Blob([titleSummaryMarkdown(await blob.text(), chosen.documentTitle ?? documentTitle)], { type: blob.type })
         : blob;
       await saveExportBlob(destination, download, filename);
+      nativeSaveOpen = false;
       notify(translate(messageKeys.complete));
     } catch {
       notify(translate('focus.exportSaveFailed'));
     } finally {
+      if (nativeSaveOpen) cancelMobileFile();
       exportPending = false;
     }
   }

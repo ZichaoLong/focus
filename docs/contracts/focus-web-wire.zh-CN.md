@@ -636,6 +636,11 @@ required field 与 TypeScript interface 一致、每个 record/enum 被 producti
 必须继续现有的 1/2/4/8/10 秒重连退避。同步建连失败也进入退避。新连接、suspend 和 dispose 取消旧
 检查与期限；旧 generation 的迟到 response/event 不得改变新连接或认证状态。dispose 移除恢复监听。
 
-恢复只重建传输并重读有界状态，不重新注册 document、不 reload 整个页面、不重发 prompt、审批或其他
-mutation。`401` 与 `document_replaced/document_unregistered` 仍停止重试并要求既有显式恢复操作；
-不改变服务端断线宽限期与 session 寿命。阅读模式、草稿和可验证的正文阅读锚点保留，见阅读模式与正文窗口合同。
+连接恢复沿用同一 document 并重读有界状态。原生壳协商的前台信号也进入同一唤醒检查。
+丢失注册的 document 返回 `document_unregistered`，同一 session 内已被替换的 capability 返回
+`document_replaced`。两者及 Focus 的 `401 unauthorized` 都停止旧连接。在曾成功取得 meta 的
+可见页面，注册丢失或 Focus session 失效可触发一次整页重建。重建预算跨刷新保存，60 秒内最多一次；
+正在提交、审批锁定、需人工核验的内存操作、更新或重置等不安全状态保留显式恢复入口。
+被替换的页面需要用户显式刷新。首次注册被拒绝时显示现有授权指引；外层 HTTP 挑战交给浏览器或壳。
+首次载入的临时网络错误与 5xx 在可见时退避重试。恢复只进行身份注册、原目标读入与证据核验，
+不会重发 prompt、回答、审批、中断或其他业务变更。阅读现场见[移动容器合同](./focus-mobile.zh-CN.md)。

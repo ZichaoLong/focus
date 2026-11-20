@@ -163,6 +163,7 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
     onMounted(() => {
       releaseDraftProtection = protectDraft(draftStorageKey(sessionId()));
       retentionHeartbeat = setInterval(() => touchDraft(draftStorageKey(sessionId())), 60_000);
+      window.addEventListener('focus-host-pause', onPageHide);
       window.addEventListener('pagehide', onPageHide);
       document.addEventListener('visibilitychange', onVisibilityChange);
     });
@@ -170,6 +171,7 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
       releaseDraftProtection?.();
       if (retentionHeartbeat !== null) clearInterval(retentionHeartbeat);
       flushDraft();
+      window.removeEventListener('focus-host-pause', onPageHide);
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     });

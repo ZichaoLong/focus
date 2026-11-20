@@ -1,3 +1,4 @@
+import { presentationScope } from './mobileHost';
 // apps/kimi-web/src/lib/storage.ts
 // Thin, safe wrapper over localStorage: raw read/write/remove plus JSON
 // helpers, each guarded with try/catch. No validation, clamping, or enum
@@ -38,7 +39,7 @@ export const STORAGE_KEYS = {
 
 /** Per-session composer draft key. */
 export function draftStorageKey(sid: string | undefined): string {
-  return `kimi-web.draft.${sid && sid.length > 0 ? sid : '__new__'}`;
+  return `kimi-web.draft.${presentationScope(sid) || '__new__'}`;
 }
 
 export function safeGetString(key: string): string | null {

@@ -853,9 +853,21 @@
         {
           "path": "web/src/focus/api.ts",
           "symbol": "FocusWebApi"
+        },
+        {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "negotiateMobileHost"
+        },
+        {
+          "path": "web/src/focus/documentRecovery.ts",
+          "symbol": "reserveDocumentReload"
         }
       ],
       "contract": [
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "宿主协议 v1"
+        },
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "浏览器目录排序"
@@ -910,7 +922,8 @@
             "web/test/focus-transport-session.test.ts",
             "web/test/focus-api.test.ts",
             "web/test/focus_client/owners/focus-transcript.test.ts",
-            "web/test/focus-reconnect-browser.test.ts"
+            "web/test/focus-reconnect-browser.test.ts",
+            "web/test/focus-mobile-host.test.ts"
           ]
         }
       ],
@@ -1222,6 +1235,10 @@
         {
           "path": "web/src/components/chat/transcriptVisibility.ts",
           "symbol": "observeTranscriptVisibility"
+        },
+        {
+          "path": "web/src/components/chat/readingBookmark.ts",
+          "symbol": "saveReadingBookmark"
         }
       ],
       "contract": [
@@ -1471,6 +1488,10 @@
           "heading": "完整性与渲染"
         },
         {
+          "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
+          "heading": "打印与生命周期"
+        },
+        {
           "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
           "heading": "正文强调与换行"
         },
@@ -1516,6 +1537,7 @@
             "web/test/summary-print-markdown.test.ts",
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
+            "web/test/focus-mobile-host.test.ts",
             "web/test/focus-thread-actions.test.ts",
             "web/test/export-filename.test.ts",
             "web/test/summary-document-title.test.ts",
@@ -3067,6 +3089,10 @@
         {
           "path": "web/src/focus/filePreviewViewState.ts",
           "symbol": "restoreFilePreviewScroll"
+        },
+        {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "saveMobileFile"
         }
       ],
       "contract": [

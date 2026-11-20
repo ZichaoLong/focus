@@ -292,6 +292,9 @@ original Composer to retain this payload as unsent.
 
 ## 5. Composer Settlement and Browser Recovery Boundary
 
+Ordinary tabs use sessionStorage. A negotiated single-instance mobile window persists the same GET locators and existing text-only recovery records in instance-scoped storage. A new document applies the same schema, writer and result checks.
+
+
 The Composer does not clear text/chips before POST. When terminal safety settlement
 arrives:
 

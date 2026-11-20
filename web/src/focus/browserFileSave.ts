@@ -1,5 +1,6 @@
+import { hasMobileFeature, chooseMobileFile, type MobileFileDestination } from '../lib/mobileHost';
 /** Shared native save-picker policy; callers own content and fallback UX. */
-export type FileDestination = { kind: 'download' } | { kind: 'file'; handle: FileSystemFileHandle };
+export type FileDestination = MobileFileDestination | { kind: 'download' } | { kind: 'file'; handle: FileSystemFileHandle };
 type FilePickerType = { description: string; accept: Record<string, string[]> };
 type SavePickerWindow = Window & {
   showSaveFilePicker?: (options: {
@@ -11,13 +12,14 @@ type SavePickerWindow = Window & {
 export function canChooseFileDestination(): boolean {
   if (typeof window === 'undefined') return false;
   const browser = window as SavePickerWindow;
-  return !!browser.isSecureContext && typeof browser.showSaveFilePicker === 'function';
+  return hasMobileFeature('save') || !!browser.isSecureContext && typeof browser.showSaveFilePicker === 'function';
 }
 
 export async function chooseFileDestination(
   filename: string, types?: FilePickerType[],
 ): Promise<FileDestination | null> {
   const browser = window as SavePickerWindow;
+  if (hasMobileFeature('save')) return chooseMobileFile(filename);
   if (!canChooseFileDestination()) return { kind: 'download' };
   try {
     // Must run inside the confirmation gesture, before any network read.

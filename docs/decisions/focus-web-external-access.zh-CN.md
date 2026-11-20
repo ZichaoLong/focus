@@ -89,9 +89,9 @@ projection 读取以及 unknown-mutation 自动核验都不续期。一个浏览
 
 External 页面 URL 是可书签化的 configured origin，不含 fragment token。
 `focusctl web open` 和 runtime discovery 仍只发布 loopback local endpoint，不发布 external
-origin、proof 或 label。运行中 session 失效或 service 重启后，当前合同只保证用户显式
-刷新页面或重新打开书签即可经 proxy 重新注册；不保证无操作 silent refresh，也不自动重放
-mutation、steer、approval 或其他可能已有 effect 的请求。
+origin、proof 或 label。运行中 session 失效或 service 重启后，已验证页面可以按[连接恢复合同](../contracts/focus-web-wire.zh-CN.md#浏览器连接恢复)
+有界重建整个 document，经可信代理重新注册。首次授权失败、并发 writer 或结果核验需要用户参与时仍提供显式刷新和打开书签。
+所有恢复均保留原 mutation 的结果边界。
 
 认证失效表面的显式恢复动作必须 reload 整个 document，不能在已完成 identity registration
 的旧 document 内再次调用普通 load。该表面同时诚实说明：external 用户刷新/重开书签；
@@ -159,7 +159,7 @@ Tunnel 或 proxy 不可用时，external 访问直接失败；Focus runtime 和 
   URL 交给 proxy，也不要期待该命令输出 external URL。
 - `400 Invalid external Host header` 表示请求的 `Host` 未精确匹配已加载的 external authority；
   `403 Invalid trusted proxy proof/identity` 或 cross-origin 拒绝表示 proof、label 或浏览器
-  `Origin` 未通过准入；已有页面后续收到 `401` 时，按第 4 节显式 reload 整个 document。
+  `Origin` 未通过准入；已有页面后续收到 `401` 时，按第 4 节恢复整个 document。
 - 排障时按顺序核对：proxy upstream 指向正确实例的固定 loopback port；外部 `Host` 保持 exact；
   浏览器实际发送 `Origin` 时原样转发；客户端同名 Focus header 已删除；两个 Focus header 已在
   每个 HTTP request 和 WebSocket upgrade 上重新注入；raw proof 的 SHA-256 与 Focus verifier

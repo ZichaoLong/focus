@@ -1,3 +1,4 @@
+import { recoveryStorage } from '../lib/mobileHost';
 import {
   isCanonicalWebMutationId,
 } from './webPromptMutation';
@@ -56,7 +57,7 @@ function decodeLocators(raw: string): WebPromptResultLocator[] {
 
 function readLocators(): WebPromptResultLocator[] {
   try {
-    return decodeLocators(sessionStorage.getItem(STORAGE_KEY) ?? '');
+    return decodeLocators(recoveryStorage().getItem(STORAGE_KEY) ?? '');
   } catch {
     return [];
   }
@@ -65,9 +66,9 @@ function readLocators(): WebPromptResultLocator[] {
 function persistLocators(locators: readonly WebPromptResultLocator[]): boolean {
   const serialized = JSON.stringify({ schemaVersion: STORE_VERSION, locators });
   try {
-    if (locators.length === 0) sessionStorage.removeItem(STORAGE_KEY);
-    else sessionStorage.setItem(STORAGE_KEY, serialized);
-    const stored = sessionStorage.getItem(STORAGE_KEY);
+    if (locators.length === 0) recoveryStorage().removeItem(STORAGE_KEY);
+    else recoveryStorage().setItem(STORAGE_KEY, serialized);
+    const stored = recoveryStorage().getItem(STORAGE_KEY);
     return locators.length === 0
       ? stored === null
       : stored === serialized;

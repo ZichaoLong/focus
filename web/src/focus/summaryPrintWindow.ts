@@ -1,15 +1,33 @@
 /** Ephemeral, same-origin handoff to the standalone Q&A print document. */
+import { shallowReactive, shallowRef } from 'vue';
+import { hasMobileFeature } from '../lib/mobileHost';
 import { DEFAULT_SUMMARY_TITLE } from './summaryDocumentTitle';
 
 const CHANNEL = 'focus-summary-print';
 const HANDOFF_TIMEOUT_MS = 90_000;
 
-type PrintPayload = { markdown: string; suggestedFilename: string; documentTitle: string } | { error: true };
+export type PrintPayload = { markdown: string; suggestedFilename: string; documentTitle: string } | { error: true };
+export const mobilePrintPreview = shallowRef<{ content: PrintPayload | null } | null>(null);
+
+export function closeMobilePrintPreview(): void {
+  if (mobilePrintPreview.value && history.state?.focusSummaryPrint) history.back();
+}
 
 export function openSummaryPrintWindow(): {
   deliver(markdown: string, suggestedFilename: string, documentTitle: string): void;
   fail(): void;
 } | null {
+  if (hasMobileFeature('print')) {
+    if (mobilePrintPreview.value) return null;
+    const preview = shallowReactive<{ content: PrintPayload | null }>({ content: null });
+    history.pushState({ ...history.state, focusSummaryPrint: true }, '');
+    mobilePrintPreview.value = preview;
+    window.addEventListener('popstate', () => { mobilePrintPreview.value = null; }, { once: true });
+    return {
+      deliver(markdown, suggestedFilename, documentTitle) { preview.content = { markdown, suggestedFilename, documentTitle }; },
+      fail() { preview.content = { error: true }; },
+    };
+  }
   const token = [...crypto.getRandomValues(new Uint8Array(16))]
     .map((byte) => byte.toString(16).padStart(2, '0')).join('');
   const url = new URL(window.location.href);
