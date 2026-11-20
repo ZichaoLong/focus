@@ -109,6 +109,8 @@ by a new check.
 
 ## 3. Apply, restart, and result
 
+Server update in Settings identifies the instance, target and machine-wide restart. Explicit confirmation submits the full operation ID captured when opening the dialog. Copy is optional and the ID remains selectable.
+
 The apply transient unit runs from the `preflight-venv` containing the tested
 target Focus, not the production `.venv` it will replace. Before shutdown it
 revalidates the bundle digest, wheelhouse, dedicated runtime, and execution

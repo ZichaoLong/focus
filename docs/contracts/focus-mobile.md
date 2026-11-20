@@ -23,6 +23,7 @@ protocol version and feature list and dispatches `focus-host-ready`. Unknown ver
 - `resume` identifies a single recoverable window per instance. Web persists client hints, GET locators, existing writer-bound recovery records,
   the last confirmed thread, text drafts and the thread explicitly selected for reading mode. Each new document registers. Unsent text and verifiable reading anchors use the instance and confirmed thread or workspace.
   Attachments, approvals and send scopes still require the acknowledged writer.
+  When available, strict IndexedDB transactions persist text drafts, mode and reading bookmarks for each negotiated instance. Existing Web Storage entries migrate on first use. Draft removal and retention expiry also remove the durable copy.
 - `tabs` can include a display `name`. The ticket-bound `instances` operation opens the picker. `chrome(web|native)` signals whether Web exposes the picker. Loading, access errors and older versions retain the native entry.
   On switch the host calls `__focusSetTabActive(false)` on the top document. Web checkpoints drafts and reading position, closes the socket, and pauses polling and retries. A `true` acknowledgement allows one document for each of the two most recent instances to stay in memory. Selection calls `__focusSetTabActive(true)` and uses the existing handshake and server reread. Missing acknowledgement, memory pressure and explicit reconnect allow a cold rebuild.
 - `save` uses `prompt("focus/1/<ticket>/<op>", value)` to await a native picker or write.
@@ -32,8 +33,17 @@ protocol version and feature list and dispatches `focus-host-ready`. Unknown ver
 - `print` accepts a ticket-bound print request with a job name up to 255 characters. Web lays out the prepared, complete Q&A preview. The shell passes the current WebView to the system print service. The content stays in document memory.
 
 Top-level navigation and teardown revoke the ticket. Parking suspends its use until the same document is selected again. External documents and sandboxed HTML previews receive no bridge.
-The protocol accepts no arbitrary URLs, paths, scripts or business retries. Push registration, notification permissions and native updates
-require separate capabilities.
+The protocol accepts no arbitrary URLs, paths, scripts or business retries. Push registration and notification permissions require separate capabilities.
+
+## Instance drawer and Android distribution
+
+A host offering `drawer` accepts a light/dark hint with `instances` and overlays its local registry. Opening, dismissing or selecting the current entry leaves the document active. Selecting a different instance parks it with acknowledgement. Normal and reading headers expose their own trigger. The Web receives the selected name only. The native entry stays available during loading and recovery.
+
+An Android host offers `android-update`. About Focus Mobile dispatches the cancelable `focus-host-about` event. The trusted document uses its ticket for `apk-info` (installed version and digest), `apk-begin` (selected manifest), `apk-write` (at most 24 KiB per chunk), and `apk-finish`. The host checks the complete hash, package, version and certificate or signing lineage, then asks the user to launch the system installer. `apk-abort` and navigation discard partial files. The alternative `apk-save` verifies the same completed APK and copies it to a user-selected system document for manual installation.
+
+An explicit Android publication writes `channels/{main|stable}.json` and `android/<sha256>.apk` in one commit on the distribution repository's main branch. Fields are package, version, version_code, source_revision (40 hex), sha256, certificate_sha256 and size (up to 32 MiB). The APK embeds the source revision. The publisher checks the expected identity and reads back and verifies bytes and signer from a new object database. Stable may promote an existing APK. Ordinary source integration and server stable Releases are independent. Direct installs permit equal version codes; channel switches need installer support and compatible application data.
+
+An instance reads `FOCUS_MOBILE_DIST_URL` (HTTPS or SSH Git URL), defaulting to `https://github.com/ZichaoLong/focus-mobile-dist.git`. Authenticated, CSRF- and document-protected `POST /api/mobile/android/{channel}/check` accepts an empty object and returns release, checked_at and stale. An unpublished channel has a null release. Network failure marks a cached release stale; invalid artifacts never replace the channel. Source-specific durable files live under mobile-updates in the Focus data root, outside server install operations. Authenticated `GET /api/mobile/android/apk/{digest}` serves exact cached bytes. Phones contact their instance and grant the installer temporary read access only to a verified APK. Signing keys stay with the publisher.
 
 ## Usage and verification
 

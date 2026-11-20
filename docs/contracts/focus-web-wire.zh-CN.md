@@ -167,6 +167,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v40 新增 exact operation 的 `POST /api/update/cancel`，扩展更新状态与阶段的封闭词汇
   `cancelling`、`cancelled`；行为见[浏览器更新合同](./focus-web-update.zh-CN.md)。
 
+- v41 增加按需检查 Android 渠道的 POST 和按内容摘要下载 APK 的 GET。Android 宿主与当前页面协商更新能力，已有业务请求沿用原合同。[移动容器合同](./focus-mobile.zh-CN.md#实例抽屉和-android-分发)
+
 ## 4. Endpoint 与 event admission
 
 诊断的两个 GET 与 metadata-only POST 不读取 app-server、不建立 result/retry authority，具体字段、限制与

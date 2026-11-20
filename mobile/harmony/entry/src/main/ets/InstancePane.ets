@@ -11,6 +11,7 @@ export class InstanceTab {
   key: string = util.generateRandomUUID();
   link: string;
   back: () => void = () => {};
+  park: () => void = () => {};
   constructor(site: Site, link: string) { this.site = site; this.link = link; }
 }
 
@@ -18,6 +19,7 @@ export class InstanceTab {
 export struct InstancePane {
   tab: InstanceTab = new InstanceTab(new Site(), '');
   @Prop @Watch('selectionChanged') active: boolean = true;
+  showDrawer: (theme: string) => void = () => {};
   leavePage: (retained: boolean) => void = () => {};
   private site: Site = new Site();
   private leaving: boolean = false;
@@ -57,6 +59,7 @@ export struct InstancePane {
     this.link = this.tab.link;
     this.tab.link = '';
     this.tab.back = () => this.back();
+    this.tab.park = () => this.leave();
   }
 
   private resetView(phase: string, address: string): void {
@@ -120,7 +123,7 @@ export struct InstancePane {
       'const url=new URL(location.href);if(!url.searchParams.has("focusApp") && !url.searchParams.has("print") && !url.hash){' +
       'url.searchParams.set("focusApp","1");location.replace(url.href)}else{' +
       'window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
-      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
+      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
     this.controller.runJavaScript(script).catch(() => {});
   }
 
@@ -224,7 +227,7 @@ export struct InstancePane {
     const op = event.message.slice(prefix.length);
     if (op === 'instances') {
       event.result.handlePromptConfirm('ok');
-      setTimeout(() => { if (epoch === this.epoch && this.active) this.leave(); }, 0);
+      setTimeout(() => { if (epoch === this.epoch && this.active) this.showDrawer(event.value); }, 0);
       return true;
     }
     if (op === 'chrome') {
@@ -286,7 +289,7 @@ export struct InstancePane {
 
   private back(): void {
     if (this.phase === 'page' && this.controller.accessBackward()) this.controller.backward();
-    else this.leave();
+    else this.showDrawer('');
   }
   aboutToDisappear(): void {
     this.gone = true; this.epoch++; clearTimeout(this.retry);
@@ -350,7 +353,7 @@ export struct InstancePane {
 
   build() {
     Column() {
-      if (!this.webChrome) { Button(this.site.name + ' ▾').accessibilityText('切换实例').onClick(() => this.leave()) }
+      if (!this.webChrome) { Button(this.site.name + ' ▾').accessibilityText('切换实例').onClick(() => this.showDrawer('')) }
       if (this.message) { Text(this.message).width('100%').padding(6) }
       if (this.loginForm) {
         Column({ space: 6 }) {

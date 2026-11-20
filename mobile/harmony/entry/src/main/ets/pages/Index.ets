@@ -10,6 +10,9 @@ struct Index {
   @State private tabs: InstanceTab[] = [];
   @State private activeId: string = '';
   @State private managing: string = '';
+  @State private drawerOpen: boolean = false;
+  @State private drawerDark: boolean = false;
+  private nextId: string = '';
   @StorageLink('focusMemoryWarning') @Watch('releaseInactive') private memoryWarning: number = 0;
   @State private sites: Site[] = [];
   @State private editing: boolean = false;
@@ -47,13 +50,24 @@ struct Index {
     this.activeId = '';
     const prefs = sitePrefs(this.ctx());
     prefs.deleteSync('active'); void prefs.flush();
+    const target = this.sites.find((site: Site) => site.id === this.nextId);
+    this.nextId = '';
+    if (target) this.open(target);
   }
 
   private releaseInactive(): void {
     this.tabs = this.tabs.filter((tab: InstanceTab) => tab.site.id === this.activeId);
   }
 
+  private selectEntry(id: string): void {
+    this.drawerOpen = false;
+    if (id === this.activeId) return;
+    this.nextId = id;
+    this.tabs.find((tab: InstanceTab) => tab.site.id === this.activeId)?.park();
+  }
+
   onBackPress(): boolean {
+    if (this.drawerOpen) { this.drawerOpen = false; return true; }
     const tab = this.tabs.find((item: InstanceTab) => item.site.id === this.activeId);
     if (tab) { tab.back(); return true; }
     if (this.editing) { this.editing = false; return true; }
@@ -157,16 +171,53 @@ struct Index {
     }.width('100%').height('100%')
   }
 
+  @Builder
+  drawer() {
+    Row() {
+      Column({ space: 8 }) {
+        Text('实例').fontSize(22).fontWeight(FontWeight.Bold)
+          .fontColor(this.drawerDark ? '#f1f1ed' : '#242523').width('100%').padding(12)
+        Scroll() {
+          Column({ space: 4 }) {
+            ForEach(this.sites, (site: Site) => {
+              Row() {
+                Column({ space: 2 }) {
+                  Text(site.name).fontSize(16)
+                  Text(site.origin).fontSize(12).fontColor(this.drawerDark ? '#b1b1aa' : '#61645d')
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+                if (site.id === this.activeId) { Text('✓') }
+              }.width('100%').padding(14).borderRadius(10)
+                .backgroundColor(site.id === this.activeId ? (this.drawerDark ? '#343b37' : '#e6ece7') : Color.Transparent)
+                .onClick(() => this.selectEntry(site.id))
+            }, (site: Site) => site.id)
+          }.width('100%')
+        }.layoutWeight(1)
+        Divider()
+        Text('管理实例').width('100%').padding(12).onClick(() => this.selectEntry(''))
+        Text('关于 Focus Mobile').width('100%').padding(12).onClick(() => {
+          this.drawerOpen = false;
+          AlertDialog.show({ title: 'Focus Mobile 1.2.0', message: 'HarmonyOS · ArkWeb' });
+        })
+      }.width('82%').constraintSize({ maxWidth: 328 }).height('100%').padding(14)
+        .foregroundColor(this.drawerDark ? '#f1f1ed' : '#242523')
+        .backgroundColor(this.drawerDark ? '#1d1f1d' : '#fcfcfa')
+      Blank().height('100%').layoutWeight(1).onClick(() => this.drawerOpen = false)
+    }.width('100%').height('100%').backgroundColor('#66000000')
+  }
+
   build() {
     Stack() {
       ForEach(this.tabs, (tab: InstanceTab) => {
         Column() {
           InstancePane({ tab: tab, active: this.activeId === tab.site.id,
+            showDrawer: (theme: string) => { this.drawerDark = theme === 'dark'; this.drawerOpen = true; },
             leavePage: (retained: boolean) => this.leave(tab, retained) })
         }.width('100%').height('100%')
           .visibility(this.activeId === tab.site.id ? Visibility.Visible : Visibility.Hidden)
       }, (tab: InstanceTab) => tab.key)
       if (!this.activeId) { this.manager() }
+      if (this.activeId && this.drawerOpen) { this.drawer() }
     }.width('100%').height('100%')
   }
 }

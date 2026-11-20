@@ -42,6 +42,7 @@ from bot.stores.web_gateway_runtime_store import WebGatewayRuntimeStore
 from bot.stores.web_prompt_timing_store import WebPromptTimingStore
 from bot.data_retention_contract import DEFAULT_RETENTION_DAYS
 from bot.web_runtime.gateway_data_retention import WebGatewayDataRetentionMixin
+from bot.web_runtime.gateway_mobile_distribution import WebGatewayMobileDistributionMixin
 from bot.web_runtime.gateway_prompt_timing import WebGatewayPromptTimingMixin
 from bot.web_runtime.prompt_timing import WebPromptTimingRecorder
 from bot.web_runtime.auth import WebAuthManager, WebAuthSession
@@ -203,7 +204,7 @@ class WebGatewayPorts:
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
 
 
-class WebGateway(WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,
+class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,
                  WebGatewayDataRetentionMixin):
     def __init__(
         self,

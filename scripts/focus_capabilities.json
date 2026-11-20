@@ -865,6 +865,10 @@
         {
           "path": "web/src/focus/focusReadingMode.ts",
           "symbol": "useFocusReadingMode"
+        },
+        {
+          "path": "web/src/lib/mobilePresentation.ts",
+          "symbol": "openMobilePresentation"
         }
       ],
       "contract": [
@@ -936,7 +940,8 @@
         {
           "runner": "vitest",
           "targets": [
-            "web/test/focus_client/transport-projection.test.ts"
+            "web/test/focus_client/transport-projection.test.ts",
+            "web/test/focus-mobile-editor-browser.test.ts"
           ]
         }
       ],
@@ -3543,6 +3548,81 @@
         "dependency-direction",
         "import-cycles",
         "source-context"
+      ]
+    },
+    "focus-mobile-distribution": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway_mobile_distribution.py",
+          "symbol": "WebGatewayMobileDistributionMixin._handle_mobile_android_check"
+        },
+        {
+          "path": "bot/web_runtime/gateway_mobile_distribution.py",
+          "symbol": "WebGatewayMobileDistributionMixin._handle_mobile_android_apk"
+        },
+        {
+          "path": "web/src/focus/FocusMobileAbout.vue",
+          "symbol": "download"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/installation/mobile_distribution.py",
+          "symbol": "MobileDistribution"
+        },
+        {
+          "path": "web/src/focus/httpResponseDecoder.ts",
+          "symbol": "decodeFocusAndroidChannel"
+        },
+        {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "mobileApkRequest"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "实例抽屉和 Android 分发"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_mobile_distribution.py",
+            "tests/test_publish_android.py",
+            "tests/web_runtime/test_mobile_distribution_gateway.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-android-distribution.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-mobile-host.test.ts",
+            "web/test/focus-update-cancel-browser.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "import-cycles",
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck",
+        "web-wire"
       ]
     }
   }

@@ -31,6 +31,10 @@ public class ClientActivity extends Activity {
     private Button switcher;
     private boolean selected = true, switching;
     private FileExchange files;
+    private InstanceDrawer drawer;
+    private PageSlots pages;
+    private ApkUpdate apkUpdate;
+    private String switchTarget = "";
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable retry = () -> { if (foreground && retryNeeded) openProbe(false); };
 
@@ -52,7 +56,9 @@ public class ClientActivity extends Activity {
         switcher.setContentDescription("切换实例");
         notice = Views.column(this); layout.addView(notice);
         frame = new FrameLayout(this); layout.addView(frame, new LinearLayout.LayoutParams(-1, 0, 1));
-        Views.install(this, layout);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(layout); Views.install(this, root);
+        drawer = new InstanceDrawer(this, root); apkUpdate = new ApkUpdate(this);
         if (!legacy && !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) {
             if (ProfileTransfer.snapshot(this, id).getBaseFile().exists()) { importProfile(); return; }
             getSharedPreferences("instances", MODE_PRIVATE).edit().putBoolean("named-" + id, true).commit();
@@ -100,6 +106,7 @@ public class ClientActivity extends Activity {
 
     private void retireView() {
         generation++; ticket = "";
+        if (apkUpdate != null) apkUpdate.cancel();
         if (files != null) files.cancel();
         if (web != null) { frame.removeView(web); web.stopLoading(); web.destroy(); web = null; }
     }
@@ -166,7 +173,7 @@ public class ClientActivity extends Activity {
             }
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
-                ticket = ""; files.cancel();
+                ticket = ""; files.cancel(); apkUpdate.cancel(); drawer.dismiss();
                 switcher.setVisibility(View.VISIBLE);
                 if (!selected) main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
@@ -230,7 +237,11 @@ public class ClientActivity extends Activity {
                     || !Site.root(url, origin) || !msg.startsWith(prefix)) { result.cancel(); return true; }
                 String op = msg.substring(prefix.length());
                 if ("instances".equals(op)) {
-                    result.confirm("ok"); main.post(() -> { if (epoch == generation) pickInstance(); });
+                    result.confirm("ok"); main.post(() -> { if (epoch == generation) showDrawer(value); });
+                } else if ("apk-save".equals(op)) {
+                    apkUpdate.save(files, result);
+                } else if (op.startsWith("apk-")) {
+                    result.confirm(apkUpdate.handle(op, value));
                 } else if ("chrome".equals(op)) {
                     switcher.setVisibility("web".equals(value) ? View.GONE : View.VISIBLE);
                     result.confirm("ok");
@@ -335,7 +346,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -345,9 +356,29 @@ public class ClientActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
     @Override protected void onPause() { foreground = false; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
-    private void pickInstance() {
+    private void pickInstance() { showDrawer(""); }
+
+    private void showDrawer(String theme) {
         if (!selected || switching) return;
-        switching = true; selected = false;
+        try {
+            JSONArray sites = new JSONArray(getSharedPreferences("instances", MODE_PRIVATE).getString("list", "[]"));
+            boolean dark = "dark".equals(theme) || (theme.isEmpty() && (getResources().getConfiguration().uiMode & 48) == 32);
+            drawer.show(sites, id, dark, this::switchInstance, () -> switchInstance(""), this::about);
+        } catch (JSONException e) { Views.message(this, "无法读取实例列表"); }
+    }
+
+    private void about() {
+        if (!selected || probe || ticket.isEmpty() || web == null || !Site.root(web.getUrl(), origin)) {
+            Views.message(this, "Focus Mobile · 连接实例后可检查客户端更新"); return;
+        }
+        web.evaluateJavascript("!dispatchEvent(new Event('focus-host-about',{cancelable:true}))", handled -> {
+            if (!"true".equals(handled)) Views.message(this, "请先更新此实例的 Focus Web 以检查客户端更新。");
+        });
+    }
+
+    private void switchInstance(String target) {
+        if (!selected || switching) return;
+        switchTarget = target; switching = true; selected = false; apkUpdate.cancel();
         main.removeCallbacks(retry);
         signal("pause");
         Runnable cold = () -> completeSwitch(false);
@@ -364,7 +395,14 @@ public class ClientActivity extends Activity {
         if (!switching) return;
         switching = false;
         if (!retained) retireView();
-        startActivity(new Intent(this, MainActivity.class).setAction(MainActivity.PICK)
+        if (!legacy && !switchTarget.isEmpty()) {
+            SharedPreferences prefs = getSharedPreferences("instances", MODE_PRIVATE);
+            try {
+                if (pages == null) pages = new PageSlots(this, prefs);
+                if (pages.openNamedTarget(switchTarget, new JSONArray(prefs.getString("list", "[]")))) return;
+            } catch (JSONException ignored) { /* The manager can recover the local entry list. */ }
+        }
+        startActivity(new Intent(this, MainActivity.class).setAction(MainActivity.PICK).putExtra("target", switchTarget)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         if (legacy) finishAndRemoveTask();
     }
@@ -390,12 +428,13 @@ public class ClientActivity extends Activity {
         super.onTrimMemory(level);
         if (!selected && !switching && level != TRIM_MEMORY_UI_HIDDEN && level >= TRIM_MEMORY_RUNNING_LOW) retireView();
     }
-    @Override public void onBackPressed() { if (web != null && !probe && web.canGoBack()) web.goBack(); else pickInstance(); }
-    @Override protected void onActivityResult(int code, int result, Intent data) { super.onActivityResult(code,result,data); files.result(code,result,data); }
+    @Override public void onBackPressed() { if (drawer != null && drawer.dismiss()) return; if (web != null && !probe && web.canGoBack()) web.goBack(); else pickInstance(); }
+    @Override protected void onActivityResult(int code, int result, Intent data) { super.onActivityResult(code,result,data); if (code == ApkUpdate.INSTALL_PERMISSION) apkUpdate.permissionResult(); else files.result(code,result,data); }
     void releaseTask() { selected = false; retireView(); finishAndRemoveTask(); }
 
     @Override protected void onDestroy() {
         main.removeCallbacksAndMessages(null); retireView(); if (files != null) files.dispose();
+        if (pages != null) pages.finishOpening();
         PageSlots.detached(this);
         super.onDestroy();
         if (legacy) android.os.Process.killProcess(android.os.Process.myPid());

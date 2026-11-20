@@ -1,4 +1,5 @@
 import type {
+  FocusAndroidChannel, FocusAndroidRelease,
   FocusExportTurnPage,
   FocusFileInfo,
   FocusActiveTurnContext,
@@ -78,7 +79,7 @@ import {
  */
 export type FocusHttpDecoder<T> = (value: unknown) => T | null;
 
-const WEB_DOCUMENT_RECEIPT_PATTERN = new RegExp('^[0-9a-f]{64}$', 'u');
+const SHA256_PATTERN = new RegExp('^[0-9a-f]{64}$', 'u');
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
@@ -98,7 +99,7 @@ function isNonEmptyTrimmedString(value: unknown): value is string {
 
 function isWebDocumentReceipt(value: unknown): value is string {
   return typeof value === 'string'
-    && WEB_DOCUMENT_RECEIPT_PATTERN.test(value);
+    && SHA256_PATTERN.test(value);
 }
 
 function isTrimmedString(value: unknown): value is string {
@@ -542,6 +543,24 @@ function isFocusUpdateSource(value: unknown): boolean {
       }
     })();
 }
+
+function isAndroidRelease(value: unknown): value is FocusAndroidRelease {
+  return isRequiredRecord('android_release', value) && hasExactRequiredFields('android_release', value)
+    && typeof value.package === 'string' && new RegExp('^[A-Za-z][A-Za-z0-9_]*([.][A-Za-z][A-Za-z0-9_]*)+$', 'u').test(value.package)
+    && typeof value.version === 'string' && new RegExp('^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$', 'u').test(value.version)
+    && typeof value.version_code === 'number' && Number.isSafeInteger(value.version_code) && value.version_code > 0 && value.version_code <= 2100000000
+    && typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size > 0 && value.size <= 32 * 1024 * 1024
+    && typeof value.source_revision === 'string' && new RegExp('^[a-f0-9]{40}$', 'u').test(value.source_revision)
+    && typeof value.sha256 === 'string' && SHA256_PATTERN.test(value.sha256)
+    && typeof value.certificate_sha256 === 'string' && SHA256_PATTERN.test(value.certificate_sha256);
+}
+
+export const decodeFocusAndroidChannel: FocusHttpDecoder<FocusAndroidChannel> = (value) => {
+  if (!isRequiredRecord('android_channel', value) || !hasExactRequiredFields('android_channel', value)
+    || !isNonNegativeFiniteNumber(value.checked_at) || typeof value.stale !== 'boolean'
+    || (value.release !== null && !isAndroidRelease(value.release))) return null;
+  return { release: value.release, checked_at: value.checked_at, stale: value.stale };
+};
 
 export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (value) => {
   if (

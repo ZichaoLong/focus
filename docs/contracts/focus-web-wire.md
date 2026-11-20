@@ -227,6 +227,8 @@ guards and may not retain parallel key or enum inventories.
 - v40 adds exact-operation `POST /api/update/cancel` and the closed update state/phase values `cancelling` and `cancelled`;
   behavior is defined by the [browser update contract](./focus-web-update.md).
 
+- v41 adds Android channel checks and digest-pinned APK reads. The current document and Android host negotiate update support. [Mobile contract](./focus-mobile.md#instance-drawer-and-android-distribution)
+
 ## 4. Endpoint and Event Admission
 
 The two diagnostic GETs and metadata-only POST neither query app-server nor establish result/retry authority.

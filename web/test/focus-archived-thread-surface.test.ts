@@ -24,6 +24,7 @@ describe('Focus archived-thread settings surface', () => {
 
     expect(dialog).toContain('deleteConfirmation.value.trim() !== deleteTarget.value');
     expect(dialog).toContain(':disabled="deleteConfirmation.trim() !== thread.id"');
-    expect(dialog).not.toContain('copyTextToClipboard');
+    const archived = dialog.split('class="archived-panel"')[1].split('</section>')[0];
+    expect(archived).not.toMatch(/copyOperationId|copyTextToClipboard|clipboard/i);
   });
 });

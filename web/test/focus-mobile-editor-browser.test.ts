@@ -256,3 +256,42 @@ it('expands a new-conversation draft and safely returns to compact after a width
     expect(errors).toEqual([]);
   } finally { await page.close(); }
 }, 45_000);
+
+it('restores durable mobile presentation after stale Web Storage and honors deletion and instance isolation', async () => {
+  const page = await browser.newPage();
+  await page.route('**/storage-fixture', route => route.fulfill({ contentType: 'text/html', body: '<title>Storage</title>' }));
+  try {
+    await page.goto(url + 'storage-fixture');
+    await page.addScriptTag({ type: 'module', content:
+      "import * as store from '/src/lib/mobilePresentation.ts'; window.presentationFixture = store;" });
+    await page.waitForFunction(() => 'presentationFixture' in window);
+    const result = await page.evaluate(async () => {
+      const store = (window as Window & { presentationFixture: typeof import('../src/lib/mobilePresentation') }).presentationFixture;
+      const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222';
+      const draft = 'kimi-web.draft.mobile:' + first + ':thread:A';
+      const mode = 'focus-mobile.' + first + '.focus-web.reading-thread';
+      const receipt = 'focus-mobile.' + first + '.receipt';
+      const other = 'kimi-web.draft.mobile:' + second + ':thread:A';
+      localStorage.setItem(draft, 'before migration');
+      localStorage.setItem(other, 'second site');
+      await store.openMobilePresentation(first);
+      store.persistMobilePresentation(draft, 'last edit');
+      store.persistMobilePresentation(mode, 'A');
+      store.persistMobilePresentation(receipt, 'must stay outside presentation');
+      localStorage.setItem(receipt, 'writer-owned');
+      // Opening another transaction on the same store waits for previous writes.
+      await store.openMobilePresentation(first);
+      const afterRestore = [draft, mode, receipt, other].map(key => localStorage.getItem(key));
+      store.persistMobilePresentation(draft, null);
+      store.persistMobilePresentation(mode, null);
+      await store.openMobilePresentation(first);
+      const afterClear = [localStorage.getItem(draft), localStorage.getItem(mode)];
+      await store.openMobilePresentation(second);
+      store.persistMobilePresentation(draft, 'another instance cannot write A');
+      await store.openMobilePresentation(first);
+      return { afterRestore, afterClear, isolated: localStorage.getItem(draft) };
+    });
+    expect(result).toEqual({ afterRestore: ['last edit', 'A', 'writer-owned', 'second site'],
+      afterClear: [null, null], isolated: null });
+  } finally { await page.close(); }
+});

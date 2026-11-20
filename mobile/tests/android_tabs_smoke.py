@@ -67,8 +67,7 @@ async def click_web(ws, selector):
 
 
 async def switch(ws, adb, target):
-    await click_web(ws, ".reading-session-switch,.tb-mid")
-    await click_web(ws, ".instance-picker")
+    await click_web(ws, ".instance-drawer-trigger,.instance-picker")
     await pick(adb, target)
 
 
@@ -80,7 +79,8 @@ async def pick(adb, target):
             if first >= 0 and last >= 0:
                 nodes = ElementTree.fromstring(raw[first:last + len("</hierarchy>")])
                 for node in nodes.iter("node"):
-                    if node.get("package") == PACKAGE and target in node.get("text", "").splitlines():
+                    labels = node.get("text", "").splitlines() + node.get("content-desc", "").splitlines()
+                    if node.get("package") == PACKAGE and target in labels:
                         left, top, right, bottom = map(int, re.findall(r"\d+", node.get("bounds")))
                         adb("shell", "input", "tap", str((left + right) // 2), str((top + bottom) // 2))
                         return
@@ -125,9 +125,15 @@ async def check_position(ws, saved):
 
 
 async def check(ws, thread, draft, reading):
-    await wait_for(ws, "location.search.includes(" + json.dumps("thread=" + thread)
-                   + ") && document.querySelector('#composer-input')?.value===" + json.dumps(draft)
-                   + " && !!document.querySelector('.focus-app.reading-mode')===" + json.dumps(reading))
+    try:
+        await wait_for(ws, "location.search.includes(" + json.dumps("thread=" + thread)
+                       + ") && document.querySelector('#composer-input')?.value===" + json.dumps(draft)
+                       + " && !!document.querySelector('.focus-app.reading-mode')===" + json.dumps(reading))
+    except TimeoutError as exc:
+        state = await evaluate(ws, """({query:location.search, ready:document.readyState,
+            reading:!!document.querySelector('.focus-app.reading-mode'),
+            draft:document.querySelector('#composer-input')?.value, page:document.body.innerText.slice(0,180)})""")
+        raise AssertionError(f"Expected fixture {thread}, {draft}, reading={reading}; observed {state}") from exc
 
 
 async def smoke(args):
@@ -144,6 +150,10 @@ async def smoke(args):
             await observed(events_a, "hello")
             saved = await bookmark(wa)
             events_a.clear()
+            await click_web(wa, ".instance-drawer-trigger,.instance-picker")
+            await pick(adb, a)
+            assert await evaluate(wa, "performance.timeOrigin") == start_a
+            assert "closed" not in events_a
             await switch(wa, adb, b)
             await observed(events_a, "closed")
             async with tab(session, adb, b) as wb, network_trace(session, adb, b) as events_b:

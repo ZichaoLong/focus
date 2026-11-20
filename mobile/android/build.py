@@ -17,6 +17,15 @@ WEBKIT = "https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.12.1/
 WEBKIT_SHA256 = "18a0a51ad129e0c8563f031d46c8a7e61169f56ae84e562a0d75686941262111"
 
 
+def clean_source_revision():
+    try:
+        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
+        changes = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all", "--", "."], cwd=ROOT)
+    except (OSError, subprocess.CalledProcessError):
+        return "working-tree"
+    return revision if not changes else "working-tree"
+
+
 def webkit_dependency(path):
     if path.is_file():
         data = path.read_bytes()
@@ -55,6 +64,7 @@ def main():
 
     build = ROOT / "build"
     build.mkdir(exist_ok=True)
+    source_id = clean_source_revision()
     with tempfile.TemporaryDirectory(dir=build) as temp:
         work = Path(temp)
         name = "focus-unsigned" if args.unsigned else "focus-debug-test-ca" if args.debug_ca else "focus-debug"
@@ -67,10 +77,13 @@ def main():
             # A distinct package keeps synthetic test data and trust out of the normal installation.
             document.getroot().set("package", "org.focus.mobile.testca")
             for activity in document.getroot().find("application"):
-                if activity.tag not in ("activity", "service"):
+                if activity.tag not in ("activity", "service", "provider"):
                     continue
                 key = "{http://schemas.android.com/apk/res/android}name"
                 activity.set(key, "org.focus.mobile" + activity.get(key))
+                authority = "{http://schemas.android.com/apk/res/android}authorities"
+                if activity.get(authority):
+                    activity.set(authority, activity.get(authority).replace("org.focus.mobile.", "org.focus.mobile.testca."))
                 affinity = "{http://schemas.android.com/apk/res/android}taskAffinity"
                 if activity.get(affinity):
                     activity.set(affinity, activity.get(affinity).replace("org.focus.mobile.", "org.focus.mobile.testca."))
@@ -102,7 +115,10 @@ def main():
         run("java", "-cp", tools / "lib/d8.jar", "com.android.tools.r8.R8", "--release",
             "--min-api", "28", "--lib", platform, "--pg-conf", keep,
             "--pg-conf", ROOT / "keep.pro", "--output", work, jar, webkit)
+        if clean_source_revision() != source_id:
+            source_id = "working-tree"
         with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("assets/focus-source-revision.txt", source_id)
             archive.write(work / "classes.dex", "classes.dex")
             archive.writestr("META-INF/androidx/webkit/LICENSE.txt", license_text)
         result = build / (name + ".apk")

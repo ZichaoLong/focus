@@ -120,6 +120,22 @@ export interface FocusUpdateProgress {
   unit: FocusWebWireEnum<'update_progress_unit'>;
 }
 
+export interface FocusAndroidRelease {
+  package: string;
+  version: string;
+  version_code: number;
+  source_revision: string;
+  sha256: string;
+  certificate_sha256: string;
+  size: number;
+}
+
+export interface FocusAndroidChannel {
+  release: FocusAndroidRelease | null;
+  checked_at: number;
+  stale: boolean;
+}
+
 export interface FocusUpdateStatus {
   source: FocusUpdateSource;
   operation_source: FocusUpdateSource | null;

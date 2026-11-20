@@ -1,3 +1,4 @@
+import { persistMobilePresentation } from './mobilePresentation';
 import { presentationScope } from './mobileHost';
 // apps/kimi-web/src/lib/storage.ts
 // Thin, safe wrapper over localStorage: raw read/write/remove plus JSON
@@ -53,6 +54,7 @@ export function safeGetString(key: string): string | null {
 export function safeSetString(key: string, value: string): void {
   try {
     globalThis.localStorage.setItem(key, value);
+    persistMobilePresentation(key, value);
   } catch {
     // storage unavailable (private mode, quota, etc.) — ignore
   }
@@ -61,6 +63,7 @@ export function safeSetString(key: string, value: string): void {
 export function safeRemove(key: string): void {
   try {
     globalThis.localStorage.removeItem(key);
+    persistMobilePresentation(key, null);
   } catch {
     // ignore
   }

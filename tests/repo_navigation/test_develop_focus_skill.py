@@ -32,6 +32,8 @@ class DevelopFocusSkillTests(unittest.TestCase):
         self.assertIn("$navigate-focus-development", text)
         self.assertIn("docs/contracts/install-artifact-delivery.zh-CN.md", text)
         self.assertIn("validation run is not publication", text)
+        self.assertIn("docs/contracts/focus-mobile.zh-CN.md", text)
+        self.assertNotIn("Use one lane", text)
         self.assertIn("feature implementation", text)
         self.assertIn("behavior change", text)
         for required in (

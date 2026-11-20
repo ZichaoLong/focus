@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 40
+FOCUS_WEB_WIRE_VERSION: Final = 41
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -143,6 +143,8 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "_handle_client_register",
     ),
     FocusWebEndpointSpec("meta", "GET", "/api/meta", "_handle_meta"),
+    FocusWebEndpointSpec("mobile_android_check", "POST", "/api/mobile/android/{channel}/check", "_handle_mobile_android_check"),
+    FocusWebEndpointSpec("mobile_android_apk", "GET", "/api/mobile/android/apk/{digest}", "_handle_mobile_android_apk"),
     FocusWebEndpointSpec(
         "update_status",
         "GET",
@@ -402,6 +404,7 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "thread_unarchive",
         "thread_delete",
         "request_respond",
+        "mobile_android_check",
         "update_source",
         "update_check",
         "update_cancel",
@@ -578,6 +581,8 @@ FOCUS_WEB_RECORDS: Final = (
         "models writer_profile next_turn_settings runtime_identity approval_policies "
         "permissions_profiles capabilities",
     ),
+    _record("android_release", "FocusAndroidRelease", "package version version_code source_revision sha256 certificate_sha256 size"),
+    _record("android_channel", "FocusAndroidChannel", "release checked_at stale"),
     _record("update_source", "FocusUpdateSource", "url branch"),
     _record(
         "update_progress",

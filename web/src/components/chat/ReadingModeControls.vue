@@ -119,6 +119,7 @@ onUnmounted(closeExportMenu);
 
 <template>
   <div class="reading-mode-controls" :class="{ 'is-narrow': narrowViewport }">
+    <slot name="instances" />
     <IconButton
       class="reading-mode-exit"
       size="sm"

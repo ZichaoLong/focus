@@ -1,4 +1,5 @@
 /** Browser draft and timing expiry. Preferences and recovery receipts are excluded. */
+import { persistMobilePresentation } from './mobilePresentation';
 import { STORAGE_KEYS, safeGetJson, safeGetString, safeRemove } from './storage';
 
 const META_KEY = 'focus-web.data-retention.v1';
@@ -60,6 +61,7 @@ export function pruneBrowserData(now = Date.now()): number {
     meta.drafts[key] = stamp;
     if (!retainedTimestamp(stamp, now)) {
       storage.removeItem(key);
+      persistMobilePresentation(key, null);
       delete meta.drafts[key];
       removed += 1;
     }

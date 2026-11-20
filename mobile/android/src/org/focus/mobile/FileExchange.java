@@ -17,10 +17,18 @@ final class FileExchange {
     private ValueCallback<Uri[]> upload;
     private JsPromptResult picker;
     private File staged;
+    private File verifiedSource;
     private Uri destination;
     private int generation;
 
     FileExchange(Activity activity) { this.activity = activity; }
+
+    void chooseVerified(File source, String name, JsPromptResult result) {
+        if (picker != null || staged != null) { source.delete(); result.confirm("error"); return; }
+        verifiedSource = source;
+        handle("choose", name, result);
+        if (picker == null) { source.delete(); verifiedSource = null; }
+    }
 
     boolean upload(ValueCallback<Uri[]> callback, WebChromeClient.FileChooserParams params) {
         if (upload != null) upload.onReceiveValue(null);
@@ -41,7 +49,7 @@ final class FileExchange {
             }
             picker = result;
             try { activity.startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
-                .setType("application/octet-stream").putExtra(Intent.EXTRA_TITLE, value), 3); }
+                .setType(verifiedSource == null ? "application/octet-stream" : ApkProvider.MIME).putExtra(Intent.EXTRA_TITLE, value), 3); }
             catch (ActivityNotFoundException e) { picker = null; result.confirm("error"); }
             return;
         }
@@ -90,7 +98,14 @@ final class FileExchange {
         if (code == 3 && picker != null) {
             JsPromptResult pending = picker; picker = null;
             Uri selected = accepted ? intent.getData() : null;
-            if (selected == null || !"content".equals(selected.getScheme())) { pending.cancel(); return; }
+            if (selected == null || !"content".equals(selected.getScheme())) {
+                if (verifiedSource != null) { cancel(); pending.confirm("cancelled"); } else pending.cancel();
+                return;
+            }
+            if (verifiedSource != null) {
+                staged = verifiedSource; verifiedSource = null; destination = selected;
+                handle("finish", "", pending); return;
+            }
             try {
                 staged = File.createTempFile("focus-save-", ".part", activity.getCacheDir());
                 destination = selected; pending.confirm("ok");
@@ -106,7 +121,8 @@ final class FileExchange {
         if (upload != null) { upload.onReceiveValue(null); upload = null; }
         if (picker != null) { picker.cancel(); picker = null; }
         if (staged != null) staged.delete();
-        staged = null; destination = null;
+        if (verifiedSource != null) verifiedSource.delete();
+        staged = null; verifiedSource = null; destination = null;
     }
     void dispose() { cancel(); io.shutdown(); }
 }

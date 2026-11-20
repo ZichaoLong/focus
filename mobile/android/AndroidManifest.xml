@@ -1,7 +1,8 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.1.0" android:versionCode="2">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.2.0" android:versionCode="3">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application android:label="Focus" android:allowBackup="false" android:usesCleartextTraffic="false" android:networkSecurityConfig="@xml/focus_network" android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
@@ -18,6 +19,7 @@
         <activity android:name=".LegacyClientActivity" android:process=":legacy" android:exported="false"
             android:taskAffinity="org.focus.mobile.legacy" android:excludeFromRecents="true"
             android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <provider android:name=".ApkProvider" android:authorities="org.focus.mobile.apk" android:exported="false" android:grantUriPermissions="true"/>
         <service android:name=".ProfileExportService" android:process=":legacy" android:exported="false"/>
     </application>
 </manifest>

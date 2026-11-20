@@ -9,7 +9,7 @@ import java.util.*;
 
 /** Two warm Android tasks, with both isolated WebViews owned by the same engine process. */
 final class PageSlots {
-    private final MainActivity owner;
+    private final Activity owner;
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ActivityManager tasks;
@@ -19,7 +19,7 @@ final class PageSlots {
     private AlertDialog transferNotice;
     private static boolean legacyOnly;
 
-    PageSlots(MainActivity owner, SharedPreferences prefs) {
+    PageSlots(Activity owner, SharedPreferences prefs) {
         this.owner = owner; this.prefs = prefs;
         tasks = owner.getSystemService(ActivityManager.class);
         retryDeletedProfiles();
@@ -48,6 +48,18 @@ final class PageSlots {
             if (new ComponentName(owner, type).equals(task.getTaskInfo().baseIntent.getComponent())) task.finishAndRemoveTask();
         }
         prefs.edit().remove("slot-" + slot).commit();
+    }
+
+    boolean openNamedTarget(String id, JSONArray sites) {
+        if (id.isEmpty() || legacyOnly || !ProfileTransfer.namedProfiles()) return false;
+        for (int i = 0; i < sites.length(); i++) {
+            JSONObject site = sites.optJSONObject(i);
+            if (id.equals(site.optString("id")) && !needsLegacy(site)) {
+                open(site, "", false, sites);
+                return true;
+            }
+        }
+        return false;
     }
 
     void open(JSONObject site, String link, boolean reload, JSONArray sites) {

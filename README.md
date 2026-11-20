@@ -17,7 +17,7 @@ Codex 后端，查看和继续同一线程。Web 默认开启，飞书按需启�
 | 入口 | 作用 | 什么时候用 |
 | --- | --- | --- |
 | Focus Web | 浏览器对话与线程管理 | 本机访问，或经 SSH 转发、可信 HTTPS 反向代理远程访问 |
-| Focus 手机客户端 | 在独立的 Android WebView 或鸿蒙 ArkWeb 窗口使用 Focus Web | 手机切换多个 HTTPS 实例、保存可选的 HTTP Basic 凭据、恢复对话和草稿。[构建、安装与验收](mobile/README.md) |
+| Focus 手机客户端 | 在独立的 Android WebView 或鸿蒙 ArkWeb 窗口使用 Focus Web | 手机切换多个 HTTPS 实例、保存可选的 HTTP Basic 凭据、恢复对话和草稿。Android 可在当前实例检查和下载安装包。[构建、安装与验收](mobile/README.md) |
 | `focus` / `fcodex` | 接入同一实例后端的 Codex TUI | 在终端中查看和继续同一线程 |
 | 飞书聊天命令（可选） | 已绑定线程的聊天入口 | 在飞书里提问、切线程、改当前会话设置 |
 | `focusctl` | 本地管理命令 | 配置、启停、实例、线程、会话绑定与清理 |

@@ -1,3 +1,5 @@
+import { openMobilePresentation, persistMobilePresentation } from './mobilePresentation';
+
 // The native half installs an offer only in the configured top document.
 // No business requests, cookie values or document capabilities cross this boundary.
 interface MobileOffer {
@@ -27,8 +29,7 @@ export async function negotiateMobileHost(): Promise<void> {
     host = offer;
     return true;
   }
-  if (accept() || !new URLSearchParams(location.search).has('focusApp')) return;
-  await new Promise<void>(resolve => {
+  if (!accept() && new URLSearchParams(location.search).has('focusApp')) await new Promise<void>(resolve => {
     const finish = () => {
       clearTimeout(timer);
       window.removeEventListener('focus-host-ready', ready);
@@ -41,6 +42,7 @@ export async function negotiateMobileHost(): Promise<void> {
     // delay its navigation-complete callback. This carries no authority.
     console.debug('focus-host-request/1');
   });
+  if (host && hasMobileFeature('resume')) await openMobilePresentation(host.instance).catch(() => {});
 }
 
 export function hasMobileFeature(feature: string): boolean {
@@ -52,7 +54,10 @@ export function mobileInstanceName(): string {
 }
 
 export function showMobileInstances(): void {
-  if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/instances', '');
+  if (!host || !hasMobileFeature('tabs')) return;
+  const scheme = hasMobileFeature('drawer') ? document.documentElement.dataset.colorScheme : '';
+  const dark = scheme === 'dark' || (scheme !== 'light' && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
+  window.prompt('focus/1/' + host.ticket + '/instances', hasMobileFeature('drawer') ? (dark ? 'dark' : 'light') : '');
 }
 
 export function showMobileWebChrome(available: boolean): void {
@@ -101,8 +106,8 @@ export function recoveryStorage(): Pick<Storage, 'getItem' | 'setItem' | 'remove
   const prefix = 'focus-mobile.' + host.instance + '.';
   return {
     getItem: key => localStorage.getItem(prefix + key),
-    setItem: (key, value) => localStorage.setItem(prefix + key, value),
-    removeItem: key => localStorage.removeItem(prefix + key),
+    setItem: (key, value) => { localStorage.setItem(prefix + key, value); persistMobilePresentation(prefix + key, value); },
+    removeItem: key => { localStorage.removeItem(prefix + key); persistMobilePresentation(prefix + key, null); },
   };
 }
 
@@ -154,3 +159,10 @@ export async function saveMobileFile(response: Response, signal?: AbortSignal, p
 }
 
 export function cancelMobileFile(): void { requestFile('abort'); }
+
+export function mobileApkRequest(action: 'info' | 'begin' | 'write' | 'finish' | 'save' | 'abort', value = ''): string {
+  if (!host || !hasMobileFeature('android-update')) throw new Error('Android installer unavailable');
+  const reply = window.prompt('focus/1/' + host.ticket + '/apk-' + action, value);
+  if (reply === null || reply.startsWith('error')) throw new Error(reply?.slice(6) || 'Android installer unavailable');
+  return reply;
+}

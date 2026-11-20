@@ -89,6 +89,8 @@ Stable 下载阶段在响应提供大小时报告已收/总字节；Git/npm/pip 
 
 ## 3. 应用、重启与结果
 
+设置中的「服务端更新」显示当前实例、目标和本机重启范围。用户单独点击确认，页面提交打开确认框时记录的完整 ID，无需抄录。剪贴板失败时可长按选取 ID。
+
 `POST /api/update/apply` 必须携带 ready operation id（浏览器会单独显示并允许复制），并由用户再次确认。在 Linux
 上 Focus 以独立的 systemd user transient unit 启动可信 updater；其他平台在停服前
 明确拒绝应用。该 updater 由既有 managed install transaction 证明所有实例 idle，

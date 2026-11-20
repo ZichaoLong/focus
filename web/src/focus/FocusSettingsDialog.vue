@@ -14,6 +14,7 @@ import {
   isComposerSendShortcut,
   type ComposerSendShortcut,
 } from '../components/chat/composerSendShortcut';
+import { copyTextToClipboard } from '../lib/clipboard';
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import type {
@@ -88,12 +89,13 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
-const section = ref<'preferences' | 'archived' | 'about' | 'danger'>('preferences');
+const section = ref<'preferences' | 'archived' | 'about' | 'updates' | 'danger'>('preferences');
 const deleteTarget = ref('');
 const deleteConfirmation = ref('');
 const updateSourceUrl = ref('');
 const updateCommit = ref('');
-const copiedOperationId = ref(false);
+const copyResult = ref<'idle' | 'copied' | 'failed'>('idle');
+watch(() => props.updateStatus?.operation_id, () => { copyResult.value = 'idle'; });
 
 watch(
   () => props.open,
@@ -104,7 +106,7 @@ watch(
       deleteConfirmation.value = '';
     } else if (!wasOpen && section.value === 'danger') {
       emit('refreshBackendReset');
-    } else if (!wasOpen && section.value === 'about') {
+    } else if (!wasOpen && section.value === 'updates') {
       emit('refreshUpdate');
     }
     if (open && props.updateStatus?.source.url) {
@@ -125,24 +127,19 @@ function setSection(value: string): void {
     value !== 'preferences'
     && value !== 'archived'
     && value !== 'about'
+    && value !== 'updates'
     && value !== 'danger'
   ) return;
   const enteringDanger = value === 'danger' && section.value !== 'danger';
   section.value = value;
   if (value === 'archived') emit('refreshArchived');
-  if (value === 'about') emit('refreshUpdate');
+  if (value === 'updates') emit('refreshUpdate');
   if (enteringDanger) emit('refreshBackendReset');
 }
 
 async function copyOperationId(operationId: string): Promise<void> {
-  if (!operationId || !navigator.clipboard) return;
-  try {
-    await navigator.clipboard.writeText(operationId);
-    copiedOperationId.value = true;
-    window.setTimeout(() => { copiedOperationId.value = false; }, 1800);
-  } catch {
-    copiedOperationId.value = false;
-  }
+  const copied = await copyTextToClipboard(operationId);
+  if (props.updateStatus?.operation_id === operationId) copyResult.value = copied ? 'copied' : 'failed';
 }
 
 function backendResetStatusLabel(status: FocusBackendResetPreview['status']): string {
@@ -225,6 +222,7 @@ function setComposerSendShortcut(value: string): void {
         :options="[
           { value: 'preferences', label: t('focus.runtime') },
           { value: 'archived', label: t('focus.archived') },
+          { value: 'updates', label: t('focus.updateTitle') },
           { value: 'about', label: t('focus.about') },
           { value: 'danger', label: t('focus.dangerZone') },
         ]"
@@ -471,6 +469,9 @@ function setComposerSendShortcut(value: string): void {
           </dl>
         </article>
 
+      </section>
+
+      <section v-else-if="section === 'updates'" class="about-panel">
         <div class="about-update-section">
           <div class="settings-label">{{ t('focus.updateTitle') }}</div>
           <div class="settings-description">{{ t('focus.updateDescription') }}</div>
@@ -500,7 +501,7 @@ function setComposerSendShortcut(value: string): void {
               :stale="updateStatusStale"
               :notice="updateNotice"
               :observed-at="updateObservedAt"
-              :visible="open && section === 'about'"
+              :visible="open && section === 'updates'"
             />
             <label class="update-field">
               <span class="settings-label">{{ t('focus.updateMainCommit') }}</span>
@@ -566,8 +567,9 @@ function setComposerSendShortcut(value: string): void {
                 <dd>
                   <code>{{ updateStatus.operation_id }}</code>
                   <Button size="sm" variant="secondary" @click="copyOperationId(updateStatus.operation_id)">
-                    {{ copiedOperationId ? t('focus.updateCopied') : t('focus.updateCopyOperationId') }}
+                    {{ copyResult === 'copied' ? t('focus.updateCopied') : t('focus.updateCopyOperationId') }}
                   </Button>
+                  <span v-if="copyResult === 'failed'" role="status">{{ t('focus.updateCopyFailed') }}</span>
                 </dd>
               </div>
               <div v-if="updateStatus.operation_source"><dt>{{ t('focus.updateOperationSource') }}</dt><dd><code>{{ updateStatus.operation_source.url }}@{{ updateStatus.operation_source.branch }}</code></dd></div>
@@ -941,6 +943,7 @@ function setComposerSendShortcut(value: string): void {
 }
 .update-status dt { color: var(--color-text-muted); font-size: var(--text-sm); }
 .update-status dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.update-operation-id code { user-select: text; -webkit-user-select: text; }
 .update-operation-id dd {
   display: flex;
   flex-wrap: wrap;

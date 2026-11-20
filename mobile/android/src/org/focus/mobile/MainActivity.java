@@ -29,7 +29,12 @@ public final class MainActivity extends Activity {
         super.onResume();
         if (PICK.equals(getIntent().getAction())) {
             prefs.edit().remove("active").commit();
+            String target = getIntent().getStringExtra("target");
             setIntent(new Intent());
+            for (int i = 0; i < sites.length(); i++) {
+                JSONObject site = sites.optJSONObject(i);
+                if (site.optString("id").equals(target)) { open(site, ""); break; }
+            }
         } else for (int i = 0; i < sites.length(); i++) {
             JSONObject site = sites.optJSONObject(i);
             if (site.optString("id").equals(prefs.getString("active", ""))) { open(site, ""); break; }

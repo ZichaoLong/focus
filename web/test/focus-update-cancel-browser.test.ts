@@ -26,7 +26,7 @@ afterAll(async () => {
 
 const cases = [
   { mode: 'normal', width: 1280 }, { mode: 'lost', width: 1280 },
-  { mode: 'normal', width: 390 }, { mode: 'applying', width: 390 },
+  { mode: 'ready', width: 390 }, { mode: 'normal', width: 390 }, { mode: 'applying', width: 390 },
 ];
 it.each(cases)('cancels preparation before checking another target: $mode at width $width', async ({ mode, width }) => {
   const page = await browser.newPage({ locale: 'en-US', viewport: { width, height: 900 } });
@@ -39,6 +39,8 @@ it.each(cases)('cancels preparation before checking another target: $mode at wid
     updated_at: Date.now() / 1000, restart_required: false, installation_started: false,
     phase: 'idle', phase_started_at: Date.now() / 1000, last_progress_at: Date.now() / 1000, progress: null,
   };
+  if (mode === 'ready') status = { ...status, target: 'main', operation_source: source,
+    operation_id: 'd'.repeat(32), resolved_commit: 'e'.repeat(40), state: 'ready', phase: 'ready' };
   if (mode === 'applying') status = { ...status, target: 'main', operation_source: source,
     operation_id: 'c'.repeat(32), state: 'applying', phase: 'apply_install', installation_started: true, restart_required: true };
   page.on('pageerror', error => errors.push(error.message));
@@ -61,6 +63,9 @@ it.each(cases)('cancels preparation before checking another target: $mode at wid
       status = { ...status, target: body.target, state: 'checking', phase: body.target === 'stable' ? 'release_download' : 'source_clone',
         operation_id: body.target === 'stable' ? 'a'.repeat(32) : 'b'.repeat(32), operation_source: body.target === 'main' ? source : null };
       payload = status;
+    } else if (path === '/api/update/apply') {
+      status = { ...status, state: 'applying', phase: 'apply_validate' };
+      await route.abort('connectionreset'); return;
     } else if (path === '/api/update/cancel') {
       expect(body).toEqual({ operation_id: 'a'.repeat(32) });
       status = { ...status, state: 'cancelling', phase: 'cancelling' };
@@ -76,9 +81,21 @@ it.each(cases)('cancels preparation before checking another target: $mode at wid
     await page.goto(url);
     const settings = page.getByRole('button', { name: width === 390 ? 'Session settings' : 'Settings', exact: true });
     await settings.click();
-    await page.getByRole('tab', { name: 'About', exact: true }).click();
+    await page.getByRole('tab', { name: 'Server update', exact: true }).click();
     const main = page.getByRole('button', { name: 'Check and prepare main', exact: true });
     const stable = page.getByRole('button', { name: 'Check and prepare stable', exact: true });
+    if (mode === 'ready') {
+      await page.getByRole('button', { name: 'Apply update and restart' }).click();
+      const confirm = page.getByRole('dialog', { name: 'Apply this Focus update?', exact: true })
+      await confirm.getByText(/main eeeeeeeeeeee/).waitFor();
+      expect(await confirm.getByRole('textbox').count()).toBe(0);
+      await confirm.getByRole('button', { name: 'Apply update and restart' }).click();
+      await page.getByText('Applying update', { exact: true }).first().waitFor();
+      expect(posts.filter(p => p.path === '/api/update/apply').map(p => p.body)).toEqual([
+        { operation_id: 'd'.repeat(32), confirmation: 'd'.repeat(32) },
+      ]);
+      return;
+    }
     if (mode === 'applying') {
       await page.getByText('Applying update', { exact: true }).first().waitFor();
       expect(await page.getByRole('button', { name: 'Cancel preparation', exact: true }).count()).toBe(0);

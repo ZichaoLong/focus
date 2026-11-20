@@ -37,6 +37,7 @@ import type {
   FocusTurnPage,
   FocusTranscriptPage,
   FocusTranscriptQuery,
+  FocusAndroidChannel,
   FocusUpdateStatus,
   FocusUpdateTarget,
   FocusWriterProfile,
@@ -65,6 +66,7 @@ import {
   decodeFocusMutationResult,
   decodeFocusNextTurnSettingsResult,
   decodeFocusOperatorStatusResponse,
+  decodeFocusAndroidChannel,
   decodeFocusUpdateStatus,
   decodeFocusRenameResult,
   decodeFocusForkResult,
@@ -226,6 +228,7 @@ export interface FocusWebApiPort {
   initialize(): Promise<FocusMeta>;
   meta(signal?: AbortSignal): Promise<FocusMeta>;
   operatorStatus(): Promise<FocusOperatorStatus>;
+  checkAndroidChannel?(channel: FocusUpdateTarget): Promise<FocusAndroidChannel>;
   updateStatus(): Promise<FocusUpdateStatus>;
   configureUpdateSource(url: string, confirmation: string): Promise<FocusUpdateStatus>;
   checkUpdate(target: FocusUpdateTarget, commit: string): Promise<FocusUpdateStatus>;
@@ -439,6 +442,12 @@ export class FocusWebApi implements FocusWebApiPort {
     } finally {
       clearTimeout(timeout);
     }
+  }
+
+  checkAndroidChannel(channel: FocusUpdateTarget): Promise<FocusAndroidChannel> {
+    return this.request('mobile_android_check', decodeFocusAndroidChannel, 'Android update channel', {
+      parameters: { channel }, body: {},
+    });
   }
 
   updateStatus(): Promise<FocusUpdateStatus> {

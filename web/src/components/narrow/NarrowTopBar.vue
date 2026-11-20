@@ -125,6 +125,7 @@ onUnmounted(closeExportMenu);
 
 <template>
   <div class="topbar">
+    <slot name="instances" />
     <IconButton
       v-if="readingModeEnabled"
       class="wsq reading-mode-entry"

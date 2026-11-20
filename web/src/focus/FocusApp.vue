@@ -6,6 +6,7 @@ import ResizeHandle from '../components/ResizeHandle.vue';
 import ConversationPane from '../components/chat/ConversationPane.vue';
 import ReadingModeControls from '../components/chat/ReadingModeControls.vue';
 import NarrowTopBar from '../components/narrow/NarrowTopBar.vue';
+import FocusMobileAbout from './FocusMobileAbout.vue';
 import NarrowSwitcherSheet from '../components/narrow/NarrowSwitcherSheet.vue';
 import ModelPicker from '../components/settings/ModelPicker.vue';
 import GlobalLoading from '../components/GlobalLoading.vue';
@@ -776,16 +777,17 @@ async function confirmUpdateSource(url: string): Promise<void> {
 }
 
 async function confirmFocusUpdate(operationId: string): Promise<void> {
-  if (!operationId.trim()) return;
+  const operation = client.updateStatus.value;
+  if (!operationId || operation?.operation_id !== operationId || operation.state !== 'ready') return;
+  const instance = mobileInstanceName() || client.meta.value?.web_display_name || client.meta.value?.instance || location.host;
   try {
     await confirm({
       title: t('focus.updateConfirmTitle'),
-      message: t('focus.updateConfirmMessage'),
+      message: t('focus.updateConfirmMessage', {
+        instance, origin: location.host, target: operation.target, revision: operation.resolved_commit.slice(0, 12),
+      }),
       confirmLabel: t('focus.updateApply'),
       cancelLabel: t('focus.cancel'),
-      confirmationText: operationId,
-      confirmationLabel: t('focus.updateConfirmationLabel'),
-      confirmationPlaceholder: operationId,
       variant: 'danger',
       action: async () => { await client.applyUpdate(operationId); },
     });
@@ -815,12 +817,21 @@ provide(focusViewportDiagnosticKey, computed(() => viewport.value?.diagnostics ?
 onMounted(() => {
   loadSidebarCollapsed();
   if (focusShell.value) viewport.value = createFocusViewport(focusShell.value, readingMode);
+  if (hasMobileFeature('android-update')) window.addEventListener('focus-host-about', openMobileAbout);
   if (mobileTabs) window.addEventListener('focus-host-ready', syncHostChrome);
   void client.load();
 });
 
 const mobileTabs = hasMobileFeature('tabs');
 const instanceLabel = mobileInstanceName();
+const locationLabel = window.location.host;
+const mobileAbout = ref(false);
+function openMobileAbout(event: Event): void {
+  if (hasWebInstancePicker.value && client.api.checkAndroidChannel) {
+    event.preventDefault();
+    mobileAbout.value = true;
+  }
+}
 function openInstancePicker(): void {
   showNarrowSwitcher.value = false;
   showMobileInstances();
@@ -850,6 +861,7 @@ watch(detailOpen, (open) => {
 }, { flush: 'sync' });
 
 onUnmounted(() => {
+  window.removeEventListener('focus-host-about', openMobileAbout);
   window.removeEventListener('focus-host-ready', syncHostChrome);
   historyEditConfirmation?.abort();
   client.dispose();
@@ -991,6 +1003,11 @@ onUnmounted(() => {
         @export-thread-data="threadActions?.exportThreadData($event)"
         @enter-reading-mode="enterReadingMode"
       >
+        <template #instances>
+          <IconButton v-if="mobileTabs" class="instance-drawer-trigger" :label="t('focus.switchInstance')" @click="openInstancePicker">
+            <Icon name="panel-expand" size="lg" />
+          </IconButton>
+        </template>
         <template #utility-actions>
           <IconButton
             class="runtime-details-narrow-trigger"
@@ -1030,7 +1047,13 @@ onUnmounted(() => {
           @export-thread-data="threadActions?.exportThreadData($event)"
           @open-runtime-details="openReadingRuntimeDetails"
           @open-settings="openReadingSettings"
-        />
+        >
+          <template #instances>
+            <IconButton v-if="mobileTabs" class="instance-drawer-trigger" :label="t('focus.switchInstance')" @click="openInstancePicker">
+              <Icon name="panel-expand" size="lg" />
+            </IconButton>
+          </template>
+        </ReadingModeControls>
         <FocusPrimaryNotices
           v-if="!readingMode"
           :document-reload-required="client.documentReloadRequired.value"
@@ -1315,6 +1338,12 @@ onUnmounted(() => {
         @submit="submitReview"
       />
 
+      <FocusMobileAbout
+        v-if="mobileAbout && client.api.checkAndroidChannel"
+        :check="channel => client.api.checkAndroidChannel!(channel)"
+        :instance="instanceLabel || locationLabel"
+        @close="mobileAbout = false"
+      />
       <NarrowSwitcherSheet
         v-if="isNarrowViewport || readingMode"
         v-model="showNarrowSwitcher"
@@ -1336,9 +1365,6 @@ onUnmounted(() => {
         @fork="client.forkThread($event)"
       >
         <template #controls>
-          <button v-if="mobileTabs" class="instance-picker" type="button" @click="openInstancePicker">
-            {{ t('focus.switchInstance') }}<template v-if="instanceLabel"> · {{ instanceLabel }}</template>
-          </button>
           <SegmentedControl
             class="directory-scope narrow-scope"
             :title="t('focus.openThreadsHint')"
