@@ -82,6 +82,17 @@ it.each(cases)('cancels preparation before checking another target: $mode at wid
     const settings = page.getByRole('button', { name: width === 390 ? 'Session settings' : 'Settings', exact: true });
     await settings.click();
     await page.getByRole('tab', { name: 'Server update', exact: true }).click();
+    if (mode === 'normal') {
+      const tabs = page.locator('.settings-sections').getByRole('tab');
+      const tops = await tabs.evaluateAll(elements => elements.map(el => el.getBoundingClientRect().top));
+      expect(tops).toHaveLength(4);
+      expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(1);
+      const about = page.locator('.server-identity');
+      expect(await about.locator('article:visible').count()).toBe(0);
+      await about.locator('summary').click();
+      expect(await about.locator('article:visible').count()).toBe(2);
+      await about.locator('summary').click();
+    }
     const main = page.getByRole('button', { name: 'Check and prepare main', exact: true });
     const stable = page.getByRole('button', { name: 'Check and prepare stable', exact: true });
     if (mode === 'ready') {

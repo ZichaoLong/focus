@@ -1,3 +1,4 @@
+import { saveReadingBookmark, threadReading } from '../components/chat/readingBookmark';
 import { documentReloadDelay, isFocusSessionRejection, reserveDocumentReload } from './documentRecovery';
 import { checkpointThread, hasMobileFeature, recoveryStorage } from '../lib/mobileHost';
 import { computed, ref, watch } from 'vue';
@@ -246,6 +247,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   } = projection;
   transcript = createFocusTranscript({
     api, snapshot, activeThreadId,
+    savedReadingItem: thread => threadReading(thread)?.bookmark ?? null,
+    forgetReadingItem: (thread, turn, item) => {
+      const saved = threadReading(thread)?.bookmark;
+      if (saved?.turn === turn && saved.item === item) saveReadingBookmark(thread, null);
+    },
     reportFatalError,
     isDisposed: () => navigation.isDisposed || authRequired.value || documentReloadRequired.value,
   });

@@ -31,8 +31,17 @@ export function useComposerDraft(deps: ComposerDraftDeps) {
 
   function loadDraft(sid: string | undefined): string {
     const key = draftStorageKey(sid);
+    let text = safeGetString(key);
+    const previous = 'kimi-web.draft.' + sid;
+    if (sid && key.startsWith('kimi-web.draft.browser:') && text === null && previous !== key) {
+      text = safeGetString(previous);
+      if (text !== null) {
+        safeSetString(key, text);
+        if (safeGetString(key) === text) { safeRemove(previous); touchDraft(previous, false); }
+      }
+    }
     touchDraft(key);
-    return safeGetString(key) ?? '';
+    return text ?? '';
   }
   function saveDraft(sid: string | undefined, value: string): void {
     const key = draftStorageKey(sid);

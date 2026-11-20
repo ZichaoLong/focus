@@ -108,7 +108,7 @@ async def bookmark(ws):
     point = await evaluate(ws, """(()=>{const p=document.querySelector('.panes'), r=p.getBoundingClientRect();
       return {x:r.left+r.width/2, y:r.top+r.height/2, deltaX:0, deltaY:Math.round(r.height*(p.scrollTop>p.scrollHeight/2?-1.6:1.6))}})()""")
     await ws.send_json({"id": 7, "method": "Input.dispatchMouseEvent", "params": {"type": "mouseWheel", **point}})
-    stored = "JSON.parse(localStorage.getItem('focus-mobile.'+window.__focusMobile.instance+'.focus-web.reading-bookmark'))"
+    stored = "JSON.parse(localStorage.getItem('focus-mobile.'+window.__focusMobile.instance+'.focus-web.thread-reading.v1') || '[]').find(r => r.thread === new URL(location.href).searchParams.get('thread'))?.bookmark"
     await wait_for(ws, "(()=>{const a="+stored+"?.anchor,p=document.querySelector('.panes');return a && a.scrollTop>0"
                    + " && Math.abs(p.scrollTop-" + json.dumps(before) + ")>20 && Math.abs(a.scrollTop-p.scrollTop)<1})()")
     saved = await evaluate(ws, stored)

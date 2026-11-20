@@ -6,7 +6,7 @@ let draftPrefix = '';
 let readingPrefix = '';
 
 function belongs(key: string): boolean {
-  return key.startsWith(draftPrefix) || key === readingPrefix + 'reading-thread' || key === readingPrefix + 'reading-bookmark';
+  return key.startsWith(draftPrefix) || ['thread-reading.v1', 'reading-thread', 'reading-bookmark'].some(keyName => key === readingPrefix + keyName);
 }
 
 function transaction(db: IDBDatabase): IDBTransaction {

@@ -180,6 +180,14 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/components/chat/readingBookmark.ts",
                     "saveReadingBookmark",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/toolGroupPresentation.ts",
+                    "threadToolExpansion",
+                ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/chat/readingBookmark.ts",
+                    "threadReading",
+                ),
             ),
         )
 

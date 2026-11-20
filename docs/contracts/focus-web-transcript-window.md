@@ -109,12 +109,7 @@ Explicit full-read transfer/memory costs depend on the chosen item and its bound
 
 Consecutive tool-summary rows within one `rawTurnId` form a presentation group. Blank
 text/reasoning placeholders do not break a group; nonempty replies, visible reasoning,
-user messages and other semantic items do. Groups never cross source turns. A later
-nonempty assistant text reply in the loaded window makes preceding tool groups collapsed
-by default. Derive this default from loaded content without scanning history. Multiple
-tools without a later reply start expanded; a lone tool without a retained expansion choice
-stays standalone until a later reply makes it foldable. Headers summarize count and status,
-preferring running, then error, then done.
+user messages and other semantic items do. Groups stay within a source turn. A single tool already starts a collapsed group. Incoming members update its count and status. Running status can appear with a failure count. The next group after a reply or other semantic boundary starts collapsed.
 
 Tool grouping and transcript rows share the same blank-assistant-content predicate.
 Items containing only blank text/reasoning retain their source-row identity for later
@@ -126,14 +121,7 @@ and other semantic items are not hidden based on blank prose.
 
 Explicit expansion/collapse overrides the default. Retain choices by stable source-row
 identity across prepends, leader changes, splits and merges. The most recent choice wins
-when differently toggled groups join and propagates to new members. Evicted members lose
-their choices; retain no group state after all members leave the window. If a split or page
-eviction leaves one member with a retained choice, keep its operable header and apply that
-choice, including after reopening it. Once all members leave the window, reloading a lone
-tool restores its default presentation. Automatic folding
-must preserve rows containing focus or selection endpoints by keeping their group open
-until another user choice or member eviction. Legacy whole-turn groups share this choice
-owner, identifying members by turn and tool.
+when differently toggled groups join and propagates to new members. Choices survive page eviction, same-tab thread changes and warm instance switches. Each retained document keeps choices for recently used threads up to the thread preference, with at most 2,048 member identities per thread. Document replacement and choice eviction restore the collapsed default. Headers support keyboard operation. Automatic updates preserve reader focus and selection. Legacy whole-turn groups identify members by turn and tool and keep inline media results visible.
 
 Presentation groups never replace, reparent or merge source rows. Each tool keeps its own
 `TranscriptRow` and exact-item detail action. Folding unmounts member tool components,

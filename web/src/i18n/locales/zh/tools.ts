@@ -89,6 +89,7 @@ export default {
     hours: '{value} 小时',
   },
   group: {
+    failedCount: '失败 {count} 次',
     title: '{count} 个工具调用',
     running: '运行中',
     error: '有失败',

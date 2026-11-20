@@ -344,6 +344,8 @@ export default {
   composerSendShortcutModifierEnter: 'Ctrl/⌘+Enter 发送，Enter 换行',
   composerSendShortcutButtonOnly: '仅点击发送按钮，Enter 换行',
   turnWindow: '近期轮次摘要',
+  threadReadingLimit: '每个实例记住的最近线程数',
+  serverUpdateTitle: 'Focus Web 服务端更新',
   turnWindowDescription: '打开新格式线程时读取 5、10 或 20 个轮次摘要。正文每页最多 40 个条目，实时窗口最多保留 80 个；更早内容可继续翻页。',
   activityFavicon: '标签页工作动画',
   activityFaviconDescription: '当前会话工作时旋转标签页图标；此设置仅保存在当前浏览器。',

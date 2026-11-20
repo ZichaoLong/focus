@@ -16,14 +16,14 @@ describe('Focus runtime identity settings surface', () => {
     const app = source('../src/focus/FocusApp.vue');
     const settingsSurface = source('../src/focus/FocusSettingsSurface.vue');
 
-    expect(dialog).toContain("'preferences' | 'archived' | 'about' | 'updates' | 'danger'");
-    expect(dialog).toContain("value: 'about', label: t('focus.about')");
+    expect(dialog).toContain("'preferences' | 'archived' | 'updates' | 'danger'");
+    expect(dialog).not.toContain("value: 'about'");
     expect(dialog).toContain("value: 'updates', label: t('focus.updateTitle')");
     expect(dialog).toContain('runtimeIdentity.installed_build.channel');
     expect(dialog).toContain('runtimeIdentity.installed_build.build_id');
     expect(dialog).toContain('runtimeIdentity.installed_build.source_revision');
     expect(dialog).toContain('runtimeIdentity.codex_app_server.user_agent');
-    expect(dialog).toContain("section === 'about'");
+    expect(dialog).toContain('<details class="server-identity">');
     expect(dialog).toContain("t('focus.updateTitle')");
     expect(settingsSurface).toContain(':runtime-identity="props.client.meta.value?.runtime_identity ?? null"');
     expect(app).toContain('<FocusSettingsSurface');

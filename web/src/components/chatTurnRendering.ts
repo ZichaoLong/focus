@@ -57,21 +57,8 @@ export function assistantRenderBlocks(turn: ChatTurn): AssistantRenderBlock[] {
   let toolRun: ToolStackItem[] = [];
   let emptyBlocks: AssistantRenderBlock[] = [];
   let hasPendingWorkActivity = false;
-  let lastReplyIndex = -1;
-  blocks.forEach((block, sourceIndex) => {
-    if (block.kind === 'text' && block.text.trim().length > 0) lastReplyIndex = sourceIndex;
-  });
-
   const flushToolRun = () => {
-    const [first] = toolRun;
-    if (first) {
-      const collapsedByDefault = first.sourceIndex < lastReplyIndex;
-      if (toolRun.length === 1 && !collapsedByDefault) {
-        rendered.push({ kind: 'tool', tool: first.tool, sourceIndex: first.sourceIndex });
-      } else {
-        rendered.push({ kind: 'tool-stack', tools: toolRun, collapsedByDefault });
-      }
-    }
+    if (toolRun.length) rendered.push({ kind: 'tool-stack', tools: toolRun, collapsedByDefault: true });
     toolRun = [];
     rendered.push(...emptyBlocks);
     emptyBlocks = [];

@@ -16,6 +16,7 @@ declare global {
       revisitTool(): Promise<void>;
       reply(paragraphs?: number): Promise<void>;
       prepend(): Promise<void>;
+      grow(count: number): Promise<void>;
       evictOlder(): Promise<void>;
       readonly details: string[];
       readonly protectedRow: string | null;
@@ -74,11 +75,29 @@ async function browseTo(page: Page, selector: string) {
 }
 
 describe('tool groups in the real conversation scroll owner', () => {
+  it('absorbs 80 arriving calls, keeps failures visible and respects an explicit expansion', async () => {
+    await fixture('working', async page => {
+      for (const count of [1, 12, 80]) {
+        await page.evaluate(n => window.toolGroupFixture.grow(n), count);
+        const header = page.locator('.tool-group-head');
+        expect(await header.count()).toBe(1);
+        expect(await header.getAttribute('aria-expanded')).toBe('false');
+        expect(await header.innerText()).toContain('1 failed');
+        expect(await page.locator('[data-scroll-anchor-id]').count()).toBe(0);
+      }
+      await page.locator('.tool-group-head').click();
+      await page.evaluate(() => window.toolGroupFixture.grow(81));
+      expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe('true');
+      expect(await page.locator('.panes').evaluate(el => el.classList.contains('is-following'))).toBe(false);
+    });
+  }, 30_000);
+
   it.each([1000, 390].flatMap(width => (['text', 'thinking'] as const).flatMap(kind =>
     ['', '\n\n'].map(text => ({ width, kind, text })),
   )))('keeps blank $kind rows out of layout at width $width (text=$text)', async ({ width, kind, text }) => {
     await fixture('working', async page => {
       await page.setViewportSize({ width, height: 600 });
+      await page.locator(head('b')).click();
       await page.locator(tool('c')).waitFor();
       const gap = async (before: string, after: string) => page.evaluate(({ before, after }) =>
         document.querySelector(after)!.getBoundingClientRect().top
@@ -92,6 +111,8 @@ describe('tool groups in the real conversation scroll owner', () => {
       expect(await emptyHeights()).toEqual([0, 0, 0, 0]);
 
       await page.evaluate(() => window.toolGroupFixture.reply(80));
+      expect(await page.locator(head('b')).getAttribute('aria-expanded')).toBe('true');
+      await page.locator(head('b')).click();
       await page.waitForFunction(() => !document.querySelector('[data-scroll-anchor-id]'));
       await page.locator(`${row('reply')} .msg`).waitFor();
       expect(await gap('.transcript-tool-group', row('reply'))).toBeCloseTo(originalGap, 1);
@@ -139,6 +160,7 @@ describe('tool groups in the real conversation scroll owner', () => {
       await browseTop(page);
       await page.waitForFunction(() => document.querySelector('.transcript-row[data-turn-id="turn:item:older:0"]')!.getBoundingClientRect().height > 600);
       await page.locator(head('b')).click();
+      await page.locator(head('b')).click();
       await browseTo(page, head('b'));
       await page.waitForFunction(() => window.toolGroupFixture.protectedRow === 'turn:item:b:0');
       const before = (await page.locator(head('b')).boundingBox())!.y;
@@ -166,8 +188,9 @@ describe('tool groups in the real conversation scroll owner', () => {
     });
   }, 30_000);
 
-  it('retains a collapsed singleton after page eviction and clears its choice after leaving the window', async () => {
+  it('retains a collapsed singleton after page eviction and remembers its choice after leaving the window', async () => {
     await fixture('paged', async page => {
+      await page.locator(head('b')).click();
       await page.locator(head('b')).click();
       await browseTo(page, row('tail'));
       await page.waitForFunction(() => window.toolGroupFixture.protectedRow === 'turn:item:tail:0');
@@ -182,13 +205,14 @@ describe('tool groups in the real conversation scroll owner', () => {
       await page.locator(head('c')).click();
       await page.evaluate(() => window.toolGroupFixture.navigateAway());
       await page.evaluate(() => window.toolGroupFixture.revisitTool());
-      expect(await page.locator('.tool-group-head').count()).toBe(0);
-      await page.locator(tool('c')).waitFor();
+      expect(await page.locator(head('c')).getAttribute('aria-expanded')).toBe('false');
+      expect(await page.locator(tool('c')).count()).toBe(0);
     });
   }, 30_000);
 
   it.each(['focus', 'selection'])('preserves %s when a group splits into untouched singletons and later seals', async kind => {
     await fixture('working', async page => {
+      await page.locator(head('b')).click();
       await page.locator(tool('b')).waitFor();
       if (kind === 'focus') await page.locator(tool('b')).getByRole('button').last().focus();
       else await page.locator(tool('b')).evaluate(element => {
@@ -196,18 +220,18 @@ describe('tool groups in the real conversation scroll owner', () => {
         const selection = document.getSelection()!; selection.removeAllRanges(); selection.addRange(range);
       });
       await page.evaluate(() => window.toolGroupFixture.reasoning('Checking the next tool.'));
-      expect(await page.locator('.tool-group-head').count()).toBe(0);
+      expect(await page.locator('.tool-group-head').count()).toBe(2);
       await page.evaluate(() => window.toolGroupFixture.reply());
       expect(await page.locator(head('b')).getAttribute('aria-expanded')).toBe('true');
-      expect(await page.locator(head('c')).getAttribute('aria-expanded')).toBe('false');
+      expect(await page.locator(head('c')).getAttribute('aria-expanded')).toBe('true');
       if (kind === 'focus') expect(await page.locator(tool('b')).evaluate(el => el.contains(document.activeElement))).toBe(true);
       else expect(await page.evaluate(() => document.getSelection()?.toString())).toContain('echo b');
     });
   }, 30_000);
 
-  it('folds after a reply, unmounts content, and preserves the exact detail target', async () => {
+  it('stays folded through streaming and a reply, then opens the exact detail target', async () => {
     await fixture('working', async page => {
-      expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe('true');
+      expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe('false');
       await page.evaluate(() => window.toolGroupFixture.reply());
       await page.waitForFunction(() => !document.querySelector('[data-scroll-anchor-id]'));
       expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe('false');
@@ -283,6 +307,7 @@ describe('tool groups in the real conversation scroll owner', () => {
 
   it.each(['focus', 'selection'])('does not auto-fold away the reader’s %s', async kind => {
     await fixture('working', async page => {
+      await page.locator(head('b')).click();
       await page.locator(tool('b')).waitFor();
       if (kind === 'focus') await page.locator(tool('b')).getByRole('button').last().focus();
       else await page.locator(tool('b')).evaluate(element => {

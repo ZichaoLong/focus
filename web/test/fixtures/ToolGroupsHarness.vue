@@ -85,6 +85,12 @@ Object.assign(window, { toolGroupFixture: {
   async navigateAway() { cache.replace(page([user('away')]), false); publish(); await nextTick(); },
   async revisitTool() { cache.replace(page([tool('c'), user('tail')]), false); publish(); await nextTick(); },
   async reply(paragraphs = 18) { cache.update([...cache.rows, reply('reply', paragraphs)], 'newer', protectedRow); publish(); await nextTick(); },
+  async grow(count: number) {
+    const calls = Array.from({ length: count }, (_, i) => tool(String(i)));
+    const last = calls.at(-1)!;
+    last.tools![0]!.status = 'error';
+    cache.replace(page(calls), false); publish(); await nextTick();
+  },
   async prepend() { cache.extend(page([reply('older'), tool('a'), tool('b')]), 'older', protectedRow); publish(); await nextTick(); },
   async evictOlder() {
     for (let index = 0; index < 7; index++) cache.extend(page([reply(`newer-${index}`, 1)]), 'newer', protectedRow);

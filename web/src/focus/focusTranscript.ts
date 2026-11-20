@@ -17,6 +17,8 @@ export function createFocusTranscript(options: {
   activeThreadId: Readonly<Ref<string>>;
   isDisposed(): boolean;
   reportFatalError?(error: unknown): boolean;
+  savedReadingItem?(thread: string): { turn: string; item: string } | null;
+  forgetReadingItem?(thread: string, turn: string, item: string): void;
 }) {
   const turns = shallowRef<ChatTurn[]>([]);
   const cache = new TranscriptPageWindow();
@@ -125,14 +127,27 @@ export function createFocusTranscript(options: {
 
   function resumeAfterReload() {
     awaitingProjection = false;
-    const anchor = readingAnchor();
-    if (anchor?.rawTurnId && anchor.itemId) {
-      return load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore');
-    }
-    return load({}, 'sync');
+    return loadReadingWindow();
   }
 
-  function reloadWithoutAnchor() {
+  function loadReadingWindow(automatic = false) {
+    const anchor = readingAnchor();
+    if (anchor?.rawTurnId && anchor.itemId) {
+      return load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore', automatic);
+    }
+    return loadInitialWindow(automatic);
+  }
+
+  function loadInitialWindow(automatic = false) {
+    if (!turns.value.length) {
+      const saved = options.savedReadingItem?.(options.activeThreadId.value);
+      if (saved?.turn && saved.item) return load({ turn_id: saved.turn, item_id: saved.item, direction: 'asc' }, 'restore', automatic);
+    }
+    return load({}, 'sync', automatic);
+  }
+
+  function reloadWithoutAnchor(query: FocusTranscriptQuery) {
+    if (query.turn_id && query.item_id) options.forgetReadingItem?.(options.activeThreadId.value, query.turn_id, query.item_id);
     // An authoritative read removed the anchor. Do not retain reverted rows.
     turns.value = [];
     cache.clear(); publishWindow(); protectedRow = null; following = true;
@@ -148,7 +163,8 @@ export function createFocusTranscript(options: {
       pendingHead = false;
       if (historical.value || disposed || options.isDisposed()) return;
       automaticAttempts += 1;
-      void load({}, 'sync', true);
+      if (cache.pageCount === 0) void loadReadingWindow(true);
+      else void load({}, 'sync', true);
     }, 1000 * 2 ** automaticAttempts);
   }
 
@@ -287,7 +303,7 @@ export function createFocusTranscript(options: {
         throw new Error('Transcript cursor did not advance.');
       }
       if (mode === 'restore' && !result.turns.some(turn => turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
-        return await reloadWithoutAnchor();
+        return await reloadWithoutAnchor(query);
       }
       if (mode === 'target' && query.item_id && !result.turns.some(turn =>
         turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
@@ -320,7 +336,7 @@ export function createFocusTranscript(options: {
       if (current()) {
         if (options.reportFatalError?.(failure)) return false;
         if (mode === 'restore' && failure instanceof FocusApiError && failure.code === 'transcript_item_missing') {
-          return await reloadWithoutAnchor();
+          return await reloadWithoutAnchor(query);
         }
         error.value = failure instanceof Error ? failure.message : String(failure);
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
@@ -400,12 +416,13 @@ export function createFocusTranscript(options: {
     if (awaitingProjection || !enabled.value) return;
     if (historical.value) unseenNewer.value = true;
     else if (loading.value) scheduleHead();
-    else void load({}, 'sync');
+    else void loadInitialWindow();
   }, { immediate: true });
   function dispose() { disposed = true; reset(); stopIdentity(); stopSnapshot(); }
 
   return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
     fullText, fullTool, fullLoading, fullError, openFull, closeFull,
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
-    handleDelta, load, older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload, reset, dispose };
+    handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
+    older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload, reset, dispose };
 }

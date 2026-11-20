@@ -89,6 +89,7 @@ export default {
     hours: '{value} hr',
   },
   group: {
+    failedCount: '{count} failed',
     title: '{count} tool call | {count} tool calls',
     running: 'running',
     error: 'failed',

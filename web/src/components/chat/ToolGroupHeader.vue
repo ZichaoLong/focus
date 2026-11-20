@@ -9,8 +9,9 @@ import StatusDot from '../ui/StatusDot.vue';
 const props = defineProps<{ tools: readonly ToolCall[]; open: boolean }>();
 const emit = defineEmits<{ toggle: [] }>();
 const { t } = useI18n();
+const failed = computed(() => props.tools.filter(tool => tool.status === 'error').length);
 const status = computed(() => props.tools.some(tool => tool.status === 'running') ? 'running'
-  : props.tools.some(tool => tool.status === 'error') ? 'error' : 'done');
+  : failed.value ? 'error' : 'done');
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
 const element = ref<HTMLElement | null>(null);
 function toggle(): void {
@@ -25,7 +26,8 @@ function toggle(): void {
     <StatusDot :status="status" />
     <Icon class="tg-ic" name="list" size="sm" />
     <span class="tg-title">{{ t('tools.group.title', tools.length) }}</span>
-    <span class="tg-meta">· {{ t(`tools.group.${status}`) }}</span>
+    <span class="tg-meta" v-if="status !== 'error'">· {{ t(`tools.group.${status}`) }}</span>
+    <span class="tg-failed" v-if="failed">· {{ t('tools.group.failedCount', { count: failed }) }}</span>
     <Icon class="tg-car" name="chevron-right" size="sm" />
   </button>
 </template>
@@ -51,6 +53,7 @@ function toggle(): void {
 .tool-group-head:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-accent-soft); }
 .tg-ic { color: var(--color-text-faint); flex: none; }
 .tg-title { font-weight: var(--weight-medium); color: var(--color-text); }
+.tg-failed { color: var(--color-danger); }
 .tg-meta { color: var(--color-text-faint); }
 .tg-car {
   margin-left: auto;

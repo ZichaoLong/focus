@@ -66,7 +66,7 @@ check is `ready` for one exact target/commit and has no implicit fallback.
 updater's admission HTTP request has finished the work. The browser must keep polling
 and show the current target, stage message, operation id, and latest recorded time. While
 either state is active, checking another target, changing the source, and applying a
-different operation are disabled. Closing the About panel does not cancel the operation;
+different operation are disabled. Closing Server update in Settings does not cancel the operation;
 reopening it reads the same journal. Multiple browser tabs can still race, so the backend
 single-flight refusal remains required. When that refusal is received, the browser reads
 the current status and explains that another operation is active instead of submitting a
@@ -109,7 +109,7 @@ by a new check.
 
 ## 3. Apply, restart, and result
 
-Server update in Settings identifies the instance, target and machine-wide restart. Explicit confirmation submits the full operation ID captured when opening the dialog. Copy is optional and the ID remains selectable.
+Settings has four top-level sections. Expand About Focus Web inside Server update to inspect the installed build and Codex app-server identity. The update section identifies the instance, target and machine-wide restart. Explicit confirmation submits the full operation ID captured when opening the dialog. Copy is optional and the ID remains selectable.
 
 The apply transient unit runs from the `preflight-venv` containing the tested
 target Focus, not the production `.venv` it will replace. Before shutdown it

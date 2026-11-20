@@ -344,6 +344,8 @@ export default {
   composerSendShortcutModifierEnter: 'Ctrl/⌘+Enter sends, Enter adds a line',
   composerSendShortcutButtonOnly: 'Send button only, Enter adds a line',
   turnWindow: 'Recent turn summaries',
+  threadReadingLimit: 'Remember recent threads per instance',
+  serverUpdateTitle: 'Focus Web server update',
   turnWindowDescription: 'Read 5, 10, or 20 turn summaries when opening a paginated thread. Message pages contain up to 40 items and the live window retains up to 80. Page back for earlier content.',
   activityFavicon: 'Tab activity animation',
   activityFaviconDescription: 'Rotate the tab icon while the current conversation is working. This setting is stored only in this browser.',

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ChatTurn } from '../src/types';
-import { createToolGroupExpansion, isEmptyAssistantTurn, projectTranscriptToolGroups, toolGroupMember, type ToolGroup } from '../src/components/toolGroupPresentation';
+import { createToolGroupExpansion, isEmptyAssistantTurn, projectTranscriptToolGroups, threadToolExpansion, toolGroupMember, type ToolGroup } from '../src/components/toolGroupPresentation';
 
 function tool(id: string, rawTurnId = 'turn'): ChatTurn {
   const value = { id, name: 'Shell', arg: `echo ${id}`, status: 'ok' as const };
@@ -29,11 +29,11 @@ describe('transcript tool group presentation', () => {
     expect(isEmptyAssistantTurn(prose('reply', 'Reply'))).toBe(false);
   });
 
-  it('annotates independent source rows and seals them only after visible replies', () => {
+  it('annotates independent source rows and starts every group collapsed', () => {
     const rows = [tool('a'), prose('empty', '', 'thinking'), tool('b')];
     const initial = projectTranscriptToolGroups(rows);
     const value = initial.leaders.get(rows[0]!.id)!;
-    expect(value.collapsedByDefault).toBe(false);
+    expect(value.collapsedByDefault).toBe(true);
     expect(value.sourceIds).toEqual([rows[0]!.id, rows[2]!.id]);
     expect(value.tools).toEqual([rows[0]!.tools![0], rows[2]!.tools![0]]);
     expect(initial.members.get(rows[2]!.id)).toBe(value);
@@ -41,7 +41,7 @@ describe('transcript tool group presentation', () => {
     const sealed = projectTranscriptToolGroups([...rows, prose('reply', 'Done'), tool('c')]);
     expect(sealed.leaders.get(rows[0]!.id)?.collapsedByDefault).toBe(true);
     expect(sealed.members.get(tool('c').id)).toMatchObject({
-      sourceIds: [tool('c').id], collapsedByDefault: false,
+      sourceIds: [tool('c').id], collapsedByDefault: true,
     });
   });
 
@@ -62,17 +62,27 @@ describe('transcript tool group presentation', () => {
 });
 
 describe('bounded tool group expansion choices', () => {
+  it('isolates the same source IDs across threads and evicts the least recent thread', () => {
+    const tools = group(['same-item']);
+    threadToolExpansion('A', 2).setOpen(tools, true);
+    expect(threadToolExpansion('B', 2).isOpen(tools)).toBe(false);
+    threadToolExpansion('B', 2).setOpen(tools, true);
+    expect(threadToolExpansion('A', 2).isOpen(tools)).toBe(true);
+    threadToolExpansion('C', 2);
+    expect(threadToolExpansion('A', 2).isOpen(tools)).toBe(true);
+    expect(threadToolExpansion('B', 2).isOpen(tools)).toBe(false);
+  });
   it('applies retained choices to projected singletons through splits, merges and eviction', () => {
     const a = tool('a'); const b = tool('b');
     const state = createToolGroupExpansion();
     function project(rows: ChatTurn[]) {
       const projected = projectTranscriptToolGroups(rows);
-      state.reconcile([...projected.leaders.values()], new Set(rows.map(row => toolGroupMember(row.id))));
+      state.reconcile([...projected.leaders.values()]);
       return projected;
     }
     const joined = project([a, prose('reasoning', '', 'thinking'), b]).leaders.get(a.id)!;
     expect(state.hasChoice(joined)).toBe(false);
-    state.toggle(joined);
+    state.setOpen(joined, false);
     const splitRows = [a, prose('reasoning', 'Checking', 'thinking'), b];
     const split = project(splitRows);
     expect(split.leaders.size).toBe(2);
@@ -88,8 +98,8 @@ describe('bounded tool group expansion choices', () => {
     state.toggle(remaining);
     project([]);
     const reloaded = project([b]).leaders.get(b.id)!;
-    expect(state.hasChoice(reloaded)).toBe(false);
-    expect(state.isOpen(reloaded)).toBe(true);
+    expect(state.hasChoice(reloaded)).toBe(true);
+    expect(state.isOpen(reloaded)).toBe(false);
   });
 
   it('inherits explicit expansion through prepend, leader eviction, and a subsequent split', () => {
@@ -98,15 +108,15 @@ describe('bounded tool group expansion choices', () => {
     expect(state.isOpen(bc)).toBe(false);
     state.toggle(bc);
     const abc = group(['a', 'b', 'c']);
-    state.reconcile([abc], new Set(abc.members));
+    state.reconcile([abc]);
     expect(state.isOpen(abc)).toBe(true);
     const ac = group(['a', 'c']);
-    state.reconcile([ac], new Set(ac.members));
-    state.reconcile([group(['a']), group(['c'])], new Set(ac.members));
+    state.reconcile([ac]);
+    state.reconcile([group(['a']), group(['c'])]);
     expect(state.isOpen(group(['a']))).toBe(true);
     expect(state.isOpen(group(['c']))).toBe(true);
-    state.reconcile([], new Set());
-    expect(state.isOpen(abc)).toBe(false);
+    state.reconcile([]);
+    expect(state.isOpen(abc)).toBe(true);
   });
 
   it('uses the latest explicit choice when differently toggled runs join', () => {
@@ -114,19 +124,19 @@ describe('bounded tool group expansion choices', () => {
     state.setOpen(group(['a']), true);
     state.setOpen(group(['b']), false);
     const both = group(['a', 'b'], false);
-    state.reconcile([both], new Set(both.members));
+    state.reconcile([both]);
     expect(state.isOpen(both)).toBe(false);
-    state.reconcile([group(['a']), group(['b'])], new Set(both.members));
+    state.reconcile([group(['a']), group(['b'])]);
     expect(state.isOpen(group(['a'], false))).toBe(false);
   });
 
-  it('keeps manual intent when the automatic default changes, without retaining evicted rows', () => {
+  it('keeps manual intent when the automatic default changes, when source rows leave the window', () => {
     const state = createToolGroupExpansion();
     const current = group(['a'], false);
     state.toggle(current);
     expect(state.isOpen(group(['a'], true))).toBe(false);
-    state.reconcile([], new Set(['b']));
-    expect(state.isOpen(current)).toBe(true);
+    state.reconcile([]);
+    expect(state.isOpen(current)).toBe(false);
   });
 
   it('separates legacy block identity from paginated row identity and ambiguous strings', () => {

@@ -51,12 +51,12 @@ describe('negotiated mobile host', () => {
     setup();
     let host = await import('../src/lib/mobileHost');
     await host.negotiateMobileHost();
-    host.rememberMobileReadingThread('thread-A');
+    host.recoveryStorage().setItem('focus-web.reading-thread', 'thread-A'); // migrate the original mobile entry
     vi.resetModules();
     setup(ticket);
     host = await import('../src/lib/mobileHost');
     await host.negotiateMobileHost();
-    expect(host.mobileReadingThread()).toBe('');
+    expect((await import('../src/components/chat/readingBookmark')).threadReading('thread-A')?.reading ?? false).toBe(false);
     vi.resetModules();
     setup();
     host = await import('../src/lib/mobileHost');
@@ -75,7 +75,7 @@ describe('negotiated mobile host', () => {
     await nextTick();
     expect(mode.readingMode.value).toBe(true);
     mode.chooseNormalMode();
-    expect(host.mobileReadingThread()).toBe('');
+    expect((await import('../src/components/chat/readingBookmark')).threadReading('thread-A')?.reading ?? false).toBe(false);
     await nextTick();
     expect(mode.readingMode.value).toBe(false);
     scope.stop();
@@ -83,8 +83,9 @@ describe('negotiated mobile host', () => {
   it('keeps browser mode local and offers the picker only to a host with tabs', async () => {
     const win = setup();
     const host = await import('../src/lib/mobileHost');
-    host.rememberMobileReadingThread('T');
-    expect(host.mobileReadingThread()).toBe('');
+    const bookmarks = await import('../src/components/chat/readingBookmark');
+    bookmarks.rememberReadingMode('T', true);
+    expect(bookmarks.threadReading('T')?.reading).toBe(true);
     await host.negotiateMobileHost();
     host.showMobileInstances();
     expect(win.prompt).not.toHaveBeenCalled();
@@ -92,6 +93,31 @@ describe('negotiated mobile host', () => {
     host.showMobileInstances();
     host.showMobileWebChrome(true);
     expect(win.prompt.mock.calls).toEqual([['focus/1/' + ticket + '/instances', ''], ['focus/1/' + ticket + '/chrome', 'web']]);
+  });
+  it('migrates an old position, bounds per-thread records and trims on a preference change', async () => {
+    setup();
+    const host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const store = host.recoveryStorage();
+    const bookmark = { turn: 'turn', item: 'item', anchor: { id: 'row', offset: 9, scrollTop: 70 } };
+    store.setItem('focus-web.reading-thread', 'first');
+    store.setItem('focus-web.reading-bookmark', JSON.stringify({ ...bookmark, scope: 'mobile:' + id + ':thread:first' }));
+    const reading = await import('../src/components/chat/readingBookmark');
+    expect(reading.threadReading('first')).toEqual({ thread: 'first', reading: true, bookmark });
+    expect(store.getItem('focus-web.reading-bookmark')).toBeNull();
+    reading.setReadingLimit(20);
+    for (let i = 0; i < 19; i++) reading.rememberReadingMode('t' + i, false);
+    reading.rememberReadingMode('first', false);
+    reading.setReadingLimit(5);
+    expect(reading.threadReading('t14')).toBeUndefined();
+    expect(reading.threadReading('first')).toEqual({ thread: 'first', reading: false, bookmark });
+    expect(JSON.parse(store.getItem('focus-web.thread-reading.v1')!)).toHaveLength(5);
+    reading.setReadingLimit(20);
+    expect(reading.threadReading('t14')).toBeUndefined();
+    store.setItem('focus-web.thread-reading.v1', '{');
+    expect(reading.threadReading('first')).toBeUndefined();
+    reading.rememberReadingMode('after', true);
+    expect(reading.threadReading('after')?.reading).toBe(true);
   });
   it.each([['127.0.0.1', true], ['localhost', true], ['[::1]', true], ['192.168.1.1', false],
     ['localhost.example', false]] as const)('negotiates cleartext only on an exact loopback host: %s', async (name, trusted) => {

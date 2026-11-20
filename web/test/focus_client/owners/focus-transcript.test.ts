@@ -28,12 +28,12 @@ function deferred<T>() {
   const promise = new Promise<T>(done => { resolve = done; });
   return { promise, resolve };
 }
-function harness(initial = page()) {
+function harness(initial = page(), reading: Pick<Parameters<typeof createFocusTranscript>[0], 'savedReadingItem' | 'forgetReadingItem'> = {}) {
   const state = shallowRef<FocusThreadSnapshot | null>(snapshot());
   const threadId = ref('thread-1');
   const read = vi.fn(async (_threadId: string, _query?: FocusTranscriptQuery, _signal?: AbortSignal) => initial);
   const owner = createFocusTranscript({ api: { readTranscriptWindow: read }, snapshot: state,
-    activeThreadId: threadId, isDisposed: () => false });
+    activeThreadId: threadId, isDisposed: () => false, ...reading });
   owners.push(owner);
   const event = (revision: number, detail: FocusThreadDeltaDetail) => owner.handleDelta({
     type: 'thread_delta', runtime_epoch: 'epoch-1', revision,
@@ -44,6 +44,26 @@ function harness(initial = page()) {
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it('retries a cold bookmark after a network error and forgets it only on authoritative loss', async () => {
+    const target = { turn: 'turn-1', item: 'item-7' };
+    const query = { turn_id: target.turn, item_id: target.item, direction: 'asc' };
+    const forget = vi.fn();
+    const h = harness(page([row(7)], { turn_id: target.turn }), {
+      savedReadingItem: () => target, forgetReadingItem: forget,
+    });
+    await settle();
+    expect(h.read).toHaveBeenCalledTimes(1);
+    expect(h.read).toHaveBeenCalledWith('thread-1', query, expect.any(AbortSignal));
+    h.owner.reset();
+    h.read.mockRejectedValueOnce(new TypeError('Network unavailable'));
+    expect(await h.owner.retry()).toBe(false);
+    expect(forget).not.toHaveBeenCalled();
+    h.read.mockResolvedValueOnce(page([row(8)], { turn_id: target.turn })).mockResolvedValueOnce(page([row(9)]));
+    expect(await h.owner.retry()).toBe(true);
+    expect(h.read.mock.calls.slice(1).map(call => call[1])).toEqual([query, query, {}]);
+    expect(forget).toHaveBeenCalledWith('thread-1', target.turn, target.item);
+    expect(h.owner.turns.value.map(r => r.itemId)).toEqual(['item-9']);
+  });
   it.each([false, true])('revalidates the reading anchor when scrolling interrupts a reconnect tail read (disjoint: %s)', async disjoint => {
     const h = harness(page([row(1), row(2), row(3)], { newer_cursor: null })); await settle();
     h.owner.prepareReload();

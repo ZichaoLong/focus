@@ -1,7 +1,6 @@
 <!-- apps/kimi-web/src/components/chat/ConversationPane.vue -->
 <script setup lang="ts">
-import { presentationScope } from '../../lib/mobileHost';
-import { readReadingBookmark, saveReadingBookmark } from './readingBookmark';
+import { threadReading, saveReadingBookmark } from './readingBookmark';
 import { canScrollVertically, captureTranscriptScrollAnchor, restoreTranscriptScrollAnchor, type TranscriptScrollAnchor } from './transcriptScrollAnchor';
 import type { SummaryExportRequest } from '../../types';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
@@ -35,7 +34,7 @@ const { t } = useI18n();
 const props = withDefaults(defineProps<{
   turns: ChatTurn[];
   sessionId?: string;
-  restoreReadingItem?: (turn: string, item: string) => Promise<string | null>;
+  threadBookmarks?: boolean;
   /** Draft/attachment scope for the composer. It may differ from sessionId
    *  while composing a new thread in a workspace. */
   composerSessionId?: string;
@@ -717,7 +716,8 @@ function currentTranscriptAnchor(pane: HTMLElement): TranscriptScrollAnchor | nu
   return transcriptAnchor?.scrollTop === pane.scrollTop
     ? transcriptAnchor : captureTranscriptScrollAnchor(pane);
 }
-let bookmark = props.restoreReadingItem ? readReadingBookmark() : null;
+function savedPosition() { return props.threadBookmarks && props.sessionId ? threadReading(props.sessionId)?.bookmark ?? null : null; }
+let bookmark = savedPosition();
 // During a cold landing the Markdown layout can grow after the first scroll
 // hits its limit. Keep the requested offset until layout settles or input wins.
 const landingAnchor = ref<TranscriptScrollAnchor | null>(null);
@@ -737,24 +737,21 @@ function checkpointReading(): void {
   clearTimeout(savingBookmark);
   savingBookmark = undefined;
   const pane = panesRef.value;
-  if (!props.restoreReadingItem || !pane || !props.composerSessionId || !props.turns.length || props.sessionLoading || bookmark || landingAnchor.value) return;
-  if (following.value && !props.hasNewerMessages) { saveReadingBookmark(null); return; }
+  if (!props.threadBookmarks || !pane || !props.composerSessionId || !props.sessionId || !props.turns.length || props.sessionLoading || bookmark || landingAnchor.value) return;
+  if (following.value && !props.hasNewerMessages) { saveReadingBookmark(props.sessionId, null); return; }
   const anchor = currentTranscriptAnchor(pane);
   const row = anchor && props.turns.find(turn => turn.id === anchor.id);
-  if (anchor && row) saveReadingBookmark({ scope: presentationScope(props.composerSessionId)!, turn: row.rawTurnId ?? '', item: row.itemId ?? '', anchor });
+  if (anchor && row) saveReadingBookmark(props.sessionId, { turn: row.rawTurnId ?? '', item: row.itemId ?? '', anchor });
 }
 watch(() => [props.composerSessionId, props.turns, props.sessionLoading] as const, async () => {
   if (!bookmark || !props.composerSessionId || props.sessionLoading || !props.turns.length) return;
   const saved = bookmark;
   bookmark = null;
-  if (saved.scope !== presentationScope(props.composerSessionId)) return;
+  if (!props.turns.some(row => row.id === saved.anchor.id)) return;
   const fence = claimOrdinaryScrollAuthority();
-  if (!props.turns.some(row => row.id === saved.anchor.id) && saved.turn && saved.item) {
-    if (!await props.restoreReadingItem?.(saved.turn, saved.item)) return;
-  }
   await nextTick();
   const pane = panesRef.value;
-  if (!pane || !scrollWriteFenceIsCurrent(fence) || presentationScope(props.composerSessionId) !== saved.scope) return;
+  if (!pane || !scrollWriteFenceIsCurrent(fence)) return;
   landingAnchor.value = saved.anchor;
   if (landBookmark(pane)) {
     following.value = false;
@@ -848,7 +845,7 @@ function hasUserActionFollowLock(): boolean {
 }
 
 function onPanesScroll(): void {
-  if (props.restoreReadingItem && savingBookmark === undefined) savingBookmark = setTimeout(checkpointReading, 500);
+  if (props.threadBookmarks && savingBookmark === undefined) savingBookmark = setTimeout(checkpointReading, 500);
   scheduleTocTableHitTest();
   reportTranscriptViewport();
   const el = panesRef.value;
@@ -1239,10 +1236,10 @@ function cancelScrollPin(): void {
 }
 
 function pinScrollFor(el: HTMLElement, ms = 260): void {
-  if (promptNavigation.ownsScroll()) {
-    claimOrdinaryScrollAuthority();
-    historyAutoLoadArmed.value = false;
-  }
+  claimUserScrollAuthority();
+  historyAutoLoadArmed.value = false;
+  following.value = false;
+  userActionFollowUntil = 0;
   const panes = panesRef.value;
   if (!panes) return;
   pinEl = el;
@@ -1368,7 +1365,13 @@ watch(
   () => props.fileReloadKey,
   async (newKey, oldKey) => {
     const el = panesRef.value;
-    if (oldKey && el) {
+    if (props.threadBookmarks) {
+      clearTimeout(savingBookmark);
+      savingBookmark = undefined;
+      clearTimeout(landingTimer);
+      landingAnchor.value = null;
+      bookmark = savedPosition();
+    } else if (oldKey && el) {
       scrollStateBySession.set(String(oldKey), { top: el.scrollTop, following: following.value });
     }
     abandonScrollbarDrag();
@@ -1377,6 +1380,7 @@ watch(
     await nextTick();
     if (!scrollWriteFenceIsCurrent(fence) || props.fileReloadKey !== newKey) return;
     const el2 = panesRef.value;
+    if (bookmark || landingAnchor.value) { following.value = false; return; }
     const saved = newKey ? scrollStateBySession.get(String(newKey)) : undefined;
     if (saved && el2) {
       historyAutoLoadArmed.value = false;
@@ -1407,7 +1411,7 @@ watch(
       claimOrdinaryScrollAuthority();
       return;
     }
-    if (!was) return;
+    if (!was || bookmark || landingAnchor.value) return;
     const fence = claimOrdinaryScrollAuthority();
     historyAutoLoadArmed.value = false;
     following.value = false;
@@ -1924,6 +1928,7 @@ function rebindComposerAttachmentsForSession(
 }
 
 defineExpose({
+  checkpointReading,
   loadComposerForEdit,
   loadComposerRecovery,
   clearComposerAttachmentsForSession,
@@ -2165,6 +2170,7 @@ defineExpose({
           <template v-else>
             <ChatPane
               :key="fileReloadKey ?? 'no-session'"
+              :reading-thread="threadBookmarks ? sessionId : undefined"
               :turns="turns"
               :approvals="approvals"
               :turn-active="turnActive"

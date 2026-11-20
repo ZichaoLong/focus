@@ -269,14 +269,15 @@ it('restores durable mobile presentation after stale Web Storage and honors dele
       const store = (window as Window & { presentationFixture: typeof import('../src/lib/mobilePresentation') }).presentationFixture;
       const first = '11111111-1111-4111-8111-111111111111', second = '22222222-2222-4222-8222-222222222222';
       const draft = 'kimi-web.draft.mobile:' + first + ':thread:A';
-      const mode = 'focus-mobile.' + first + '.focus-web.reading-thread';
+      const mode = 'focus-mobile.' + first + '.focus-web.thread-reading.v1';
+      const readings = JSON.stringify([{ thread: 'A', reading: true, bookmark: null }]);
       const receipt = 'focus-mobile.' + first + '.receipt';
       const other = 'kimi-web.draft.mobile:' + second + ':thread:A';
       localStorage.setItem(draft, 'before migration');
       localStorage.setItem(other, 'second site');
       await store.openMobilePresentation(first);
       store.persistMobilePresentation(draft, 'last edit');
-      store.persistMobilePresentation(mode, 'A');
+      store.persistMobilePresentation(mode, readings);
       store.persistMobilePresentation(receipt, 'must stay outside presentation');
       localStorage.setItem(receipt, 'writer-owned');
       // Opening another transaction on the same store waits for previous writes.
@@ -291,7 +292,7 @@ it('restores durable mobile presentation after stale Web Storage and honors dele
       await store.openMobilePresentation(first);
       return { afterRestore, afterClear, isolated: localStorage.getItem(draft) };
     });
-    expect(result).toEqual({ afterRestore: ['last edit', 'A', 'writer-owned', 'second site'],
+    expect(result).toEqual({ afterRestore: ['last edit', JSON.stringify([{ thread: 'A', reading: true, bookmark: null }]), 'writer-owned', 'second site'],
       afterClear: [null, null], isolated: null });
   } finally { await page.close(); }
 });

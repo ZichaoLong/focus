@@ -64,19 +64,6 @@ export function showMobileWebChrome(available: boolean): void {
   if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/chrome', available ? 'web' : 'native');
 }
 
-export function mobileReadingThread(): string {
-  try { return hasMobileFeature('resume') ? recoveryStorage().getItem('focus-web.reading-thread') ?? '' : ''; }
-  catch { return ''; }
-}
-
-export function rememberMobileReadingThread(thread: string): void {
-  if (!hasMobileFeature('resume')) return;
-  try {
-    if (thread) recoveryStorage().setItem('focus-web.reading-thread', thread);
-    else recoveryStorage().removeItem('focus-web.reading-thread');
-  } catch { /* Presentation persistence is optional. */ }
-}
-
 export function printMobileSummary(filename: string): boolean {
   return !!host && hasMobileFeature('print') && window.prompt('focus/1/' + host.ticket + '/print', filename.slice(0, 255)) === 'ok';
 }
@@ -94,9 +81,13 @@ export function checkpointThread(thread: string): void {
 // Unsent text and visual bookmarks may follow the confirmed thread/workspace
 // across writer reissuance. Attachment tokens and submission scopes never do.
 export function presentationScope(composerScope: string | undefined): string | undefined {
-  if (!host || !hasMobileFeature('resume') || !composerScope) return composerScope;
-  const target = new RegExp('^[^:]+:generation:[0-9]+:((?:thread|draft):.+)$', 's').exec(composerScope)?.[1];
-  return target ? 'mobile:' + host.instance + ':' + target : composerScope;
+  if (!composerScope) return composerScope;
+  const match = new RegExp('^([^:]+):generation:[0-9]+:((?:thread|draft):.+)$', 's').exec(composerScope);
+  if (!match) return composerScope;
+  if (host && hasMobileFeature('resume')) return 'mobile:' + host.instance + ':' + match[2];
+  // Unsent thread text belongs to this browser client across navigation. Keep
+  // workspace drafts and all server-signed attachment scopes generation-bound.
+  return match[2]!.startsWith('thread:') ? 'browser:' + match[1] + ':' + match[2] : composerScope;
 }
 
 // Browser tabs keep independent sessionStorage. A shell has one Web document per

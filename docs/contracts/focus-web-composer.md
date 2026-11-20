@@ -11,7 +11,7 @@ Presentation changes create no second draft, neither remount nor move the textar
 
 The narrow compact input remains approximately four lines with internal overflow and explicit expansion. Wide expansion
 keeps the existing approximately 70vh editor. Presentation is not persisted; changing conversation or crossing the narrow/wide
-layout boundary returns to compact, while drafts retain their existing conversation scope.
+layout boundary returns to compact, and unsent text follows its confirmed target. Browser thread text uses the client and thread across selection generations. A negotiated mobile host stores text by instance and thread or workspace. Attachments, queued operations and submission authority keep their server-issued writer and generation scopes.
 
 ## Keyboard editing and page boundaries
 

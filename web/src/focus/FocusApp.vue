@@ -823,7 +823,7 @@ onMounted(() => {
 });
 
 const mobileTabs = hasMobileFeature('tabs');
-const instanceLabel = mobileInstanceName();
+const instanceLabel = ref(mobileInstanceName());
 const locationLabel = window.location.host;
 const mobileAbout = ref(false);
 function openMobileAbout(event: Event): void {
@@ -837,9 +837,10 @@ function openInstancePicker(): void {
   showMobileInstances();
 }
 const hasWebInstancePicker = computed(() => client.initialized.value && !!client.meta.value && currentDocumentAccessAvailable.value);
-function syncHostChrome(): void { showMobileWebChrome(hasWebInstancePicker.value); }
+function syncHostChrome(): void { instanceLabel.value = mobileInstanceName(); showMobileWebChrome(hasWebInstancePicker.value); }
 watch(hasWebInstancePicker, syncHostChrome, { flush: 'post' });
 
+watch(client.activeThreadId, () => conversationPaneRef.value?.checkpointReading(), { flush: 'sync' });
 watch(client.activeThreadId, (threadId) => {
   closeDetail();
   if (!threadId) exitReadingMode();
@@ -1119,10 +1120,10 @@ onUnmounted(() => {
           :has-newer-messages="client.transcript.hasNewer.value"
           :continuous-transcript="client.transcript.enabled.value"
           :update-transcript-viewport="client.transcript.updateViewport"
-          :restore-reading-item="client.transcript.locate"
+          thread-bookmarks
           :load-newer-messages="client.transcript.newer"
           @open-full-content="openTranscriptTool"
-          @retry-transcript="client.transcript.load()"
+          @retry-transcript="client.transcript.retry()"
           :has-more-messages="client.historyHasMore.value"
           :loading-more="client.loadingMore.value"
           :loading-more-error="client.loadingMoreError.value"

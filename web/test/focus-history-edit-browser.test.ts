@@ -129,15 +129,16 @@ it.each(cases)('confirms history editing and preserves exact IDs and drafts: $mo
       await dialog.waitFor({ state: 'hidden' });
       await page.waitForURL('**thread=other*');
       await page.waitForFunction(() => !document.body.innerText.includes('TRUNCATED PREVIEW'));
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('');
       await page.getByText('Source', { exact: true }).first().click();
       await page.waitForURL('**thread=thread-1*');
       await edit.waitFor();
       expect(await dialog.count()).toBe(0);
       expect(reads).toEqual([]);
       expect(posts.filter(p => p.path.endsWith('/revert'))).toEqual([]);
-      // Navigation starts a new writer-scope generation; the earlier draft
-      // remains stored under its original scope instead of crossing into it.
-      expect(await page.locator('textarea:visible').first().inputValue()).toBe('');
+      // The confirmed source thread recovers unsent text across generations.
+      // The revert confirmation itself expired on the first navigation.
+      expect(await page.locator('textarea:visible').first().inputValue()).toBe('Draft to retain');
       expect(await page.evaluate(() => Object.values(localStorage).includes('Draft to retain'))).toBe(true);
       expect(errors).toEqual([]);
       return;

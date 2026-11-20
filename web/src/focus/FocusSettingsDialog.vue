@@ -14,6 +14,7 @@ import {
   isComposerSendShortcut,
   type ComposerSendShortcut,
 } from '../components/chat/composerSendShortcut';
+import { readingLimit, setReadingLimit, THREAD_READING_LIMITS } from '../components/chat/readingBookmark';
 import { copyTextToClipboard } from '../lib/clipboard';
 import { ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -89,7 +90,12 @@ const themeOptions = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ];
-const section = ref<'preferences' | 'archived' | 'about' | 'updates' | 'danger'>('preferences');
+const section = ref<'preferences' | 'archived' | 'updates' | 'danger'>('preferences');
+const bookmarkLimit = ref(readingLimit());
+function changeBookmarkLimit(value: string): void {
+  setReadingLimit(Number(value));
+  bookmarkLimit.value = readingLimit();
+}
 const deleteTarget = ref('');
 const deleteConfirmation = ref('');
 const updateSourceUrl = ref('');
@@ -126,7 +132,6 @@ function setSection(value: string): void {
   if (
     value !== 'preferences'
     && value !== 'archived'
-    && value !== 'about'
     && value !== 'updates'
     && value !== 'danger'
   ) return;
@@ -223,7 +228,6 @@ function setComposerSendShortcut(value: string): void {
           { value: 'preferences', label: t('focus.runtime') },
           { value: 'archived', label: t('focus.archived') },
           { value: 'updates', label: t('focus.updateTitle') },
-          { value: 'about', label: t('focus.about') },
           { value: 'danger', label: t('focus.dangerZone') },
         ]"
         size="sm"
@@ -279,6 +283,13 @@ function setComposerSendShortcut(value: string): void {
             <option value="5">5</option>
             <option value="10">10</option>
             <option value="20">20</option>
+          </Select>
+        </section>
+        <section class="settings-row">
+          <label for="bookmark-limit" class="settings-label">{{ t('focus.threadReadingLimit') }}</label>
+          <Select id="bookmark-limit" class="settings-select" size="sm"
+            :model-value="String(bookmarkLimit)" @update:model-value="changeBookmarkLimit">
+            <option v-for="limit in THREAD_READING_LIMITS" :key="limit" :value="String(limit)">{{ limit }}</option>
           </Select>
         </section>
         <section class="settings-row">
@@ -415,65 +426,9 @@ function setComposerSendShortcut(value: string): void {
         </div>
       </section>
 
-      <section v-else-if="section === 'about'" class="about-panel">
-        <div>
-          <div class="settings-label">{{ t('focus.about') }}</div>
-          <div class="settings-description">{{ t('focus.aboutDescription') }}</div>
-        </div>
-
-        <article class="runtime-identity-card">
-          <div class="settings-label">Focus</div>
-          <dl>
-            <div>
-              <dt>{{ t('focus.focusVersion') }}</dt>
-              <dd>
-                <code class="runtime-identity-value">
-                  {{ runtimeIdentity?.focus_version ?? t('focus.unknown') }}
-                </code>
-              </dd>
-            </div>
-            <div>
-              <dt>{{ t('focus.focusInstalledBuild') }}</dt>
-              <dd v-if="runtimeIdentity?.installed_build">
-                <code class="runtime-identity-value">{{ runtimeIdentity.installed_build.channel }}/{{ runtimeIdentity.installed_build.build_id }}</code>
-              </dd>
-              <dd v-else class="runtime-identity-unavailable">
-                {{ t('focus.focusInstallIdentityUnavailable') }}
-              </dd>
-            </div>
-            <div v-if="runtimeIdentity?.installed_build">
-              <dt>{{ t('focus.focusSourceRevision') }}</dt>
-              <dd>
-                <code class="runtime-identity-value">
-                  {{ runtimeIdentity.installed_build.source_revision }}
-                </code>
-              </dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="runtime-identity-card">
-          <div class="settings-label">Codex app-server</div>
-          <dl>
-            <div>
-              <dt>{{ t('focus.codexHandshakeIdentity') }}</dt>
-              <dd v-if="runtimeIdentity?.codex_app_server">
-                <code class="runtime-identity-value">
-                  {{ runtimeIdentity.codex_app_server.user_agent }}
-                </code>
-              </dd>
-              <dd v-else class="runtime-identity-unavailable">
-                {{ t('focus.codexIdentityUnavailable') }}
-              </dd>
-            </div>
-          </dl>
-        </article>
-
-      </section>
-
       <section v-else-if="section === 'updates'" class="about-panel">
         <div class="about-update-section">
-          <div class="settings-label">{{ t('focus.updateTitle') }}</div>
+          <div class="settings-label">{{ t('focus.serverUpdateTitle') }}</div>
           <div class="settings-description">{{ t('focus.updateDescription') }}</div>
           <div class="update-card">
             <label class="update-field">
@@ -584,6 +539,56 @@ function setComposerSendShortcut(value: string): void {
             </div>
           </div>
         </div>
+        <details class="server-identity">
+          <summary>{{ t('focus.about') }} Focus Web</summary>
+          <article class="runtime-identity-card">
+            <div class="settings-label">Focus</div>
+            <dl>
+              <div>
+                <dt>{{ t('focus.focusVersion') }}</dt>
+                <dd>
+                  <code class="runtime-identity-value">
+                    {{ runtimeIdentity?.focus_version ?? t('focus.unknown') }}
+                  </code>
+                </dd>
+              </div>
+              <div>
+                <dt>{{ t('focus.focusInstalledBuild') }}</dt>
+                <dd v-if="runtimeIdentity?.installed_build">
+                  <code class="runtime-identity-value">{{ runtimeIdentity.installed_build.channel }}/{{ runtimeIdentity.installed_build.build_id }}</code>
+                </dd>
+                <dd v-else class="runtime-identity-unavailable">
+                  {{ t('focus.focusInstallIdentityUnavailable') }}
+                </dd>
+              </div>
+              <div v-if="runtimeIdentity?.installed_build">
+                <dt>{{ t('focus.focusSourceRevision') }}</dt>
+                <dd>
+                  <code class="runtime-identity-value">
+                    {{ runtimeIdentity.installed_build.source_revision }}
+                  </code>
+                </dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="runtime-identity-card">
+            <div class="settings-label">Codex app-server</div>
+            <dl>
+              <div>
+                <dt>{{ t('focus.codexHandshakeIdentity') }}</dt>
+                <dd v-if="runtimeIdentity?.codex_app_server">
+                  <code class="runtime-identity-value">
+                    {{ runtimeIdentity.codex_app_server.user_agent }}
+                  </code>
+                </dd>
+                <dd v-else class="runtime-identity-unavailable">
+                  {{ t('focus.codexIdentityUnavailable') }}
+                </dd>
+              </div>
+            </dl>
+          </article>
+        </details>
       </section>
 
       <section v-else class="danger-panel">
@@ -723,6 +728,8 @@ function setComposerSendShortcut(value: string): void {
 </template>
 
 <style scoped>
+.server-identity summary { cursor: pointer; padding: 10px 0; }
+.server-identity article { margin-top: 8px; }
 .settings-list {
   display: flex;
   flex-direction: column;

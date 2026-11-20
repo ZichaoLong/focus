@@ -869,6 +869,10 @@
         {
           "path": "web/src/lib/mobilePresentation.ts",
           "symbol": "openMobilePresentation"
+        },
+        {
+          "path": "web/src/components/chat/readingBookmark.ts",
+          "symbol": "threadReading"
         }
       ],
       "contract": [
@@ -1249,6 +1253,14 @@
         {
           "path": "web/src/components/chat/readingBookmark.ts",
           "symbol": "saveReadingBookmark"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "threadToolExpansion"
+        },
+        {
+          "path": "web/src/components/chat/readingBookmark.ts",
+          "symbol": "threadReading"
         }
       ],
       "contract": [
@@ -1283,6 +1295,10 @@
         {
           "path": "docs/contracts/focus-web-transcript-window.zh-CN.md",
           "heading": "实时更新、预算与重同步"
+        },
+        {
+          "path": "docs/contracts/focus-web-reading-mode.zh-CN.md",
+          "heading": "状态边界"
         }
       ],
       "focused-test": [
@@ -1319,7 +1335,9 @@
             "web/test/transcript-tool-groups-browser.test.ts",
             "web/test/composer-scroll-browser.test.ts",
             "web/test/transcript-visibility.test.ts",
-            "web/test/transcript-visibility-browser.test.ts"
+            "web/test/transcript-visibility-browser.test.ts",
+            "web/test/focus-reconnect-browser.test.ts",
+            "web/test/focus-mobile-host.test.ts"
           ]
         }
       ],
@@ -1726,6 +1744,10 @@
         {
           "path": "web/src/components/toolGroupPresentation.ts",
           "symbol": "isEmptyAssistantTurn"
+        },
+        {
+          "path": "web/src/components/toolGroupPresentation.ts",
+          "symbol": "threadToolExpansion"
         }
       ],
       "contract": [

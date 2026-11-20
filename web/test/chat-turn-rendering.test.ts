@@ -98,22 +98,22 @@ describe('toolStackPosition', () => {
 });
 
 describe('assistantRenderBlocks', () => {
-  it('groups consecutive renderable tools into one open tool-stack', () => {
+  it('groups consecutive renderable tools into one collapsed tool-stack', () => {
     const rendered = assistantRenderBlocks(assistantTurn([toolBlock('a'), toolBlock('b')]));
     expect(rendered).toHaveLength(1);
-    expect(rendered[0]).toMatchObject({ kind: 'tool-stack', collapsedByDefault: false });
+    expect(rendered[0]).toMatchObject({ kind: 'tool-stack', collapsedByDefault: true });
     if (rendered[0]?.kind === 'tool-stack') {
       expect(rendered[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b']);
       expect(rendered[0].tools.map((t) => t.sourceIndex)).toEqual([0, 1]);
     }
   });
 
-  it('renders a lone tool without a later reply as a standalone tool', () => {
+  it('collapses the first tool before a later reply', () => {
     const rendered = assistantRenderBlocks(assistantTurn([toolBlock('a')]));
-    expect(rendered).toEqual([{ kind: 'tool', tool: tool('a'), sourceIndex: 0 }]);
+    expect(rendered).toEqual([{ kind: 'tool-stack', collapsedByDefault: true, tools: [{ tool: tool('a'), sourceIndex: 0 }] }]);
   });
 
-  it('collapses the preceding tool and leaves the tool after the latest reply open', () => {
+  it('starts a new collapsed group after visible prose', () => {
     const rendered = assistantRenderBlocks(
       assistantTurn([toolBlock('a'), { kind: 'text', text: 'x' }, toolBlock('b')]),
     );
@@ -121,10 +121,10 @@ describe('assistantRenderBlocks', () => {
       'tool-stack',
       'reply-separator',
       'text',
-      'tool',
+      'tool-stack',
     ]);
     expect(rendered[0]).toMatchObject({ collapsedByDefault: true });
-    expect(rendered[3]).toEqual({ kind: 'tool', tool: tool('b'), sourceIndex: 2 });
+    expect(rendered[3]).toEqual({ kind: 'tool-stack', collapsedByDefault: true, tools: [{ tool: tool('b'), sourceIndex: 2 }] });
   });
 
   it('breaks the stack when a media tool (no card) interrupts the run', () => {
@@ -138,7 +138,7 @@ describe('assistantRenderBlocks', () => {
     expect(rendered.map((b) => b.kind)).toEqual(['tool-stack', 'tool']);
     if (rendered[0]?.kind === 'tool-stack') {
       expect(rendered[0].tools.map((t) => t.tool.id)).toEqual(['a', 'b']);
-      expect(rendered[0].collapsedByDefault).toBe(false);
+      expect(rendered[0].collapsedByDefault).toBe(true);
     }
   });
 
@@ -187,7 +187,7 @@ describe('assistantRenderBlocks', () => {
 
     expect(assistantRenderBlocks(assistantTurn([
       toolBlock('a'),
-    ])).map((block) => block.kind)).toEqual(['tool']);
+    ])).map((block) => block.kind)).toEqual(['tool-stack']);
   });
 
   it('does not let empty text split a pending tool run or consume its reply boundary', () => {
@@ -221,7 +221,7 @@ describe('assistantRenderBlocks', () => {
       { kind: 'text', text: 'third reply' },
     ]));
 
-    expect(first.map((block) => block.kind)).toEqual(['tool']);
+    expect(first.map((block) => block.kind)).toEqual(['tool-stack']);
     expect(nextTurn.map((block) => block.kind)).toEqual(['text']);
     expect(repeated.map((block) => block.kind)).toEqual([
       'text',
@@ -259,7 +259,7 @@ describe('assistantRenderBlocks', () => {
     if (rendered[0]?.kind === 'tool-stack') {
       expect(rendered[0].tools.map((item) => item.tool.id)).toEqual(['a', 'b']);
       expect(rendered[0].tools.map((item) => item.sourceIndex)).toEqual([0, 3]);
-      expect(rendered[0].collapsedByDefault).toBe(false);
+      expect(rendered[0].collapsedByDefault).toBe(true);
     }
     expect(rendered[1]).toMatchObject({ sourceIndex: 1 });
     expect(rendered[2]).toMatchObject({ sourceIndex: 2 });
@@ -272,7 +272,7 @@ describe('assistantRenderBlocks', () => {
       toolBlock('b'),
     ]));
 
-    expect(rendered.map((block) => block.kind)).toEqual(['tool', 'thinking', 'tool']);
+    expect(rendered.map((block) => block.kind)).toEqual(['tool-stack', 'thinking', 'tool-stack']);
   });
 
   it('collapses every tool run before the latest reply without changing tool data', () => {
@@ -296,13 +296,13 @@ describe('assistantRenderBlocks', () => {
       'tool-stack',
       'reply-separator',
       'text',
-      'tool',
+      'tool-stack',
     ]);
     const stacks = rendered.filter((block) => block.kind === 'tool-stack');
-    expect(stacks.map((block) => block.collapsedByDefault)).toEqual([true, true, true]);
-    expect(stacks.flatMap((block) => block.tools.map((item) => item.tool.id))).toEqual(['a', 'b', 'c', 'd']);
-    expect(stacks.flatMap((block) => block.tools.map((item) => item.sourceIndex))).toEqual([0, 1, 3, 5]);
-    expect(rendered.at(-1)).toEqual({ kind: 'tool', tool: tool('e'), sourceIndex: 7 });
+    expect(stacks.map((block) => block.collapsedByDefault)).toEqual([true, true, true, true]);
+    expect(stacks.flatMap((block) => block.tools.map((item) => item.tool.id))).toEqual(['a', 'b', 'c', 'd', 'e']);
+    expect(stacks.flatMap((block) => block.tools.map((item) => item.sourceIndex))).toEqual([0, 1, 3, 5, 7]);
+    expect(rendered.at(-1)).toEqual({ kind: 'tool-stack', collapsedByDefault: true, tools: [{ tool: tool('e'), sourceIndex: 7 }] });
   });
 });
 
@@ -343,7 +343,7 @@ describe('renderBlockKey', () => {
     expect(renderBlockKey({ kind: 'tool', tool: tool('a'), sourceIndex: 3 }, 0)).toBe('a');
     const tools = [{ tool: tool('a'), sourceIndex: 5 }];
     expect(
-      renderBlockKey({ kind: 'tool-stack', tools, collapsedByDefault: false }, 0),
+      renderBlockKey({ kind: 'tool-stack', tools, collapsedByDefault: true }, 0),
     ).toBe('tool-stack-5');
     expect(
       renderBlockKey({ kind: 'tool-stack', tools, collapsedByDefault: true }, 0),

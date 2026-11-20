@@ -1,5 +1,5 @@
 import { computed, nextTick, ref, watch } from 'vue';
-import { mobileReadingThread, rememberMobileReadingThread } from '../lib/mobileHost';
+import { rememberReadingMode, threadReading } from '../components/chat/readingBookmark';
 
 interface ValueRef<T> {
   readonly value: T;
@@ -23,7 +23,7 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
   const presentationMode = ref<FocusPresentationMode>('normal');
   const readingMode = computed(() => presentationMode.value === 'reading');
   const pendingReadingModeIntent = ref(false);
-  let savedThread = mobileReadingThread();
+  let restoredThread = '';
 
   function focusReadingModeToggle(): void {
     if (typeof document === 'undefined') return;
@@ -36,11 +36,10 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
 
   function enterReadingMode(): void {
     if (!options.canEnter.value || readingMode.value) return;
-    savedThread = '';
     pendingReadingModeIntent.value = false;
     options.dismissChrome();
     presentationMode.value = 'reading';
-    if (options.confirmedThread?.value) rememberMobileReadingThread(options.confirmedThread.value);
+    if (options.confirmedThread?.value) rememberReadingMode(options.confirmedThread.value, true);
     focusReadingModeToggle();
   }
 
@@ -61,9 +60,8 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
   }
 
   function chooseNormalMode(): void {
-    savedThread = '';
     pendingReadingModeIntent.value = false;
-    rememberMobileReadingThread('');
+    if (options.confirmedThread?.value) rememberReadingMode(options.confirmedThread.value, false);
     exitReadingMode();
   }
 
@@ -73,12 +71,14 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
     () => options.confirmedThread?.value ?? '',
     () => options.initialized.value,
     () => options.canEnter.value,
-    readingMode,
-  ], ([thread, initialized, readable, reading]) => {
-    if (!initialized || !readable || !thread) return;
-    if (reading) rememberMobileReadingThread(thread);
-    else if (savedThread === thread) enterReadingMode();
-    savedThread = '';
+  ], ([thread, initialized, readable]) => {
+    if (!thread) { restoredThread = ''; return; }
+    if (!initialized || !readable || thread === restoredThread) return;
+    restoredThread = thread;
+    const saved = threadReading(thread);
+    if (saved?.reading) enterReadingMode();
+    else if (saved) exitReadingMode();
+    rememberReadingMode(thread, readingMode.value);
   }, { flush: 'pre' });
 
   watch(

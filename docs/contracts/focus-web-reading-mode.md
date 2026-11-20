@@ -4,7 +4,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 ## Entry and loading
 
-Reading mode belongs to the current browser document. A mobile host that negotiated `resume` persists the reading choice and its confirmed thread for that instance. With valid document access and a selected session,
+Shared Web remembers the mode and reading position of recently confirmed threads. Ordinary browser tabs use sessionStorage across a same-tab reload. A mobile host that negotiated `resume` persists these hints per instance. With valid document access and a selected session,
 the desktop conversation header and narrow top bar offer reading mode whenever
 the conversation is loading or has readable content. Switching sessions must not
 hide the entry while waiting for content.
@@ -18,15 +18,16 @@ consume it when the selected conversation becomes eligible for reading mode.
 ## State boundaries
 
 - A new-chat page with no selected session does not offer reading mode.
-- Reading mode survives session switches; temporary absence of content during
-  loading does not cause an exit.
+- Returning to a remembered thread restores its mode. A first visit inherits the current mode. Settings retains the 5, 10 or 20 most recently used threads, default 10. Loading may temporarily show an empty conversation.
 - With valid document access, foreground checks and reconnection preserve reading mode and drafts. Keep the mode during
-  transcript reconciliation and revalidate the visible reading anchor. An ordinary browser reload starts in normal mode. A rebuilt mobile page restores reading mode once the server confirms the matching thread and it is loading or has readable content. Choosing normal mode clears that preference.
+  transcript reconciliation and revalidate the visible reading anchor. A rebuilt page restores its mode once the server confirms the matching thread and it is loading or has readable content. Choosing normal mode records that choice.
 - A settled empty conversation returns to normal mode instead of an empty
   reading page.
 - Opening a new-chat page, requesting input, or losing document access exits
   reading mode.
 - The user may exit during loading; arriving content must not re-enter the mode.
+
+Thread bookmarks store mode, verifiable message and chunk identifiers, and offsets. Each thread switch confirms the target with the server. The first paginated body read uses the exact saved item, or requests the live tail when following. An authoritative missing item clears the bookmark and reads the tail. A network failure keeps the bookmark. Legacy threads locate a source row within the returned content. Corrupt or unavailable presentation storage permits a normal conversation load. Closing the browser tab, deleting the app entry, or clearing the corresponding site data ends that storage lifetime.
 
 `web/src/focus/FocusApp.vue` owns entry eligibility, while
 `web/src/focus/focusReadingMode.ts` owns the page's presentation mode and pending

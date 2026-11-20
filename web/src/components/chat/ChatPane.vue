@@ -20,7 +20,8 @@ import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import TranscriptRow from './TranscriptRow.vue';
 import { isTranscriptRowPinned } from './transcriptScrollAnchor';
-import { createToolGroupExpansion, projectTranscriptToolGroups, toolGroupMember, type ToolGroup as ExpansionGroup } from '../toolGroupPresentation';
+import { readingLimit } from './readingBookmark';
+import { createToolGroupExpansion, threadToolExpansion, projectTranscriptToolGroups, toolGroupMember, type ToolGroup as ExpansionGroup } from '../toolGroupPresentation';
 import { copyTextToClipboard } from '../../lib/clipboard';
 import {
   assistantRenderBlocks,
@@ -44,6 +45,7 @@ onUnmounted(() => {
 const props = withDefaults(
   defineProps<{
     turns: ChatTurn[];
+    readingThread?: string;
     approvals?: { approvalId: string; block: ApprovalBlock; agentName?: string }[];
     /**
      * True while the MAIN agent has a turn in flight (not merely "session
@@ -210,17 +212,12 @@ const streamingTurnId = computed<string | null>(() => {
 
 type ToolStackBlock = Extract<AssistantRenderBlock, { kind: 'tool-stack' }>;
 const chatElement = ref<HTMLElement | null>(null);
-const toolGroupExpansion = createToolGroupExpansion();
+const toolGroupExpansion = props.readingThread ? threadToolExpansion(props.readingThread, readingLimit()) : createToolGroupExpansion();
 const toolGroupExpansionRevision = ref(0);
 const renderedBlocks = computed(() => new Map(props.turns.map(turn => [turn.id,
   turn.role === 'assistant' && !turn.contentDeferred ? assistantRenderBlocks(turn) : [],
 ])));
 const deferredProjection = computed(() => projectTranscriptToolGroups(props.turns));
-const deferredGroupHeaders = computed(() => {
-  void toolGroupExpansionRevision.value;
-  return new Map([...deferredProjection.value.leaders].filter(([, group]) =>
-    group.sourceIds.length > 1 || group.collapsedByDefault || toolGroupExpansion.hasChoice(group)));
-});
 
 function legacyGroup(turn: ChatTurn, block: ToolStackBlock): ExpansionGroup {
   return { members: block.tools.map(item => toolGroupMember(turn.id, item.tool.id || String(item.sourceIndex))),
@@ -229,24 +226,17 @@ function legacyGroup(turn: ChatTurn, block: ToolStackBlock): ExpansionGroup {
 
 const expansionGroups = computed(() => {
   const groups: ExpansionGroup[] = [...deferredProjection.value.leaders.values()];
-  const retained = new Set<string>();
   for (const turn of props.turns) {
-    if (turn.contentDeferred) retained.add(toolGroupMember(turn.id));
-    else {
-      turnBlocks(turn).forEach((block, index) => {
-        if (block.kind === 'tool') retained.add(toolGroupMember(turn.id, block.tool.id || String(index)));
-      });
-      for (const block of renderedBlocks.value.get(turn.id) ?? []) {
-        if (block.kind === 'tool-stack') groups.push(legacyGroup(turn, block));
-      }
+    for (const block of renderedBlocks.value.get(turn.id) ?? []) {
+      if (block.kind === 'tool-stack') groups.push(legacyGroup(turn, block));
     }
   }
-  return { groups, retained };
+  return groups;
 });
 
-watch(expansionGroups, ({ groups, retained }) => {
-  toolGroupExpansion.reconcile(groups, retained);
-  // A reply may seal a group while the reader is interacting with one of its rows.
+watch(expansionGroups, groups => {
+  toolGroupExpansion.reconcile(groups);
+  // A split or merge can move a row into a folded group during interaction.
   // Preserve that interaction before Vue removes any folded content.
   const pinned = new Set([...chatElement.value?.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]') ?? []]
     .filter(isTranscriptRowPinned).map(row => row.dataset.turnId!));
@@ -527,10 +517,10 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     </div>
 
     <template v-for="(turn, ti) in turns" :key="turn.id">
-      <div v-if="deferredGroupHeaders.has(turn.id)" class="transcript-tool-group"
+      <div v-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
         :data-turn-id="turn.id"
-        :data-transcript-tool-group="JSON.stringify(deferredGroupHeaders.get(turn.id)!.sourceIds)">
-        <ToolGroupHeader :tools="deferredGroupHeaders.get(turn.id)!.tools"
+        :data-transcript-tool-group="JSON.stringify(deferredProjection.leaders.get(turn.id)!.sourceIds)">
+        <ToolGroupHeader :tools="deferredProjection.leaders.get(turn.id)!.tools"
           :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
       </div>
       <TranscriptRow :turn="turn" :folded="!deferredGroupOpen(turn)">
