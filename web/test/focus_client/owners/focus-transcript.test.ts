@@ -90,6 +90,86 @@ describe('bounded transcript owner', () => {
     expect(h.read).toHaveBeenCalledTimes(4);
   });
 
+  it('spends the same two attempts across stale cursors and subsequent handshakes', async () => {
+    const h = harness(page([row(4)])); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    const first = h.owner.restoredTailContext.value!;
+    const stale = new FocusApiError('superseded', { status: 409, code: 'stale_thread_read' });
+    h.read.mockRejectedValueOnce(stale).mockResolvedValueOnce(page([row(5)], { older_cursor: 'reconfirmed' }));
+    expect(await h.owner.older(first.signal)).toBe(false);
+    expect(first.signal.aborted).toBe(true);
+    const second = h.owner.restoredTailContext.value!;
+    h.read.mockRejectedValueOnce(stale);
+    expect(await h.owner.older(second.signal)).toBe(false);
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(await h.owner.older(second.signal)).toBe(false);
+    expect(h.read.mock.calls.map(([, q]) => q)).toEqual([{}, {},
+      { cursor: 'older', direction: 'desc', fill: true }, {},
+      { cursor: 'reconfirmed', direction: 'desc', fill: true }, {}]);
+    expect(h.owner.error.value).toBe('');
+    h.read.mockResolvedValueOnce(page([row(2)], { older_cursor: null }));
+    expect(await h.owner.older()).toBe(true);
+  });
+
+  it('counts a superseded in-flight page and ignores its late result after reconnect', async () => {
+    const h = harness(); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    const delayed = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(delayed.promise);
+    const oldFill = h.owner.older(h.owner.restoredTailContext.value!.signal);
+    const request = h.read.mock.calls.at(-1)![2]!;
+    h.owner.prepareReload();
+    expect(request.aborted).toBe(true);
+    h.read.mockResolvedValueOnce(page([row(8)], { older_cursor: 'after-reconnect' }));
+    await h.owner.resumeAfterReload();
+    const fresh = h.owner.restoredTailContext.value!;
+    h.read.mockResolvedValueOnce(page([row(7)], { older_cursor: 'before-7' }));
+    expect(await h.owner.older(fresh.signal)).toBe(true);
+    delayed.resolve(page([row(2)]));
+    expect(await oldFill).toBe(false);
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['7', '8']);
+    expect(await h.owner.older(fresh.signal)).toBe(false);
+    expect(h.read.mock.calls.filter(([, q]) => q?.fill).map(([, q]) => q?.cursor)).toEqual(['older', 'after-reconnect']);
+  });
+
+  it.each([409, 503])('stops optional reads after a size or network refusal (%s)', async status => {
+    const h = harness(); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    const intent = h.owner.restoredTailContext.value!;
+    h.read.mockRejectedValueOnce(new FocusApiError('refused', { status, code: status === 409 ? 'transcript_fill_limit' : 'unavailable' }));
+    expect(await h.owner.older(intent.signal)).toBe(false);
+    expect(await h.owner.older(intent.signal)).toBe(false);
+    expect(h.owner.hasOlder.value).toBe(true);
+    expect(h.read).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['reader', 'park', 'epoch'] as const)('revokes a return while its head is pending on %s', async action => {
+    const h = harness(); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    const pending = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(pending.promise);
+    const head = h.owner.resumeAfterReload();
+    if (action === 'reader') h.owner.cancelInstanceReturn();
+    if (action === 'park') h.owner.expectInstanceReturn('');
+    if (action === 'epoch') {
+      h.read.mockResolvedValue(page([row(7)], { runtime_epoch: 'next' }));
+      h.state.value = { ...h.state.value!, runtime_epoch: 'next', revision: 2 };
+    }
+    pending.resolve(page());
+    await head; await settle();
+    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.read.mock.calls.some(([, query]) => query?.fill)).toBe(false);
+  });
+
   it('preserves filled rows across a contiguous live refresh and drops them across a gap', async () => {
     const h = harness(page([row(3)])); await settle();
     h.owner.expectInstanceReturn('thread-1');

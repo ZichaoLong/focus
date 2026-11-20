@@ -1,12 +1,12 @@
 import { computed, ref, shallowRef, watch, type Ref } from 'vue';
 import type { ChatTurn, ToolCall } from '../types';
 import type { FocusWebApiPort } from './api';
-import { FocusApiError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
+import { FocusApiError, isStaleWebReadError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
   type FocusThreadSnapshot, type FocusTranscriptQuery } from './types';
 import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
-import { TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
+import { MAX_TAIL_FILL_READS, TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -62,7 +62,8 @@ export function createFocusTranscript(options: {
   let awaitingProjection = false;
   let activeMode = 'head';
   let latestIntent: AbortSignal | undefined;
-  let pendingInstanceReturn: { threadId: string; recoveryStarted: boolean } | null = null;
+  let tailReadsLeft = 0;
+  let pendingInstanceReturn: { threadId: string; scope: string | null; recoveryStarted: boolean } | null = null;
   const restoredTailContext = shallowRef<AbortController | null>(null);
   const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
@@ -71,17 +72,28 @@ export function createFocusTranscript(options: {
     return `${options.activeThreadId.value}\n${options.snapshot.value?.runtime_epoch ?? ''}\n${options.isDisposed()}`;
   }
 
-  function expectInstanceReturn(threadId: string) {
-    restoredTailContext.value?.abort();
+  function retireConfirmedCursor() {
+    const previous = restoredTailContext.value;
     restoredTailContext.value = null;
-    pendingInstanceReturn = threadId ? { threadId, recoveryStarted: false } : null;
+    previous?.abort();
+  }
+
+  function cancelInstanceReturn() {
+    pendingInstanceReturn = null;
+    retireConfirmedCursor();
+  }
+
+  function expectInstanceReturn(threadId: string) {
+    cancelInstanceReturn();
+    if (!threadId) return;
+    pendingInstanceReturn = { threadId, scope: enabled.value ? identity() : null, recoveryStarted: false };
+    tailReadsLeft = MAX_TAIL_FILL_READS;
   }
 
   function cancel() {
     generation += 1;
     latestIntent = undefined;
-    restoredTailContext.value?.abort();
-    restoredTailContext.value = null;
+    retireConfirmedCursor();
     controller?.abort();
     controller = null;
     loading.value = false;
@@ -106,6 +118,9 @@ export function createFocusTranscript(options: {
   function cancelTarget() { if (activeMode === 'target' && loading.value) cancel(); }
 
   function reset() {
+    // A cold thread hint precedes its first snapshot. Once bound, a change
+    // of thread, epoch or access retires the entire return.
+    if (pendingInstanceReturn?.scope) cancelInstanceReturn();
     awaitingProjection = false;
     cancel();
     closeFull();
@@ -282,9 +297,15 @@ export function createFocusTranscript(options: {
     const threadId = options.activeThreadId.value;
     // A retained tab must complete its fresh recovery read. Its old window
     // can still be on screen when the host selects it again.
-    if (mode !== 'sync') pendingInstanceReturn = null;
+    const instanceFill = !!query.fill && !!intent && intent === restoredTailContext.value?.signal;
+    if (mode === 'sync') retireConfirmedCursor();
+    else if (!instanceFill) cancelInstanceReturn();
+    if (mode === 'latest' && intent) tailReadsLeft = MAX_TAIL_FILL_READS;
     const returning = pendingInstanceReturn;
-    if (returning && !cache.pageCount) returning.recoveryStarted = true;
+    if (returning?.threadId === threadId && !cache.pageCount) {
+      returning.scope = scope;
+      returning.recoveryStarted = true;
+    }
     const browsingAtStart = historical.value;
     const followingAtStart = following;
     // Superseding a same-document page read must carry its ordered events
@@ -367,26 +388,37 @@ export function createFocusTranscript(options: {
         }
       }
       if (!needsHead.value && !pendingHead) automaticAttempts = 0;
-      // A control update during the read queues another authoritative head.
-      // Let that read grant the one fill, using its own cursor.
-      if (returning?.recoveryStarted && returning === pendingInstanceReturn && !needsHead.value && !pendingHead) {
-        pendingInstanceReturn = null;
-        if (returning.threadId === threadId && followingAtStart && following && cache.atTail && cache.older) {
+      if (mode === 'sync' && returning?.recoveryStarted && returning === pendingInstanceReturn
+        && returning.scope === scope && !needsHead.value && !pendingHead) {
+        if (!followingAtStart || !following) cancelInstanceReturn();
+        else if (tailReadsLeft && cache.atTail && cache.older) {
           const context = new AbortController();
           latestIntent = context.signal;
           restoredTailContext.value = context;
         }
       }
-      return !query.fill || cache.older !== query.cursor;
+      if (query.fill && cache.older === query.cursor) {
+        tailReadsLeft = 0;
+        return false;
+      }
+      return true;
     } catch (failure) {
       if (current()) {
         if (options.reportFatalError?.(failure)) return false;
         if (mode === 'restore' && failure instanceof FocusApiError && failure.code === 'transcript_item_missing') {
           return await reloadWithoutAnchor(query);
         }
-        // Optional context can stop on size, network or stale-read refusal.
-        // The confirmed page and manual boundary remain usable.
-        if (!query.fill) error.value = failure instanceof Error ? failure.message : String(failure);
+        if (query.fill) {
+          if (instanceFill && returning === pendingInstanceReturn && tailReadsLeft && following
+            && isStaleWebReadError(failure, 'stale_thread_read')) {
+            // Revalidate from the head. Even an overlapping head cannot
+            // authorize reuse of the refused cursor from an older source page.
+            needsHead.value = true;
+            await load({}, 'sync');
+            return false;
+          }
+          tailReadsLeft = 0;
+        } else error.value = failure instanceof Error ? failure.message : String(failure);
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
       }
       return false;
@@ -408,8 +440,9 @@ export function createFocusTranscript(options: {
   function older(intent?: AbortSignal) {
     if (!hasOlder.value || loading.value) return Promise.resolve(false);
     if (intent) {
-      if (intent !== latestIntent || !cache.atTail || cache.pageCount >= TRANSCRIPT_CACHE_PAGES
-        || cache.bytes >= TRANSCRIPT_CACHE_BYTES) return Promise.resolve(false);
+      if (intent.aborted || intent !== latestIntent || !tailReadsLeft || !cache.atTail || pendingHead
+        || cache.pageCount >= TRANSCRIPT_CACHE_PAGES || cache.bytes >= TRANSCRIPT_CACHE_BYTES) return Promise.resolve(false);
+      tailReadsLeft--;
       return load({ cursor: edges.value.older!, direction: 'desc', fill: true }, 'older', false, intent);
     }
     return load({ cursor: edges.value.older!, direction: 'desc' }, 'older');
@@ -479,5 +512,5 @@ export function createFocusTranscript(options: {
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
     older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload,
-    expectInstanceReturn, restoredTailContext, reset, dispose };
+    expectInstanceReturn, cancelInstanceReturn, restoredTailContext, reset, dispose };
 }

@@ -256,14 +256,21 @@ Reconnection still retires the old window.
 Clicking “Latest messages” or returning to an instance in a host that negotiated `tabs` can request extra context.
 An instance return, including reopening its saved thread in a rebuilt document, first completes the authoritative
 read of the selected thread. Use that result for extra context only if the reader is following the tail when the
-read starts and finishes, and the confirmed tail has an older cursor. If another control refresh is already
-queued, wait for its confirmed cursor. Restore historical positions from their item anchor.
+read starts and finishes, and the confirmed tail has an older cursor. Measure once the page is visible,
+the event connection has completed its handshake and layout has settled. Remeasure if the transcript viewport
+grows after activation. Restoring the saved reading mode in a rebuilt document uses its resulting layout
+and the same return budget. A queued control refresh or another handshake requires a newly confirmed cursor.
+Restore historical positions from their item anchor.
+Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position.
+A reader following the tail stays at the end as layout settles. Actual scroll input takes over immediately.
 Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.
-Each return allows two additional reads at most. Each complete successful fill response is limited to 128 KiB
+Each return allows at most two fill requests, counting failures and cancellations. Layout changes, stream
+events and repeated handshakes share that budget. If an instance fill receives `409 stale_thread_read` with
+an attempt left, reread the head and continue from its current cursor. Each complete successful fill response is limited to 128 KiB
 of serialized JSON before HTTP compression. The gateway returns a small `transcript_fill_limit` refusal for a larger page.
-A failure, full cache or reader taking control ends the fill. Keep the live tail and the manual paging control.
+Other fill failures, a full cache, an exhausted budget or the reader taking control end the fill. Keep the live tail and the manual paging control.
 Scroll input, Prompt navigation, thread changes, hiding the page or parking the instance cancel a pending
 return. Manual reads still admit a whole oversized item.
 
