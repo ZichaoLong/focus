@@ -115,6 +115,8 @@ const props = withDefaults(defineProps<{
   loadOlderMessages?: (sessionId: string, tailContext?: AbortSignal) => Promise<boolean>;
   /** Leave a replacement history page before scrolling to the live tail. */
   returnToLiveTail?: (intent?: AbortSignal) => Promise<boolean>;
+  /** One optional fill after the host-selected instance confirms its live tail. */
+  restoredTailContext?: AbortController | null;
   /** Available models for the quick-switch dropdown in the composer toolbar. */
   models?: AppModel[];
   /** Product-owned notice shown beside model/effort controls. */
@@ -953,27 +955,38 @@ async function handleReturnToLiveTail(): Promise<void> {
     if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
     scrollToBottom(true);
     scheduleStableFollow(16);
-    for (let i = 0; i < MAX_TAIL_CONTEXT_PAGES; i++) {
-      if (!props.continuousTranscript || !props.hasMoreMessages || !props.sessionId || !props.loadOlderMessages) break;
-      await new Promise<void>(resolve => raf(resolve));
-      const pane = fence.pane;
-      if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence) || !following.value || !pane
-        || document.visibilityState === 'hidden' || pane.scrollHeight > pane.clientHeight + 1) break;
-      // The flex wrapper fills short viewports. Measure the flow after all
-      // rows, activity and queued prompts, before its normal bottom padding.
-      const end = pane.querySelector('[data-transcript-end]');
-      if (!end || pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top
-        < Math.max(96, pane.clientHeight * 0.2)) break;
-      if (!await props.loadOlderMessages(props.sessionId, intent.signal)) break;
-      await nextTick();
-      if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
-      scrollToBottom(false);
-      scheduleStableFollow(16);
-    }
+    await fillShortTail(intent, fence);
   } finally {
     if (latestReturn === intent) latestReturn = null;
   }
 }
+
+async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): Promise<void> {
+  for (let i = 0; i < MAX_TAIL_CONTEXT_PAGES; i++) {
+    if (!props.continuousTranscript || !props.hasMoreMessages || !props.sessionId || !props.loadOlderMessages) break;
+    await new Promise<void>(resolve => raf(resolve));
+    const pane = fence.pane;
+    if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence) || !following.value || !pane
+      || mobileEditorExpanded.value || props.hasNewerMessages || document.visibilityState === 'hidden'
+      || !pane.clientHeight || pane.scrollHeight > pane.clientHeight + 1) break;
+    // Measure the flow after all rows, activity and queued prompts, before normal bottom padding.
+    const end = pane.querySelector('[data-transcript-end]');
+    if (!end || pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top
+      < Math.max(96, pane.clientHeight * 0.2)) break;
+    if (!await props.loadOlderMessages(props.sessionId, intent.signal)) break;
+    await nextTick();
+    if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
+    scrollToBottom(false);
+    scheduleStableFollow(16);
+  }
+}
+
+watch(() => props.restoredTailContext, async intent => {
+  if (!intent || latestReturn) return;
+  latestReturn = intent;
+  try { await fillShortTail(intent, captureScrollWriteFence()); }
+  finally { if (latestReturn === intent) latestReturn = null; }
+}, { flush: 'post' });
 
 async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {
   // ChatPane receives props on Vue's next render. Re-check a sentinel event at

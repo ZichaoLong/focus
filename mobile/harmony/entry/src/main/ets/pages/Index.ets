@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
-import { common } from '@kit.AbilityKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { systemDateTime } from '@kit.BasicServicesKit';
 import { util, url } from '@kit.ArkTS';
 import { InstanceTab, InstancePane } from '../InstancePane';
 import { Site, sitePrefs, siteOrigin, focusRoot, forgetSite } from '../Sites';
@@ -12,6 +13,8 @@ struct Index {
   @State private managing: string = '';
   @State private drawerOpen: boolean = false;
   @State private drawerDark: boolean = false;
+  private drawerExitDeadline: number = 0;
+  @StorageLink('focusForeground') @Watch('disarmDrawerExit') private foreground: boolean = true;
   private nextId: string = '';
   @State private returnId: string = '';
   @State private pageLimit: number = 2;
@@ -71,16 +74,32 @@ struct Index {
     this.tabs.find((tab: InstanceTab) => tab.site.id === this.activeId)?.park();
   }
 
+  private disarmDrawerExit(): void { this.drawerExitDeadline = 0; }
+
+  private showDrawer(theme: string, fromRootBack: boolean): void {
+    if (!this.foreground || !this.activeId) return;
+    this.drawerDark = theme === 'dark' || (!theme && this.ctx().config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    this.drawerOpen = true;
+    this.drawerExitDeadline = fromRootBack ? systemDateTime.getUptime(systemDateTime.TimeType.STARTUP) + 2000 : 0;
+  }
+
+  private leaveToSystem(): void {
+    this.ctx().moveAbilityToBackground().catch(() => { this.message = '系统未能将 Focus 移到后台'; });
+  }
+
   onBackPress(): boolean {
-    if (this.drawerOpen) { this.drawerOpen = false; return true; }
+    if (this.drawerOpen) {
+      this.drawerOpen = false;
+      if (this.drawerExitDeadline > systemDateTime.getUptime(systemDateTime.TimeType.STARTUP)) this.leaveToSystem();
+      this.disarmDrawerExit();
+      return true;
+    }
     const tab = this.tabs.find((item: InstanceTab) => item.site.id === this.activeId);
     if (tab) { tab.back(); return true; }
     if (this.editing) { this.editing = false; return true; }
     if (this.authSite) { this.authSite = ''; this.authLink = ''; return true; }
     if (this.managing) { this.managing = ''; return true; }
-    if (!this.returnToPage()) {
-      this.ctx().moveAbilityToBackground().catch(() => { this.message = '系统未能将 Focus 移到后台'; });
-    }
+    if (!this.returnToPage()) this.leaveToSystem();
     return true;
   }
 
@@ -263,7 +282,7 @@ struct Index {
       ForEach(this.tabs, (tab: InstanceTab) => {
         Column() {
           InstancePane({ tab: tab, active: this.activeId === tab.site.id,
-            showDrawer: (theme: string) => { this.drawerDark = theme === 'dark'; this.drawerOpen = true; },
+            showDrawer: (theme: string, fromRootBack: boolean) => this.showDrawer(theme, fromRootBack),
             leavePage: (retained: boolean) => this.leave(tab, retained) })
         }.width('100%').height('100%')
           .visibility(this.activeId === tab.site.id ? Visibility.Visible : Visibility.Hidden)

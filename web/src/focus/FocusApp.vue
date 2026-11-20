@@ -1144,6 +1144,7 @@ onUnmounted(() => {
           :viewing-history="client.viewingHistory.value"
           :load-older-messages="client.loadOlderMessages"
           :return-to-live-tail="client.returnToLiveTail"
+          :restored-tail-context="client.transcript.restoredTailContext.value"
           :workspace-name="client.visibleWorkspace.value?.name"
           :workspace-root="client.visibleWorkspace.value?.root ?? client.status.value.cwd"
           :workspaces="client.workspacesView.value"

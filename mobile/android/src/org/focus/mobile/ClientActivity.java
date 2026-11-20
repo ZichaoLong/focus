@@ -33,9 +33,11 @@ public class ClientActivity extends Activity {
     private FrameLayout frame;
     private LinearLayout notice;
     private Button switcher;
+    private Runnable pendingSwitcher;
     private boolean selected = true, switching;
     private FileExchange files;
     private InstanceDrawer drawer;
+    private long drawerExitDeadline;
     private PageSlots pages;
     private ApkUpdate apkUpdate;
     private String switchTarget = "";
@@ -57,8 +59,11 @@ public class ClientActivity extends Activity {
         presentation = getSharedPreferences("page-" + id, MODE_PRIVATE);
         files = new FileExchange(this);
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL);
-        switcher = Views.button(this, layout, name + " ▾", this::pickInstance);
-        switcher.setContentDescription("切换实例");
+        switcher = new Button(this, null, android.R.attr.borderlessButtonStyle);
+        switcher.setText("切换实例");
+        switcher.setVisibility(View.GONE);
+        switcher.setOnClickListener(v -> showDrawer("", false));
+        layout.addView(switcher, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         notice = Views.column(this); layout.addView(notice);
         frame = new FrameLayout(this); layout.addView(frame, new LinearLayout.LayoutParams(-1, 0, 1));
         FrameLayout root = new FrameLayout(this);
@@ -95,7 +100,21 @@ public class ClientActivity extends Activity {
         });
     }
 
+    // The probe, redirects and the Focus document share one wait for a usable drawer.
+    private void awaitWebSwitcher() {
+        if (pendingSwitcher != null || switcher.getVisibility() == View.VISIBLE) return;
+        pendingSwitcher = () -> setNativeSwitcher(true);
+        main.postDelayed(pendingSwitcher, 2500);
+    }
+
+    private void setNativeSwitcher(boolean visible) {
+        if (pendingSwitcher != null) main.removeCallbacks(pendingSwitcher);
+        pendingSwitcher = null;
+        switcher.setVisibility(visible ? View.VISIBLE : View.GONE);
+    }
+
     private void banner(String message, String action, Runnable click) {
+        setNativeSwitcher(true);
         notice.removeAllViews(); notice.setVisibility(View.VISIBLE);
         TextView text = new TextView(this); text.setText(message); notice.addView(text);
         if (action != null) Views.button(this, notice, action, click);
@@ -118,6 +137,7 @@ public class ClientActivity extends Activity {
 
     private void openProbe(boolean editPassword) {
         if (!selected) return;
+        awaitWebSwitcher();
         main.removeCallbacks(retry); retireView();
         retryNeeded = false; probe = true; attempted = false; rejected = false; manual = editPassword;
         supplied = null;
@@ -182,9 +202,9 @@ public class ClientActivity extends Activity {
             }
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
-                ticket = ""; pendingBack = null; files.cancel(); apkUpdate.cancel(); drawer.dismiss();
-                switcher.setVisibility(View.VISIBLE);
-                if (!selected) main.post(() -> { if (!selected && epoch == generation) retireView(); });
+                ticket = ""; pendingBack = null; files.cancel(); apkUpdate.cancel();
+                if (selected) awaitWebSwitcher();
+                else main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
             @Override public void onPageCommitVisible(WebView v, String url) {
                 if (epoch == generation && page && Site.root(url, origin)) offer(v);
@@ -248,13 +268,13 @@ public class ClientActivity extends Activity {
                 if ("external".equals(op)) {
                     result.confirm(openExternal(value) ? "ok" : "error");
                 } else if ("instances".equals(op)) {
-                    result.confirm("ok"); main.post(() -> { if (epoch == generation) showDrawer(value); });
+                    result.confirm("ok"); main.post(() -> { if (epoch == generation) showDrawer(value, false); });
                 } else if ("apk-save".equals(op)) {
                     apkUpdate.save(files, result);
                 } else if (op.startsWith("apk-")) {
                     result.confirm(apkUpdate.handle(op, value));
                 } else if ("chrome".equals(op)) {
-                    switcher.setVisibility("web".equals(value) ? View.GONE : View.VISIBLE);
+                    setNativeSwitcher(!"web".equals(value));
                     result.confirm("ok");
                 } else if ("thread".equals(op)) {
                     boolean saved = value != null && value.length() <= 256 && presentation.edit().putString("thread", value).commit();
@@ -366,20 +386,19 @@ public class ClientActivity extends Activity {
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
     @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
-    @Override protected void onPause() { foreground = false; pendingBack = null; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onPause() { foreground = false; pendingBack = null; drawerExitDeadline = 0; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onStop() {
         super.onStop();
         if (!selected && !isFinishing()) moveTaskToBack(true);
     }
-    private void pickInstance() { showDrawer(""); }
-
-    private void showDrawer(String theme) {
-        if (!selected || switching) return;
+    private void showDrawer(String theme, boolean fromRootBack) {
+        if (!foreground || !selected || switching) return;
         pendingBack = null;
         try {
             JSONArray sites = new JSONArray(getSharedPreferences("instances", MODE_PRIVATE).getString("list", "[]"));
             boolean dark = "dark".equals(theme) || (theme.isEmpty() && (getResources().getConfiguration().uiMode & 48) == 32);
             drawer.show(sites, id, dark, this::switchInstance, () -> switchInstance(""), this::about);
+            drawerExitDeadline = fromRootBack ? SystemClock.elapsedRealtime() + 2000 : 0;
         } catch (JSONException e) { Views.message(this, "无法读取实例列表"); }
     }
 
@@ -410,7 +429,7 @@ public class ClientActivity extends Activity {
     private void completeSwitch(boolean retained) {
         if (!switching) return;
         switching = false;
-        if (!retained) retireView();
+        if (!retained) { setNativeSwitcher(false); retireView(); }
         if (!legacy && !switchTarget.isEmpty()) {
             SharedPreferences prefs = getSharedPreferences("instances", MODE_PRIVATE);
             try {
@@ -432,7 +451,6 @@ public class ClientActivity extends Activity {
             boolean renamed = !name.equals(site.getString("name"));
             name = site.getString("name"); sso = site.optBoolean("sso");
             link = intent.getStringExtra("link"); intent.removeExtra("link"); setIntent(intent);
-            switcher.setText(name + " ▾");
             switching = false; boolean wasParked = !selected; selected = true;
             if (!legacy && ProfileTransfer.snapshot(this, id).getBaseFile().exists() &&
                     !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) { importProfile(); return; }
@@ -458,11 +476,16 @@ public class ClientActivity extends Activity {
 
     private void browserBack() {
         if (web != null && !probe && web.canGoBack()) web.goBack();
-        else moveTaskToBack(true);
+        else showDrawer("", true);
     }
 
     @Override public void onBackPressed() {
-        if ((drawer != null && drawer.dismiss()) || !selected || switching || pendingBack != null) return;
+        if (!selected || switching || pendingBack != null) return;
+        if (drawer != null && drawer.dismiss()) {
+            if (SystemClock.elapsedRealtime() < drawerExitDeadline) moveTaskToBack(true);
+            drawerExitDeadline = 0;
+            return;
+        }
         if (web == null || probe || ticket.isEmpty() || !Site.root(web.getUrl(), origin)) { browserBack(); return; }
         Object press = new Object(); pendingBack = press;
         // 0 is a confirmed older document. An absent/stale reply must never perform a second action.
@@ -471,7 +494,7 @@ public class ClientActivity extends Activity {
         web.evaluateJavascript(script, reply -> {
             if (pendingBack != press) return;
             pendingBack = null;
-            if ("false".equals(reply)) moveTaskToBack(true);
+            if ("false".equals(reply)) showDrawer("", true);
             else if ("0".equals(reply)) browserBack();
         });
     }

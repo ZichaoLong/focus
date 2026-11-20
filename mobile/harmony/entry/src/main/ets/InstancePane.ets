@@ -20,11 +20,12 @@ export class InstanceTab {
 export struct InstancePane {
   tab: InstanceTab = new InstanceTab(new Site(), '');
   @Prop @Watch('selectionChanged') active: boolean = true;
-  showDrawer: (theme: string) => void = () => {};
+  showDrawer: (theme: string, fromRootBack: boolean) => void = () => {};
   leavePage: (retained: boolean) => void = () => {};
   private site: Site = new Site();
   private leaving: boolean = false;
-  @State private webChrome: boolean = false;
+  @State private nativeSwitcher: boolean = false;
+  private switcherTimer: number = -1;
   private controller: webview.WebviewController = new webview.WebviewController();
   private files: FileExchange = new FileExchange();
   @StorageLink('focusForeground') @Watch('foregroundChanged') private foreground: boolean = true;
@@ -63,12 +64,23 @@ export struct InstancePane {
     this.tab.link = '';
     this.tab.back = () => this.back();
     this.tab.park = () => this.leave();
+    this.awaitWebSwitcher();
+  }
+
+  private awaitWebSwitcher(): void {
+    if (this.nativeSwitcher || this.switcherTimer !== -1) return;
+    this.switcherTimer = setTimeout(() => this.setNativeSwitcher(true), 2500);
+  }
+
+  private setNativeSwitcher(visible: boolean): void {
+    clearTimeout(this.switcherTimer); this.switcherTimer = -1;
+    this.nativeSwitcher = visible;
   }
 
   private resetView(phase: string, address: string): void {
     this.pendingBack = 0;
     clearTimeout(this.retry);
-    this.webChrome = false; this.files.cancel(); this.ticket = ''; this.loginForm = false;
+    this.awaitWebSwitcher(); this.files.cancel(); this.ticket = ''; this.loginForm = false;
     this.handler?.cancel(); this.handler = undefined; this.password = '';
     this.phase = phase; this.source = address;
     this.controller = new webview.WebviewController();
@@ -98,6 +110,7 @@ export struct InstancePane {
   }
 
   private unavailable(message: string): void {
+    this.setNativeSwitcher(true);
     this.needsNetwork = true; this.message = message;
     clearTimeout(this.retry);
     if (this.active && this.foreground) {
@@ -133,6 +146,7 @@ export struct InstancePane {
   }
 
   private block(message: string): void {
+    this.setNativeSwitcher(true);
     this.phase = 'blocked'; this.message = message; this.supplied = undefined;
     this.loginForm = false; this.password = '';
     this.handler?.cancel(); this.handler = undefined;
@@ -161,7 +175,10 @@ export struct InstancePane {
     catch { this.message = '无法读取安全凭据，请重新输入。'; }
     if (epoch !== this.epoch || this.gone || this.handler !== event.handler) return;
     if (existing) { this.remember = true; this.provide(existing); }
-    else { this.user = ''; this.password = ''; this.remember = false; this.loginForm = true; }
+    else {
+      this.setNativeSwitcher(true);
+      this.user = ''; this.password = ''; this.remember = false; this.loginForm = true;
+    }
   }
 
   private provide(entry: Login): void {
@@ -172,6 +189,7 @@ export struct InstancePane {
   }
 
   private reauthenticate(epoch: number, failedMainRequest: boolean): void {
+    this.setNativeSwitcher(true);
     this.message = '入口要求重新验证。';
     if (!this.active || !this.foreground || Date.now() - this.lastReauth < 60000) return;
     const verify = (): void => {
@@ -249,11 +267,11 @@ export struct InstancePane {
     }
     if (op === 'instances') {
       event.result.handlePromptConfirm('ok');
-      setTimeout(() => { if (epoch === this.epoch && this.active) this.showDrawer(event.value); }, 0);
+      setTimeout(() => { if (epoch === this.epoch && this.active) this.showDrawer(event.value, false); }, 0);
       return true;
     }
     if (op === 'chrome') {
-      this.webChrome = event.value === 'web';
+      this.setNativeSwitcher(event.value !== 'web');
       event.result.handlePromptConfirm('ok'); return true;
     }
     if (op === 'print') {
@@ -314,13 +332,9 @@ export struct InstancePane {
     }
   }
 
-  private leaveToSystem(): void {
-    this.ctx().moveAbilityToBackground().catch(() => { this.message = '系统未能将 Focus 移到后台'; });
-  }
-
   private browserBack(): void {
     if (this.phase === 'page' && this.controller.accessBackward()) this.controller.backward();
-    else this.leaveToSystem();
+    else this.showDrawer('', true);
   }
 
   private back(): void {
@@ -336,12 +350,12 @@ export struct InstancePane {
     this.controller.runJavaScript(script).then(result => {
       if (this.pendingBack !== press || this.gone) return;
       this.pendingBack = 0;
-      if (result === 'false') this.leaveToSystem();
+      if (result === 'false') this.showDrawer('', true);
       else if (result === '0') this.browserBack();
     }).catch(() => { if (this.pendingBack === press) this.pendingBack = 0; });
   }
   aboutToDisappear(): void {
-    this.gone = true; this.epoch++; clearTimeout(this.retry);
+    this.gone = true; this.epoch++; clearTimeout(this.retry); clearTimeout(this.switcherTimer);
     this.handler?.cancel(); this.files.cancel();
   }
 
@@ -361,8 +375,8 @@ export struct InstancePane {
         return null;
       })
       .onPageBegin(() => { if (epoch === this.epoch) {
-        this.ticket = ''; this.webChrome = false; this.pendingBack = 0; this.files.cancel();
-        if (!this.active) this.leavePage(false);
+        this.ticket = ''; this.pendingBack = 0; this.files.cancel();
+        if (this.active) this.awaitWebSwitcher(); else this.leavePage(false);
       } })
       .onProgressChange(e => {
         if (epoch === this.epoch && this.phase === 'page' && e.newProgress >= 60) this.offer(this.controller.getUrl());
@@ -402,7 +416,11 @@ export struct InstancePane {
 
   build() {
     Column() {
-      if (!this.webChrome) { Button(this.site.name + ' ▾').accessibilityText('切换实例').onClick(() => this.showDrawer('')) }
+      if (this.nativeSwitcher) {
+        Row() {
+          Button('切换实例').buttonStyle(ButtonStyleMode.TEXTUAL).height(48).onClick(() => this.showDrawer('', false))
+        }.width('100%').justifyContent(FlexAlign.Start)
+      }
       if (this.message) { Text(this.message).width('100%').padding(6) }
       if (this.loginForm) {
         Column({ space: 6 }) {

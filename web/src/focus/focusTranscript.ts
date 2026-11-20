@@ -62,6 +62,8 @@ export function createFocusTranscript(options: {
   let awaitingProjection = false;
   let activeMode = 'head';
   let latestIntent: AbortSignal | undefined;
+  let pendingInstanceReturn: { threadId: string; recoveryStarted: boolean } | null = null;
+  const restoredTailContext = shallowRef<AbortController | null>(null);
   const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
 
@@ -69,9 +71,17 @@ export function createFocusTranscript(options: {
     return `${options.activeThreadId.value}\n${options.snapshot.value?.runtime_epoch ?? ''}\n${options.isDisposed()}`;
   }
 
+  function expectInstanceReturn(threadId: string) {
+    restoredTailContext.value?.abort();
+    restoredTailContext.value = null;
+    pendingInstanceReturn = threadId ? { threadId, recoveryStarted: false } : null;
+  }
+
   function cancel() {
     generation += 1;
     latestIntent = undefined;
+    restoredTailContext.value?.abort();
+    restoredTailContext.value = null;
     controller?.abort();
     controller = null;
     loading.value = false;
@@ -259,6 +269,7 @@ export function createFocusTranscript(options: {
     refreshTimer = null;
     pendingHead = false;
     if (!automatic) automaticAttempts = 0;
+    const keepLiveContext = mode === 'sync' && !needsHead.value && cache.atTail && cache.pageCount > 1;
     if (mode === 'sync') needsHead.value = true;
     controller?.abort();
     const requestController = new AbortController();
@@ -269,6 +280,11 @@ export function createFocusTranscript(options: {
     const startedAt = Date.now();
     const scope = identity();
     const threadId = options.activeThreadId.value;
+    // A retained tab must complete its fresh recovery read. Its old window
+    // can still be on screen when the host selects it again.
+    if (mode !== 'sync') pendingInstanceReturn = null;
+    const returning = pendingInstanceReturn;
+    if (returning && !cache.pageCount) returning.recoveryStarted = true;
     const browsingAtStart = historical.value;
     const followingAtStart = following;
     // Superseding a same-document page read must carry its ordered events
@@ -329,7 +345,7 @@ export function createFocusTranscript(options: {
       if (mode === 'older' || mode === 'newer') {
         lastDirection = query.fill ? 'newer' : mode;
         cache.extend(result, query.fill ? 'tail-context' : mode, protectedRow);
-      } else if (mode === 'latest' && !needsHead.value) {
+      } else if ((mode === 'latest' && !needsHead.value) || (keepLiveContext && following)) {
         lastDirection = 'newer';
         cache.returnToLatest(result);
       } else if (mode === 'sync' && cache.pageCount > 0 && !following && protectedRow && turns.value.length) {
@@ -351,6 +367,16 @@ export function createFocusTranscript(options: {
         }
       }
       if (!needsHead.value && !pendingHead) automaticAttempts = 0;
+      // A control update during the read queues another authoritative head.
+      // Let that read grant the one fill, using its own cursor.
+      if (returning?.recoveryStarted && returning === pendingInstanceReturn && !needsHead.value && !pendingHead) {
+        pendingInstanceReturn = null;
+        if (returning.threadId === threadId && followingAtStart && following && cache.atTail && cache.older) {
+          const context = new AbortController();
+          latestIntent = context.signal;
+          restoredTailContext.value = context;
+        }
+      }
       return !query.fill || cache.older !== query.cursor;
     } catch (failure) {
       if (current()) {
@@ -452,5 +478,6 @@ export function createFocusTranscript(options: {
     fullText, fullTool, fullLoading, fullError, openFull, closeFull,
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
-    older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload, reset, dispose };
+    older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload,
+    expectInstanceReturn, restoredTailContext, reset, dispose };
 }

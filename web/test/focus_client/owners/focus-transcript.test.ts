@@ -63,6 +63,73 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older(intent.signal)).toBe(false);
   });
 
+  it('grants context only to the current instance return using its freshly read cursor', async () => {
+    const h = harness(page([row(4)], { older_cursor: 'retired' })); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    const delayed = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(delayed.promise);
+    const previous = h.owner.resumeAfterReload();
+    h.owner.expectInstanceReturn('');
+    h.owner.expectInstanceReturn('thread-1');
+    delayed.resolve(page([row(4)], { older_cursor: 'from-previous-selection' }));
+    await previous;
+    expect(h.owner.restoredTailContext.value).toBeNull();
+
+    h.owner.prepareReload();
+    h.read.mockResolvedValueOnce(page([row(5)], { older_cursor: 'fresh' }));
+    expect(await h.owner.resumeAfterReload()).toBe(true);
+    const intent = h.owner.restoredTailContext.value!;
+    h.read.mockResolvedValueOnce(page([row(3), row(4)]));
+    expect(await h.owner.older(intent.signal)).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'fresh', direction: 'desc', fill: true }, expect.any(AbortSignal));
+
+    h.owner.expectInstanceReturn('');
+    expect(intent.signal.aborted).toBe(true);
+    expect(await h.owner.older(intent.signal)).toBe(false);
+    expect(h.read).toHaveBeenCalledTimes(4);
+  });
+
+  it('preserves filled rows across a contiguous live refresh and drops them across a gap', async () => {
+    const h = harness(page([row(3)])); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    h.read.mockResolvedValueOnce(page([row(1), row(2)], { older_cursor: 'before-1' }));
+    expect(await h.owner.older(h.owner.restoredTailContext.value!.signal)).toBe(true);
+    h.read.mockResolvedValueOnce(page([row(3, 'fresh'), row(4)], { revision: 2 }));
+    h.state.value = { ...h.state.value!, revision: 2 };
+    await settle();
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['1', '2', 'fresh', '4']);
+    h.read.mockResolvedValueOnce(page([row(9)], { revision: 3 }));
+    h.state.value = { ...h.state.value!, revision: 3 };
+    await settle();
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['9']);
+    expect(h.read).toHaveBeenCalledTimes(5);
+  });
+
+  it('uses the final confirmed cursor when a control refresh is queued during instance recovery', async () => {
+    vi.useFakeTimers();
+    const h = harness(page([row(1)])); await settle();
+    h.owner.expectInstanceReturn('thread-1');
+    h.owner.prepareReload();
+    const delayed = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(delayed.promise);
+    const recovery = h.owner.resumeAfterReload();
+    h.state.value = { ...h.state.value!, revision: 2 };
+    await settle();
+    delayed.resolve(page([row(2)], { older_cursor: 'superseded' }));
+    await recovery;
+    expect(h.owner.restoredTailContext.value).toBeNull();
+
+    h.read.mockResolvedValueOnce(page([row(3)], { older_cursor: 'confirmed', revision: 2 }));
+    await vi.advanceTimersByTimeAsync(1000);
+    h.read.mockResolvedValueOnce(page([row(1), row(2)], { older_cursor: null }));
+    expect(await h.owner.older(h.owner.restoredTailContext.value!.signal)).toBe(true);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'confirmed', direction: 'desc', fill: true }, expect.any(AbortSignal));
+    expect(h.read).toHaveBeenCalledTimes(4);
+  });
+
   it.each(['latest', 'context'] as const)('abandons a delayed %s read and replays buffered live events', async mode => {
     const h = harness(page([row(5)])); await settle();
     const intent = new AbortController();

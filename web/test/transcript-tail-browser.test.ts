@@ -33,11 +33,15 @@ function tools(start: number, count: number): ChatTurn[] {
   });
 }
 type Fixture = { page: Page; reads: string[] };
-async function fixture(width: number, prosePage: number, run: (f: Fixture) => Promise<void>, holdFill?: Promise<void>) {
+async function fixture(width: number, prosePage: number, run: (f: Fixture) => Promise<void>, holdFill?: Promise<void>, mobileTabs = false) {
   const page = await browser.newPage({ viewport: { width, height: width < 500 ? 844 : 880 }, hasTouch: width < 500 });
   page.setDefaultTimeout(12_000);
   const reads: string[] = [], errors: string[] = [];
   page.on('pageerror', err => errors.push(err.message));
+  if (mobileTabs) await page.addInitScript(() => {
+    window.__focusMobile = { version: 1, instance: crypto.randomUUID(), ticket: crypto.randomUUID(), features: ['tabs'] };
+    window.prompt = () => 'ok';
+  });
   const source = { ...thread(), name: 'Folded tools', title: 'Folded tools', source: 'cli', ephemeral: false,
     session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
   await page.routeWebSocket('**/api/events?*', socket => {
@@ -56,7 +60,11 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
     else if (pathname.endsWith('/transcript')) {
       let rows: ChatTurn[] = [], older: string | null = null;
       const view = query.get('view') ?? 'transcript', cursor = Number(query.get('cursor'));
-      if (view === 'transcript') {
+      const anchor = query.get('item_id');
+      if (anchor) {
+        reads.push('anchor-' + anchor);
+        rows = [reply(anchor, 'Previous discussion.\n\n'.repeat(60))];
+      } else if (view === 'transcript') {
         const fill = query.has('fill');
         reads.push(cursor ? (fill ? 'fill-' : 'older-') + cursor : 'head');
         if (fill && holdFill) await holdFill;
@@ -65,8 +73,8 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
         else rows = tools(-40 * cursor, 40);
         older = cursor < prosePage ? String(cursor + 1) : null;
       }
-      payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: source.id, turn_id: null, view, target_pending: false,
-        turns: rows, older_cursor: older, newer_cursor: cursor ? 'forward-' + cursor : null, full_text: null };
+      payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: source.id, turn_id: query.get('turn_id'), view, target_pending: false,
+        turns: rows, older_cursor: older, newer_cursor: anchor ? 'after-anchor' : cursor ? 'forward-' + cursor : null, full_text: null };
     } else if (/\/api\/threads\/thread-1(?:\/open)?$/.test(pathname)) {
       payload = { ...snapshot('none', 'thread-1', 1), revision: 1, thread: source, active_turn_context: null };
     } else return route.fulfill({ status: 404, json: { error: { code: 'unavailable', message: pathname } } });
@@ -94,6 +102,28 @@ async function swipeEarlier(page: Page) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await cdp.detach();
 }
+
+it('fills the reselected instance after its confirmed tail, and restores a historical reader at the exact item', async () => {
+  await fixture(390, 2, async ({ page, reads }) => {
+    await expect.poll(() => page.locator('.transcript-row').count()).toBe(81);
+    expect(reads).toEqual(['head', 'fill-1', 'fill-2']);
+    await page.locator('.reading-mode-entry:visible').click();
+    async function reselect() {
+      expect(await page.evaluate(() => window.__focusSetTabActive?.(false))).toBe(true);
+      expect(await page.evaluate(() => window.__focusSetTabActive?.(true))).toBe(true);
+    }
+    await reselect();
+    await expect.poll(() => reads.slice(3)).toEqual(['head', 'fill-1', 'fill-2']);
+    await expect.poll(() => gap(page)).toBeLessThanOrEqual(32);
+    await swipeEarlier(page);
+    await page.locator('.panes:not(.is-following)').waitFor();
+    const previous = reads.length;
+    await reselect();
+    await page.locator('.transcript-notice button').waitFor();
+    expect(reads.slice(previous)).toEqual([expect.stringMatching(/^anchor-/)]);
+    expect(await page.locator('.panes.is-following').count()).toBe(0);
+  }, undefined, true);
+}, 45_000);
 
 it.each([1280, 390])('retains previously read folded history and refreshes the tail at width %s', async width => {
   await fixture(width, 2, async ({ page, reads }) => {

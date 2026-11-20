@@ -1066,6 +1066,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (navigation.isDisposed || !initialized.value || !meta.value) return false;
     if (parked === !active) return true;
     parked = !active;
+    transcript.expectInstanceReturn(active ? activeThreadId.value : '');
     if (parked) {
       window.dispatchEvent(new Event('focus-host-pause'));
       transportSession.suspend();
@@ -1093,6 +1094,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (!requestedThreadId && hasMobileFeature('resume')) {
       try { requestedThreadId = recoveryStorage().getItem('focus-web.last-thread') ?? ''; } catch { /* private storage */ }
     }
+    if (hasMobileFeature('tabs')) transcript.expectInstanceReturn(requestedThreadId);
     loading.value = true;
     authRequired.value = false;
     clearError();

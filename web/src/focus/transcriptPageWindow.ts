@@ -33,7 +33,7 @@ export class TranscriptPageWindow {
     this.measure();
   }
 
-  /** Explicit return: install the authoritative head, keeping only a proven adjacent prefix. */
+  /** Install the authoritative head, keeping only a proven adjacent prefix. */
   returnToLatest(page: FocusTranscriptPage): void {
     const rows = this.rows;
     const start = rows.findIndex(row => row.id === page.turns[0]?.id);

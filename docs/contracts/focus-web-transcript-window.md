@@ -250,11 +250,18 @@ Clicking “Latest messages” rereads the server's latest page. Keep the alread
 has an older cursor and its initial row IDs match the cached suffix in order, with no duplicate in the retained prefix.
 Install the entire fresh page. A gap, order conflict or retired cache uses just the new page. A split source page
 can resume toward newer history from its exact last item. Retained rows keep their own read revisions.
+While following the tail, ordinary control refreshes preserve adjacent pages under the same continuity rule.
+Reconnection still retires the old window.
 
-Only this explicit action may request extra context. After rendering, normal and reading modes measure the gap
+Clicking “Latest messages” or returning to an instance in a host that negotiated `tabs` can request extra context.
+An instance return, including reopening its saved thread in a rebuilt document, first completes the authoritative
+read of the selected thread. Use that result for extra context only if the reader is following the tail when the
+read starts and finishes, and the confirmed tail has an older cursor. If another control refresh is already
+queued, wait for its confirmed cursor. Restore historical positions from their item anchor.
+Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.
-Each click allows two additional reads at most. Each complete successful fill response is limited to 128 KiB
+Each return allows two additional reads at most. Each complete successful fill response is limited to 128 KiB
 of serialized JSON before HTTP compression. The gateway returns a small `transcript_fill_limit` refusal for a larger page.
 A failure, full cache or reader taking control ends the fill. Keep the live tail and the manual paging control.
 Scroll input, Prompt navigation, thread changes, hiding the page or parking the instance cancel a pending

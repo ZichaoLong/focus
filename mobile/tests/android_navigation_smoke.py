@@ -4,6 +4,7 @@ import asyncio
 from contextlib import AsyncExitStack, asynccontextmanager
 import json
 from pathlib import Path
+import re
 import subprocess
 from urllib.parse import urlsplit
 from xml.etree import ElementTree
@@ -105,8 +106,16 @@ async def run(args):
     assert all(urlsplit(origin).hostname == "10.0.2.2" for origin in (a, b, guest))
     adb = emulator_adb(args.adb, args.serial)
     saved = next(x for x in entries(adb) if x["origin"] == a)
+    if args.edge_gesture:
+        if adb("shell", "settings", "get", "secure", "navigation_mode") != "2":
+            raise ValueError("--edge-gesture requires gesture navigation on the test emulator")
+        width, height = map(int, re.findall(r"(\d+)x(\d+)", adb("shell", "wm", "size"))[-1])
+
     def back():
-        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        if args.edge_gesture:
+            adb("shell", "input", "touchscreen", "swipe", "1", str(height // 2), str(width // 2), str(height // 2), "240")
+        else:
+            adb("shell", "input", "keyevent", "KEYCODE_BACK")
 
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-W", "-a", "org.focus.mobile.PICK", "-n", PACKAGE + "/org.focus.mobile.MainActivity")
@@ -182,6 +191,27 @@ async def run(args):
         await asyncio.to_thread(choose, adb, b)
         async with ready_tab(session, adb, b) as ws:
             document = await evaluate(ws, "performance.timeOrigin")
+            component = next(word for word in resumed(adb).split() if word.startswith(PACKAGE + "/"))
+
+            async def wait_drawer(visible):
+                # Native view dumps avoid UIAutomator's idle wait consuming the double-Back window.
+                async with asyncio.timeout(5):
+                    while ("android.widget.ScrollView{" in adb("shell", "dumpsys", "activity", component)) != visible:
+                        await asyncio.sleep(.05)
+
+            await click_web(ws, ".instance-drawer-trigger,.instance-picker")
+            await wait_drawer(True)
+            back()
+            await wait_drawer(False)
+            assert component in resumed(adb)
+            back()
+            await wait_drawer(True)
+            await asyncio.sleep(2.2)
+            back()
+            await wait_drawer(False)
+            assert component in resumed(adb)
+            back()
+            await wait_drawer(True)
             back()
             async with asyncio.timeout(10):
                 while not (activity := resumed(adb)) or PACKAGE in activity:
@@ -191,7 +221,7 @@ async def run(args):
             launch(adb)
             await wait_for(ws, "!document.hidden")
             assert await evaluate(ws, "performance.timeOrigin") == document
-        print("Two-instance root Back left Focus, launcher reopened the last live instance", flush=True)
+        print("Manual and expired drawer Back returned to the conversation; double root Back backgrounded the same live instance", flush=True)
 
 
 if __name__ == "__main__":
@@ -199,4 +229,5 @@ if __name__ == "__main__":
     parser.add_argument("lab", type=Path)
     parser.add_argument("--adb", default="adb")
     parser.add_argument("--serial", required=True)
+    parser.add_argument("--edge-gesture", action="store_true", help="send system edge swipes instead of KEYCODE_BACK")
     asyncio.run(run(parser.parse_args()))

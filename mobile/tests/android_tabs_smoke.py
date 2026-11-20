@@ -87,6 +87,25 @@ async def pick(adb, target):
             await asyncio.sleep(.25)
 
 
+async def check_switcher_fallback(ws, adb, origin):
+    ready = "!!document.querySelector('.instance-drawer-trigger,.instance-picker') && !document.querySelector('.gload,.auth-page')"
+    viewport = "Math.round(visualViewport.height * visualViewport.scale)"
+    await wait_for(ws, ready)
+    height = await evaluate(ws, viewport)
+    # This small, same-origin document has no Web picker or bridge.
+    await evaluate(ws, "location.assign('/focus-connect.txt')")
+    await wait_for(ws, "location.pathname === '/focus-connect.txt' && document.readyState === 'complete'")
+    assert await evaluate(ws, viewport) == height, "A native header occupied the initial viewport"
+    await wait_for(ws, viewport + " < " + str(height))
+    await pick(adb, "切换实例")
+    # Keep the drawer open while a new Focus document claims the picker.
+    await evaluate(ws, "location.assign('/?focusApp=1')")
+    await wait_for(ws, "location.pathname === '/' && " + ready)
+    await pick(adb, origin)
+    assert await evaluate(ws, viewport) == height, "The native picker remained above the Focus page"
+    print("A bridge-less page opened at full height, then offered the drawer. Focus recovered the full viewport.", flush=True)
+
+
 async def prepare(ws, origin, thread, draft, reading):
     previous = await evaluate(ws, "performance.timeOrigin")
     await evaluate(ws, "location.assign(" + json.dumps(origin + "/?focusApp=1&thread=" + thread) + ")")
@@ -145,6 +164,8 @@ async def smoke(args):
     draft_a, draft_b = ("tab-A-" + uuid4().hex, "tab-B-" + uuid4().hex)
     launch(adb)
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+        async with tab(session, adb, a) as wa:
+            await check_switcher_fallback(wa, adb, a)
         async with tab(session, adb, a) as wa, network_trace(session, adb, a) as events_a:
             start_a = await prepare(wa, a, "thread-1", draft_a, True)
             await observed(events_a, "hello")
