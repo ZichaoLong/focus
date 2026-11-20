@@ -322,12 +322,12 @@ export function createFocusTransportSession(
   }
 
   function runScheduledTask(task: () => Promise<void>): void {
-    if (mutableSnapshot.value.disposed) return;
+    if (suspended || mutableSnapshot.value.disposed) return;
     void task().catch(callbacks.onScheduledTaskError);
   }
 
   function scheduleProjectionRefresh(): void {
-    if (mutableSnapshot.value.disposed) return;
+    if (suspended || mutableSnapshot.value.disposed) return;
     if (projectionRefreshTimer !== null) clearTimeout(projectionRefreshTimer);
     projectionRefreshTimer = setTimeout(() => {
       projectionRefreshTimer = null;
@@ -336,7 +336,7 @@ export function createFocusTransportSession(
   }
 
   function scheduleThreadListRefresh(): void {
-    if (mutableSnapshot.value.disposed) return;
+    if (suspended || mutableSnapshot.value.disposed) return;
     if (threadListRefreshTimer !== null) clearTimeout(threadListRefreshTimer);
     threadListRefreshTimer = setTimeout(() => {
       threadListRefreshTimer = null;
@@ -345,7 +345,7 @@ export function createFocusTransportSession(
   }
 
   function requestProjectionReload(): void {
-    if (mutableSnapshot.value.disposed) return;
+    if (suspended || mutableSnapshot.value.disposed) return;
     // A composite reload subsumes queued lightweight reads. Leaving either
     // timer armed would let older work advance request generations after the
     // authoritative reload has already started.
@@ -360,7 +360,7 @@ export function createFocusTransportSession(
   function scheduleProjectionReloadRetry(): void {
     if (
       projectionReloadRetryTimer !== null
-      || mutableSnapshot.value.disposed
+      || suspended || mutableSnapshot.value.disposed
       || !callbacks.mayRetryProjectionReload()
     ) return;
     const delay = Math.min(
@@ -371,7 +371,7 @@ export function createFocusTransportSession(
     projectionReloadRetryTimer = setTimeout(() => {
       projectionReloadRetryTimer = null;
       updateSnapshot({ projectionReloadRetryScheduled: false });
-      if (mutableSnapshot.value.disposed || !callbacks.mayRetryProjectionReload()) return;
+      if (suspended || mutableSnapshot.value.disposed || !callbacks.mayRetryProjectionReload()) return;
       requestProjectionReload();
     }, delay);
     updateSnapshot({ projectionReloadRetryScheduled: true });

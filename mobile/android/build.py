@@ -1,16 +1,35 @@
 #!/usr/bin/env python3
-"""Build the dependency-free Java WebView shell with the official Android SDK."""
+"""Build the Java WebView shell with the Android SDK and pinned AndroidX WebKit."""
 
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import zipfile
+from urllib.request import urlopen
 from xml.etree import ElementTree as xml
 
 ROOT = Path(__file__).resolve().parent
+WEBKIT = "https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.12.1/webkit-1.12.1.aar"
+WEBKIT_SHA256 = "18a0a51ad129e0c8563f031d46c8a7e61169f56ae84e562a0d75686941262111"
+
+
+def webkit_dependency(path):
+    if path.is_file():
+        data = path.read_bytes()
+    else:
+        with urlopen(WEBKIT, timeout=60) as response:
+            data = response.read()
+    if hashlib.sha256(data).hexdigest() != WEBKIT_SHA256:
+        raise ValueError("AndroidX WebKit 1.12.1 checksum mismatch: " + str(path))
+    if not path.exists():
+        with tempfile.NamedTemporaryFile(dir=path.parent, delete=False) as cache:
+            cache.write(data)
+        Path(cache.name).replace(path)
+    return zipfile.ZipFile(path)
 
 
 def main():
@@ -18,9 +37,12 @@ def main():
     parser.add_argument("--sdk", type=Path, default=os.getenv("ANDROID_HOME") or os.getenv("ANDROID_SDK_ROOT"))
     parser.add_argument("--unsigned", action="store_true", help="produce a zipaligned APK for release signing")
     parser.add_argument("--debug-ca", type=Path, help="extra PEM CA for an isolated development test APK only")
+    parser.add_argument("--webkit-aar", type=Path, help="offline copy of the official AndroidX WebKit 1.12.1 AAR")
     args = parser.parse_args()
     if not args.sdk:
         parser.error("set ANDROID_HOME or pass --sdk")
+    if args.webkit_aar and not args.webkit_aar.is_file():
+        parser.error("--webkit-aar must name an existing offline AAR")
     if args.debug_ca and args.unsigned:
         parser.error("test trust anchors are supported only for debug builds")
     tools = args.sdk.resolve() / "build-tools" / "35.0.0"
@@ -44,9 +66,14 @@ def main():
             document.getroot().find("application").set("{http://schemas.android.com/apk/res/android}debuggable", "true")
             # A distinct package keeps synthetic test data and trust out of the normal installation.
             document.getroot().set("package", "org.focus.mobile.testca")
-            for activity in document.getroot().findall("application/activity"):
+            for activity in document.getroot().find("application"):
+                if activity.tag not in ("activity", "service"):
+                    continue
                 key = "{http://schemas.android.com/apk/res/android}name"
                 activity.set(key, "org.focus.mobile" + activity.get(key))
+                affinity = "{http://schemas.android.com/apk/res/android}taskAffinity"
+                if activity.get(affinity):
+                    activity.set(affinity, activity.get(affinity).replace("org.focus.mobile.", "org.focus.mobile.testca."))
             manifest = work / "AndroidManifest.xml"
             document.write(manifest, encoding="utf-8")
             (res / "raw").mkdir()
@@ -60,16 +87,24 @@ def main():
         run(tools / ("aapt2" + suffix), "link", "-o", apk, "--manifest", manifest, "-I", platform, "-R", work / "resources.zip")
         classes = work / "classes"
         classes.mkdir()
+        with webkit_dependency(args.webkit_aar or build / "webkit-1.12.1.aar") as dependency:
+            webkit = Path(dependency.extract("classes.jar", work / "webkit"))
+            keep = Path(dependency.extract("proguard.txt", work / "webkit"))
+            license_text = dependency.read("META-INF/androidx/webkit/webkit/LICENSE.txt")
         run("javac", "-encoding", "UTF-8", "-source", "8", "-target", "8", "-bootclasspath",
             os.pathsep.join(map(str, (platform, tools / "core-lambda-stubs.jar"))),
+            "-classpath", webkit,
             "-d", classes, *sorted((ROOT / "src").rglob("*.java")))
         jar = work / "classes.jar"
         with zipfile.ZipFile(jar, "w") as archive:
             for cls in classes.rglob("*.class"):
                 archive.write(cls, cls.relative_to(classes))
-        run(tools / ("d8" + batch), "--min-api", "28", "--lib", platform, "--output", work, jar)
+        run("java", "-cp", tools / "lib/d8.jar", "com.android.tools.r8.R8", "--release",
+            "--min-api", "28", "--lib", platform, "--pg-conf", keep,
+            "--pg-conf", ROOT / "keep.pro", "--output", work, jar, webkit)
         with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as archive:
             archive.write(work / "classes.dex", "classes.dex")
+            archive.writestr("META-INF/androidx/webkit/LICENSE.txt", license_text)
         result = build / (name + ".apk")
         aligned = work / "aligned.apk"
         run(tools / ("zipalign" + suffix), "-p", "-f", "4", apk, aligned)

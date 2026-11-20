@@ -4,7 +4,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 ## Entry and authentication
 
-An entry stores its name, origin, random instance ID and optional web-login mode. Only the selected business page runs.
+An entry stores its name, origin, random instance ID and optional web-login mode. Only the selected instance maintains its business subscription.
 Remote entries require platform-validated TLS. Local Focus authorization also accepts HTTP on phone loopback (`localhost`, `127.0.0.1`, `[::1]`). Basic credentials require HTTPS. Native Basic authentication uses a dedicated script-disabled top-level GET of
 `/focus-connect.txt`. Subresources and redirects cannot solicit stored credentials. The exact origin and Basic challenge realm
 must match. The engine owns subsequent HTTP and WebSocket Upgrade authentication within that protection space.
@@ -21,15 +21,17 @@ protocol version and feature list and dispatches `focus-host-ready`. Unknown ver
 - `wake` accepts `focus-host-resume` and `focus-host-pause`. Foreground uses the transport wake check. Background flushes text and reading coordinates.
 - `thread` accepts the last thread hint from the root document using the ticket-bound `thread` operation (up to 256 characters, empty for a workspace). The shell encodes it into the next root URL. Web must confirm that target through existing server navigation.
 - `resume` identifies a single recoverable window per instance. Web persists client hints, GET locators, existing writer-bound recovery records,
-  last thread and text drafts. Each new document registers. Unsent text and verifiable reading anchors use the instance and confirmed thread or workspace.
+  the last confirmed thread, text drafts and the thread explicitly selected for reading mode. Each new document registers. Unsent text and verifiable reading anchors use the instance and confirmed thread or workspace.
   Attachments, approvals and send scopes still require the acknowledged writer.
+- `tabs` can include a display `name`. The ticket-bound `instances` operation opens the picker. `chrome(web|native)` signals whether Web exposes the picker. Loading, access errors and older versions retain the native entry.
+  On switch the host calls `__focusSetTabActive(false)` on the top document. Web checkpoints drafts and reading position, closes the socket, and pauses polling and retries. A `true` acknowledgement allows one document for each of the two most recent instances to stay in memory. Selection calls `__focusSetTabActive(true)` and uses the existing handshake and server reread. Missing acknowledgement, memory pressure and explicit reconnect allow a cold rebuild.
 - `save` uses `prompt("focus/1/<ticket>/<op>", value)` to await a native picker or write.
   `choose` accepts a filename. The user chooses the destination. `write` acknowledges Base64 chunks of at most 24 KiB of bytes.
   `finish` copies the staged file to the selected destination. `abort` releases staging. Success returns `ok`.
   Cancellation or failure stops the write. Existing authenticated Web reads supply the contents. HTML uploads use the system picker and the existing Web uploader.
 - `print` accepts a ticket-bound print request with a job name up to 255 characters. Web lays out the prepared, complete Q&A preview. The shell passes the current WebView to the system print service. The content stays in document memory.
 
-Navigation, instance switching and teardown revoke the ticket. External documents and sandboxed HTML previews receive no bridge.
+Top-level navigation and teardown revoke the ticket. Parking suspends its use until the same document is selected again. External documents and sandboxed HTML previews receive no bridge.
 The protocol accepts no arbitrary URLs, paths, scripts or business retries. Push registration, notification permissions and native updates
 require separate capabilities.
 

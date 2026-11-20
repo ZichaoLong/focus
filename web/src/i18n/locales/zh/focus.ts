@@ -1,4 +1,5 @@
 export default {
+  switchInstance: "切换实例",
   retentionTitle: "数据清理",
   retentionRecords: "Focus 记录保留期",
   retentionAttachments: "附件保留期",

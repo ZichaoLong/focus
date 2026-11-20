@@ -29,23 +29,29 @@ final class BasicVault {
     }
 
     static JSONObject read(Context ctx, String id, String origin, String realm) throws Exception {
-        AtomicFile file = record(ctx, id);
+        JSONObject entry = open(record(ctx, id), id);
+        return entry != null && origin.equals(entry.getString("origin")) && realm.equals(entry.getString("realm")) ? entry : null;
+    }
+
+    static JSONObject open(AtomicFile file, String binding) throws Exception {
         if (!file.getBaseFile().exists()) return null;
         JSONObject box = new JSONObject(new String(file.readFully(), StandardCharsets.UTF_8));
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Base64.decode(box.getString("iv"), 0)));
-        cipher.updateAAD(id.getBytes(StandardCharsets.UTF_8));
-        JSONObject entry = new JSONObject(new String(cipher.doFinal(Base64.decode(box.getString("data"), 0)), StandardCharsets.UTF_8));
-        return origin.equals(entry.getString("origin")) && realm.equals(entry.getString("realm")) ? entry : null;
+        cipher.updateAAD(binding.getBytes(StandardCharsets.UTF_8));
+        return new JSONObject(new String(cipher.doFinal(Base64.decode(box.getString("data"), 0)), StandardCharsets.UTF_8));
     }
 
     static void store(Context ctx, String id, JSONObject entry) throws Exception {
+        seal(record(ctx, id), id, entry);
+    }
+
+    static void seal(AtomicFile file, String binding, JSONObject entry) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.ENCRYPT_MODE, key());
-        cipher.updateAAD(id.getBytes(StandardCharsets.UTF_8));
+        cipher.updateAAD(binding.getBytes(StandardCharsets.UTF_8));
         JSONObject box = new JSONObject().put("iv", Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
             .put("data", Base64.encodeToString(cipher.doFinal(entry.toString().getBytes(StandardCharsets.UTF_8)), Base64.NO_WRAP));
-        AtomicFile file = record(ctx, id);
         FileOutputStream stream = file.startWrite();
         try {
             stream.write(box.toString().getBytes(StandardCharsets.UTF_8));

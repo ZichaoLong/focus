@@ -92,7 +92,7 @@ describe('Focus page-level reading mode surface', () => {
     const controls = source('../src/components/chat/ReadingModeControls.vue');
 
     expect(app).toMatch(/<ReadingModeControls\s+v-if="readingMode"/u);
-    expect(app).toContain('@exit="exitReadingMode"');
+    expect(app).toContain('@exit="chooseNormalMode"');
     expect(app).toContain('@switch-session="showNarrowSwitcher = true"');
     expect(app).toContain('@prompt-history="conversationPaneRef?.openPromptHistory()"');
     expect(controls).toContain('class="reading-mode-exit"');
@@ -133,7 +133,7 @@ describe('Focus page-level reading mode surface', () => {
     const exit = between(
       readingModeOwner,
       'function exitReadingMode(): void {',
-      '\n  }\n\n  watch(',
+      '\n  }\n\n  function chooseNormalMode',
     );
     expect(exit.indexOf('options.dismissSwitcher();')).toBeLessThan(
       exit.indexOf("presentationMode.value = 'normal';"),
@@ -181,7 +181,7 @@ describe('Focus page-level reading mode surface', () => {
       'async function openWorkspaceDraft(workspace: string)',
       '\n}\n\nasync function handleSubmit',
     );
-    expect(openDraft.indexOf('exitReadingMode();')).toBeLessThan(
+    expect(openDraft.indexOf('chooseNormalMode();')).toBeLessThan(
       openDraft.indexOf('await client.openWorkspaceDraft(workspace);'),
     );
 
@@ -319,7 +319,7 @@ describe('Focus page-level reading mode surface', () => {
 
     const readingModeOwner = source('../src/focus/focusReadingMode.ts');
     const enter = between(readingModeOwner, 'function enterReadingMode(): void {', '\n  }\n\n  function requestReadingMode');
-    const exit = between(readingModeOwner, 'function exitReadingMode(): void {', '\n  }\n\n  watch(');
+    const exit = between(readingModeOwner, 'function exitReadingMode(): void {', '\n  }\n\n  function chooseNormalMode');
     expect(readingModeOwner).toContain('.find((button) => button.offsetParent !== null)');
     expect(enter).not.toContain('focusComposer');
     expect(exit).not.toContain('focusComposer');

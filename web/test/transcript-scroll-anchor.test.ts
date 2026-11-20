@@ -23,7 +23,7 @@ describe('continuous transcript scroll anchors', () => {
       getBoundingClientRect: () => ({ top: 120 + inserted - pane.scrollTop, bottom: 152 + inserted - pane.scrollTop }) };
     const pane = { scrollTop: 100, getBoundingClientRect: () => ({ top: 0, bottom: 500 }),
       querySelectorAll: (selector: string) => selector.includes(',') ? [header, hiddenRow]
-        : selector.startsWith('.transcript-row') ? [hiddenRow] : [header] };
+        : selector.startsWith('.turn-anchor') ? [hiddenRow] : [header] };
     const element = pane as unknown as HTMLElement;
     const anchor = captureTranscriptScrollAnchor(element)!;
     expect(anchor).toEqual({ id: 'b', group: true, offset: 20, scrollTop: 100 });
@@ -49,7 +49,7 @@ describe('continuous transcript scroll anchors', () => {
       getBoundingClientRect: () => ({ top: 40 - pane.scrollTop, bottom: 72 - pane.scrollTop }) };
     const pane = { scrollTop: 150, getBoundingClientRect: () => ({ top: 0, bottom: 500 }),
       querySelectorAll: (selector: string) => selector.includes(',') ? [header, row]
-        : selector.startsWith('.transcript-row') ? [row] : grouped ? [header] : [] };
+        : selector.startsWith('.turn-anchor') ? [row] : grouped ? [header] : [] };
     const element = pane as unknown as HTMLElement;
     const anchor = captureTranscriptScrollAnchor(element)!;
     expect(anchor.id).toBe('b');

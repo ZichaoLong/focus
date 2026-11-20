@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.0.0" android:versionCode="1">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.1.0" android:versionCode="2">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -9,7 +9,15 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <activity android:name=".ClientActivity" android:process=":web" android:exported="false"
+        <activity android:name=".ClientActivity" android:taskAffinity="org.focus.mobile.tab1"
+            android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
             android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <activity android:name=".SecondClientActivity" android:taskAffinity="org.focus.mobile.tab2"
+            android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
+            android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <activity android:name=".LegacyClientActivity" android:process=":legacy" android:exported="false"
+            android:taskAffinity="org.focus.mobile.legacy" android:excludeFromRecents="true"
+            android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <service android:name=".ProfileExportService" android:process=":legacy" android:exported="false"/>
     </application>
 </manifest>

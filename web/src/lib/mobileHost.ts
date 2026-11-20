@@ -5,8 +5,13 @@ interface MobileOffer {
   instance: string;
   ticket: string;
   features: string[];
+  name?: string;
 }
-declare global { interface Window { __focusMobile?: MobileOffer; __focusCanRebuild?: () => boolean } }
+declare global { interface Window {
+  __focusMobile?: MobileOffer;
+  __focusCanRebuild?: () => boolean;
+  __focusSetTabActive?: (active: boolean) => boolean;
+} }
 
 let host: MobileOffer | undefined;
 const uuid = new RegExp('^[a-f0-9]{8}(-[a-f0-9]{4}){3}-[a-f0-9]{12}$', 'i');
@@ -32,11 +37,39 @@ export async function negotiateMobileHost(): Promise<void> {
     const ready = () => { if (accept()) finish(); };
     const timer = setTimeout(finish, 2500);
     window.addEventListener('focus-host-ready', ready);
+    // Ask the host to inspect the top document now, even when subresources
+    // delay its navigation-complete callback. This carries no authority.
+    console.debug('focus-host-request/1');
   });
 }
 
 export function hasMobileFeature(feature: string): boolean {
   return host?.features.includes(feature) === true;
+}
+
+export function mobileInstanceName(): string {
+  return typeof host?.name === 'string' ? host.name : '';
+}
+
+export function showMobileInstances(): void {
+  if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/instances', '');
+}
+
+export function showMobileWebChrome(available: boolean): void {
+  if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/chrome', available ? 'web' : 'native');
+}
+
+export function mobileReadingThread(): string {
+  try { return hasMobileFeature('resume') ? recoveryStorage().getItem('focus-web.reading-thread') ?? '' : ''; }
+  catch { return ''; }
+}
+
+export function rememberMobileReadingThread(thread: string): void {
+  if (!hasMobileFeature('resume')) return;
+  try {
+    if (thread) recoveryStorage().setItem('focus-web.reading-thread', thread);
+    else recoveryStorage().removeItem('focus-web.reading-thread');
+  } catch { /* Presentation persistence is optional. */ }
 }
 
 export function printMobileSummary(filename: string): boolean {

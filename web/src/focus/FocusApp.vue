@@ -45,6 +45,7 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
+import { hasMobileFeature, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
 import { createFocusViewport, focusViewportDiagnosticKey } from './focusViewport';
 import FocusThreadActions from './FocusThreadActions.vue';
 import FocusTransientNotice from './FocusTransientNotice.vue';
@@ -231,6 +232,7 @@ const {
   requestReadingMode,
   enterReadingMode,
   exitReadingMode,
+  chooseNormalMode,
 } = useFocusReadingMode({
   canEnter: canEnterReadingMode,
   documentAccessAvailable: currentDocumentAccessAvailable,
@@ -238,6 +240,7 @@ const {
   meta: client.meta,
   conversationLoading: client.conversationLoading,
   turns: client.turns,
+  confirmedThread: computed(() => client.scopeReady.value ? client.activeThreadId.value : ''),
   dismissSwitcher: () => { showNarrowSwitcher.value = false; },
   dismissChrome: () => {
     showNarrowSwitcher.value = false;
@@ -344,7 +347,7 @@ const detailPayloadAvailable = computed(() => {
 });
 
 async function openWorkspaceDraft(workspace: string) {
-  exitReadingMode();
+  chooseNormalMode();
   const outcome = await client.openWorkspaceDraft(workspace);
   if (
     outcome.committed
@@ -812,8 +815,19 @@ provide(focusViewportDiagnosticKey, computed(() => viewport.value?.diagnostics ?
 onMounted(() => {
   loadSidebarCollapsed();
   if (focusShell.value) viewport.value = createFocusViewport(focusShell.value, readingMode);
+  if (mobileTabs) window.addEventListener('focus-host-ready', syncHostChrome);
   void client.load();
 });
+
+const mobileTabs = hasMobileFeature('tabs');
+const instanceLabel = mobileInstanceName();
+function openInstancePicker(): void {
+  showNarrowSwitcher.value = false;
+  showMobileInstances();
+}
+const hasWebInstancePicker = computed(() => client.initialized.value && !!client.meta.value && currentDocumentAccessAvailable.value);
+function syncHostChrome(): void { showMobileWebChrome(hasWebInstancePicker.value); }
+watch(hasWebInstancePicker, syncHostChrome, { flush: 'post' });
 
 watch(client.activeThreadId, (threadId) => {
   closeDetail();
@@ -836,6 +850,7 @@ watch(detailOpen, (open) => {
 }, { flush: 'sync' });
 
 onUnmounted(() => {
+  window.removeEventListener('focus-host-ready', syncHostChrome);
   historyEditConfirmation?.abort();
   client.dispose();
   viewport.value?.dispose();
@@ -915,6 +930,9 @@ onUnmounted(() => {
           @load-all-sessions="client.loadAllSessionsForSearch()"
         >
           <template #directory-controls>
+            <button v-if="mobileTabs" class="instance-picker" type="button" @click="openInstancePicker">
+              {{ t('focus.switchInstance') }}<template v-if="instanceLabel"> · {{ instanceLabel }}</template>
+            </button>
             <SegmentedControl
               class="directory-scope"
               :title="t('focus.openThreadsHint')"
@@ -1005,7 +1023,7 @@ onUnmounted(() => {
           :export-disabled="client.conversationLoading.value || client.summaryExporting.value || client.threadDataExporting.value"
           :runtime-details-tone="runtimeDetailsPresentation.tone"
           :runtime-details-open="detailTarget === 'runtimeDetails'"
-          @exit="exitReadingMode"
+          @exit="chooseNormalMode"
           @switch-session="showNarrowSwitcher = true"
           @prompt-history="conversationPaneRef?.openPromptHistory()"
           @export-session="threadActions?.exportThreadSummary($event)"
@@ -1139,7 +1157,7 @@ onUnmounted(() => {
           @review-session="showReviewDialog = true"
           @goal-session="showGoalDialog = true"
           @enter-reading-mode="enterReadingMode"
-          @exit-reading-mode="exitReadingMode"
+          @exit-reading-mode="chooseNormalMode"
           @mobile-editor-expanded-change="mobileEditorExpanded = $event"
         />
       </main>
@@ -1318,6 +1336,9 @@ onUnmounted(() => {
         @fork="client.forkThread($event)"
       >
         <template #controls>
+          <button v-if="mobileTabs" class="instance-picker" type="button" @click="openInstancePicker">
+            {{ t('focus.switchInstance') }}<template v-if="instanceLabel"> · {{ instanceLabel }}</template>
+          </button>
           <SegmentedControl
             class="directory-scope narrow-scope"
             :title="t('focus.openThreadsHint')"
@@ -1359,6 +1380,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.instance-picker {
+  width: 100%;
+  padding: 8px 12px;
+  color: var(--color-text);
+  text-align: start;
+  font: inherit;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .focus-shell {
   position: fixed;
   top: var(--app-top, 0px);

@@ -982,6 +982,8 @@ continues the existing 1/2/4/8/10-second backoff even if fetch ignores cancellat
 retries. Replacement, suspend and dispose cancel old probes/deadlines; late responses/events from old generations cannot
 change the current connection or authentication state. Dispose removes the recovery listeners.
 
+A negotiated mobile tab switch suspends the parked socket, wake retries and status polling. Selection reconnects and rereads bounded state after server `hello`. Parking grants no new writer authority and never replays an uncertain action.
+
 Connection recovery keeps the document and rereads bounded state. A negotiated native foreground signal uses the same
 wake check. A missing registration returns `document_unregistered`. A replaced capability in the same session returns
 `document_replaced`. Both and Focus `401 unauthorized` stop the old transport. A previously initialized visible page may

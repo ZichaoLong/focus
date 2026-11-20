@@ -46,6 +46,53 @@ describe('negotiated mobile host', () => {
     expect(host.recoveryStorage().getItem('locator')).toBeNull();
     expect(host.presentationScope('next:generation:5:thread:T')).not.toBe(scope);
   });
+  it('restores the reading choice only for the confirmed instance and readable thread', async () => {
+    const { ref, effectScope, nextTick } = await import('vue');
+    setup();
+    let host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    host.rememberMobileReadingThread('thread-A');
+    vi.resetModules();
+    setup(ticket);
+    host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    expect(host.mobileReadingThread()).toBe('');
+    vi.resetModules();
+    setup();
+    host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const { useFocusReadingMode } = await import('../src/focus/focusReadingMode');
+    const scope = effectScope();
+    const thread = ref(''), readable = ref(false);
+    const mode = scope.run(() => useFocusReadingMode({
+      confirmedThread: thread, canEnter: readable, documentAccessAvailable: ref(true), initialized: ref(true),
+      meta: ref({}), conversationLoading: ref(false), turns: ref([{}]), dismissSwitcher: vi.fn(), dismissChrome: vi.fn(),
+    }))!;
+    thread.value = 'thread-A';
+    await nextTick();
+    expect(mode.readingMode.value).toBe(false);
+    readable.value = true;
+    await nextTick();
+    expect(mode.readingMode.value).toBe(true);
+    mode.chooseNormalMode();
+    expect(host.mobileReadingThread()).toBe('');
+    await nextTick();
+    expect(mode.readingMode.value).toBe(false);
+    scope.stop();
+  });
+  it('keeps browser mode local and offers the picker only to a host with tabs', async () => {
+    const win = setup();
+    const host = await import('../src/lib/mobileHost');
+    host.rememberMobileReadingThread('T');
+    expect(host.mobileReadingThread()).toBe('');
+    await host.negotiateMobileHost();
+    host.showMobileInstances();
+    expect(win.prompt).not.toHaveBeenCalled();
+    win.__focusMobile.features.push('tabs');
+    host.showMobileInstances();
+    host.showMobileWebChrome(true);
+    expect(win.prompt.mock.calls).toEqual([['focus/1/' + ticket + '/instances', ''], ['focus/1/' + ticket + '/chrome', 'web']]);
+  });
   it.each([['127.0.0.1', true], ['localhost', true], ['[::1]', true], ['192.168.1.1', false],
     ['localhost.example', false]] as const)('negotiates cleartext only on an exact loopback host: %s', async (name, trusted) => {
     setup();

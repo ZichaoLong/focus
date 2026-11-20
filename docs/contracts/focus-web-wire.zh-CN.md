@@ -636,6 +636,8 @@ required field 与 TypeScript interface 一致、每个 record/enum 被 producti
 必须继续现有的 1/2/4/8/10 秒重连退避。同步建连失败也进入退避。新连接、suspend 和 dispose 取消旧
 检查与期限；旧 generation 的迟到 response/event 不得改变新连接或认证状态。dispose 移除恢复监听。
 
+协商了移动实例切换的页面在切走时暂停 socket、唤醒重试和状态轮询；回到该页时重连，在服务端 `hello` 后重读有界状态。暂存页面不取得新的 writer 权限，也不重发结果未知的操作。
+
 连接恢复沿用同一 document 并重读有界状态。原生壳协商的前台信号也进入同一唤醒检查。
 丢失注册的 document 返回 `document_unregistered`，同一 session 内已被替换的 capability 返回
 `document_replaced`。两者及 Focus 的 `401 unauthorized` 都停止旧连接。在曾成功取得 meta 的

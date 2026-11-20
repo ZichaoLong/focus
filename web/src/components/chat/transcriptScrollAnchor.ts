@@ -28,7 +28,7 @@ export function canScrollVertically(element: HTMLElement, direction: 'up' | 'dow
 /** Anchor the first visible source row, including a partially visible tall row. */
 export function captureTranscriptScrollAnchor(pane: HTMLElement): TranscriptScrollAnchor | null {
   const viewport = pane.getBoundingClientRect();
-  for (const row of pane.querySelectorAll<HTMLElement>('.transcript-row[data-turn-id], [data-transcript-tool-group]')) {
+  for (const row of pane.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id], [data-transcript-tool-group]')) {
     const box = row.getBoundingClientRect();
     if (box.bottom <= box.top) continue;
     if (box.bottom > viewport.top && box.top < viewport.bottom) {
@@ -50,7 +50,7 @@ export function captureTranscriptScrollAnchor(pane: HTMLElement): TranscriptScro
 
 export function restoreTranscriptScrollAnchor(pane: HTMLElement, anchor: TranscriptScrollAnchor,
   options: { preserveScrollMotion?: boolean } = {}): boolean {
-  let row = [...pane.querySelectorAll<HTMLElement>('.transcript-row[data-turn-id]')]
+  let row = [...pane.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]')]
     .find(element => element.dataset.turnId === anchor.id);
   const box = row?.getBoundingClientRect();
   // Group headers may move when a previous page joins the run. Resolve by a

@@ -451,6 +451,52 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe('negotiated mobile tab lifecycle', () => {
+  it('parks retries, polls and transport until selection, then rereads after hello', async () => {
+    vi.useFakeTimers();
+    stubBrowser();
+    const url = new URL('https://focus.test/?focusApp=1');
+    const win = Object.assign(new EventTarget(), { location: url, top: {}, prompt: vi.fn(), __focusMobile: {
+      version: 1, instance: '10000000-0000-4000-8000-000000000000', ticket: '20000000-0000-4000-8000-000000000000',
+      features: ['tabs', 'resume'],
+    } });
+    win.top = win;
+    vi.stubGlobal('window', win); vi.stubGlobal('location', url);
+    vi.resetModules();
+    const host = await import('../../../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const { useFocusWebClient: createClient } = await import('../../../src/focus/useFocusWebClient');
+    const fake = testApi();
+    const client = createClient(fake.api);
+    try {
+      expect(window.__focusSetTabActive?.(false)).toBe(false);
+      await client.load();
+      const hello = { type: 'hello' as const, runtime_epoch: EPOCH, revision: client.revision.value };
+      const old = fake.handlers;
+      old.open?.(); old.event(hello);
+      await client.checkUpdate('main', '');
+      expect(window.__focusSetTabActive?.(false)).toBe(true);
+      const polls = vi.mocked(fake.api.updateStatus).mock.calls.length;
+      old.close?.(); old.event(hello);
+      window.dispatchEvent(new Event('focus-host-resume'));
+      await vi.advanceTimersByTimeAsync(90000);
+      expect(fake.api.updateStatus).toHaveBeenCalledTimes(polls);
+      expect(fake.api.connectEvents).toHaveBeenCalledTimes(1);
+      expect(window.__focusSetTabActive?.(true)).toBe(true);
+      expect(window.__focusSetTabActive?.(true)).toBe(true);
+      expect(fake.api.connectEvents).toHaveBeenCalledTimes(2);
+      const reads = vi.mocked(fake.api.meta).mock.calls.length;
+      fake.handlers.open?.(); fake.handlers.event(hello);
+      await vi.advanceTimersByTimeAsync(20);
+      expect(vi.mocked(fake.api.meta).mock.calls.length).toBeGreaterThan(reads);
+      expect(fake.api.initialize).toHaveBeenCalledTimes(1);
+      expect(fake.api.submitPrompt).not.toHaveBeenCalled();
+      expect(fake.api.checkUpdate).toHaveBeenCalledTimes(1);
+    } finally { client.dispose(); vi.useRealTimers(); }
+    expect(window.__focusSetTabActive).toBeUndefined();
+  });
+});
+
 describe('useFocusWebClient instance open threads', () => {
   it('closes across browsers and drops a late snapshot without replaying open', async () => {
     stubBrowser();

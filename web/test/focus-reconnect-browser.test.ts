@@ -32,9 +32,8 @@ it.each([
   const sockets: WebSocketRoute[] = [], errors: string[] = [], posts: string[] = [], targets: string[] = [];
   let broken = false, revision = 1, registrations = 0;
   const scrollDuringReload = mode === 'scroll-during-reload';
-  let releaseRecovery!: () => void, recoveryRequested!: () => void, heldRecovery = false;
+  let releaseRecovery!: () => void, heldRecovery = false;
   const recoveryGate = new Promise<void>(resolve => { releaseRecovery = resolve; });
-  const recoveryReadStarted = new Promise<void>(resolve => { recoveryRequested = resolve; });
   const profile = { selected_thread_id: 'thread-1', working_dir: '/work', scope_generation: 1 };
   const source = { ...thread(), name: 'Reading recovery', title: 'Reading recovery', source: 'cli', ephemeral: false,
     session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
@@ -60,7 +59,6 @@ it.each([
       if (item) targets.push(item);
       if (scrollDuringReload && revision > 1 && !item && query.get('view') !== 'prompts' && !heldRecovery) {
         heldRecovery = true;
-        recoveryRequested();
         await recoveryGate;
       }
       const start = item ? Math.max(0, rows.findIndex(row => row.itemId === item) - 2)
@@ -79,11 +77,14 @@ it.each([
   });
   try {
     await page.goto(url);
-    // fill() can write beneath the loading overlay before the initial thread
-    // selection has settled; real users cannot edit that covered input yet.
+    // An absent pre-mount overlay also matches "hidden". Start editing only
+    // after the selected transcript exists and the input receives real clicks.
+    await page.locator('[data-turn-id="turn-1:item:item-20:0"]').waitFor({ state: 'attached' });
     await page.locator('.gload').waitFor({ state: 'hidden' });
     const origin = await page.evaluate(() => performance.timeOrigin);
-    await page.locator('textarea:visible').first().fill('Keep my unsent draft');
+    const editor = page.locator('#composer-input:visible');
+    await editor.click();
+    await editor.fill('Keep my unsent draft');
     const readingMode = !scrollDuringReload && mode !== 'cold-document';
     if (readingMode) await page.locator('[data-reading-mode-toggle][aria-label="Enter reading mode"]:visible').click();
     const exit = page.getByRole('button', { name: 'Exit reading mode', exact: true });
@@ -92,7 +93,11 @@ it.each([
     let anchor = page.locator('[data-turn-id="turn-1:item:item-20:0"]');
     await anchor.waitFor({ state: 'attached' });
     await pane.hover();
-    if (!scrollDuringReload) {
+    if (scrollDuringReload) {
+      await page.mouse.wheel(0, await pane.evaluate(el => el.scrollHeight));
+      await expect.poll(() => pane.evaluate(el => el.classList.contains('is-following')
+        && el.scrollHeight - el.scrollTop - el.clientHeight < 3)).toBe(true);
+    } else {
       const delta = await anchor.evaluate(el => el.getBoundingClientRect().top - document.querySelector('.panes')!.getBoundingClientRect().top - 8);
       await page.mouse.wheel(0, delta);
       await expect.poll(async () => Math.abs(await anchor.evaluate(el => el.getBoundingClientRect().top - document.querySelector('.panes')!.getBoundingClientRect().top - 8))).toBeLessThan(2);
@@ -128,7 +133,7 @@ it.each([
     } else {
       await expect.poll(() => sockets.length, { timeout: 15_000 }).toBe(2);
       if (scrollDuringReload) {
-        await recoveryReadStarted;
+        await expect.poll(() => heldRecovery, { timeout: 10_000 }).toBe(true);
         await page.mouse.wheel(0, -60);
         await expect.poll(() => pane.evaluate(el => el.classList.contains('is-following'))).toBe(false);
         const id = await pane.evaluate(el => {

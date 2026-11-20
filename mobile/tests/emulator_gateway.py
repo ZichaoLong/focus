@@ -1,6 +1,6 @@
 """Isolated Basic, trusted-proxy and local Focus gateways for an Android emulator."""
 import argparse
-from dataclasses import fields, MISSING
+from dataclasses import fields, MISSING, replace
 import hashlib
 import json
 import os
@@ -46,13 +46,20 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic):
         runtime.setUp()
         runtimes.append(runtime)
         runtime.fake.history_mode = "legacy"
-        runtime.fake.turns = [{"id": "mobile-read", "status": "completed", "items": [
-            {"id": "question", "type": "userMessage", "content": [{"type": "text", "text": "Focus mobile export check"}]},
-            {"id": "sample", "type": "agentMessage", "phase": "final_answer", "text": f"[Download sample]({sample})"}
-        ]}]
+        runtime.fake.extra_summaries.append(replace(runtime.fake.summary(), thread_id="thread-2", name="Second conversation"))
+        runtime.fake.turns = [
+            {"id": f"mobile-{n}", "status": "completed", "items": [
+                {"id": f"q-{n}", "type": "userMessage", "content": [
+                    {"type": "text", "text": f"Focus mobile export check {n}"}]},
+                {"id": f"a-{n}", "type": "agentMessage", "phase": "final_answer",
+                 "text": f"Reading position {n}. " + "A paragraph in the mobile test conversation. " * 14},
+            ]} for n in range(12)
+        ]
+        runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Download sample]({sample})"
         controller = runtime.controller
         retention = DataRetentionService(DataRetentionStore(runtime.workspace.parent, config_dir=runtime.workspace.parent / "config"), {})
-        controller.run_prepared_thread_read(controller.prepare_read_thread("tab-1", "thread-1", open_in_browser=True))
+        for tid in ("thread-1", "thread-2"):
+            controller.run_prepared_thread_read(controller.prepare_read_thread("tab-1", tid, open_in_browser=True))
         ports = {field.name: getattr(controller, field.name) for field in fields(WebGatewayPorts)
                  if field.default is MISSING and hasattr(controller, field.name)}
         ports.update(data_retention_read=retention.policy, data_retention_update=retention.update,

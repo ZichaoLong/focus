@@ -10,14 +10,15 @@ import android.text.InputType;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
+import androidx.webkit.WebViewCompat;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.util.*;
 import org.json.*;
 
-public final class ClientActivity extends Activity {
+public class ClientActivity extends Activity {
     private static final String PROBE = "/focus-connect.txt";
-    private static String profile;
+    private final boolean legacy = this instanceof LegacyClientActivity;
     private String id, origin, name, link, ticket = "";
     private boolean sso, probe, attempted, rejected, foreground, retryNeeded, remember, manual;
     private int backoff, generation, renderFailures;
@@ -27,6 +28,8 @@ public final class ClientActivity extends Activity {
     private WebView web;
     private FrameLayout frame;
     private LinearLayout notice;
+    private Button switcher;
+    private boolean selected = true, switching;
     private FileExchange files;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable retry = () -> { if (foreground && retryNeeded) openProbe(false); };
@@ -38,21 +41,47 @@ public final class ClientActivity extends Activity {
             id = UUID.fromString(site.getString("id")).toString(); origin = Site.entry(site.getString("origin"));
             name = site.getString("name"); sso = site.optBoolean("sso");
             link = getIntent().getStringExtra("link"); getIntent().removeExtra("link");
-            if (profile == null) { WebView.setDataDirectorySuffix(id); profile = id; }
-            if (!profile.equals(id)) throw new IllegalStateException("Profile changed");
+            if (!id.equals(getSharedPreferences("instances", MODE_PRIVATE).getString("active", ""))) { finish(); return; }
+            if (legacy) WebView.setDataDirectorySuffix(id);
+            else PageSlots.attached(this);
         } catch (Exception e) { finish(); return; }
         presentation = getSharedPreferences("page-" + id, MODE_PRIVATE);
         files = new FileExchange(this);
         LinearLayout layout = new LinearLayout(this); layout.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout header = new LinearLayout(this); layout.addView(header);
-        Views.button(this, header, "‹ 实例", this::finish);
-        TextView label = new TextView(this); label.setText(name); label.setGravity(Gravity.CENTER_VERTICAL);
-        header.addView(label, new LinearLayout.LayoutParams(0, -1, 1));
-        Views.button(this, header, "重新连接", () -> openProbe(false));
+        switcher = Views.button(this, layout, name + " ▾", this::pickInstance);
+        switcher.setContentDescription("切换实例");
         notice = Views.column(this); layout.addView(notice);
         frame = new FrameLayout(this); layout.addView(frame, new LinearLayout.LayoutParams(-1, 0, 1));
         Views.install(this, layout);
+        if (!legacy && !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) {
+            if (ProfileTransfer.snapshot(this, id).getBaseFile().exists()) { importProfile(); return; }
+            getSharedPreferences("instances", MODE_PRIVATE).edit().putBoolean("named-" + id, true).commit();
+        }
         openProbe(false);
+    }
+
+    private WebView newProfileView() {
+        WebView view = new WebView(this);
+        if (!legacy) WebViewCompat.setProfile(view, id);
+        return view;
+    }
+
+    private void importProfile() {
+        retireView();
+        int epoch = generation;
+        web = newProfileView();
+        banner("正在恢复此实例原有的网页数据…", null, null);
+        ProfileTransfer.restore(web, this, id, origin, ok -> {
+            if (epoch != generation) return;
+            if (!ok) {
+                Views.message(this, "此网页配置暂时无法迁移，继续使用原有数据。");
+                PageSlots.continueInLegacy(this, id, getIntent().getStringExtra("site"), link);
+                return;
+            }
+            getSharedPreferences("instances", MODE_PRIVATE).edit().putBoolean("named-" + id, true).commit();
+            ProfileTransfer.snapshot(this, id).delete();
+            openProbe(false);
+        });
     }
 
     private void banner(String message, String action, Runnable click) {
@@ -76,6 +105,7 @@ public final class ClientActivity extends Activity {
     }
 
     private void openProbe(boolean editPassword) {
+        if (!selected) return;
         main.removeCallbacks(retry); retireView();
         retryNeeded = false; probe = true; attempted = false; rejected = false; manual = editPassword;
         supplied = null;
@@ -86,7 +116,7 @@ public final class ClientActivity extends Activity {
     }
 
     private void showPage() {
-        if (!probe || rejected || retryNeeded) return;
+        if (!selected || !probe || rejected || retryNeeded) return;
         if (supplied != null) {
             try { if (remember) BasicVault.store(this, id, supplied); else BasicVault.erase(this, id); }
             catch (Exception e) { Views.message(this, "安全存储不可用，本次凭据仅在内存中使用"); }
@@ -103,7 +133,7 @@ public final class ClientActivity extends Activity {
 
     private void createView(boolean page) {
         final int epoch = generation;
-        WebView view = new WebView(this); web = view; frame.addView(view);
+        WebView view = newProfileView(); web = view; frame.addView(view);
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(page); settings.setDomStorageEnabled(page); settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false); settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -137,6 +167,8 @@ public final class ClientActivity extends Activity {
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
                 ticket = ""; files.cancel();
+                switcher.setVisibility(View.VISIBLE);
+                if (!selected) main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
             @Override public void onPageCommitVisible(WebView v, String url) {
                 if (epoch == generation && page && Site.root(url, origin)) offer(v);
@@ -146,11 +178,11 @@ public final class ClientActivity extends Activity {
                 if (!page && url.equals(origin + PROBE) && !checkingChallenge) {
                     main.post(() -> { if (epoch == generation && !checkingChallenge) showPage(); });
                 } else if (page && Site.root(url, origin)) {
-                    offer(v); CookieManager.getInstance().flush();
+                    offer(v); (legacy ? CookieManager.getInstance() : WebViewCompat.getProfile(v).getCookieManager()).flush();
                 }
             }
             @Override public void onReceivedHttpAuthRequest(WebView v, HttpAuthHandler handler, String host, String realm) {
-                if (epoch != generation || !origin.startsWith("https://") || !URI.create(origin).getHost().equalsIgnoreCase(host)) { handler.cancel(); return; }
+                if (!selected || epoch != generation || !origin.startsWith("https://") || !URI.create(origin).getHost().equalsIgnoreCase(host)) { handler.cancel(); return; }
                 if (page) {
                     handler.cancel();
                     if (Site.root(v.getUrl(), origin)) reauthenticate(v, false);
@@ -178,6 +210,7 @@ public final class ClientActivity extends Activity {
             @Override public boolean onRenderProcessGone(WebView v, RenderProcessGoneDetail detail) {
                 if (epoch == generation) {
                     retireView();
+                    if (!selected) return true;
                     if (++renderFailures <= 2) openProbe(false);
                     else banner("网页进程已退出", "重建页面", () -> openProbe(false));
                 }
@@ -186,13 +219,22 @@ public final class ClientActivity extends Activity {
         });
         if (!page) { checkingChallenge = false; return; }
         view.setWebChromeClient(new WebChromeClient() {
+            @Override public boolean onConsoleMessage(ConsoleMessage message) {
+                if (selected && epoch == generation && "focus-host-request/1".equals(message.message()) && Site.root(view.getUrl(), origin)) offer(view);
+                return super.onConsoleMessage(message);
+            }
             @Override public boolean onJsPrompt(WebView v, String url, String msg, String value, JsPromptResult result) {
                 if (!msg.startsWith("focus/1/")) return false;
                 String prefix = "focus/1/" + ticket + "/";
-                if (epoch != generation || ticket.isEmpty() || !Site.root(v.getUrl(), origin)
-                    || !Site.sameOrigin(url, origin) || !msg.startsWith(prefix)) { result.cancel(); return true; }
+                if (!selected || epoch != generation || ticket.isEmpty() || !Site.root(v.getUrl(), origin)
+                    || !Site.root(url, origin) || !msg.startsWith(prefix)) { result.cancel(); return true; }
                 String op = msg.substring(prefix.length());
-                if ("thread".equals(op)) {
+                if ("instances".equals(op)) {
+                    result.confirm("ok"); main.post(() -> { if (epoch == generation) pickInstance(); });
+                } else if ("chrome".equals(op)) {
+                    switcher.setVisibility("web".equals(value) ? View.GONE : View.VISIBLE);
+                    result.confirm("ok");
+                } else if ("thread".equals(op)) {
                     boolean saved = value != null && value.length() <= 256 && presentation.edit().putString("thread", value).commit();
                     result.confirm(saved ? "ok" : "error");
                 } else if ("print".equals(op)) {
@@ -206,7 +248,7 @@ public final class ClientActivity extends Activity {
                 return true;
             }
             @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams params) {
-                if (epoch != generation || !Site.root(v.getUrl(), origin)) { cb.onReceiveValue(null); return true; }
+                if (!selected || epoch != generation || !Site.root(v.getUrl(), origin)) { cb.onReceiveValue(null); return true; }
                 return files.upload(cb, params);
             }
         });
@@ -286,13 +328,14 @@ public final class ClientActivity extends Activity {
     }
 
     private void offer(WebView view) {
+        if (!selected) return;
         if (ticket.isEmpty()) ticket = UUID.randomUUID().toString();
         String printFeature = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PRINTING) ? ",'print'" : "";
         String js = "if(window===top && location.origin===" + JSONObject.quote(origin)
-            + " && location.pathname==='/' && !window.__focusMobile && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
+            + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile={version:1,instance:'" + id + "',ticket:'" + ticket + "',features:['wake','resume','save','thread'" + printFeature + "]};"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -302,11 +345,59 @@ public final class ClientActivity extends Activity {
     }
     @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
     @Override protected void onPause() { foreground = false; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
-    @Override public void onBackPressed() { if (web != null && !probe && web.canGoBack()) web.goBack(); else finish(); }
+    private void pickInstance() {
+        if (!selected || switching) return;
+        switching = true; selected = false;
+        main.removeCallbacks(retry);
+        signal("pause");
+        Runnable cold = () -> completeSwitch(false);
+        main.postDelayed(cold, 800);
+        if (legacy || web == null || probe || ticket.isEmpty() || !Site.root(web.getUrl(), origin)) { completeSwitch(false); return; }
+        int epoch = generation;
+        web.evaluateJavascript("window.__focusSetTabActive?.(false) === true", reply -> {
+            main.removeCallbacks(cold);
+            completeSwitch(epoch == generation && "true".equals(reply));
+        });
+    }
+
+    private void completeSwitch(boolean retained) {
+        if (!switching) return;
+        switching = false;
+        if (!retained) retireView();
+        startActivity(new Intent(this, MainActivity.class).setAction(MainActivity.PICK)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        if (legacy) finishAndRemoveTask();
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        try {
+            JSONObject site = new JSONObject(intent.getStringExtra("site"));
+            if (!id.equals(site.getString("id")) || !origin.equals(Site.entry(site.getString("origin")))) { finish(); return; }
+            boolean policyChanged = sso != site.optBoolean("sso") || !name.equals(site.getString("name"));
+            name = site.getString("name"); sso = site.optBoolean("sso");
+            link = intent.getStringExtra("link"); intent.removeExtra("link"); setIntent(intent);
+            switcher.setText(name + " ▾");
+            switching = false; boolean wasParked = !selected; selected = true;
+            if (!legacy && ProfileTransfer.snapshot(this, id).getBaseFile().exists() &&
+                    !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) { importProfile(); return; }
+            if (web == null || policyChanged || Site.root(link, origin) || intent.getBooleanExtra("reload", false)) openProbe(false);
+            else if (wasParked) web.evaluateJavascript("window.__focusSetTabActive?.(true)", null);
+        } catch (Exception e) { finish(); }
+    }
+
+    @Override public void onTrimMemory(int level) {
+        super.onTrimMemory(level);
+        if (!selected && !switching && level != TRIM_MEMORY_UI_HIDDEN && level >= TRIM_MEMORY_RUNNING_LOW) retireView();
+    }
+    @Override public void onBackPressed() { if (web != null && !probe && web.canGoBack()) web.goBack(); else pickInstance(); }
     @Override protected void onActivityResult(int code, int result, Intent data) { super.onActivityResult(code,result,data); files.result(code,result,data); }
+    void releaseTask() { selected = false; retireView(); finishAndRemoveTask(); }
+
     @Override protected void onDestroy() {
         main.removeCallbacksAndMessages(null); retireView(); if (files != null) files.dispose();
+        PageSlots.detached(this);
         super.onDestroy();
-        if (isFinishing()) android.os.Process.killProcess(android.os.Process.myPid());
+        if (legacy) android.os.Process.killProcess(android.os.Process.myPid());
     }
 }

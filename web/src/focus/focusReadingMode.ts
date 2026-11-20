@@ -1,4 +1,5 @@
 import { computed, nextTick, ref, watch } from 'vue';
+import { mobileReadingThread, rememberMobileReadingThread } from '../lib/mobileHost';
 
 interface ValueRef<T> {
   readonly value: T;
@@ -11,6 +12,7 @@ interface FocusReadingModeOptions {
   meta: ValueRef<unknown | null>;
   conversationLoading: ValueRef<boolean>;
   turns: ValueRef<readonly unknown[]>;
+  confirmedThread?: ValueRef<string>;
   dismissChrome: () => void;
   dismissSwitcher: () => void;
 }
@@ -21,6 +23,7 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
   const presentationMode = ref<FocusPresentationMode>('normal');
   const readingMode = computed(() => presentationMode.value === 'reading');
   const pendingReadingModeIntent = ref(false);
+  let savedThread = mobileReadingThread();
 
   function focusReadingModeToggle(): void {
     if (typeof document === 'undefined') return;
@@ -33,9 +36,11 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
 
   function enterReadingMode(): void {
     if (!options.canEnter.value || readingMode.value) return;
+    savedThread = '';
     pendingReadingModeIntent.value = false;
     options.dismissChrome();
     presentationMode.value = 'reading';
+    if (options.confirmedThread?.value) rememberMobileReadingThread(options.confirmedThread.value);
     focusReadingModeToggle();
   }
 
@@ -54,6 +59,27 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
     presentationMode.value = 'normal';
     focusReadingModeToggle();
   }
+
+  function chooseNormalMode(): void {
+    savedThread = '';
+    pendingReadingModeIntent.value = false;
+    rememberMobileReadingThread('');
+    exitReadingMode();
+  }
+
+  // Only a confirmed, readable destination can consume a cold bookmark.
+  // An empty startup view or an authorization screen has no preference to save.
+  watch([
+    () => options.confirmedThread?.value ?? '',
+    () => options.initialized.value,
+    () => options.canEnter.value,
+    readingMode,
+  ], ([thread, initialized, readable, reading]) => {
+    if (!initialized || !readable || !thread) return;
+    if (reading) rememberMobileReadingThread(thread);
+    else if (savedThread === thread) enterReadingMode();
+    savedThread = '';
+  }, { flush: 'pre' });
 
   watch(
     [() => options.conversationLoading.value, () => options.turns.value.length],
@@ -94,6 +120,7 @@ export function useFocusReadingMode(options: FocusReadingModeOptions) {
     readingMode,
     pendingReadingModeIntent,
     requestReadingMode,
+    chooseNormalMode,
     enterReadingMode,
     exitReadingMode,
   };

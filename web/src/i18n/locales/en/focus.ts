@@ -1,4 +1,5 @@
 export default {
+  switchInstance: "Switch instance",
   retentionTitle: "Data cleanup",
   retentionRecords: "Focus record retention",
   retentionAttachments: "Attachment retention",

@@ -1,21 +1,32 @@
 import { webview } from '@kit.ArkWeb';
-import { router } from '@kit.ArkUI';
 import { KeyboardAvoidMode as WindowKeyboardAvoidMode } from '@ohos.arkui.UIContext';
 import { common } from '@kit.AbilityKit';
 import { util, url } from '@kit.ArkTS';
 import { print } from '@kit.BasicServicesKit';
-import { Site, Login, savedLogin, rememberLogin, forgetLogin, basicRealm, sitePrefs, siteOrigin, focusRoot } from '../Sites';
-import { FileExchange } from '../FileExchange';
+import { Site, Login, savedLogin, rememberLogin, forgetLogin, basicRealm, sitePrefs, siteOrigin, focusRoot } from './Sites';
+import { FileExchange } from './FileExchange';
 
-@Entry
+export class InstanceTab {
+  site: Site;
+  key: string = util.generateRandomUUID();
+  link: string;
+  back: () => void = () => {};
+  constructor(site: Site, link: string) { this.site = site; this.link = link; }
+}
+
 @Component
-struct Instance {
-  private site: Site = router.getParams() as Site;
+export struct InstancePane {
+  tab: InstanceTab = new InstanceTab(new Site(), '');
+  @Prop @Watch('selectionChanged') active: boolean = true;
+  leavePage: (retained: boolean) => void = () => {};
+  private site: Site = new Site();
+  private leaving: boolean = false;
+  @State private webChrome: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private files: FileExchange = new FileExchange();
   @StorageLink('focusForeground') @Watch('foregroundChanged') private foreground: boolean = true;
   @State private phase: string = 'probe';
-  @State private source: string = this.site.origin + '/focus-connect.txt';
+  @State private source: string = '';
   @State private epoch: number = 0;
   @State private message: string = '';
   @State private loginForm: boolean = false;
@@ -41,13 +52,16 @@ struct Instance {
 
   aboutToAppear(): void {
     this.getUIContext().setKeyboardAvoidMode(WindowKeyboardAvoidMode.RESIZE);
-    this.link = AppStorage.get<string>('focusAuthorizationLink') ?? '';
-    AppStorage.delete('focusAuthorizationLink');
+    this.site = this.tab.site;
+    this.source = this.probeUrl();
+    this.link = this.tab.link;
+    this.tab.link = '';
+    this.tab.back = () => this.back();
   }
 
   private resetView(phase: string, address: string): void {
     clearTimeout(this.retry);
-    this.files.cancel(); this.ticket = ''; this.loginForm = false;
+    this.webChrome = false; this.files.cancel(); this.ticket = ''; this.loginForm = false;
     this.handler?.cancel(); this.handler = undefined; this.password = '';
     this.phase = phase; this.source = address;
     this.controller = new webview.WebviewController();
@@ -79,7 +93,7 @@ struct Instance {
   private unavailable(message: string): void {
     this.needsNetwork = true; this.message = message;
     clearTimeout(this.retry);
-    if (this.foreground) {
+    if (this.active && this.foreground) {
       this.retry = setTimeout(() => this.start(), this.delay);
       this.delay = Math.min(this.delay * 2, 30000);
     }
@@ -92,20 +106,21 @@ struct Instance {
 
   private foregroundChanged(): void {
     clearTimeout(this.retry);
+    if (!this.active) return;
     this.signal(this.foreground ? 'resume' : 'pause');
     if (this.foreground && this.needsNetwork && !this.gone) this.start();
   }
 
   private offer(address: string): void {
-    if (!focusRoot(address, this.site.origin)) return;
+    if (!this.active || this.leaving || !focusRoot(address, this.site.origin)) return;
     if (!this.ticket) this.ticket = util.generateRandomUUID();
     const printFeature = canIUse('SystemCapability.Print.PrintFramework') ? ',"print"' : '';
     const script = 'if(window===top && location.origin===' + JSON.stringify(this.site.origin) +
-      ' && location.pathname==="/" && !window.__focusMobile && document.querySelector(\'meta[name=focus-mobile-contract][content="1"]\')){' +
+      ' && location.pathname==="/" && window.__focusMobile?.ticket!==' + JSON.stringify(this.ticket) + ' && document.querySelector(\'meta[name=focus-mobile-contract][content="1"]\')){' +
       'const url=new URL(location.href);if(!url.searchParams.has("focusApp") && !url.searchParams.has("print") && !url.hash){' +
       'url.searchParams.set("focusApp","1");location.replace(url.href)}else{' +
-      'window.__focusMobile={version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
-      ',features:["wake","resume","save","thread"' + printFeature + ']};dispatchEvent(new Event("focus-host-ready"))}}';
+      'window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
+      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
     this.controller.runJavaScript(script).catch(() => {});
   }
 
@@ -116,7 +131,7 @@ struct Instance {
   }
 
   private async challenge(event: OnHttpAuthRequestEvent, epoch: number): Promise<void> {
-    if (this.gone || this.epoch !== epoch || !this.site.origin.startsWith('https://') || event.host.toLowerCase() !== new url.URL(this.site.origin).hostname) {
+    if (!this.active || this.leaving || this.gone || this.epoch !== epoch || !this.site.origin.startsWith('https://') || event.host.toLowerCase() !== new url.URL(this.site.origin).hostname) {
       event.handler.cancel(); return;
     }
     if (this.phase === 'probe') {
@@ -150,7 +165,7 @@ struct Instance {
 
   private reauthenticate(epoch: number, failedMainRequest: boolean): void {
     this.message = '入口要求重新验证。';
-    if (!this.foreground || Date.now() - this.lastReauth < 60000) return;
+    if (!this.active || !this.foreground || Date.now() - this.lastReauth < 60000) return;
     const verify = (): void => {
       if (epoch !== this.epoch || this.gone) return;
       this.lastReauth = Date.now(); this.start();
@@ -161,7 +176,7 @@ struct Instance {
   }
 
   private httpError(event: OnHttpErrorReceiveEvent, epoch: number): void {
-    if (epoch !== this.epoch || !event.request.isMainFrame()) return;
+    if (!this.active || this.leaving || this.gone || epoch !== this.epoch || !event.request.isMainFrame()) return;
     const code = event.response.getResponseCode();
     if (this.phase === 'page' && this.site.origin.startsWith('https://') && code === 401 && focusRoot(event.request.getRequestUrl(), this.site.origin)) {
       this.reauthenticate(epoch, true); return;
@@ -180,7 +195,7 @@ struct Instance {
   }
 
   private intercept(req: WebResourceRequest, epoch: number): boolean {
-    if (epoch !== this.epoch || this.gone) return true;
+    if (!this.active || this.leaving || epoch !== this.epoch || this.gone) return true;
     const address = req.getRequestUrl();
     if (this.phase !== 'page') {
       if (req.isMainFrame() && address !== this.probeUrl() && this.phase !== 'blocked') {
@@ -202,11 +217,20 @@ struct Instance {
   private filePrompt(event: OnPromptEvent, epoch: number): boolean {
     if (!event.message.startsWith('focus/1/')) return false;
     const prefix = 'focus/1/' + this.ticket + '/';
-    if (epoch !== this.epoch || this.phase !== 'page' || !this.ticket || !event.message.startsWith(prefix)
+    if (!this.active || this.leaving || this.gone || epoch !== this.epoch || this.phase !== 'page' || !this.ticket || !event.message.startsWith(prefix)
       || !focusRoot(this.controller.getUrl(), this.site.origin) || !focusRoot(event.url, this.site.origin)) {
       event.result.handleCancel(); return true;
     }
     const op = event.message.slice(prefix.length);
+    if (op === 'instances') {
+      event.result.handlePromptConfirm('ok');
+      setTimeout(() => { if (epoch === this.epoch && this.active) this.leave(); }, 0);
+      return true;
+    }
+    if (op === 'chrome') {
+      this.webChrome = event.value === 'web';
+      event.result.handlePromptConfirm('ok'); return true;
+    }
     if (op === 'print') {
       const name = event.value;
       if (!name || name.length > 255) { event.result.handleCancel(); return true; }
@@ -233,15 +257,36 @@ struct Instance {
   }
 
   private leave(): void {
+    if (!this.active || this.leaving) return;
+    this.leaving = true;
     this.signal('pause');
-    const prefs = sitePrefs(this.ctx());
-    prefs.deleteSync('active'); void prefs.flush();
-    router.back();
+    const epoch = this.epoch;
+    let timer: number = -1;
+    const done = (warm: boolean): void => {
+      if (!this.leaving || this.gone) return;
+      this.leaving = false; clearTimeout(timer);
+      this.leavePage(warm && epoch === this.epoch);
+    };
+    if (this.phase !== 'page' || !this.ticket || !focusRoot(this.controller.getUrl(), this.site.origin)) { done(false); return; }
+    timer = setTimeout(() => done(false), 800);
+    this.controller.runJavaScript('window.__focusSetTabActive?.(false) === true')
+      .then(reply => done(reply === 'true')).catch(() => done(false));
   }
-  onBackPress(): boolean {
+
+  private selectionChanged(): void {
+    if (!this.active) {
+      clearTimeout(this.retry);
+      this.controller.onInactive();
+    } else {
+      this.controller.onActive();
+      this.controller.runJavaScript('window.__focusSetTabActive?.(true)').catch(() => {});
+      this.foregroundChanged();
+    }
+  }
+
+  private back(): void {
     if (this.phase === 'page' && this.controller.accessBackward()) this.controller.backward();
     else this.leave();
-    return true;
   }
   aboutToDisappear(): void {
     this.gone = true; this.epoch++; clearTimeout(this.retry);
@@ -263,7 +308,10 @@ struct Instance {
         }
         return null;
       })
-      .onPageBegin(() => { if (epoch === this.epoch) { this.ticket = ''; this.files.cancel(); } })
+      .onPageBegin(() => { if (epoch === this.epoch) {
+        this.ticket = ''; this.webChrome = false; this.files.cancel();
+        if (!this.active) this.leavePage(false);
+      } })
       .onProgressChange(e => {
         if (epoch === this.epoch && this.phase === 'page' && e.newProgress >= 60) this.offer(this.controller.getUrl());
       })
@@ -278,16 +326,22 @@ struct Instance {
       .onHttpAuthRequest(e => { void this.challenge(e, epoch); return true; })
       .onHttpErrorReceive(e => this.httpError(e, epoch))
       .onErrorReceive(e => {
-        if (epoch === this.epoch && e.request.isMainFrame() && this.phase !== 'blocked' && this.challengedRealm === undefined)
+        if (this.active && !this.leaving && epoch === this.epoch && e.request.isMainFrame() && this.phase !== 'blocked' && this.challengedRealm === undefined)
           this.unavailable('ArkWeb 连接失败 ' + e.error.getErrorCode());
       })
       .onRenderExited(() => {
         if (epoch !== this.epoch || this.gone) return;
+        if (!this.active) { this.leavePage(false); return; }
         if (++this.rendererFailures <= 2) this.start(); else this.block('网页进程已退出，请重新连接。');
+      })
+      .onConsole(e => {
+        if (epoch === this.epoch && this.phase === 'page' && e.message.getMessage() === 'focus-host-request/1')
+          this.offer(this.controller.getUrl());
+        return false;
       })
       .onPrompt(e => this.filePrompt(e, epoch))
       .onShowFileSelector(e => {
-        if (epoch === this.epoch && this.phase === 'page' && focusRoot(this.controller.getUrl(), this.site.origin)) {
+        if (this.active && epoch === this.epoch && this.phase === 'page' && focusRoot(this.controller.getUrl(), this.site.origin)) {
           void this.files.upload(this.ctx(), e);
         } else e.result.handleFileList([]);
         return true;
@@ -296,11 +350,7 @@ struct Instance {
 
   build() {
     Column() {
-      Row({ space: 8 }) {
-        Button('‹ 实例').onClick(() => this.leave())
-        Text(this.site.name).layoutWeight(1).maxLines(1)
-        Button('重新连接').onClick(() => this.start(this.phase === 'blocked'))
-      }.width('100%').padding(6)
+      if (!this.webChrome) { Button(this.site.name + ' ▾').accessibilityText('切换实例').onClick(() => this.leave()) }
       if (this.message) { Text(this.message).width('100%').padding(6) }
       if (this.loginForm) {
         Column({ space: 6 }) {

@@ -4,8 +4,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 ## Entry and loading
 
-Reading mode belongs to the current browser page. It is not stored in a session
-or a persistent preference. With valid document access and a selected session,
+Reading mode belongs to the current browser document. A mobile host that negotiated `resume` persists the reading choice and its confirmed thread for that instance. With valid document access and a selected session,
 the desktop conversation header and narrow top bar offer reading mode whenever
 the conversation is loading or has readable content. Switching sessions must not
 hide the entry while waiting for content.
@@ -22,8 +21,7 @@ consume it when the selected conversation becomes eligible for reading mode.
 - Reading mode survives session switches; temporary absence of content during
   loading does not cause an exit.
 - With valid document access, foreground checks and reconnection preserve reading mode and drafts. Keep the mode during
-  transcript reconciliation and revalidate the visible reading anchor. A document discarded and reloaded by the browser
-  still starts in normal mode as a new page.
+  transcript reconciliation and revalidate the visible reading anchor. An ordinary browser reload starts in normal mode. A rebuilt mobile page restores reading mode once the server confirms the matching thread and it is loading or has readable content. Choosing normal mode clears that preference.
 - A settled empty conversation returns to normal mode instead of an empty
   reading page.
 - Opening a new-chat page, requesting input, or losing document access exits

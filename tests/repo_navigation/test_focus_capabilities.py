@@ -175,6 +175,10 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                     "web/src/components/chat/transcriptVisibility.ts",
                     "observeTranscriptVisibility",
                 ),
+                focus_capabilities.SourceReference(
+                    "web/src/components/chat/readingBookmark.ts",
+                    "saveReadingBookmark",
+                ),
             ),
         )
 

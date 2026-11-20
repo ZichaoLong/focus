@@ -13,6 +13,58 @@ PACKAGE = "org.focus.mobile.testca"
 ACTIVITY = PACKAGE + "/org.focus.mobile.MainActivity"
 
 
+def emulator_adb(executable, serial):
+    if not serial.startswith("emulator-"):
+        raise ValueError("Choose a dedicated emulator")
+    def adb(*argv):
+        return subprocess.check_output([executable, "-s", serial, *argv], text=True, stderr=subprocess.DEVNULL).strip()
+    return adb
+
+
+def launch(adb):
+    adb("shell", "am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER",
+        "-f", "0x10200000", "-n", ACTIVITY)
+
+
+async def attach(session, adb, origin):
+    async with asyncio.timeout(45):
+        while True:
+            for suffix in ("", ":legacy"):
+                port = None
+                try:
+                    pid = str(int(adb("shell", "pidof", PACKAGE + suffix)))
+                    port = adb("forward", "tcp:0", "localabstract:webview_devtools_remote_" + pid)
+                    async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
+                        pages = await response.json()
+                    page = next((p for p in pages if urlsplit(p["url"]).path == "/"
+                                 and p["url"].startswith(origin + "/")), None)
+                    if page:
+                        return port, await session.ws_connect(page["webSocketDebuggerUrl"])
+                except (subprocess.SubprocessError, ValueError, aiohttp.ClientError, OSError):
+                    pass
+                if port:
+                    adb("forward", "--remove", "tcp:" + port)
+            await asyncio.sleep(.35)
+
+
+async def evaluate(ws, expression):
+    await ws.send_json({"id": 100, "method": "Runtime.evaluate",
+                        "params": {"expression": expression, "returnByValue": True, "userGesture": True,
+                                   "awaitPromise": True}})
+    while True:
+        reply = await ws.receive_json(timeout=10)
+        if reply.get("id") == 100:
+            result = reply["result"]
+            if "exceptionDetails" in result:
+                raise AssertionError(result["exceptionDetails"]["text"])
+            return result["result"].get("value")
+
+async def wait_for(ws, expression):
+    async with asyncio.timeout(25):
+        while not await evaluate(ws, expression):
+            await asyncio.sleep(.25)
+
+
 async def smoke(args):
     entries = json.loads((args.lab / "instances.json").read_text())
     origin = entries[args.entry]["origin"]
@@ -22,52 +74,10 @@ async def smoke(args):
     if (args.cycle_network or args.wait_session_expiry) and args.entry == 2:
         raise ValueError("Choose a trusted-proxy HTTPS entry for network and automatic reauthorization checks")
 
-    def adb(*argv):
-        return subprocess.check_output([args.adb, "-s", args.serial, *argv], text=True, stderr=subprocess.DEVNULL).strip()
-
-    def launch():
-        adb("shell", "am", "start", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER",
-            "-f", "0x10200000", "-n", ACTIVITY)
-
+    adb = emulator_adb(args.adb, args.serial)
     async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-        async def attach():
-            async with asyncio.timeout(45):
-                while True:
-                    port = None
-                    try:
-                        pid = str(int(adb("shell", "pidof", PACKAGE + ":web")))
-                        port = adb("forward", "tcp:0", "localabstract:webview_devtools_remote_" + pid)
-                        async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
-                            pages = await response.json()
-                        page = next((p for p in pages if urlsplit(p["url"]).path == "/"
-                                     and p["url"].startswith(origin + "/")), None)
-                        if page:
-                            return port, await session.ws_connect(page["webSocketDebuggerUrl"])
-                    except (subprocess.SubprocessError, ValueError, aiohttp.ClientError, OSError):
-                        pass
-                    if port:
-                        adb("forward", "--remove", "tcp:" + port)
-                    await asyncio.sleep(.35)
-
-        async def evaluate(ws, expression):
-            await ws.send_json({"id": 100, "method": "Runtime.evaluate",
-                                "params": {"expression": expression, "returnByValue": True, "userGesture": True,
-                                           "awaitPromise": True}})
-            while True:
-                reply = await ws.receive_json(timeout=10)
-                if reply.get("id") == 100:
-                    result = reply["result"]
-                    if "exceptionDetails" in result:
-                        raise AssertionError(result["exceptionDetails"]["text"])
-                    return result["result"].get("value")
-
-        async def wait_for(ws, expression):
-            async with asyncio.timeout(25):
-                while not await evaluate(ws, expression):
-                    await asyncio.sleep(.25)
-
-        launch()
-        port, ws = await attach()
+        launch(adb)
+        port, ws = await attach(session, adb, origin)
         try:
             # A one-time local authorization fragment must finish its exchange
             # in the original document before the test navigates to the thread.
@@ -101,7 +111,7 @@ async def smoke(args):
 
         adb("shell", "input", "keyevent", "KEYCODE_HOME")
         await asyncio.sleep(1)
-        launch()
+        launch(adb)
         adb("shell", "input", "keyevent", "KEYCODE_SLEEP")
         await asyncio.sleep(2)
         adb("shell", "input", "keyevent", "KEYCODE_WAKEUP")
@@ -110,8 +120,8 @@ async def smoke(args):
         for step in ("emulator Home and screen off/on", "process stop and relaunch"):
             if step.startswith("process"):
                 adb("shell", "am", "force-stop", PACKAGE)
-                launch()
-            port, ws = await attach()
+                launch(adb)
+            port, ws = await attach(session, adb, origin)
             try:
                 await wait_for(ws, check)
                 print(step + " preserved the thread and its unsent draft", flush=True)
@@ -120,7 +130,7 @@ async def smoke(args):
                 adb("forward", "--remove", "tcp:" + port)
 
         if args.wait_session_expiry:
-            port, ws = await attach()
+            port, ws = await attach(session, adb, origin)
             try:
                 await wait_for(ws, check)
                 document_start = await evaluate(ws, "performance.timeOrigin")
@@ -152,7 +162,7 @@ async def smoke(args):
         if args.cycle_network:
             if adb("shell", "cmd", "connectivity", "airplane-mode") != "disabled":
                 raise ValueError("Start this check with the emulator's airplane mode off")
-            port, ws = await attach()
+            port, ws = await attach(session, adb, origin)
             probe = "fetch('/focus-connect.txt',{cache:'no-store',signal:AbortSignal.timeout(4000)}).then(r=>r.status,()=>0)"
             try:
                 assert await evaluate(ws, probe) == 200

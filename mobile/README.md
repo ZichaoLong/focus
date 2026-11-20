@@ -6,8 +6,8 @@ Android 使用系统 WebView，HarmonyOS 使用 ArkUI Stage 工程和 ArkWeb。�
 
 1. 先连上通常用来访问实例的网络。在使用 Tailscale 的手机上手动打开它。
 2. 打开 Focus，选「添加实例」，输入显示名和 HTTPS 站点根地址，例如 `https://focus.example.net`。可使用自定义端口。本地模式支持手机回环的 HTTP 地址（仅限 `127.0.0.1`、`localhost`、`[::1]`）。远端域名或 IP 必须与手机信任的 TLS 证书匹配。
-3. 打开该实例。「‹ 实例」返回列表，系统返回键优先回退网页导航。可以重命名、编辑地址或删除条目。更换地址会创建新的本地身份。列表只打开当前选择的页面。
-4. 为其他实例重复上述步骤。为独立入口使用不同的主机名，尤其是代理使用 Cookie 登录时。ArkWeb API 12 的 Cookie 存储以主机划分，此版鸿蒙端会拒绝同主机的第二个条目。Android 为每个条目创建单独的 WebView 数据目录。
+3. 打开该实例。窄屏点击会话标题，在会话切换面板选「切换实例」；宽屏可从侧栏进入。阅读模式也可点会话标题。加载期间及旧版 Web 可点原生的实例名称。实例列表中每一行的「⋮」提供重新连接、编辑、授权链接和删除。系统返回键优先回退网页导航。更换地址会创建新的本地身份。
+4. 为其他实例重复上述步骤。为独立入口使用不同的主机名，尤其是代理使用 Cookie 登录时。ArkWeb API 12 的 Cookie 存储以主机划分，此版鸿蒙端会拒绝同主机的第二个条目。Android 对支持多配置的系统 WebView 使用独立的命名配置，同一主机的不同端口也可隔离。旧引擎一次打开一个实例，继续使用各自的数据目录。
 
 | 入口已有的认证 | 手机上的操作 |
 | --- | --- |
@@ -22,9 +22,9 @@ Basic 凭据只在 HTTPS 上响应。Basic 处理适用于首页、静态资源�
 
 ## 恢复与文件
 
-进入前台会触发现有 WebSocket 健康检查。断线时退避重连，握手后重新读取服务端状态。若原页面注册已清理，满足安全条件的可见页面会限频重新注册。被其他标签替换的身份须显式刷新。有待核验操作时，先按 Focus 提示查看结果。服务端任务继续按原生命周期运行。切到其他实例会释放当前页面。
+进入前台会触发现有 WebSocket 健康检查。断线时退避重连，握手后重新读取服务端状态。若原页面注册已清理，满足安全条件的可见页面会限频重新注册。被其他标签替换的身份须显式刷新。有待核验操作时，先按 Focus 提示查看结果。服务端任务继续按原生命周期运行。App 最多在内存保留最近两个实例的页面。打开实例列表即暂停原实例的 WebSocket、状态轮询和重试；切回后重新握手并核对服务端状态。打开第三个实例、系统回收内存、页面未确认暂停或手动「重新连接」时，回到实例会重建页面。
 
-每个实例可恢复上次线程、已保存的文字草稿和可验证的历史消息位置。历史内容已删除、服务器拒绝打开线程或用户另选了位置时，按服务器当前结果显示。结果未知的 prompt 使用既有定位记录查询，审批、回答、中断和其他业务操作由原有处理流程核验。选中的附件和提交权限仍属于原 writer。Tailscale、SSH 或代理恢复连通后，页面才有条件接续。
+每个实例可恢复上次已确认的线程、阅读或普通模式、文字草稿和可验证的历史消息位置。升级各实例提供的 Focus Web 后才会提供新的切换入口和模式恢复。离线期间可以看到仍在内存里的页面，冷启动需要实例页面可访问。历史内容已删除、服务器拒绝打开线程或用户另选了位置时，按服务器当前结果显示。结果未知的 prompt 使用既有定位记录查询，审批、回答、中断和其他业务操作由原有处理流程核验。选中的附件和提交权限仍属于原 writer。Tailscale、SSH 或代理恢复连通后，页面才有条件接续。
 
 附件由系统文件选择器交给现有上传入口。下载使用 Web 中「另存为」，选择系统目标后，Web 用当前会话读取内容，原生分块暂存并写入目标。可在预览里查看文本、图片、PDF 等已有格式。HTML 预览保留现有沙箱。Web 不向外部网页提供原生文件桥接。
 
@@ -40,6 +40,8 @@ python mobile/android/build.py --sdk "$ANDROID_HOME"
 adb install -r mobile/android/build/focus-debug.apk
 ```
 
+首次构建下载 Google Maven 的 AndroidX WebKit 1.12.1 并校验 SHA-256。离线构建可传 `--webkit-aar /path/to/webkit-1.12.1.aar`。
+
 输出 `mobile/android/build/focus-debug.apk`，支持 Android 9（API 28）及以上。也可把该 APK 下载到手机，通过系统安装器打开并按系统提示允许此下载来源。首次构建在本用户的 `.android/debug.keystore` 生成调试密钥。更新同一应用须使用相同签名。独立发布时使用自己的密钥签署已对齐的 APK，口令由工具交互读取。
 
 ```sh
@@ -47,6 +49,8 @@ python mobile/android/build.py --sdk "$ANDROID_HOME" --unsigned
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks /path/to/release.jks --out focus-release.apk mobile/android/build/focus-unsigned.apk
 "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose focus-release.apk
 ```
+
+使用相同包名和签名覆盖安装可保留现有实例和 Keystore 凭据。首次升级到多配置时，App 用本地空页面按原站点迁移 Focus 的草稿、恢复记录和根地址 Cookie，临时副本加密并在导入成功后删除。迁移遇到当前引擎不接受的数据时，会继续使用原有目录。已启用网页登录的旧条目沿用原配置，以保留 IdP 会话，切换时冷恢复。若已有命名配置后系统 WebView 被降级到不支持该能力的版本，恢复兼容的系统 WebView 即可重新使用原数据。
 
 ## HarmonyOS 构建、签名与安装
 
@@ -111,6 +115,12 @@ adb install -r mobile/android/build/focus-debug-test-ca.apk
 
 在专用模拟器的飞行模式关闭时，可给 HTTPS 入口的上述命令加上 `--cycle-network`。脚本切换飞行模式、临时关闭 Wi-Fi，确认断网期间 HTTPS 无法读取，恢复原网络设置后检查同一页面的 WebSocket 握手。想复现会话过期，可在启动服务夹具时加 `--session-lifetime 60`，在模拟器脚本中加 `--wait-session-expiry`。服务夹具还可加 `--second-basic`，为第二个 HTTPS 入口设置独立密码，适合用同一主机的两个端口测试 Android 凭据隔离。
 
+为两个 HTTPS 入口分别完成首次登录并选中第一个实例后，用下列命令验证热切换和进程回收。若已配置第三个模拟器回环入口，可加 `--third-origin http://127.0.0.1:<该端口>` 验证淘汰和冷恢复。脚本从会话标题进入系统实例列表，观察两个 document 的标识、真实 WebSocket 握手和关闭、POST、草稿及历史消息相对位置。
+
+```sh
+.venv/bin/python mobile/tests/android_tabs_smoke.py --serial emulator-5554 "$lab"
+```
+
 JDK 可独立运行 Android 的站点、端口和 Basic realm 策略测试。
 
 ```sh
@@ -126,6 +136,8 @@ java -cp "$out" org.focus.mobile.SitePolicyTest
 | Pura X，HarmonyOS 7.0.0，卓易通内运行 Android 版 Focus（用户真机反馈） | 用户成功安装 APK、打开当前实例并在对话中发送消息，对端已收到。 |
 | 标准 Android 调试 APK，Android 15 模拟器 | APK v3 验签、安装和启动成功。从原生界面输入一次性本地授权链接后，可打开测试线程、看到附件链接并使用输入框。 |
 | 同源码的测试 CA 包，系统 WebView 124 | 通过隔离的 Basic HTTPS、无 Basic 的可信代理 HTTPS 和本地授权三个入口加载页面、静态资源和 API，收到 WebSocket 101 和 hello。两个主机名及 realm 相同、端口不同的 Basic 入口分别复用了自己的密码，恢复了同名线程里的不同草稿。模拟器息屏唤醒及进程重启后可继续输入。错误密码和已变更密码均可进入更新入口。 |
+| Android 1.0 → 1.1 覆盖安装，系统 WebView 124 | 两个同主机不同端口的 Basic 入口，在旧包中分别留下文字草稿和持久 Cookie。用相同签名覆盖安装后，两个原线程、不同草稿和各自的 Cookie 都可用；核对了 Cookie 的 HttpOnly、Secure、SameSite 属性，两个入口均未再次询问已保存的 Basic 密码。 |
+| Android 1.1 实例切换，隔离的双 HTTPS Gateway | A 为阅读模式、B 为普通模式。经原生列表 A → B → A → B，各自 document 标识保持，停用页关闭 WebSocket，返回页收到 101 和 hello，热切换期间未观察到 POST。强制停止后，两页重新注册并恢复各自线程、草稿和模式；旧格式对话的原消息位置偏差小于 4 个 CSS 像素。打开第三个实例后，最久未使用的页面被释放，再选择它时按已保存的现场重建。 |
 | Android 模拟器系统断网和 Focus 会话过期 | 飞行模式并关闭 Wi-Fi 后，页面收到离线状态且 HTTPS 读取失败。重新联网后，同一 document 收到 WebSocket 101 和 hello。另一次测试中服务端发出 `session_expired`，可信代理入口完成新页面注册并收到 hello，原线程和草稿可用，期间只发送了注册 POST。 |
 | 隔离的 Caddy、OpenSSH 和 Focus Gateway | 停用转发时返回 502，恢复后原 document、线程和草稿仍在，WebSocket 重新握手，观察期间没有 POST。重启测试 Focus 后也能重新进入原线程。经 Basic 和 SSH 的系统选文件上传成功，预览和系统另存的 176000 字节文本与服务端样本的 SHA-256 一致。业务后端采用仓库的 Codex 测试实现。 |
 | Android 系统打印 | 从 Web 的问答导出菜单进入预览，用系统打印面板另存 PDF，再从模拟器取回文件提取文字，核对了所选问题和最终回答。草稿与界面控件均未出现在 PDF 内。 |

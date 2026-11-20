@@ -9,22 +9,34 @@ import java.util.UUID;
 import java.io.File;
 
 public final class MainActivity extends Activity {
+    static final String PICK = "org.focus.mobile.PICK";
     private JSONArray sites;
     private SharedPreferences prefs;
+    private PageSlots pages;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("instances", MODE_PRIVATE);
+        pages = new PageSlots(this, prefs);
         try { sites = new JSONArray(prefs.getString("list", "[]")); }
         catch (JSONException e) { throw new IllegalStateException(e); }
         render();
-        if (state == null) {
-            for (int i = 0; i < sites.length(); i++) {
-                JSONObject site = sites.optJSONObject(i);
-                if (site.optString("id").equals(prefs.getString("active", ""))) { open(site, ""); break; }
-            }
+    }
+
+    @Override protected void onNewIntent(Intent intent) { super.onNewIntent(intent); setIntent(intent); }
+
+    @Override protected void onResume() {
+        super.onResume();
+        if (PICK.equals(getIntent().getAction())) {
+            prefs.edit().remove("active").commit();
+            setIntent(new Intent());
+        } else for (int i = 0; i < sites.length(); i++) {
+            JSONObject site = sites.optJSONObject(i);
+            if (site.optString("id").equals(prefs.getString("active", ""))) { open(site, ""); break; }
         }
     }
+
+    @Override protected void onDestroy() { pages.finishOpening(); super.onDestroy(); }
 
     private void render() {
         ScrollView scroll = new ScrollView(this);
@@ -33,26 +45,36 @@ public final class MainActivity extends Activity {
         Views.install(this, scroll);
         TextView title = new TextView(this);
         title.setText("Focus 实例"); title.setTextSize(24); list.addView(title);
-        Views.button(this, list, "添加实例", () -> edit(-1));
         for (int i = 0; i < sites.length(); i++) {
             final int index = i;
             JSONObject site = sites.optJSONObject(i);
-            Views.button(this, list, site.optString("name") + "\n" + site.optString("origin"), () -> open(site, ""));
             LinearLayout row = new LinearLayout(this); list.addView(row);
-            Views.button(this, row, "编辑", () -> edit(index));
-            Views.button(this, row, "授权链接", () -> authorize(site));
-            Views.button(this, row, "删除", () -> new AlertDialog.Builder(this)
-                .setMessage("删除这个实例及其在 App 中保存的凭据和页面数据？")
-                .setNegativeButton("取消", null).setPositiveButton("删除", (d,w) -> {
-                    sites.remove(index); persist(); forget(site); render();
-                }).show());
+            Button entry = Views.button(this, row, site.optString("name") + "\n" + site.optString("origin"), () -> open(site, ""));
+            entry.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1));
+            Button more = new Button(this); more.setText("⋮"); more.setContentDescription("管理 " + site.optString("name"));
+            row.addView(more);
+            more.setOnClickListener(v -> {
+                PopupMenu menu = new PopupMenu(this, more);
+                menu.getMenu().add("重新连接").setOnMenuItemClickListener(item -> { launch(site, "", true); return true; });
+                menu.getMenu().add("编辑").setOnMenuItemClickListener(item -> { edit(index); return true; });
+                menu.getMenu().add("授权链接").setOnMenuItemClickListener(item -> { authorize(site); return true; });
+                menu.getMenu().add("删除").setOnMenuItemClickListener(item -> {
+                    new AlertDialog.Builder(this).setMessage("删除这个实例及此 App 保存的凭据和页面数据？")
+                        .setNegativeButton("取消", null).setPositiveButton("删除", (d,w) ->
+                            { sites.remove(index); persist(); forget(site); render(); }).show();
+                    return true;
+                });
+                menu.show();
+            });
         }
+        Views.button(this, list, "添加实例", () -> edit(-1));
     }
 
     private void persist() { prefs.edit().putString("list", sites.toString()).commit(); }
 
     private void forget(JSONObject site) {
         String id = site.optString("id");
+        pages.forget(id);
         BasicVault.erase(this, id);
         deleteSharedPreferences("page-" + id);
         removeTree(new File(getApplicationInfo().dataDir, "app_webview_" + id));
@@ -104,12 +126,9 @@ public final class MainActivity extends Activity {
     }
 
     private void open(JSONObject site, String link) {
-        prefs.edit().putString("active", site.optString("id")).commit();
-        startActivityForResult(new Intent(this, ClientActivity.class).putExtra("site", site.toString()).putExtra("link", link), 1);
+        launch(site, link, false);
     }
-
-    @Override protected void onActivityResult(int req, int result, Intent data) {
-        super.onActivityResult(req, result, data);
-        if (req == 1) prefs.edit().remove("active").apply();
+    private void launch(JSONObject site, String link, boolean reload) {
+        pages.open(site, link, reload, sites);
     }
 }

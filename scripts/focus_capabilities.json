@@ -861,6 +861,10 @@
         {
           "path": "web/src/focus/documentRecovery.ts",
           "symbol": "reserveDocumentReload"
+        },
+        {
+          "path": "web/src/focus/focusReadingMode.ts",
+          "symbol": "useFocusReadingMode"
         }
       ],
       "contract": [
@@ -923,7 +927,8 @@
             "web/test/focus-api.test.ts",
             "web/test/focus_client/owners/focus-transcript.test.ts",
             "web/test/focus-reconnect-browser.test.ts",
-            "web/test/focus-mobile-host.test.ts"
+            "web/test/focus-mobile-host.test.ts",
+            "web/test/focus-reading-mode-surface.test.ts"
           ]
         }
       ],

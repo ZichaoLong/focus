@@ -1,6 +1,6 @@
 import { documentReloadDelay, isFocusSessionRejection, reserveDocumentReload } from './documentRecovery';
 import { checkpointThread, hasMobileFeature, recoveryStorage } from '../lib/mobileHost';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { i18n } from '../i18n';
 import { FocusWebApi, type FocusWebApiPort } from './api';
 import { ClientIntentClock } from './clientIntentClock';
@@ -91,6 +91,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     || updateStatusStale.value || updateStatus.value?.state === 'unknown'
   ));
   const authRequired = ref(false);
+  let parked = false;
   const outerAuthRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
@@ -137,10 +138,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     defaultWorkspace: () => projection.meta.value?.default_working_dir ?? '',
     clearSnapshot: () => projection.clearSnapshot(),
     clearHistoryView: () => clearHistoryView(),
-    updateThreadQuery(threadId) {
-      updateThreadQuery(threadId);
-      if (initialized.value) checkpointThread(threadId);
-    },
+    updateThreadQuery,
     reportError,
     clearError,
     setNavigationLoading: (value) => {
@@ -171,6 +169,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     scopeReady,
     composerReady,
   } = navigation;
+  const stopThreadCheckpoint = watch([initialized, scopeReady, activeThreadId], ([ready, confirmed, thread]) => {
+    if (ready && confirmed) checkpointThread(thread);
+  });
   const runtimeNotices = createRuntimeNoticeOwner(activeThreadId);
   projection = createFocusProjectionSync({
     api,
@@ -329,7 +330,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const backendReset = createFocusBackendResetTransaction({ api, reloadAll });
   const transportSession = createFocusTransportSession({
     mayConnect: () => (
-      !authRequired.value
+      !parked && !authRequired.value
       && !documentReloadRequired.value
       && meta.value !== null
     ),
@@ -387,7 +388,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     },
     reloadProjection: reloadAll,
     mayRetryProjectionReload: () => (
-      projection.mayRetryProjectionReload()
+      !parked && projection.mayRetryProjectionReload()
     ),
     onScheduledTaskError: reportError,
   });
@@ -410,7 +411,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   function scheduleOperatorStatusRefresh(): void {
     clearOperatorStatusTimer();
     if (
-      transportSession.snapshot.value.disposed
+      parked || transportSession.snapshot.value.disposed
       || authRequired.value
       || documentReloadRequired.value
     ) return;
@@ -424,7 +425,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearOperatorStatusTimer();
     if (operatorStatusRefreshPromise) return operatorStatusRefreshPromise;
     if (
-      transportSession.snapshot.value.disposed
+      parked || transportSession.snapshot.value.disposed
       || authRequired.value
       || documentReloadRequired.value
     ) return;
@@ -578,7 +579,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   let recoverablePage = false;
   let accessReloadTimer: ReturnType<typeof setTimeout> | undefined;
   function canRebuildPage(): boolean {
-    return !navigation.isDisposed && typeof document !== 'undefined' && document.visibilityState === 'visible'
+    return !parked && !navigation.isDisposed && typeof document !== 'undefined' && document.visibilityState === 'visible'
       && !starting.value && !actionBusy.value && !Object.keys(mutationBusyByThread.value).length
       && !unknownProcessLocalMutations.value.length && !unknownLifecycleMutations.value.length
       && !Object.keys(pendingApprovalActions.value).length && !Object.keys(pendingQuestionActions.value).length
@@ -679,7 +680,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   function scheduleUpdatePoll(): void {
     clearUpdatePoll();
-    if (navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
+    if (parked || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
     const state = updateStatus.value?.state;
     if (state !== 'checking' && state !== 'cancelling' && state !== 'applying' && !updateApplyStarted.value) return;
     updatePollTimer = setTimeout(() => {
@@ -711,7 +712,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   async function readUpdateStatus(options: { silent?: boolean } = {}): Promise<void> {
-    if (updateLoading.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
+    if (parked || updateLoading.value || navigation.isDisposed || authRequired.value || documentReloadRequired.value) return;
     updateLoading.value = true;
     try {
       const observed = await api.updateStatus();
@@ -720,7 +721,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       if (observed.state === 'succeeded' && updateApplyStarted.value && updateReloadTimer === null) {
         updateReloadTimer = setTimeout(() => {
           updateReloadTimer = null;
-          window.location.reload();
+          if (!parked) window.location.reload();
         }, 1200);
       }
       scheduleUpdatePoll();
@@ -740,7 +741,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
           if (updateReloadTimer === null) {
             updateReloadTimer = setTimeout(() => {
               updateReloadTimer = null;
-              window.location.reload();
+              if (!parked) window.location.reload();
             }, 300);
           }
         } else if (elapsed < UPDATE_RECONNECT_TIMEOUT_MS) {
@@ -1045,7 +1046,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   let initialDelay = 1000;
   let initialReadFailed = false;
   function wakeDocument(): void {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (parked || typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
     if (recoverablePage) recoverDocumentIfIdle();
     else if (initialReadFailed && !loading.value) void load();
   }
@@ -1053,8 +1054,28 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   window.addEventListener?.('focus-host-resume', wakeDocument);
   if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', wakeDocument);
 
+  function setTabActive(active: boolean): boolean {
+    if (navigation.isDisposed || !initialized.value || !meta.value) return false;
+    if (parked === !active) return true;
+    parked = !active;
+    if (parked) {
+      window.dispatchEvent(new Event('focus-host-pause'));
+      transportSession.suspend();
+      clearOperatorStatusTimer();
+      clearUpdatePoll();
+      clearTimeout(initialRetry);
+      clearTimeout(accessReloadTimer);
+    } else {
+      transportSession.connect();
+      scheduleUpdatePoll();
+      wakeDocument();
+    }
+    return true;
+  }
+  if (hasMobileFeature('tabs')) window.__focusSetTabActive = setTabActive;
+
   async function load(): Promise<void> {
-    if (navigation.isDisposed || loading.value) return;
+    if (parked || navigation.isDisposed || loading.value) return;
     clearTimeout(initialRetry);
     initialReadFailed = false;
     // Capture the deep link before initial durable-profile convergence may
@@ -1089,7 +1110,6 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
         persistedThreadId: initialMeta.writer_profile.selected_thread_id.trim(),
       });
       if (navigation.isDisposed) return;
-      checkpointThread(navigation.activeThreadId.value);
       initialDelay = 1000;
       transportSession.connect();
     } catch (error) {
@@ -1110,6 +1130,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   function dispose(): void {
+    stopThreadCheckpoint();
+    if (window.__focusSetTabActive === setTabActive) delete window.__focusSetTabActive;
     if (window.__focusCanRebuild === canRebuildPage) delete window.__focusCanRebuild;
     clearTimeout(accessReloadTimer);
     clearTimeout(initialRetry);

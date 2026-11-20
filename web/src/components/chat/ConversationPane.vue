@@ -718,12 +718,26 @@ function currentTranscriptAnchor(pane: HTMLElement): TranscriptScrollAnchor | nu
     ? transcriptAnchor : captureTranscriptScrollAnchor(pane);
 }
 let bookmark = props.restoreReadingItem ? readReadingBookmark() : null;
+// During a cold landing the Markdown layout can grow after the first scroll
+// hits its limit. Keep the requested offset until layout settles or input wins.
+const landingAnchor = ref<TranscriptScrollAnchor | null>(null);
+let landingTimer: ReturnType<typeof setTimeout> | undefined;
+function landBookmark(pane: HTMLElement): boolean {
+  if (!landingAnchor.value) return false;
+  const anchor = { ...landingAnchor.value };
+  if (!restoreTranscriptScrollAnchor(pane, anchor, { preserveScrollMotion: false })) return false;
+  transcriptAnchor = anchor;
+  lastScrollTop = pane.scrollTop;
+  clearTimeout(landingTimer);
+  landingTimer = setTimeout(() => { landingAnchor.value = null; }, 600);
+  return true;
+}
 let savingBookmark: ReturnType<typeof setTimeout> | undefined;
 function checkpointReading(): void {
   clearTimeout(savingBookmark);
   savingBookmark = undefined;
   const pane = panesRef.value;
-  if (!props.restoreReadingItem || !pane || !props.composerSessionId || !props.turns.length || props.sessionLoading || bookmark) return;
+  if (!props.restoreReadingItem || !pane || !props.composerSessionId || !props.turns.length || props.sessionLoading || bookmark || landingAnchor.value) return;
   if (following.value && !props.hasNewerMessages) { saveReadingBookmark(null); return; }
   const anchor = currentTranscriptAnchor(pane);
   const row = anchor && props.turns.find(turn => turn.id === anchor.id);
@@ -741,12 +755,11 @@ watch(() => [props.composerSessionId, props.turns, props.sessionLoading] as cons
   await nextTick();
   const pane = panesRef.value;
   if (!pane || !scrollWriteFenceIsCurrent(fence) || presentationScope(props.composerSessionId) !== saved.scope) return;
-  if (restoreTranscriptScrollAnchor(pane, saved.anchor, { preserveScrollMotion: false })) {
+  landingAnchor.value = saved.anchor;
+  if (landBookmark(pane)) {
     following.value = false;
-    transcriptAnchor = saved.anchor;
-    lastScrollTop = pane.scrollTop;
     reportTranscriptViewport();
-  }
+  } else landingAnchor.value = null;
 }, { flush: 'post' });
 function reportTranscriptViewport(): void {
   const pane = panesRef.value;
@@ -842,6 +855,7 @@ function onPanesScroll(): void {
   if (!el) return;
   const top = el.scrollTop;
 
+  if (landingAnchor.value) { lastScrollTop = top; return; }
   if (scrollbarDrag) {
     if (top < scrollbarDrag.lastTop - 1) {
       historyAutoLoadArmed.value = !props.loadingMore && !historyLoadInProgress.value;
@@ -1550,6 +1564,8 @@ function scrollWriteFenceIsCurrent(fence: ScrollWriteFence): boolean {
 
 /** Stop every non-Prompt viewport writer, including an in-flight native smooth. */
 function cancelOrdinaryScrollWrites(): void {
+  clearTimeout(landingTimer);
+  landingAnchor.value = null;
   transcriptAnchor = null;
   const el = panesRef.value;
 
@@ -1582,6 +1598,7 @@ function claimOrdinaryScrollAuthority(): ScrollWriteFence {
 }
 
 function claimUserScrollAuthority(): void {
+  bookmark = null;
   // An already-authorized older-page read still owns its post-install landing.
   // A gesture may stop competing follow writes, but it must not strand the
   // replacement page at an arbitrary browser-selected position.
@@ -1773,7 +1790,7 @@ function rebindScrollObservers(): void {
 function restoreReadingAnchor(): void {
   const pane = panesRef.value;
   if (following.value || promptNavigation.ownsScroll() || isPinned()) { transcriptAnchor = null; return; }
-  if (!pane || !transcriptAnchor) return;
+  if (!pane || landBookmark(pane) || !transcriptAnchor) return;
   restoreTranscriptScrollAnchor(pane, transcriptAnchor);
   lastScrollTop = pane.scrollTop;
 }
@@ -1866,6 +1883,7 @@ onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange);
   }
   window.visualViewport?.removeEventListener('resize', onVisualViewportResize);
+  clearTimeout(landingTimer);
   clearTimeout(savingBookmark);
   window.removeEventListener('pagehide', checkpointReading);
   window.removeEventListener('focus-host-pause', checkpointReading);
@@ -2011,6 +2029,7 @@ defineExpose({
           'is-following': following,
           'history-loading': historyLoadInProgress,
           'continuous-transcript': continuousTranscript,
+          'restoring-bookmark': !!landingAnchor,
           'prompt-navigation-active': promptNavigationActive,
           'prompt-navigation-resolving': promptNavigationResolving,
           'editor-transcript-hidden': mobileEditorExpanded && !showTargetlessComposer,
@@ -2341,6 +2360,7 @@ defineExpose({
 .panes.is-following,
 .panes.history-loading,
 .panes.continuous-transcript,
+.panes.restoring-bookmark,
 .panes.prompt-navigation-active {
   overflow-anchor: none;
 }
