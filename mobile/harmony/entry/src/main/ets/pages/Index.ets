@@ -13,6 +13,8 @@ struct Index {
   @State private drawerOpen: boolean = false;
   @State private drawerDark: boolean = false;
   private nextId: string = '';
+  @State private returnId: string = '';
+  @State private pageLimit: number = 2;
   @StorageLink('focusMemoryWarning') @Watch('releaseInactive') private memoryWarning: number = 0;
   @State private sites: Site[] = [];
   @State private editing: boolean = false;
@@ -27,6 +29,7 @@ struct Index {
 
   aboutToAppear(): void {
     const prefs = sitePrefs(this.ctx());
+    this.pageLimit = Math.max(1, Math.min(5, prefs.getSync('page-limit', 2) as number));
     this.sites = JSON.parse(prefs.getSync('sites', '[]') as string) as Site[];
     const previous = this.sites.find((item: Site) => item.id === prefs.getSync('active', ''));
     if (previous) this.open(previous);
@@ -36,7 +39,8 @@ struct Index {
     const cached = this.tabs.find((tab: InstanceTab) => tab.site.id === site.id);
     const tab = cached && !link && !reload ? cached : new InstanceTab(site, link);
     const others = this.tabs.filter((item: InstanceTab) => item.site.id !== site.id);
-    this.tabs = [...others.slice(-1), tab];
+    this.tabs = [...others, tab].slice(-this.pageLimit);
+    this.returnId = '';
     this.activeId = site.id;
     this.managing = '';
     const prefs = sitePrefs(this.ctx());
@@ -47,6 +51,7 @@ struct Index {
     if (!this.tabs.some((item: InstanceTab) => item.key === tab.key)) return;
     if (!retained) this.tabs = this.tabs.filter((item: InstanceTab) => item.key !== tab.key);
     if (this.activeId !== tab.site.id) return;
+    this.returnId = tab.site.id;
     this.activeId = '';
     const prefs = sitePrefs(this.ctx());
     prefs.deleteSync('active'); void prefs.flush();
@@ -71,7 +76,23 @@ struct Index {
     const tab = this.tabs.find((item: InstanceTab) => item.site.id === this.activeId);
     if (tab) { tab.back(); return true; }
     if (this.editing) { this.editing = false; return true; }
-    return false;
+    if (this.authSite) { this.authSite = ''; this.authLink = ''; return true; }
+    if (this.managing) { this.managing = ''; return true; }
+    return this.returnToPage();
+  }
+
+  private returnToPage(): boolean {
+    const site = this.sites.find((item: Site) => item.id === this.returnId);
+    if (!site) return false;
+    this.open(site);
+    return true;
+  }
+
+  private setPageLimit(value: number): void {
+    this.pageLimit = value;
+    this.tabs = this.tabs.slice(-value);
+    const prefs = sitePrefs(this.ctx());
+    prefs.putSync('page-limit', value); void prefs.flush();
   }
 
   private edit(site: Site): void {
@@ -91,8 +112,10 @@ struct Index {
       const site = new Site();
       site.origin = origin; site.name = this.label.trim(); site.sso = this.sso;
       site.id = old?.origin === origin ? old.id : util.generateRandomUUID();
-      if (old && (old.origin !== origin || old.name !== site.name || old.sso !== site.sso))
+      if (old && (old.origin !== origin || old.sso !== site.sso))
         this.tabs = this.tabs.filter((tab: InstanceTab) => tab.site.id !== old.id);
+      const retained = this.tabs.find((tab: InstanceTab) => tab.site.id === site.id);
+      if (retained) retained.site.name = site.name;
       if (old && old.origin !== origin) await forgetSite(this.ctx(), old);
       const next = this.sites.filter((s: Site) => s.id !== this.editingId);
       next.push(site);
@@ -136,6 +159,14 @@ struct Index {
             Button('保存').onClick(() => this.save())
           }
         } else {
+          if (this.sites.some((item: Site) => item.id === this.returnId)) {
+            Button('返回对话').onClick(() => this.returnToPage())
+          }
+          Row({ space: 12 }) {
+            Text('保留实例页面数')
+            Select([{ value: '1' }, { value: '2' }, { value: '3' }, { value: '4' }, { value: '5' }])
+              .selected(this.pageLimit - 1).value(this.pageLimit.toString()).onSelect((index: number) => this.setPageLimit(index + 1))
+          }
           Button('添加实例').onClick(() => this.edit(new Site()))
           ForEach(this.sites, (site: Site) => {
             Column({ space: 6 }) {
@@ -197,7 +228,7 @@ struct Index {
         Text('管理实例').width('100%').padding(12).onClick(() => this.selectEntry(''))
         Text('关于 Focus Mobile').width('100%').padding(12).onClick(() => {
           this.drawerOpen = false;
-          AlertDialog.show({ title: 'Focus Mobile 1.2.0', message: 'HarmonyOS · ArkWeb' });
+          AlertDialog.show({ title: 'Focus Mobile 1.3.0', message: 'HarmonyOS · ArkWeb' });
         })
       }.width('82%').constraintSize({ maxWidth: 328 }).height('100%').padding(14)
         .foregroundColor(this.drawerDark ? '#f1f1ed' : '#242523')

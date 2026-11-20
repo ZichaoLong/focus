@@ -21,11 +21,11 @@ protocol version and feature list and dispatches `focus-host-ready`. Unknown ver
 - `wake` accepts `focus-host-resume` and `focus-host-pause`. Foreground uses the transport wake check. Background flushes text and reading coordinates.
 - `thread` accepts the last thread hint from the root document using the ticket-bound `thread` operation (up to 256 characters, empty for a workspace). The shell encodes it into the next root URL. Web must confirm that target through existing server navigation.
 - `resume` identifies a single recoverable window per instance. Web persists client hints, GET locators, existing writer-bound recovery records,
-  the last confirmed thread, text drafts and the thread explicitly selected for reading mode. Each new document registers. Unsent text and verifiable reading anchors use the instance and confirmed thread or workspace.
+  the last confirmed thread, text drafts and the reading mode and position of recently confirmed threads. Each new document registers. Unsent text and verifiable reading anchors use the instance and confirmed thread or workspace.
   Attachments, approvals and send scopes still require the acknowledged writer.
   When available, strict IndexedDB transactions persist text drafts, mode and reading bookmarks for each negotiated instance. Existing Web Storage entries migrate on first use. Draft removal and retention expiry also remove the durable copy.
 - `tabs` can include a display `name`. The ticket-bound `instances` operation opens the picker. `chrome(web|native)` signals whether Web exposes the picker. Loading, access errors and older versions retain the native entry.
-  On switch the host calls `__focusSetTabActive(false)` on the top document. Web checkpoints drafts and reading position, closes the socket, and pauses polling and retries. A `true` acknowledgement allows one document for each of the two most recent instances to stay in memory. Selection calls `__focusSetTabActive(true)` and uses the existing handshake and server reread. Missing acknowledgement, memory pressure and explicit reconnect allow a cold rebuild.
+  On switch the host calls `__focusSetTabActive(false)` on the top document. Web checkpoints drafts and reading position, closes the socket, and pauses polling and retries. A `true` acknowledgement allows one document per instance to stay in memory. Manage instances sets a limit of 1–5 recent pages including the current page, with a default of 2. Exceeding or lowering the limit releases the least recently selected pages first. Selection calls `__focusSetTabActive(true)` and uses the existing handshake and server reread. Missing acknowledgement, memory pressure and explicit reconnect allow a cold rebuild.
 - `save` uses `prompt("focus/1/<ticket>/<op>", value)` to await a native picker or write.
   `choose` accepts a filename. The user chooses the destination. `write` acknowledges Base64 chunks of at most 24 KiB of bytes.
   `finish` copies the staged file to the selected destination. `abort` releases staging. Success returns `ok`.
@@ -36,6 +36,8 @@ Top-level navigation and teardown revoke the ticket. Parking suspends its use un
 The protocol accepts no arbitrary URLs, paths, scripts or business retries. Push registration and notification permissions require separate capabilities.
 
 ## Instance drawer and Android distribution
+
+Return to conversation and system Back in the manager select the originating instance again. Renaming preserves its retained document. Deleting or replacing its origin leaves the instance list available.
 
 A host offering `drawer` accepts a light/dark hint with `instances` and overlays its local registry. Opening, dismissing or selecting the current entry leaves the document active. Selecting a different instance parks it with acknowledgement. Normal and reading headers expose their own trigger. The Web receives the selected name only. The native entry stays available during loading and recovery.
 

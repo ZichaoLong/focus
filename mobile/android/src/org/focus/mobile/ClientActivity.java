@@ -17,6 +17,10 @@ import java.util.*;
 import org.json.*;
 
 public class ClientActivity extends Activity {
+    public static final class Third extends ClientActivity {}
+    public static final class Fourth extends ClientActivity {}
+    public static final class Fifth extends ClientActivity {}
+
     private static final String PROBE = "/focus-connect.txt";
     private final boolean legacy = this instanceof LegacyClientActivity;
     private String id, origin, name, link, ticket = "";
@@ -402,7 +406,7 @@ public class ClientActivity extends Activity {
                 if (pages.openNamedTarget(switchTarget, new JSONArray(prefs.getString("list", "[]")))) return;
             } catch (JSONException ignored) { /* The manager can recover the local entry list. */ }
         }
-        startActivity(new Intent(this, MainActivity.class).setAction(MainActivity.PICK).putExtra("target", switchTarget)
+        startActivity(new Intent(this, MainActivity.class).setAction(MainActivity.PICK).putExtra("target", switchTarget).putExtra("return-instance", id)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP));
         if (legacy) finishAndRemoveTask();
     }
@@ -412,7 +416,8 @@ public class ClientActivity extends Activity {
         try {
             JSONObject site = new JSONObject(intent.getStringExtra("site"));
             if (!id.equals(site.getString("id")) || !origin.equals(Site.entry(site.getString("origin")))) { finish(); return; }
-            boolean policyChanged = sso != site.optBoolean("sso") || !name.equals(site.getString("name"));
+            boolean policyChanged = sso != site.optBoolean("sso");
+            boolean renamed = !name.equals(site.getString("name"));
             name = site.getString("name"); sso = site.optBoolean("sso");
             link = intent.getStringExtra("link"); intent.removeExtra("link"); setIntent(intent);
             switcher.setText(name + " ▾");
@@ -420,7 +425,12 @@ public class ClientActivity extends Activity {
             if (!legacy && ProfileTransfer.snapshot(this, id).getBaseFile().exists() &&
                     !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) { importProfile(); return; }
             if (web == null || policyChanged || Site.root(link, origin) || intent.getBooleanExtra("reload", false)) openProbe(false);
-            else if (wasParked) web.evaluateJavascript("window.__focusSetTabActive?.(true)", null);
+            else {
+                if (renamed && !ticket.isEmpty() && Site.root(web.getUrl(), origin))
+                    web.evaluateJavascript("if(window.__focusMobile?.ticket===" + JSONObject.quote(ticket) + "){window.__focusMobile.name=" + JSONObject.quote(name)
+                        + ";dispatchEvent(new Event('focus-host-ready'))}", null);
+                if (wasParked) web.evaluateJavascript("window.__focusSetTabActive?.(true)", null);
+            }
         } catch (Exception e) { finish(); }
     }
 

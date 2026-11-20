@@ -7,7 +7,7 @@ import androidx.webkit.ProfileStore;
 import org.json.*;
 import java.util.*;
 
-/** Two warm Android tasks, with both isolated WebViews owned by the same engine process. */
+/** Recently selected isolated pages share one WebView host process. */
 final class PageSlots {
     private final Activity owner;
     private final SharedPreferences prefs;
@@ -37,17 +37,52 @@ final class PageSlots {
 
     static void attached(ClientActivity page) { live.put(page.getClass(), page); }
     static void detached(ClientActivity page) { live.remove(page.getClass(), page); }
-    private Class<?> activity(int slot) { return slot == 0 ? ClientActivity.class : SecondClientActivity.class; }
+    private static final Class<?>[] ACTIVITIES = { ClientActivity.class, SecondClientActivity.class,
+        ClientActivity.Third.class, ClientActivity.Fourth.class, ClientActivity.Fifth.class };
+    int limit() { return Math.max(1, Math.min(ACTIVITIES.length, prefs.getInt("page-limit", 2))); }
+
+    private List<Integer> occupied() {
+        List<Integer> slots = new ArrayList<>();
+        for (int i = 0; i < ACTIVITIES.length; i++) if (!instance(i).isEmpty()) slots.add(i);
+        slots.sort(Comparator.comparingLong(this::lastUse));
+        return slots;
+    }
+
+    private long lastUse(int slot) {
+        // Version 1.2 kept the most recent of its two task slots.
+        return prefs.getLong("use-" + slot, slot == prefs.getInt("latest-slot", 1) ? 1L : 0L);
+    }
+
+    void setLimit(int count) {
+        if (count < 1 || count > ACTIVITIES.length) return;
+        prefs.edit().putInt("page-limit", count).apply();
+        List<Integer> slots = occupied();
+        for (int i = 0; i < slots.size() - count; i++) retire(slots.get(i));
+    }
+
+    private int claim(String id) {
+        List<Integer> slots = occupied();
+        long order = slots.isEmpty() ? 1 : lastUse(slots.get(slots.size() - 1)) + 1;
+        int slot = 0;
+        while (slot < ACTIVITIES.length && !id.equals(instance(slot))) slot++;
+        if (slot == ACTIVITIES.length) {
+            if (slots.size() >= limit()) retire(slots.get(0));
+            slot = 0;
+            while (!instance(slot).isEmpty()) slot++;
+        }
+        prefs.edit().putString("slot-" + slot, id).putLong("use-" + slot, order).commit();
+        return slot;
+    }
     private String instance(int slot) { return prefs.getString("slot-" + slot, ""); }
 
     private void retire(int slot) {
-        Class<?> type = activity(slot);
+        Class<?> type = ACTIVITIES[slot];
         ClientActivity page = live.get(type);
         if (page != null) page.releaseTask();
         else for (ActivityManager.AppTask task : tasks.getAppTasks()) {
             if (new ComponentName(owner, type).equals(task.getTaskInfo().baseIntent.getComponent())) task.finishAndRemoveTask();
         }
-        prefs.edit().remove("slot-" + slot).commit();
+        prefs.edit().remove("slot-" + slot).remove("use-" + slot).commit();
     }
 
     boolean openNamedTarget(String id, JSONArray sites) {
@@ -84,7 +119,7 @@ final class PageSlots {
             String key = old.optString("id");
             if (!needsLegacy(old) || old.optBoolean("sso") || exportFailed.contains(key)
                 || ProfileTransfer.snapshot(owner, key).getBaseFile().exists()) continue;
-            if (!live.isEmpty()) { retire(0); retire(1); }
+            if (!live.isEmpty()) for (int slot : occupied()) retire(slot);
             if (transferNotice == null) transferNotice = new AlertDialog.Builder(owner)
                 .setMessage("正在恢复原有实例的网页数据…").setCancelable(false).show();
             ResultReceiver reply = new ResultReceiver(main) {
@@ -118,13 +153,10 @@ final class PageSlots {
             .putExtra("site", site.toString()).putExtra("link", link).putExtra("reload", reload);
         if (legacy) {
             ProfileTransfer.snapshot(owner, id).delete();
-            retire(0); retire(1);
+            for (int slot : occupied()) retire(slot);
             intent.setClass(owner, LegacyClientActivity.class);
         } else {
-            int slot = id.equals(instance(0)) ? 0 : id.equals(instance(1)) ? 1 : 1 - prefs.getInt("latest-slot", 1);
-            if (!id.equals(instance(slot))) retire(slot);
-            prefs.edit().putString("slot-" + slot, id).putInt("latest-slot", slot).commit();
-            intent.setClass(owner, activity(slot));
+            intent.setClass(owner, ACTIVITIES[claim(id)]);
         }
         prefs.edit().putString("active", id).commit();
         owner.startActivity(intent);
@@ -161,7 +193,7 @@ final class PageSlots {
     }
 
     void forget(String id) {
-        for (int slot = 0; slot < 2; slot++) if (id.equals(instance(slot))) retire(slot);
+        for (int slot = 0; slot < ACTIVITIES.length; slot++) if (id.equals(instance(slot))) retire(slot);
         ProfileTransfer.snapshot(owner, id).delete();
         Set<String> pending = new HashSet<>(prefs.getStringSet("delete-profiles", Collections.emptySet()));
         pending.add(id);

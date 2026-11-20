@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.2.0" android:versionCode="3">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="org.focus.mobile" android:versionName="1.3.0" android:versionCode="4">
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="35"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -14,6 +14,15 @@
             android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
             android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
         <activity android:name=".SecondClientActivity" android:taskAffinity="org.focus.mobile.tab2"
+            android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
+            android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <activity android:name=".ClientActivity$Third" android:taskAffinity="org.focus.mobile.tab3"
+            android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
+            android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <activity android:name=".ClientActivity$Fourth" android:taskAffinity="org.focus.mobile.tab4"
+            android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
+            android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
+        <activity android:name=".ClientActivity$Fifth" android:taskAffinity="org.focus.mobile.tab5"
             android:launchMode="singleTask" android:excludeFromRecents="true" android:exported="false"
             android:windowSoftInputMode="adjustResize" android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize"/>
         <activity android:name=".LegacyClientActivity" android:process=":legacy" android:exported="false"

@@ -13,10 +13,12 @@ public final class MainActivity extends Activity {
     private JSONArray sites;
     private SharedPreferences prefs;
     private PageSlots pages;
+    private String returnInstance = "";
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("instances", MODE_PRIVATE);
+        if (state != null) returnInstance = state.getString("return-instance", "");
         pages = new PageSlots(this, prefs);
         try { sites = new JSONArray(prefs.getString("list", "[]")); }
         catch (JSONException e) { throw new IllegalStateException(e); }
@@ -29,8 +31,10 @@ public final class MainActivity extends Activity {
         super.onResume();
         if (PICK.equals(getIntent().getAction())) {
             prefs.edit().remove("active").commit();
+            returnInstance = getIntent().getStringExtra("return-instance");
             String target = getIntent().getStringExtra("target");
             setIntent(new Intent());
+            render();
             for (int i = 0; i < sites.length(); i++) {
                 JSONObject site = sites.optJSONObject(i);
                 if (site.optString("id").equals(target)) { open(site, ""); break; }
@@ -43,11 +47,30 @@ public final class MainActivity extends Activity {
 
     @Override protected void onDestroy() { pages.finishOpening(); super.onDestroy(); }
 
+    private JSONObject returnSite() {
+        for (int i = 0; i < sites.length(); i++) {
+            JSONObject site = sites.optJSONObject(i);
+            if (site.optString("id").equals(returnInstance)) return site;
+        }
+        return null;
+    }
+
+    @Override public void onBackPressed() {
+        JSONObject site = returnSite();
+        if (site != null) open(site, ""); else super.onBackPressed();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        state.putString("return-instance", returnInstance);
+    }
+
     private void render() {
         ScrollView scroll = new ScrollView(this);
         LinearLayout list = Views.column(this);
         scroll.addView(list);
         Views.install(this, scroll);
+        if (returnSite() != null) Views.button(this, list, "返回对话", this::onBackPressed);
         TextView title = new TextView(this);
         title.setText("Focus 实例"); title.setTextSize(24); list.addView(title);
         for (int i = 0; i < sites.length(); i++) {
@@ -73,6 +96,11 @@ public final class MainActivity extends Activity {
             });
         }
         Views.button(this, list, "添加实例", () -> edit(-1));
+        Views.button(this, list, "保留实例页面数 · " + pages.limit(), () ->
+            new AlertDialog.Builder(this).setTitle("保留实例页面数")
+                .setSingleChoiceItems(new String[]{"1", "2", "3", "4", "5"}, pages.limit() - 1, (dialog, index) -> {
+                    pages.setLimit(index + 1); dialog.dismiss(); render();
+                }).setNegativeButton("取消", null).show());
     }
 
     private void persist() { prefs.edit().putString("list", sites.toString()).commit(); }

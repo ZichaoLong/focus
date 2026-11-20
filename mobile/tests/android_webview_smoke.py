@@ -67,11 +67,14 @@ async def wait_for(ws, expression):
 
 async def smoke(args):
     entries = json.loads((args.lab / "instances.json").read_text())
+    if not 0 <= args.entry < len(entries):
+        raise ValueError("Choose an entry index from the fixture")
     origin = entries[args.entry]["origin"]
-    expected_host = "127.0.0.1" if args.entry == 2 else "10.0.2.2"
+    local = args.entry == len(entries) - 1
+    expected_host = "127.0.0.1" if local else "10.0.2.2"
     if urlsplit(origin).hostname != expected_host or not args.serial.startswith("emulator-"):
         raise ValueError("Expected the loopback fixture and a dedicated Android emulator")
-    if (args.cycle_network or args.wait_session_expiry) and args.entry == 2:
+    if (args.cycle_network or args.wait_session_expiry) and local:
         raise ValueError("Choose a trusted-proxy HTTPS entry for network and automatic reauthorization checks")
 
     adb = emulator_adb(args.adb, args.serial)
@@ -205,7 +208,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--adb", default="adb")
-    parser.add_argument("--entry", type=int, choices=(0, 1, 2), default=0)
+    parser.add_argument("--entry", type=int, default=0)
     parser.add_argument("--cycle-network", action="store_true", help="cycle system airplane mode on the dedicated emulator")
     parser.add_argument("--wait-session-expiry", action="store_true", help="observe trusted-proxy recovery with fixture --session-lifetime 60")
     parser.add_argument("lab", type=Path)

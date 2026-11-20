@@ -282,7 +282,11 @@ export struct InstancePane {
       this.controller.onInactive();
     } else {
       this.controller.onActive();
-      this.controller.runJavaScript('window.__focusSetTabActive?.(true)').catch(() => {});
+      if (this.ticket && this.phase === 'page') {
+        const ticket = JSON.stringify(this.ticket);
+        this.controller.runJavaScript('if(window.__focusMobile?.ticket===' + ticket + '){window.__focusMobile.name=' +
+          JSON.stringify(this.site.name) + ';dispatchEvent(new Event("focus-host-ready"));window.__focusSetTabActive?.(true)}').catch(() => {});
+      }
       this.foregroundChanged();
     }
   }
