@@ -791,6 +791,7 @@ export interface FocusThreadDeltaDetail {
 }
 
 export interface FocusTranscriptQuery {
+  fill?: true;
   turn_id?: string;
   cursor?: string;
   direction?: 'asc' | 'desc';

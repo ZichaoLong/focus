@@ -28,13 +28,32 @@ class ThreadInspectionGatewayTests(WebGatewayHarness):
         async with self.session.get(path + "?turn_id=turn-1&item_id=item-1&full=true", headers=headers) as response:
             self.assertEqual(response.status, 200)
         self.assertEqual(calls, [("thread-1", {"turn_id": "turn-1", "item_id": "item-1", "full": True})])
-        for query in ("?direction=asc&direction=desc", "?full=1", "?cursor=", "?all=true"):
+        for query in ("?direction=asc&direction=desc", "?full=1", "?cursor=", "?all=true",
+                      "?fill=true", "?cursor=c&fill=1", "?cursor=c&direction=asc&fill=true",
+                      "?cursor=c&turn_id=t&fill=true", "?cursor=c&view=prompts&fill=true"):
             async with self.session.get(path + query, headers=headers) as response:
                 self.assertEqual(response.status, 400)
         async with self.session.get(path) as response:
             self.assertEqual(response.status, 400)
             self.assertEqual((await response.json())["error"]["code"], "invalid_client")
         self.assertEqual(len(calls), 1)
+
+    async def test_tail_context_limits_serialized_bytes_only_on_the_optional_read(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(resume_client_id="context", incarnation_id="context-doc")
+        headers = self._client_headers(document)
+        path = f"{self.endpoint}/api/threads/thread-1/transcript?cursor=c&direction=desc"
+        payload = {"text": "small"}
+        self.gateway._ports.prepare_transcript_window = lambda *args, **kwargs: ("transcript", payload)
+        async with self.session.get(path + "&fill=true", headers=headers) as response:
+            self.assertEqual(await response.json(), payload)
+        payload["text"] = "正" * 48_000
+        async with self.session.get(path + "&fill=true", headers=headers) as response:
+            self.assertEqual(response.status, 409)
+            self.assertEqual((await response.json())["error"]["code"], "transcript_fill_limit")
+        async with self.session.get(path, headers=headers) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.json(), payload)
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()

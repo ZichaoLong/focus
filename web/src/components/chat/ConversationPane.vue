@@ -112,9 +112,9 @@ const props = withDefaults(defineProps<{
   /** True when the last older-message fetch failed; blocks sentinel auto-retry. */
   loadingMoreError?: boolean;
   /** Callback to fetch the next older page of messages. */
-  loadOlderMessages?: (sessionId: string) => Promise<boolean>;
+  loadOlderMessages?: (sessionId: string, tailContext?: AbortSignal) => Promise<boolean>;
   /** Leave a replacement history page before scrolling to the live tail. */
-  returnToLiveTail?: () => void;
+  returnToLiveTail?: (intent?: AbortSignal) => Promise<boolean>;
   /** Available models for the quick-switch dropdown in the composer toolbar. */
   models?: AppModel[];
   /** Product-owned notice shown beside model/effort controls. */
@@ -455,6 +455,7 @@ watch(hasDockWork, (hasWork) => {
   if (!hasWork) closeDockPanel();
 });
 watch(() => props.readingMode, (reading) => {
+  latestReturn?.abort();
   if (reading) closeDockPanel();
 });
 
@@ -772,6 +773,7 @@ function armNewerHistory(): void {
 }
 watch(following, reportTranscriptViewport, { flush: 'sync' });
 watch(mobileEditorExpanded, async expanded => {
+  if (expanded) latestReturn?.abort();
   const pane = panesRef.value;
   if (expanded && pane && !showTargetlessComposer.value) {
     // Keep the hidden transcript at its current size so opening the editor or
@@ -809,6 +811,8 @@ const promptNavigationResolving = ref(false);
     scrolling DOWN into this zone re-enables the follow. */
 const BOTTOM_THRESHOLD = 80;
 const USER_ACTION_FOLLOW_LOCK_MS = 1000;
+const MAX_TAIL_CONTEXT_PAGES = 2;
+let latestReturn: AbortController | null = null;
 
 function distanceFromBottom(): number {
   const el = panesRef.value;
@@ -938,16 +942,37 @@ function scrollToBottom(smooth = false): void {
 
 async function handleReturnToLiveTail(): Promise<void> {
   const fence = claimOrdinaryScrollAuthority();
+  const intent = new AbortController();
+  latestReturn = intent;
   abandonScrollbarDrag();
   historyAutoLoadArmed.value = false;
-  // Keep bottom-follow disabled while the history window is replaced. The
-  // matching continuation below becomes its sole landing-position writer.
   following.value = false;
-  props.returnToLiveTail?.();
-  await nextTick();
-  if (!scrollWriteFenceIsCurrent(fence)) return;
-  scrollToBottom(true);
-  scheduleStableFollow(16);
+  try {
+    if (props.returnToLiveTail && !await props.returnToLiveTail(intent.signal)) return;
+    await nextTick();
+    if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
+    scrollToBottom(true);
+    scheduleStableFollow(16);
+    for (let i = 0; i < MAX_TAIL_CONTEXT_PAGES; i++) {
+      if (!props.continuousTranscript || !props.hasMoreMessages || !props.sessionId || !props.loadOlderMessages) break;
+      await new Promise<void>(resolve => raf(resolve));
+      const pane = fence.pane;
+      if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence) || !following.value || !pane
+        || document.visibilityState === 'hidden' || pane.scrollHeight > pane.clientHeight + 1) break;
+      // The flex wrapper fills short viewports. Measure the flow after all
+      // rows, activity and queued prompts, before its normal bottom padding.
+      const end = pane.querySelector('[data-transcript-end]');
+      if (!end || pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top
+        < Math.max(96, pane.clientHeight * 0.2)) break;
+      if (!await props.loadOlderMessages(props.sessionId, intent.signal)) break;
+      await nextTick();
+      if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
+      scrollToBottom(false);
+      scheduleStableFollow(16);
+    }
+  } finally {
+    if (latestReturn === intent) latestReturn = null;
+  }
 }
 
 async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {
@@ -1568,6 +1593,7 @@ function scrollWriteFenceIsCurrent(fence: ScrollWriteFence): boolean {
 
 /** Stop every non-Prompt viewport writer, including an in-flight native smooth. */
 function cancelOrdinaryScrollWrites(): void {
+  latestReturn?.abort();
   clearTimeout(landingTimer);
   landingAnchor.value = null;
   transcriptAnchor = null;
@@ -1673,6 +1699,7 @@ function finishScrollbarDrag(event: PointerEvent): void {
 }
 
 function onWindowBlur(): void {
+  latestReturn?.abort();
   if (promptNavigation.ownsScroll()) claimOrdinaryScrollAuthority();
   abandonScrollbarDrag();
   historyAutoLoadArmed.value = false;
@@ -1702,10 +1729,12 @@ function onPanesPointerDown(event: PointerEvent): void {
 }
 
 let lastTouchY: number | null = null;
+let touchDirection: 'up' | 'down' | null = null;
 
 function onPanesTouchStart(event: TouchEvent): void {
   abandonScrollbarDrag();
   claimUserScrollAuthority();
+  touchDirection = null;
   lastTouchY = event.touches.length === 1 ? event.touches[0]!.clientY : null;
 }
 
@@ -1715,7 +1744,8 @@ function onPanesTouchMove(event: TouchEvent): void {
   // The finger moving down means the scroll container is moving up.
   if (Math.abs(delta) > 2) {
     const direction = delta > 0 ? 'up' : 'down';
-    if (!nestedScrollerCanMove(event, direction)) {
+    if (direction !== touchDirection && !nestedScrollerCanMove(event, direction)) {
+      touchDirection = direction;
       if (direction === 'up') {
         historyAutoLoadArmed.value = !props.loadingMore && !historyLoadInProgress.value;
         following.value = false;
@@ -1810,10 +1840,15 @@ function onContentMutated(): void {
 
 function onVisibilityChange(): void {
   if (typeof document === 'undefined') return;
-  if (document.visibilityState === 'hidden') checkpointReading();
+  if (document.visibilityState === 'hidden') leaveVisibleTranscript();
   if (document.visibilityState === 'visible' && following.value) {
     scheduleStableFollow();
   }
+}
+
+function leaveVisibleTranscript(): void {
+  latestReturn?.abort();
+  checkpointReading();
 }
 
 function handleInterrupt(): void {
@@ -1865,8 +1900,8 @@ onMounted(() => {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
     window.visualViewport?.addEventListener('resize', onVisualViewportResize);
-    window.addEventListener('pagehide', checkpointReading);
-    window.addEventListener('focus-host-pause', checkpointReading);
+    window.addEventListener('pagehide', leaveVisibleTranscript);
+    window.addEventListener('focus-host-pause', leaveVisibleTranscript);
     window.addEventListener('pointerup', finishScrollbarDrag);
     window.addEventListener('pointercancel', finishScrollbarDrag);
     window.addEventListener('blur', onWindowBlur);
@@ -1878,6 +1913,7 @@ onUnmounted(() => {
   componentDisposed = true;
   if (contentObserver) contentObserver.disconnect();
   if (resizeObserver) resizeObserver.disconnect();
+  latestReturn?.abort();
   cancelScheduledFollow();
   promptNavigation.cancel();
   abandonScrollbarDrag();
@@ -1889,8 +1925,8 @@ onUnmounted(() => {
   window.visualViewport?.removeEventListener('resize', onVisualViewportResize);
   clearTimeout(landingTimer);
   clearTimeout(savingBookmark);
-  window.removeEventListener('pagehide', checkpointReading);
-  window.removeEventListener('focus-host-pause', checkpointReading);
+  window.removeEventListener('pagehide', leaveVisibleTranscript);
+  window.removeEventListener('focus-host-pause', leaveVisibleTranscript);
   window.removeEventListener('pointerup', finishScrollbarDrag);
   window.removeEventListener('pointercancel', finishScrollbarDrag);
   window.removeEventListener('blur', onWindowBlur);

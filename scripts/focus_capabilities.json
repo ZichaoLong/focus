@@ -1207,6 +1207,10 @@
           "symbol": "TranscriptPageWindow"
         },
         {
+          "path": "bot/web_runtime/gateway_request_decoder.py",
+          "symbol": "decode_transcript_query"
+        },
+        {
           "path": "web/src/components/chat/transcriptScrollAnchor.ts",
           "symbol": "captureTranscriptScrollAnchor"
         },
@@ -1341,6 +1345,7 @@
             "web/test/reply-time.test.ts",
             "web/test/tool-group-presentation.test.ts",
             "web/test/transcript-tool-groups-browser.test.ts",
+            "web/test/transcript-tail-browser.test.ts",
             "web/test/composer-scroll-browser.test.ts",
             "web/test/transcript-visibility.test.ts",
             "web/test/transcript-visibility-browser.test.ts",

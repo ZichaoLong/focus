@@ -18,7 +18,7 @@ export async function readTranscriptTarget(
     try {
       result = await api.readTranscriptWindow(threadId, request, signal);
     } catch (failure) {
-      if (!isStaleWebReadError(failure) || !current() || signal.aborted) throw failure;
+      if (query.fill || !isStaleWebReadError(failure) || !current() || signal.aborted) throw failure;
       result = await api.readTranscriptWindow(threadId, request, signal);
     }
     if (result.thread_id !== threadId || result.runtime_epoch !== epoch

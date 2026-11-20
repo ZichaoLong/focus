@@ -44,6 +44,42 @@ function harness(initial = page(), reading: Pick<Parameters<typeof createFocusTr
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it('confirms Latest while preserving the original revision of earlier cached rows', async () => {
+    const h = harness(page([row(2), row(3)])); await settle();
+    h.read.mockResolvedValueOnce(page([row(1)], { older_cursor: 'before-1' }));
+    await h.owner.older();
+    h.read.mockResolvedValueOnce(page([row(3, 'fresh'), row(4)], { revision: 5 }));
+    const intent = new AbortController();
+    expect(await h.owner.load({}, 'latest', false, intent.signal)).toBe(true);
+    h.event(4, { method: 'item/completed', item_turns: [row(1, 'earlier edited'), row(3, 'stale')] });
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['earlier edited', '2', 'fresh', '4']);
+    expect(await h.owner.older(new AbortController().signal)).toBe(false);
+    h.read.mockRejectedValueOnce(new FocusApiError('changed', { status: 409, code: 'stale_thread_read' }));
+    expect(await h.owner.older(intent.signal)).toBe(false);
+    expect(h.owner.error.value).toBe('');
+    expect(h.read).toHaveBeenCalledTimes(4);
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'before-1', direction: 'desc', fill: true }, expect.any(AbortSignal));
+    h.owner.prepareReload();
+    expect(await h.owner.older(intent.signal)).toBe(false);
+  });
+
+  it.each(['latest', 'context'] as const)('abandons a delayed %s read and replays buffered live events', async mode => {
+    const h = harness(page([row(5)])); await settle();
+    const intent = new AbortController();
+    if (mode === 'context') await h.owner.load({}, 'latest', false, intent.signal);
+    const pending = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(pending.promise);
+    const read = mode === 'latest' ? h.owner.load({}, 'latest', false, intent.signal) : h.owner.older(intent.signal);
+    h.event(3, { method: 'item/completed', item_turns: [row(6)] });
+    intent.abort();
+    expect(h.read.mock.calls.at(-1)?.[2]?.aborted).toBe(true);
+    expect(h.owner.loading.value).toBe(false);
+    pending.resolve(page([row(0)]));
+    expect(await read).toBe(false);
+    expect(h.owner.turns.value.map(r => r.itemId)).toEqual(['item-5', 'item-6']);
+    expect(h.owner.error.value).toBe('');
+  });
+
   it('retries a cold bookmark after a network error and forgets it only on authoritative loss', async () => {
     const target = { turn: 'turn-1', item: 'item-7' };
     const query = { turn_id: target.turn, item_id: target.item, direction: 'asc' };

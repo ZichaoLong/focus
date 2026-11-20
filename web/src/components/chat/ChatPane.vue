@@ -758,6 +758,7 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
         </div>
       </div>
     </div>
+    <span data-transcript-end aria-hidden="true" />
   </div>
 
 </template>

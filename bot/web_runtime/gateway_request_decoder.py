@@ -52,7 +52,7 @@ def decode_transcript_query(query: object) -> dict[str, Any]:
     message = "Transcript queries require exact cursor/turn/item fields and asc/desc direction."
     values = _decode_exact_query(
         query, required=frozenset(),
-        optional=frozenset({"turn_id", "cursor", "direction", "item_id", "full", "view", "source_cursor"}),
+        optional=frozenset({"turn_id", "cursor", "direction", "item_id", "full", "view", "source_cursor", "fill"}),
         code="invalid_transcript_query", message=message,
     )
     if any(not value or value.strip() != value or len(value) > 4096 for value in values.values()):
@@ -60,6 +60,11 @@ def decode_transcript_query(query: object) -> dict[str, Any]:
     if (values.get("direction", "desc") not in {"asc", "desc"}
             or values.get("full", "false") not in {"true", "false"}
             or values.get("view", "transcript") not in {"transcript", "prompts"}):
+        raise WebRuntimeError(message, code="invalid_transcript_query", status=400)
+    if "fill" in values and (
+        values["fill"] != "true" or not values.get("cursor") or values.get("direction", "desc") != "desc"
+        or values.keys() - {"fill", "cursor", "direction"}
+    ):
         raise WebRuntimeError(message, code="invalid_transcript_query", status=400)
     return {**values, "full": values.get("full", "false") == "true"}
 

@@ -12,6 +12,52 @@ const page = (start: number, count = 40, text?: string): FocusTranscriptPage => 
 });
 
 describe('contiguous transcript cache', () => {
+  it('keeps only the proven prefix and real edge cursors when the latest page moves', () => {
+    const cache = new TranscriptPageWindow();
+    cache.replace(page(40), true);
+    cache.extend(page(0), 'older');
+    cache.returnToLatest(page(65, 40, 'fresh'));
+    expect(cache.rows.map(r => r.id)).toEqual(page(0, 105).turns.map(r => r.id));
+    expect(cache.rows[64]?.text).toBe('64');
+    expect(cache.rows[65]?.text).toBe('fresh');
+    expect([cache.older, cache.newer, cache.atTail]).toEqual(['before-0', 'after-105', true]);
+    for (let i = 1; i <= 8; i++) cache.extend(page(-40 * i), 'older');
+    expect(cache.rows.at(-1)?.id).toBe('row-64');
+    expect([cache.newer, cache.atTail]).toEqual([null, false]); // resume from exact row 64
+  });
+
+  it.each([
+    page(90), page(60, 0), { ...page(55), older_cursor: null }, page(55, 10),
+    { ...page(60), turns: [row(60), row(62), row(61)] },
+    { ...page(79), turns: [row(79), row(80), row(20)] },
+  ])('falls back to the authoritative head on a gap, truncation or reorder', latest => {
+    const cache = new TranscriptPageWindow();
+    cache.replace(page(40), true);
+    cache.extend(page(0), 'older');
+    cache.returnToLatest(latest);
+    expect(cache.rows).toEqual(latest.turns);
+    expect([cache.pageCount, cache.older, cache.atTail]).toEqual([1, latest.older_cursor, true]);
+  });
+
+  it('retains the confirmed tail when an optional older page exceeds the cache budget', () => {
+    const cache = new TranscriptPageWindow();
+    const tail = page(40, 1, 'x'.repeat(TRANSCRIPT_CACHE_BYTES / 2));
+    cache.replace(tail, true);
+    cache.extend(page(0), 'tail-context');
+    expect(cache.rows).toEqual(tail.turns);
+    expect([cache.older, cache.atTail]).toEqual([tail.older_cursor, true]);
+  });
+
+  it('cannot reuse a clipped live page as evidence for an adjacent older prefix', () => {
+    const cache = new TranscriptPageWindow();
+    cache.replace(page(40), true);
+    cache.extend(page(0), 'older');
+    expect(cache.update(page(0, 125).turns, 'newer')).toBe(true);
+    const latest = page(95);
+    cache.returnToLatest(latest);
+    expect(cache.rows).toEqual(latest.turns);
+  });
+
   it('retains ten visited pages, evicts the distant edge, and keeps continuation cursors', () => {
     const cache = new TranscriptPageWindow();
     cache.replace(page(480), true);

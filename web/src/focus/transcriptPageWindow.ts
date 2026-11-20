@@ -15,6 +15,7 @@ interface CachedPage {
 export class TranscriptPageWindow {
   private pages: CachedPage[] = [];
   private sizes = new Map<string, { row: ChatTurn; bytes: number }>();
+  private livePageClipped = false;
   atTail = false;
 
   get rows(): ChatTurn[] { return this.pages.flatMap(page => page.rows); }
@@ -23,13 +24,42 @@ export class TranscriptPageWindow {
   get pageCount(): number { return this.pages.length; }
   get bytes(): number { return [...this.sizes.values()].reduce((sum, entry) => sum + entry.bytes, 0); }
 
-  clear(): void { this.pages = []; this.sizes.clear(); this.atTail = false; }
+  clear(): void { this.pages = []; this.sizes.clear(); this.atTail = false; this.livePageClipped = false; }
 
   replace(page: FocusTranscriptPage, atTail: boolean): void {
     this.clear();
     this.pages = [{ rows: page.turns, older: page.older_cursor, newer: page.newer_cursor }];
     this.atTail = atTail;
     this.measure();
+  }
+
+  /** Explicit return: install the authoritative head, keeping only a proven adjacent prefix. */
+  returnToLatest(page: FocusTranscriptPage): void {
+    const rows = this.rows;
+    const start = rows.findIndex(row => row.id === page.turns[0]?.id);
+    const incoming = new Set(page.turns.map(row => row.id));
+    if (this.livePageClipped || !page.older_cursor || start <= 0
+      || rows.slice(start).some((row, i) => row.id !== page.turns[i]?.id)
+      || rows.slice(0, start).some(row => incoming.has(row.id))) {
+      this.replace(page, true);
+      return;
+    }
+    const prefix: CachedPage[] = [];
+    let remaining = start;
+    for (const cached of this.pages) {
+      if (!remaining) break;
+      if (cached.rows.length > remaining) {
+        // The original forward cursor would skip the rest of this split page.
+        // If the head is evicted, newer() continues from the exact last item.
+        prefix.push({ rows: cached.rows.slice(0, remaining), older: cached.older, newer: null });
+        break;
+      }
+      prefix.push(cached);
+      remaining -= cached.rows.length;
+    }
+    this.pages = [...prefix, { rows: page.turns, older: page.older_cursor, newer: page.newer_cursor }];
+    this.atTail = true;
+    this.bound('newer');
   }
 
   /** Refresh the live edge without replacing a reader's earlier cached rows. */
@@ -47,7 +77,7 @@ export class TranscriptPageWindow {
     this.extend({ ...page, turns: page.turns.slice(overlap) }, 'newer', protectedRow, true);
   }
 
-  extend(page: FocusTranscriptPage, direction: 'older' | 'newer', protectedRow: string | null = null,
+  extend(page: FocusTranscriptPage, direction: 'older' | 'newer' | 'tail-context', protectedRow: string | null = null,
     atTail = !page.newer_cursor): void {
     const incoming = new Map(page.turns.map(row => [row.id, row]));
     const existing = new Set(this.rows.map(row => row.id));
@@ -59,12 +89,14 @@ export class TranscriptPageWindow {
     const rows = page.turns.filter(row => !existing.has(row.id));
     if (rows.length || !this.pages.length) {
       const next = { rows, older: page.older_cursor, newer: page.newer_cursor };
-      if (direction === 'older') this.pages.unshift(next);
+      if (direction !== 'newer') this.pages.unshift(next);
       else this.pages.push(next);
-    } else if (direction === 'older') this.pages[0]!.older = page.older_cursor;
+    } else if (direction !== 'newer') this.pages[0]!.older = page.older_cursor;
     else this.pages.at(-1)!.newer = page.newer_cursor;
     if (direction === 'newer') this.atTail = atTail;
-    this.bound(direction, protectedRow);
+    // An optional prepend may discard its own page, never the confirmed tail.
+    if (direction === 'tail-context') this.bound('newer');
+    else this.bound(direction, protectedRow);
   }
 
   /** Streaming changes reuse page boundaries; only the live tail may grow. */
@@ -86,6 +118,7 @@ export class TranscriptPageWindow {
     // before allowing pagination after a live page has outgrown its budget.
     const overflow = !!tail && tail.rows.length > TRANSCRIPT_WINDOW_ITEMS;
     if (overflow) {
+      this.livePageClipped = true;
       const anchorIndex = tail!.rows.findIndex(row => row.id === protectedRow);
       if (anchorIndex >= 0 && anchorIndex < tail!.rows.length - TRANSCRIPT_WINDOW_ITEMS) {
         tail!.rows = tail!.rows.slice(0, TRANSCRIPT_WINDOW_ITEMS);

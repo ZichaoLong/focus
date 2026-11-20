@@ -24,8 +24,8 @@ if (query.has('paging')) {
   turns.splice(0, turns.length, shortRow(2));
   (window as Window & { pagingRequests: string[] }).pagingRequests = pagingRequests;
 }
-async function loadOlder() {
-  pagingRequests.push('older');
+async function loadOlder(_session: string, tailContext?: AbortSignal) {
+  pagingRequests.push(tailContext ? 'context' : 'older');
   turns.unshift(shortRow(--firstPage.value));
   return true;
 }
@@ -34,10 +34,11 @@ async function loadNewer() {
   turns.push(shortRow(++lastPage.value));
   return true;
 }
-function latest() {
+async function latest() {
   pagingRequests.push('latest');
   firstPage.value = lastPage.value = 4;
   turns.splice(0, turns.length, shortRow(4));
+  return true;
 }
 </script>
 

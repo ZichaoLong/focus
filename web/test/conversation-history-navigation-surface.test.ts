@@ -453,20 +453,19 @@ describe('ConversationPane bounded history navigation surface', () => {
 
     const clientHandler = between(
       client,
-      'function returnToLiveTail(): void {',
+      'function returnToLiveTail(intent?',
       'let turnWindowChangeGeneration',
     );
     expect(clientHandler).toContain('historyNavigation.clearHistoryWindow();');
     expect(client).toContain('returnToLiveTail,');
     expect(app).toContain(':return-to-live-tail="client.returnToLiveTail"');
-    expect(pane).toContain('returnToLiveTail?: () => void;');
 
     const paneHandler = between(
       pane,
       'async function handleReturnToLiveTail(): Promise<void> {',
       'async function handleLoadOlderMessages',
     );
-    const clearWindow = paneHandler.indexOf('props.returnToLiveTail?.();');
+    const clearWindow = paneHandler.indexOf('await props.returnToLiveTail(intent.signal)');
     const renderTick = paneHandler.indexOf('await nextTick();', clearWindow);
     const scroll = paneHandler.indexOf('scrollToBottom(true);', renderTick);
     const settle = paneHandler.indexOf('scheduleStableFollow(16);', scroll);

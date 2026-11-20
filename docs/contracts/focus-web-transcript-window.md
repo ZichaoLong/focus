@@ -28,7 +28,8 @@ A proven pre-effect `web_writer_disconnected` refusal reconnects while retaining
 draft, without replaying the prompt. Unknown outcomes follow the prompt recovery contract.
 
 The closed query permits `turn_id`, opaque `cursor`, `direction=asc|desc`, `item_id`,
-`full=true|false`, `view=transcript|prompts`, and `source_cursor`. Values must be unique,
+`full=true|false`, `view=transcript|prompts`, `source_cursor`, and optional `fill=true`.
+A fill accepts only a whole-thread older `cursor` and optional `direction=desc`. Values must be unique,
 nonempty, trimmed and at most 4096 characters. An item requires a turn; full requires an
 item. Source cursors require full and exclude cursor. Default reads return the latest
 40 thread items chronologically. Paging uses upstream cursors, never synthetic offsets.
@@ -245,10 +246,24 @@ old body content as proof of current state. If an authoritative result no longer
 and load the current tail rather than restoring reverted content. Thread, epoch/access changes and explicit history
 invalidation still clear the old window; late recovery cannot overwrite a new target.
 
-Both automatic directions require actual user movement toward the respective edge, within
+Clicking “Latest messages” rereads the server's latest page. Keep the already-read prefix only when the new page
+has an older cursor and its initial row IDs match the cached suffix in order, with no duplicate in the retained prefix.
+Install the entire fresh page. A gap, order conflict or retired cache uses just the new page. A split source page
+can resume toward newer history from its exact last item. Retained rows keep their own read revisions.
+
+Only this explicit action may request extra context. After rendering, normal and reading modes measure the gap
+from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
+fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.
+Each click allows two additional reads at most. Each complete successful fill response is limited to 128 KiB
+of serialized JSON before HTTP compression. The gateway returns a small `transcript_fill_limit` refusal for a larger page.
+A failure, full cache or reader taking control ends the fill. Keep the live tail and the manual paging control.
+Scroll input, Prompt navigation, thread changes, hiding the page or parking the instance cancel a pending
+return. Manual reads still admit a whole oversized item.
+
+During ordinary browsing both directions require actual user movement toward the respective edge, within
 about 300px of the scroll container boundary. When content fits within one screen and the scroll
 position cannot move, upward or downward wheel input can still load the adjacent older or newer page.
-Normal browsing does not require clicking load buttons; “Latest messages” returns directly to the live tail.
+Normal browsing supports wheel, touch and edge buttons.
 Allow only one body request at a time. Consume
 scroll intent on admission, without chaining reads from observers, layout changes, Prompt
 navigation or pages shorter than the viewport; input during loading cannot queue another

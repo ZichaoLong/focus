@@ -71,7 +71,7 @@ tests are Focus-owned additions, explicitly listed in `focus_owned_files`.
 The shared Markdown parser configuration and CJK emphasis regression tests
 are also Focus-owned additions.
 The update-preparation cancellation browser regressions are Focus-owned additions.
-The connection recovery browser regressions are Focus-owned additions.
+The browser regressions for connection recovery and folded history on return to the latest message are Focus-owned additions.
 The static-asset compression build plugin and its regression tests are Focus-owned additions.
 The composer layout and keyboard browser regressions are Focus-owned additions; the
 composer and conversation layout retain their recorded Kimi source attribution.

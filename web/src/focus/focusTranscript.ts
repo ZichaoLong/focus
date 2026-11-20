@@ -6,7 +6,7 @@ import { FocusApiError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
 import { appendTranscriptDelta } from './transcriptItems';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
-import { TranscriptPageWindow } from './transcriptPageWindow';
+import { TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 
@@ -61,6 +61,7 @@ export function createFocusTranscript(options: {
   let disposed = false;
   let awaitingProjection = false;
   let activeMode = 'head';
+  let latestIntent: AbortSignal | undefined;
   const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
 
@@ -70,6 +71,7 @@ export function createFocusTranscript(options: {
 
   function cancel() {
     generation += 1;
+    latestIntent = undefined;
     controller?.abort();
     controller = null;
     loading.value = false;
@@ -250,8 +252,9 @@ export function createFocusTranscript(options: {
     applyDelta(event, detail);
   }
 
-  async function load(query: FocusTranscriptQuery = {}, mode: 'head' | 'sync' | 'older' | 'newer' | 'target' | 'restore' = 'head', automatic = false): Promise<boolean> {
-    if (awaitingProjection || !enabled.value || disposed || options.isDisposed()) return false;
+  async function load(query: FocusTranscriptQuery = {}, mode: 'head' | 'latest' | 'sync' | 'older' | 'newer' | 'target' | 'restore' = 'head',
+    automatic = false, intent?: AbortSignal): Promise<boolean> {
+    if (awaitingProjection || !enabled.value || disposed || options.isDisposed() || intent?.aborted) return false;
     if (refreshTimer !== null) clearTimeout(refreshTimer);
     refreshTimer = null;
     pendingHead = false;
@@ -262,17 +265,31 @@ export function createFocusTranscript(options: {
     controller = requestController;
     const request = ++generation;
     activeMode = mode;
+    latestIntent = intent;
     const startedAt = Date.now();
     const scope = identity();
     const threadId = options.activeThreadId.value;
     const browsingAtStart = historical.value;
     const followingAtStart = following;
+    // Superseding a same-document page read must carry its ordered events
+    // into the next read, including events for rows retained outside the head.
+    if (!loading.value) {
+      buffer = [];
+      bufferBytes = 0;
+      overflowed = false;
+    }
     loading.value = true;
     error.value = '';
-    buffer = [];
-    bufferBytes = 0;
-    overflowed = false;
     const current = () => request === generation && scope === identity() && !disposed && !options.isDisposed();
+    const abandonIntent = () => {
+      if (!current()) return;
+      for (const pending of buffer) applyDelta(pending.event, pending.detail);
+      if (overflowed) needsHead.value = true;
+      const resync = needsHead.value || pendingHead;
+      cancel();
+      if (resync) scheduleHead();
+    };
+    intent?.addEventListener('abort', abandonIntent, { once: true });
     try {
       const result = await readTranscriptTarget(options.api, threadId,
         options.snapshot.value?.runtime_epoch ?? '', query, requestController.signal, current);
@@ -310,13 +327,16 @@ export function createFocusTranscript(options: {
         throw new Error('Transcript target was not found.');
       }
       if (mode === 'older' || mode === 'newer') {
-        lastDirection = mode;
-        cache.extend(result, mode, protectedRow);
+        lastDirection = query.fill ? 'newer' : mode;
+        cache.extend(result, query.fill ? 'tail-context' : mode, protectedRow);
+      } else if (mode === 'latest' && !needsHead.value) {
+        lastDirection = 'newer';
+        cache.returnToLatest(result);
       } else if (mode === 'sync' && cache.pageCount > 0 && !following && protectedRow && turns.value.length) {
         cache.refreshTail(result, protectedRow);
       } else {
         lastDirection = 'newer';
-        cache.replace(result, mode === 'head' || mode === 'sync' || !result.newer_cursor);
+        cache.replace(result, mode === 'head' || mode === 'latest' || mode === 'sync' || !result.newer_cursor);
         rowReadRevisions.clear();
       }
       for (const row of result.turns) rowReadRevisions.set(row.id, result.revision);
@@ -331,18 +351,21 @@ export function createFocusTranscript(options: {
         }
       }
       if (!needsHead.value && !pendingHead) automaticAttempts = 0;
-      return true;
+      return !query.fill || cache.older !== query.cursor;
     } catch (failure) {
       if (current()) {
         if (options.reportFatalError?.(failure)) return false;
         if (mode === 'restore' && failure instanceof FocusApiError && failure.code === 'transcript_item_missing') {
           return await reloadWithoutAnchor(query);
         }
-        error.value = failure instanceof Error ? failure.message : String(failure);
+        // Optional context can stop on size, network or stale-read refusal.
+        // The confirmed page and manual boundary remain usable.
+        if (!query.fill) error.value = failure instanceof Error ? failure.message : String(failure);
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
       }
       return false;
     } finally {
+      intent?.removeEventListener('abort', abandonIntent);
       if (current()) {
         loading.value = false;
         buffer = [];
@@ -356,8 +379,13 @@ export function createFocusTranscript(options: {
     }
   }
 
-  function older() {
+  function older(intent?: AbortSignal) {
     if (!hasOlder.value || loading.value) return Promise.resolve(false);
+    if (intent) {
+      if (intent !== latestIntent || !cache.atTail || cache.pageCount >= TRANSCRIPT_CACHE_PAGES
+        || cache.bytes >= TRANSCRIPT_CACHE_BYTES) return Promise.resolve(false);
+      return load({ cursor: edges.value.older!, direction: 'desc', fill: true }, 'older', false, intent);
+    }
     return load({ cursor: edges.value.older!, direction: 'desc' }, 'older');
   }
 

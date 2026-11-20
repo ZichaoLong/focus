@@ -1003,14 +1003,16 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     }
   }
 
-  async function loadOlderMessages(sessionId: string): Promise<boolean> {
-    if (sessionId !== activeThreadId.value) return false;
-    return transcript.enabled.value ? transcript.older() : historyNavigation.loadOlderPage();
+  async function loadOlderMessages(sessionId: string, tailContext?: AbortSignal): Promise<boolean> {
+    if (sessionId !== activeThreadId.value || parked) return false;
+    if (transcript.enabled.value) return transcript.older(tailContext);
+    return !tailContext && historyNavigation.loadOlderPage();
   }
 
-  function returnToLiveTail(): void {
+  async function returnToLiveTail(intent?: AbortSignal): Promise<boolean> {
     historyNavigation.clearHistoryWindow();
-    if (transcript.enabled.value) void transcript.load();
+    if (!transcript.enabled.value) return true;
+    return intent ? transcript.load({}, 'latest', false, intent) : transcript.load();
   }
 
   async function resolveHistoryPromptTarget(turnId: string): Promise<boolean> {
