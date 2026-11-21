@@ -149,6 +149,14 @@ Web session. The journal does not own thread, writer, approval, or recovery auth
 Transport loss during the update is a service lifecycle effect, not proof of installation
 success.
 
+## Updates across installations
+
+The phone uses a separate lightweight document at each authorized origin. `GET /api/update/installation` returns the random installation ID, installed build and current journal summary. The controller creates the ID under the machine journal lock in the global data directory. Removing that directory resets it. Remove `web-update-installation-id` when copying a data directory to create an independent deployment. A corrupt ID fails closed.
+
+`POST /api/update/prepare-latest` accepts exactly `{installation_id,target,previous_operation_id,request_id}`. Targets are `installed`, `main` and `stable`. Following the installation maps local builds to main and published builds to stable. Missing identity requires an explicit channel. Main resolves the configured Git branch SHA, while stable verifies only Release, tag, manifest and artifact metadata. A matching installed channel and build returns current. Preparation pins main by full commit and stable by artifact SHA-256. An exact ready result can be reused. Remote I/O runs outside the journal lock. Admission rechecks the installation, configured source and observed operation. Active, cancelling and uncertain work is reconciled first.
+
+The phone saves the request ID before preparation to correlate a lost reply with the journal. The updater generates the independent operation ID. Applying requires the exact ready ID selected and confirmed by the user and uses the existing machine-wide idle and shutdown transaction. Each origin enforces its own session, origin, document and mutation CSRF checks. Reconnecting or resuming only reads the journal.
+
 ## 5. Maintenance closure
 
 Changes to update-source behavior, status vocabulary, preflight boundaries, or the install

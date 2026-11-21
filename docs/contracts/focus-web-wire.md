@@ -228,6 +228,7 @@ guards and may not retain parallel key or enum inventories.
   behavior is defined by the [browser update contract](./focus-web-update.md).
 
 - v41 adds Android channel checks and digest-pinned APK reads. The current document and Android host negotiate update support. [Mobile contract](./focus-mobile.md#instance-drawer-and-android-distribution)
+- v42 adds per-installation update identity reads and pinned channel preparation. [Update contract](./focus-web-update.md#updates-across-installations)
 
 ## 4. Endpoint and Event Admission
 

@@ -314,6 +314,17 @@ def decode_update_check_request(body: dict[str, Any]) -> tuple[str, str]:
     return str(body["target"]), body["commit"]
 
 
+def decode_update_prepare_latest(body: dict[str, Any]) -> tuple[str, str, str, str]:
+    fields = ("installation_id", "target", "previous_operation_id", "request_id")
+    if set(body) == set(fields) and all(isinstance(body[key], str) for key in fields):
+        install, target, previous, proposed = (body[key] for key in fields)
+        if (target in {"installed", "main", "stable"}
+                and re.fullmatch("[0-9a-f]{32}", install) and re.fullmatch("[0-9a-f]{32}", proposed)
+                and (not previous or re.fullmatch("[0-9a-f]{32}", previous))):
+            return install, target, previous, proposed
+    raise WebRuntimeError("无效的批量准备请求", code="invalid_update_preparation", status=400)
+
+
 def decode_update_cancel_request(body: dict[str, Any]) -> str:
     operation_id = body.get("operation_id")
     if (set(body) != {"operation_id"} or not isinstance(operation_id, str)

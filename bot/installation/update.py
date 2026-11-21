@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 
 from bot.atomic_file import atomic_write_text
 from bot.file_lock import acquire_file_lock, open_lock_file, release_file_lock
+from bot.installation.update_discovery import installed_build, installation_id, resolve_candidate
 from bot.installation.update_process import UpdateError, UpdateLaunchOutcomeUnknown
 from bot.platform_paths import default_data_root
 
@@ -451,33 +452,95 @@ class FocusUpdateController:
                 and not self._recoverable_unknown_check(current)
             ):
                 raise UpdateError("An update is active or its outcome is unknown")
-            if current["operation_id"]:
-                self._remove_staging(current)
-            operation_id = secrets.token_hex(16)
+            return self._start_locked(current, target, requested)
+
+    def _start_locked(self, current: dict, target: str, requested: str, *, preflight: dict | None = None) -> dict:
+        operation_id = secrets.token_hex(16)
+        if current["operation_id"]:
+            self._remove_staging(current)
+        now = time.time()
+        value = dict(operation_id=operation_id, target=target, state="checking", requested_commit=requested,
+                     resolved_commit="", operation_source=self._source() if target == "main" else None,
+                     message="Preparing the update check",
+                     error="", preflight=preflight or {}, updated_at=time.time(), installation_started=False,
+                     unit=f"focus-update-{operation_id}-check.service", bundle_sha256="",
+                     staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="",
+                     phase="starting", phase_started_at=now, last_progress_at=now, progress=None)
+        self.journal.write(value)
+        # Once launch is attempted its outcome may be ambiguous; never
+        # repeat this POST. GET reconciles the exact unit and journal.
+        try:
+            launch_worker(self.journal, operation_id, "check")
+        except UpdateLaunchOutcomeUnknown as exc:
             now = time.time()
-            value = dict(operation_id=operation_id, target=target, state="checking", requested_commit=requested,
-                         resolved_commit="", operation_source=self._source() if target == "main" else None,
-                         message="Preparing the update check",
-                         error="", preflight={}, updated_at=time.time(), installation_started=False,
-                         unit=f"focus-update-{operation_id}-check.service", bundle_sha256="",
-                         staging_dir="", bundle_path="", wheelhouse_path="", offline_requirements="",
-                         phase="starting", phase_started_at=now, last_progress_at=now, progress=None)
+            value.update(state="unknown", error=str(exc), phase="unknown",
+                         phase_started_at=now, last_progress_at=now, progress=None)
             self.journal.write(value)
-            # Once launch is attempted its outcome may be ambiguous; never
-            # repeat this POST. GET reconciles the exact unit and journal.
-            try:
-                launch_worker(self.journal, operation_id, "check")
-            except UpdateLaunchOutcomeUnknown as exc:
-                now = time.time()
-                value.update(state="unknown", error=str(exc), phase="unknown",
-                             phase_started_at=now, last_progress_at=now, progress=None)
-                self.journal.write(value)
-            except Exception as exc:
-                now = time.time()
-                value.update(state="failed", error=str(exc) or "Updater could not be started",
-                             phase="failed", phase_started_at=now, last_progress_at=now, progress=None)
-                self.journal.write(value)
-            return self._snapshot()
+        except Exception as exc:
+            now = time.time()
+            value.update(state="failed", error=str(exc) or "Updater could not be started",
+                         phase="failed", phase_started_at=now, last_progress_at=now, progress=None)
+            self.journal.write(value)
+        return self._snapshot()
+
+    def installation_status(self) -> dict:
+        with self.journal.locked():
+            return self._installation_status_locked()
+
+    def _installation_status_locked(self) -> dict:
+        status = self._snapshot()
+        installed = installed_build(self.journal.root)
+        fields = ("operation_id", "target", "state", "requested_commit", "resolved_commit",
+                  "phase", "progress", "message", "error")
+        return {"installation_id": installation_id(self.journal.root), "installed": installed,
+                "request_id": status["preflight"].get("batch_request_id", ""),
+                "operation": {key: status[key] for key in fields}}
+
+    def prepare_latest(self, install_id: str, channel: str, previous: str, request_id: str) -> dict:
+        if (channel not in {"installed", "main", "stable"} or not re.fullmatch("[a-f0-9]{32}", request_id)):
+            raise UpdateError("Invalid batch preparation")
+        if reason := unavailable_reason():
+            raise UpdateError(reason)
+        with self.journal.locked():
+            before = self._installation_status_locked()
+            op = before["operation"]
+            if before["installation_id"] != install_id or op["operation_id"] != previous:
+                raise UpdateError("安装或更新记录已更换，请重新检查")
+            if op["state"] in {"checking", "applying", "cancelling", "unknown"}:
+                raise UpdateError("已有操作进行中或结果待核实，请查看实例的服务端更新")
+            installed = before["installed"]
+            if channel == "installed" and not installed:
+                raise UpdateError("没有已安装渠道记录，请选择 main 或 stable")
+            target = ("stable" if installed["channel"] == "stable" else "main") if channel == "installed" else channel
+            source = self._source() if target == "main" else None
+
+        # Remote I/O never holds the shared journal lock. Compare the full observed
+        # operation and source again before allowing the single-flight transition.
+        candidate = resolve_candidate(target, source, self.journal.root)
+        with self.journal.locked():
+            now = self._installation_status_locked()
+            if before != now or (source and self._source() != source):
+                raise UpdateError("检查期间安装、更新源或操作已变化，请重新检查")
+            current = self.journal.read()
+            revision = candidate["revision"]
+            same = (installed and installed["source_revision"] == revision and
+                    installed["channel"] == ("stable" if target == "stable" else "local") and
+                    (target == "main" or (installed["build_id"], installed["version"]) ==
+                     (candidate["build_id"], candidate["version"])))
+            if same:
+                outcome = "current"
+            elif (op["state"] == "ready" and op["target"] == target and op["resolved_commit"] == revision
+                  and current["operation_source"] == source and current["preflight"].get("python_runtime") and
+                  (target == "main" or current["bundle_sha256"] == candidate["digest"])):
+                outcome = "prepared"
+            else:
+                pins = {"batch_request_id": request_id}
+                if candidate["digest"]:
+                    pins["stable_sha256"] = candidate["digest"]
+                self._start_locked(current, target, revision, preflight=pins)
+                now = self._installation_status_locked()
+                outcome = "prepared"
+            return {**now, "outcome": outcome, "target": target, "revision": revision, "version": candidate["version"]}
 
     def cancel_check(self, operation_id: str) -> dict:
         if reason := unavailable_reason():

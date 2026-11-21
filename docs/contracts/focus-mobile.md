@@ -49,6 +49,12 @@ An explicit Android publication writes `channels/{main|stable}.json` and `androi
 
 An instance reads `FOCUS_MOBILE_DIST_URL` (HTTPS or SSH Git URL), defaulting to `https://github.com/ZichaoLong/focus-mobile-dist.git`. Authenticated, CSRF- and document-protected `POST /api/mobile/android/{channel}/check` accepts an empty object and returns release, checked_at and stale. An unpublished channel has a null release. Network failure marks a cached release stale; invalid artifacts never replace the channel. Source-specific durable files live under mobile-updates in the Focus data root, outside server install operations. Authenticated `GET /api/mobile/android/apk/{digest}` serves exact cached bytes. Phones contact their instance and grant the installer temporary read access only to a verified APK. Signing keys stay with the publisher.
 
+## Managing server updates across entries
+
+Manage instances → Server updates opens a bundled local dashboard. Each request uses a short-lived `/focus-update.html` document in the entry's own Web profile. It registers with a separate client hint, calls same-origin update endpoints and is released after the call. It has no native bridge or conversation WebSocket. Only the restricted probe can answer matching saved Basic challenges. Login and reauthorization take place in the individual entry. Older servers can upgrade from their instance settings.
+
+Check and prepare all reads installation IDs, groups aliases and checks the selected channel once per installation. Operators can deselect ready rows and confirm all selected exact operation IDs together. The app submits them in sequence. An unavailable installation retains its record and other installations can proceed. Submitted work continues on the server when the app leaves the foreground or exits. Reopening only verifies recorded operations. Unsubmitted work needs fresh confirmation. Removing an entry or changing its address clears its local record. [Server update contract](./focus-web-update.md#updates-across-installations)
+
 ## Usage and verification
 
 [Build, install and verify](../../mobile/README.md)

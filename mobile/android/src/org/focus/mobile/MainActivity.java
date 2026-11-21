@@ -90,6 +90,10 @@ public final class MainActivity extends Activity {
         header.addView(ui.text("管理实例", 26, ui.ink, true), new LinearLayout.LayoutParams(0, -2, 1));
         header.addView(ui.button("添加实例", true, () -> edit(-1))); list.addView(header);
         ui.gap(list, 16);
+        if (sites.length() > 0) {
+            list.addView(ui.button("服务端更新", false, () -> startActivityForResult(new Intent(this, ServerUpdatesActivity.class), 24)));
+            ui.gap(list, 12);
+        }
         if (sites.length() == 0) list.addView(ui.text("添加 Focus 的访问地址以开始使用。", 15, ui.muted, false));
         for (int i = 0; i < sites.length(); i++) {
             final int index = i;
@@ -129,11 +133,19 @@ public final class MainActivity extends Activity {
                 }).setNegativeButton("取消", null).show()));
     }
 
+    @Override protected void onActivityResult(int code, int result, Intent data) {
+        super.onActivityResult(code, result, data);
+        if (code == 24 && result == RESULT_OK && data != null)
+            setIntent(new Intent().setAction(PICK).putExtra("return-instance", returnInstance)
+                .putExtra("target", data.getStringExtra("site")));
+    }
+
     private void persist() { prefs.edit().putString("list", sites.toString()).commit(); }
 
     private void forget(JSONObject site) {
         String id = site.optString("id");
         pages.forget(id);
+        getSharedPreferences("server-updates", MODE_PRIVATE).edit().remove(id).apply();
         BasicVault.erase(this, id);
         deleteSharedPreferences("page-" + id);
         removeTree(new File(getApplicationInfo().dataDir, "app_webview_" + id));

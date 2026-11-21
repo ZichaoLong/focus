@@ -81,6 +81,7 @@ _SAFE_INLINE_IMAGE_TYPES = {
 }
 _STATIC_NO_STORE_FILENAMES = {
     "index.html",
+    "focus-update.html",
     "THIRD_PARTY_NOTICES.html",
     "THIRD_PARTY_NOTICES.md",
     "THIRD_PARTY_SBOM.json",
@@ -199,6 +200,8 @@ class WebGatewayPorts:
     data_prune: Callable[[], dict[str, Any]] | None = None
     update_status: Callable[[], dict[str, Any]] | None = None
     update_source: Callable[[str, str], dict[str, Any]] | None = None
+    update_installation: Callable[[], dict[str, Any]] | None = None
+    update_prepare_latest: Callable[[str, str, str, str], dict[str, Any]] | None = None
     update_check: Callable[[str, str], dict[str, Any]] | None = None
     update_cancel: Callable[[str], dict[str, Any]] | None = None
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
@@ -796,6 +799,16 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
     async def _handle_update_status(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         payload = await self._call_update_port("update_status", request, client_id)
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def _handle_update_installation(self, request: web.Request) -> web.Response:
+        payload = await self._call_update_port("update_installation", request, self._required_client_id(request))
+        return web.json_response(payload, headers={"Cache-Control": "no-store"})
+
+    async def _handle_update_prepare_latest(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        args = request_decoder.decode_update_prepare_latest(await request_decoder.decode_json_object(request))
+        payload = await self._call_update_port("update_prepare_latest", request, client_id, *args)
         return web.json_response(payload, headers={"Cache-Control": "no-store"})
 
     async def _handle_update_source(self, request: web.Request) -> web.Response:

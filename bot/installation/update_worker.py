@@ -170,7 +170,9 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
         output.mkdir()
         node_preflight: dict[str, object] = {"status": "skipped"}
         if target == "stable":
-            with installer._resolved_install_bundle(SimpleNamespace(artifact=None), progress=report) as downloaded:
+            pin = operation["preflight"].get("stable_sha256")
+            options = {"expected_digest": pin} if pin else {}
+            with installer._resolved_install_bundle(SimpleNamespace(artifact=None), progress=report, **options) as downloaded:
                 bundle = output / downloaded.artifact_path.name
                 shutil.copy2(downloaded.artifact_path, bundle)
                 revision = downloaded.metadata.source_revision
@@ -232,7 +234,7 @@ def _check(journal: UpdateJournal, operation: dict) -> None:
                                 if target == "stable" else
                                 "Source, Web build, dependency, disk and offline-install preflight passed"),
                        phase="ready", phase_started_at=time.time(), last_progress_at=time.time(), progress=None,
-                       preflight={"target": target, "git": git_status, "node": node_preflight.get("status", "skipped"),
+                       preflight={**operation["preflight"], "target": target, "git": git_status, "node": node_preflight.get("status", "skipped"),
                                   "npm": node_preflight.get("status", "skipped"), "web_build": web_status,
                                   "pip": "passed", "disk": "passed", "node_toolchain": node_preflight,
                                   "python_runtime": runtime_info,

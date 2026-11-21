@@ -3663,6 +3663,85 @@
         "web-typecheck",
         "web-wire"
       ]
+    },
+    "focus-mobile-server-updates": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_update_installation"
+        },
+        {
+          "path": "bot/web_runtime/gateway.py",
+          "symbol": "WebGateway._handle_update_prepare_latest"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/installation/update.py",
+          "symbol": "FocusUpdateController.prepare_latest"
+        },
+        {
+          "path": "bot/installation/update_discovery.py",
+          "symbol": "resolve_candidate"
+        },
+        {
+          "path": "web/src/focus/mobileUpdateAgent.ts",
+          "symbol": "runMobileServerUpdate"
+        },
+        {
+          "path": "web/src/focus/httpResponseDecoder.ts",
+          "symbol": "decodeFocusUpdatePreparation"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "批量管理服务端"
+        },
+        {
+          "path": "docs/contracts/focus-web-update.zh-CN.md",
+          "heading": "多安装批量更新"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_server_update_batch.py",
+            "tests/web_runtime/test_update_batch_gateway.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-mobile-server-updates.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_web_update_controller.py",
+            "tests/test_web_update_worker.py",
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-update-cancel-browser.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "import-cycles",
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck",
+        "web-wire"
+      ]
     }
   }
 }

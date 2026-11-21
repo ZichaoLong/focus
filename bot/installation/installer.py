@@ -372,16 +372,61 @@ def _stable_release() -> dict[str, Any]:
     return release
 
 
+def stable_bundle_metadata(progress: ProgressCallback | None = None):
+    """Resolve and verify the published manifest without downloading the bundle."""
+    from bot.installation.install_bundle import CHANNEL_MANIFEST_NAMES, parse_channel_manifest
+
+    if progress is not None:
+        progress("release_metadata", "Reading the latest stable Release", None, None)
+    release = _stable_release()
+    release_tag = release["tag_name"]
+    channel_name = CHANNEL_MANIFEST_NAMES["stable"]
+    channel_asset = _release_asset(release, channel_name)
+    channel_url, channel_size = _asset_download_url(
+        channel_asset,
+        expected_name=channel_name,
+    )
+    if channel_size > _MAX_CHANNEL_MANIFEST_BYTES:
+        raise SystemExit("GitHub channel manifest超过安装器上限。")
+    if progress is not None:
+        progress("release_download", "Downloading the stable channel manifest", 0, channel_size)
+    channel_raw = _read_response_bytes(
+        urllib.request.Request(channel_url, headers={"User-Agent": "focus-installer"}),
+        maximum=_MAX_CHANNEL_MANIFEST_BYTES,
+        expected_size=channel_size,
+        progress=(
+            (lambda current, total: progress(
+                "release_download", "Downloading the stable channel manifest", current, total
+            ))
+            if progress is not None else None
+        ),
+    )
+    if progress is not None:
+        progress("release_verify", "Verifying the stable Release metadata", None, None)
+    manifest = parse_channel_manifest(channel_raw, expected_channel="stable")
+    if manifest.release_tag != release_tag:
+        raise SystemExit("channel manifest的release_tag与GitHub Release不一致。")
+    if _release_tag_commit(release_tag) != manifest.source_revision:
+        raise SystemExit("GitHub Release tag与bundle source_revision不一致。")
+    bundle_asset = _release_asset(release, manifest.bundle.name)
+    bundle_url, bundle_size = _asset_download_url(
+        bundle_asset,
+        expected_name=manifest.bundle.name,
+    )
+    if bundle_size != manifest.bundle.size:
+        raise SystemExit("GitHub asset size与channel manifest不一致。")
+    return manifest, bundle_url, bundle_size
+
+
 @contextlib.contextmanager
 def _resolved_install_bundle(
     args: argparse.Namespace,
     *,
     progress: ProgressCallback | None = None,
+    expected_digest: str = "",
 ) -> Iterator[Any]:
     from bot.installation.install_bundle import (
-        CHANNEL_MANIFEST_NAMES,
         InstallBundleError,
-        parse_channel_manifest,
         sha256_file,
         validate_install_bundle,
     )
@@ -397,45 +442,9 @@ def _resolved_install_bundle(
         expected_build_id: str | None = None
         expected_source_revision: str | None = None
         if artifact is None:
-            if progress is not None:
-                progress("release_metadata", "Reading the latest stable Release", None, None)
-            release = _stable_release()
-            release_tag = release["tag_name"]
-            channel_name = CHANNEL_MANIFEST_NAMES["stable"]
-            channel_asset = _release_asset(release, channel_name)
-            channel_url, channel_size = _asset_download_url(
-                channel_asset,
-                expected_name=channel_name,
-            )
-            if channel_size > _MAX_CHANNEL_MANIFEST_BYTES:
-                raise SystemExit("GitHub channel manifest超过安装器上限。")
-            if progress is not None:
-                progress("release_download", "Downloading the stable channel manifest", 0, channel_size)
-            channel_raw = _read_response_bytes(
-                urllib.request.Request(channel_url, headers={"User-Agent": "focus-installer"}),
-                maximum=_MAX_CHANNEL_MANIFEST_BYTES,
-                expected_size=channel_size,
-                progress=(
-                    (lambda current, total: progress(
-                        "release_download", "Downloading the stable channel manifest", current, total
-                    ))
-                    if progress is not None else None
-                ),
-            )
-            if progress is not None:
-                progress("release_verify", "Verifying the stable Release metadata", None, None)
-            manifest = parse_channel_manifest(channel_raw, expected_channel="stable")
-            if manifest.release_tag != release_tag:
-                raise SystemExit("channel manifest的release_tag与GitHub Release不一致。")
-            if _release_tag_commit(release_tag) != manifest.source_revision:
-                raise SystemExit("GitHub Release tag与bundle source_revision不一致。")
-            bundle_asset = _release_asset(release, manifest.bundle.name)
-            bundle_url, bundle_size = _asset_download_url(
-                bundle_asset,
-                expected_name=manifest.bundle.name,
-            )
-            if bundle_size != manifest.bundle.size:
-                raise SystemExit("GitHub asset size与channel manifest不一致。")
+            manifest, bundle_url, bundle_size = stable_bundle_metadata(progress)
+            if expected_digest and manifest.bundle.sha256 != expected_digest:
+                raise SystemExit("Stable Release changed after discovery; check again")
             artifact = root / manifest.bundle.name
             if progress is not None:
                 progress("release_download", "Downloading the stable Focus bundle", 0, bundle_size)

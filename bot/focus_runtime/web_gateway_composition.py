@@ -283,6 +283,8 @@ def compose_web_gateway(
                 web_runtime.client_disconnected,
                 client_id,
             ),
+            update_installation=(update_controller.installation_status if update_controller is not None else None),
+            update_prepare_latest=(update_controller.prepare_latest if update_controller is not None else None),
             update_status=(update_controller.snapshot if update_controller is not None else None),
             update_source=(
                 update_controller.configure_source

@@ -42,6 +42,18 @@ final class Site {
         return url != null && sameOrigin(url, origin) && "/".equals(URI.create(url).getRawPath());
     }
 
+    static boolean verifyBasic(String origin, String realm) throws java.io.IOException {
+        javax.net.ssl.HttpsURLConnection conn = (javax.net.ssl.HttpsURLConnection)
+            URI.create(origin + "/focus-connect.txt").toURL().openConnection();
+        try {
+            conn.setInstanceFollowRedirects(false); conn.setUseCaches(false);
+            conn.setConnectTimeout(5000); conn.setReadTimeout(5000);
+            int status = conn.getResponseCode();
+            if (status >= 500 || status == 408 || status == 429) throw new java.io.IOException("入口暂不可达");
+            return status == 401 && basicRealm(conn.getHeaderField("WWW-Authenticate"), realm);
+        } finally { conn.disconnect(); }
+    }
+
     static boolean basicRealm(String header, String realm) {
         if (header == null || realm == null || realm.length() > 512) return false;
         Matcher m = BASIC.matcher(header.trim());

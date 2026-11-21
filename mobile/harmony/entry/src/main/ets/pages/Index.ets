@@ -3,6 +3,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { systemDateTime } from '@kit.BasicServicesKit';
 import { util, url } from '@kit.ArkTS';
 import { InstanceTab, InstancePane } from '../InstancePane';
+import { ServerUpdates } from '../ServerUpdates';
 import { Site, sitePrefs, siteOrigin, focusRoot, forgetSite } from '../Sites';
 
 @Entry
@@ -20,6 +21,7 @@ struct Index {
   @State private pageLimit: number = 2;
   @StorageLink('focusMemoryWarning') @Watch('releaseInactive') private memoryWarning: number = 0;
   @State private sites: Site[] = [];
+  @State private updating: boolean = false;
   @State private editing: boolean = false;
   @State private editingId: string = '';
   @State private label: string = '';
@@ -88,6 +90,7 @@ struct Index {
   }
 
   onBackPress(): boolean {
+    if (this.updating) { this.updating = false; return true; }
     if (this.drawerOpen) {
       this.drawerOpen = false;
       if (this.drawerExitDeadline > systemDateTime.getUptime(systemDateTime.TimeType.STARTUP)) this.leaveToSystem();
@@ -195,6 +198,7 @@ struct Index {
             Button('保存').onClick(() => this.save())
           }.width('100%').justifyContent(FlexAlign.End)
         } else {
+          if (this.sites.length) { Button('服务端更新').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.updating = true) }
           if (!this.sites.length) { Text('添加 Focus 的访问地址以开始使用。').fontSize(15) }
           ForEach(this.sites, (site: Site) => {
             Column({ space: 8 }) {
@@ -268,7 +272,7 @@ struct Index {
         Text('管理实例').width('100%').padding(12).onClick(() => this.selectEntry(''))
         Text('关于 Focus Mobile').width('100%').padding(12).onClick(() => {
           this.drawerOpen = false;
-          AlertDialog.show({ title: 'Focus Mobile 1.4.0', message: 'HarmonyOS · ArkWeb' });
+          AlertDialog.show({ title: 'Focus Mobile 1.6.0', message: 'HarmonyOS · ArkWeb' });
         })
       }.width('82%').constraintSize({ maxWidth: 328 }).height('100%').padding(14)
         .foregroundColor(this.drawerDark ? '#f1f1ed' : '#242523')
@@ -287,7 +291,10 @@ struct Index {
         }.width('100%').height('100%')
           .visibility(this.activeId === tab.site.id ? Visibility.Visible : Visibility.Hidden)
       }, (tab: InstanceTab) => tab.key)
-      if (!this.activeId) { this.manager() }
+      if (!this.activeId && this.updating) {
+        ServerUpdates({sites:this.sites, close:() => this.updating = false,
+          open:(site: Site) => { this.updating = false; this.open(site); }})
+      } else if (!this.activeId) { this.manager() }
       if (this.activeId && this.drawerOpen) { this.drawer() }
     }.width('100%').height('100%')
   }

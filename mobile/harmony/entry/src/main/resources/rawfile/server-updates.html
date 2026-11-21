@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>服务端更新</title>
+<style>
+:root{color-scheme:light dark;--bg:#f6f7f4;--card:#fff;--ink:#202520;--muted:#566158;--line:#cdd5cc;--accent:#245d40;--on:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#191c19;--card:#222723;--ink:#edf2ec;--muted:#b5c1b6;--line:#485248;--accent:#a9dbb9;--on:#113320}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:auto;padding:16px 18px 48px}
+h1{font-size:26px;margin:12px 0 18px}button,select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);padding:9px 13px;border-radius:10px}
+button:disabled,select:disabled{opacity:.52}.primary{background:var(--accent);color:var(--on);border-color:var(--accent);font-weight:600}nav,header,.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button.link{padding:5px 0;color:var(--accent);background:transparent;border:0}.card{margin:10px 0;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card);overflow-wrap:anywhere}
+h2{margin:0;font-size:18px;flex:1}.muted,small{font-size:14px;color:var(--muted)}.status{margin-top:8px;font-weight:550}input{width:21px;height:21px;accent-color:var(--accent)}#apply{width:100%;margin-top:8px}p{margin:8px 0}
+</style></head><body><main>
+<nav><button id="back" class="link">‹ 管理实例</button></nav><h1>服务端更新</h1>
+<div class="actions"><select id="channel" aria-label="更新渠道"><option value="installed">沿用各自渠道</option><option value="main">全部使用 main</option><option value="stable">全部使用 stable</option></select>
+<button id="check">检查并准备全部</button></div>
+<p class="muted">仅为有变化的安装准备更新。确认后会重启该安装下原先运行的实例。</p>
+<div id="list"></div><button class="primary" id="apply" disabled>确认更新已就绪的安装</button><p role="status" id="message"></p>
+</main><script src="server-updates.js"></script></body></html>

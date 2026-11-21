@@ -119,6 +119,14 @@ check、cancel、apply 都是 authenticated same-origin、CSRF 保护的用户�
 journal 不授予 thread、writer、approval 或 recovery authority；
 更新期间连接断开只是 service lifecycle 的结果，不得把断线当作安装成功。
 
+## 多安装批量更新
+
+手机从每个已授权入口的独立轻量文档读取 `GET /api/update/installation`，取得本安装的随机标识、已安装构建与当前操作摘要。标识由更新控制器在全局数据目录的 journal 锁下创建，随安装数据保存，删除该目录后重新生成。复制数据目录来创建独立部署时应移除 `web-update-installation-id`。读取损坏的标识会报错。
+
+`POST /api/update/prepare-latest` 接受 exact `{installation_id,target,previous_operation_id,request_id}`。目标可选 `installed`、`main` 或 `stable`。沿用渠道时，本地构建选 main、正式发布选 stable，缺失安装身份时要求显式选择。main 仅查询选定 Git 源的完整分支 SHA，stable 仅读取并校验发布清单、tag 与制品元数据。已在目标渠道及构建时返回 current。进入准备时，main 固定 commit，stable 固定清单中的制品 SHA-256，已有完全匹配的 ready 可复用。远端查询期间释放 journal 锁，准备前重新核验安装、渠道源及观察到的操作。正在执行、取消或结果不明的操作须先核实。
+
+手机预存 request_id，用于在准备回执丢失时从 journal 认领同一次准备。更新器独立生成 operation_id，只有用户勾选并确认的确切 ready ID 才能调用原有 apply。应用阶段继续使用原有全机空闲证明与停服事务。批量读写走各自站点的会话、同源和文档校验，写请求需要 CSRF。断线、进程重启及返回前台仅重读状态。
+
 ## 5. 维护闭环
 
 更新来源、状态词汇、预检边界或安装事务变更时，必须同步更新本合同、英文 peer、

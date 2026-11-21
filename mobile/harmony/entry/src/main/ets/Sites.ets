@@ -84,6 +84,7 @@ export async function forgetSite(context: common.UIAbilityContext, site: Site): 
   await forgetLogin(site);
   const prefs = sitePrefs(context);
   prefs.deleteSync('thread.' + site.id);
+  prefs.deleteSync('batch.' + site.id);
   await prefs.flush();
   webview.WebStorage.deleteOrigin(site.origin);
   // Host-only root cookies, including HttpOnly Focus sessions. Cookie names are

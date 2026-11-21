@@ -62,6 +62,10 @@ _FORWARDED_ENVIRONMENT = (
 _SYSTEMD_USER_BUS_ENVIRONMENT = ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")
 
 
+def update_environment() -> dict[str, str]:
+    return {name: os.environ[name] for name in _FORWARDED_ENVIRONMENT if os.environ.get(name)}
+
+
 def launch_update_worker(journal, operation_id: str, mode: str) -> None:
     systemd_run = shutil.which("systemd-run")
     if not systemd_run:
@@ -80,9 +84,7 @@ def launch_update_worker(journal, operation_id: str, mode: str) -> None:
             raise UpdateError("Prepared independent updater is missing; check the update again")
         python = str(prepared)
     setenv_args = [
-        f"--setenv={name}={os.environ[name]}"
-        for name in _FORWARDED_ENVIRONMENT
-        if os.environ.get(name)
+        f"--setenv={name}={value}" for name, value in update_environment().items()
     ]
     command = [
         systemd_run,

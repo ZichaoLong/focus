@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 41
+FOCUS_WEB_WIRE_VERSION: Final = 42
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -151,6 +151,8 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "/api/update",
         "_handle_update_status",
     ),
+    FocusWebEndpointSpec("update_installation", "GET", "/api/update/installation", "_handle_update_installation"),
+    FocusWebEndpointSpec("update_prepare_latest", "POST", "/api/update/prepare-latest", "_handle_update_prepare_latest"),
     FocusWebEndpointSpec(
         "update_source",
         "POST",
@@ -405,6 +407,7 @@ FOCUS_WEB_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset(
         "thread_delete",
         "request_respond",
         "mobile_android_check",
+        "update_prepare_latest",
         "update_source",
         "update_check",
         "update_cancel",
@@ -583,6 +586,8 @@ FOCUS_WEB_RECORDS: Final = (
     ),
     _record("android_release", "FocusAndroidRelease", "package version version_code source_revision sha256 certificate_sha256 size"),
     _record("android_channel", "FocusAndroidChannel", "release checked_at stale"),
+    _record("update_installation", "FocusUpdateInstallation", "installation_id installed request_id operation"),
+    _record("update_preparation", "FocusUpdatePreparation", "installation_id installed request_id operation outcome target revision version"),
     _record("update_source", "FocusUpdateSource", "url branch"),
     _record(
         "update_progress",

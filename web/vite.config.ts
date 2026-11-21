@@ -60,6 +60,7 @@ export default defineConfig({
   build: {
     outDir: '../bot/web_assets/dist',
     emptyOutDir: true,
+    rollupOptions: { input: { app: 'index.html', update: 'focus-update.html' } },
     target: 'es2022',
   },
   worker: { format: 'es' },

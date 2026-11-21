@@ -321,16 +321,8 @@ public class ClientActivity extends Activity {
         // GET with redirects disabled before releasing anything to its handler.
         new Thread(() -> {
             boolean basic = false, unavailable = false;
-            javax.net.ssl.HttpsURLConnection conn = null;
-            try {
-                conn = (javax.net.ssl.HttpsURLConnection) URI.create(origin + PROBE).toURL().openConnection();
-                conn.setInstanceFollowRedirects(false); conn.setUseCaches(false);
-                conn.setConnectTimeout(5000); conn.setReadTimeout(5000);
-                int status = conn.getResponseCode();
-                unavailable = status >= 500 || status == 408 || status == 429;
-                basic = status == 401 && Site.basicRealm(conn.getHeaderField("WWW-Authenticate"), realm);
-            } catch (Exception e) { unavailable = true; }
-            finally { if (conn != null) conn.disconnect(); }
+            try { basic = Site.verifyBasic(origin, realm); }
+            catch (Exception e) { unavailable = true; }
             final boolean valid = basic, failed = unavailable;
             main.post(() -> {
                 if (epoch != generation) { handler.cancel(); return; }

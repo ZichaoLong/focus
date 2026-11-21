@@ -136,6 +136,20 @@ export interface FocusAndroidChannel {
   stale: boolean;
 }
 
+export interface FocusUpdateInstallation {
+  installation_id: string;
+  request_id: string;
+  installed: FocusInstalledBuildIdentity | null;
+  operation: Pick<FocusUpdateStatus, 'operation_id' | 'target' | 'state' | 'requested_commit' | 'resolved_commit' | 'phase' | 'progress' | 'message' | 'error'>;
+}
+
+export interface FocusUpdatePreparation extends FocusUpdateInstallation {
+  outcome: 'current' | 'prepared';
+  target: 'main' | 'stable';
+  revision: string;
+  version: string;
+}
+
 export interface FocusUpdateStatus {
   source: FocusUpdateSource;
   operation_source: FocusUpdateSource | null;

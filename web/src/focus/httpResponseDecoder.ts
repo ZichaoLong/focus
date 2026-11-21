@@ -43,6 +43,8 @@ import type {
   FocusToolInspectionLocator,
   FocusTurnPage,
   FocusTranscriptPage,
+  FocusUpdateInstallation,
+  FocusUpdatePreparation,
   FocusUpdateProgress,
   FocusUpdateStatus,
   FocusUnknownLifecycleMutation,
@@ -79,6 +81,8 @@ import {
  */
 export type FocusHttpDecoder<T> = (value: unknown) => T | null;
 
+const UPDATE_ID_PATTERN = new RegExp('^[a-f0-9]{32}$', 'u');
+const COMMIT_PATTERN = new RegExp('^[a-f0-9]{40}$', 'u');
 const SHA256_PATTERN = new RegExp('^[0-9a-f]{64}$', 'u');
 
 function hasOwn(value: Record<string, unknown>, key: string): boolean {
@@ -560,6 +564,32 @@ export const decodeFocusAndroidChannel: FocusHttpDecoder<FocusAndroidChannel> = 
     || !isNonNegativeFiniteNumber(value.checked_at) || typeof value.stale !== 'boolean'
     || (value.release !== null && !isAndroidRelease(value.release))) return null;
   return { release: value.release, checked_at: value.checked_at, stale: value.stale };
+};
+
+export const decodeFocusUpdateInstallation: FocusHttpDecoder<FocusUpdateInstallation> = (value) => {
+  if (!isRequiredRecord('update_installation', value)
+    || typeof value.request_id !== 'string' || (value.request_id !== '' && !UPDATE_ID_PATTERN.test(value.request_id))
+    || typeof value.installation_id !== 'string' || !UPDATE_ID_PATTERN.test(value.installation_id)
+    || (value.installed !== null && !isInstalledBuildIdentity(value.installed))) return null;
+  const op = value.operation;
+  if (!isFocusWireRecord(op) || !isFocusWebWireEnum('update_state', op.state)
+    || !isFocusWebWireEnum('update_phase', op.phase)
+    || (op.progress !== null && !isFocusUpdateProgress(op.progress))
+    || !['message', 'error', 'resolved_commit', 'requested_commit'].every(key => hasString(op, key))
+    || (op.resolved_commit !== '' && !COMMIT_PATTERN.test(String(op.resolved_commit)))
+    || (op.state === 'ready' && !op.resolved_commit)
+    || typeof op.operation_id !== 'string'
+    || (op.state === 'idle' ? op.operation_id !== '' || op.target !== '' :
+      !UPDATE_ID_PATTERN.test(op.operation_id) || !isFocusWebWireEnum('update_target', op.target))) return null;
+  return value as unknown as FocusUpdateInstallation;
+};
+
+export const decodeFocusUpdatePreparation: FocusHttpDecoder<FocusUpdatePreparation> = (value) => {
+  if (!isRequiredRecord('update_preparation', value) || !decodeFocusUpdateInstallation(value)
+    || !isFocusWebWireEnum('update_target', value.target) || !hasString(value, 'version')
+    || typeof value.revision !== 'string' || !COMMIT_PATTERN.test(value.revision)
+    || (value.outcome !== 'current' && value.outcome !== 'prepared')) return null;
+  return value as unknown as FocusUpdatePreparation;
 };
 
 export const decodeFocusUpdateStatus: FocusHttpDecoder<FocusUpdateStatus> = (value) => {

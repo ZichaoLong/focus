@@ -210,7 +210,7 @@
     "test/swarm-result.test.ts": null,
     "test/workspace-order.test.ts": null,
     "tsconfig.json": "6b09711eb60c1b8c3a33ab04c96bb6c3038232ca02e5f34c2f73d4d154db9866",
-    "vite.config.ts": "5688838fc47e6e413676dc81e0b88e6591b086095ff4c583df961096cee531d6"
+    "vite.config.ts": "47d15a9ba8b57febe40ca12d3bb1f842614e9d3a4fcea2423f499ca1c5d2ce1c"
   },
   "upstream_path_overrides": {
     "src/components/chat/ToolGroupHeader.vue": "src/components/chat/ToolGroup.vue",
@@ -331,6 +331,7 @@
     "src/focus/focusViewport.ts",
     "src/focus/focusWire.generated.ts",
     "src/focus/httpResponseDecoder.ts",
+    "src/focus/mobileUpdateAgent.ts",
     "src/focus/mutations/actions.ts",
     "src/focus/mutations/pending-request-responses.ts",
     "src/focus/mutations/prompt-results.ts",
@@ -438,6 +439,7 @@
     "test/focus-instance-inventory-surface.test.ts",
     "test/focus-mobile-editor-browser.test.ts",
     "test/focus-mobile-host.test.ts",
+    "test/focus-mobile-server-updates.test.ts",
     "test/focus-next-turn-settings-surface.test.ts",
     "test/focus-operator-warning-surface.test.ts",
     "test/focus-performance.test.ts",
