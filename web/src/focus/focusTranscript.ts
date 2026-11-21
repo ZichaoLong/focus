@@ -9,6 +9,12 @@ import { readTranscriptTarget } from './transcriptRead';
 import { MAX_TAIL_FILL_READS, TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
 
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
+type InstanceReturn = {
+  threadId: string;
+  scope: string | null;
+  recoveryStarted: boolean;
+  wake: 'none' | 'pending' | 'confirmed';
+};
 
 /** One bounded visible item window; navigation never accumulates full turns. */
 export function createFocusTranscript(options: {
@@ -63,7 +69,7 @@ export function createFocusTranscript(options: {
   let activeMode = 'head';
   let latestIntent: AbortSignal | undefined;
   let tailReadsLeft = 0;
-  let pendingInstanceReturn: { threadId: string; scope: string | null; recoveryStarted: boolean } | null = null;
+  let pendingInstanceReturn: InstanceReturn | null = null;
   const restoredTailContext = shallowRef<AbortController | null>(null);
   const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
@@ -83,11 +89,53 @@ export function createFocusTranscript(options: {
     retireConfirmedCursor();
   }
 
-  function expectInstanceReturn(threadId: string) {
+  function startInstanceReturn(threadId: string, wake: 'none' | 'pending' = 'none') {
     cancelInstanceReturn();
-    if (!threadId) return;
-    pendingInstanceReturn = { threadId, scope: enabled.value ? identity() : null, recoveryStarted: false };
+    const scope = enabled.value && threadId === options.activeThreadId.value ? identity() : null;
+    const returning: InstanceReturn = { threadId, scope, recoveryStarted: false, wake };
+    pendingInstanceReturn = returning;
     tailReadsLeft = MAX_TAIL_FILL_READS;
+    return returning;
+  }
+
+  function prepareInitialReturn() {
+    // Startup navigation resolves its target asynchronously. A gesture or a
+    // pause before that point must still be able to cancel this return.
+    const returning = startInstanceReturn('');
+    return (threadId: string) => {
+      if (pendingInstanceReturn !== returning) return;
+      if (!threadId) { cancelInstanceReturn(); return; }
+      returning.threadId = threadId;
+    };
+  }
+
+  function expectInstanceReturn(threadId: string) {
+    if (threadId) startInstanceReturn(threadId);
+    else cancelInstanceReturn();
+  }
+
+  function captureForegroundReturn() {
+    if (!enabled.value || !following) return null;
+    const scope = identity();
+    return () => {
+      if (scope === identity() && enabled.value && following) startInstanceReturn(options.activeThreadId.value, 'pending');
+    };
+  }
+
+  function offerTailContext() {
+    if (!tailReadsLeft || !cache.atTail || !cache.older || restoredTailContext.value) return;
+    const context = new AbortController();
+    latestIntent = context.signal;
+    restoredTailContext.value = context;
+  }
+
+  function confirmForegroundWake() {
+    const returning = pendingInstanceReturn;
+    if (returning?.wake !== 'pending' || returning.scope !== identity() || !following) return;
+    returning.wake = 'confirmed';
+    // A pong on the current socket also covers a head revalidated while the
+    // app was hidden. A projection or transcript read in flight settles first.
+    if (!awaitingProjection && !loading.value && !needsHead.value && !pendingHead && !error.value) offerTailContext();
   }
 
   function cancel() {
@@ -388,14 +436,11 @@ export function createFocusTranscript(options: {
         }
       }
       if (!needsHead.value && !pendingHead) automaticAttempts = 0;
-      if (mode === 'sync' && returning?.recoveryStarted && returning === pendingInstanceReturn
-        && returning.scope === scope && !needsHead.value && !pendingHead) {
+      const activeReturn = pendingInstanceReturn;
+      if (mode === 'sync' && activeReturn?.scope === scope && !needsHead.value && !pendingHead
+        && ((returning === activeReturn && activeReturn.recoveryStarted) || activeReturn.wake === 'confirmed')) {
         if (!followingAtStart || !following) cancelInstanceReturn();
-        else if (tailReadsLeft && cache.atTail && cache.older) {
-          const context = new AbortController();
-          latestIntent = context.signal;
-          restoredTailContext.value = context;
-        }
+        else offerTailContext();
       }
       if (query.fill && cache.older === query.cursor) {
         tailReadsLeft = 0;
@@ -512,5 +557,6 @@ export function createFocusTranscript(options: {
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
     older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload,
-    expectInstanceReturn, cancelInstanceReturn, restoredTailContext, reset, dispose };
+    prepareInitialReturn, expectInstanceReturn, captureForegroundReturn, confirmForegroundWake,
+    cancelInstanceReturn, restoredTailContext, reset, dispose };
 }

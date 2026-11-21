@@ -913,10 +913,12 @@ function onPanesScroll(): void {
   if (top < lastScrollTop - 1 && dist > 1) {
     const restore = props.restoredTailContext;
     // Measuring a newly installed prefix can clamp scrollTop, then grow the
-    // range again before the browser delivers its scroll event. Actual input
-    // has already revoked the return in claimUserScrollAuthority.
+    // range again before the browser delivers its scroll event. A collapse
+    // to zero can even restore the exact old range after follow frames settle.
+    // Actual input has already revoked the return in claimUserScrollAuthority.
+    const clampedFromTail = top <= 1 && Math.abs(lastScrollTop - lastFollowRange) <= 1;
     if (following.value && restore && !restore.signal.aborted
-      && (stableFollowRaf || Math.abs(el.scrollHeight - el.clientHeight - lastFollowRange) > 1)) {
+      && (clampedFromTail || stableFollowRaf || Math.abs(el.scrollHeight - el.clientHeight - lastFollowRange) > 1)) {
       scheduleFollow();
     } else {
       following.value = false;

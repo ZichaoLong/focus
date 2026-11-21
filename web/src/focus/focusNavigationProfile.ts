@@ -125,6 +125,7 @@ export interface FocusNavigationProfile {
     requestedThreadId: string;
     recoveryThreadId: string;
     persistedThreadId: string;
+    onTarget?(threadId: string): void;
   }): Promise<void>;
   dispose(): void;
 }
@@ -738,42 +739,31 @@ export function createFocusNavigationProfile(
     requestedThreadId: string;
     recoveryThreadId: string;
     persistedThreadId: string;
+    onTarget?(threadId: string): void;
   }): Promise<void> {
     if (disposed.value) return;
     const requested = input.requestedThreadId.trim();
     const recovery = input.recoveryThreadId.trim();
     const persisted = input.persistedThreadId.trim();
-    if (requested) {
-      const unavailableReason = options.threadUnavailableReason(requested);
-      if (!unavailableReason) {
-        await settleNavigationRead(beginThreadNavigation(requested));
-        return;
-      }
-      options.reportError(new Error(unavailableReason));
-    }
-    if (recovery) {
-      const current = scopeReceipt.value;
-      if (current?.selectedThreadId === recovery && scopeReceiptIsCurrent(current)) {
-        await refreshConfirmedTarget(recovery, true);
-        return;
-      }
-      await confirmUnconfirmedThread(recovery);
+    const unavailableReason = requested && options.threadUnavailableReason(requested);
+    if (unavailableReason) options.reportError(new Error(unavailableReason));
+    const explicitTarget = unavailableReason ? '' : requested;
+    const target = explicitTarget || recovery || persisted;
+    input.onTarget?.(target);
+    if (!target) return;
+    if (explicitTarget) {
+      await settleNavigationRead(beginThreadNavigation(target));
       return;
     }
-    if (persisted) {
-      // Even a list-marked unavailable persisted selection crosses the direct
-      // read authority. The server may compare-clear stale durable selection,
-      // after which the exact fresh-meta reconcile restores a writable draft.
-      const current = scopeReceipt.value;
-      if (current?.selectedThreadId === persisted && scopeReceiptIsCurrent(current)) {
-        // A stale durable selection is background recovery, not an explicit
-        // user request.  Its direct-read failure may compare-clear the profile
-        // and should converge silently; an explicit URL failure was already
-        // reported in the requested-target branch above.
-        await refreshConfirmedTarget(persisted, false);
-        return;
-      }
-      await settleNavigationRead(beginThreadNavigation(persisted), requested === '');
+    const current = scopeReceipt.value;
+    if (current?.selectedThreadId === target && scopeReceiptIsCurrent(current)) {
+      // The direct read can compare-clear a stale durable selection and
+      // converge silently to a writable draft.
+      await refreshConfirmedTarget(target, Boolean(recovery));
+    } else if (recovery) {
+      await confirmUnconfirmedThread(target);
+    } else {
+      await settleNavigationRead(beginThreadNavigation(target), requested === '');
     }
   }
 

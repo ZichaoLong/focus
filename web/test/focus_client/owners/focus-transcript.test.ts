@@ -63,6 +63,38 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older(intent.signal)).toBe(false);
   });
 
+  it('leaves a cancelled startup return cancelled when navigation later resolves its target', async () => {
+    const h = harness();
+    await settle();
+    const bindTarget = h.owner.prepareInitialReturn();
+    h.owner.cancelInstanceReturn();
+    bindTarget('thread-1');
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    expect(h.owner.restoredTailContext.value).toBeNull();
+  });
+
+  it('shares the foreground allowance across duplicate wake confirmations and another handshake', async () => {
+    const h = harness();
+    await settle();
+    const resume = h.owner.captureForegroundReturn()!;
+    resume();
+    expect(h.owner.restoredTailContext.value).toBeNull();
+    h.owner.confirmForegroundWake();
+    const intent = h.owner.restoredTailContext.value!;
+    h.owner.confirmForegroundWake();
+    expect(h.owner.restoredTailContext.value).toBe(intent);
+    h.read.mockResolvedValueOnce(page([row(0)], { older_cursor: 'more' }));
+    expect(await h.owner.older(intent.signal)).toBe(true);
+    h.owner.prepareReload();
+    await h.owner.resumeAfterReload();
+    const fresh = h.owner.restoredTailContext.value!;
+    h.read.mockResolvedValueOnce(page([row(0)], { older_cursor: 'more' }));
+    expect(await h.owner.older(fresh.signal)).toBe(true);
+    h.owner.confirmForegroundWake();
+    expect(await h.owner.older(fresh.signal)).toBe(false);
+  });
+
   it('grants context only to the current instance return using its freshly read cursor', async () => {
     const h = harness(page([row(4)], { older_cursor: 'retired' })); await settle();
     h.owner.expectInstanceReturn('thread-1');

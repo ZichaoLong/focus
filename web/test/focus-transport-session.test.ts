@@ -288,17 +288,22 @@ describe('Focus transport session', () => {
   });
 
   it('coalesces wake signals and keeps a healthy socket without a projection reload', async () => {
-    const fixture = transportFixture();
+    const onWakeConfirmed = vi.fn();
+    const fixture = transportFixture({ onWakeConfirmed });
     fixture.session.connect();
     const socket = fixture.sockets[0]!;
     socket.handlers.open?.();
     socket.handlers.event({ type: 'hello', runtime_epoch: 'epoch-1', revision: 0 });
+    socket.handlers.pong?.();
+    expect(onWakeConfirmed).not.toHaveBeenCalled();
     document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('online'));
     window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
     await vi.advanceTimersByTimeAsync(200);
     expect(socket.send).toHaveBeenCalledExactlyOnceWith('ping');
     socket.handlers.pong?.();
+    socket.handlers.pong?.();
+    expect(onWakeConfirmed).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fixture.sockets).toHaveLength(1);
     expect(fixture.reloadProjection).not.toHaveBeenCalled();

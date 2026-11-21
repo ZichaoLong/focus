@@ -32,30 +32,31 @@ function tools(start: number, count: number): ChatTurn[] {
     return { ...reply(id, ''), contentDeferred: true, tools: [tool], blocks: [{ kind: 'tool', tool }] };
   });
 }
-type Fixture = { page: Page; reads: string[]; disconnect(): void; refuseNextCursor(): void };
+type Fixture = { page: Page; reads: string[]; pings(): number; disconnect(): void; refuseNextCursor(): void };
 type FixtureOptions = {
   onFill?(cursor: number): Promise<void> | void;
   pages?: ChatTurn[][];
   mobileTabs?: boolean;
   running?: boolean;
+  fromProfile?: boolean;
 };
 async function fixture(width: number, prosePage: number, run: (f: Fixture) => Promise<void>,
-  { onFill, pages, mobileTabs, running }: FixtureOptions = {}) {
+  { onFill, pages, mobileTabs, running, fromProfile }: FixtureOptions = {}) {
   const page = await browser.newPage({ viewport: { width, height: width < 500 ? 844 : 880 }, hasTouch: width < 500 });
   page.setDefaultTimeout(12_000);
   const reads: string[] = [], errors: string[] = [];
-  let closeSocket: () => void, refuseFill = false, cursorBase = 0;
+  let closeSocket: () => void, refuseFill = false, cursorBase = 0, pings = 0;
   page.on('pageerror', err => errors.push(err.message));
   if (mobileTabs) await page.addInitScript(() => {
     window.__focusMobile = { version: 1, instance: '7ebb390f-2699-49de-ab09-95c6c5f53b76',
-      ticket: crypto.randomUUID(), features: ['tabs', 'resume'] };
+      ticket: crypto.randomUUID(), features: ['tabs', 'resume', 'wake'] };
     window.prompt = () => 'ok';
   });
   const source = { ...thread(), name: 'Folded tools', title: 'Folded tools', source: 'cli', ephemeral: false,
     session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
   await page.routeWebSocket('**/api/events?*', socket => {
     closeSocket = () => socket.close({ code: 1011, reason: 'Test reconnect' });
-    socket.onMessage(msg => { if (msg === 'ping') socket.send('pong'); });
+    socket.onMessage(msg => { if (msg === 'ping') { pings++; socket.send('pong'); } });
     setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 })), 10);
   });
   await page.route('**/api/**', async route => {
@@ -102,15 +103,21 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
     await route.fulfill({ json: payload });
   });
   try {
-    await page.goto(url);
+    await page.goto(fromProfile ? new URL('/?focusApp=1', url).href : url);
     const first = pages ? page.locator('.tool-group-head').first() : page.locator('.md').getByText('First read.', { exact: true });
     await first.waitFor({ timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready);
-    await run({ page, reads, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
+    await run({ page, reads, pings: () => pings, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
     expect(errors).toEqual([]);
   } catch (error) {
+    const viewport = await page.locator('.panes').evaluateAll(panes => panes.map(pane => ({
+      following: pane.classList.contains('is-following'), top: pane.scrollTop,
+      range: pane.scrollHeight - pane.clientHeight,
+      end: pane.querySelector('[data-transcript-end]')?.getBoundingClientRect().top,
+      bottom: pane.getBoundingClientRect().bottom,
+    })));
     throw new Error(String(error) + '\nBody reads: ' + JSON.stringify(reads) + '\nBrowser errors: ' + JSON.stringify(errors)
-      + '\nPage: ' + (await page.locator('body').innerText()).slice(0, 600), { cause: error });
+      + '\nViewport: ' + JSON.stringify(viewport) + '\nPage: ' + (await page.locator('body').innerText()).slice(0, 600), { cause: error });
   } finally { await page.close(); }
 }
 async function gap(page: Page) {
@@ -128,6 +135,50 @@ async function swipeEarlier(page: Page) {
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await cdp.detach();
 }
+
+it.each(['server selection', 'healthy socket', 'reconnect before resume', 'reconnect after resume', 'historical reader'])(
+  'returns from the launcher with a short running transcript (%s)', async scenario => {
+    const pages = [[reply('progress', '正在复核这一步的数值，并与已有的实验记录对照。'.repeat(4)), ...tools(1, 37)],
+      [reply('earlier', 'Previous discussion.\n\n'.repeat(60))]];
+    await fixture(440, 1, async ({ page, reads, pings, disconnect }) => {
+      await page.locator('[data-turn-id*=":earlier:"]').waitFor({ state: 'attached' });
+      await page.locator('.reading-mode-entry:visible').click();
+      await expectVisibleTail(page);
+      expect(reads).toEqual(['head', 'fill-1']);
+      if (scenario === 'historical reader') {
+        await swipeEarlier(page);
+        await page.locator('.panes:not(.is-following)').waitFor();
+      }
+      const start = reads.length;
+      await page.evaluate(() => window.dispatchEvent(new Event('focus-host-pause')));
+      if (scenario === 'reconnect before resume') {
+        disconnect();
+        await expect.poll(() => reads.slice(start), { timeout: 12_000 }).toEqual(['head']);
+        await expect.poll(() => gap(page)).toBeGreaterThan(96);
+      }
+      await page.evaluate(() => {
+        window.dispatchEvent(new Event('focus-host-resume'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        window.dispatchEvent(new Event('focus-host-resume'));
+      });
+      if (scenario === 'reconnect after resume' || scenario === 'historical reader') disconnect();
+      if (scenario === 'historical reader') {
+        await expect.poll(() => reads.slice(start), { timeout: 12_000 }).toEqual([expect.stringMatching(/^anchor-/)]);
+        await page.locator('.panes:not(.is-following) .transcript-notice button').waitFor();
+        return;
+      }
+      if (scenario.startsWith('reconnect')) {
+        await expect.poll(() => reads.slice(start), { timeout: 12_000 }).toEqual(['head', 'fill-1']);
+      } else {
+        await expect.poll(pings).toBeGreaterThan(0);
+      }
+      await expectVisibleTail(page);
+      await page.locator('.panes .sending-placeholder').waitFor();
+      expect(await page.locator('.tool-group-head[aria-expanded="false"]').allTextContents())
+        .toEqual([expect.stringContaining('37 tool calls')]);
+      if (!scenario.startsWith('reconnect')) expect(reads.slice(start)).toEqual([]);
+    }, { mobileTabs: true, running: true, pages, fromProfile: scenario === 'server selection' });
+  }, 45_000);
 
 it('fills the reselected instance after its confirmed tail, and restores a historical reader at the exact item', async () => {
   await fixture(390, 2, async ({ page, reads }) => {
@@ -245,18 +296,22 @@ it('fills past 57 folded calls that span two source pages on a running instance 
       await expect.poll(() => reads.slice(rebuilt), { timeout: 12_000 }).toEqual(['head', 'fill-1', 'fill-2']);
       await expectVisibleTail(page);
       expect(await groups.count()).toBe(2);
-      // Reproduce a transient renderer clamp followed by a taller measured
-      // prefix in the same frame. Only the later touch should leave the tail.
-      const clamped = await page.locator('.panes').evaluate(pane => {
-        const content = pane.querySelector('[data-transcript-end]')!.parentElement!;
-        content.style.display = 'none';
-        const top = pane.scrollTop;
-        content.style.display = '';
-        content.style.paddingTop = '120px';
-        return top;
-      });
-      expect(clamped).toBe(0);
-      await expectVisibleTail(page);
+      // The prefix can return at a new height or the original height after
+      // follow frames settle. Only the later touch should leave the tail.
+      for (const grow of [true, false]) {
+        const clamped = await page.locator('.panes').evaluate(async (pane, grow) => {
+          for (let i = 0; i < 8; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+          const content = pane.querySelector('[data-transcript-end]')!.parentElement!;
+          const height = pane.scrollHeight;
+          content.style.display = 'none';
+          const top = pane.scrollTop;
+          content.style.display = '';
+          if (grow) content.style.paddingTop = '120px';
+          return { top, sameHeight: pane.scrollHeight === height };
+        }, grow);
+        expect(clamped).toEqual({ top: 0, sameHeight: !grow });
+        await expectVisibleTail(page);
+      }
       await swipeEarlier(page);
       await page.locator('.panes:not(.is-following)').waitFor();
     }, { mobileTabs: true, running: true, pages, onFill: cursor => { if (holdSecond && cursor === 2) return pending; } });

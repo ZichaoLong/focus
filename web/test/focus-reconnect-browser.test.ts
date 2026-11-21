@@ -118,9 +118,13 @@ it.each([
     await anchor.waitFor({ state: 'attached' });
     await pane.hover();
     if (scrollDuringReload) {
-      await page.mouse.wheel(0, await pane.evaluate(el => el.scrollHeight));
+      // Establish the live tail before holding its recovery read. A wheel
+      // delta based on the initial estimates can fall short as rows render.
+      await page.mouse.wheel(0, -160);
+      await page.locator('.newmsg-pill').click();
       await expect.poll(() => pane.evaluate(el => el.classList.contains('is-following')
-        && el.scrollHeight - el.scrollTop - el.clientHeight < 3)).toBe(true);
+        && el.scrollHeight - el.scrollTop - el.clientHeight < 3), { timeout: 5_000 }).toBe(true);
+      await pane.hover();
     } else {
       const delta = await anchor.evaluate(el => el.getBoundingClientRect().top - document.querySelector('.panes')!.getBoundingClientRect().top - 8);
       await page.mouse.wheel(0, delta);

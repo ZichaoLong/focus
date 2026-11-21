@@ -93,6 +93,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   ));
   const authRequired = ref(false);
   let parked = false;
+  const mobileTabs = hasMobileFeature('tabs');
+  let hostPaused = false;
+  let resumeTranscript: (() => void) | null = null;
   const outerAuthRequired = ref(false);
   // A copied/reloaded document can lose its memory-only document capability
   // while another document keeps the resumable client hint.  Do not keep
@@ -371,6 +374,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       if (reconnected) transportSession.requestProjectionReload();
       else transportSession.scheduleProjectionRefresh();
     },
+    onWakeConfirmed: () => transcript.confirmForegroundWake(),
     onEvent: (event) => {
       if (event.type === 'prompt_timing_changed') api.promptTimings?.changed(String(event.detail?.submission_id ?? ''));
       runtimeNotices.handleEvent(event);
@@ -1004,7 +1008,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   async function loadOlderMessages(sessionId: string, tailContext?: AbortSignal): Promise<boolean> {
-    if (sessionId !== activeThreadId.value || parked) return false;
+    if (sessionId !== activeThreadId.value || parked || (tailContext && hostPaused)) return false;
     if (transcript.enabled.value) return transcript.older(tailContext);
     return !tailContext && historyNavigation.loadOlderPage();
   }
@@ -1058,14 +1062,38 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (recoverablePage) recoverDocumentIfIdle();
     else if (initialReadFailed && !loading.value) void load();
   }
+  function rememberForegroundThread(): void {
+    if (mobileTabs && !parked) resumeTranscript ??= transcript.captureForegroundReturn();
+  }
+  function resumeVisibleDocument(): void {
+    if (parked || hostPaused || typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    resumeTranscript?.();
+    resumeTranscript = null;
+    wakeDocument();
+  }
+  function hostDidPause(): void {
+    hostPaused = true;
+    rememberForegroundThread();
+  }
+  function hostDidResume(): void {
+    hostPaused = false;
+    resumeVisibleDocument();
+  }
+  function visibilityChanged(): void {
+    if (document.visibilityState === 'hidden') rememberForegroundThread();
+    else resumeVisibleDocument();
+  }
   window.addEventListener?.('online', wakeDocument);
-  window.addEventListener?.('focus-host-resume', wakeDocument);
-  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', wakeDocument);
+  if (mobileTabs) window.addEventListener?.('focus-host-pause', hostDidPause);
+  window.addEventListener?.('focus-host-resume', hostDidResume);
+  if (typeof document !== 'undefined') document.addEventListener?.('visibilitychange', visibilityChanged);
 
   function setTabActive(active: boolean): boolean {
     if (navigation.isDisposed || !initialized.value || !meta.value) return false;
     if (parked === !active) return true;
     parked = !active;
+    hostPaused = !active;
+    resumeTranscript = null;
     transcript.expectInstanceReturn(active ? activeThreadId.value : '');
     if (parked) {
       window.dispatchEvent(new Event('focus-host-pause'));
@@ -1081,7 +1109,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     }
     return true;
   }
-  if (hasMobileFeature('tabs')) window.__focusSetTabActive = setTabActive;
+  if (mobileTabs) window.__focusSetTabActive = setTabActive;
 
   async function load(): Promise<void> {
     if (parked || navigation.isDisposed || loading.value) return;
@@ -1094,7 +1122,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     if (!requestedThreadId && hasMobileFeature('resume')) {
       try { requestedThreadId = recoveryStorage().getItem('focus-web.last-thread') ?? ''; } catch { /* private storage */ }
     }
-    if (hasMobileFeature('tabs')) transcript.expectInstanceReturn(requestedThreadId);
+    const onTarget = mobileTabs ? transcript.prepareInitialReturn() : undefined;
     loading.value = true;
     authRequired.value = false;
     clearError();
@@ -1112,6 +1140,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       await refreshThreads();
       if (navigation.isDisposed) return;
       await navigation.restoreInitialTarget({
+        onTarget,
         requestedThreadId,
         recoveryThreadId: unknownSubmissionDraft.value?.threadId.trim() ?? '',
         // Session-local unknown evidence is a retry fence, not selection
@@ -1146,8 +1175,9 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     clearTimeout(accessReloadTimer);
     clearTimeout(initialRetry);
     window.removeEventListener?.('online', wakeDocument);
-    window.removeEventListener?.('focus-host-resume', wakeDocument);
-    if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', wakeDocument);
+    window.removeEventListener?.('focus-host-pause', hostDidPause);
+    window.removeEventListener?.('focus-host-resume', hostDidResume);
+    if (typeof document !== 'undefined') document.removeEventListener?.('visibilitychange', visibilityChanged);
     // The document is leaving; pending stream deltas no longer have a visible
     // consumer. Cancel their presentation callbacks instead of doing one last
     // Markdown/DOM pass during teardown.

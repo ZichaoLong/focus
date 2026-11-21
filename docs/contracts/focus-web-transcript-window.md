@@ -260,9 +260,14 @@ read starts and finishes, and the confirmed tail has an older cursor. Measure on
 the event connection has completed its handshake and layout has settled. Remeasure if the transcript viewport
 grows after activation. Restoring the saved reading mode in a rebuilt document uses its resulting layout
 and the same return budget. A queued control refresh or another handshake requires a newly confirmed cursor.
+At startup, use the thread actually restored by navigation, including a selection known only to the server.
+Returning from the phone launcher to the same retained document uses the existing connection check.
+A pong on the current socket permits measuring its confirmed live window. After a new handshake, wait for the
+authoritative reread, including one completed in the background. A full viewport needs no extra body read.
+Duplicate visibility and host signals share one allowance per background-to-foreground transition.
 Restore historical positions from their item anchor.
-Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position.
-A reader following the tail stays at the end as layout settles. Actual scroll input takes over immediately.
+Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position to the top.
+A reader following the tail stays at the end even if the content returns to its original height. Actual scroll input takes over immediately.
 Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.

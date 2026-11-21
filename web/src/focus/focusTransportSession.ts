@@ -33,6 +33,7 @@ export interface FocusTransportSessionCallbacks {
   onConnectionError(error: unknown): void;
   onSocketOpened(): void;
   onHandshakeReady(reconnected: boolean): void;
+  onWakeConfirmed?(): void;
   onEvent(event: FocusProjectionEvent): void;
   onInvalidEvent(): void;
   refreshProjection(): Promise<void>;
@@ -217,9 +218,10 @@ export function createFocusTransportSession(
           }
         },
         pong: () => {
-          if (socket !== nextSocket || generation !== socketGeneration) return;
-          if (pongTimer !== null) clearTimeout(pongTimer);
+          if (socket !== nextSocket || generation !== socketGeneration || pongTimer === null) return;
+          clearTimeout(pongTimer);
           pongTimer = null;
+          if (socketHandshakeReady) callbacks.onWakeConfirmed?.();
         },
         event: (event) => {
           if (socket === nextSocket && generation === socketGeneration) {
