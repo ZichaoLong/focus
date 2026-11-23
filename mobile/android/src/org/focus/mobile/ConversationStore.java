@@ -42,6 +42,39 @@ final class ConversationStore {
     private static String coordinate(JSONObject row) {
         return new JSONArray().put(row.optString("turn")).put(key(row)).toString();
     }
+    private static String layout(JSONObject data) {
+        JSONObject layout = data.optJSONObject("layout");
+        if (layout == null) return null;
+        String json = layout.toString();
+        return json.length() <= 2048 ? json : null;
+    }
+    void rememberLayout(JSONObject data) throws JSONException {
+        String json = layout(data);
+        if (json == null) return;
+        JSONObject view = data.getJSONObject("layout");
+        String scheme = view.optString("colorScheme");
+        JSONObject style = new JSONObject()
+            .put("colorScheme", "dark".equals(scheme) || "light".equals(scheme) ? scheme : "system")
+            .put("accent", "mono".equals(view.optString("accent")) ? "mono" : "blue")
+            .put("locale", "zh".equals(view.optString("locale")) ? "zh" : "en")
+            .put("fontSize", Math.max(12, Math.min(20, view.optInt("fontSize", 14))));
+        context.getSharedPreferences("page-" + entry, Context.MODE_PRIVATE).edit().putString("appearance",style.toString()).apply();
+        String thread = data.getString("thread"), scope = data.getString("scope");
+        String fence = scalar(store.getReadableDatabase(), "SELECT fence FROM sites WHERE site=? AND enabled AND NOT locked AND scope=?", site, scope);
+        if (fence == null) return;
+        disk.execute(() -> {
+            try {
+                if (writer == null) writer = new RecordsStore(context);
+                writer.getWritableDatabase().execSQL(
+                    "UPDATE books SET layout=? WHERE site=? AND thread=? AND EXISTS(SELECT 1 FROM sites WHERE site=? AND enabled AND NOT locked AND scope=? AND fence=?)",
+                    new Object[]{json, site, thread, site, scope, fence});
+            } catch (android.database.SQLException unavailable) { /* The next window can supply its layout. */ }
+        });
+    }
+    JSONObject appearance() {
+        String json = context.getSharedPreferences("page-" + entry, Context.MODE_PRIVATE).getString("appearance","{}");
+        try { return new JSONObject(json); } catch (JSONException invalid) { return new JSONObject(); }
+    }
     static void index(SQLiteDatabase db,String run,int seq,JSONArray rows) {
         for(int i=0;i<rows.length();i++) {
             JSONObject row=rows.optJSONObject(i);
@@ -126,6 +159,8 @@ final class ConversationStore {
                 && scalar(db,"SELECT 1 WHERE (SELECT COUNT(*) FROM books WHERE site=?)<1000 AND (SELECT COUNT(*) FROM books)<5000",site)==null) return;
             long now=System.currentTimeMillis();
             db.execSQL("INSERT OR IGNORE INTO books(site,thread,key,title,touched) VALUES(?,?,?,?,?)",new Object[]{site,thread,hash,title,now});
+            String layout = layout(page);
+            if (layout != null) db.execSQL("UPDATE books SET layout=? WHERE site=? AND thread=? AND layout IS NULL",new Object[]{layout,site,thread});
             // Replace overlapping copies of this window and retain only a bounded set of recently read pages.
             db.execSQL("DELETE FROM reading_pages WHERE site=? AND thread=? AND (first=? AND last=? OR run NOT IN (SELECT p.run FROM reading_pages p JOIN runs r USING(run) WHERE p.site=? AND p.thread=? ORDER BY r.stamp DESC,r.rowid DESC LIMIT 11))",new Object[]{site,thread,first,last,site,thread});
             db.execSQL("INSERT INTO runs(site,thread,run,stamp,mark,head) VALUES(?,?,?,?,?,?)",new Object[]{site,thread,run,now,"window",""});
@@ -171,7 +206,7 @@ final class ConversationStore {
         try {
             String direction=request.optString("direction","open");
             boolean open="open".equals(direction);
-            try(Cursor b=db.rawQuery("SELECT b.visible,b.title,b.anchor,b.live FROM books b JOIN sites s USING(site) WHERE b.site=? AND b.thread=? AND NOT s.locked AND length(s.scope)=64 AND (?='' OR s.scope=?)",new String[]{site,thread,scope,scope})) {
+            try(Cursor b=db.rawQuery("SELECT b.visible,b.title,b.anchor,b.live,b.layout FROM books b JOIN sites s USING(site) WHERE b.site=? AND b.thread=? AND NOT s.locked AND length(s.scope)=64 AND (?='' OR s.scope=?)",new String[]{site,thread,scope,scope})) {
                 if(!b.moveToFirst()) return null;
                 String visible=b.getString(0);
                 JSONObject anchor=b.getString(2).isEmpty()?new JSONObject():new JSONObject(b.getString(2));
@@ -203,6 +238,7 @@ final class ConversationStore {
                                     result.put("rows",joined).put("older",before.getBoolean("older") || start>0);
                                 } else result.put("older",archive?runs.getInt(2)==0:runs.getInt(5)!=0);
                             }
+                            if (!b.isNull(4)) result.put("layout",new JSONObject(b.getString(4)));
                             return result.put("thread",thread).put("title",b.getString(1)).put("anchor",anchor);
                         }
                     }

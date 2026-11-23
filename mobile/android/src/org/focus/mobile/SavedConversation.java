@@ -16,13 +16,18 @@ final class SavedConversation {
     private final WebView view;
     private final FrameLayout parent;
     private String thread;
-    private boolean closed, moved;
+    private boolean closed, moved, interacting, unavailable;
     private JSONObject latestPosition;
     private String offered="", landed="";
     SavedConversation(Activity activity,FrameLayout parent,RecordsStore store,ConversationStore conversation,
         String id,String origin,String name,String initial,Action action) {
         this.parent=parent; thread=initial;
         view=new WebView(activity);
+        JSONObject appearance = conversation.appearance();
+        String scheme = appearance.optString("colorScheme","system");
+        int night = activity.getResources().getConfiguration().uiMode & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+        boolean dark = "dark".equals(scheme) || ("system".equals(scheme) && night == android.content.res.Configuration.UI_MODE_NIGHT_YES);
+        view.setBackgroundColor(dark ? 0xff0d1117 : android.graphics.Color.WHITE);
         WebSettings settings=view.getSettings();
         settings.setJavaScriptEnabled(true); settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
         settings.setBlockNetworkLoads(true);
@@ -47,7 +52,8 @@ final class SavedConversation {
                 try {
                     JSONObject data=new JSONObject(value);
                     String op=msg.substring("conversation/1/".length());
-                    if(op.equals("init")) result.confirm(new JSONObject().put("thread",thread).put("name",name).toString());
+                    if(op.equals("init")) result.confirm(new JSONObject().put("thread",thread).put("name",name).put("unavailable",unavailable).put("appearance",appearance).toString());
+                    else if(op.equals("interacting")) { interacting=data.getBoolean("active"); result.confirm("ok"); }
                     else if(op.equals("threads")) result.confirm(store.request(true,id,origin,"list",data));
                     else if(op.equals("select")) {
                         String next=data.getString("thread");
@@ -62,7 +68,7 @@ final class SavedConversation {
                         moved=true;
                         data.put("anchor",latestPosition.toString()).put("now",System.currentTimeMillis());
                         result.confirm(store.request(true,id,origin,"bookmark",data));
-                    } else if(op.equals("instances") || op.equals("records")) {
+                    } else if(op.equals("instances") || op.equals("records") || op.equals("retry")) {
                         result.confirm("ok"); view.post(() -> { if(!closed) action.run(op,thread); });
                     } else result.cancel();
                 } catch(Exception invalid) { result.cancel(); }
@@ -72,17 +78,33 @@ final class SavedConversation {
         parent.addView(view,new FrameLayout.LayoutParams(-1,-1)); view.loadUrl(PAGE);
     }
     boolean waitingForPosition(WebView online) {
+        if (interacting) return true;
         if(latestPosition==null || (!latestPosition.has("item") && !moved)) return false;
         final String position=latestPosition.toString();
         if(position.equals(landed)) return false;
         if(!position.equals(offered)) {
             offered=position;
+            landed="";
             online.evaluateJavascript("!dispatchEvent(new CustomEvent('focus-conversation-position',{cancelable:true,detail:{thread:"
                 +JSONObject.quote(thread)+",position:"+JSONObject.quote(position)+"}}))", handled -> {
                     if(!"true".equals(handled)) positioned(position);
                 });
         }
         return true;
+    }
+    void networkFailure() {
+        unavailable=true;
+        view.evaluateJavascript("dispatchEvent(new Event('focus-instance-unavailable'))",null);
+    }
+    void networkReachable() {
+        if (!unavailable) return;
+        unavailable=false;
+        view.evaluateJavascript("dispatchEvent(new Event('focus-instance-reachable'))",null);
+    }
+    void back(Runnable openDrawer) {
+        view.evaluateJavascript("!dispatchEvent(new Event('focus-saved-back',{cancelable:true}))", handled -> {
+            if (!closed && !"true".equals(handled)) openDrawer.run();
+        });
     }
     void reconnect() { offered=landed=""; }
     void positioned(String position) { if(position.equals(offered)) landed=position; }

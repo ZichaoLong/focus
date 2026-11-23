@@ -1,4 +1,9 @@
 export default {
+  connectingInstance: "Connecting",
+  savedOffline: "Offline",
+  siteUnreachable: "Instance unavailable",
+  openSavedCopy: "View offline copy",
+  savedPageGap: "Connect to load this part of the conversation",
   offlineRecords: "Offline records",
   switchInstance: "Switch instance",
   retentionTitle: "Data cleanup",

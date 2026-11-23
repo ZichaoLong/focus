@@ -1,0 +1,58 @@
+/* The bundled first screen and the instance document share the same chat viewport. */
+.focus-shell {
+  position: fixed;
+  top: var(--app-top, 0px);
+  left: 0;
+  right: 0;
+  height: var(--app-height, 100dvh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+.focus-app {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: auto 0 minmax(0, 1fr) 0 auto;
+  /* Inner panes own scrolling. A hidden overflow container can still be
+     scrolled by native textarea paging, shifting the entire sidebar away. */
+  overflow: clip;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+.focus-app > * {
+  min-width: 0;
+  min-height: 0;
+}
+.focus-main {
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+}
+.focus-main > .con {
+  flex: 1;
+  min-height: 0;
+}
+.focus-app > .sidebar-toggle-btn {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: var(--z-sticky);
+}
+.focus-app.narrow-viewport {
+  display: flex;
+  flex-direction: column;
+}
+.focus-app.narrow-viewport .focus-main {
+  flex: 1;
+  min-height: 0;
+}
+.focus-app.narrow-viewport.reading-mode {
+  /* Give mobile reading its own composited surface on entry. ArkWeb can leave
+     the fixed/flex page blank while all layout boxes remain visible and sized;
+     changing the surface does not remount the transcript or reset its scroll. */
+  transform: translateZ(0);
+}

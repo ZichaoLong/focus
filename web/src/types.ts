@@ -298,6 +298,8 @@ export interface ChatTurn {
   itemId?: string;
   /** A tool header whose complete detail is fetched explicitly; never prose. */
   contentDeferred?: boolean;
+  /** Only the collapsed count is available in this saved reading window. */
+  savedToolCount?: number;
   reply?: ReplyMetadata;
   /** Opaque source-page receipt for an exact full-content reread. */
   sourceCursor?: string;

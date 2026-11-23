@@ -19,7 +19,7 @@ final class RecordsStore extends SQLiteOpenHelper {
     private final JSONObject commands;
 
     RecordsStore(Context context) {
-        super(context, "offline-records-v1.db", null, 2);
+        super(context, "offline-records-v1.db", null, 3);
         setWriteAheadLoggingEnabled(true);
         try (InputStream input = context.getAssets().open("records-sql.json");
              Scanner scanner = new Scanner(input, "UTF-8").useDelimiter("\\A")) {
@@ -35,6 +35,7 @@ final class RecordsStore extends SQLiteOpenHelper {
         for (int i = 0; i < schema.length(); i++) db.execSQL(schema.optString(i));
     }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if (oldVersion < 3) db.execSQL("ALTER TABLE books ADD COLUMN layout TEXT");
         onCreate(db);
     }
 

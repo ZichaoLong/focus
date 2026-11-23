@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<{
   exportDisabled?: boolean;
   runtimeDetailsTone?: RuntimeDetailsTone;
   runtimeDetailsOpen?: boolean;
+  saved?: boolean;
+  connectionLabel?: string;
 }>(), {
   narrowViewport: false,
   sessionId: '',
@@ -140,6 +142,7 @@ onUnmounted(closeExportMenu);
       @click="emit('switchSession')"
     >
       <span class="reading-session-title">{{ sessionTitle }}</span>
+      <small v-if="connectionLabel" class="reading-connection" role="status">{{ connectionLabel }}</small>
       <Icon name="chevron-down" size="sm" />
     </Button>
     <IconButton
@@ -190,6 +193,7 @@ onUnmounted(closeExportMenu);
     <IconButton
       class="reading-runtime-details"
       size="sm"
+      :disabled="saved"
       :label="t('focus.runtimeDetailsOpen')"
       :title="t('focus.runtimeDetailsOpen')"
       :aria-expanded="runtimeDetailsOpen"
@@ -200,6 +204,7 @@ onUnmounted(closeExportMenu);
     </IconButton>
     <IconButton
       class="reading-settings"
+      :disabled="saved"
       size="sm"
       :label="t('settings.title')"
       :title="t('settings.title')"
@@ -212,6 +217,7 @@ onUnmounted(closeExportMenu);
 </template>
 
 <style scoped>
+.reading-connection { font-weight: normal; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .reading-mode-controls {
   z-index: var(--z-sticky);
   height: 48px;

@@ -159,7 +159,8 @@ describe('ConversationPane bounded history navigation surface', () => {
     expect(narrowTopBar).toBeGreaterThanOrEqual(0);
     expect(main).toBeGreaterThan(narrowTopBar);
     expect(conversationPane).toBeGreaterThan(main);
-    expect(app).toContain('.focus-app.narrow-viewport {\n  display: flex;\n  flex-direction: column;');
+    expect(app).toContain('<style src="./conversationLayout.css">');
+    expect(source('../src/focus/conversationLayout.css')).toContain('.focus-app.narrow-viewport {\n  display: flex;\n  flex-direction: column;');
     expect(topBar).toContain('height: calc(50px + var(--safe-top));');
     expect(pane).toContain('position: relative;\n  container-type: inline-size;');
     expect(toc).toContain('.toc-compact-trigger.is-narrow { top: var(--space-3); }');

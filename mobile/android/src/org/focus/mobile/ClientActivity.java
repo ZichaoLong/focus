@@ -132,7 +132,7 @@ public class ClientActivity extends Activity {
     private void setNativeSwitcher(boolean visible) {
         if (pendingSwitcher != null) main.removeCallbacks(pendingSwitcher);
         pendingSwitcher = null;
-        switcher.setVisibility(visible ? View.VISIBLE : View.GONE);
+        switcher.setVisibility(visible && savedChat == null ? View.VISIBLE : View.GONE);
     }
 
     private void banner(String message, String action, Runnable click) {
@@ -161,11 +161,14 @@ public class ClientActivity extends Activity {
             savedChat=new SavedConversation(this,frame,records,conversation,id,origin,name,thread,(op,target) -> {
                 if ("instances".equals(op)) showDrawer("",false);
                 else if ("records".equals(op)) openRecords(target);
+                else if ("retry".equals(op)) openProbe(false);
                 else if ("select".equals(op)) {
                     presentation.edit().putString("thread",target).apply();
                     openProbe(false);
                 }
             });
+            setNativeSwitcher(false);
+            opening.setVisibility(View.INVISIBLE);
         }
         final LinearLayout cover = opening;
         main.postDelayed(() -> {
@@ -187,6 +190,7 @@ public class ClientActivity extends Activity {
             view.postVisualStateCallback(epoch,new WebView.VisualStateCallback() {
                 @Override public void onComplete(long request) {
                     if (generation!=epoch || web!=view || opening==null || retryNeeded || rejected) return;
+                    if (savedChat!=null && savedChat.waitingForPosition(view)) { revealScreen(epoch,view); return; }
                     closeSavedChat(); frame.removeView(opening); opening=null;
                     openingMessage=null; retryEntry=null; savedRecords=null;
                     view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
@@ -199,6 +203,7 @@ public class ClientActivity extends Activity {
         if (rejected) return;
         retryNeeded = true;
         showOpening(); setNativeSwitcher(true);
+        if (savedChat!=null) savedChat.networkFailure();
         notice.setVisibility(View.GONE);
         openingMessage.setText(message);
         retryEntry.setVisibility(View.VISIBLE);
@@ -208,10 +213,15 @@ public class ClientActivity extends Activity {
     }
 
     private void closeSavedChat() {
-        if(savedChat!=null) { savedChat.close(); savedChat=null; }
+        if(savedChat!=null) {
+            savedChat.close(); savedChat=null;
+            if (opening!=null) opening.setVisibility(View.VISIBLE);
+        }
     }
     private void checkSavedAccess() {
-        if(savedChat!=null && !savedChat.hasAccess(conversation)) closeSavedChat();
+        if(savedChat!=null && !savedChat.hasAccess(conversation)) {
+            closeSavedChat(); setNativeSwitcher(true);
+        }
     }
     private void retireView() {
         if(savedChat!=null) savedChat.reconnect();
@@ -236,6 +246,7 @@ public class ClientActivity extends Activity {
 
     private void showPage() {
         if (!selected || !probe || rejected || retryNeeded) return;
+        if (savedChat != null) savedChat.networkReachable();
         if (supplied != null) {
             if (basicIdentityChanged) lockRecords("reauthorize");
             try { if (remember) BasicVault.store(this, id, supplied); else BasicVault.erase(this, id); }
@@ -366,6 +377,10 @@ public class ClientActivity extends Activity {
                         String operation = op.substring(8);
                         if ("positioned".equals(operation)) {
                             if(savedChat!=null) savedChat.positioned(data.optString("position"));
+                            result.confirm("ok");
+                        } else if ("layout".equals(operation)) {
+                            if (!recordScopeConfirmed || data.optString("scope").length()!=64 || !presentation.getString("thread","").equals(data.getString("thread"))) { result.cancel(); return true; }
+                            conversation.rememberLayout(data);
                             result.confirm("ok");
                         } else if ("readwindow".equals(operation) || "putwindow".equals(operation)) {
                             if (!recordScopeConfirmed || data.optString("scope").length()!=64) { result.cancel(); return true; }
@@ -501,7 +516,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','record-states','conversation-windows','android-update'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','record-states','conversation-windows','conversation-layout','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -642,6 +657,7 @@ public class ClientActivity extends Activity {
             drawerExitDeadline = 0;
             return;
         }
+        if (savedChat!=null) { savedChat.back(() -> showDrawer("",true)); return; }
         if (web == null || probe || ticket.isEmpty() || !Site.root(web.getUrl(), origin)) { browserBack(); return; }
         Object press = new Object(); pendingBack = press;
         // 0 is a confirmed older document. An absent/stale reply must never perform a second action.

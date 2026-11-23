@@ -584,8 +584,8 @@ export function createFocusTranscript(options: {
     protectedRow = isFollowing ? null : anchorId;
   }
 
-  async function locate(turnId: string, itemId?: string): Promise<string | null> {
-    if (!await load({ turn_id: turnId, direction: 'asc', ...(itemId ? { item_id: itemId } : {}) }, 'target')) return null;
+  async function locate(turnId: string, itemId?: string, intent?: AbortSignal): Promise<string | null> {
+    if (!await load({ turn_id: turnId, direction: 'asc', ...(itemId ? { item_id: itemId } : {}) }, 'target', false, intent)) return null;
     return turns.value.find((turn) => turn.rawTurnId === turnId && (!itemId || turn.itemId === itemId))?.id ?? null;
   }
 

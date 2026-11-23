@@ -40,7 +40,9 @@ def install_record_history(fake, instance: int, arrival=None) -> None:
         elif thread_id == "thread-1":
             items = [ThreadItemEntry(turn["id"], item) for turn in turns for item in turn["items"]]
             if arrival is not None and arrival.exists():
-                items.append(ThreadItemEntry("turn-230",{"id":"after-reopen","type":"agentMessage","text":"**Arrived while away**"}))
+                paragraph = "Reading a saved conversation. 离线打开后继续阅读同一行。 " * 24
+                items.append(ThreadItemEntry("turn-230", {"id": "after-reopen", "type": "agentMessage",
+                    "text": "**Arrived while away**\n\n" + paragraph}))
         else:
             return ThreadItemsPage()
         step = 1 if options["sort_direction"] == "asc" else -1

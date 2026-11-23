@@ -103,6 +103,7 @@ const props = withDefaults(defineProps<{
   hasNewerMessages?: boolean;
   continuousTranscript?: boolean;
   savedTranscript?: boolean;
+  localReadOnly?: boolean;
   updateTranscriptViewport?: (anchorId: string | null, following: boolean) => void;
   loadNewerMessages?: () => Promise<boolean>;
   /** Live compaction state of the active session (non-null while running). */
@@ -2026,6 +2027,8 @@ function rebindComposerAttachmentsForSession(
 }
 
 defineExpose({
+  transcriptElement: panesRef,
+  dockHeight,
   collapseEditor: () => setComposerSurfaceMode('compact'),
   checkpointReading,
   loadComposerForEdit,
@@ -2037,12 +2040,12 @@ defineExpose({
   prepareTimelineMutation: followAfterUserAction,
   scrollToRenderedTurn,
   returnToLiveTail: handleReturnToLiveTail,
-  restoreSavedPosition(id: string, offset: number) {
+  restoreSavedPosition(id: string, offset: number, chunk?: string) {
     const pane=panesRef.value;
     if (!pane || !props.turns.some(row=>row.id===id)) return;
     claimOrdinaryScrollAuthority();
     bookmark=null; following.value=false;
-    landingAnchor.value={id,offset,scrollTop:pane.scrollTop};
+    landingAnchor.value={id,offset,chunk,scrollTop:pane.scrollTop};
     landBookmark(pane); reportTranscriptViewport();
   },
 });
@@ -2320,6 +2323,7 @@ defineExpose({
       <ChatDock
         v-if="!showTargetlessComposer"
         v-show="!readingMode"
+        :inert="localReadOnly"
         :ref="bindChatDock"
         :style="chatDockStyle"
         :session-id="composerSessionId ?? sessionId"

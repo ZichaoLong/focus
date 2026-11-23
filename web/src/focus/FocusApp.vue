@@ -46,6 +46,8 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
+import { rememberConversationLayout } from './mobileConversation';
+import { useMobileConnectionLabel } from './mobileConnectionLabel';
 import { mobileRecords, hasMobileFeature, installMobileNavigation, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
 import { backFromDialog } from '../composables/dialogStack';
 import { createFocusViewport, focusViewportDiagnosticKey } from './focusViewport';
@@ -61,7 +63,7 @@ import type {
   FocusBackendResetPreview, FocusConversationSearchOccurrence, FocusThreadScope,
   FocusThreadToolDetailPayload, FocusToolInspectionLocator,
 } from './types';
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const client = useFocusWebClient();
 if (client.api.promptTimings) provide(promptTimingKey, createPromptTimingReader(client.api.promptTimings, key => String(t(key))));
 const activityFaviconPreference = createFocusDocumentActivityFaviconPreference();
@@ -85,7 +87,7 @@ const conversationPaneRef = ref<InstanceType<typeof ConversationPane> | null>(nu
 // the editor its navigation space and retains notices/interaction authority.
 const mobileEditorExpanded = ref(false);
 const transientNotice = ref<InstanceType<typeof FocusTransientNotice> | null>(null);
-const { colorScheme, setColorScheme } = useAppearance();
+const { colorScheme, accent, uiFontSize, setColorScheme } = useAppearance();
 const { confirm } = useConfirmDialog();
 const { viewportWidth } = useViewportWidth();
 const {
@@ -838,6 +840,25 @@ onMounted(() => {
 });
 
 const mobileTabs = hasMobileFeature('tabs');
+const mobileConversationLayout = hasMobileFeature('conversation-layout');
+const connectionLabel = mobileConversationLayout ? useMobileConnectionLabel(() => client.connection.value) : undefined;
+if (mobileConversationLayout) {
+  watch(() => {
+    const thread = client.activeThreadId.value;
+    const scope = client.api.mobileReadScope;
+    if (!thread || !scope || !client.scopeReady.value || !client.activeThread.value) return;
+    return { thread, scope, layout: {
+      colorScheme: colorScheme.value, accent: accent.value, fontSize: uiFontSize.value,
+      locale: locale.value === 'zh' ? 'zh' as const : 'en' as const, reading: readingMode.value,
+      workspace: client.visibleWorkspace.value?.name ?? '', model: client.status.value.model,
+      timing: !!client.api.promptTimings, exports: sessionActionCapabilities.value.export,
+      width: viewportWidth.value, dock: conversationPaneRef.value?.dockHeight ?? 0,
+      sidebar: sidebarCollapsed.value ? 0 : sideWidth.value,
+    } };
+  }, value => {
+    if (value) rememberConversationLayout(value.thread, value.scope, value.layout);
+  }, { immediate: true, flush: 'post' });
+}
 const instanceLabel = ref(mobileInstanceName());
 const locationLabel = window.location.host;
 const mobileAbout = ref(false);
@@ -851,21 +872,35 @@ function openRecords(): void {
   showNarrowSwitcher.value = false;
   mobileRecords('show',{thread:client.activeThreadId.value});
 }
+let pendingSavedPosition: AbortController | undefined;
 async function landSavedPosition(event: Event) {
-  const { thread, position }=(event as CustomEvent<{thread:string;position:string}>).detail;
-  if (thread!==client.activeThreadId.value) return;
+  const { thread, position } = (event as CustomEvent<{thread: string; position: string}>).detail;
+  if (thread !== client.activeThreadId.value) return;
   event.preventDefault();
+  pendingSavedPosition?.abort();
+  const intent = new AbortController();
+  pendingSavedPosition = intent;
+  const current = () => !intent.signal.aborted && thread === client.activeThreadId.value;
   try {
-    const anchor=JSON.parse(position);
+    const anchor = JSON.parse(position);
+    if (anchor.reading === true) requestReadingMode();
+    else if (anchor.reading === false && readingMode.value) chooseNormalMode();
+    await nextTick();
+    if (!current()) return;
     if (!anchor.item) {
       await conversationPaneRef.value?.returnToLiveTail();
       return;
     }
-    const row=client.turns.value.find(r=>r.rawTurnId===anchor.turn && r.itemId===anchor.item);
-    const id=row?.id ?? await client.transcript.locate(anchor.turn,anchor.item);
+    const row = client.turns.value.find(r => r.rawTurnId === anchor.turn && r.itemId === anchor.item);
+    const id = row?.id ?? await client.transcript.locate(anchor.turn, anchor.item, intent.signal);
     await nextTick();
-    if (id && thread===client.activeThreadId.value) conversationPaneRef.value?.restoreSavedPosition(id,Number(anchor.offset) || 0);
-  } finally { mobileRecords('positioned',{position}); }
+    if (id && current()) conversationPaneRef.value?.restoreSavedPosition(id, Number(anchor.offset) || 0, anchor.chunk);
+  } finally {
+    if (pendingSavedPosition === intent) {
+      pendingSavedPosition = undefined;
+      mobileRecords('positioned', {position});
+    }
+  }
 }
 async function returnToOnlineRecord(event: Event): Promise<void> {
   const data = (event as CustomEvent).detail;
@@ -1041,6 +1076,7 @@ onUnmounted(() => {
         v-else
         v-show="!readingMode && !mobileEditorExpanded"
         :workspace="client.visibleWorkspace.value"
+        :connection-label="connectionLabel"
         :session-id="client.activeThreadId.value"
         :session-title="activeSessionTitle"
         :running="client.running.value"
@@ -1081,6 +1117,7 @@ onUnmounted(() => {
           :store="client.api.promptTimings" :thread-id="client.activeThreadId.value" />
         <ReadingModeControls
           v-if="readingMode"
+          :connection-label="connectionLabel"
           :narrow-viewport="isNarrowViewport"
           :session-title="activeSessionTitle"
           :session-id="client.activeThreadId.value"
@@ -1461,6 +1498,7 @@ onUnmounted(() => {
   </div>
 </template>
 
+<style src="./conversationLayout.css"></style>
 <style scoped>
 .instance-picker {
   width: 100%;
@@ -1472,46 +1510,9 @@ onUnmounted(() => {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.focus-shell {
-  position: fixed;
-  top: var(--app-top, 0px);
-  left: 0;
-  right: 0;
-  height: var(--app-height, 100dvh);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--color-bg);
-}
-.focus-app {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: auto 0 minmax(0, 1fr) 0 auto;
-  /* Inner panes own scrolling. A hidden overflow container can still be
-     scrolled by native textarea paging, shifting the entire sidebar away. */
-  overflow: clip;
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-.focus-app > * {
-  min-width: 0;
-  min-height: 0;
-}
 .focus-app > .side { grid-column: 1; }
 .side-handle { grid-column: 2; }
-.focus-main {
-  grid-column: 3;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  position: relative;
-}
 .detail-handle { grid-column: 4; }
-.focus-main > :deep(.con) {
-  flex: 1;
-  min-height: 0;
-}
 .focus-detail {
   grid-column: 5;
   width: min(440px, 42vw);
@@ -1654,28 +1655,8 @@ onUnmounted(() => {
   font-size: var(--text-base);
   line-height: var(--leading-relaxed);
 }
-.sidebar-toggle-btn {
-  position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  z-index: var(--z-sticky);
-}
 .gload-fade-leave-active { transition: opacity var(--duration-slow) var(--ease-out); }
 .gload-fade-leave-to { opacity: 0; }
-.focus-app.narrow-viewport {
-  display: flex;
-  flex-direction: column;
-}
-.focus-app.narrow-viewport .focus-main {
-  flex: 1;
-  min-height: 0;
-}
-.focus-app.narrow-viewport.reading-mode {
-  /* Give mobile reading its own composited surface on entry. ArkWeb can leave
-     the fixed/flex page blank while all layout boxes remain visible and sized;
-     changing the surface does not remount the transcript or reset its scroll. */
-  transform: translateZ(0);
-}
 @media (min-width: 641px) {
   .focus-app.reading-mode :deep(.sheet-panel) {
     align-self: center;

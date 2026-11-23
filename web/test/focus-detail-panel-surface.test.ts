@@ -133,7 +133,8 @@ describe('Focus detail panel presentation state', () => {
     const app = source('../src/focus/FocusApp.vue');
 
     expect(STORAGE_KEYS.detailPanelWidth).toBe('focus-web.detail-panel-width');
-    expect(app).toContain('grid-template-columns: auto 0 minmax(0, 1fr) 0 auto');
+    expect(app).toContain('<style src="./conversationLayout.css">');
+    expect(source('../src/focus/conversationLayout.css')).toContain('grid-template-columns: auto 0 minmax(0, 1fr) 0 auto');
     expect(app).toContain('v-if="detailOpen && !detailPanelFullscreen"');
     expect(app).toContain(':storage-key="STORAGE_KEYS.detailPanelWidth"');
     expect(app).toMatch(/<ResizeHandle[\s\S]*?\breverse\b[\s\S]*?class="detail-handle"|<ResizeHandle[\s\S]*?class="detail-handle"[\s\S]*?\breverse\b/);

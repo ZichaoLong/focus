@@ -6,7 +6,7 @@ import type { ToolCall } from '../../types';
 import Icon from '../ui/Icon.vue';
 import StatusDot from '../ui/StatusDot.vue';
 
-const props = defineProps<{ tools: readonly ToolCall[]; open: boolean }>();
+const props = defineProps<{ tools: readonly ToolCall[]; open: boolean; savedCount?: number }>();
 const emit = defineEmits<{ toggle: [] }>();
 const { t } = useI18n();
 const failed = computed(() => props.tools.filter(tool => tool.status === 'error').length);
@@ -22,11 +22,12 @@ function toggle(): void {
 </script>
 
 <template>
-  <button ref="element" class="tool-group-head" type="button" :aria-expanded="open" @click="toggle">
-    <StatusDot :status="status" />
+  <button ref="element" class="tool-group-head" type="button" :disabled="savedCount !== undefined" :aria-expanded="open" @click="toggle">
+    <StatusDot v-if="savedCount === undefined" :status="status" />
+    <span v-else class="saved-tool-dot" aria-hidden="true" />
     <Icon class="tg-ic" name="list" size="sm" />
-    <span class="tg-title">{{ t('tools.group.title', tools.length) }}</span>
-    <span class="tg-meta" v-if="status !== 'error'">· {{ t(`tools.group.${status}`) }}</span>
+    <span class="tg-title">{{ t('tools.group.title', savedCount ?? tools.length) }}</span>
+    <span class="tg-meta" v-if="savedCount === undefined && status !== 'error'">· {{ t(`tools.group.${status}`) }}</span>
     <span class="tg-failed" v-if="failed">· {{ t('tools.group.failedCount', { count: failed }) }}</span>
     <Icon class="tg-car" name="chevron-right" size="sm" />
   </button>
@@ -52,6 +53,7 @@ function toggle(): void {
 .tool-group-head:hover { background: var(--color-surface-sunken); color: var(--color-text); }
 .tool-group-head:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-accent-soft); }
 .tg-ic { color: var(--color-text-faint); flex: none; }
+.saved-tool-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--color-text-faint); }
 .tg-title { font-weight: var(--weight-medium); color: var(--color-text); }
 .tg-failed { color: var(--color-danger); }
 .tg-meta { color: var(--color-text-faint); }

@@ -19,7 +19,9 @@ const { t } = useI18n();
 const props = withDefaults(
   defineProps<{
     /** Active workspace (for the chip glyph + name). */
-    workspace: WorkspaceView | null;
+    workspace: Pick<WorkspaceView, 'name' | 'root'> | null;
+    connectionLabel?: string;
+    saved?: boolean;
     /** Active session title (the right, bold side of the mono path). */
     sessionTitle?: string;
     /** True when the active session is doing work (drives the status dot/text). */
@@ -155,7 +157,7 @@ onUnmounted(closeExportMenu);
       </span>
       <span class="tb-sub">
         <span class="rd" :class="{ on: running }" />
-        <span>{{ statusText }}</span>
+        <span role="status">{{ connectionLabel || (saved ? '' : statusText) }}</span>
         <template v-if="branch"> · {{ branch }}</template>
         <template v-if="sessionCount > 0"> · {{ t('narrow.sessionCount', { n: sessionCount }) }}</template>
       </span>
@@ -166,6 +168,7 @@ onUnmounted(closeExportMenu);
         <IconButton
           size="lg"
           :label="t('header.exportOptions')"
+          :disabled="saved"
           :aria-expanded="exportMenuOpen"
           aria-haspopup="menu"
           @click.stop="toggleExportMenu"
@@ -193,6 +196,7 @@ onUnmounted(closeExportMenu);
       <IconButton
         size="lg"
         :label="t('narrow.openSettings')"
+        :disabled="saved"
         @click="emit('openSettings')"
       >
         <Icon name="sliders" size="lg" />

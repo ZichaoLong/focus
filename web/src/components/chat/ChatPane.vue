@@ -517,13 +517,17 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
     </div>
 
     <template v-for="(turn, ti) in turns" :key="turn.id">
-      <div v-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
+      <div v-if="turn.savedToolCount" class="transcript-tool-group"
+        :data-turn-id="turn.id" :data-transcript-tool-group="JSON.stringify([turn.id])">
+        <ToolGroupHeader :tools="[]" :open="false" :saved-count="turn.savedToolCount" />
+      </div>
+      <div v-else-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
         :data-turn-id="turn.id"
         :data-transcript-tool-group="JSON.stringify(deferredProjection.leaders.get(turn.id)!.sourceIds)">
         <ToolGroupHeader :tools="deferredProjection.leaders.get(turn.id)!.tools"
           :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
       </div>
-      <TranscriptRow :turn="turn" :folded="!deferredGroupOpen(turn)">
+      <TranscriptRow v-if="!turn.savedToolCount" :turn="turn" :folded="!deferredGroupOpen(turn)">
       <!-- User turn → right-aligned soft-blue bubble with actions below. -->
       <template v-if="turn.role === 'user'">
         <div v-if="userTurnHasPresentation(turn)" class="u-turn">

@@ -1,7 +1,7 @@
 {
   "schema": [
     "CREATE TABLE IF NOT EXISTS sites (site TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0, scope TEXT DEFAULT '', locked INTEGER DEFAULT 0, fence INTEGER DEFAULT 0,note TEXT DEFAULT '')",
-    "CREATE TABLE IF NOT EXISTS books (site TEXT, thread TEXT, key TEXT, title TEXT, touched INTEGER, closed INTEGER DEFAULT 0, anchor TEXT DEFAULT '', live TEXT DEFAULT '', livebytes INTEGER DEFAULT 0, visible TEXT DEFAULT '', building TEXT DEFAULT '', PRIMARY KEY(site,thread))",
+    "CREATE TABLE IF NOT EXISTS books (site TEXT, thread TEXT, key TEXT, title TEXT, touched INTEGER, closed INTEGER DEFAULT 0, anchor TEXT DEFAULT '', live TEXT DEFAULT '', livebytes INTEGER DEFAULT 0, visible TEXT DEFAULT '', building TEXT DEFAULT '', layout TEXT, PRIMARY KEY(site,thread))",
     "CREATE TABLE IF NOT EXISTS runs (site TEXT, thread TEXT, run TEXT PRIMARY KEY, edge TEXT DEFAULT '', stamp INTEGER DEFAULT 0, complete INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0, seq INTEGER DEFAULT 0, mark TEXT, head TEXT, oldest TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS chunks (run TEXT, seq INTEGER, body TEXT, PRIMARY KEY(run,seq))",
     "CREATE TABLE IF NOT EXISTS removed (site TEXT, key TEXT, PRIMARY KEY(site,key))",

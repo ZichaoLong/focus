@@ -1,4 +1,9 @@
 export default {
+  connectingInstance: "正在连接",
+  savedOffline: "离线",
+  siteUnreachable: "实例暂不可达",
+  openSavedCopy: "查看离线副本",
+  savedPageGap: "这部分记录需要联网加载",
   offlineRecords: "本机离线记录",
   switchInstance: "切换实例",
   retentionTitle: "数据清理",

@@ -85,7 +85,8 @@ function remember(thread: string, changes: Partial<Pick<ThreadReading, 'reading'
     if (data !== store.getItem(KEY)) {
       store.setItem(KEY, data);
       mobileRecords('bookmark',{thread,now:Date.now(),anchor:JSON.stringify({
-        turn:entry.bookmark?.turn, item:entry.bookmark?.item, offset:entry.bookmark?.anchor.offset, reading:entry.reading,
+        turn:entry.bookmark?.turn, item:entry.bookmark?.item, chunk:entry.bookmark?.anchor.chunk,
+        offset:entry.bookmark?.anchor.offset, reading:entry.reading,
       })});
     }
   } catch { /* Reading and navigation work without storage. */ }

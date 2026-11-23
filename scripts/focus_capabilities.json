@@ -3878,6 +3878,10 @@
           "symbol": "installMobileRecords"
         },
         {
+          "path": "web/src/focus/SavedConversation.vue",
+          "symbol": "applyPresentation"
+        },
+        {
           "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
         },
         {
@@ -3903,6 +3907,14 @@
         {
           "path": "web/src/focus/mobileConversation.ts",
           "symbol": "readSavedWindow"
+        },
+        {
+          "path": "web/src/focus/FocusApp.vue",
+          "symbol": "landSavedPosition"
+        },
+        {
+          "path": "web/src/focus/mobileConnectionLabel.ts",
+          "symbol": "useMobileConnectionLabel"
         },
         {
           "path": "bot/web_runtime/mobile_records.py",

@@ -60,6 +60,11 @@ def choose(adb, site):
         "-f", "0x34000000", "--es", "target", site["id"])
 
 
+def offline_db(adb, sql):
+    return adb("shell", shlex.join(["run-as", PACKAGE, "sqlite3", "-cmd", ".timeout 3000",
+                                    "databases/offline-records-v1.db", sql]))
+
+
 def click(label):
     return "[...document.querySelectorAll('button')].find(n=>n.textContent.includes(" + json.dumps(label) + "))?.click()"
 
@@ -118,6 +123,87 @@ async def open_reader(live):
         await evaluate(live,"document.querySelector('.tb-mid').click()")
     await wait_for(live,"!!"+button)
     await evaluate(live,button+".click()")
+
+
+async def open_saved_reader(chat):
+    await evaluate(chat, "document.querySelector('.tb-mid,.reading-session-switch').click()")
+    await wait_for(chat, "!!document.querySelector('.saved-menu .saved-copy-action')")
+    await evaluate(chat, "document.querySelector('.saved-copy-action').click()")
+
+
+PARAGRAPH = """[...document.querySelectorAll('.chat p')].find(p => p.textContent.startsWith('Reading a saved conversation.'))"""
+GEOMETRY = """(() => {
+  const p=PARAGRAPH, pane=document.querySelector('.chat-scroll').getBoundingClientRect();
+  const range=new Range(); range.selectNodeContents(p);
+  return [pane.left,pane.top,pane.right,pane.bottom,...Array.from(range.getClientRects()).flatMap(r=>[r.x,r.y,r.width,r.height])];
+})()""".replace("PARAGRAPH", PARAGRAPH)
+
+
+async def check_cold_layout(session, adb, origin, reading):
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "cmd", "connectivity", "airplane-mode", "enable")
+    launch(adb)
+    async with panel(session, adb, "https://conversation.focus.invalid/conversation.html") as local:
+        await wait_for(local, "!!(" + PARAGRAPH + ") && document.fonts.status==='loaded'")
+        assert await evaluate(local, "document.documentElement.dataset.colorScheme") == "dark"
+        assert await evaluate(local, "getComputedStyle(document.body).fontSize") == "17px"
+        assert await evaluate(local, "!!document.querySelector('.reading-mode-controls')") == reading
+        assert not await evaluate(local, "!!document.querySelector('textarea:not(:disabled)')")
+        assert not await evaluate(local, "!!document.querySelector('.saved-copy-action')")
+        # Move within a wrapped reply during the reconnect wait, not just to the beginning of a turn.
+        await evaluate(local, """(() => {
+          const p=PARAGRAPH, pane=document.querySelector('.chat-scroll');
+          p.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));
+          pane.scrollTop += p.getBoundingClientRect().top-pane.getBoundingClientRect().top+76;
+          p.dispatchEvent(new PointerEvent('pointerup',{bubbles:true}));
+        })()""".replace("PARAGRAPH", PARAGRAPH))
+        await asyncio.sleep(3)
+        before = await evaluate(local, GEOMETRY)
+        assert len(before) > 24
+        if reading:
+            await evaluate(local, "document.querySelector('.chat-scroll').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))")
+        else:
+            await evaluate(local, "document.querySelector('.tb-mid').click()")
+            await wait_for(local, "!!document.querySelector('.saved-copy-action')")
+        adb("shell", "cmd", "connectivity", "airplane-mode", "disable")
+        async with tab(session, adb, origin) as live:
+            await wait_for(live, "!!document.querySelector('.focus-shell[data-online-conversation=ready][data-first-screen=ready] .chat-scroll [data-turn-id]')")
+            # The live page is painted behind the ongoing local interaction.
+            if reading:
+                await evaluate(local, "document.querySelector('.chat-scroll').scrollTop += 32")
+                await asyncio.sleep(.25)
+                before = await evaluate(local, GEOMETRY)
+                await evaluate(local, "window.dispatchEvent(new PointerEvent('pointerup'))")
+            else:
+                assert await evaluate(local, "!!document.querySelector('.saved-menu')")
+                adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    port, live = await attach(session, adb, origin)
+    try:
+        async with asyncio.timeout(35):
+            while True:
+                async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
+                    if not any("conversation.focus.invalid" in entry["url"] for entry in await response.json()):
+                        break
+                await asyncio.sleep(.1)
+        await wait_for(live, "!!(" + PARAGRAPH + ") && document.fonts.status==='loaded'")
+        await asyncio.sleep(.7)
+        assert await evaluate(live, "!!document.querySelector('.reading-mode-controls')") == reading
+        after = await evaluate(live, GEOMETRY)
+        assert len(after) == len(before), (len(before), len(after))
+        difference = max(abs(a - b) for a, b in zip(before, after))
+        assert difference <= 1.5, (reading, difference, before[:12], after[:12])
+        print(f"{'Reading' if reading else 'Normal'} cold handoff after 3s: {len(after[4:])//4} text rectangles, max change {difference:.2f} CSS px", flush=True)
+        if not reading:
+            assert await evaluate(live, "document.querySelector('textarea:not(:disabled)').value") == "handoff draft"
+            await evaluate(live, "document.querySelector('[data-reading-mode-toggle]').click()")
+            await wait_for(live, "!!document.querySelector('.reading-mode-controls')")
+        else:
+            await evaluate(live, "document.querySelector('.reading-mode-exit').click()")
+            await wait_for(live, "!!document.querySelector('.tb-mid')")
+        await asyncio.sleep(.5)
+    finally:
+        await live.close()
+        adb("forward", "--remove", "tcp:" + port)
 
 
 async def switch_with_server_held(live, lab, adb):
@@ -186,10 +272,25 @@ async def smoke(args):
                 await check_server_cleanup(adb, local, site)
                 await evaluate(local,"setTimeout(()=>document.querySelector('#back').click(),50);true")
             await switch_with_server_held(live,args.lab,adb)
+            await evaluate(live, """localStorage.setItem('kimi-web.color-scheme','dark');
+                localStorage.setItem('kimi-web.ui-font-size','17'); setTimeout(()=>location.reload(),20); true""")
+            await wait_for(live, "document.documentElement.dataset.colorScheme==='dark' && !!document.querySelector('textarea:not(:disabled)')")
+            await wait_for(live, "!!(" + PARAGRAPH + ")")
+            await evaluate(live, """const editor=document.querySelector('textarea:not(:disabled)');
+                editor.value='handoff draft'; editor.dispatchEvent(new Event('input',{bubbles:true})); true""")
+            await asyncio.sleep(.7)
             adb("shell","am","force-stop",PACKAGE)
         finally:
             await live.close()
             adb("forward","--remove","tcp:"+port)
+        await check_cold_layout(session, adb, site["origin"], False)
+        await check_cold_layout(session, adb, site["origin"], True)
+        adb("shell", "am", "force-stop", PACKAGE)
+        # Version 2 has the same record rows and indices, without the per-thread layout column.
+        count_chunks = "SELECT count(*) FROM chunks"
+        old_chunks = int(offline_db(adb, count_chunks))
+        assert old_chunks > 0
+        offline_db(adb, "ALTER TABLE books DROP COLUMN layout; PRAGMA user_version=2")
         adb("shell","cmd","connectivity","airplane-mode","enable")
         try:
             await asyncio.sleep(1)
@@ -198,7 +299,10 @@ async def smoke(args):
             async with panel(session,adb,"https://conversation.focus.invalid/conversation.html") as chat:
                 await wait_for(chat,"[...document.querySelectorAll('main strong')].some(n=>n.textContent==='Arrived while away')")
                 print(f"offline cold start to ordinary chat: {time.monotonic()-started:.2f}s",flush=True)
-                await evaluate(chat,click('查看离线副本'))
+                assert offline_db(adb, "PRAGMA user_version") == "3"
+                assert int(offline_db(adb, count_chunks)) == old_chunks
+                print("Upgraded a version 2 database offline and retained every saved chunk", flush=True)
+                await open_saved_reader(chat)
             async with panel(session,adb) as local:
                 await wait_for(local,"document.querySelectorAll('[data-item]').length>0")
                 print(f"offline cold start until readable: {time.monotonic()-started:.2f}s",flush=True)
@@ -223,7 +327,7 @@ async def smoke(args):
             launch(adb)
             async with panel(session,adb,"https://conversation.focus.invalid/conversation.html") as chat:
                 await wait_for(chat,"!!document.querySelector('main [data-turn-id]')")
-                await evaluate(chat,click('查看离线副本'))
+                await open_saved_reader(chat)
             async with panel(session,adb) as local:
                 await wait_for(local,"document.body?.innerText.includes('site-1 question 0')")
                 print("offline reading position restored",flush=True)
