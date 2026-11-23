@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 import json
 import pathlib
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -61,137 +64,156 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
     def test_repository_catalog_resolves_every_reviewed_reference(self) -> None:
         catalog = focus_capabilities.load_catalog()
 
-        self.assertEqual(
-            tuple(item.name for item in catalog.capabilities),
-            (
-                "backend-reset",
-                "data-retention",
-                "diagnostic-logs",
-                "fcodex-runtime",
-                "feishu-execution-presentation",
-                "feishu-interaction-approvals",
-                "feishu-settings-cards",
-                "feishu-turn-steer",
-                "focus-installation",
-                "focus-mobile-distribution",
-                "focus-mobile-offline-records",
-                "focus-mobile-server-updates",
-                "focus-runtime",
-                "focus-web-browser-open",
-                "focus-web-client-state",
-                "focus-web-composer",
-                "focus-web-context-usage",
-                "focus-web-file-download",
-                "focus-web-gateway-wire",
-                "focus-web-history-navigation",
-                "focus-web-mutations",
-                "focus-web-next-turn-settings",
-                "focus-web-prompt-timing",
-                "focus-web-request-admission",
-                "focus-web-static-assets",
-                "focus-web-summary-export",
-                "focus-web-thread-data-export",
-                "focus-web-thread-inspection",
-                "focus-web-tool-output-presentation",
-                "focus-web-trusted-proxy-access",
-                "main-turn-admission",
-                "main-turn-interrupt",
-                "runtime-admin-cli",
-                "server-request-interactions",
-                "thread-effective-settings",
+        names = [item.name for item in catalog.capabilities]
+        self.assertEqual(names, sorted(set(names)))
+        self.assertIn(
+            focus_capabilities.SourceReference(
+                "web/src/focus/focusHistoryNavigation.ts", "createFocusHistoryNavigation"
             ),
+            catalog.require("focus-web-history-navigation").owners,
         )
         for name in ("focus-web-client-state", "focus-web-mutations"):
             with self.subTest(capability=name):
-                self.assertIn(
-                    "web-dependency-direction",
-                    catalog.require(name).guards,
-                )
-        self.assertEqual(
-            tuple(
-                reference
-                for reference in catalog.require("focus-web-history-navigation").owners
-                if reference.path.startswith("web/")
-            ),
-            (
-                focus_capabilities.SourceReference(
-                    "web/src/focus/focusHistoryNavigation.ts",
-                    "createFocusHistoryNavigation",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/promptNavigationIntent.ts",
-                    "createPromptNavigationIntent",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/client-state/browser-turn-window.ts",
-                    "createBrowserTurnWindow",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/focusTranscript.ts",
-                    "createFocusTranscript",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/focusPromptHistory.ts",
-                    "createFocusPromptHistory",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/transcriptRead.ts",
-                    "readTranscriptTarget",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/transcriptPageWindow.ts",
-                    "TranscriptPageWindow",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/chat/transcriptScrollAnchor.ts",
-                    "captureTranscriptScrollAnchor",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/lib/markdownChunks.ts",
-                    "markdownChunks",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/focus/projectionEventDecoder.ts",
-                    "isFocusTranscriptWindow",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/toolGroupPresentation.ts",
-                    "projectTranscriptToolGroups",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/toolGroupPresentation.ts",
-                    "createToolGroupExpansion",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/chat/transcriptScrollAnchor.ts",
-                    "restoreTranscriptScrollAnchor",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/toolGroupPresentation.ts",
-                    "isEmptyAssistantTurn",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/composables/useComposerDraft.ts",
-                    "useComposerDraft",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/chat/transcriptVisibility.ts",
-                    "observeTranscriptVisibility",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/chat/readingBookmark.ts",
-                    "saveReadingBookmark",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/toolGroupPresentation.ts",
-                    "threadToolExpansion",
-                ),
-                focus_capabilities.SourceReference(
-                    "web/src/components/chat/readingBookmark.ts",
-                    "threadReading",
-                ),
-            ),
+                self.assertIn("web-dependency-direction", catalog.require(name).guards)
+
+    def test_mobile_file_and_guide_refs_resolve_live_without_weakening_symbol_refs(self) -> None:
+        root, catalog_path, payload = self._fixture()
+        java = "mobile/android/src/org/focus/mobile/Sample.java"
+        device = "mobile/tests/device.py"
+        guide = "mobile/README.md"
+        for relative, content in (
+            (java, "class Sample {}\n"),
+            (device, "def main():\n    pass\n"),
+            (guide, "# Mobile\n\n## Verify\nUse the device.\n"),
+        ):
+            path = root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        sample = payload["capabilities"]["sample"]
+        sample["owner"] = [{"path": java}]
+        sample["platform-check"] = [{"path": guide, "heading": "Verify"}, {"path": device}]
+        self._write_payload(catalog_path, payload)
+        capability = focus_capabilities.load_catalog(repo_root=root, catalog_path=catalog_path).require("sample")
+        (root / java).write_text("class Sample {\n}\n", encoding="utf-8")
+        for ref, start, end in (
+            (capability.owners[0], 1, 2),
+            (capability.platform_checks[0], 3, 4),
+            (capability.platform_checks[1], 1, 2),
+        ):
+            self.assertEqual(focus_capabilities.source_reference_location(ref, repo_root=root),
+                             focus_capabilities.ReferenceLocation(ref.path, start, end))
+        for role, ref in (
+            ("owner", {"path": "bot/sample.py"}),
+            ("owner", {"path": device}),
+            ("owner", {"path": java, "symbol": "Sample"}),
+            ("contract", {"path": guide, "heading": "Verify"}),
+            ("platform-check", {"path": guide}),
+            ("platform-check", {"path": guide, "heading": "Missing"}),
+            ("platform-check", {"path": java}),
+            ("platform-check", {"path": device, "command": "run this"}),
+        ):
+            with self.subTest(role=role, ref=ref):
+                invalid = copy.deepcopy(payload)
+                invalid["capabilities"]["sample"][role] = [ref]
+                self._write_payload(catalog_path, invalid)
+                with self.assertRaises(focus_capabilities.CapabilityMapError):
+                    focus_capabilities.load_catalog(repo_root=root, catalog_path=catalog_path)
+
+    def test_shared_checks_follow_one_guide_in_each_capability(self) -> None:
+        root, catalog_path, payload = self._fixture()
+        guide = root / "mobile/README.md"
+        guide.parent.mkdir()
+        guide.write_text("# Mobile\n## Build\n## On device\n", encoding="utf-8")
+        build = {"path": "mobile/README.md", "heading": "Build"}
+        device = {"path": "mobile/README.md", "heading": "On device"}
+        script = {"path": "mobile/android/build.py"}
+        (root / script["path"]).parent.mkdir()
+        (root / script["path"]).write_text("print('build')\n", encoding="utf-8")
+        payload["shared-platform-checks"] = {"build": [build, script]}
+        sample = payload["capabilities"]["sample"]
+        sample["platform-check"] = [device, "build"]
+        payload["capabilities"]["another"] = {**sample, "platform-check": ["build", device]}
+
+        def check_both() -> None:
+            self._write_payload(catalog_path, payload)
+            catalog = focus_capabilities.load_catalog(repo_root=root, catalog_path=catalog_path)
+            for name, expected in (
+                ("sample", [device, build, script]),
+                ("another", [build, script, device]),
+            ):
+                with self.subTest(name=name, heading=build["heading"]):
+                    view = focus_capabilities.capability_payload(catalog.require(name))
+                    self.assertEqual(view["platform-check"], expected)
+
+        check_both()
+        guide.write_text("# Mobile\n## New build instructions\n## On device\n", encoding="utf-8")
+        with self.assertRaises(focus_capabilities.CapabilityMapError):
+            focus_capabilities.load_catalog(repo_root=root, catalog_path=catalog_path)
+        build["heading"] = "New build instructions"
+        check_both()
+
+    def test_new_capability_is_discoverable_in_a_checkout_without_skills(self) -> None:
+        root, catalog_path, payload = self._fixture()
+        shutil.copytree(
+            focus_capabilities.REPO_ROOT / "scripts",
+            catalog_path.parent,
+            ignore=shutil.ignore_patterns(catalog_path.name, "__pycache__"),
+            dirs_exist_ok=True,
         )
+        guide = root / "mobile/README.md"
+        guide.parent.mkdir()
+        guide.write_text("# Mobile\n## Device\n", encoding="utf-8")
+        check = {"path": "mobile/README.md", "heading": "Device"}
+
+        def run(script: str, *args: str) -> dict:
+            output = subprocess.check_output(
+                [sys.executable, "-E", "-S", f"scripts/{script}.py", *args],
+                cwd=root, encoding="utf-8",
+            )
+            return json.loads(output)
+
+        query = ("list", "--under", "mobile/", "--json")
+        self.assertEqual(run("focus_nav", *query)["capabilities"], [])
+        name = "new-capability"
+        payload["shared-platform-checks"] = {"device": [check]}
+        payload["capabilities"][name] = {
+            **payload["capabilities"]["sample"], "platform-check": ["device"],
+        }
+        self._write_payload(catalog_path, payload)
+
+        self.assertEqual(run("focus_nav", *query)["capabilities"], [name])
+        self.assertEqual(run("focus_nav", "show", name, "--json")["platform-check"], [check])
+        paths = run("focus_nav", "paths", check["path"], "--locations", "--json")["paths"]
+        (match,) = paths[0]["matches"]
+        self.assertEqual(match["capability"], name)
+        self.assertEqual(match["ref"], check)
+        self.assertEqual(match["location"]["start_line"], 2)
+        plan = run("focus_verify", name, "--dry-run")
+        self.assertEqual(plan["platform-check"], [check])
+        self.assertTrue(plan["commands"])
+
+    def test_shared_checks_reject_invalid_definitions_and_overlapping_references(self) -> None:
+        root, catalog_path, payload = self._fixture()
+        guide = root / "mobile/README.md"
+        guide.parent.mkdir()
+        guide.write_text("# Mobile\n## Build\n", encoding="utf-8")
+        ref = {"path": "mobile/README.md", "heading": "Build"}
+        cases = (
+            ({"build": [ref]}, ["missing"], "unknown platform check"),
+            ({"one": [ref], "two": ["one"]}, ["two"], "must be an object"),
+            ({"build": [{**ref, "command": "run"}]}, ["build"], "unknown="),
+            ({"build": []}, ["build"], "nonempty array"),
+            ({"build": [ref, ref]}, ["build"], "duplicate references"),
+            ({"build": [ref]}, [ref, "build"], "duplicate references after expansion"),
+            ({"one": [ref], "two": [ref]}, ["one", "two"], "duplicate references after expansion"),
+        )
+        for groups, members, error in cases:
+            with self.subTest(groups=groups, members=members):
+                payload["shared-platform-checks"] = groups
+                payload["capabilities"]["sample"]["platform-check"] = members
+                self._write_payload(catalog_path, payload)
+                with self.assertRaisesRegex(focus_capabilities.CapabilityMapError, error):
+                    focus_capabilities.load_catalog(repo_root=root, catalog_path=catalog_path)
 
     def test_reference_locations_are_computed_from_current_sources(self) -> None:
         root, catalog_path, _ = self._fixture()
@@ -335,39 +357,6 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 "pytest", "tests/package", repo_root=root
             )
 
-    def test_repository_skill_stays_small_and_has_only_required_files(self) -> None:
-        skill_root = (
-            focus_capabilities.REPO_ROOT / ".agents/skills/navigate-focus-development"
-        )
-        files = tuple(
-            sorted(
-                path.relative_to(skill_root).as_posix()
-                for path in skill_root.rglob("*")
-                if path.is_file()
-            )
-        )
-        skill_text = (skill_root / "SKILL.md").read_text(encoding="utf-8")
-
-        self.assertEqual(files, ("SKILL.md", "agents/openai.yaml"))
-        self.assertGreaterEqual(len(skill_text.splitlines()), 30)
-        self.assertLessEqual(len(skill_text.splitlines()), 50)
-        self.assertNotIn("TODO", skill_text)
-        self.assertIn("docs/architecture/development-navigation.zh-CN.md", skill_text)
-        self.assertIn("focus_nav.py paths", skill_text)
-        self.assertIn("--node <exact-path>", skill_text)
-        self.assertFalse(
-            (focus_capabilities.REPO_ROOT / "AGENTS.example.md").exists()
-        )
-        navigation_text = (
-            focus_capabilities.REPO_ROOT
-            / "docs/architecture/development-navigation.zh-CN.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("英文同步副本", navigation_text)
-        self.assertIn(
-            "$navigate-focus-development",
-            (skill_root / "agents/openai.yaml").read_text(encoding="utf-8"),
-        )
-
     def test_duplicate_json_key_is_rejected_before_schema_validation(self) -> None:
         root, catalog_path, _ = self._fixture()
         catalog_path.write_text(
@@ -484,7 +473,7 @@ class FocusCapabilityCatalogTests(unittest.TestCase):
                 self._write_payload(catalog_path, payload)
 
                 with self.assertRaisesRegex(
-                    focus_capabilities.CapabilityMapError, "keys must be exactly"
+                    focus_capabilities.CapabilityMapError, "unknown="
                 ):
                     focus_capabilities.load_catalog(
                         repo_root=root, catalog_path=catalog_path

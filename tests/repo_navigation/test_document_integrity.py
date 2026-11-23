@@ -27,12 +27,18 @@ class DocumentIntegrityTests(unittest.TestCase):
             (root / "docs" / "target.md").write_text(
                 "# 现有章节\n[bad](#不存在)\n", encoding="utf-8"
             )
+            (root / "mobile").mkdir()
+            (root / "mobile/README.md").write_text("[设备验收](#已改名)\n", encoding="utf-8")
 
             violations = document_integrity.repository_violations(root)
 
         self.assertEqual(
-            tuple(violation.kind for violation in violations),
-            ("missing local link target", "missing local heading anchor"),
+            tuple((violation.path, violation.kind) for violation in violations),
+            (
+                ("README.md", "missing local link target"),
+                ("docs/target.md", "missing local heading anchor"),
+                ("mobile/README.md", "missing local heading anchor"),
+            ),
         )
 
     def test_numbered_bilingual_heading_shape_must_match(self) -> None:

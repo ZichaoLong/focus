@@ -493,6 +493,12 @@ extend a writer, or spread a local delivery unknown into a later turn.
   existing runtime owners.
 - `web/src/focus/`: Focus-owned transport, projection, navigation/profile, and
   mutation/action owners. Generic UI components consume view projections only.
+- The WebView in `mobile/android/` and ArkWeb in `mobile/harmony/` load the same Focus Web
+  published by the selected instance. The native hosts manage instance entries, platform
+  credentials, lifecycle and device features. The APK and HAP ship the offline reader and
+  batch update manager. Both use the pages, scripts and offline SQL under
+  `mobile/harmony/entry/src/main/resources/rawfile/`, which the Android build also packages.
+  [Mobile host contract](../contracts/focus-mobile.md) · [Implementation and verification by change](../../mobile/README.md#移动端开发导航)
 - `docs/contracts/`: formal source for current behavior semantics.
 - `docs/architecture/`: current owners, layers, dependencies, and active debt.
 - `docs/decisions/`: rationale. Superseded decisions must be visibly marked and may

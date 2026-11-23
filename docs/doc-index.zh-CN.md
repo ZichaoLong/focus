@@ -183,10 +183,8 @@
 
 ## 常见阅读路径
 
-- 做任何仓库诊断、实现、review 或重构时：
-  - 可用单句 `使用 $develop-focus 完成：<任务>` 启用当前完整开发纪律
-  - [`development-navigation.zh-CN.md`](./architecture/development-navigation.zh-CN.md)
-  - 再只读它指向的 capability refs 与有证据触发的相邻来源
+- 诊断、修改、验证或发布 Focus 都从[仓库开发与验证规范](./architecture/development-navigation.zh-CN.md)开始。可直接运行仓库命令，也可通过 `$develop-focus` 进入同一流程。
+- 移动端使用同一套能力索引。构建、安装和设备验收见[移动端开发导航](../mobile/README.md#移动端开发导航)。
 - 做架构调整或较大重构时：
   - [`focus-design.zh-CN.md`](./architecture/focus-design.zh-CN.md)
   - [`architecture-debt-register.zh-CN.md`](./architecture/architecture-debt-register.zh-CN.md)

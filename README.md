@@ -23,6 +23,8 @@ Codex 后端，查看和继续同一线程。Web 默认开启，飞书按需启�
 | `focusctl` | 本地管理命令 | 配置、启停、实例、线程、会话绑定与清理 |
 | `focusd` | 后台服务入口 | 由系统服务管理器调用，通常不手敲 |
 
+定位实现、修改源码及发布 Focus 的步骤见[仓库开发与验证规范](docs/architecture/development-navigation.zh-CN.md)。
+
 ## 快速开始
 
 ### 安装环境

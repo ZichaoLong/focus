@@ -19,24 +19,33 @@ an additional layer for broad changes. It answers what the objective and
 non-goals are, how many commits are available, and when to stop or escalate.
 The two compose, but must not duplicate rules or mutable status.
 
-Task authority, progress reporting, campaigns, and stop conditions follow the
-current user instructions and actually applicable `AGENTS.md` files. Use
-`Use $develop-focus to complete: <task>` for the execution workflow;
-`$navigate-focus-development` provides the navigation tool entry point. Skills
-route to formal rules and fixed tools without expanding task authority or scope.
-Architecture evolution and compatibility decisions follow
-[Technical Design §7](./focus-design.md#7-evolution-rules); this document owns
-navigation and change-cone discipline.
+Start at the repository root. Task scope, reporting and stop conditions follow
+the current request and applicable `AGENTS.md` files. Enter dependency, vendor
+or generated trees when the task concerns them. Use the commands here directly
+or enter the same workflow through `$develop-focus` or `$navigate-focus-development`.
+Architecture and compatibility decisions follow [Technical Design §7](./focus-design.md#7-evolution-rules).
+
+### 1.1 Selecting the requested stages
+
+Read-only investigation (`inspect`) delivers findings. Implementation (`change`)
+delivers changes and verification. Source integration (`integrate`) commits or
+pushes as requested. Publication (`publish`) delivers the named product and channel.
+A request may cover several stages. Establish the worktree baseline, toolchain,
+dependencies and verification scope before starting.
+
+For upstream behavior, check the official protocol or pinned source first.
+Use a task-local, read-only upstream checkout by default and preserve existing
+differences. Cite upstream source in durable documents with its full 40-character commit SHA.
 
 ## 2. Fact Roles and Precedence
 
 | Content | Authority | Navigation role |
 | --- | --- | --- |
 | Normative behavior, architecture intent, and boundaries | The relevant formal document under `docs/contracts/`, `docs/architecture/`, or `docs/decisions/` | Link only; do not restate |
-| Mutable runtime facts and external-effect authority | The one owner in production code | Locate the owner symbol only |
+| Mutable runtime facts and external-effect authority | The one owner in production code | Locate the owner symbol or native implementation file |
 | Configuration values and schemas | The canonical configuration surface and validator | Locate the entry or owner only |
 | Regression and static evidence | Tests and guards | Form the verification cone only |
-| Locations of capability entries, owners, contracts, and verification cones | `scripts/focus_capabilities.json` | Human-reviewed derived index |
+| Locations of capability entries, owners, contracts, and verification cones | [Capability catalog](../../scripts/focus_capabilities.json) | Human-reviewed derived index |
 | Agent procedure entry point | The `develop-focus` and `navigate-focus-development` skills and applicable `AGENTS.md` | Route only to current authorities and fixed tools |
 | Temporary campaign status | The current `docs/_work/` ledger | Never enter long-lived navigation |
 
@@ -79,9 +88,12 @@ within a bounded transaction or campaign.
 1. Read the `AGENTS.md` files applicable to the current path, then query the
    closest reviewed capability with `focus_nav.py list` / `show`. A hit is a
    reading hypothesis, not proof of ownership.
-2. For the first read, open only the returned entry, owner, contract,
-   focused-test, sentinel, and guard references. Identify the task's fact type,
-   authority, and external effect before expanding.
+   For example, `python scripts/focus_nav.py list --under mobile` lists capabilities
+   with current mobile references. `python scripts/focus_nav.py show <capability>`
+   gives their implementations, contracts and verification entries.
+2. For the first read, open only the returned entries, implementations, contracts
+   and verification references applicable to the change. Identify the task's
+   fact type, authority, and external effect before expanding.
 3. Expand one hop only when evidence shows that a call or import crosses the
    current boundary; another owner reads or writes the same mutable fact or
    effect; a formal contract links to a higher-precedence contract; a failing
@@ -107,16 +119,16 @@ relevance alone is not evidence to expand.
 ## 5. Change and Navigation-Impact Closure
 
 Before editing, identify the formal contract, production owner, public entry,
-direct consumers, focused tests, sentinels, and direction guards in the change
-cone. Keep edits inside that cone unless an evidence trigger from section 4
+direct consumers, focused tests, sentinels, direction guards and verification
+steps for the affected platforms. Keep edits inside that cone unless an evidence trigger from section 4
 requires expansion.
 
-Review and update or remove affected capability references in the same
-transaction whenever any of the following changes:
+Review affected capability references in the same transaction whenever any of the
+following changes. Edit the catalog only when its locations or verification scope change.
 
 - an entry or owner's path, symbol, responsibility, or effect authority;
 - a formal contract's path, heading, precedence, or behavior boundary;
-- focused-test, sentinel, or test-package topology;
+- focused-test, sentinel, platform verification entry, or test-package topology;
 - import direction, direct consumers, or applicable guards;
 - capability creation, merge, split, or removal.
 
@@ -135,7 +147,8 @@ The tool does not read Git or infer a capability or semantic owner from a path.
 It returns only exact current-catalog matches with their capability, role, and
 reference. A pytest `::node` reference matches its base file. `--locations`
 parses current source to locate a symbol, Markdown heading section, or test
-target. It fails closed if any selector is not unique or if a directory-level
+target. Native code and assets with whole-file references resolve to the full
+current file. The lookup fails closed if any selector is not unique or if a directory-level
 test target has no exact line range. `unmapped` means only that no catalog
 reference matched; it is not proof of no semantic impact and does not replace
 manual navigation-impact review. If the catalog cannot load, follow section 6.
@@ -168,8 +181,12 @@ Do not automatically expand the scope to repair unrelated references.
 
 ## 7. Allowed and Forbidden Long-Lived Navigation Content
 
-The capability catalog contains only reviewed entry, owner, contract,
-focused-test, sentinel, and guard references.
+The capability catalog contains only reviewed entry, owner, contract, focused-test,
+sentinel, guard and optional `platform-check` references. Platform verification
+references locate build scripts, device tests or specific sections of an operator guide.
+Define checks shared by several capabilities once under `shared-platform-checks` in
+the same catalog and reference them by name. `list --under`, `show`, reverse lookup
+and verification plans use the same expanded references. READMEs and skills point to these queries.
 
 Long-lived navigation must not store:
 
@@ -193,10 +210,37 @@ include direct-consumer regressions introduced by the edit, tests named by
 failure evidence, applicable static guards, contract/document checks, and any
 wider gates required by its risk.
 
+In `python scripts/focus_verify.py <capability> --dry-run`, `commands` lists automatic
+checks. The `platform-check` references identify separate checks to run for the affected
+artifacts and also appear in `show`. Verify UI behavior in the relevant available browser,
+emulator or physical device and record the actual environment. Classify results as
+`passed`, `failed`, `not-run` or `blocked-by-environment`.
+
+When maintaining navigation itself, use `python scripts/focus_capabilities.py` to
+validate current references, `python -m pytest -q tests/repo_navigation` to exercise
+the tools and `bash scripts/check-docs.sh` to check document links and bilingual structure.
+
 A development transaction is complete only when:
 
 - authoritative contracts, code, and tests agree for the changed semantics;
-- navigation impact for every affected capability is updated, removed, or
-  confirmed to have no catalog match;
+- navigation references for the affected capabilities have been reviewed and stale
+  references corrected, or the absence of a catalog match confirmed;
 - old paths and stale references affected by this change are absent;
 - focused verification and all wider gates required by the transaction pass.
+
+### 8.1 Source integration and publication
+
+Before integration, review the baseline and final worktree differences and stage
+only the task's files. Run the local checks for the applicable [CI workflows](../../.github/workflows).
+
+After pushing, query GitHub Actions for the exact source SHA and wait for all
+applicable runs to succeed. Inspect logs for failed or cancelled runs, distinguish
+code failures from external infrastructure issues and retry only confirmed transient
+failures that are safe to retry. Report any inability to read remote status.
+Deliver the source SHA and corresponding remote results for a source push.
+
+If publication was requested, continue after source CI passes. Verify the remote
+artifact and its provenance under the product contract and report the publication
+receipt. Read back remote state before deciding whether to retry an uncertain
+publication. Report verified stages, remaining material gaps and any decision needed.
+[Server artifact publication](../contracts/install-artifact-delivery.md#6-build-and-publication-are-separate-actions) · [Android publisher procedure](../../mobile/README.md#android-发布者流程)

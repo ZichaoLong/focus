@@ -58,10 +58,8 @@ class MarkdownLink:
 
 
 def _markdown_files(repo_root: Path) -> tuple[Path, ...]:
-    files: list[Path] = []
-    readme = repo_root / "README.md"
-    if readme.is_file():
-        files.append(readme)
+    readmes = (repo_root / "README.md", repo_root / "mobile/README.md")
+    files = [readme for readme in readmes if readme.is_file()]
     docs_root = repo_root / "docs"
     if docs_root.is_dir():
         files.extend(

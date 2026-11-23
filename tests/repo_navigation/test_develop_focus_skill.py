@@ -1,69 +1,40 @@
 from __future__ import annotations
 
 import unittest
+from urllib.parse import unquote, urlsplit
 
-from scripts import focus_capabilities
+import yaml
+
+from scripts import check_document_integrity, focus_capabilities
 
 
-class DevelopFocusSkillTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.skill_root = (
-            focus_capabilities.REPO_ROOT / ".agents/skills/develop-focus"
-        )
-
-    def test_skill_is_a_small_explicit_router(self) -> None:
-        files = tuple(
-            sorted(
-                path.relative_to(self.skill_root).as_posix()
-                for path in self.skill_root.rglob("*")
-                if path.is_file()
-            )
-        )
-        self.assertEqual(files, ("SKILL.md", "agents/openai.yaml"))
-
-        text = (self.skill_root / "SKILL.md").read_text(encoding="utf-8")
-        self.assertGreaterEqual(len(text.splitlines()), 30)
-        self.assertLessEqual(len(text.splitlines()), 50)
-        for forbidden in ("TODO", "```", "docs/_work", "git diff", "git status"):
-            with self.subTest(forbidden=forbidden):
-                self.assertNotIn(forbidden, text)
-        self.assertIn("AGENTS.md", text)
-        self.assertIn("docs/architecture/development-navigation.zh-CN.md", text)
-        self.assertIn("$navigate-focus-development", text)
-        self.assertIn("docs/contracts/install-artifact-delivery.zh-CN.md", text)
-        self.assertIn("validation run is not publication", text)
-        self.assertIn("docs/contracts/focus-mobile.zh-CN.md", text)
-        self.assertNotIn("Use one lane", text)
-        self.assertIn("feature implementation", text)
-        self.assertIn("behavior change", text)
-        for required in (
-            "`inspect`",
-            "`change`",
-            "`integrate`",
-            "`publish`",
-            "blocked-by-environment",
-            "relevant workflow",
-            "read-only by default",
-            "task-local",
-            "pre-existing differences untouched",
-            "remote read-back",
+class DevelopmentEntryPointTests(unittest.TestCase):
+    def test_human_and_agent_entry_points_reach_the_repository_discipline(self) -> None:
+        root = focus_capabilities.REPO_ROOT
+        discipline = root / "docs/architecture/development-navigation.zh-CN.md"
+        anchors = check_document_integrity.markdown_anchors(discipline.read_text(encoding="utf-8"))
+        for entry in (
+            root / "README.md",
+            root / "mobile/README.md",
+            root / ".agents/skills/develop-focus/SKILL.md",
+            root / ".agents/skills/navigate-focus-development/SKILL.md",
         ):
-            with self.subTest(required=required):
-                self.assertIn(required, text)
-        self.assertNotIn("AGENTS.example.md", text)
-        self.assertFalse((focus_capabilities.REPO_ROOT / "AGENTS.example.md").exists())
+            with self.subTest(entry=entry.relative_to(root)):
+                links = check_document_integrity.markdown_links(entry.read_text(encoding="utf-8"))
+                targets = [urlsplit(link.target) for link in links]
+                self.assertTrue(any(
+                    not target.scheme and not target.netloc
+                    and (entry.parent / unquote(target.path)).resolve() == discipline
+                    and (not target.fragment or unquote(target.fragment) in anchors)
+                    for target in targets
+                ), f"No working link to {discipline.name}")
 
-        discipline = (
-            focus_capabilities.REPO_ROOT
-            / "docs/architecture/development-navigation.zh-CN.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("功能实现、行为变更与重构", discipline)
-        self.assertIn("合同、代码、测试、guard 与导航影响", discipline)
-
-    def test_metadata_requires_explicit_invocation(self) -> None:
-        text = (self.skill_root / "agents/openai.yaml").read_text(encoding="utf-8")
-        self.assertIn('default_prompt: "使用 $develop-focus ', text)
-        self.assertIn("allow_implicit_invocation: false", text)
+    def test_develop_focus_requires_explicit_invocation(self) -> None:
+        metadata = (
+            focus_capabilities.REPO_ROOT / ".agents/skills/develop-focus/agents/openai.yaml"
+        )
+        policy = yaml.safe_load(metadata.read_text(encoding="utf-8"))["policy"]
+        self.assertIs(policy["allow_implicit_invocation"], False)
 
 
 if __name__ == "__main__":

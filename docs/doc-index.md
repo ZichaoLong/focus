@@ -200,10 +200,8 @@ Status guidance:
 
 ## Practical Reading Paths
 
-- For any repository diagnosis, implementation, review, or refactor:
-  - use `Use $develop-focus to complete: <task>` to activate the current full development discipline
-  - [`development-navigation.md`](./architecture/development-navigation.md)
-  - then only the capability refs and evidence-triggered adjacent sources it directs
+- Start diagnosis, changes, verification and publication with the [repository development discipline](./architecture/development-navigation.md). Run its repository commands directly or use `$develop-focus` to enter the same workflow.
+- Mobile development uses the same capability catalog. For builds, installation and device verification see the [mobile development guide](../mobile/README.md#移动端开发导航).
 - For architecture or large refactors:
   - [`focus-design.md`](./architecture/focus-design.md)
   - [`architecture-debt-register.md`](./architecture/architecture-debt-register.md)

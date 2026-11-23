@@ -350,6 +350,17 @@ class FocusNavigationTests(unittest.TestCase):
                 include_locations=True,
             )
 
+    def test_list_under_matches_complete_components_and_verification_targets(self) -> None:
+        _, catalog = self._path_catalog()
+        self.assertEqual(focus_nav.list_capabilities(catalog, under="tests/grou"), [])
+        self.assertEqual(focus_nav.list_capabilities(catalog, under="tests/group"), ["beta"])
+        self.assertCountEqual(
+            focus_nav.list_capabilities(catalog, under="tests/test_sample.py"), ["alpha", "beta"],
+        )
+        for prefix in ("../mobile", "mobile/*", "/mobile", ""):
+            with self.subTest(prefix=prefix), self.assertRaises(focus_nav.NavigationError):
+                focus_nav.list_capabilities(catalog, under=prefix)
+
     def test_paths_cli_emits_stable_json_and_preserves_show(self) -> None:
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -388,6 +399,39 @@ class FocusNavigationTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertIn("Focus navigation failed:", errors.getvalue())
+
+    def test_system_back_and_offline_cleanup_lead_to_both_hosts_and_platform_checks(self) -> None:
+        android = "mobile/android/src/org/focus/mobile/"
+        harmony = "mobile/harmony/entry/src/main/"
+        scenarios = {
+            "focus-mobile-navigation": {
+                android + "ClientActivity.java": "entry",
+                harmony + "ets/pages/Index.ets": "entry",
+                harmony + "ets/InstancePane.ets": "owner",
+                "mobile/tests/android_navigation_smoke.py": "platform-check",
+            },
+            "focus-mobile-offline-records": {
+                android + "RecordsStore.java": "owner",
+                harmony + "ets/RecordsStore.ets": "owner",
+                harmony + "resources/rawfile/records.js": "owner",
+                harmony + "resources/rawfile/records-sql.json": "owner",
+                "mobile/tests/android_records_smoke.py": "platform-check",
+            },
+        }
+        catalog = focus_capabilities.load_catalog()
+        for capability, expected in scenarios.items():
+            with self.subTest(capability=capability):
+                impacts = focus_nav.path_impacts(tuple(expected), catalog=catalog, include_locations=True)
+                for impact in impacts:
+                    match, = (item for item in impact.matches if item.capability == capability)
+                    self.assertEqual(match.role, expected[impact.path])
+                    self.assertEqual(focus_nav._reference_payload(match.reference), {"path": impact.path})
+                    self.assertEqual(match.location.start_line, 1)
+                checks = catalog.require(capability).platform_checks
+                self.assertTrue(any(ref.heading for ref in checks))
+                for platform in ("android", "harmony"):
+                    self.assertTrue(any(ref.path.startswith(f"mobile/{platform}/") for ref in checks))
+                self.assertIn("platform-check:", focus_nav._render_paths(impacts))
 
     def test_json_payloads_are_stable_navigation_shapes(self) -> None:
         capability = focus_capabilities.load_catalog().require("focus-runtime")

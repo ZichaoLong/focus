@@ -14,21 +14,29 @@ transaction 中对齐相关合同、代码、测试、guard 与导航影响。�
 回答“目标与非目标是什么、允许多少提交、何时停止或请示”。两者组合使用，
 但不得互相复制状态或规则。
 
-任务授权、汇报、campaign 与停止条件以当前用户指令及实际适用的 `AGENTS.md`
-为准。使用 `使用 $develop-focus 完成：<任务>` 进入执行流程，
-`$navigate-focus-development` 提供导航工具入口；skill 只路由到正式规则和固定工具，
-不扩大任务权限或范围。架构演进与兼容取舍遵循
-[技术设计 §7](./focus-design.zh-CN.md#7-演进规则)，本文负责导航与变更锥。
+从仓库根目录开始。任务范围、汇报与停止条件以当前用户指令及实际适用的 `AGENTS.md`
+为准。依赖、第三方和生成目录只在任务涉及它们时进入。可以直接使用本文的命令，
+也可以通过 `$develop-focus` 或 `$navigate-focus-development` 进入同一流程。
+架构演进与兼容取舍遵循[技术设计 §7](./focus-design.zh-CN.md#7-演进规则)。
+
+### 1.1 按请求选择阶段
+
+只读调查（`inspect`）交付发现。实现（`change`）交付改动及验证。
+源码集成（`integrate`）按请求提交或推送。发布（`publish`）交付指定产品和渠道。
+一次请求可包含多个阶段。开始工作时核对工作区基线、工具链、依赖及本次验证范围。
+
+涉及上游行为时，先核对官方协议或固定版本的源码。默认在任务单独使用的只读 checkout
+中调查，保留原有差异。持久文档引用上游源码时使用完整的 40 位提交 SHA。
 
 ## 2. 事实角色与优先级
 
 | 内容 | 权威来源 | 导航中的角色 |
 | --- | --- | --- |
 | 规范行为、架构意图与边界 | `docs/contracts/`、`docs/architecture/`、`docs/decisions/` 中相关正式文档 | 只链接，不转述 |
-| 可变 runtime fact 与外部 effect authority | production code 中唯一 owner | 只定位 owner symbol |
+| 可变 runtime fact 与外部 effect authority | production code 中唯一 owner | 定位 owner symbol 或原生实现文件 |
 | 配置值与 schema | canonical 配置入口及其校验 | 只定位入口或 owner |
 | 回归与静态证据 | tests 与 guards | 只组成验证锥 |
-| 能力入口、owner、合同和验证锥的定位 | `scripts/focus_capabilities.json` | 人工复核的派生索引 |
+| 能力入口、owner、合同和验证锥的定位 | [能力索引](../../scripts/focus_capabilities.json) | 人工复核的派生索引 |
 | agent 操作入口 | `develop-focus`、`navigate-focus-development` skills 与适用的 `AGENTS.md` | 只路由到当前权威来源和固定工具 |
 | 临时 campaign 状态 | 当前 `docs/_work/` ledger | 不进入长期导航 |
 
@@ -62,8 +70,10 @@ transaction/campaign 中修正代码结构或正式合同的可发现性缺口�
 
 1. 先读当前路径适用的 `AGENTS.md`，再用 `focus_nav.py list` / `show` 查询最接近
    的 reviewed capability。命中结果只是读取假设，不是 ownership 证明。
-2. 首轮只读命中项返回的 entry、owner、contract、focused-test、sentinel 与 guard
-   引用，先确定本任务涉及的事实类型、authority 和外部 effect。
+   例如 `python scripts/focus_nav.py list --under mobile` 从当前引用列出涉及移动端的能力，
+   `python scripts/focus_nav.py show <能力>` 展示其实现、合同和验证入口。
+2. 首轮只读命中项中的入口、实现、合同和适用于本次改动的验证引用，先确定本任务
+   涉及的事实类型、authority 和外部 effect。
 3. 只有出现以下证据时才扩展一跳：调用或 import 跨出当前边界；同一 mutable
    fact 或 effect 被另一 owner 读写；正式合同指向上位合同；失败测试或 guard
    指向相邻模块；修改影响一个已知 public entry 或直接 consumer。
@@ -82,15 +92,15 @@ transaction/campaign 中修正代码结构或正式合同的可发现性缺口�
 ## 5. 修改与导航影响闭环
 
 编辑前，明确本次 change cone 中的正式合同、production owner、public entry、
-直接 consumer、focused tests、sentinels 与方向 guard。修改应留在这个锥内；
+直接 consumer、focused tests、sentinels、方向 guard 和受影响平台的验收步骤。修改应留在这个锥内；
 只有第 4 节的证据触发条件成立时才扩大。
 
-出现以下任一变化时，必须在同一个 transaction 中复核并更新或删除受影响的
-capability refs：
+出现以下任一变化时，在同一笔变更中复核受影响的 capability refs。
+仅当定位或验证范围随之改变时编辑索引。
 
 - entry 或 owner 的路径、symbol、职责或 effect authority 改变；
 - 正式合同路径、heading、优先级或行为边界改变；
-- focused-test、sentinel 或测试 package 拓扑改变；
+- focused-test、sentinel、平台验收入口或测试 package 拓扑改变；
 - import 方向、直接 consumer 或适用 guard 改变；
 - capability 被新增、合并、拆分或删除。
 
@@ -105,7 +115,8 @@ python scripts/focus_nav.py paths <repo-relative-path>... [--locations]
 
 工具不读取 Git，也不从路径猜 capability 或 semantic owner。它只返回当前 catalog
 中精确命中的 capability、role 与 ref；pytest `::node` ref 按其基础文件匹配，
-`--locations` 从当前源码解析 symbol、heading section 或 test target 的行范围。任何
+`--locations` 从当前源码解析 symbol、heading section 或 test target 的行范围。
+按整份文件引用的原生代码和资源，行范围覆盖当前文件。任何
 selector 无法唯一定位、或目录级 test target 没有精确行范围时，`--locations` 整次
 查询 fail closed。`unmapped` 只表示没有 catalog ref 命中，不能证明没有语义影响，
 也不能替代人工 navigation-impact 复核。catalog 无法载入时按第 6 节处理。
@@ -131,8 +142,10 @@ shim、宽泛 re-export 或新旧双入口。行为修复、owner extraction 与
 
 ## 7. 长期导航允许与禁止承载的内容
 
-capability catalog 只允许 reviewed entry、owner、contract、focused-test、sentinel
-与 guard refs。
+capability catalog 只允许 reviewed entry、owner、contract、focused-test、sentinel、guard
+与可选的 `platform-check` refs。平台验收引用定位构建脚本、设备测试或操作指南中的具体章节。
+多项能力共用的验收引用可在同一索引文件的 `shared-platform-checks` 中定义一次，按名称引用。
+`list --under`、`show`、路径反查及验证计划读取同一份展开结果。README 和 skill 指向这些查询。
 
 长期导航不得保存：
 
@@ -152,9 +165,30 @@ capability catalog 只允许 reviewed entry、owner、contract、focused-test、
 退出门禁的替代品。实际变更还必须加入本次修改产生的直接 consumer 回归、失败
 证据指向的测试、适用静态 guard、合同/文档检查，以及变更风险要求的更宽门禁。
 
+`python scripts/focus_verify.py <能力> --dry-run` 输出的 `commands` 是自动检查。
+`platform-check` 给出按受影响发布物单独执行的验收步骤，`show` 也能查看。在可用的
+浏览器、模拟器或真机上验证对应的界面行为，记录实际环境。各项结果标为 `passed`、`failed`、
+`not-run` 或 `blocked-by-environment`。
+
+维护导航本身时，运行 `python scripts/focus_capabilities.py` 校验当前引用，
+`python -m pytest -q tests/repo_navigation` 验证导航工具，`bash scripts/check-docs.sh` 检查文档链接和双语结构。
+
 一笔开发 transaction 只有同时满足以下条件才完成：
 
 - 权威合同、代码与测试对本次语义保持一致；
-- 所有受影响 capability 的 navigation-impact 已更新、删除或确认无命中；
+- 已复核受影响能力的导航引用，修正失效引用，或确认当前索引没有命中；
 - 本次变更涉及的旧路径与 stale refs 归零；
 - focused verification 与本 transaction 所需的更宽门禁均为绿色。
+
+### 8.1 源码集成与发布
+
+集成前复核工作区基线与最终差异，只提交本次负责的文件。按实际适用的
+[CI 工作流](../../.github/workflows)执行本地检查。
+
+推送后按准确的源码提交 SHA 查询 GitHub Actions，等该提交适用的运行全部成功。
+失败或取消时检查日志，区分代码与外部基础设施问题，只重试已确认可安全重试的临时故障。
+远端状态无法读取时如实报告。源码推送的交付凭据是提交 SHA 和对应的远端结果。
+
+任务还包含发布时，在源码 CI 通过后继续，按产品合同核对远端发布物与来源并交付凭据。
+发布请求的回执不确定时，先读回远端状态再决定是否重试。最终报告本次已验证的阶段、
+仍影响交付的缺口及所需决定。[服务端制品发布](../contracts/install-artifact-delivery.zh-CN.md#6-构建与发布是两件事) · [Android 发布者流程](../../mobile/README.md#android-发布者流程)

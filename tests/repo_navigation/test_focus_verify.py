@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import pathlib
 import subprocess
 import unittest
+from unittest import mock
 
 from scripts import focus_capabilities, focus_verify
 
@@ -15,6 +17,7 @@ def _capability(
     focused: tuple[focus_capabilities.VerificationReference, ...] = (),
     sentinels: tuple[focus_capabilities.VerificationReference, ...] = (),
     guards: tuple[str, ...] = (),
+    platform_checks: tuple[focus_capabilities.FileReference, ...] = (),
 ) -> focus_capabilities.Capability:
     return focus_capabilities.Capability(
         name=name,
@@ -24,6 +27,7 @@ def _capability(
         focused_tests=focused,
         sentinels=sentinels,
         guards=guards,
+        platform_checks=platform_checks,
     )
 
 
@@ -307,6 +311,28 @@ class FocusVerificationTests(unittest.TestCase):
         self.assertEqual(result, 0)
         self.assertIn('"/exact/python"', output.getvalue())
         self.assertIn('"guard:dependency-direction"', output.getvalue())
+        self.assertNotIn("platform-check", json.loads(output.getvalue()))
+
+    def test_platform_checks_are_deduplicated_references_outside_executed_commands(self) -> None:
+        guide = focus_capabilities.FileReference("mobile/README.md", "Build")
+        device = focus_capabilities.FileReference("mobile/tests/device.py")
+        catalog = focus_capabilities.CapabilityCatalog((
+            _capability("first", guards=("source-context",), platform_checks=(guide, device)),
+            _capability("second", guards=("import-cycles",), platform_checks=(guide,)),
+        ))
+        with (
+            mock.patch.object(focus_capabilities, "load_catalog", return_value=catalog),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            result = focus_verify.main(["first", "second", "--dry-run"])
+        self.assertEqual(result, 0)
+        plan = json.loads(output.getvalue())
+        self.assertEqual(plan["platform-check"], [
+            {"path": guide.path, "heading": guide.heading}, {"path": device.path},
+        ])
+        self.assertEqual(len(plan["commands"]), 2)
+        for command in plan["commands"]:
+            self.assertFalse(any(arg.startswith("mobile/") for arg in command["argv"]))
 
 
 if __name__ == "__main__":

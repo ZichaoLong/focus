@@ -1,5 +1,44 @@
 {
   "schema_version": 1,
+  "shared-platform-checks": {
+    "android-build": [
+      {
+        "path": "mobile/README.md",
+        "heading": "Android 构建、签名与安装"
+      },
+      {
+        "path": "mobile/android/build.py"
+      }
+    ],
+    "harmony-build": [
+      {
+        "path": "mobile/README.md",
+        "heading": "Linux 上的公开 SDK 编译检查"
+      },
+      {
+        "path": "mobile/harmony/verify_openharmony.py"
+      },
+      {
+        "path": "mobile/README.md",
+        "heading": "HarmonyOS 构建、签名与安装"
+      }
+    ],
+    "android-navigation-emulator": [
+      {
+        "path": "mobile/README.md",
+        "heading": "Android 模拟器验证返回和外链"
+      },
+      {
+        "path": "mobile/tests/android_navigation_smoke.py"
+      }
+    ],
+    "mobile-device": [
+      {
+        "path": "mobile/README.md",
+        "heading": "移动端真机验收"
+      }
+    ]
+  },
   "capabilities": {
     "backend-reset": {
       "entry": [
@@ -881,6 +920,18 @@
         {
           "path": "web/src/composables/dialogStack.ts",
           "symbol": "backFromDialog"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/PageSlots.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/InstancePane.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/pages/Index.ets"
         }
       ],
       "contract": [
@@ -961,6 +1012,24 @@
         "source-context",
         "web-dependency-direction",
         "web-typecheck"
+      ],
+      "platform-check": [
+        "android-build",
+        "harmony-build",
+        {
+          "path": "mobile/README.md",
+          "heading": "连接恢复和实例切换验收"
+        },
+        {
+          "path": "mobile/tests/android_webview_smoke.py"
+        },
+        {
+          "path": "mobile/tests/android_tabs_smoke.py"
+        },
+        {
+          "path": "mobile/tests/android_page_retention.py"
+        },
+        "mobile-device"
       ]
     },
     "focus-web-composer": {
@@ -3142,6 +3211,12 @@
         {
           "path": "web/src/focus/FocusFileDownloadDialog.vue",
           "symbol": "systemBack"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/FileExchange.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/FileExchange.ets"
         }
       ],
       "contract": [
@@ -3222,6 +3297,12 @@
         "web-wire",
         "web-dependency-direction",
         "web-typecheck"
+      ],
+      "platform-check": [
+        "android-build",
+        "harmony-build",
+        "android-navigation-emulator",
+        "mobile-device"
       ]
     },
     "focus-web-browser-open": {
@@ -3616,6 +3697,12 @@
         {
           "path": "web/src/lib/mobileHost.ts",
           "symbol": "mobileApkRequest"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ApkUpdate.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ApkProvider.java"
         }
       ],
       "contract": [
@@ -3662,6 +3749,13 @@
         "web-dependency-direction",
         "web-typecheck",
         "web-wire"
+      ],
+      "platform-check": [
+        "android-build",
+        {
+          "path": "mobile/README.md",
+          "heading": "Android 客户端更新验收"
+        }
       ]
     },
     "focus-mobile-server-updates": {
@@ -3673,6 +3767,15 @@
         {
           "path": "bot/web_runtime/gateway.py",
           "symbol": "WebGateway._handle_update_prepare_latest"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ServerUpdatesActivity.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/ServerUpdates.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/resources/rawfile/server-updates.html"
         }
       ],
       "owner": [
@@ -3691,6 +3794,12 @@
         {
           "path": "web/src/focus/httpResponseDecoder.ts",
           "symbol": "decodeFocusUpdatePreparation"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/UpdateConnection.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/resources/rawfile/server-updates.js"
         }
       ],
       "contract": [
@@ -3741,6 +3850,14 @@
         "web-dependency-direction",
         "web-typecheck",
         "web-wire"
+      ],
+      "platform-check": [
+        "android-build",
+        "harmony-build",
+        {
+          "path": "mobile/README.md",
+          "heading": "批量更新设备验收"
+        }
       ]
     },
     "focus-mobile-offline-records": {
@@ -3752,6 +3869,21 @@
         {
           "path": "web/src/focus/mobileRecords.ts",
           "symbol": "installMobileRecords"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/RecordsActivity.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/InstancePane.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/pages/Index.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/resources/rawfile/records.html"
         }
       ],
       "owner": [
@@ -3766,6 +3898,24 @@
         {
           "path": "bot/web_runtime/thread_inspection.py",
           "symbol": "WebThreadInspectionService.prepare_transcript_window"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/RecordsPanel.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/RecordsStore.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/RecordsPanel.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/RecordsStore.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/resources/rawfile/records.js"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/resources/rawfile/records-sql.json"
         }
       ],
       "contract": [
@@ -3812,6 +3962,105 @@
         "web-dependency-direction",
         "web-typecheck",
         "web-wire"
+      ],
+      "platform-check": [
+        "android-build",
+        "harmony-build",
+        {
+          "path": "mobile/README.md",
+          "heading": "离线记录模拟器验收"
+        },
+        {
+          "path": "mobile/tests/android_records_smoke.py"
+        },
+        {
+          "path": "mobile/README.md",
+          "heading": "离线记录真机验收"
+        }
+      ]
+    },
+    "focus-mobile-navigation": {
+      "entry": [
+        {
+          "path": "web/src/focus/FocusApp.vue",
+          "symbol": "mobileBack"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/MainActivity.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/pages/Index.ets"
+        }
+      ],
+      "owner": [
+        {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "installMobileNavigation"
+        },
+        {
+          "path": "web/src/composables/dialogStack.ts",
+          "symbol": "backFromDialog"
+        },
+        {
+          "path": "web/src/focus/FocusFileDownloadDialog.vue",
+          "symbol": "systemBack"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/InstanceDrawer.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ExternalPageActivity.java"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/InstancePane.ets"
+        },
+        {
+          "path": "mobile/harmony/entry/src/main/ets/pages/ExternalPage.ets"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "宿主协议 v1"
+        },
+        {
+          "path": "docs/contracts/focus-web-file-download.zh-CN.md",
+          "heading": "预览内后退"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/file-preview-navigation-browser.test.ts",
+            "web/test/focus-mobile-host.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/file-preview-navigation.test.ts",
+            "web/test/focus-mobile-editor-browser.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "web-dependency-direction",
+        "web-typecheck"
+      ],
+      "platform-check": [
+        "android-build",
+        "harmony-build",
+        "android-navigation-emulator",
+        {
+          "path": "mobile/README.md",
+          "heading": "系统返回真机验收"
+        }
       ]
     }
   }

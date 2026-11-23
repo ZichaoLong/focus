@@ -31,8 +31,14 @@ _CAPABILITY_KEYS = frozenset(
     {"entry", "owner", "contract", "focused-test", "sentinel", "guard"}
 )
 _SOURCE_KEYS = frozenset({"path", "symbol"})
+_FILE_KEYS = frozenset({"path"})
 _CONTRACT_KEYS = frozenset({"path", "heading"})
 _VERIFICATION_KEYS = frozenset({"runner", "targets"})
+_MOBILE_SOURCES = (
+    ("mobile/android/src/", {".java"}),
+    ("mobile/harmony/entry/src/main/ets/", {".ets"}),
+    ("mobile/harmony/entry/src/main/resources/rawfile/", {".html", ".js", ".json"}),
+)
 _CAPABILITY_ID = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
 _SYMBOL = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\Z")
 _PYTEST_NODE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\[[^\]\r\n]+\])?\Z")
@@ -66,6 +72,14 @@ class ContractReference:
 
 
 @dataclass(frozen=True, slots=True)
+class FileReference:
+    """An entire mobile source/check file, or one section of the verification guide."""
+
+    path: str
+    heading: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class VerificationReference:
     runner: str
     targets: tuple[str, ...]
@@ -81,12 +95,13 @@ class ReferenceLocation:
 @dataclass(frozen=True, slots=True)
 class Capability:
     name: str
-    entries: tuple[SourceReference, ...]
-    owners: tuple[SourceReference, ...]
+    entries: tuple[SourceReference | FileReference, ...]
+    owners: tuple[SourceReference | FileReference, ...]
     contracts: tuple[ContractReference, ...]
     focused_tests: tuple[VerificationReference, ...]
     sentinels: tuple[VerificationReference, ...]
     guards: tuple[str, ...]
+    platform_checks: tuple[FileReference, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,14 +134,17 @@ def _require_object(value: Any, *, context: str) -> dict[str, Any]:
 
 
 def _require_exact_keys(
-    value: dict[str, Any], *, expected: frozenset[str], context: str
+    value: dict[str, Any],
+    *,
+    expected: frozenset[str],
+    context: str,
+    optional: frozenset[str] = frozenset(),
 ) -> None:
-    actual = frozenset(value)
-    if actual != expected:
-        missing = sorted(expected - actual)
-        unknown = sorted(actual - expected)
+    missing = sorted(expected - value.keys())
+    unknown = sorted(value.keys() - expected - optional)
+    if missing or unknown:
         raise CapabilityMapError(
-            f"{context} keys must be exactly {sorted(expected)}; "
+            f"{context} has invalid keys; required={sorted(expected)}, optional={sorted(optional)}, "
             f"missing={missing}, unknown={unknown}"
         )
 
@@ -411,21 +429,28 @@ def _source_symbol_line_range(
 
 def _source_reference(
     raw: Any, *, repo_root: pathlib.Path, context: str
-) -> SourceReference:
+) -> SourceReference | FileReference:
     value = _require_object(raw, context=context)
-    _require_exact_keys(value, expected=_SOURCE_KEYS, context=context)
+    whole_file = value.keys() == _FILE_KEYS
+    if not whole_file:
+        _require_exact_keys(value, expected=_SOURCE_KEYS, context=context)
     path_value, path = _resolve_repository_path(
         value["path"], repo_root=repo_root, context=f"{context}.path"
     )
-    relative = pathlib.PurePosixPath(path_value)
-    if relative.parts[0] == "bot":
-        pass
-    elif relative.parts[:2] == ("web", "src"):
-        pass
-    else:
-        raise CapabilityMapError(f"{context}.path must be under bot/ or web/src/")
     if not path.is_file():
         raise CapabilityMapError(f"{context}.path must name a source file")
+    if whole_file:
+        if not any(
+            path_value.startswith(root) and path.suffix in suffixes
+            for root, suffixes in _MOBILE_SOURCES
+        ):
+            raise CapabilityMapError(
+                f"{context} whole-file source must be a native source or packaged mobile asset"
+            )
+        _file_line_range(path, context=context)
+        return FileReference(path_value)
+    if not path_value.startswith(("bot/", "web/src/")):
+        raise CapabilityMapError(f"{context}.path must be under bot/ or web/src/")
     symbol = _require_nonempty_string(value["symbol"], context=f"{context}.symbol")
     _source_symbol_line_range(path, symbol, context=context)
     return SourceReference(path=path_value, symbol=symbol)
@@ -680,18 +705,47 @@ def _file_line_range(path: pathlib.Path, *, context: str) -> tuple[int, int]:
     return 1, line_count
 
 
-def source_reference_location(
-    reference: SourceReference, *, repo_root: pathlib.Path = REPO_ROOT
-) -> ReferenceLocation:
-    """Resolve a reviewed source selector to its current declaration lines."""
+def _platform_check(raw: Any, *, repo_root: pathlib.Path, context: str) -> FileReference:
+    value = _require_object(raw, context=context)
+    is_guide = value.get("path") == "mobile/README.md"
+    _require_exact_keys(value, expected=_CONTRACT_KEYS if is_guide else _FILE_KEYS, context=context)
+    relative, path = _resolve_repository_path(
+        value["path"], repo_root=repo_root, context=f"{context}.path"
+    )
+    if not path.is_file():
+        raise CapabilityMapError(f"{context}.path must name a verification file")
+    if is_guide:
+        heading = _require_nonempty_string(value["heading"], context=f"{context}.heading")
+        _contract_heading_line_range(path, heading, context=context)
+        return FileReference(relative, heading)
+    project = pathlib.PurePosixPath(relative).parent
+    build_script = project.as_posix() in {"mobile/android", "mobile/harmony"} and path.suffix == ".py"
+    device_test = relative.startswith("mobile/tests/") and path.suffix in {".py", ".java"}
+    if not (build_script or device_test):
+        raise CapabilityMapError(
+            f"{context} must reference a mobile build, test, or verification guide section"
+        )
+    _file_line_range(path, context=context)
+    return FileReference(relative)
 
-    context = f"source reference {reference.path}#{reference.symbol}"
+
+def source_reference_location(
+    reference: SourceReference | FileReference, *, repo_root: pathlib.Path = REPO_ROOT
+) -> ReferenceLocation:
+    """Resolve a reviewed declaration, file or mobile guide section to its current lines."""
+
+    context = f"source reference {reference.path}"
     path_value, path = _resolve_repository_path(
         reference.path, repo_root=pathlib.Path(repo_root), context=f"{context}.path"
     )
-    start_line, end_line = _source_symbol_line_range(
-        path, reference.symbol, context=context
-    )
+    if isinstance(reference, SourceReference):
+        start_line, end_line = _source_symbol_line_range(
+            path, reference.symbol, context=context
+        )
+    elif reference.heading is not None:
+        start_line, end_line = _contract_heading_line_range(path, reference.heading, context=context)
+    else:
+        start_line, end_line = _file_line_range(path, context=context)
     return ReferenceLocation(path_value, start_line, end_line)
 
 
@@ -756,13 +810,49 @@ def _reference_array(
     return values
 
 
-def _capability(name: str, raw: Any, *, repo_root: pathlib.Path) -> Capability:
+def _capability_platform_checks(
+    raw: Any,
+    shared: dict[str, tuple[FileReference, ...]],
+    *,
+    repo_root: pathlib.Path,
+    context: str,
+) -> tuple[FileReference, ...]:
+    if not isinstance(raw, list) or not raw:
+        raise CapabilityMapError(f"{context} must be a nonempty array")
+    checks: list[FileReference] = []
+    for index, member in enumerate(raw):
+        member_context = f"{context}[{index}]"
+        if isinstance(member, str):
+            if member not in shared:
+                raise CapabilityMapError(f"{member_context} names an unknown platform check: {member!r}")
+            checks.extend(shared[member])
+        else:
+            checks.append(_platform_check(member, repo_root=repo_root, context=member_context))
+    if len(set(checks)) != len(checks):
+        raise CapabilityMapError(f"{context} contains duplicate references after expansion")
+    return tuple(checks)
+
+
+def _capability(
+    name: str,
+    raw: Any,
+    *,
+    repo_root: pathlib.Path,
+    shared_checks: dict[str, tuple[FileReference, ...]],
+) -> Capability:
     if not _CAPABILITY_ID.fullmatch(name):
         raise CapabilityMapError(f"invalid capability id: {name!r}")
     value = _require_object(raw, context=f"capability {name!r}")
     _require_exact_keys(
-        value, expected=_CAPABILITY_KEYS, context=f"capability {name!r}"
+        value, expected=_CAPABILITY_KEYS, optional=frozenset({"platform-check"}),
+        context=f"capability {name!r}",
     )
+    platform_checks: tuple[FileReference, ...] = ()
+    if "platform-check" in value:
+        platform_checks = _capability_platform_checks(
+            value["platform-check"], shared_checks, repo_root=repo_root,
+            context=f"capability {name!r}.platform-check",
+        )
     entries = _reference_array(
         value["entry"],
         loader=_source_reference,
@@ -821,6 +911,7 @@ def _capability(name: str, raw: Any, *, repo_root: pathlib.Path) -> Capability:
         focused_tests=focused_tests,
         sentinels=sentinels,
         guards=guards,
+        platform_checks=platform_checks,
     )
 
 
@@ -853,6 +944,7 @@ def load_catalog(
     _require_exact_keys(
         value,
         expected=frozenset({"schema_version", "capabilities"}),
+        optional=frozenset({"shared-platform-checks"}),
         context="capability catalog",
     )
     if type(value["schema_version"]) is not int or value["schema_version"] != 1:
@@ -862,21 +954,36 @@ def load_catalog(
     )
     if not raw_capabilities:
         raise CapabilityMapError("capability catalog.capabilities cannot be empty")
+    raw_shared_checks = _require_object(
+        value.get("shared-platform-checks", {}), context="shared-platform-checks"
+    )
+    shared_checks = {}
+    for name, refs in raw_shared_checks.items():
+        if not _CAPABILITY_ID.fullmatch(name):
+            raise CapabilityMapError(f"invalid shared platform check name: {name!r}")
+        shared_checks[name] = _reference_array(
+            refs, loader=_platform_check, repo_root=root,
+            context=f"shared-platform-checks.{name}",
+        )
     capabilities = tuple(
-        _capability(name, raw_capabilities[name], repo_root=root)
+        _capability(name, raw_capabilities[name], repo_root=root, shared_checks=shared_checks)
         for name in sorted(raw_capabilities)
     )
     return CapabilityCatalog(capabilities=capabilities)
 
 
+def path_reference_payload(
+    reference: SourceReference | ContractReference | FileReference,
+) -> dict[str, str]:
+    if isinstance(reference, SourceReference):
+        return {"path": reference.path, "symbol": reference.symbol}
+    if reference.heading is not None:
+        return {"path": reference.path, "heading": reference.heading}
+    return {"path": reference.path}
+
+
 def capability_payload(capability: Capability) -> dict[str, Any]:
     """Return a stable JSON-ready navigation view without inferred behavior."""
-
-    def sources(values: tuple[SourceReference, ...]) -> list[dict[str, str]]:
-        return [{"path": item.path, "symbol": item.symbol} for item in values]
-
-    def contracts(values: tuple[ContractReference, ...]) -> list[dict[str, str]]:
-        return [{"path": item.path, "heading": item.heading} for item in values]
 
     def verification(
         values: tuple[VerificationReference, ...],
@@ -885,15 +992,20 @@ def capability_payload(capability: Capability) -> dict[str, Any]:
             {"runner": item.runner, "targets": list(item.targets)} for item in values
         ]
 
-    return {
+    payload = {
         "name": capability.name,
-        "entry": sources(capability.entries),
-        "owner": sources(capability.owners),
-        "contract": contracts(capability.contracts),
+        "entry": [path_reference_payload(item) for item in capability.entries],
+        "owner": [path_reference_payload(item) for item in capability.owners],
+        "contract": [path_reference_payload(item) for item in capability.contracts],
         "focused-test": verification(capability.focused_tests),
         "sentinel": verification(capability.sentinels),
         "guard": list(capability.guards),
     }
+    if capability.platform_checks:
+        payload["platform-check"] = [
+            path_reference_payload(item) for item in capability.platform_checks
+        ]
+    return payload
 
 
 def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -917,6 +1029,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         + sum(len(group.targets) for group in item.focused_tests)
         + sum(len(group.targets) for group in item.sentinels)
         + len(item.guards)
+        + len(item.platform_checks)
         for item in catalog.capabilities
     )
     print(

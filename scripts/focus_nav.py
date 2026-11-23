@@ -42,6 +42,7 @@ class VerificationTargetReference:
 ReviewedReference = (
     focus_capabilities.SourceReference
     | focus_capabilities.ContractReference
+    | focus_capabilities.FileReference
     | VerificationTargetReference
 )
 
@@ -66,6 +67,7 @@ _ROLE_ORDER = {
     "contract": 2,
     "focused-test": 3,
     "sentinel": 4,
+    "platform-check": 5,
 }
 
 
@@ -143,7 +145,7 @@ def _module_payload(neighborhood: ModuleNeighborhood) -> dict[str, Any]:
     }
 
 
-def _normalized_changed_paths(paths: Sequence[str]) -> tuple[str, ...]:
+def _normalized_paths(paths: Sequence[str]) -> tuple[str, ...]:
     normalized: list[str] = []
     for value in paths:
         if (
@@ -153,7 +155,7 @@ def _normalized_changed_paths(paths: Sequence[str]) -> tuple[str, ...]:
             or "\n" in value
             or "\r" in value
         ):
-            raise NavigationError("changed path must be a nonempty trimmed line")
+            raise NavigationError("path must be a nonempty trimmed line")
         relative = pathlib.PurePosixPath(value)
         if (
             relative.is_absolute()
@@ -165,12 +167,12 @@ def _normalized_changed_paths(paths: Sequence[str]) -> tuple[str, ...]:
             or relative.as_posix() != value
         ):
             raise NavigationError(
-                "changed path must be a normalized repository-relative POSIX path "
+                "path must be a normalized repository-relative POSIX path "
                 "without selectors or globs"
             )
         normalized.append(value)
     if len(set(normalized)) != len(normalized):
-        raise NavigationError("changed paths must not contain duplicates")
+        raise NavigationError("paths must not contain duplicates")
     return tuple(sorted(normalized))
 
 
@@ -185,6 +187,8 @@ def _reference_sort_key(reference: ReviewedReference) -> tuple[str, ...]:
         return (reference.path, "symbol", reference.symbol)
     if isinstance(reference, focus_capabilities.ContractReference):
         return (reference.path, "heading", reference.heading)
+    if isinstance(reference, focus_capabilities.FileReference):
+        return (reference.path, "file", reference.heading or "")
     return (reference.target, "runner", reference.runner)
 
 
@@ -199,7 +203,7 @@ def _match_sort_key(match: CapabilityPathMatch) -> tuple[Any, ...]:
 def _reference_location(
     reference: ReviewedReference, *, repo_root: pathlib.Path
 ) -> focus_capabilities.ReferenceLocation:
-    if isinstance(reference, focus_capabilities.SourceReference):
+    if isinstance(reference, (focus_capabilities.SourceReference, focus_capabilities.FileReference)):
         return focus_capabilities.source_reference_location(
             reference, repo_root=repo_root
         )
@@ -219,6 +223,7 @@ def _capability_references(
     references.extend(("entry", item) for item in capability.entries)
     references.extend(("owner", item) for item in capability.owners)
     references.extend(("contract", item) for item in capability.contracts)
+    references.extend(("platform-check", item) for item in capability.platform_checks)
     for role, groups in (
         ("focused-test", capability.focused_tests),
         ("sentinel", capability.sentinels),
@@ -231,6 +236,22 @@ def _capability_references(
     return tuple(references)
 
 
+def list_capabilities(
+    catalog: focus_capabilities.CapabilityCatalog, *, under: str | None = None
+) -> list[str]:
+    if under is None:
+        return [item.name for item in catalog.capabilities]
+    (prefix,) = _normalized_paths((under.removesuffix("/"),))
+    return [
+        item.name
+        for item in catalog.capabilities
+        if any(
+            pathlib.PurePosixPath(_reference_path(ref)).is_relative_to(prefix)
+            for _, ref in _capability_references(item)
+        )
+    ]
+
+
 def path_impacts(
     paths: Sequence[str],
     *,
@@ -240,7 +261,7 @@ def path_impacts(
 ) -> tuple[PathImpact, ...]:
     """Reverse-map explicit changed paths to reviewed refs without reading Git."""
 
-    normalized_paths = _normalized_changed_paths(paths)
+    normalized_paths = _normalized_paths(paths)
     root = pathlib.Path(repo_root)
     indexed: list[tuple[str, str, str, ReviewedReference]] = []
     for capability in catalog.capabilities:
@@ -284,11 +305,14 @@ def path_impacts(
 
 
 def _reference_payload(reference: ReviewedReference) -> dict[str, str]:
-    if isinstance(reference, focus_capabilities.SourceReference):
-        return {"path": reference.path, "symbol": reference.symbol}
-    if isinstance(reference, focus_capabilities.ContractReference):
-        return {"path": reference.path, "heading": reference.heading}
-    return {"runner": reference.runner, "target": reference.target}
+    if isinstance(reference, VerificationTargetReference):
+        return {"runner": reference.runner, "target": reference.target}
+    return focus_capabilities.path_reference_payload(reference)
+
+
+def _render_path_ref(value: dict[str, str]) -> str:
+    selector = value.get("symbol") or value.get("heading")
+    return f"{value['path']}#{selector}" if selector else value["path"]
 
 
 def _path_match_payload(match: CapabilityPathMatch) -> dict[str, Any]:
@@ -329,11 +353,10 @@ def _render_paths(impacts: Sequence[PathImpact]) -> str:
             lines.append("- (none)")
         for match in impact.matches:
             reference = _reference_payload(match.reference)
-            selector = reference.get("symbol") or reference.get("heading")
-            if selector is None:
+            if "runner" in reference:
                 rendered_ref = f"{reference['runner']}:{reference['target']}"
             else:
-                rendered_ref = f"{reference['path']}#{selector}"
+                rendered_ref = _render_path_ref(reference)
             location = ""
             if match.location is not None:
                 location = (
@@ -347,14 +370,13 @@ def _render_paths(impacts: Sequence[PathImpact]) -> str:
 def _render_capability(capability: focus_capabilities.Capability) -> str:
     payload = focus_capabilities.capability_payload(capability)
     lines = [f"capability: {capability.name}"]
-    for key in ("entry", "owner", "contract", "focused-test", "sentinel", "guard"):
+    for key, values in payload.items():
+        if key == "name":
+            continue
         lines.append(f"{key}:")
-        values = payload[key]
         for value in values:
-            if key in {"entry", "owner"}:
-                lines.append(f"- {value['path']}#{value['symbol']}")
-            elif key == "contract":
-                lines.append(f"- {value['path']}#{value['heading']}")
+            if key in {"entry", "owner", "contract", "platform-check"}:
+                lines.append(f"- {_render_path_ref(value)}")
             elif key in {"focused-test", "sentinel"}:
                 targets = ", ".join(value["targets"])
                 lines.append(f"- {value['runner']}: {targets}")
@@ -382,6 +404,9 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     list_parser = subparsers.add_parser("list", help="List reviewed capability ids.")
+    list_parser.add_argument(
+        "--under", metavar="PATH", help="Only capabilities with reviewed references at or below this path."
+    )
     list_parser.add_argument("--json", action="store_true", help="Emit stable JSON.")
 
     show_parser = subparsers.add_parser("show", help="Show one reviewed capability.")
@@ -405,7 +430,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     paths_parser.add_argument(
         "--locations",
         action="store_true",
-        help="Resolve matched selectors to current source line ranges.",
+        help="Locate matched declarations, Markdown sections, whole files and test targets.",
     )
     paths_parser.add_argument("--json", action="store_true", help="Emit stable JSON.")
     return parser.parse_args(list(argv))
@@ -424,7 +449,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         catalog = focus_capabilities.load_catalog()
         if args.command == "list":
-            names = [item.name for item in catalog.capabilities]
+            names = list_capabilities(catalog, under=args.under)
             if args.json:
                 print(json.dumps({"capabilities": names}, sort_keys=True))
             else:

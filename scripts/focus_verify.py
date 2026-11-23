@@ -239,7 +239,7 @@ def _parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Print the argv/cwd plan as JSON without executing it.",
+        help="Print the argv/cwd plan and any separate platform-check references as JSON.",
     )
     return parser.parse_args(list(argv))
 
@@ -257,14 +257,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (focus_capabilities.CapabilityMapError, VerificationError) as exc:
         print(f"Focus verification plan is invalid: {exc}", file=sys.stderr)
         return 2
+    platform_checks = dict.fromkeys(
+        ref
+        for name in sorted(set(args.capability))
+        for ref in catalog.require(name).platform_checks
+    )
     if args.dry_run:
-        print(
-            json.dumps(
-                {"commands": [command_payload(item) for item in commands]},
-                sort_keys=True,
-            )
-        )
+        plan = {"commands": [command_payload(item) for item in commands]}
+        if platform_checks:
+            plan["platform-check"] = [
+                focus_capabilities.path_reference_payload(ref) for ref in platform_checks
+            ]
+        print(json.dumps(plan, ensure_ascii=False, sort_keys=True))
         return 0
+    if platform_checks:
+        print("Platform checks to run separately for affected artifacts:", file=sys.stderr)
+        for ref in platform_checks:
+            print(f"  {ref.path}" + (f"#{ref.heading}" if ref.heading else ""), file=sys.stderr)
     return run_commands(commands)
 
 

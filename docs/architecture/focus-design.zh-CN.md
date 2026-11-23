@@ -356,6 +356,10 @@ Feishu execution page、terminal result、generated image、Web projection 和 d
   settings fence、settlement与history/card projection，所有mutable fact仍由既有runtime owner持有。
 - `web/src/focus/`：Focus-owned transport、projection、navigation/profile 与 mutation/action owner；通用 UI
   component 只消费 view projection。
+- `mobile/android/` 的 WebView 和 `mobile/harmony/` 的 ArkWeb 加载实例发布的同一份 Focus Web。
+  原生宿主管理实例入口、平台凭据、生命周期和设备能力。离线阅读器及批量更新管理页随 APK 和 HAP 分发。
+  两端共用的页面、脚本和离线 SQL 位于 `mobile/harmony/entry/src/main/resources/rawfile/`，Android 构建从此处打包。
+  [移动容器合同](../contracts/focus-mobile.zh-CN.md) · [按改动查实现与验证](../../mobile/README.md#移动端开发导航)
 - `docs/contracts/`：当前行为语义的正式来源。
 - `docs/architecture/`：当前 owner、层次、依赖与活跃债务。
 - `docs/decisions/`：设计理由；被取代的决策必须显著标记，不能冒充当前合同。
