@@ -138,6 +138,7 @@ from bot.web_runtime.prompt_submission import (
     WebPromptSubmissionPorts,
 )
 from bot.web_runtime.turn_window import MAX_TURN_WINDOW_LIMIT
+from bot.web_runtime.mobile_records import record_states
 from bot.web_runtime.prompt_timing import PromptTimingTrace
 from bot.web_runtime.writer_workspace_coordinator import (
     WebWriterWorkspaceCoordinator,
@@ -836,6 +837,9 @@ class WebRuntimeController:
             thread_id,
             intent_generation=intent_generation,
         )
+
+    def mobile_record_states(self, threads: list[str]) -> list[str]:
+        return record_states(threads, self._ports.read_thread, self._ports.capture_connection_generation)
 
     def close_thread(self, client_id: str, thread_id: str) -> dict[str, Any]:
         return self._thread_mutations.close_thread(client_id, thread_id)

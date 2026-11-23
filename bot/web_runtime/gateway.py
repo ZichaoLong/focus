@@ -205,6 +205,7 @@ class WebGatewayPorts:
     update_check: Callable[[str, str], dict[str, Any]] | None = None
     update_cancel: Callable[[str], dict[str, Any]] | None = None
     update_apply: Callable[[str, str], dict[str, Any]] | None = None
+    mobile_record_states: Callable[[list[str]], list[str]] | None = None
 
 
 class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,

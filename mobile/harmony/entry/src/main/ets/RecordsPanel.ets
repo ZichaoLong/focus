@@ -1,6 +1,7 @@
 import { webview } from '@kit.ArkWeb';
 import { common } from '@kit.AbilityKit';
 import { Site, sitePrefs } from './Sites';
+import { BatchCall, UpdateAgent } from './ServerUpdates';
 import { recordAllowed, recordCall } from './RecordsStore';
 
 export class ReaderControls {
@@ -17,7 +18,6 @@ class ReaderInit {
   sites: Site[] = [];
   entry: string = '';
   thread: string = '';
-  cold: boolean = false;
 }
 
 @Component
@@ -25,11 +25,18 @@ export struct RecordsPanel {
   sites: Site[] = [];
   entry: string = '';
   thread: string = '';
-  cold: boolean = false;
   activeEntry: string = '';
   controls: ReaderControls = new ReaderControls();
   action: (op: string, data: string) => void = () => {};
   private alive: boolean = true;
+  @StorageLink('focusForeground') @Watch('cancelCheck') private foreground: boolean = true;
+  @State private jobs: BatchCall[] = [];
+  private cancelCheck(): void { this.jobs=[]; }
+  private checked(job: BatchCall, value: string): void {
+    if (!this.alive || !this.foreground || this.jobs[0]?.id!==job.id) return;
+    this.jobs=[];
+    this.controls.controller.runJavaScript('window.focusRecordCheck?.('+JSON.stringify(job.id)+',JSON.parse('+JSON.stringify(value)+'))').catch(()=>{});
+  }
   private ctx(): common.UIAbilityContext { return getContext(this) as common.UIAbilityContext; }
   private local(address: string, file: string): boolean {
     return address==='resource://rawfile/'+file || address==='file://'+this.ctx().resourceDir+'/rawfile/'+file;
@@ -41,10 +48,19 @@ export struct RecordsPanel {
       const op = e.message.substring(10);
       if (op === 'init') {
         for (const site of this.sites) await recordCall(this.ctx(),site.id,site.origin,'register',{});
-        const init = new ReaderInit(); init.sites=this.sites; init.active=this.activeEntry; init.current=sitePrefs(this.ctx()).getSync('thread.'+this.activeEntry,'') as string; init.entry=this.entry; init.thread=this.thread; init.cold=this.cold;
+        const init = new ReaderInit(); init.sites=this.sites; init.active=this.activeEntry; init.current=sitePrefs(this.ctx()).getSync('thread.'+this.activeEntry,'') as string; init.entry=this.entry; init.thread=this.thread;
         e.result.handlePromptConfirm(JSON.stringify(init)); return;
       }
       const data = JSON.parse(e.value) as Record<string,string>;
+      if (op==='cancelcheck') { this.cancelCheck(); e.result.handlePromptConfirm('ok'); return; }
+      if (op==='verify') {
+        const job=JSON.parse(e.value) as BatchCall;
+        const site=this.sites.find((s: Site)=>s.id===data['entry']);
+        if (!site || !this.foreground) { e.result.handleCancel(); return; }
+        const states=JSON.parse(await recordCall(this.ctx(),site.id,site.origin,'status',{})) as Record<string,string>[];
+        if (!this.alive || !this.foreground || states[0]?.locked!=='0' || !/^[a-f0-9]{64}$/.test(job.body.scope) || states[0].scope!==job.body.scope) { e.result.handleCancel(); return; }
+        job.site=site.id; job.action='record-status'; this.jobs=[job]; e.result.handlePromptConfirm('ok'); return;
+      }
       if (op === 'action') {
         e.result.handlePromptConfirm('ok'); setTimeout(()=>{if(this.alive)this.action(data['op'],e.value);},0); return;
       }
@@ -55,6 +71,10 @@ export struct RecordsPanel {
   }
   aboutToDisappear(): void { this.alive=false; }
   build() {
+    Stack() {
+    ForEach(this.jobs,(job: BatchCall)=>{
+      UpdateAgent({site:this.sites.find((s: Site)=>s.id===job.site),call:job,finish:(value: string)=>this.checked(job,value)})
+    },(job: BatchCall)=>job.id)
     Web({src:$rawfile('records.html'), controller:this.controls.controller})
       .width('100%').height('100%').javaScriptAccess(true).domStorageAccess(false).fileAccess(false).mixedMode(MixedMode.None)
       .onLoadIntercept(e=>e.data.isMainFrame() && !this.local(e.data.getRequestUrl(),'records.html'))
@@ -64,5 +84,6 @@ export struct RecordsPanel {
         denied.setReasonMessage('Forbidden'); denied.setResponseMimeType('text/plain'); denied.setResponseEncoding('utf-8');
         return denied;
       }).onPrompt(e=>{void this.command(e); return true;})
+    }.width('100%').height('100%')
   }
 }

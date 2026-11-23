@@ -41,6 +41,26 @@ class WebGatewayThreadInspectionMixin:
             raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
         return response
 
+    async def _handle_mobile_record_status(self, request: web.Request) -> web.Response:
+        client = self._required_client_id(request)
+        body = await request_decoder.decode_json_object(request)
+        session = self._request_admission.session(request)
+        if body.get("scope") != session.mobile_read_scope:
+            raise WebRuntimeError("Mobile record scope changed.", code="record_scope_changed", status=409)
+        threads = body.get("threads")
+        if (set(body) != {"scope", "threads"} or request.query or not isinstance(threads, list)
+                or not 1 <= len(threads) <= 32
+                or any(not isinstance(t, str) or not t.isprintable() or not 1 <= len(t) <= 256 for t in threads)
+                or len(set(threads)) != len(threads)):
+            raise WebRuntimeError("Invalid mobile record query.", code="invalid_record_query", status=400)
+        if self._ports.mobile_record_states is None:
+            raise WebRuntimeError("Mobile record verification unavailable.", code="record_status_unavailable", status=503)
+        states = await self._document_request_to_thread(
+            self._ports.mobile_record_states, request, client, threads, pass_client_id=False,
+        )
+        self._required_client_id(request)
+        return self._json_response({"scope": session.mobile_read_scope, "states": states}, headers={"Cache-Control": "no-store"})
+
     async def _handle_mobile_records(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         query = request_decoder.decode_transcript_query(request.query)

@@ -29,7 +29,10 @@ export struct InstancePane {
   private site: Site = new Site();
   @State private reader: boolean = false;
   private readerThread: string = '';
-  private coldReader: boolean = false;
+  @State private opening: boolean = true;
+  @State private connectionFailed: boolean = false;
+  private firstScreen: string = 'true';
+  private screenTimer: number = -1;
   private recordScopeConfirmed: boolean = false;
   private readerControls: ReaderControls = new ReaderControls();
   private leaving: boolean = false;
@@ -72,25 +75,24 @@ export struct InstancePane {
     this.source = this.probeUrl();
     this.link = this.tab.link;
     this.tab.link = '';
-    this.tab.read = (thread: string) => { this.readerThread=thread; this.coldReader=false; this.reader=true; };
+    this.tab.read = (thread: string) => { this.readerThread=thread; this.reader=true; };
     if(this.tab.readerThread) this.tab.read(this.tab.readerThread);
-    else void this.restoreRecord();
+    void recordCall(this.ctx(),this.site.id,this.site.origin,'register',{}).catch(()=>{});
+    this.firstScreen=util.TextDecoder.create('utf-8').decodeToString(this.ctx().resourceManager.getRawFileContentSync('first-screen.js'));
     this.tab.back = () => this.back();
     this.tab.park = () => this.leave();
     this.awaitWebSwitcher();
   }
 
-  private async restoreRecord(): Promise<void> {
-    const site=this.site;
-    try {
-      await recordCall(this.ctx(),site.id,site.origin,'register',{});
-      const thread=sitePrefs(this.ctx()).getSync('thread.'+site.id,'') as string;
-      const query: Record<string,string> = {}; query['thread']=thread;
-      if (!this.link && thread && await recordCall(this.ctx(),site.id,site.origin,'book',query) !== '[]'
-        && this.active && !this.gone && !this.ticket) {
-        this.readerThread=thread; this.coldReader=true; this.reader=true;
-      }
-    } catch { /* Reading storage is optional. */ }
+  private openSavedRecords(): void {
+    this.tab.read(sitePrefs(this.ctx()).getSync('thread.'+this.site.id,'') as string);
+  }
+  private async revealScreen(epoch: number): Promise<void> {
+    if (!this.opening || this.gone || epoch!==this.epoch || this.phase!=='page' || this.needsNetwork) return;
+    const ready=await this.controller.runJavaScript(this.firstScreen).catch(()=>'false');
+    if (this.gone || epoch!==this.epoch || this.needsNetwork) return;
+    if (ready==='true') { this.opening=false; this.connectionFailed=false; return; }
+    clearTimeout(this.screenTimer); this.screenTimer=setTimeout(()=>{void this.revealScreen(epoch);},150);
   }
 
   private readerAction(op: string, data: string): void {
@@ -107,20 +109,20 @@ export struct InstancePane {
       if (!this.foreground) { e.result.handleCancel(); return; }
       const data=JSON.parse(e.value) as Record<string,string>;
       if (op==='show') {
-        this.readerThread=data['thread']; this.coldReader=false; this.reader=true;
+        this.readerThread=data['thread']; this.reader=true;
       } else if (op==='ready' || op==='result') {
         data['event']=op; if(this.reader)this.readerControls.notify(JSON.stringify(data));
       } else if (op==='bookmark' && this.reader) {
         e.result.handlePromptConfirm('[]'); return;
       } else {
-        if (!recordAllowed(false,op) || (data['thread'] && op!=='closed' && op!=='revert' &&
+        if (!recordAllowed(false,op) || (data['thread'] && op!=='lifecycle' && op!=='closed' && op!=='revert' &&
           data['thread']!==sitePrefs(this.ctx()).getSync('thread.'+this.site.id,''))) { e.result.handleCancel(); return; }
         const ticket=this.ticket;
         const result=await recordCall(this.ctx(),this.site.id,this.site.origin,op,data,()=>
           this.active && this.foreground && !this.gone && !this.leaving && epoch===this.epoch && this.ticket===ticket);
         e.result.handlePromptConfirm(result);
         if (op==='auth') this.recordScopeConfirmed=true;
-        if (this.reader && (op==='closed' || op==='revert')) {
+        if (this.reader && (op==='lifecycle' || op==='closed' || op==='revert')) {
           data['event']=op; this.readerControls.notify(JSON.stringify(data));
         }
         if(this.reader && (op==='auth' || op==='lock' || op==='revoke')) this.readerControls.notify('{"event":"access"}');
@@ -176,7 +178,7 @@ export struct InstancePane {
 
   private unavailable(message: string): void {
     this.setNativeSwitcher(true);
-    this.needsNetwork = true; this.message = message;
+    this.needsNetwork = true; this.connectionFailed = true; this.opening=true; this.message = message;
     clearTimeout(this.retry);
     if (this.active && this.foreground) {
       this.retry = setTimeout(() => this.start(), this.delay);
@@ -206,7 +208,7 @@ export struct InstancePane {
       'const url=new URL(location.href);if(!url.searchParams.has("focusApp") && !url.searchParams.has("print") && !url.hash){' +
       'url.searchParams.set("focusApp","1");location.replace(url.href)}else{' +
       'window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
-      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer","navigation","records-v1"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
+      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer","navigation","records-v1","record-states"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
     this.controller.runJavaScript(script).catch(() => {});
   }
 
@@ -431,14 +433,14 @@ export struct InstancePane {
     }).catch(() => { if (this.pendingBack === press) this.pendingBack = 0; });
   }
   aboutToDisappear(): void {
-    this.gone = true; this.epoch++; clearTimeout(this.retry); clearTimeout(this.switcherTimer);
+    clearTimeout(this.screenTimer); this.gone = true; this.epoch++; clearTimeout(this.retry); clearTimeout(this.switcherTimer);
     this.handler?.cancel(); this.files.cancel();
   }
 
   @Builder
   pageWeb(epoch: number) {
     Web({ src: this.source, controller: this.controller })
-      .width('100%').layoutWeight(1).javaScriptAccess(this.phase === 'page')
+      .width('100%').height('100%').javaScriptAccess(this.phase === 'page')
       .domStorageAccess(this.phase === 'page').fileAccess(false).mixedMode(MixedMode.None)
       .onLoadIntercept(e => this.intercept(e.data, epoch))
       .onInterceptRequest(e => {
@@ -461,7 +463,7 @@ export struct InstancePane {
       })
       .onPageEnd(e => {
         if (epoch !== this.epoch || this.gone || this.needsNetwork) return;
-        if (this.phase === 'page') this.offer(e.url);
+        if (this.phase === 'page') { this.offer(e.url); void this.revealScreen(epoch); }
         else if (e.url === this.probeUrl() && (this.phase === 'verified' && this.attempted
           || this.phase === 'probe' && this.challengedRealm === undefined)) void this.enterPage(epoch);
         else if (this.phase === 'probe' && this.challengedRealm !== undefined)
@@ -517,10 +519,19 @@ export struct InstancePane {
           }
         }.padding(12)
       }
-      ForEach([this.epoch], (epoch: number) => { this.pageWeb(epoch) }, (epoch: number) => String(epoch))
+      Stack() {
+        ForEach([this.epoch], (epoch: number) => { this.pageWeb(epoch) }, (epoch: number) => String(epoch))
+        if (this.opening) {
+          Column({space:12}) {
+            Text(this.connectionFailed ? '暂时无法连接「'+this.site.name+'」' : '正在打开「'+this.site.name+'」…')
+            if (this.connectionFailed) { Button('立即重试').onClick(()=>this.start()) }
+            Button('查看离线副本').onClick(()=>this.openSavedRecords())
+          }.width('100%').height('100%').justifyContent(FlexAlign.Center).backgroundColor($r('sys.color.ohos_id_color_background'))
+        }
+      }.width('100%').layoutWeight(1)
     }.width('100%').height('100%')
     if(this.reader) {
-      RecordsPanel({sites:[this.site],entry:this.site.id,thread:this.readerThread,cold:this.coldReader,
+      RecordsPanel({sites:[this.site],entry:this.site.id,thread:this.readerThread,
         controls:this.readerControls,action:(op: string,data: string)=>this.readerAction(op,data)})
     }
     }.width('100%').height('100%')

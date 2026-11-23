@@ -2,7 +2,9 @@
 import argparse
 import asyncio
 from contextlib import asynccontextmanager
+from hashlib import sha256
 import json
+import shlex
 import subprocess
 from pathlib import Path
 import time
@@ -11,7 +13,7 @@ from xml.sax.saxutils import escape
 
 import aiohttp
 
-from android_tabs_smoke import pick
+from android_tabs_smoke import pick, switch, tab
 from android_webview_smoke import ACTIVITY, PACKAGE, attach, emulator_adb, evaluate, launch, wait_for
 
 
@@ -62,6 +64,30 @@ def click(label):
     return "[...document.querySelectorAll('button')].find(n=>n.textContent.includes(" + json.dumps(label) + "))?.click()"
 
 
+async def assert_online_only(session, port):
+    async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
+        assert all(page["url"] != "file:///android_asset/records.html" for page in await response.json())
+
+
+async def check_server_cleanup(adb, local, site):
+    for thread in ("fixture-external-gone", "fixture-archived"):
+        key = sha256(thread.encode()).hexdigest()
+        sql = ("INSERT INTO books(site,thread,key,title,touched) VALUES("
+               f"'{site['id']}|{site['origin']}','{thread}','{key}','{thread}',{int(time.time()*1000)})")
+        adb("shell", shlex.join(["run-as", PACKAGE, "sqlite3", "databases/offline-records-v1.db", sql]))
+    await evaluate(local, click("选择要清理的离线记录"))
+    for label, thread in (("服务端已找不到", "fixture-external-gone"), ("已归档", "fixture-archived")):
+        await wait_for(local, "[...document.querySelectorAll('details[open]')].some(d=>"
+                       f"d.querySelector('summary').textContent.includes({json.dumps(label)}) && "
+                       f"d.querySelector('input[aria-label={thread}]')?.checked)")
+    await evaluate(local, click("清理所选 2 条"))
+    await wait_for(local, "document.querySelector('.confirm')?.innerText.includes('最后一份')")
+    await evaluate(local, click("确认清理"))
+    await wait_for(local, "document.querySelector('#status').innerText.includes('已清理 2 条')")
+    assert await evaluate(local, "document.querySelectorAll('.entry').length") == 1
+    print("Verified external deletion and archive twice through the entry profile; current copy retained", flush=True)
+
+
 async def open_reader(live):
     button = "[...document.querySelectorAll('.records-shortcut')].find(el=>el.offsetHeight)"
     if not await evaluate(live,"!!"+button):
@@ -86,6 +112,7 @@ async def smoke(args):
             await wait_for(live,"!!document.querySelector('textarea:not(:disabled)')")
             await evaluate(live, "location.assign('/?focusApp=1&thread=thread-1')")
             await wait_for(live,"!!document.querySelector('textarea:not(:disabled)') && location.search.includes('thread-1') && !!window.__focusMobile")
+            await assert_online_only(session, port)
             await open_reader(live)
             async with panel(session,adb) as local:
                 await wait_for(local,"!!document.querySelector('input[type=checkbox]')")
@@ -98,6 +125,7 @@ async def smoke(args):
                 print("online capture:",await evaluate(local,"document.querySelector('#status').textContent"),flush=True)
                 await evaluate(local,click('线程列表'))
                 print("stored:",await evaluate(local,"document.querySelector('.entry small').innerText"),flush=True)
+                await check_server_cleanup(adb, local, site)
             adb("shell","am","force-stop",PACKAGE)
         finally:
             await live.close()
@@ -107,6 +135,7 @@ async def smoke(args):
             await asyncio.sleep(1)
             started=time.monotonic()
             launch(adb)
+            await pick(adb,"查看离线副本")
             async with panel(session,adb) as local:
                 await wait_for(local,"document.querySelectorAll('[data-item]').length>0")
                 print(f"offline cold start until readable: {time.monotonic()-started:.2f}s",flush=True)
@@ -122,6 +151,7 @@ async def smoke(args):
                 print("earliest item after force-stop with airplane mode enabled",flush=True)
             adb("shell","am","force-stop",PACKAGE)
             launch(adb)
+            await pick(adb,"查看离线副本")
             async with panel(session,adb) as local:
                 await wait_for(local,"document.body?.innerText.includes('site-1 question 0')")
                 print("offline reading position restored",flush=True)
@@ -170,7 +200,18 @@ async def smoke(args):
             port,live=await attach(session,adb,sites[0]["origin"])
             try:
                 await wait_for(live,"!!document.querySelector('textarea:not(:disabled)') && document.body.innerText.includes('right reply')")
+                await assert_online_only(session, port)
                 print(f"Basic instance cold start to online composer: {time.monotonic()-started:.2f}s",flush=True)
+                document = await evaluate(live, "performance.timeOrigin")
+                await switch(live, adb, site["origin"])
+                async with tab(session, adb, site["origin"]) as other:
+                    await wait_for(other, "document.querySelector('.focus-shell')?.dataset.firstScreen==='ready'")
+                    await assert_online_only(session, port)
+                    await switch(other, adb, sites[0]["origin"])
+                await wait_for(live, "document.visibilityState==='visible' && !!document.querySelector('textarea:not(:disabled)')")
+                assert await evaluate(live, "performance.timeOrigin") == document
+                await assert_online_only(session, port)
+                print("Drawer switched cold and resumed the same online document without an offline WebView", flush=True)
                 await open_reader(live)
                 async with panel(session,adb) as local:
                     await wait_for(local,"document.body?.innerText.includes('已完整保存')")
@@ -183,6 +224,8 @@ async def smoke(args):
                     await evaluate(local,click('选择要清理的离线记录'))
                     await wait_for(local,"document.body.innerText.includes('没有符合条件的旧线程')")
                     await evaluate(local,"const f=document.querySelector('select[aria-label=记录范围]'); f.value='all'; f.dispatchEvent(new Event('change')); true")
+                    await wait_for(local,"!!document.querySelector('details summary')")
+                    await evaluate(local,"document.querySelector('details summary').click()")
                     await wait_for(local,"!!document.querySelector('.candidate input')")
                     await evaluate(local,"document.querySelector('.candidate input').click()")
                     await evaluate(local,click('清理所选 1 条'))

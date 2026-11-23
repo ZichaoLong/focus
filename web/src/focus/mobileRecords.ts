@@ -1,5 +1,5 @@
 import { watch } from 'vue';
-import { mobileRecords } from '../lib/mobileHost';
+import { hasMobileFeature, mobileRecords } from '../lib/mobileHost';
 import type { ChatTurn } from '../types';
 import type { FocusWebApiPort } from './api';
 import { FocusApiError, type FocusProjectionEvent, type FocusThreadSnapshot } from './types';
@@ -275,8 +275,13 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
     event(e: FocusProjectionEvent) {
       if (e.type === 'session_expired' && e.reason === 'session_revoked') mobileRecords('revoke',{scope:api.mobileReadScope});
       if (!e.thread_id) return;
-      if (['thread/closed','thread/archived','thread/deleted','web_thread_closed'].includes(e.reason ?? ''))
-        mobileRecords('closed',{thread:e.thread_id});
+      const reason = e.reason;
+      if (reason && ['thread/closed','thread/archived','thread/deleted','web_thread_closed','web_thread_opened','thread/unarchived'].includes(reason)) {
+        const state = reason.replace('thread/', '').replace('web_thread_', '');
+        if (hasMobileFeature('record-states')) mobileRecords('lifecycle',{thread:e.thread_id,reason:state,scope:api.mobileReadScope});
+        else if (['archived','closed','deleted'].includes(state)) mobileRecords('closed',{thread:e.thread_id});
+        if (e.thread_id === ctx.selected() && ['archived','closed','deleted'].includes(state)) stop();
+      }
       if (e.reason === 'thread/reverted' || e.reason === 'web_thread_revert_unconfirmed') {
         mobileRecords('revert',{thread:e.thread_id});
         if (e.thread_id === ctx.selected()) { stop(); pending = null; schedule(500); }

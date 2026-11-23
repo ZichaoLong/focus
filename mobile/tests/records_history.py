@@ -1,10 +1,25 @@
 """Paginated upstream fixture for force-stop and offline reader acceptance."""
 
+from dataclasses import replace
+
 from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
+from bot.codex_protocol.client import CodexRpcError
 
 
 def install_record_history(fake, instance: int) -> None:
     fake.history_mode = "paginated"
+    read_thread = fake.read_thread
+
+    def read(thread_id, include_turns, **options):
+        if thread_id == "fixture-external-gone":
+            raise CodexRpcError("thread/read", {"message": f"thread not loaded: {thread_id}"})
+        if thread_id == "fixture-archived":
+            snapshot = read_thread("thread-1", include_turns, **options)
+            return replace(snapshot, summary=replace(snapshot.summary, thread_id=thread_id,
+                           path=f"/data/archived_sessions/{thread_id}"))
+        return read_thread(thread_id, include_turns, **options)
+
+    fake.read_thread = read
     turns = [
         {"id": f"turn-{n}", "status": "completed", "items": [
             {"type": "userMessage", "id": f"q-{n}", "content": [{"type": "text", "text": f"site-{instance} question {n}"}]},

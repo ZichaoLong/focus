@@ -3,7 +3,7 @@ import { webview } from '@kit.ArkWeb';
 import { url } from '@kit.ArkTS';
 import { Site, savedLogin, basicRealm, sitePrefs } from './Sites';
 
-class BatchCall {
+export class BatchCall {
   id: string = '';
   action: string = '';
   site: string = '';
@@ -32,7 +32,7 @@ function denied(): WebResourceResponse {
 }
 
 @Component
-struct UpdateAgent {
+export struct UpdateAgent {
   site: Site = new Site();
   call: BatchCall = new BatchCall();
   finish: (result: string) => void = () => {};
@@ -99,8 +99,9 @@ struct UpdateAgent {
     if (req.isMainFrame()) return this.address() === address;
     if (this.phase !== 'agent') return false;
     if (req.getRequestMethod() === 'GET') return address.startsWith(this.site.origin + '/assets/') ||
-      address === this.site.origin + '/api/update/installation';
+      (this.call.action !== 'record-status' && address === this.site.origin + '/api/update/installation');
     return req.getRequestMethod() === 'POST' && (address === this.site.origin + '/api/client/register' ||
+      (this.call.action === 'record-status' && address === this.site.origin + '/api/mobile/record-status') ||
       (this.call.action === 'prepare' && address === this.site.origin + '/api/update/prepare-latest') ||
       (this.call.action === 'apply' && address === this.site.origin + '/api/update/apply'));
   }

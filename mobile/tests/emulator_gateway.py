@@ -72,7 +72,7 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
             controller.run_prepared_thread_read(controller.prepare_read_thread("tab-1", tid, open_in_browser=True))
         ports = {field.name: getattr(controller, field.name) for field in fields(WebGatewayPorts)
                  if field.default is MISSING and hasattr(controller, field.name)}
-        ports.update(data_retention_read=retention.policy, data_retention_update=retention.update,
+        ports.update(mobile_record_states=controller.mobile_record_states, data_retention_read=retention.policy, data_retention_update=retention.update,
                      operator_status=lambda: {"status": "ok", "warnings": [], "observed_at": time.time(),
                                                "runtime_loop": {}, "poll_after_seconds": 15},
                      backend_reset_preview=lambda: {}, backend_reset_execute=lambda **_: {},

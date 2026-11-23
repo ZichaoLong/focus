@@ -110,8 +110,9 @@ final class UpdateConnection {
 
     private boolean allowed(Uri uri, String method) {
         String path = uri.getPath();
-        if ("GET".equals(method)) return path.startsWith("/assets/") || path.equals("/api/update/installation");
+        if ("GET".equals(method)) return path.startsWith("/assets/") || (!call.optString("action").equals("record-status") && path.equals("/api/update/installation"));
         return "POST".equals(method) && (path.equals("/api/client/register") ||
+            (call.optString("action").equals("record-status") && path.equals("/api/mobile/record-status")) ||
             (call.optString("action").equals("prepare") && path.equals("/api/update/prepare-latest")) ||
             (call.optString("action").equals("apply") && path.equals("/api/update/apply")));
     }

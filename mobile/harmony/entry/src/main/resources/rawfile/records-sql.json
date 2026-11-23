@@ -8,7 +8,7 @@
     "CREATE INDEX IF NOT EXISTS runs_site ON runs(site,thread)"
   ],
   "register": ["INSERT OR IGNORE INTO sites(site) VALUES(:site)"],
-  "status": ["?SELECT enabled, locked, fence,note FROM sites WHERE site=:site"],
+  "status": ["?SELECT enabled, locked, fence,note,CASE WHEN locked THEN '' ELSE scope END AS scope FROM sites WHERE site=:site"],
   "auth": [
     "!SELECT 1 FROM sites WHERE site=:site AND length(:scope)=64",
     "DELETE FROM books WHERE site=:site AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND scope<>:scope)",
@@ -55,16 +55,21 @@
     "UPDATE books SET live=:body,livebytes=length(CAST(:body AS BLOB)) WHERE site=:site AND thread=:thread AND NOT closed AND :run IN (building,visible) AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER))"],
   "bookmark": ["UPDATE books SET anchor=:anchor,touched=:now WHERE site=:site AND thread=:thread AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND NOT locked)"],
   "touch": ["UPDATE books SET touched=:now WHERE site=:site AND thread=:thread"],
-  "closed": ["UPDATE books SET closed=1,building='' WHERE site=:site AND thread=:thread","@sweep"],
+  "closed": ["UPDATE books SET closed=CASE WHEN closed=0 THEN 1 ELSE closed END,building='' WHERE site=:site AND thread=:thread","@sweep"],
+  "lifecycle": [
+    "UPDATE books SET closed=CASE :reason WHEN 'deleted' THEN 4 WHEN 'archived' THEN 3 WHEN 'closed' THEN CASE WHEN closed IN (3,4) THEN closed ELSE 2 END ELSE 0 END,building='' WHERE site=:site AND thread=:thread AND :reason IN ('deleted','archived','closed','opened','unarchived') AND (closed<>4 OR :reason IN ('opened','unarchived')) AND (closed<>0 OR :reason NOT IN ('opened','unarchived')) AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND NOT locked AND scope=:scope AND length(:scope)=64)",
+    "@sweep"
+  ],
+  "checklock": ["UPDATE sites SET locked=1,fence=fence+1 WHERE site=:site AND scope=:scope AND fence=CAST(:fence AS INTEGER) AND NOT locked"],
   "revert": ["DELETE FROM books WHERE site=:site AND thread=:thread","UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"],
   "list": ["?SELECT b.thread,b.key,b.title,b.touched,b.closed,r.complete,r.stamp,r.bytes+b.livebytes AS bytes FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND NOT s.locked ORDER BY b.touched DESC"],
   "book": ["?SELECT b.thread,b.title,b.anchor,b.live,r.run,r.edge,r.seq,r.bytes,r.complete,r.stamp FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND b.thread=:thread AND NOT s.locked"],
   "chunk": ["?SELECT c.body FROM chunks c JOIN books b ON b.visible=c.run JOIN sites s USING(site) WHERE b.site=:site AND b.thread=:thread AND NOT s.locked AND c.run=:run AND c.seq=CAST(:seq AS INTEGER)"],
   "candidates": [
-    "?SELECT b.key || '.' || b.touched || '.' || (b.thread=:reading) AS choice, s.fence,s.locked,(b.thread=:reading) AS reading, CASE WHEN s.locked THEN '' ELSE b.title END AS title, b.touched,b.closed,COALESCE(v.complete,-1) AS complete, COALESCE((SELECT SUM(bytes) FROM runs r WHERE r.site=b.site AND r.thread=b.thread),0)+b.livebytes AS bytes FROM books b JOIN sites s USING(site) LEFT JOIN runs v ON v.run=b.visible WHERE b.site=:site AND (:mode='all' OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER)))) ORDER BY b.touched,b.key"
+    "?SELECT b.key || '.' || b.touched || '.' || b.closed || '.' || (b.thread=:reading) AS choice, s.fence,s.locked,(b.thread=:reading) AS reading, CASE WHEN s.locked THEN '' ELSE b.thread END AS thread, CASE WHEN s.locked THEN '' ELSE b.title END AS title, b.touched,b.closed,COALESCE(v.complete,-1) AS complete, COALESCE((SELECT SUM(bytes) FROM runs r WHERE r.site=b.site AND r.thread=b.thread),0)+b.livebytes AS bytes FROM books b JOIN sites s USING(site) LEFT JOIN runs v ON v.run=b.visible WHERE b.site=:site AND (:mode='all' OR (:mode='review' AND b.thread<>:reading) OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER)))) ORDER BY b.touched,b.key"
   ],
   "cleanselected": [
-    "INSERT OR IGNORE INTO removed SELECT b.site,b.key FROM books b JOIN sites s USING(site) WHERE b.site=:site AND s.fence=CAST(:fence AS INTEGER) AND s.locked=CAST(:locked AS INTEGER) AND instr(:choices, ',' || b.key || '.' || b.touched || '.' || (b.thread=:reading) || ',')>0 AND (:mode='all' OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER))))",
+    "INSERT OR IGNORE INTO removed SELECT b.site,b.key FROM books b JOIN sites s USING(site) WHERE b.site=:site AND s.fence=CAST(:fence AS INTEGER) AND s.locked=CAST(:locked AS INTEGER) AND instr(:choices, ',' || b.key || '.' || b.touched || '.' || b.closed || '.' || (b.thread=:reading) || ',')>0 AND (:mode='all' OR (:mode='review' AND b.thread<>:reading) OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER))))",
     "DELETE FROM books WHERE site=:site AND key IN (SELECT key FROM removed WHERE site=:site) AND instr(:choices, ',' || key || '.')>0",
     "?SELECT changes() AS removed",
     "UPDATE sites SET fence=fence+1 WHERE site=:site AND changes()>0",

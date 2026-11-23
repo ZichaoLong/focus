@@ -14,8 +14,8 @@ import java.util.regex.Pattern;
 /** Private, cross-process SQLite store. Only packaged statement names are executable. */
 final class RecordsStore extends SQLiteOpenHelper {
     private static final Pattern PARAM = Pattern.compile(":([a-z]+)");
-    private static final String LIVE = " auth lock revoke note touch capture checkpoint start write finish live bookmark closed revert allow ";
-    private static final String LOCAL = " status enable list book chunk bookmark touch candidates cleanselected allow ";
+    private static final String LIVE = " auth lock revoke note touch capture checkpoint start write finish live bookmark closed lifecycle revert allow ";
+    private static final String LOCAL = " status checklock enable list book chunk bookmark touch candidates cleanselected allow ";
     private final JSONObject commands;
 
     RecordsStore(Context context) {

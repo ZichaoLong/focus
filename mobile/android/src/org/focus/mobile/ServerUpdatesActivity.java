@@ -1,13 +1,11 @@
 package org.focus.mobile;
 
 import android.app.Activity;
-import android.app.ActivityManager;
 import android.content.*;
 import android.os.*;
 import android.webkit.*;
 import android.widget.FrameLayout;
 import java.io.ByteArrayInputStream;
-import java.util.UUID;
 import org.json.*;
 
 /** The bundled manager is the only document with access to the local entry list. */
@@ -18,10 +16,9 @@ public final class ServerUpdatesActivity extends Activity {
     private JSONArray sites;
     private SharedPreferences state;
     private WebView panel;
-    private UpdateConnection connection;
+    private ProfileConnection connection;
     private String pending = "";
     private boolean foreground;
-    private Intent legacy;
 
     @Override public void onCreate(Bundle bundle) {
         super.onCreate(bundle);
@@ -89,49 +86,17 @@ public final class ServerUpdatesActivity extends Activity {
         call.getJSONObject("body");
         if (!id.matches("[a-f0-9]{32}") || !(action.equals("status") || action.equals("prepare") || action.equals("apply"))) return "";
         pending = id;
-        main.post(() -> { if (pending.equals(id) && foreground) start(entry,call,id); });
+        main.post(() -> {
+            if (pending.equals(id) && foreground) {
+                connection=new ProfileConnection(this, result -> reply(id,result)); connection.start(entry,call);
+            }
+        });
         return "ok";
-    }
-
-    private void start(JSONObject entry, JSONObject call, String id) {
-        try {
-            String key = UUID.fromString(entry.getString("id")).toString();
-            boolean named = getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + key,false);
-            if (!ProfileTransfer.namedProfiles() || (!named && ProfileTransfer.legacyDirectory(this,key).isDirectory())) {
-                if (named) { reply(id,UpdateConnection.error("请更新系统 WebView 以使用此实例的网页配置")); return; }
-                startLegacyAfterExit(entry,call,id,SystemClock.elapsedRealtime()+8000); return;
-            }
-            connection = new UpdateConnection(this,entry,call,true,result -> reply(id,result));
-            connection.start();
-        } catch (Exception e) { reply(id,UpdateConnection.error("无法打开实例的网页配置")); }
-    }
-
-    private void startLegacyAfterExit(JSONObject entry, JSONObject call, String id, long deadline) {
-        if (!foreground || !id.equals(pending)) return;
-        ActivityManager manager = getSystemService(ActivityManager.class);
-        for (ActivityManager.RunningAppProcessInfo p : manager.getRunningAppProcesses()) {
-            if (p.uid == android.os.Process.myUid() && (p.processName.equals(getPackageName()+":legacy") ||
-                p.processName.equals(getPackageName()+":updateLegacy"))) {
-                if (SystemClock.elapsedRealtime() >= deadline) reply(id,UpdateConnection.error("旧网页配置仍在释放，请重试"));
-                else main.postDelayed(() -> startLegacyAfterExit(entry,call,id,deadline),100);
-                return;
-            }
-        }
-        ResultReceiver receiver = new ResultReceiver(main) {
-            @Override protected void onReceiveResult(int code, Bundle data) {
-                reply(id,data.getString("result",UpdateConnection.error("无法连接入口")));
-            }
-        };
-        legacy = new Intent(this,LegacyUpdateService.class).putExtra("site",entry.toString())
-            .putExtra("call",call.toString()).putExtra("reply",receiver);
-        startService(legacy);
-        main.postDelayed(() -> { if (id.equals(pending)) reply(id,UpdateConnection.error("暂时无法读取实例状态")); },80000);
     }
 
     private void reply(String id, String value) {
         if (!id.equals(pending) || !foreground) return;
         pending = ""; main.removeCallbacksAndMessages(null); connection = null;
-        if (legacy != null) { stopService(legacy); legacy = null; }
         panel.evaluateJavascript("window.focusBatchResult?.(" + JSONObject.quote(id) +
             ",JSON.parse(" + JSONObject.quote(value) + "))",null);
     }
@@ -142,7 +107,6 @@ public final class ServerUpdatesActivity extends Activity {
     @Override protected void onPause() {
         foreground = false; pending = ""; main.removeCallbacksAndMessages(null);
         if (connection != null) { connection.close(); connection = null; }
-        if (legacy != null) { stopService(legacy); legacy = null; }
         if (panel != null) panel.evaluateJavascript("window.focusBatchActive?.(false)",null);
         super.onPause();
     }

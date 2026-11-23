@@ -121,7 +121,7 @@ def main():
         with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("assets/focus-source-revision.txt", source_id)
             archive.write(work / "classes.dex", "classes.dex")
-            for asset in ("server-updates.html", "server-updates.js", "records.html", "records.js", "records-sql.json"):
+            for asset in ("server-updates.html", "server-updates.js", "first-screen.js", "records.html", "records.js", "records-sql.json"):
                 archive.write(MANAGER_ASSETS / asset, "assets/" + asset)
             archive.writestr("META-INF/androidx/webkit/LICENSE.txt", license_text)
         result = build / (name + ".apk")

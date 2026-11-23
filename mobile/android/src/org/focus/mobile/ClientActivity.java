@@ -42,6 +42,11 @@ public class ClientActivity extends Activity {
     private ApkUpdate apkUpdate;
     private RecordsStore records;
     private RecordsPanel reader;
+    private LinearLayout opening;
+    private TextView openingMessage;
+    private Button retryEntry, savedRecords;
+    private String firstScreen;
+    private boolean checkingScreen;
     private boolean recordScopeConfirmed, basicIdentityChanged;
     private FrameLayout surface;
     private String switchTarget = "";
@@ -77,11 +82,12 @@ public class ClientActivity extends Activity {
             String requested = new JSONObject(getIntent().getStringExtra("site")).optString("recordThread");
             records = new RecordsStore(this);
             records.call("register",id,origin,new JSONObject());
-            String previous = requested.isEmpty() ? presentation.getString("thread","") : requested;
-            if ((link == null || link.isEmpty()) && !previous.isEmpty()
-                    && !records.call("book",id,origin,new JSONObject().put("thread",previous)).equals("[]"))
-                openRecords(previous,requested.isEmpty());
+            if (!requested.isEmpty()) openRecords(requested);
         } catch (Exception unavailable) { /* The online client works without a readable disk. */ }
+        try (java.util.Scanner scanner=new java.util.Scanner(getAssets().open("first-screen.js"),"UTF-8").useDelimiter("\\A")) {
+            firstScreen=scanner.next();
+        } catch (java.io.IOException missing) { firstScreen="true"; }
+        showOpening();
         if (!legacy && !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) {
             if (ProfileTransfer.snapshot(this, id).getBaseFile().exists()) { importProfile(); return; }
             getSharedPreferences("instances", MODE_PRIVATE).edit().putBoolean("named-" + id, true).commit();
@@ -133,16 +139,59 @@ public class ClientActivity extends Activity {
         if (action != null) Views.button(this, notice, action, click);
     }
 
+    private void showOpening() {
+        if (opening != null) return;
+        opening = Views.column(this);
+        opening.setGravity(Gravity.CENTER);
+        opening.setBackgroundColor(new ManagerStyle(this).canvas);
+        openingMessage = new TextView(this);
+        openingMessage.setText("正在打开「" + name + "」…");
+        opening.addView(openingMessage);
+        retryEntry = Views.button(this, opening, "立即重试", () -> openProbe(false));
+        savedRecords = Views.button(this, opening, "查看离线副本", this::openSavedRecords);
+        retryEntry.setVisibility(View.INVISIBLE);
+        savedRecords.setVisibility(View.INVISIBLE);
+        if (web != null) web.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        frame.addView(opening, new FrameLayout.LayoutParams(-1,-1));
+        final LinearLayout cover = opening;
+        main.postDelayed(() -> {
+            if (opening == cover) savedRecords.setVisibility(View.VISIBLE);
+        }, 3500);
+    }
+    private void openSavedRecords() { openRecords(presentation.getString("thread","")); }
+    private void revealScreen(int epoch, WebView view) {
+        if (opening==null || checkingScreen || epoch!=generation || web!=view || retryNeeded || rejected) return;
+        checkingScreen=true;
+        view.evaluateJavascript(firstScreen, value -> {
+            if (epoch!=generation || web!=view) return;
+            checkingScreen=false;
+            if (retryNeeded || rejected || opening==null) return;
+            if (!"true".equals(value)) { main.postDelayed(() -> revealScreen(epoch,view),150); return; }
+            view.postVisualStateCallback(epoch,new WebView.VisualStateCallback() {
+                @Override public void onComplete(long request) {
+                    if (generation!=epoch || web!=view || opening==null || retryNeeded || rejected) return;
+                    frame.removeView(opening); opening=null;
+                    openingMessage=null; retryEntry=null; savedRecords=null;
+                    view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+                    notice.setVisibility(View.GONE);
+                }
+            });
+        });
+    }
     private void networkFailure(String message) {
         if (rejected) return;
         retryNeeded = true;
-        banner(message, "立即重试", () -> openProbe(false));
+        showOpening(); setNativeSwitcher(true);
+        notice.setVisibility(View.GONE);
+        openingMessage.setText(message);
+        retryEntry.setVisibility(View.VISIBLE);
+        savedRecords.setVisibility(View.VISIBLE);
         main.removeCallbacks(retry);
         if (foreground) main.postDelayed(retry, Math.min(30000L, 1000L << Math.min(backoff++, 5)));
     }
 
     private void retireView() {
-        generation++; ticket = ""; pendingBack = null;
+        checkingScreen=false; generation++; ticket = ""; pendingBack = null;
         if (apkUpdate != null) apkUpdate.cancel();
         if (files != null) files.cancel();
         if (web != null) { frame.removeView(web); web.stopLoading(); web.destroy(); web = null; }
@@ -155,6 +204,7 @@ public class ClientActivity extends Activity {
         retryNeeded = false; probe = true; attempted = false; rejected = false; manual = editPassword;
         supplied = null; basicIdentityChanged = false;
         notice.setVisibility(View.GONE);
+        showOpening();
         if (origin.startsWith("http://")) { showPage(); return; }
         createView(false);
         web.loadUrl(origin + PROBE);
@@ -179,7 +229,8 @@ public class ClientActivity extends Activity {
 
     private void createView(boolean page) {
         final int epoch = generation;
-        WebView view = newProfileView(); web = view; frame.addView(view);
+        WebView view = newProfileView(); web = view; frame.addView(view,0);
+        if (opening != null) view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         WebSettings settings = view.getSettings();
         settings.setJavaScriptEnabled(page); settings.setDomStorageEnabled(page); settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false); settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -222,13 +273,17 @@ public class ClientActivity extends Activity {
                 else main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
             @Override public void onPageCommitVisible(WebView v, String url) {
-                if (epoch == generation && page && Site.root(url, origin)) offer(v);
+                if (epoch == generation && page) {
+                    if (Site.root(url, origin)) offer(v);
+                    revealScreen(epoch,v);
+                }
             }
             @Override public void onPageFinished(WebView v, String url) {
                 if (epoch != generation || retryNeeded || rejected) return;
                 if (!page && url.equals(origin + PROBE) && !checkingChallenge) {
                     main.post(() -> { if (epoch == generation && !checkingChallenge) showPage(); });
                 } else if (page && Site.root(url, origin)) {
+                    revealScreen(epoch,v);
                     offer(v); (legacy ? CookieManager.getInstance() : WebViewCompat.getProfile(v).getCookieManager()).flush();
                 }
             }
@@ -286,17 +341,17 @@ public class ClientActivity extends Activity {
                         JSONObject data = new JSONObject(value);
                         String operation = op.substring(8);
                         if ("show".equals(operation)) {
-                            result.confirm("ok"); main.post(() -> { if (epoch == generation) openRecords(data.optString("thread"),false); });
+                            result.confirm("ok"); main.post(() -> { if (epoch == generation) openRecords(data.optString("thread")); });
                         } else if ("ready".equals(operation) || "result".equals(operation)) {
                             result.confirm("ok"); if (reader != null) reader.notify(data.put("event",operation).toString());
                         } else if ("bookmark".equals(operation) && reader != null) {
                             result.confirm("[]");
                         } else {
-                            if (data.has("thread") && !"closed".equals(operation) && !"revert".equals(operation)
+                            if (data.has("thread") && !"lifecycle".equals(operation) && !"closed".equals(operation) && !"revert".equals(operation)
                                 && !presentation.getString("thread","").equals(data.getString("thread"))) { result.cancel(); return true; }
                             result.confirm(records.request(false,id,origin,operation,data));
                             if ("auth".equals(operation)) recordScopeConfirmed = true;
-                            if (reader != null && ("closed".equals(operation) || "revert".equals(operation)))
+                            if (reader != null && ("lifecycle".equals(operation) || "closed".equals(operation) || "revert".equals(operation)))
                                 reader.notify(data.put("event",operation).toString());
                             if (reader != null && ("auth".equals(operation) || "lock".equals(operation) || "revoke".equals(operation)))
                                 reader.notify("{\"event\":\"access\"}");
@@ -410,7 +465,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','android-update'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','record-states','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -419,7 +474,7 @@ public class ClientActivity extends Activity {
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
     @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
-    @Override protected void onPause() { foreground = false; pendingBack = null; drawerExitDeadline = 0; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onPause() { if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; drawerExitDeadline = 0; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onStop() {
         super.onStop();
         if (!selected && !isFinishing()) moveTaskToBack(true);
@@ -435,11 +490,11 @@ public class ClientActivity extends Activity {
         } catch (JSONException e) { Views.message(this, "无法读取实例列表"); }
     }
 
-    private void openRecords(String thread, boolean cold) {
+    private void openRecords(String thread) {
         closeRecords();
         try {
             JSONObject site = new JSONObject().put("id",id).put("name",name).put("origin",origin);
-            reader = new RecordsPanel(this,surface,records,new JSONArray().put(site),id,thread,cold,(op,value) -> {
+            reader = new RecordsPanel(this,surface,records,new JSONArray().put(site),id,thread,(op,value) -> {
                 if (!selected || !foreground) return;
                 if ("back".equals(op)) { sendReaderAction(value); closeRecords(); }
                 else if ("drawer".equals(op)) { closeRecords(); showDrawer("",false); }
@@ -514,7 +569,7 @@ public class ClientActivity extends Activity {
             String recordThread = site.optString("recordThread");
             link = intent.getStringExtra("link"); intent.removeExtra("link"); setIntent(intent);
             switching = false; boolean wasParked = !selected; selected = true;
-            if (!recordThread.isEmpty()) openRecords(recordThread,false);
+            if (!recordThread.isEmpty()) openRecords(recordThread);
             if (!legacy && ProfileTransfer.snapshot(this, id).getBaseFile().exists() &&
                     !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) { importProfile(); return; }
             if (web == null || policyChanged || Site.root(link, origin) || intent.getBooleanExtra("reload", false)) openProbe(false);

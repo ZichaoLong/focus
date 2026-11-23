@@ -54,6 +54,7 @@ def compose_web_gateway(
         ports=WebGatewayPorts(
             meta=lambda client_id: runtime_call(web_runtime.meta, client_id),
             operator_status=operator_status,
+            mobile_record_states=lambda threads: ingress().run_external_transaction(web_runtime.mobile_record_states, threads),
             data_retention_read=lambda: ingress().run_external_transaction(data_retention().policy),
             data_retention_update=lambda changes: ingress().run_external_transaction(data_retention().update, changes),
             data_prune=lambda: ingress().run_external_transaction(data_retention().prune),

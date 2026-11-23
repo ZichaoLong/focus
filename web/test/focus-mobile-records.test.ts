@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { nextTick, ref } from 'vue';
-import { mobileRecords } from '../src/lib/mobileHost';
+import { hasMobileFeature, mobileRecords } from '../src/lib/mobileHost';
 import { installMobileRecords } from '../src/focus/mobileRecords';
 import type { FocusThreadSnapshot } from '../src/focus/types';
 import { classifyRecordTurn, decodeRecordPage, foldRecordPage, type ToolCount, type RecordItem } from '../src/focus/mobileRecordPage';
@@ -10,7 +10,7 @@ import type { ChatTurn } from '../src/types';
 const tool=(item:string,turn='one'):RecordItem=>({kind:'tool',turn,item});
 const ids=Array.from({length:80},(_,i)=>'tool-'+i);
 
-vi.mock('../src/lib/mobileHost',()=>({mobileRecords:vi.fn()}));
+vi.mock('../src/lib/mobileHost',()=>({mobileRecords:vi.fn(),hasMobileFeature:vi.fn(()=>false)}));
 
 describe('compact mobile thread records',()=>{
   it('preserves the same ordered membership across pages and stores constant-size locators',async()=>{
@@ -70,6 +70,23 @@ describe('foreground mobile reader',()=>{
     return {owner,host,connected,action,api,ctx};
   }
   afterEach(()=>vi.unstubAllGlobals());
+  it('passes scoped lifecycle changes to a capable shell and preserves the older close signal',()=>{
+    const {owner,host}=fixture();
+    const feature=vi.mocked(hasMobileFeature);
+    const event=(reason:string)=>owner.event({type:'thread_invalidated',thread_id:'other',reason,runtime_epoch:'epoch',revision:1});
+    try {
+      event('thread/archived');
+      expect(host).toHaveBeenCalledWith('closed',{thread:'other'});
+      host.mockClear();
+      feature.mockImplementation(name=>name==='record-states');
+      for(const [reason,state] of [['thread/archived','archived'],['thread/deleted','deleted'],
+        ['web_thread_closed','closed'],['web_thread_opened','opened'],['thread/unarchived','unarchived']] as const) {
+        event(reason);
+        expect(host).toHaveBeenLastCalledWith('lifecycle',{thread:'other',reason:state,scope});
+      }
+      expect(host).not.toHaveBeenCalledWith('closed',expect.anything());
+    } finally { feature.mockReturnValue(false); owner.dispose(); }
+  });
   it('reattaches live partial text to a completed edition after parking',async()=>{
     const {owner,host,connected,api}=fixture();
     try {

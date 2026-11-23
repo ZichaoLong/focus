@@ -5,8 +5,9 @@
   const call = (name, data = {}) => window.prompt('records/1/' + name, JSON.stringify(data));
   const init = JSON.parse(call('init') || '{}'), sites = init.sites || [];
   const manager = !init.entry;
-  let entry = init.entry || sites[0]?.id || '', thread = init.thread || '', book, cold = !!init.cold;
+  let entry = init.entry || sites[0]?.id || '', thread = init.thread || '', book;
   let activeIntent, requested, visibleSeq, markTimer, confirmBox, loadedAnchor, refreshCleanup;
+  let checkRequest;
   const day = 86400000;
   const readingThreads = new Map(sites.map(site => [site.id, site.reading ||
     (init.entry === site.id ? init.thread : init.active === site.id ? init.current : '') || '']));
@@ -32,15 +33,23 @@
     activeIntent = null; requested = null;
   }
   function reset() {
-    cancelIntent(); clearTimeout(markTimer); confirmBox = null;
+    cancelIntent(); cancelCheck(); refreshCleanup=null; clearTimeout(markTimer); confirmBox = null;
     content.replaceChildren(); status.textContent = ''; window.scrollTo(0,0);
   }
   function bytes(n) { return Number(n) >= 1048576 ? (n/1048576).toFixed(1)+' MiB' : Math.ceil(n/1024)+' KiB'; }
   function confirmation(label, execute) {
     confirmBox?.remove(); confirmBox = el('div',undefined,'confirm');
-    confirmBox.append(el('p',label),button('取消',()=>{confirmBox?.remove();confirmBox=null;}),button('确认清理',()=>{
-      const message=execute(); list(); if(typeof message==='string') status.textContent=message;
-    }));
+    const box=confirmBox;
+    const submit=button('确认清理',async ()=>{
+      if (submit.disabled) return;
+      submit.disabled=true;
+      try {
+        const message=await execute(()=>confirmBox===box);
+        if(confirmBox!==box) return;
+        list(); if(typeof message==='string') status.textContent=message;
+      } catch(e) { if(confirmBox===box) { status.textContent=e.message; submit.disabled=false; } }
+    });
+    box.append(el('p',label),button('取消',()=>{confirmBox?.remove();confirmBox=null;}),submit);
     content.prepend(confirmBox); confirmBox.scrollIntoView({block:'nearest'});
   }
   function cleanupFilter(label, options, value, change) {
@@ -56,7 +65,6 @@
     const days=Math.max(0,Math.floor((now-Number(row.touched))/day));
     const parts=[];
     if(row.reading==='1') parts.push('当前在读');
-    if(row.closed==='1') parts.push('已记录关闭、归档或删除');
     parts.push(days ? '本机 '+days+' 天未读' : '本机 24 小时内读过',
       row.complete==='1' ? '已完整保存' : row.complete==='0' ? '部分已保存' : '尚无可读片段',bytes(row.bytes));
     return parts.join(' · ');
@@ -75,73 +83,198 @@
     return '已清理 '+removed+' 条本机离线记录。'+(skipped ? skipped+' 条记录已变化，已跳过。' : '')+
       (uncertain ? uncertain+' 条清理结果待核对，请重新查看列表。' : '');
   }
-  function cleanup(scope='current', mode='old') {
-    reset(); book=null; thread=''; cold=false;
+  function cancelCheck() {
+    if(!checkRequest) return;
+    call('cancelcheck'); checkRequest.finish(null);
+  }
+  function verify(site, scope, rows) {
+    if(!scope || !rows.length) return Promise.resolve(null);
+    cancelCheck();
+    return new Promise(resolve=>{
+      const id=crypto.randomUUID();
+      const timeout=setTimeout(()=>{if(checkRequest?.id===id) cancelCheck();},25000);
+      checkRequest={id,finish:value=>{clearTimeout(timeout);checkRequest=null;resolve(value);}};
+      const ok=call('verify',{entry:site.id,id,body:{scope,threads:JSON.stringify(rows.map(r=>r.thread))}});
+      if(ok!=='ok') checkRequest.finish(null);
+    });
+  }
+  window.focusRecordCheck=(id,reply)=>{ if(checkRequest?.id===id) checkRequest.finish(reply); };
+  const categories=[
+    ['deleted','已确认删除',true],['missing','服务端已找不到，本机仍有副本',true],
+    ['archived','已归档',true],['closed','已关闭',false],['old','本机至少 30 天未读',false],
+    ['unknown','状态待核实',false],['recent','近期读过',false],['reading','当前在读',false],['locked','已锁定',false]
+  ];
+  function classify(row, remote, before) {
+    if(row.locked==='1') return 'locked';
+    if(row.reading==='1') return 'reading';
+    if(remote==='missing') return row.closed==='4' ? 'deleted' : 'missing';
+    if(remote==='archived') return 'archived';
+    if(remote!=='present' && row.closed==='4') return 'deleted';
+    if(remote!=='present' && row.closed==='3') return 'archived';
+    if(row.closed==='2') return 'closed';
+    if(row.closed==='1') return 'unknown';
+    if(Number(row.touched)<=before) return 'old';
+    return remote==='present' ? 'recent' : 'unknown';
+  }
+  function cleanup(scope='current', mode='old', selected=new Map(), expanded=new Map()) {
+    reset(); book=null; thread='';
     title.textContent='选择要清理的离线记录';
     const current=sites.find(site=>site.id===entry);
-    const targets=scope==='all' ? sites : [current], access=new Map();
-    refreshCleanup=(accessEvent=false)=>{
-      if(accessEvent && targets.every(site=>{
-        const state=db('status',{},site.id)[0], prior=access.get(site.id);
-        return state && prior && state.fence===prior.fence && state.locked===prior.locked;
+    const targets=scope==='all' ? sites : [current];
+    const choices=[], groups=[];
+    const selectionKey=(site,row)=>[site.id,row.fence,row.locked,row.choice].join(':');
+    const now=Date.now(), before=now-30*day;
+    const sitesWithRows=targets.map(site=>({site,access:db('status',{},site.id)[0],
+      rows:db('candidates',{mode:'all',before,reading:readingThreads.get(site.id)},site.id),remote:new Map()}));
+    let confirming=false, scanGeneration=0, previewed=new Set();
+    const refresh=(accessOnly=false)=>{
+      if(accessOnly && sitesWithRows.every(({site,access})=>{
+        const state=db('status',{},site.id)[0];
+        return state && access && state.fence===access.fence && state.locked===access.locked;
       })) return;
-      cleanup(scope,mode);
+      cleanup(scope,mode,selected,expanded);
     };
+    refreshCleanup=refresh;
     const filters=el('div',undefined,'row');
     if(manager && sites.length>1) filters.append(cleanupFilter('实例范围',
       [['current','当前实例 · '+current.name],['all','所有实例']],scope,value=>cleanup(value,mode)));
-    filters.append(cleanupFilter('记录范围',[['old','旧线程'],['all','全部记录']],mode,value=>cleanup(scope,value)));
-    content.append(filters,el('p',mode==='old' ? '列出已记录关闭、归档或删除，以及本机至少 30 天未读的线程。当前在读线程已排除。'
-      : '清理会删除所选线程在本机的离线副本和阅读位置。实例入口和服务端对话会保留。','muted'));
-    const now=Date.now(), choices=[];
+    filters.append(cleanupFilter('记录范围',[['old','清理候选'],['all','全部记录']],mode,value=>cleanup(scope,value)));
+    content.append(filters,el('p','清理所选线程在本机的副本和阅读位置。当前在读记录始终由你手动选择。','muted'));
     const selectAll=el('input'); selectAll.type='checkbox';
     const selectLabel=el('label',undefined,'row'); selectLabel.append(selectAll,'全选当前列表');
     const results=el('div'), footer=el('div',undefined,'cleanup-footer');
     const submit=button('',()=>{
-      const selected=new Map(), reading=[];
-      for (const {box,site,rows} of choices) {
-        if(!box.checked) continue;
-        if(!selected.has(site)) selected.set(site,[]);
-        selected.get(site).push(...rows);
-        for(const row of rows) if(row.reading==='1') reading.push(site.name+' · '+(row.title || '锁定记录'));
-      }
-      const groups=Array.from(selected,([site,rows])=>({site,rows}));
-      if(groups.length) confirmation(submit.textContent+'？仅删除本机离线副本。'+
-        (reading.length ? '包含当前在读记录：'+reading.join('、')+'。' : ''),()=>cleanSelection(groups,mode));
+      const batches=sitesWithRows.map(data=>({...data,rows:choices.filter(c=>c.site===data.site && c.checked).flatMap(c=>c.rows)})).filter(g=>g.rows.length);
+      if(!batches.length) return;
+      previewed=new Set(batches.flatMap(group=>group.rows));
+      const reading=batches.flatMap(g=>g.rows.filter(r=>r.reading==='1').map(r=>g.site.name+' · '+(r.title || '锁定记录')));
+      const last=choices.some(c=>c.checked && ['missing','deleted'].includes(c.category));
+      confirmation(submit.textContent+'？仅删除本机离线副本。'+(last?'所选记录可能是最后一份可读副本。':'')+
+        (reading.length?'包含当前在读记录：'+reading.join('、')+'。':''),async stillOpen=>{
+        confirming=true; scanGeneration++; cancelCheck();
+        const verified=[];
+        let changed=0;
+        try {
+          for(const group of batches) {
+            const vetted=[];
+            const checked=group.rows.filter(row=>['archived','missing'].includes(group.remote.get(row.choice)));
+            const checkKeys=new Set(checked.map(row=>row.choice));
+            vetted.push(...group.rows.filter(row=>!checkKeys.has(row.choice)));
+            for(let i=0;i<checked.length;i+=32) {
+              if(!stillOpen()) return;
+              const page=checked.slice(i,i+32), states=await checkPage(group,page);
+              if(!stillOpen()) return;
+              for(const [j,row] of page.entries()) {
+                if(states?.[j]===group.remote.get(row.choice)) vetted.push(row); else changed++;
+              }
+            }
+            if(vetted.length) verified.push({site:group.site,rows:vetted});
+          }
+          if(!stillOpen()) return;
+          const message=cleanSelection(verified,mode==='old'?'review':'all');
+          return message+(changed ? changed+' 条在线状态已变化或无法核实，已保留。' : '');
+        } finally { confirming=false; }
+      });
     });
     function updateSelection() {
-      confirmBox?.remove(); confirmBox=null;
-      let count=0, size=0, checked=0;
-      for(const choice of choices) if(choice.box.checked) { count+=choice.rows.length; size+=choice.size; checked++; }
+      let count=0,size=0,checked=0;
+      for(const group of groups) {
+        let n=0;
+        for(const item of group.items) if(item.checked) { n+=item.rows.length; size+=item.size; checked++; }
+        count+=n;
+        group.label.textContent=group.name+' · 已选 '+n+' / '+group.count+' 条 · '+bytes(group.size);
+      }
       selectAll.checked=checked>0 && checked===choices.length;
       selectAll.indeterminate=checked>0 && checked<choices.length;
       submit.disabled=!count; submit.textContent='清理所选 '+count+' 条 · '+bytes(size);
     }
-    selectAll.onchange=()=>{ for(const {box} of choices) box.checked=selectAll.checked; updateSelection(); };
-    function addChoice(section, site, rows, name, summary) {
-      const label=el('label',undefined,'candidate'), box=el('input'), text=el('span');
-      box.type='checkbox'; box.setAttribute('aria-label',name); box.onchange=updateSelection;
-      const detail=el('small',summary); detail.id='cleanup-detail-'+choices.length;
-      box.setAttribute('aria-describedby',detail.id); text.append(el('strong',name),detail);
-      label.append(box,text); section.append(label);
-      choices.push({box,site,rows,size:rows.reduce((n,row)=>n+Number(row.bytes),0)});
+    function remember(item, checked) {
+      item.checked=checked;
+      if(item.box) item.box.checked=checked;
+      for(const row of item.rows) selected.set(selectionKey(item.site,row),checked);
+      confirmBox?.remove(); confirmBox=null;
     }
-    for (const site of targets) {
-      const rows=db('candidates',{mode,before:now-30*day,reading:readingThreads.get(site.id)},site.id);
-      access.set(site.id,rows[0] || db('status',{},site.id)[0]);
-      if(!rows.length) continue;
-      const section=el('section'); section.setAttribute('aria-label',site.name); section.append(el('h2',site.name));
-      if(rows[0].locked==='1') {
-        const size=rows.reduce((n,row)=>n+Number(row.bytes),0);
-        addChoice(section,site,rows,rows.length+' 条锁定记录 · '+bytes(size),'重新授权后可查看标题并逐条选择。');
-      } else for(const row of rows) addChoice(section,site,[row],row.title,recordSummary(row,now));
-      results.append(section);
+    selectAll.onchange=()=>{for(const item of choices) remember(item,selectAll.checked); updateSelection();};
+    function showRows(group) {
+      if(!group.fold.open || group.body.childElementCount) return;
+      for(const item of group.items) {
+        const line=el('label',undefined,'candidate'), box=el('input'), text=el('span');
+        const locked=item.category==='locked', row=item.rows[0];
+        const title=locked ? item.rows.length+' 条锁定记录 · '+bytes(item.size) : row.title;
+        const detail=el('small',locked ? '重新授权后可逐条查看。' : recordSummary(row,now));
+        detail.id='cleanup-detail-'+item.index;
+        box.type='checkbox'; box.setAttribute('aria-label',title); box.setAttribute('aria-describedby',detail.id);
+        box.checked=item.checked; item.box=box;
+        box.onchange=()=>{remember(item,box.checked);updateSelection();};
+        text.append(el('strong',title),detail); line.append(box,text); group.body.append(line);
+      }
     }
-    if(!choices.length) { content.append(el('p',mode==='old'?'没有符合条件的旧线程。':'没有可清理的本机离线记录。','muted')); return; }
-    footer.append(submit); content.append(selectLabel,results,footer); updateSelection();
+    function render() {
+      for(const group of groups) expanded.set(group.key,group.fold.open);
+      results.replaceChildren(); groups.length=0; choices.length=0;
+      for(const {site,rows,remote} of sitesWithRows) {
+        const section=el('section'); section.setAttribute('aria-label',site.name); section.append(el('h2',site.name));
+        for(const [category,name,preselect] of categories) {
+          if(mode==='old' && (category==='recent' || category==='reading')) continue;
+          const matching=rows.filter(r=>(mode!=='old' || r.reading!=='1') && classify(r,remote.get(r.choice),before)===category);
+          if(!matching.length) continue;
+          const fold=el('details'),label=el('summary'),items=[],body=el('div'),foldKey=site.id+':'+category;
+          fold.open=expanded.get(foldKey) ?? preselect;
+          fold.append(label);
+          if(category==='missing') fold.append(el('p','可能是最后一份可读副本。','muted'));
+          const size=matching.reduce((n,r)=>n+Number(r.bytes),0);
+          const group={name,label,items,count:matching.length,size,fold,body,key:foldKey};
+          groups.push(group); fold.append(body);
+          fold.ontoggle=()=>{if(fold.isConnected) { expanded.set(foldKey,fold.open); showRows(group); }};
+          for(const copies of category==='locked' ? [matching] : matching.map(r=>[r])) {
+            const amount=copies.reduce((n,r)=>n+Number(r.bytes),0);
+            const checked=copies.every(r=>selected.get(selectionKey(site,r)) ?? (preselect && r.reading!=='1'));
+            const item={checked,rows:copies,site,category,size:amount,index:choices.length};
+            items.push(item); choices.push(item);
+          }
+          showRows(group); section.append(fold);
+        }
+        if(section.children.length>1) results.append(section);
+      }
+      selectLabel.hidden=footer.hidden=!choices.length;
+      if(!choices.length) results.append(el('p',mode==='old'?'没有符合条件的旧线程。':'没有可清理的本机离线记录。','muted'));
+      updateSelection();
+    }
+    async function checkPage(group, page) {
+      const response=await verify(group.site,group.access?.scope,page);
+      if(refreshCleanup!==refresh) return null;
+      if(response?.scope_changed) {
+        db('checklock',{scope:group.access.scope,fence:group.access.fence},group.site.id);
+        refresh(true); return null;
+      }
+      const data=response?.data;
+      if(data?.scope!==group.access?.scope || !Array.isArray(data?.states) || data.states.length!==page.length) return null;
+      return data.states.every(s=>['present','archived','missing','unknown'].includes(s)) ? data.states : null;
+    }
+    async function scan() {
+      const generation=++scanGeneration;
+      let incomplete=false;
+      for(const group of sitesWithRows) {
+        const rows=group.rows.filter(row=>row.thread && row.reading!=='1');
+        for(let i=0;i<rows.length;i+=32) {
+          if(refreshCleanup!==refresh || document.hidden || confirming || generation!==scanGeneration) return;
+          const page=rows.slice(i,i+32), states=await checkPage(group,page);
+          if(refreshCleanup!==refresh || confirming || generation!==scanGeneration) return;
+          if(!states) { incomplete=true; break; }
+          const changes=page.filter((row,j)=>classify(row,group.remote.get(row.choice),before)!==classify(row,states[j],before));
+          page.forEach((row,j)=>group.remote.set(row.choice,states[j]));
+          if(confirmBox && changes.some(row=>previewed.has(row))) { confirmBox.remove(); confirmBox=null; }
+          if(changes.length) render();
+        }
+      }
+      if(refreshCleanup===refresh) status.textContent=incomplete?'部分记录暂时无法从服务端核实，已保留本机状态。':'';
+    }
+    footer.append(submit);content.append(selectLabel,results,footer);render();
+    status.textContent='正在核对服务端线程状态…';
+    void scan().catch(()=>{if(refreshCleanup===refresh)status.textContent='部分记录暂时无法核实。';});
   }
   function list() {
-    reset(); refreshCleanup=null; book=null; thread=''; cold=false;
+    reset(); refreshCleanup=null; book=null; thread='';
     title.textContent='本机离线记录';
     if (!sites.length) { status.textContent='尚未添加实例'; return; }
     const selector=el('select'); selector.setAttribute('aria-label','选择实例');
@@ -209,7 +342,6 @@
   function toolGroup(group) {
     const wrap=el('section',undefined,'tools'), details=el('div');
     const toggle=button(group.count+' 条工具调用  ›',()=>{
-      cold=false;
       if (activeIntent?.wrap===wrap) { cancelIntent();details.replaceChildren();toggle.setAttribute('aria-expanded','false');return; }
       cancelIntent();content.querySelectorAll('.tool-results').forEach(n=>n.replaceChildren());
       toggle.setAttribute('aria-expanded','true');details.textContent=manager?'在线进入此实例和线程后可查看详情':'恢复连接后展开…';
@@ -294,6 +426,13 @@
   window.focusRecordEvent=data=>{
     if(data.thread===thread && data.event==='revert'){list();status.textContent='线程历史已变更，正在等待重新保存。';return;}
     if(data.thread===thread && data.event==='closed'){cancelIntent();content.querySelectorAll('.tool-results').forEach(n=>n.replaceChildren());status.textContent='此线程已关闭或归档。';return;}
+    if(data.event==='lifecycle'){
+      if(refreshCleanup) refreshCleanup();
+      else if(data.thread===thread && ['closed','archived','deleted'].includes(data.reason)){
+        cancelIntent();content.querySelectorAll('.tool-results').forEach(n=>n.replaceChildren());status.textContent='线程状态已变化，可在清理页查看。';
+      }
+      return;
+    }
     if(data.event==='access'){
       if(refreshCleanup) refreshCleanup(true); else if(!book || !db('book')[0]) list();return;
     }
@@ -301,8 +440,7 @@
       if(!book && init.entry && data.thread && data.thread!==readingThreads.get(init.entry)){
         readingThreads.set(init.entry,data.thread); refreshCleanup?.();
       }
-      if(cold && data.thread===thread){cold=false;online();}
-      else if(requested) action(requested.op,requested);
+      if(requested) action(requested.op,requested);
       return;
     }
     if(requested?.op==='online' && data.id===requested.id){
@@ -332,8 +470,12 @@
   };
   document.querySelector('#back').onclick=window.focusRecordBack;
   const sw=document.querySelector('#switch');sw.hidden=manager;sw.onclick=()=>{cancelIntent();action('drawer');};
-  for(const event of ['pointerdown','keydown','wheel','touchstart'])document.addEventListener(event,()=>{cold=false;},{passive:true});
   window.addEventListener('scroll',()=>{clearTimeout(markTimer);markTimer=setTimeout(()=>{try{bookmark();}catch{}},200);},{passive:true});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden && refreshCleanup)refreshCleanup();});
-  try{if(thread)read();else list();if(cold)action('probe');}catch(e){status.textContent=e.message;}
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden) {
+      if(refreshCleanup && confirmBox) { confirmBox.remove(); confirmBox=null; }
+      cancelCheck();
+    } else refreshCleanup?.();
+  });
+  try{if(thread)read();else list();if(!manager)action('probe');}catch(e){status.textContent=e.message;}
 })();

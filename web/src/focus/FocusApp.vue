@@ -898,7 +898,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="focusShell" class="focus-shell">
+  <div ref="focusShell" class="focus-shell" :data-first-screen="client.initialized.value
+    && (!currentDocumentAccessAvailable || !client.activeThreadId.value || !client.conversationLoading.value || client.turns.value.length || client.errorMessage.value) ? 'ready' : 'loading'">
     <section v-if="client.authRequired.value" class="auth-page">
       <div class="auth-page-inner">
         <div class="focus-lockup"><span>F</span><strong>Focus Web</strong></div>
@@ -924,6 +925,7 @@ onUnmounted(() => {
           <Icon name="refresh" size="md" />
           {{ t('focus.retry') }}
         </Button>
+        <button v-if="hasMobileFeature('records-v1')" class="instance-picker records-shortcut" type="button" @click="openRecords">{{ t('focus.offlineRecords') }}</button>
       </div>
     </section>
 

@@ -170,6 +170,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v41 增加按需检查 Android 渠道的 POST 和按内容摘要下载 APK 的 GET。Android 宿主与当前页面协商更新能力，已有业务请求沿用原合同。[移动容器合同](./focus-mobile.zh-CN.md#实例抽屉和-android-分发)
 - v42 增加按安装读取更新身份和按指定渠道准备最新构建的入口。[更新合同](./focus-web-update.zh-CN.md#多安装批量更新)
 - v43 增加按已选线程读取紧凑离线文字页的 GET、按需返回的注册范围响应头，以及显式撤销会话时的 `session_revoked` 原因。读取和查找沿用现有 document 屏障。[移动端记录合同](./focus-mobile.zh-CN.md#本机离线记录)
+- v44 增加清理页的只读 `POST /api/mobile/record-status`，核对当前 document 与离线副本的授权范围，按本机线程 ID 批量返回元数据状态。该请求不续期会话。
 
 ## 4. Endpoint 与 event admission
 

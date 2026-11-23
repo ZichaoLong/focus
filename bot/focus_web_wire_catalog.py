@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 43
+FOCUS_WEB_WIRE_VERSION: Final = 44
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -244,6 +244,7 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "/api/threads/{thread_id}/turns",
         "_handle_thread_turns",
     ),
+    FocusWebEndpointSpec("mobile_record_status", "POST", "/api/mobile/record-status", "_handle_mobile_record_status"),
     FocusWebEndpointSpec("mobile_records", "GET", "/api/threads/{thread_id}/mobile-records", "_handle_mobile_records"),
     FocusWebEndpointSpec(
         "thread_transcript",
@@ -419,6 +420,7 @@ FOCUS_WEB_CONDITIONAL_SESSION_ACTIVITY_ENDPOINT_NAMES: Final = frozenset({"threa
 _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
     {
         'prompt_timing_sync',
+        'mobile_record_status',
         "auth_bootstrap",
         "auth_logout",
         "client_register",

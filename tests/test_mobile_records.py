@@ -3,12 +3,14 @@
 import json
 from pathlib import Path
 import sqlite3
+from types import SimpleNamespace
 
 import pytest
 
 from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
 from bot.web_runtime.auth import WebAuthManager
-from bot.web_runtime.mobile_records import reading_rows
+from bot.codex_protocol.client import CodexRpcError
+from bot.web_runtime.mobile_records import reading_rows, record_states
 from bot.web_runtime.transcript_window import project_transcript_item
 from tests.test_web_transcript_window import inspection, read  # noqa: F401 -- shared admitted inspection fixture
 from tests.web_runtime.gateway_harness import WebGatewayHarness
@@ -35,6 +37,26 @@ def test_projection_keeps_prose_and_semantic_breaks_without_tool_payload(inspect
 
 
 class MobileRouteTests(WebGatewayHarness):
+    async def test_status_checks_exact_document_scope_and_bounded_batch(self):
+        await self._authenticate()
+        async with self.session.post(self.endpoint+"/api/client/register", json={"incarnation_id":"checker"},
+                                     headers={"Origin":self.endpoint,"X-Focus-Mobile-Records":"1"}) as response:
+            scope=response.headers["X-Focus-Mobile-Record-Scope"]
+            document=await response.json()
+        url=self.endpoint+"/api/mobile/record-status"
+        calls=[]
+        def read(ids):
+            calls.append(ids)
+            return ["missing"]*len(ids)
+        self.gateway._ports.mobile_record_states=read
+        for ids,proof,status in [(["valid"],"x",409),(["a","a"],scope,400),([],scope,400),
+                                 (["ok"]*33,scope,400),(["valid"],scope,200)]:
+            async with self.session.post(url,json={"scope":proof,"threads":ids},headers=self._client_headers(document)) as res:
+                self.assertEqual(res.status,status)
+                if status==200:
+                    self.assertEqual(await res.json(),{"scope":scope,"states":["missing"]})
+        self.assertEqual(calls,[["valid"]])
+
     async def test_mobile_scope_and_admitted_page(self):
         url = self.endpoint + "/api/threads/thread-1/mobile-records"
         async with self.session.get(url) as response:
@@ -251,3 +273,42 @@ def test_cleanup_locked_preview_and_current_reader(store):
     locked_request["fence"] = store("candidates",reading="thread")[0]["fence"]
     assert store("cleanselected",**locked_request) == [{"removed":1}]
     assert store("candidates") == []
+
+def test_record_states_use_exact_read_and_preserve_ambiguous_outcomes():
+    def read(thread, **kwargs):
+        assert kwargs["include_turns"] is False and kwargs["expected_connection_generation"] == 7
+        if thread == "unavailable":
+            raise TimeoutError("metadata unavailable")
+        if thread in {"gone", "unrelated"}:
+            target = thread if thread == "gone" else "some-other-id"
+            raise CodexRpcError("thread/read", {"message": f"thread not loaded: {target}"})
+        paths = {"archived": r"C:\data\archived_sessions\old", "present": "/archive/archived_sessions/home/sessions/new"}
+        return SimpleNamespace(summary=SimpleNamespace(thread_id=thread, ephemeral=False, path=paths.get(thread)))
+    ids=["gone","unrelated","unavailable","archived","present","no-path"]
+    assert record_states(ids, read, lambda:7) == ["missing","unknown","unknown","archived","present","unknown"]
+    generations=iter([7,8])
+    assert record_states(ids, read, generations.__next__) == ["unknown"]*len(ids)
+
+
+def test_cleanup_revalidates_lifecycle_and_supports_legacy_closed_rows(store):
+    enroll(store)
+    store("start",fence=2)
+    store("closed")
+    assert store("candidates")[0]["closed"]==1
+    store("lifecycle",reason="closed")
+    assert store("candidates")[0]["closed"]==2
+    store("lifecycle",reason="archived")
+    archived=store("candidates")[0]
+    assert archived["closed"]==3
+    store("lifecycle",reason="closed")
+    assert store("candidates")[0]["closed"]==3
+    store("lifecycle",reason="unarchived")
+    assert clean_copy(store,archived)==[{"removed":0}]
+    store("lifecycle",scope="wrong",reason="deleted")
+    assert store("candidates")[0]["closed"]==0
+    store("lifecycle",reason="deleted")
+    assert store("candidates")[0]["closed"]==4
+    store("checklock",scope="wrong",fence=2)
+    assert store("candidates")[0]["thread"]=="thread"
+    store("checklock",fence=2)
+    assert store("candidates")[0]["thread"]==store("status")[0]["scope"]==""
