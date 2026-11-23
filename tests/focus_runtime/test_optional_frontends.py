@@ -270,12 +270,17 @@ assert not any(name.startswith("lark_oapi") for name in sys.modules)
                     status = control_request(
                         tmp_path / "data", "service/status", {}, timeout_seconds=0.25
                     )
-                    break
                 except Exception:
-                    time.sleep(0.05)
+                    pass
+                else:
+                    # The control listener starts before an enabled Web gateway binds.
+                    if not status["web_gateway_enabled"] or status["web_gateway_url"]:
+                        break
+                time.sleep(0.05)
             else:
                 pytest.fail((tmp_path / "process.log").read_text())
             assert status["operator_status"]["feishu"]["state"] == "disabled"
+            assert status["web_gateway_enabled"] is web
             assert bool(status["web_gateway_url"]) is web
             assert not (tmp_path / "global" / "feishu_app_connections").exists()
             process.send_signal(signal.SIGTERM)

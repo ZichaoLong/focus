@@ -4,6 +4,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from hashlib import sha256
 import json
+import re
 import shlex
 import subprocess
 from pathlib import Path
@@ -70,20 +71,20 @@ def click(label):
 
 
 async def assert_online_only(session, port):
-    async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
-        assert all(page["url"] != "file:///android_asset/records.html" for page in await response.json())
+    async with asyncio.timeout(35):
+        while True:
+            async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
+                urls = {page["url"] for page in await response.json()}
+            assert "file:///android_asset/records.html" not in urls
+            if "https://conversation.focus.invalid/conversation.html" not in urls:
+                return
+            await asyncio.sleep(.1)
 
 
 async def wait_for_online_handoff(session, adb, origin):
     port, live = await attach(session, adb, origin)
     try:
-        async with asyncio.timeout(35):
-            while True:
-                async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
-                    pages = await response.json()
-                if all(page["url"] != "https://conversation.focus.invalid/conversation.html" for page in pages):
-                    break
-                await asyncio.sleep(.1)
+        await assert_online_only(session, port)
         await wait_for(live, """(() => {
           const pane=document.querySelector('.panes'), box=pane?.getBoundingClientRect();
           if (!box) return false;
@@ -179,12 +180,7 @@ async def check_cold_layout(session, adb, origin, reading):
                 adb("shell", "input", "keyevent", "KEYCODE_BACK")
     port, live = await attach(session, adb, origin)
     try:
-        async with asyncio.timeout(35):
-            while True:
-                async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
-                    if not any("conversation.focus.invalid" in entry["url"] for entry in await response.json()):
-                        break
-                await asyncio.sleep(.1)
+        await assert_online_only(session, port)
         await wait_for(live, "!!(" + PARAGRAPH + ") && document.fonts.status==='loaded'")
         await asyncio.sleep(.7)
         assert await evaluate(live, "!!document.querySelector('.reading-mode-controls')") == reading
@@ -379,16 +375,30 @@ async def smoke(args):
                 await assert_online_only(session, port)
                 print(f"Basic instance cold start to online composer: {time.monotonic()-started:.2f}s",flush=True)
                 document = await evaluate(live, "performance.timeOrigin")
+                task = re.search(r"topResumedActivity=.*?" + re.escape(PACKAGE) + r"/\S+ t(\d+)",
+                                 adb("shell", "dumpsys", "activity", "activities"))
+                assert task, "Expected the fixture conversation in the foreground"
+                await evaluate(live, """(() => { const input=document.querySelector('textarea:not(:disabled)');
+                    input.value='parked draft'; input.dispatchEvent(new Event('input',{bubbles:true})); })()""")
+                await wait_for(live, "Object.keys(localStorage).some(k=>k.includes('.draft.') && localStorage[k]==='parked draft')")
                 await switch(live, adb, site["origin"])
                 async with tab(session, adb, site["origin"]) as other:
                     await wait_for(other, "document.querySelector('.focus-shell')?.dataset.firstScreen==='ready'")
                     await assert_online_only(session, port)
                     await switch(other, adb, sites[0]["origin"])
-                await wait_for(live, "document.visibilityState==='visible' && !!document.querySelector('textarea:not(:disabled)')")
-                assert await evaluate(live, "performance.timeOrigin") == document
-                await assert_online_only(session, port)
-                print("Drawer switched cold and resumed the same online document without an offline WebView", flush=True)
-                await open_reader(live)
+                async with tab(session, adb, sites[0]["origin"]) as returned:
+                    await assert_online_only(session, port)
+                    await wait_for(returned, "document.visibilityState==='visible' && document.querySelector('textarea:not(:disabled)')?.value==='parked draft'")
+                    if await evaluate(returned, "performance.timeOrigin") != document:
+                        # Android can remove an excluded task from recents while its sibling opens.
+                        events = adb("logcat", "-b", "events", "-d", "-s", "wm_destroy_activity:I")
+                        assert any(f",{task[1]},{PACKAGE}/" in line and "recent-task-trimmed" in line
+                                   for line in events.splitlines()), "Parked page was lost without OS task removal"
+                        await wait_for(returned, "location.search.includes('thread=thread-1') && document.querySelector('.chat-scroll')?.innerText.includes('right reply')")
+                        print("Restored the thread, messages and draft after Android removed its parked task", flush=True)
+                    else:
+                        print("Drawer resumed the same online document and draft", flush=True)
+                    await open_reader(returned)
                 async with panel(session,adb) as local:
                     await wait_for(local,"document.body?.innerText.includes('已完整保存')")
                     for _ in range(90):
