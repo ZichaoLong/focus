@@ -1,6 +1,7 @@
 import { saveReadingBookmark, threadReading } from '../components/chat/readingBookmark';
 import { documentReloadDelay, isFocusSessionRejection, reserveDocumentReload } from './documentRecovery';
-import { checkpointThread, hasMobileFeature, recoveryStorage } from '../lib/mobileHost';
+import { installMobileRecords } from './mobileRecords';
+import { mobileRecords, checkpointThread, hasMobileFeature, recoveryStorage } from '../lib/mobileHost';
 import { computed, ref, watch } from 'vue';
 import { i18n } from '../i18n';
 import { FocusWebApi, type FocusWebApiPort } from './api';
@@ -71,6 +72,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   const operatorStatusFreshness = ref<FocusOperatorStatusFreshness>('loading');
   const operatorStatusStale = computed(() => operatorStatusFreshness.value === 'stale');
   const dataRetention = createDataRetention(api);
+  let records: ReturnType<typeof installMobileRecords> | undefined;
   const initialized = ref(false);
   const loading = ref(false);
   const summaryExporting = ref(false);
@@ -183,7 +185,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     turnWindowLimit: turnWindow.limit,
     navigation,
     settings,
-    onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail); promptHistory?.handleDelta(detail); },
+    onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail); records?.live(); promptHistory?.handleDelta(detail); },
     onHistoryInvalidated: () => {
       clearHistoryView();
       promptHistory?.reset();
@@ -377,6 +379,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     onWakeConfirmed: () => transcript.confirmForegroundWake(),
     onEvent: (event) => {
       if (event.type === 'prompt_timing_changed') api.promptTimings?.changed(String(event.detail?.submission_id ?? ''));
+      records?.event(event);
       runtimeNotices.handleEvent(event);
       projection.handleEvent(event);
       if (event.type === 'thread_invalidated' && event.thread_id
@@ -403,6 +406,14 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     onScheduledTaskError: reportError,
   });
   const connection = computed(() => transportSession.snapshot.value.connection);
+
+  if (hasMobileFeature('records-v1')) records = installMobileRecords(api, {
+    snapshot: () => snapshot.value, selected: () => scopeReady.value ? activeThreadId.value : '',
+    connected: () => initialized.value && !authRequired.value && !documentReloadRequired.value && connection.value === 'connected',
+    turns: () => transcript.turns.value,
+    locate: (turn,item) => transcript.locate(turn,item),
+    selectOpen: thread => canRebuildPage() ? navigation.confirmUnconfirmedThread(thread) : Promise.resolve(false),
+  });
 
   function operatorStatusPollDelayMs(): number {
     const requested = Number(operatorStatus.value?.poll_after_seconds) * 1_000;
@@ -612,6 +623,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   function requireAuthentication(outer = false): void {
+    mobileRecords('lock');
     outerAuthRequired.value = outer;
     recoverablePage = !outer;
     authRequired.value = true;
@@ -953,6 +965,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function selectThread(threadId: string): Promise<void> {
     await navigation.selectThread(threadId);
+    records?.deliberate(threadId);
     reconcileMaterializedPromptResults();
   }
   const openWorkspaceDraft = navigation.openWorkspaceDraft;
@@ -1072,16 +1085,18 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     wakeDocument();
   }
   function hostDidPause(): void {
+    records?.pause();
     hostPaused = true;
     rememberForegroundThread();
   }
   function hostDidResume(): void {
     hostPaused = false;
+    if (!parked) records?.resume();
     resumeVisibleDocument();
   }
   function visibilityChanged(): void {
-    if (document.visibilityState === 'hidden') rememberForegroundThread();
-    else resumeVisibleDocument();
+    if (document.visibilityState === 'hidden') { records?.pause(); rememberForegroundThread(); }
+    else if (!parked && !hostPaused) { records?.resume(); resumeVisibleDocument(); }
   }
   window.addEventListener?.('online', wakeDocument);
   if (mobileTabs) window.addEventListener?.('focus-host-pause', hostDidPause);
@@ -1096,6 +1111,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     resumeTranscript = null;
     transcript.expectInstanceReturn(active ? activeThreadId.value : '');
     if (parked) {
+      records?.park();
       window.dispatchEvent(new Event('focus-host-pause'));
       transportSession.suspend();
       clearOperatorStatusTimer();
@@ -1103,6 +1119,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       clearTimeout(initialRetry);
       clearTimeout(accessReloadTimer);
     } else {
+      records?.resume();
       transportSession.connect();
       scheduleUpdatePoll();
       wakeDocument();
@@ -1169,6 +1186,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   function dispose(): void {
+    records?.dispose();
     stopThreadCheckpoint();
     if (window.__focusSetTabActive === setTabActive) delete window.__focusSetTabActive;
     if (window.__focusCanRebuild === canRebuildPage) delete window.__focusCanRebuild;

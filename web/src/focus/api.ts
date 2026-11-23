@@ -1,4 +1,5 @@
-import { recoveryStorage } from '../lib/mobileHost';
+import { decodeRecordPage, type RecordPage } from './mobileRecordPage';
+import { recoveryStorage, hasMobileFeature, mobileRecords } from '../lib/mobileHost';
 import { decodeDataRetention, decodeDataPrune } from './dataRetentionDecoder';
 import type { FocusDataRetentionPolicy, FocusDataPruneResult } from './types';
 import { focusPerformance } from './focusPerformance';
@@ -276,6 +277,8 @@ export interface FocusWebApiPort {
   ): Promise<FocusTurnPage>;
   exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, signal?: AbortSignal): Promise<Blob>;
   listExportTurns(threadId: string, cursor?: string, signal?: AbortSignal): Promise<FocusExportTurnPage>;
+  mobileReadScope?: string;
+  readMobileRecords?(thread: string, cursor: string | null, signal: AbortSignal): Promise<RecordPage>;
   readTranscriptWindow(threadId: string, query?: FocusTranscriptQuery, signal?: AbortSignal): Promise<FocusTranscriptPage>;
   exportThreadData(threadId: string): Promise<Blob>;
   readToolDetail(
@@ -370,11 +373,13 @@ export class FocusWebApi implements FocusWebApiPort {
     return this.identityReady;
   }
 
+  mobileReadScope = '';
+
   private async registerDocument(): Promise<void> {
     const response = await fetch(focusWebEndpointPath('client_register'), {
       method: FOCUS_WEB_ENDPOINTS.client_register.method,
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(hasMobileFeature('records-v1') ? { 'X-Focus-Mobile-Records':'1' } : {}) },
       body: JSON.stringify({
         resume_client_id: this._clientId,
         incarnation_id: this.documentIncarnation,
@@ -386,6 +391,10 @@ export class FocusWebApi implements FocusWebApiPort {
       decodeFocusDocumentRegistration,
       'document registration',
     );
+    this.mobileReadScope = response.headers?.get('X-Focus-Mobile-Record-Scope') ?? '';
+    if (hasMobileFeature('records-v1')) {
+      mobileRecords(new RegExp('^[0-9a-f]{64}$').test(this.mobileReadScope) ? 'auth' : 'lock', {scope:this.mobileReadScope});
+    }
     const clientId = registration.client_id;
     const documentToken = registration.document_token;
     this._clientId = clientId;
@@ -650,6 +659,12 @@ export class FocusWebApi implements FocusWebApiPort {
       'turn page',
       { parameters: { thread_id: threadId }, query: params },
     );
+  }
+
+  readMobileRecords(thread: string, cursor: string | null, signal: AbortSignal): Promise<RecordPage> {
+    return this.request('mobile_records', decodeRecordPage, 'mobile reading page', {
+      parameters: {thread_id: thread}, query: new URLSearchParams(cursor ? {cursor} : {}), signal,
+    });
   }
 
   readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}, signal?: AbortSignal): Promise<FocusTranscriptPage> {

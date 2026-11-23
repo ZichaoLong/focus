@@ -1,3 +1,4 @@
+import { recordCall } from './RecordsStore';
 import preferences from '@ohos.data.preferences';
 import { asset } from '@kit.AssetStoreKit';
 import { url, util } from '@kit.ArkTS';
@@ -81,6 +82,7 @@ export async function forgetLogin(site: Site): Promise<void> {
 }
 
 export async function forgetSite(context: common.UIAbilityContext, site: Site): Promise<void> {
+  await recordCall(context,site.id,site.origin,'forget',{});
   await forgetLogin(site);
   const prefs = sitePrefs(context);
   prefs.deleteSync('thread.' + site.id);

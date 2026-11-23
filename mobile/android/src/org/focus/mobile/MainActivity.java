@@ -38,11 +38,16 @@ public final class MainActivity extends Activity {
             prefs.edit().remove("active").commit();
             returnInstance = getIntent().getStringExtra("return-instance");
             String target = getIntent().getStringExtra("target");
+            String record = getIntent().getStringExtra("recordThread");
             setIntent(new Intent());
             render();
             for (int i = 0; i < sites.length(); i++) {
                 JSONObject site = sites.optJSONObject(i);
-                if (site.optString("id").equals(target)) { open(site, ""); break; }
+                if (site.optString("id").equals(target)) {
+                    if (record != null) try { site = new JSONObject(site.toString()).put("recordThread",record); }
+                    catch (JSONException invalid) { return; }
+                    open(site, ""); break;
+                }
             }
         } else for (int i = 0; i < sites.length(); i++) {
             JSONObject site = sites.optJSONObject(i);
@@ -91,6 +96,8 @@ public final class MainActivity extends Activity {
         header.addView(ui.button("添加实例", true, () -> edit(-1))); list.addView(header);
         ui.gap(list, 16);
         if (sites.length() > 0) {
+            list.addView(ui.button("本机离线记录", false, () -> startActivityForResult(new Intent(this, RecordsActivity.class).putExtra("active",returnInstance),25)));
+            ui.gap(list, 8);
             list.addView(ui.button("服务端更新", false, () -> startActivityForResult(new Intent(this, ServerUpdatesActivity.class), 24)));
             ui.gap(list, 12);
         }
@@ -135,9 +142,9 @@ public final class MainActivity extends Activity {
 
     @Override protected void onActivityResult(int code, int result, Intent data) {
         super.onActivityResult(code, result, data);
-        if (code == 24 && result == RESULT_OK && data != null)
+        if ((code == 24 || code == 25) && result == RESULT_OK && data != null)
             setIntent(new Intent().setAction(PICK).putExtra("return-instance", returnInstance)
-                .putExtra("target", data.getStringExtra("site")));
+                .putExtra("target", data.getStringExtra("site")).putExtra("recordThread",data.getStringExtra("recordThread")));
     }
 
     private void persist() { prefs.edit().putString("list", sites.toString()).commit(); }
@@ -145,6 +152,8 @@ public final class MainActivity extends Activity {
     private void forget(JSONObject site) {
         String id = site.optString("id");
         pages.forget(id);
+        try (RecordsStore store = new RecordsStore(this)) { store.call("forget", id, site.optString("origin"), new JSONObject()); }
+        catch (JSONException invalid) { throw new IllegalStateException(invalid); }
         getSharedPreferences("server-updates", MODE_PRIVATE).edit().remove(id).apply();
         BasicVault.erase(this, id);
         deleteSharedPreferences("page-" + id);

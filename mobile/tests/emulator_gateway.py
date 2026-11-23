@@ -27,7 +27,7 @@ def port():
         return sock.getsockname()[1]
 
 
-def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, https_count, navigation):
+def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, https_count, navigation, records=False):
     if not (ROOT / "bot/web_assets/dist/focus-connect.txt").is_file():
         raise SystemExit("Build web/ before running the emulator fixture")
     prefix = "https://10.0.2.2:"
@@ -63,6 +63,9 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
         runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Download sample]({sample})"
         if navigation:
             runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Navigation catalog]({catalog})\n\n[Open article]({guest}/jump)"
+        if records:
+            from records_history import install_record_history
+            install_record_history(runtime.fake, index)
         controller = runtime.controller
         retention = DataRetentionService(DataRetentionStore(runtime.workspace.parent, config_dir=runtime.workspace.parent / "config"), {})
         for tid in ("thread-1", "thread-2"):
@@ -147,5 +150,6 @@ if __name__ == "__main__":
     parser.add_argument("--https-count", type=int, choices=range(2, 7), default=2,
                         help="number of HTTPS entries for page retention and LRU tests")
     parser.add_argument("--navigation", action="store_true", help="add an isolated redirected article, sign-in round trip and nested file")
+    parser.add_argument("--records", action="store_true", help="serve long paginated transcripts with two groups of 80 tools")
     args = parser.parse_args()
-    serve(args.lab.resolve(), args.disconnect_grace, args.basic_forward_port, args.session_lifetime, args.second_basic, args.https_count, args.navigation)
+    serve(args.lab.resolve(), args.disconnect_grace, args.basic_forward_port, args.session_lifetime, args.second_basic, args.https_count, args.navigation, args.records)

@@ -226,7 +226,7 @@ class WebThreadInspectionService:
         if direction not in {"asc", "desc"} or type(full) is not bool:
             raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
         if ((item_id and not turn_id) or (full and not item_id)
-                or view not in {"transcript", "prompts"}
+                or view not in {"transcript", "prompts", "mobile_records"}
                 or (view == "prompts" and (turn_id or item_id or full or source_cursor or direction != "desc"))
                 or (source_cursor and (not full or cursor))):
             raise WebRuntimeError("Invalid transcript locator.", code="invalid_transcript_query", status=400)

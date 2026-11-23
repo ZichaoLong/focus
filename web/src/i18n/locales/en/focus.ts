@@ -1,4 +1,5 @@
 export default {
+  offlineRecords: "Offline records",
   switchInstance: "Switch instance",
   retentionTitle: "Data cleanup",
   retentionRecords: "Focus record retention",

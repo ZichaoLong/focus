@@ -46,7 +46,7 @@ import { isLocalPossiblySentDraft, type UnknownSubmissionDraft } from './mutatio
 import { dispatchFocusComposerPayload } from './focusComposerSubmission';
 import { createFocusComposerSendShortcutPreference } from './focusComposerSendShortcut';
 import { useFocusReadingMode } from './focusReadingMode';
-import { hasMobileFeature, installMobileNavigation, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
+import { mobileRecords, hasMobileFeature, installMobileNavigation, mobileInstanceName, showMobileInstances, showMobileWebChrome } from '../lib/mobileHost';
 import { backFromDialog } from '../composables/dialogStack';
 import { createFocusViewport, focusViewportDiagnosticKey } from './focusViewport';
 import FocusThreadActions from './FocusThreadActions.vue';
@@ -832,6 +832,7 @@ onMounted(() => {
   if (focusShell.value) viewport.value = createFocusViewport(focusShell.value, readingMode);
   if (hasMobileFeature('android-update')) window.addEventListener('focus-host-about', openMobileAbout);
   if (mobileTabs) window.addEventListener('focus-host-ready', syncHostChrome);
+  if (hasMobileFeature('records-v1')) window.addEventListener('focus-record-position',returnToOnlineRecord);
   void client.load();
 });
 
@@ -844,6 +845,17 @@ function openMobileAbout(event: Event): void {
     event.preventDefault();
     mobileAbout.value = true;
   }
+}
+function openRecords(): void {
+  showNarrowSwitcher.value = false;
+  mobileRecords('show',{thread:client.activeThreadId.value});
+}
+async function returnToOnlineRecord(event: Event): Promise<void> {
+  const data = (event as CustomEvent).detail;
+  if (!data?.target || data.thread !== client.activeThreadId.value) return;
+  if (data.reading === true) requestReadingMode();
+  await nextTick();
+  if (data.thread === client.activeThreadId.value) await conversationPaneRef.value?.scrollToRenderedTurn(data.target);
 }
 function openInstancePicker(): void {
   showNarrowSwitcher.value = false;
@@ -878,6 +890,7 @@ onUnmounted(() => {
   releaseNavigation?.();
   window.removeEventListener('focus-host-about', openMobileAbout);
   window.removeEventListener('focus-host-ready', syncHostChrome);
+  window.removeEventListener('focus-record-position',returnToOnlineRecord);
   historyEditConfirmation?.abort();
   client.dispose();
   viewport.value?.dispose();
@@ -960,6 +973,8 @@ onUnmounted(() => {
             <button v-if="mobileTabs" class="instance-picker" type="button" @click="openInstancePicker">
               {{ t('focus.switchInstance') }}<template v-if="instanceLabel"> · {{ instanceLabel }}</template>
             </button>
+            <button v-if="hasMobileFeature('records-v1')" type="button" class="instance-picker records-shortcut"
+              @click="openRecords">{{ t('focus.offlineRecords') }}</button>
             <SegmentedControl
               class="directory-scope"
               :title="t('focus.openThreadsHint')"
@@ -1382,6 +1397,8 @@ onUnmounted(() => {
         @fork="client.forkThread($event)"
       >
         <template #controls>
+          <button v-if="hasMobileFeature('records-v1')" class="instance-picker records-shortcut" type="button"
+            @click="openRecords">{{ t('focus.offlineRecords') }}</button>
           <SegmentedControl
             class="directory-scope narrow-scope"
             :title="t('focus.openThreadsHint')"

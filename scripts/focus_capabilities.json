@@ -3742,6 +3742,77 @@
         "web-typecheck",
         "web-wire"
       ]
+    },
+    "focus-mobile-offline-records": {
+      "entry": [
+        {
+          "path": "bot/web_runtime/gateway_thread_inspection.py",
+          "symbol": "WebGatewayThreadInspectionMixin._handle_mobile_records"
+        },
+        {
+          "path": "web/src/focus/mobileRecords.ts",
+          "symbol": "installMobileRecords"
+        }
+      ],
+      "owner": [
+        {
+          "path": "bot/web_runtime/mobile_records.py",
+          "symbol": "reading_rows"
+        },
+        {
+          "path": "web/src/focus/mobileRecordPage.ts",
+          "symbol": "foldRecordPage"
+        },
+        {
+          "path": "bot/web_runtime/thread_inspection.py",
+          "symbol": "WebThreadInspectionService.prepare_transcript_window"
+        }
+      ],
+      "contract": [
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "本机离线记录"
+        }
+      ],
+      "focused-test": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_mobile_records.py",
+            "tests/test_web_transcript_window.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus-mobile-records.test.ts",
+            "web/test/focus-mobile-host.test.ts"
+          ]
+        }
+      ],
+      "sentinel": [
+        {
+          "runner": "pytest",
+          "targets": [
+            "tests/test_codex_transcript_protocol.py",
+            "tests/test_focus_web_wire_catalog.py"
+          ]
+        },
+        {
+          "runner": "vitest",
+          "targets": [
+            "web/test/focus_client/owners/use-focus-web-client.test.ts"
+          ]
+        }
+      ],
+      "guard": [
+        "dependency-direction",
+        "import-cycles",
+        "source-context",
+        "web-dependency-direction",
+        "web-typecheck",
+        "web-wire"
+      ]
     }
   }
 }

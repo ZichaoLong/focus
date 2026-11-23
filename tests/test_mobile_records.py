@@ -1,0 +1,189 @@
+"""No mobile cache authority escapes the selected document or its local store."""
+
+import json
+from pathlib import Path
+import sqlite3
+
+import pytest
+
+from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
+from bot.web_runtime.auth import WebAuthManager
+from bot.web_runtime.mobile_records import reading_rows
+from bot.web_runtime.transcript_window import project_transcript_item
+from tests.test_web_transcript_window import inspection, read  # noqa: F401 -- shared admitted inspection fixture
+from tests.web_runtime.gateway_harness import WebGatewayHarness
+
+
+def test_projection_keeps_prose_and_semantic_breaks_without_tool_payload(inspection):  # noqa: F811
+    items = [
+        {"id": "q", "type": "userMessage", "content": [{"type": "text", "text": "question"}]},
+        {"id": "t", "type": "commandExecution", "command": "sensitive", "aggregatedOutput": "private", "status": "completed"},
+        {"id": "empty", "type": "agentMessage", "text": "  "},
+        {"id": "r", "type": "reasoning", "summary": ["secret reasoning"]},
+        {"id": "m", "type": "agentMessage", "phase": "commentary", "text": "intermediate"},
+        {"id": "a", "type": "agentMessage", "text": "final"},
+    ]
+    inspection.list_items.return_value = ThreadItemsPage(items=[ThreadItemEntry("one", item) for item in reversed(items)])
+    result = read(inspection, view="mobile_records")
+    assert [r["kind"] for r in result["rows"]] == ["user", "tool", "break", "assistant", "assistant"]
+    assert result["oldest"] == ["one", "q"]
+    assert result["older"] is None
+    assert "private" not in json.dumps(result) and "sensitive" not in json.dumps(result)
+    assert "secret reasoning" not in json.dumps(result)
+    assert result["rows"][1] == {"kind": "tool", "turn": "one", "item": "t"}
+    assert reading_rows(project_transcript_item("one", items[-1])) == [result["rows"][-1]]
+
+
+class MobileRouteTests(WebGatewayHarness):
+    async def test_mobile_scope_and_admitted_page(self):
+        url = self.endpoint + "/api/threads/thread-1/mobile-records"
+        async with self.session.get(url) as response:
+            self.assertEqual(response.status, 401)
+        await self._authenticate()
+        async with self.session.post(self.endpoint+"/api/client/register", json={"incarnation_id":"reader"},
+                                     headers={"Origin":self.endpoint,"X-Focus-Mobile-Records":"1"}) as response:
+            proof = response.headers["X-Focus-Mobile-Record-Scope"]
+            document = await response.json()
+        self.assertRegex(proof, "^[a-f0-9]{64}$")
+        self.assertNotIn(proof, document.values())
+        self.gateway._ports.prepare_transcript_window = lambda client, thread, **kw: ("transcript", {"thread":thread, **kw})
+        async with self.session.get(url+"?cursor=older", headers=self._client_headers(document)) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())["scope"], proof)
+            self.assertIn("no-store", response.headers["Cache-Control"])
+        for query in ("?view=transcript", "?turn_id=x", "?cursor=x&cursor=y", "?full=true", "?full=false"):
+            async with self.session.get(url+query,headers=self._client_headers(document)) as response:
+                self.assertEqual(response.status, 400)
+        async with self.session.get(url, headers={**self._client_headers(document),"X-Focus-Web-Document":"old"}) as response:
+            self.assertEqual(response.status, 409)
+
+
+def test_proxy_labels_do_not_unlock_another_session():
+    manager = WebAuthManager(session_ttl_seconds=60)
+    def issue():
+        return manager.issue_external_session(external_origin="https://same.example",proxy_identity="shared")
+    a, b = issue(), issue()
+    assert a.mobile_read_scope != b.mobile_read_scope
+    assert manager.renew_if_live(a.session_token).mobile_read_scope == a.mobile_read_scope
+    assert manager.authenticate(a.mobile_read_scope) is None
+
+
+@pytest.fixture
+def store():
+    path = Path(__file__).resolve().parents[1] / "mobile/harmony/entry/src/main/resources/rawfile/records-sql.json"
+    ops = json.loads(path.read_text())
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    def call(op, **data):
+        args = dict(site="entry-a|https://a", scope="f"*64, thread="thread", key="hash", title="title",
+                    now="100", mark="epoch:generation:observation", head="fingerprint", run="run-a",
+                    fence="1", seq="0", body='[{"kind":"user","text":"hello"}]', edge="", oldest='["turn","first"]')
+        args.update(data)
+        def execute(name):
+            rows = []
+            for statement in ops[name]:
+                if statement.startswith("@"):
+                    execute(statement[1:])
+                elif statement.startswith("!"):
+                    if not db.execute(statement[1:],args).fetchone():
+                        raise ValueError("fence")
+                elif statement.startswith("?"):
+                    rows = [dict(r) for r in db.execute(statement[1:],args)]
+                else:
+                    db.execute(statement,args)
+            return rows
+        with db:
+            return execute(op)
+    call("schema")
+    yield call
+    db.close()
+
+
+def enroll(store, **kw):
+    store("register",**kw)
+    store("enable",enable=1,**kw)
+    store("auth",**kw)
+
+
+def test_fenced_publication_and_cleanup(store):
+    enroll(store)
+    opts = {"fence":"2"}
+    store("start",**opts)
+    store("write",**opts)
+    assert store("book")[0]["complete"] == 0
+    assert store("checkpoint")[0]["oldest"] == '["turn","first"]'
+    with pytest.raises(ValueError):
+        store("write",**opts)
+    store("finish",**opts)
+    assert store("book")[0]["complete"] == 1
+    store("start",run="refresh",**opts)
+    assert store("book")[0]["run"] == "run-a"  # Old complete edition survives interrupted replacement.
+    store("remove")
+    for op, args in [("finish",opts),("write",opts),("start",{"fence":"3"})]:
+        with pytest.raises(ValueError):
+            store(op,run="refresh",**args)
+    assert store("list") == store("count") == store("chunk") == []
+    store("allow")
+    store("start",run="deliberate",fence="3")
+    store("write",run="deliberate",fence="3")
+    assert store("book")[0]["run"] == "deliberate"
+
+
+def test_exact_instance_scope_and_retention(store):
+    for name in ("a","b"):
+        args = dict(site=name,run=name,fence=2)
+        enroll(store,site=name)
+        store("start",**args)
+        store("write",**args)
+        store("finish",**args)
+    store("lock",site="a")
+    assert store("book",site="a") == [] and store("list",site="a") == []
+    assert store("book",site="b")[0]["run"] == "b"
+    store("auth",site="a")
+    assert store("book",site="a")[0]["run"] == "a"
+    store("auth",site="a",scope="d"*64)
+    assert store("count",site="a") == []
+    store("enable",site="b",enable=0)
+    assert store("list",site="b")[0]["bytes"] > 0
+    store("closed",site="b")
+    assert store("count",site="b")[0]["closed"] == 1
+    store("enable",site="b",enable=1)
+    store("checkpoint",site="b",fence=store("status",site="b")[0]["fence"])
+    assert store("count",site="b")[0]["closed"] == 0
+    store("forget",site="b")
+    assert store("status",site="b") == store("chunk",site="b",run="b") == []
+
+
+def test_outer_identity_change_and_late_revocation(store):
+    enroll(store)
+    store("start", fence=2)
+    store("write", fence=2)
+    store("reauthorize")
+    assert store("book") == store("capture") == []
+    assert store("count")  # The old edition stays locked until authorization.
+    store("auth")
+    assert store("book") == store("count") == []
+    assert store("capture")  # Preserve the opt-in with the same shared-proxy session.
+    fence = store("status")[0]["fence"]
+    store("start", fence=fence)
+    store("write", fence=fence)
+    with pytest.raises(ValueError):
+        store("revoke", scope="d" * 64)
+    assert store("book")
+    store("revoke")
+    assert store("book") == store("count") == store("capture") == []
+
+
+def test_quota_and_removed_thread_do_not_restart_writes(store):
+    enroll(store)
+    store("start", fence=2)
+    store("write", fence=2)
+    with pytest.raises(ValueError):
+        store("write", fence=2, seq=1, body="x" * (16 * 1024 * 1024))
+    assert store("book")[0]["seq"] == 1
+    store("remove")
+    store("enable", enable=0)
+    store("enable", enable=1)
+    assert store("capture") == []
+    store("allow")
+    assert store("capture")

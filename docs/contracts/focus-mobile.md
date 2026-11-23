@@ -58,3 +58,17 @@ Check and prepare all reads installation IDs, groups aliases and checks the sele
 ## Usage and verification
 
 [Build, install and verify](../../mobile/README.md)
+
+## On-device offline records
+
+Android and ArkWeb negotiate `records-v1`. Saving is opt-in per entry under Manage instances → Offline records. Only the selected thread of the foreground instance is filled back to its beginning. Ordinary browsers keep their existing transcript and reading preferences.
+
+The compact v1 GET on `/api/threads/{thread_id}/mobile-records` uses the existing authenticated document, selected-thread and backend-generation inspection fence. It projects user and assistant text, plus transient tool markers and semantic boundaries. The app's private SQLite store groups adjacent tools across pages and persists only a version, turn, first and last stable item IDs, count and ordered SHA-256 membership chain. Visible reasoning separates runs, empty assistant targets do not. Expansion verifies the original prefix, even if more items were appended. Tool headers and explicitly requested full details live in memory.
+
+Storage is keyed by local entry UUID, exact origin, a non-authorizing session equality proof, and thread. Renewal preserves the proof. Registration under a newly issued session cannot unlock an older session's records using a shared proxy label. Confirmed authentication challenges lock content. Confirmed revocation, different proof, entry removal and address changes clear the corresponding copy. Successful manual Basic login without a matching saved origin, realm and username, or a cross-origin sign-in followed by Focus authorization, starts a fresh local copy. A disconnected device relies on the last confirmed authorization.
+
+Both shells execute the same fixed, parameter-bound transactions. A staged historical edition becomes complete only on contiguous coverage back to the beginning under the same server observation and verified head. Recovery can use a stable item under the same observation. Upstream cursors are transient. Previously completed text stays available while a new edition builds. Partial assistant text is marked. Limits are 16 MiB per thread edition, 64 MiB per entry and 192 MiB across entries, including staged editions, plus database overhead. Thread counts are bounded at 1000 per entry and 5000 per device.
+
+The bundled network-isolated reader can open the last saved thread immediately on cold launch and restore its anchor. An untouched reader yields to a ready live conversation. Explicit tool expansion waits for connection and verifies membership in place. Selecting a different saved thread for expansion may use the existing read for an already-open thread. Closed threads and unresolved operations remain subject to normal selection and recovery. Unsupported source formats retain their online presentation.
+
+Local management can preview and remove one thread, old threads, an entry or all entries while offline. Old means positively closed/archived or last locally read at least 30 days ago, sparing the current reader by default. Absence from a server list proves nothing about deletion. Cleanup removes local titles, index, editions and anchors, invalidates pending writes and suppresses automatic re-enrollment until deliberate selection or saving. Turning off saving leaves existing records readable. Server history, login, drafts and mutation evidence keep their existing owners.

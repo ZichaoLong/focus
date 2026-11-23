@@ -5,12 +5,16 @@ import { common } from '@kit.AbilityKit';
 import { util, url } from '@kit.ArkTS';
 import { print } from '@kit.BasicServicesKit';
 import { Site, Login, savedLogin, rememberLogin, forgetLogin, basicRealm, sitePrefs, siteOrigin, focusRoot, httpsOrigin } from './Sites';
+import { recordAllowed, recordCall } from './RecordsStore';
+import { RecordsPanel, ReaderControls } from './RecordsPanel';
 import { FileExchange } from './FileExchange';
 
 export class InstanceTab {
   site: Site;
   key: string = util.generateRandomUUID();
   link: string;
+  readerThread: string = '';
+  read: (thread: string) => void = () => {};
   back: () => void = () => {};
   park: () => void = () => {};
   constructor(site: Site, link: string) { this.site = site; this.link = link; }
@@ -23,6 +27,11 @@ export struct InstancePane {
   showDrawer: (theme: string, fromRootBack: boolean) => void = () => {};
   leavePage: (retained: boolean) => void = () => {};
   private site: Site = new Site();
+  @State private reader: boolean = false;
+  private readerThread: string = '';
+  private coldReader: boolean = false;
+  private recordScopeConfirmed: boolean = false;
+  private readerControls: ReaderControls = new ReaderControls();
   private leaving: boolean = false;
   @State private nativeSwitcher: boolean = false;
   private switcherTimer: number = -1;
@@ -42,6 +51,7 @@ export struct InstancePane {
   private challengedRealm?: string;
   private attempted: boolean = false;
   private manual: boolean = false;
+  private previousBasicUser?: string;
   private supplied?: Login;
   private ticket: string = '';
   private link: string = '';
@@ -62,9 +72,62 @@ export struct InstancePane {
     this.source = this.probeUrl();
     this.link = this.tab.link;
     this.tab.link = '';
+    this.tab.read = (thread: string) => { this.readerThread=thread; this.coldReader=false; this.reader=true; };
+    if(this.tab.readerThread) this.tab.read(this.tab.readerThread);
+    else void this.restoreRecord();
     this.tab.back = () => this.back();
     this.tab.park = () => this.leave();
     this.awaitWebSwitcher();
+  }
+
+  private async restoreRecord(): Promise<void> {
+    const site=this.site;
+    try {
+      await recordCall(this.ctx(),site.id,site.origin,'register',{});
+      const thread=sitePrefs(this.ctx()).getSync('thread.'+site.id,'') as string;
+      const query: Record<string,string> = {}; query['thread']=thread;
+      if (!this.link && thread && await recordCall(this.ctx(),site.id,site.origin,'book',query) !== '[]'
+        && this.active && !this.gone && !this.ticket) {
+        this.readerThread=thread; this.coldReader=true; this.reader=true;
+      }
+    } catch { /* Reading storage is optional. */ }
+  }
+
+  private readerAction(op: string, data: string): void {
+    if (!this.active || !this.foreground) return;
+    if (op==='drawer') { this.reader=false; this.showDrawer('',false); return; }
+    if (op==='back') { this.reader=false; }
+    if (this.ticket && this.phase==='page') this.controller.runJavaScript(
+      'if(window.__focusMobile?.ticket==='+JSON.stringify(this.ticket)+
+      '){dispatchEvent(new CustomEvent("focus-record-action",{detail:JSON.parse('+JSON.stringify(data)+')}))}').catch(()=>{});
+  }
+
+  private async recordPrompt(e: OnPromptEvent, op: string, epoch: number): Promise<void> {
+    try {
+      if (!this.foreground) { e.result.handleCancel(); return; }
+      const data=JSON.parse(e.value) as Record<string,string>;
+      if (op==='show') {
+        this.readerThread=data['thread']; this.coldReader=false; this.reader=true;
+      } else if (op==='ready' || op==='result') {
+        data['event']=op; if(this.reader)this.readerControls.notify(JSON.stringify(data));
+      } else if (op==='bookmark' && this.reader) {
+        e.result.handlePromptConfirm('[]'); return;
+      } else {
+        if (!recordAllowed(false,op) || (data['thread'] && op!=='closed' && op!=='revert' &&
+          data['thread']!==sitePrefs(this.ctx()).getSync('thread.'+this.site.id,''))) { e.result.handleCancel(); return; }
+        const ticket=this.ticket;
+        const result=await recordCall(this.ctx(),this.site.id,this.site.origin,op,data,()=>
+          this.active && this.foreground && !this.gone && !this.leaving && epoch===this.epoch && this.ticket===ticket);
+        e.result.handlePromptConfirm(result);
+        if (op==='auth') this.recordScopeConfirmed=true;
+        if (this.reader && (op==='closed' || op==='revert')) {
+          data['event']=op; this.readerControls.notify(JSON.stringify(data));
+        }
+        if(this.reader && (op==='auth' || op==='lock' || op==='revoke')) this.readerControls.notify('{"event":"access"}');
+        return;
+      }
+      e.result.handlePromptConfirm('ok');
+    } catch { e.result.handleCancel(); }
   }
 
   private awaitWebSwitcher(): void {
@@ -89,13 +152,15 @@ export struct InstancePane {
 
   private start(manual: boolean = false): void {
     this.manual = manual; this.observedRealm = undefined; this.challengedRealm = undefined;
-    this.attempted = false; this.supplied = undefined; this.needsNetwork = false; this.message = '';
+    this.attempted = false; this.supplied = undefined; this.previousBasicUser = undefined; this.needsNetwork = false; this.message = '';
     this.resetView('probe', this.probeUrl());
   }
 
   private async enterPage(epoch: number): Promise<void> {
     if (epoch !== this.epoch || this.gone || this.phase === 'page' || this.phase === 'blocked' || this.needsNetwork) return;
     if (this.supplied) {
+      if (this.supplied.user !== this.previousBasicUser) await this.lockRecords('reauthorize');
+      if (epoch !== this.epoch || this.gone) return;
       try {
         if (this.remember) await rememberLogin(this.site, this.supplied);
         else await forgetLogin(this.site);
@@ -141,15 +206,22 @@ export struct InstancePane {
       'const url=new URL(location.href);if(!url.searchParams.has("focusApp") && !url.searchParams.has("print") && !url.hash){' +
       'url.searchParams.set("focusApp","1");location.replace(url.href)}else{' +
       'window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:' + JSON.stringify(this.site.id) + ',ticket:' + JSON.stringify(this.ticket) +
-      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer","navigation"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
+      ',name:' + JSON.stringify(this.site.name) + ',features:["wake","resume","save","thread","tabs","drawer","navigation","records-v1"' + printFeature + ']});dispatchEvent(new Event("focus-host-ready"))}}';
     this.controller.runJavaScript(script).catch(() => {});
   }
 
   private block(message: string): void {
     this.setNativeSwitcher(true);
+    this.lockRecords();
     this.phase = 'blocked'; this.message = message; this.supplied = undefined;
     this.loginForm = false; this.password = '';
     this.handler?.cancel(); this.handler = undefined;
+  }
+
+  private async lockRecords(operation: string = 'lock'): Promise<void> {
+    await recordCall(this.ctx(),this.site.id,this.site.origin,operation,{}).then(()=>{
+      if(this.reader)this.readerControls.notify('{"event":"access"}');
+    }).catch(()=>{});
   }
 
   private async challenge(event: OnHttpAuthRequestEvent, epoch: number): Promise<void> {
@@ -171,13 +243,14 @@ export struct InstancePane {
     }
     this.handler = event.handler;
     let existing: Login | undefined;
-    try { if (!this.manual) existing = await savedLogin(this.site, event.realm); }
+    try { existing = await savedLogin(this.site, event.realm); }
     catch { this.message = '无法读取安全凭据，请重新输入。'; }
     if (epoch !== this.epoch || this.gone || this.handler !== event.handler) return;
-    if (existing) { this.remember = true; this.provide(existing); }
+    this.previousBasicUser = existing?.user;
+    if (existing && !this.manual) { this.remember = true; this.provide(existing); }
     else {
       this.setNativeSwitcher(true);
-      this.user = ''; this.password = ''; this.remember = false; this.loginForm = true;
+      this.lockRecords(); this.user = ''; this.password = ''; this.remember = false; this.loginForm = true;
     }
   }
 
@@ -260,6 +333,7 @@ export struct InstancePane {
       event.result.handleCancel(); return true;
     }
     const op = event.message.slice(prefix.length);
+    if (op.startsWith('records-')) { void this.recordPrompt(event,op.substring(8),epoch); return true; }
     if (op === 'external') {
       const origin = httpsOrigin(event.value);
       if (!this.foreground || !origin || origin === this.site.origin) { event.result.handleCancel(); return true; }
@@ -271,6 +345,7 @@ export struct InstancePane {
       return true;
     }
     if (op === 'chrome') {
+      if(event.value==='web' && !this.recordScopeConfirmed)this.lockRecords();
       this.setNativeSwitcher(event.value !== 'web');
       event.result.handlePromptConfirm('ok'); return true;
     }
@@ -302,7 +377,7 @@ export struct InstancePane {
   private leave(): void {
     if (!this.active || this.leaving) return;
     this.pendingBack = 0;
-    this.leaving = true;
+    this.reader=false; this.leaving = true;
     this.signal('pause');
     const epoch = this.epoch;
     let timer: number = -1;
@@ -339,6 +414,7 @@ export struct InstancePane {
 
   private back(): void {
     if (!this.active || this.leaving || this.gone || this.pendingBack) return;
+    if (this.reader) { this.readerControls.back(); return; }
     if (this.loginForm) { this.block('已取消认证。'); return; }
     if (this.phase !== 'page' || !this.ticket || !focusRoot(this.controller.getUrl(), this.site.origin)) {
       this.browserBack(); return;
@@ -374,8 +450,10 @@ export struct InstancePane {
         }
         return null;
       })
-      .onPageBegin(() => { if (epoch === this.epoch) {
-        this.ticket = ''; this.pendingBack = 0; this.files.cancel();
+      .onPageBegin(e => { if (epoch === this.epoch) {
+        this.ticket = ''; this.recordScopeConfirmed=false; this.pendingBack = 0; this.files.cancel();
+        const origin = httpsOrigin(e.url);
+        if (this.phase==='page' && this.site.sso && origin && origin!==this.site.origin) void this.lockRecords('reauthorize');
         if (this.active) this.awaitWebSwitcher(); else this.leavePage(false);
       } })
       .onProgressChange(e => {
@@ -415,6 +493,7 @@ export struct InstancePane {
   }
 
   build() {
+    Stack() {
     Column() {
       if (this.nativeSwitcher) {
         Row() {
@@ -439,6 +518,11 @@ export struct InstancePane {
         }.padding(12)
       }
       ForEach([this.epoch], (epoch: number) => { this.pageWeb(epoch) }, (epoch: number) => String(epoch))
+    }.width('100%').height('100%')
+    if(this.reader) {
+      RecordsPanel({sites:[this.site],entry:this.site.id,thread:this.readerThread,cold:this.coldReader,
+        controls:this.readerControls,action:(op: string,data: string)=>this.readerAction(op,data)})
+    }
     }.width('100%').height('100%')
   }
 }

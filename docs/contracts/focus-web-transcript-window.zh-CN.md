@@ -287,3 +287,5 @@ cookie 或任意断开原因字符串。
 `ItemStartedNotification`、`ItemCompletedNotification`（`v2/item.rs`）；引入提交为
 `772abc9425d4bf4c2802456365785378811e7d3d`。本机 npm 0.160.0 已验证返回该字段；
 旧 producer 没有记录的时间仍可为空。
+
+移动宿主可从同一已选线程读取文字与工具位置，独立维护本机离线版本。在线窗口的页数、填屏边界和锚点导航仍由本文的 owner 维护。[本机离线记录](./focus-mobile.zh-CN.md#本机离线记录)

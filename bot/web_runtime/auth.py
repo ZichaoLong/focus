@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import threading
 import time
@@ -29,6 +30,10 @@ class WebAuthSession:
     expires_at: float
     absolute_expires_at: float
     audience: WebAuthAudience = LOCAL_WEB_AUTH_AUDIENCE
+
+    @property
+    def mobile_read_scope(self) -> str:
+        return hashlib.sha256(b"focus-mobile-records-v1\0" + self.session_token.encode()).hexdigest()
 
 
 class WebAuthManager:

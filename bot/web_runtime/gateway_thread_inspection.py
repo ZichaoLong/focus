@@ -41,6 +41,20 @@ class WebGatewayThreadInspectionMixin:
             raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
         return response
 
+    async def _handle_mobile_records(self, request: web.Request) -> web.Response:
+        client_id = self._required_client_id(request)
+        query = request_decoder.decode_transcript_query(request.query)
+        if request.query.keys() - {"cursor"}:
+            raise WebRuntimeError("Invalid mobile record page.", code="invalid_transcript_query", status=400)
+        page = await self._staged_document_request_to_thread(
+            self._ports.prepare_transcript_window, request, client_id,
+            request.match_info["thread_id"], cursor=query.get("cursor"), view="mobile_records",
+            execute=self._ports.run_prepared_thread_read,
+        )
+        session = self._request_admission.session(request)
+        # Non-authorizing, session-specific equality proof. A proxy label can be shared.
+        return self._json_response({**page, "scope": session.mobile_read_scope}, headers={"Cache-Control": "no-store"})
+
     async def _handle_thread_tool_detail(self, request: web.Request) -> web.Response:
         client_id = self._required_client_id(request)
         view, change_index, cursor = request_decoder.decode_tool_detail_query(

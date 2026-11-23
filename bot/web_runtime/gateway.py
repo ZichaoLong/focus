@@ -611,7 +611,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
             await self._close_session_sockets(
                 previous_session_token,
                 event_type="session_expired",
-                close_message=b"Focus Web session replaced",
+                close_message=b"Focus Web session replaced", revoked=True,
             )
         response = web.json_response(
             {
@@ -630,7 +630,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
         await self._close_session_sockets(
             session.session_token,
             event_type="session_expired",
-            close_message=b"Focus Web session logged out",
+            close_message=b"Focus Web session logged out", revoked=True,
         )
         response = web.json_response({"authenticated": False})
         self._request_admission.clear_session_cookie(response)
@@ -654,7 +654,11 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
             != session.session_token
         )
         try:
-            return await self._register_client_document_response(session, body)
+            response = await self._register_client_document_response(session, body)
+            if request.headers.get("X-Focus-Mobile-Records") == "1":
+                response.headers["X-Focus-Mobile-Record-Scope"] = session.mobile_read_scope
+                response.headers["Cache-Control"] = "no-store"
+            return response
         except BaseException:
             if provisional_external:
                 for client_id in tuple(
@@ -1652,6 +1656,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
         *,
         event_type: str,
         close_message: bytes,
+        revoked: bool = False,
     ) -> None:
         event_type = require_focus_web_event_type(event_type)
         expiry_task = self._session_expiry_tasks.pop(session_token, None)
@@ -1677,7 +1682,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
             if not socket.closed:
                 try:
                     await socket.send_json(
-                        {"type": event_type, **self._projection.coordinates()}
+                        {"type": event_type, **self._projection.coordinates(), **({"reason": "session_revoked"} if revoked else {})}
                     )
                 except Exception:
                     logger.debug(

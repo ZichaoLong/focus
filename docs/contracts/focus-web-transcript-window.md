@@ -353,3 +353,5 @@ Per-item timing evidence is `ThreadItemEntry` (`v2/thread.rs`) and `ItemStartedN
 `ItemCompletedNotification` (`v2/item.rs`) at the same pinned commit, introduced by
 `772abc9425d4bf4c2802456365785378811e7d3d`. Local npm 0.160.0 has been verified to return
 these fields. Times not recorded by older producers may remain null.
+
+Negotiated mobile hosts may save compact thread editions from the same selected-thread inspection boundary. The online page window, viewport filling and exact navigation remain owned here. [On-device offline records](./focus-mobile.md#on-device-offline-records)

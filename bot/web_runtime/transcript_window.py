@@ -14,6 +14,7 @@ from typing import Any, Callable
 from bot.adapters.base import ThreadItemsPage
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
+from bot.web_runtime.mobile_records import reading_rows
 from bot.web_runtime.mutation_recovery import is_web_mutation_id
 from bot.web_runtime.projection import bounded_summary_prompt_text, project_turns
 from bot.web_runtime.reply_metadata import project_reply_metadata
@@ -278,6 +279,14 @@ def read_transcript_window(
         "newer_cursor": page.backwards_cursor if direction == "desc" else page.next_cursor,
         "full_text": None,
     }
+    if prepared.view == "mobile_records":
+        first = entries[0] if entries else None
+        payload = {
+            "version": 1, "thread": prepared.thread_id, "epoch": prepared.runtime_epoch,
+            "mark": f"{prepared.connection_generation}:{prepared.observation.revision}",
+            "oldest": [first.turn_id, first.item["id"]] if first and first.item.get("id") else None,
+            "older": payload["older_cursor"], "rows": reading_rows(turns),
+        }
     if prepared.full and target is not None:
         item = target.item
         item_type = item.get("type")
@@ -295,7 +304,7 @@ def read_transcript_window(
             text = json.dumps(item, ensure_ascii=False, indent=2)
         payload["full_text"] = str(text)
         payload["turns"] = []
-    elif (prepared.view == "transcript" and len(entries) > 1
+    elif (prepared.view in {"transcript", "mobile_records"} and len(entries) > 1
           and len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > TRANSCRIPT_PAGE_BYTES):
         # Re-read fewer complete source items from the same authoritative
         # anchor. Never truncate a message or fabricate continuation cursors.

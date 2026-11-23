@@ -1,0 +1,78 @@
+{
+  "schema": [
+    "CREATE TABLE IF NOT EXISTS sites (site TEXT PRIMARY KEY, enabled INTEGER DEFAULT 0, scope TEXT DEFAULT '', locked INTEGER DEFAULT 0, fence INTEGER DEFAULT 0,note TEXT DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS books (site TEXT, thread TEXT, key TEXT, title TEXT, touched INTEGER, closed INTEGER DEFAULT 0, anchor TEXT DEFAULT '', live TEXT DEFAULT '', livebytes INTEGER DEFAULT 0, visible TEXT DEFAULT '', building TEXT DEFAULT '', PRIMARY KEY(site,thread))",
+    "CREATE TABLE IF NOT EXISTS runs (site TEXT, thread TEXT, run TEXT PRIMARY KEY, edge TEXT DEFAULT '', stamp INTEGER DEFAULT 0, complete INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0, seq INTEGER DEFAULT 0, mark TEXT, head TEXT, oldest TEXT DEFAULT '')",
+    "CREATE TABLE IF NOT EXISTS chunks (run TEXT, seq INTEGER, body TEXT, PRIMARY KEY(run,seq))",
+    "CREATE TABLE IF NOT EXISTS removed (site TEXT, key TEXT, PRIMARY KEY(site,key))",
+    "CREATE INDEX IF NOT EXISTS runs_site ON runs(site,thread)"
+  ],
+  "register": ["INSERT OR IGNORE INTO sites(site) VALUES(:site)"],
+  "status": ["?SELECT enabled, locked, fence,note FROM sites WHERE site=:site"],
+  "auth": [
+    "!SELECT 1 FROM sites WHERE site=:site AND length(:scope)=64",
+    "DELETE FROM books WHERE site=:site AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND scope<>:scope)",
+    "DELETE FROM removed WHERE site=:site AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND scope<>:scope)",
+    "UPDATE sites SET fence=fence+(scope<>:scope),scope=:scope,locked=0 WHERE site=:site",
+    "@sweep"
+  ],
+  "note": ["UPDATE sites SET note=:note WHERE site=:site AND :note IN ('','unsupported','paused') AND note<>:note"],
+  "revoke": ["!SELECT 1 FROM sites WHERE site=:site AND scope=:scope","DELETE FROM books WHERE site=:site","UPDATE sites SET locked=1,scope='',fence=fence+1 WHERE site=:site","@sweep"],
+  "lock": ["UPDATE sites SET locked=1,fence=fence+1 WHERE site=:site AND locked=0"],
+  "reauthorize": ["UPDATE sites SET scope='',locked=1,fence=fence+1 WHERE site=:site AND (scope<>'' OR NOT locked)"],
+  "enable": ["UPDATE sites SET enabled=CAST(:enable AS INTEGER),fence=fence+1 WHERE site=:site"],
+  "allow": ["DELETE FROM removed WHERE site=:site AND key=:key"],
+  "capture": ["?SELECT fence FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND NOT EXISTS(SELECT 1 FROM removed WHERE site=:site AND key=:key)"],
+  "checkpoint": [
+    "UPDATE books SET closed=0 WHERE site=:site AND thread=:thread AND closed AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER))",
+    "?SELECT r.run,r.edge,r.seq,r.complete,r.oldest,b.key FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=CASE WHEN b.building<>'' THEN b.building ELSE b.visible END WHERE b.site=:site AND b.thread=:thread AND s.enabled AND NOT s.locked AND s.scope=:scope AND r.mark=:mark AND r.head=:head"
+  ],
+  "start": [
+    "!SELECT 1 FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER) AND NOT EXISTS(SELECT 1 FROM removed WHERE site=:site AND key=:key)",
+    "!SELECT 1 WHERE EXISTS(SELECT 1 FROM books WHERE site=:site AND thread=:thread) OR ((SELECT COUNT(*) FROM books WHERE site=:site)<1000 AND (SELECT COUNT(*) FROM books)<5000)",
+    "INSERT OR IGNORE INTO books(site,thread,key,title,touched) VALUES(:site,:thread,:key,:title,:now)",
+    "UPDATE books SET building=:run,title=:title,closed=0 WHERE site=:site AND thread=:thread",
+    "INSERT INTO runs(site,thread,run,stamp,mark,head) VALUES(:site,:thread,:run,:now,:mark,:head)",
+    "@sweep"
+  ],
+  "write": [
+    "@writer",
+    "!SELECT 1 WHERE COALESCE((SELECT SUM(bytes) FROM runs WHERE site=:site),0)+COALESCE((SELECT SUM(livebytes) FROM books WHERE site=:site),0)+length(CAST(:body AS BLOB))<=67108864 AND COALESCE((SELECT SUM(bytes) FROM runs),0)+COALESCE((SELECT SUM(livebytes) FROM books),0)+length(CAST(:body AS BLOB))<=201326592",
+    "!SELECT 1 FROM runs WHERE run=:run AND seq=CAST(:seq AS INTEGER) AND bytes+length(CAST(:body AS BLOB))<=16777216",
+    "INSERT INTO chunks(run,seq,body) VALUES(:run,:seq,:body)",
+    "UPDATE runs SET bytes=bytes+length(CAST(:body AS BLOB)),seq=seq+1,edge=:edge,oldest=:oldest WHERE run=:run",
+    "UPDATE books SET visible=:run WHERE site=:site AND thread=:thread AND (visible='' OR EXISTS(SELECT 1 FROM runs old JOIN runs fresh ON fresh.run=:run WHERE old.run=books.visible AND NOT old.complete AND fresh.seq>=old.seq))"
+  ],
+  "finish": [
+    "@writer",
+    "UPDATE runs SET complete=1,oldest='' WHERE run=:run",
+    "UPDATE books SET visible=:run,building='',live='',livebytes=0 WHERE site=:site AND thread=:thread",
+    "@sweep"
+  ],
+  "writer": ["!SELECT 1 FROM sites JOIN books USING(site) WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER) AND thread=:thread AND building=:run"],
+  "live": [
+    "!SELECT 1 WHERE length(CAST(:body AS BLOB))<524288 AND COALESCE((SELECT SUM(bytes) FROM runs WHERE site=:site),0)+COALESCE((SELECT SUM(livebytes) FROM books WHERE site=:site AND thread<>:thread),0)+length(CAST(:body AS BLOB))<=67108864 AND COALESCE((SELECT SUM(bytes) FROM runs),0)+COALESCE((SELECT SUM(livebytes) FROM books WHERE site<>:site OR thread<>:thread),0)+length(CAST(:body AS BLOB))<=201326592",
+    "UPDATE books SET live=:body,livebytes=length(CAST(:body AS BLOB)) WHERE site=:site AND thread=:thread AND NOT closed AND :run IN (building,visible) AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER))"],
+  "bookmark": ["UPDATE books SET anchor=:anchor,touched=:now WHERE site=:site AND thread=:thread AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND NOT locked)"],
+  "touch": ["UPDATE books SET touched=:now WHERE site=:site AND thread=:thread"],
+  "closed": ["UPDATE books SET closed=1,building='' WHERE site=:site AND thread=:thread","@sweep"],
+  "revert": ["DELETE FROM books WHERE site=:site AND thread=:thread","UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"],
+  "list": ["?SELECT b.thread,b.key,b.title,b.touched,b.closed,r.complete,r.stamp,r.bytes+b.livebytes AS bytes FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND NOT s.locked ORDER BY b.touched DESC"],
+  "book": ["?SELECT b.thread,b.title,b.anchor,b.live,r.run,r.edge,r.seq,r.bytes,r.complete,r.stamp FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND b.thread=:thread AND NOT s.locked"],
+  "chunk": ["?SELECT c.body FROM chunks c JOIN books b ON b.visible=c.run JOIN sites s USING(site) WHERE b.site=:site AND b.thread=:thread AND NOT s.locked AND c.run=:run AND c.seq=CAST(:seq AS INTEGER)"],
+  "count": ["?SELECT b.key, b.touched,b.closed,COALESCE((SELECT SUM(bytes) FROM runs r WHERE r.site=b.site AND r.thread=b.thread),0)+b.livebytes AS bytes FROM books b WHERE b.site=:site"],
+  "remove": [
+    "INSERT OR IGNORE INTO removed SELECT site,key FROM books WHERE site=:site AND key=:key",
+    "DELETE FROM books WHERE site=:site AND key=:key",
+    "UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"
+  ],
+  "clear": [
+    "INSERT OR IGNORE INTO removed SELECT site,key FROM books WHERE site=:site",
+    "DELETE FROM books WHERE site=:site","UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"
+  ],
+  "forget": ["DELETE FROM books WHERE site=:site","DELETE FROM removed WHERE site=:site","DELETE FROM sites WHERE site=:site","@sweep"],
+  "sweep": [
+    "DELETE FROM runs WHERE NOT EXISTS(SELECT 1 FROM books b WHERE b.site=runs.site AND b.thread=runs.thread AND (b.visible=runs.run OR b.building=runs.run))",
+    "DELETE FROM chunks WHERE NOT EXISTS(SELECT 1 FROM runs WHERE runs.run=chunks.run)"
+  ]
+}

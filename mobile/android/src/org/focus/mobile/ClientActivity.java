@@ -40,6 +40,10 @@ public class ClientActivity extends Activity {
     private long drawerExitDeadline;
     private PageSlots pages;
     private ApkUpdate apkUpdate;
+    private RecordsStore records;
+    private RecordsPanel reader;
+    private boolean recordScopeConfirmed, basicIdentityChanged;
+    private FrameLayout surface;
     private String switchTarget = "";
     private Object pendingBack;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -67,8 +71,17 @@ public class ClientActivity extends Activity {
         notice = Views.column(this); layout.addView(notice);
         frame = new FrameLayout(this); layout.addView(frame, new LinearLayout.LayoutParams(-1, 0, 1));
         FrameLayout root = new FrameLayout(this);
-        root.addView(layout); Views.install(this, root);
+        surface = root; root.addView(layout); Views.install(this, root);
         drawer = new InstanceDrawer(this, root); apkUpdate = new ApkUpdate(this);
+        try {
+            String requested = new JSONObject(getIntent().getStringExtra("site")).optString("recordThread");
+            records = new RecordsStore(this);
+            records.call("register",id,origin,new JSONObject());
+            String previous = requested.isEmpty() ? presentation.getString("thread","") : requested;
+            if ((link == null || link.isEmpty()) && !previous.isEmpty()
+                    && !records.call("book",id,origin,new JSONObject().put("thread",previous)).equals("[]"))
+                openRecords(previous,requested.isEmpty());
+        } catch (Exception unavailable) { /* The online client works without a readable disk. */ }
         if (!legacy && !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) {
             if (ProfileTransfer.snapshot(this, id).getBaseFile().exists()) { importProfile(); return; }
             getSharedPreferences("instances", MODE_PRIVATE).edit().putBoolean("named-" + id, true).commit();
@@ -140,7 +153,7 @@ public class ClientActivity extends Activity {
         awaitWebSwitcher();
         main.removeCallbacks(retry); retireView();
         retryNeeded = false; probe = true; attempted = false; rejected = false; manual = editPassword;
-        supplied = null;
+        supplied = null; basicIdentityChanged = false;
         notice.setVisibility(View.GONE);
         if (origin.startsWith("http://")) { showPage(); return; }
         createView(false);
@@ -150,6 +163,7 @@ public class ClientActivity extends Activity {
     private void showPage() {
         if (!selected || !probe || rejected || retryNeeded) return;
         if (supplied != null) {
+            if (basicIdentityChanged) lockRecords("reauthorize");
             try { if (remember) BasicVault.store(this, id, supplied); else BasicVault.erase(this, id); }
             catch (Exception e) { Views.message(this, "安全存储不可用，本次凭据仅在内存中使用"); }
         }
@@ -202,7 +216,8 @@ public class ClientActivity extends Activity {
             }
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
-                ticket = ""; pendingBack = null; files.cancel(); apkUpdate.cancel();
+                ticket = ""; recordScopeConfirmed = false; pendingBack = null; files.cancel(); apkUpdate.cancel();
+                if (page && sso && Site.httpsPage(url) && !Site.sameOrigin(url, origin)) lockRecords("reauthorize");
                 if (selected) awaitWebSwitcher();
                 else main.post(() -> { if (!selected && epoch == generation) retireView(); });
             }
@@ -234,11 +249,11 @@ public class ClientActivity extends Activity {
                     reauthenticate(v, true); return;
                 }
                 if (!page && res.getStatusCode() == 401 && attempted) {
-                    rejected = true; supplied = null;
+                    rejected = true; supplied = null; lockRecords();
                     banner("入口未接受凭据。", "更新凭据", () -> openProbe(true)); return;
                 }
                 if (!page && res.getStatusCode() == 403) {
-                    rejected = true; supplied = null;
+                    rejected = true; supplied = null; lockRecords();
                     banner("入口拒绝访问 (HTTP 403)。", null, null); return;
                 }
                 if (res.getStatusCode() >= 500) networkFailure("入口返回 HTTP " + res.getStatusCode() + "，等待服务恢复。");
@@ -265,7 +280,29 @@ public class ClientActivity extends Activity {
                 if (!selected || epoch != generation || ticket.isEmpty() || !Site.root(v.getUrl(), origin)
                     || !Site.root(url, origin) || !msg.startsWith(prefix)) { result.cancel(); return true; }
                 String op = msg.substring(prefix.length());
-                if ("external".equals(op)) {
+                if (op.startsWith("records-")) {
+                    try {
+                        if (!foreground || switching) { result.cancel(); return true; }
+                        JSONObject data = new JSONObject(value);
+                        String operation = op.substring(8);
+                        if ("show".equals(operation)) {
+                            result.confirm("ok"); main.post(() -> { if (epoch == generation) openRecords(data.optString("thread"),false); });
+                        } else if ("ready".equals(operation) || "result".equals(operation)) {
+                            result.confirm("ok"); if (reader != null) reader.notify(data.put("event",operation).toString());
+                        } else if ("bookmark".equals(operation) && reader != null) {
+                            result.confirm("[]");
+                        } else {
+                            if (data.has("thread") && !"closed".equals(operation) && !"revert".equals(operation)
+                                && !presentation.getString("thread","").equals(data.getString("thread"))) { result.cancel(); return true; }
+                            result.confirm(records.request(false,id,origin,operation,data));
+                            if ("auth".equals(operation)) recordScopeConfirmed = true;
+                            if (reader != null && ("closed".equals(operation) || "revert".equals(operation)))
+                                reader.notify(data.put("event",operation).toString());
+                            if (reader != null && ("auth".equals(operation) || "lock".equals(operation) || "revoke".equals(operation)))
+                                reader.notify("{\"event\":\"access\"}");
+                        }
+                    } catch (Exception unavailable) { result.cancel(); }
+                } else if ("external".equals(op)) {
                     result.confirm(openExternal(value) ? "ok" : "error");
                 } else if ("instances".equals(op)) {
                     result.confirm("ok"); main.post(() -> { if (epoch == generation) showDrawer(value, false); });
@@ -274,6 +311,7 @@ public class ClientActivity extends Activity {
                 } else if (op.startsWith("apk-")) {
                     result.confirm(apkUpdate.handle(op, value));
                 } else if ("chrome".equals(op)) {
+                    if ("web".equals(value) && !recordScopeConfirmed) lockRecords();
                     setNativeSwitcher(!"web".equals(value));
                     result.confirm("ok");
                 } else if ("thread".equals(op)) {
@@ -313,7 +351,7 @@ public class ClientActivity extends Activity {
     private boolean checkingChallenge;
     private void challenge(HttpAuthHandler handler, String realm, int epoch) {
         if (rejected || attempted || checkingChallenge) {
-            rejected = true; handler.cancel(); supplied = null;
+            rejected = true; handler.cancel(); supplied = null; lockRecords();
             banner("入口未接受凭据。", "更新凭据", () -> openProbe(true)); return;
         }
         checkingChallenge = true;
@@ -333,9 +371,11 @@ public class ClientActivity extends Activity {
                     return;
                 }
                 JSONObject saved = null;
-                try { if (!manual) saved = BasicVault.read(this, id, origin, realm); }
+                try { saved = BasicVault.read(this, id, origin, realm); }
                 catch (Exception e) { Views.message(this, "无法读取已保存的凭据"); }
-                if (saved != null) { provide(handler, saved, true); return; }
+                if (saved != null && !manual) { provide(handler, saved, true); return; }
+                lockRecords();
+                final String previousUser = saved == null ? null : saved.optString("user");
                 LinearLayout form = Views.column(this);
                 EditText user = Views.field(this, form, "用户名", "");
                 EditText pass = Views.field(this, form, "密码", "");
@@ -349,6 +389,7 @@ public class ClientActivity extends Activity {
                     .setNegativeButton("取消", (d,w) -> cancel.run()).setOnCancelListener(d -> cancel.run())
                     .setPositiveButton("登录", (d,w) -> {
                         if (generation != epoch) { handler.cancel(); return; }
+                        basicIdentityChanged = !user.getText().toString().equals(previousUser);
                         try { provide(handler, new JSONObject().put("origin", origin).put("realm", realm)
                             .put("user", user.getText().toString()).put("password", pass.getText().toString()), keep.isChecked()); }
                         catch (JSONException e) { cancel.run(); }
@@ -369,7 +410,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','android-update'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -394,6 +435,34 @@ public class ClientActivity extends Activity {
         } catch (JSONException e) { Views.message(this, "无法读取实例列表"); }
     }
 
+    private void openRecords(String thread, boolean cold) {
+        closeRecords();
+        try {
+            JSONObject site = new JSONObject().put("id",id).put("name",name).put("origin",origin);
+            reader = new RecordsPanel(this,surface,records,new JSONArray().put(site),id,thread,cold,(op,value) -> {
+                if (!selected || !foreground) return;
+                if ("back".equals(op)) { sendReaderAction(value); closeRecords(); }
+                else if ("drawer".equals(op)) { closeRecords(); showDrawer("",false); }
+                else sendReaderAction(value);
+            });
+        } catch (Exception unavailable) { Views.message(this,"无法读取本机离线记录"); }
+    }
+    private void sendReaderAction(String value) {
+        if (web != null && !ticket.isEmpty() && Site.root(web.getUrl(),origin))
+            web.evaluateJavascript("if(window.__focusMobile?.ticket===" + JSONObject.quote(ticket)
+                + "){dispatchEvent(new CustomEvent('focus-record-action',{detail:JSON.parse(" + JSONObject.quote(value) + ")}))}",null);
+    }
+    private void closeRecords() {
+        if (reader != null) { reader.close(); reader=null; }
+    }
+    private void lockRecords() {
+        lockRecords("lock");
+    }
+    private void lockRecords(String operation) {
+        try { records.call(operation,id,origin,new JSONObject()); } catch (Exception unavailable) { /* Optional store. */ }
+        if (reader != null) reader.notify("{\"event\":\"access\"}");
+    }
+
     private void about() {
         if (!selected || probe || ticket.isEmpty() || web == null || !Site.root(web.getUrl(), origin)) {
             Views.message(this, "Focus Mobile · 连接实例后可检查客户端更新"); return;
@@ -405,7 +474,7 @@ public class ClientActivity extends Activity {
 
     private void switchInstance(String target) {
         if (!selected || switching) return;
-        switchTarget = target; switching = true; selected = false; apkUpdate.cancel();
+        closeRecords(); switchTarget = target; switching = true; selected = false; apkUpdate.cancel();
         main.removeCallbacks(retry);
         signal("pause");
         Runnable cold = () -> completeSwitch(false);
@@ -442,8 +511,10 @@ public class ClientActivity extends Activity {
             boolean policyChanged = sso != site.optBoolean("sso");
             boolean renamed = !name.equals(site.getString("name"));
             name = site.getString("name"); sso = site.optBoolean("sso");
+            String recordThread = site.optString("recordThread");
             link = intent.getStringExtra("link"); intent.removeExtra("link"); setIntent(intent);
             switching = false; boolean wasParked = !selected; selected = true;
+            if (!recordThread.isEmpty()) openRecords(recordThread,false);
             if (!legacy && ProfileTransfer.snapshot(this, id).getBaseFile().exists() &&
                     !getSharedPreferences("instances", MODE_PRIVATE).getBoolean("named-" + id, false)) { importProfile(); return; }
             if (web == null || policyChanged || Site.root(link, origin) || intent.getBooleanExtra("reload", false)) openProbe(false);
@@ -473,6 +544,7 @@ public class ClientActivity extends Activity {
 
     @Override public void onBackPressed() {
         if (!selected || switching || pendingBack != null) return;
+        if (reader != null) { reader.back(); return; }
         if (drawer != null && drawer.dismiss()) {
             if (SystemClock.elapsedRealtime() < drawerExitDeadline) moveTaskToBack(true);
             drawerExitDeadline = 0;
@@ -494,6 +566,7 @@ public class ClientActivity extends Activity {
     void releaseTask() { selected = false; retireView(); finishAndRemoveTask(); }
 
     @Override protected void onDestroy() {
+        closeRecords(); if (records != null) records.close();
         main.removeCallbacksAndMessages(null); retireView(); if (files != null) files.dispose();
         if (pages != null) pages.finishOpening();
         PageSlots.detached(this);

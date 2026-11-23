@@ -179,3 +179,10 @@ export function mobileApkRequest(action: 'info' | 'begin' | 'write' | 'finish' |
   if (reply === null || reply.startsWith('error')) throw new Error(reply?.slice(6) || 'Android installer unavailable');
   return reply;
 }
+
+/** Native storage accepts versioned operations only in the elected Focus root. */
+export function mobileRecords(op: string, data: object = {}): string | null {
+  if (!host || !hasMobileFeature('records-v1')) return null;
+  try { return window.prompt('focus/1/' + host.ticket + '/records-' + op, JSON.stringify(data)); }
+  catch { return null; }
+}

@@ -1,4 +1,4 @@
-import { recoveryStorage } from '../../lib/mobileHost';
+import { mobileRecords, recoveryStorage } from '../../lib/mobileHost';
 import { trimThreadToolExpansion } from '../toolGroupPresentation';
 import type { TranscriptScrollAnchor } from './transcriptScrollAnchor';
 
@@ -82,7 +82,12 @@ function remember(thread: string, changes: Partial<Pick<ThreadReading, 'reading'
     const next = [...rows.filter(row => row.thread !== thread), entry].slice(-readingLimit());
     const data = JSON.stringify(next);
     const store = recoveryStorage();
-    if (data !== store.getItem(KEY)) store.setItem(KEY, data);
+    if (data !== store.getItem(KEY)) {
+      store.setItem(KEY, data);
+      mobileRecords('bookmark',{thread,now:Date.now(),anchor:JSON.stringify({
+        turn:entry.bookmark?.turn, item:entry.bookmark?.item, offset:entry.bookmark?.anchor.offset, reading:entry.reading,
+      })});
+    }
   } catch { /* Reading and navigation work without storage. */ }
 }
 

@@ -229,6 +229,7 @@ guards and may not retain parallel key or enum inventories.
 
 - v41 adds Android channel checks and digest-pinned APK reads. The current document and Android host negotiate update support. [Mobile contract](./focus-mobile.md#instance-drawer-and-android-distribution)
 - v42 adds per-installation update identity reads and pinned channel preparation. [Update contract](./focus-web-update.md#updates-across-installations)
+- v43 adds compact mobile reading pages for the selected thread, an opt-in registration scope header, and the `session_revoked` reason on explicit revocation. [Mobile record contract](./focus-mobile.md#on-device-offline-records)
 
 ## 4. Endpoint and Event Admission
 

@@ -3,6 +3,7 @@ import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { systemDateTime } from '@kit.BasicServicesKit';
 import { util, url } from '@kit.ArkTS';
 import { InstanceTab, InstancePane } from '../InstancePane';
+import { RecordsPanel, ReaderControls } from '../RecordsPanel';
 import { ServerUpdates } from '../ServerUpdates';
 import { Site, sitePrefs, siteOrigin, focusRoot, forgetSite } from '../Sites';
 
@@ -21,6 +22,8 @@ struct Index {
   @State private pageLimit: number = 2;
   @StorageLink('focusMemoryWarning') @Watch('releaseInactive') private memoryWarning: number = 0;
   @State private sites: Site[] = [];
+  @State private records: boolean = false;
+  private readerControls: ReaderControls = new ReaderControls();
   @State private updating: boolean = false;
   @State private editing: boolean = false;
   @State private editingId: string = '';
@@ -40,9 +43,10 @@ struct Index {
     if (previous) this.open(previous);
   }
 
-  private open(site: Site, link: string = '', reload: boolean = false): void {
+  private open(site: Site, link: string = '', reload: boolean = false, readerThread: string = ''): void {
     const cached = this.tabs.find((tab: InstanceTab) => tab.site.id === site.id);
     const tab = cached && !link && !reload ? cached : new InstanceTab(site, link);
+    if(readerThread) { tab.readerThread=readerThread; if(tab===cached)tab.read(readerThread); }
     const others = this.tabs.filter((item: InstanceTab) => item.site.id !== site.id);
     this.tabs = [...others, tab].slice(-this.pageLimit);
     this.returnId = '';
@@ -90,6 +94,7 @@ struct Index {
   }
 
   onBackPress(): boolean {
+    if (this.records) { this.readerControls.back(); return true; }
     if (this.updating) { this.updating = false; return true; }
     if (this.drawerOpen) {
       this.drawerOpen = false;
@@ -198,7 +203,8 @@ struct Index {
             Button('保存').onClick(() => this.save())
           }.width('100%').justifyContent(FlexAlign.End)
         } else {
-          if (this.sites.length) { Button('服务端更新').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.updating = true) }
+          if (this.sites.length) { Button('本机离线记录').onClick(()=>this.records=true)
+            Button('服务端更新').buttonStyle(ButtonStyleMode.TEXTUAL).onClick(() => this.updating = true) }
           if (!this.sites.length) { Text('添加 Focus 的访问地址以开始使用。').fontSize(15) }
           ForEach(this.sites, (site: Site) => {
             Column({ space: 8 }) {
@@ -272,7 +278,7 @@ struct Index {
         Text('管理实例').width('100%').padding(12).onClick(() => this.selectEntry(''))
         Text('关于 Focus Mobile').width('100%').padding(12).onClick(() => {
           this.drawerOpen = false;
-          AlertDialog.show({ title: 'Focus Mobile 1.6.0', message: 'HarmonyOS · ArkWeb' });
+          AlertDialog.show({ title: 'Focus Mobile 1.7.0', message: 'HarmonyOS · ArkWeb' });
         })
       }.width('82%').constraintSize({ maxWidth: 328 }).height('100%').padding(14)
         .foregroundColor(this.drawerDark ? '#f1f1ed' : '#242523')
@@ -291,7 +297,16 @@ struct Index {
         }.width('100%').height('100%')
           .visibility(this.activeId === tab.site.id ? Visibility.Visible : Visibility.Hidden)
       }, (tab: InstanceTab) => tab.key)
-      if (!this.activeId && this.updating) {
+      if (!this.activeId && this.records) {
+        RecordsPanel({sites:this.sites,controls:this.readerControls,activeEntry:this.returnId,action:(op: string,value: string)=>{
+          if(op==='back')this.records=false;
+          if(op==='visit'){
+            const data=JSON.parse(value) as Record<string,string>;
+            const site=this.sites.find((s: Site)=>s.id===data['entry']);
+            if(site){this.records=false;this.open(site,'',false,data['thread']);}
+          }
+        }})
+      } else if (!this.activeId && this.updating) {
         ServerUpdates({sites:this.sites, close:() => this.updating = false,
           open:(site: Site) => { this.updating = false; this.open(site); }})
       } else if (!this.activeId) { this.manager() }
