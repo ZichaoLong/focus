@@ -67,6 +67,58 @@ def entries(adb):
     return json.loads(prefs.findtext("*[@name='list']", "[]"))
 
 
+async def check_drawer_gestures(adb, back, wait_drawer, other, current):
+    def bounds(node):
+        return tuple(map(int, re.findall(r"-?\d+", node.get("bounds"))))
+
+    def row(tree, origin):
+        return next(node for node in tree if node.get("content-desc", "").endswith(origin))
+
+    def swipe(x, y, end_x, end_y, ms):
+        adb("shell", "input", "touchscreen", "swipe", *map(str, (x, y, end_x, end_y, ms)))
+
+    tree = await asyncio.to_thread(nodes, adb)
+    other_row = row(tree, other)
+    left, top, right, bottom = original = bounds(other_row)
+    span = right - left
+    x, y = right - span // 4, (top + bottom) // 2
+    scroll = next(node for node in tree if node.get("class") == "android.widget.ScrollView")
+    screen_width = int(re.findall(r"(\d+)x\d+", adb("shell", "wm", "size"))[-1])
+
+    # Start on another instance. Taking over the drag must cancel that row's click.
+    swipe(x, y, x - span // 4, y, 500)
+    assert bounds(row(await asyncio.to_thread(nodes, adb), other)) == original, "short drag did not spring back"
+    swipe(x, y, x - span // 4, y, 65)
+    await wait_drawer(False)
+
+    # All three actions also dismiss during the system double-Back window.
+    back()
+    await wait_drawer(True)
+    swipe(x, y, x - span // 2, y, 450)
+    await wait_drawer(False)
+    back()
+    await wait_drawer(True)
+    adb("shell", "input", "tap", str(screen_width - 8), str(y))
+    await wait_drawer(False)
+    back()
+    await wait_drawer(True)
+    tap(adb, row(tree, current))
+    await wait_drawer(False)
+
+    back()
+    await wait_drawer(True)
+    _, top, _, bottom = bounds(scroll)
+    inset = (bottom - top) // 4
+    swipe(x, bottom - inset, x - span // 12, top + inset, 400)
+    scrolled = await asyncio.to_thread(nodes, adb)
+    assert any(n.get("class") == "android.widget.ScrollView" for n in scrolled), "vertical drag dismissed drawer"
+    if scroll.get("scrollable") == "true":
+        same_row = next((n for n in scrolled if n.get("content-desc") == other_row.get("content-desc")), None)
+        assert same_row is None or bounds(same_row) != original, "list did not scroll"
+    adb("shell", "input", "tap", str(screen_width - 8), str(y))
+    await wait_drawer(False)
+
+
 def change_sso(adb, site, enabled):
     choose(adb, "管理实例")
     choose(adb, "管理 " + site["name"])
@@ -89,6 +141,7 @@ async def ready_tab(session, adb, origin, replaced=None):
                 ws = await stack.enter_async_context(tab(session, adb, origin))
                 try:
                     started = await evaluate(ws, "!document.hidden && typeof window.__focusBack==='function' && "
+                                              "!!document.querySelector('.focus-shell[data-online-conversation=ready]') && "
                                               "!!document.querySelector('#composer-input:not(:disabled)') && performance.timeOrigin")
                     if started and started != replaced:
                         break
@@ -129,13 +182,16 @@ async def run(args):
             async with ready_tab(session, adb, a, previous if changed else None) as ws:
                 if not await evaluate(ws, "location.search.includes('thread=thread-1')"):
                     await evaluate(ws, "location.assign('/?focusApp=1&thread=thread-1')")
-                await wait_for(ws, "!!document.querySelector('#composer-input:not(:disabled)') && [...document.links].some(a=>a.textContent.trim()==='Navigation catalog')")
+                await wait_for(ws, "!!document.querySelector('.focus-shell[data-online-conversation=ready] #composer-input:not(:disabled)') && "
+                               "[...document.links].some(a=>a.textContent.trim()==='Navigation catalog')")
                 if await evaluate(ws, "!!document.querySelector('.focus-app.reading-mode')"):
                     await click_web(ws, ".reading-mode-exit")
                 document = await evaluate(ws, "performance.timeOrigin")
                 await evaluate(ws, "(()=>{const input=document.querySelector('#composer-input');input.value='navigation draft';"
                                "input.dispatchEvent(new Event('input',{bubbles:true}));document.cookie='navigation_source=focus;path=/;secure'})()")
-                await press_link(ws, "Navigation catalog")
+                # A real screen tap gives input focus back to the retained WebView after leaving the manager.
+                await evaluate(ws, "[...document.links].find(a=>a.textContent.trim()==='Navigation catalog').scrollIntoView({block:'center',behavior:'instant'})")
+                await asyncio.to_thread(choose, adb, "Navigation catalog")
                 await click_web(ws, ".file-download-actions button:nth-last-child(2)")
                 await wait_for(ws, "document.querySelector('.file-preview-markdown')?.innerText.includes('Open article')")
                 await press_link(ws, "Open article")
@@ -204,6 +260,14 @@ async def run(args):
             back()
             await wait_drawer(False)
             assert component in resumed(adb)
+            await evaluate(ws, "(()=>{const input=document.querySelector('#composer-input');input.value='drawer draft';"
+                           "input.dispatchEvent(new Event('input',{bubbles:true}))})()")
+            await click_web(ws, ".instance-drawer-trigger,.instance-picker")
+            await wait_drawer(True)
+            await check_drawer_gestures(adb, back, wait_drawer, a, b)
+            assert component in resumed(adb)
+            assert await evaluate(ws, "!document.hidden && document.querySelector('#composer-input').value==='drawer draft' && performance.timeOrigin") == document
+            print("Drawer distance and fling, short-drag rebound, vertical scroll, scrim and current-row tap kept the conversation and draft", flush=True)
             back()
             await wait_drawer(True)
             await asyncio.sleep(2.2)

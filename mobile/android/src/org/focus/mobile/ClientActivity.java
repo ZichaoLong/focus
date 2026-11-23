@@ -37,7 +37,6 @@ public class ClientActivity extends Activity {
     private boolean selected = true, switching;
     private FileExchange files;
     private InstanceDrawer drawer;
-    private long drawerExitDeadline;
     private PageSlots pages;
     private ApkUpdate apkUpdate;
     private RecordsStore records;
@@ -525,7 +524,7 @@ public class ClientActivity extends Activity {
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
     @Override protected void onResume() { super.onResume(); foreground = true; checkSavedAccess(); if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
-    @Override protected void onPause() { if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; drawerExitDeadline = 0; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override protected void onPause() { if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; if (drawer != null) drawer.disarmExit(); main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onStop() {
         super.onStop();
         if (!selected && !isFinishing()) moveTaskToBack(true);
@@ -536,8 +535,7 @@ public class ClientActivity extends Activity {
         try {
             JSONArray sites = new JSONArray(getSharedPreferences("instances", MODE_PRIVATE).getString("list", "[]"));
             boolean dark = "dark".equals(theme) || (theme.isEmpty() && (getResources().getConfiguration().uiMode & 48) == 32);
-            drawer.show(sites, id, dark, this::switchInstance, () -> switchInstance(""), this::about);
-            drawerExitDeadline = fromRootBack ? SystemClock.elapsedRealtime() + 2000 : 0;
+            drawer.show(sites, id, dark, fromRootBack, this::switchInstance, () -> switchInstance(""), this::about);
         } catch (JSONException e) { Views.message(this, "无法读取实例列表"); }
     }
 
@@ -652,11 +650,7 @@ public class ClientActivity extends Activity {
     @Override public void onBackPressed() {
         if (!selected || switching || pendingBack != null) return;
         if (reader != null) { reader.back(); return; }
-        if (drawer != null && drawer.dismiss()) {
-            if (SystemClock.elapsedRealtime() < drawerExitDeadline) moveTaskToBack(true);
-            drawerExitDeadline = 0;
-            return;
-        }
+        if (drawer != null && drawer.handleBack(() -> moveTaskToBack(true))) return;
         if (savedChat!=null) { savedChat.back(() -> showDrawer("",true)); return; }
         if (web == null || probe || ticket.isEmpty() || !Site.root(web.getUrl(), origin)) { browserBack(); return; }
         Object press = new Object(); pendingBack = press;
