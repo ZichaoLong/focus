@@ -60,15 +60,15 @@
   "list": ["?SELECT b.thread,b.key,b.title,b.touched,b.closed,r.complete,r.stamp,r.bytes+b.livebytes AS bytes FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND NOT s.locked ORDER BY b.touched DESC"],
   "book": ["?SELECT b.thread,b.title,b.anchor,b.live,r.run,r.edge,r.seq,r.bytes,r.complete,r.stamp FROM books b JOIN sites s USING(site) JOIN runs r ON r.run=b.visible WHERE b.site=:site AND b.thread=:thread AND NOT s.locked"],
   "chunk": ["?SELECT c.body FROM chunks c JOIN books b ON b.visible=c.run JOIN sites s USING(site) WHERE b.site=:site AND b.thread=:thread AND NOT s.locked AND c.run=:run AND c.seq=CAST(:seq AS INTEGER)"],
-  "count": ["?SELECT b.key, b.touched,b.closed,COALESCE((SELECT SUM(bytes) FROM runs r WHERE r.site=b.site AND r.thread=b.thread),0)+b.livebytes AS bytes FROM books b WHERE b.site=:site"],
-  "remove": [
-    "INSERT OR IGNORE INTO removed SELECT site,key FROM books WHERE site=:site AND key=:key",
-    "DELETE FROM books WHERE site=:site AND key=:key",
-    "UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"
+  "candidates": [
+    "?SELECT b.key || '.' || b.touched || '.' || (b.thread=:reading) AS choice, s.fence,s.locked,(b.thread=:reading) AS reading, CASE WHEN s.locked THEN '' ELSE b.title END AS title, b.touched,b.closed,COALESCE(v.complete,-1) AS complete, COALESCE((SELECT SUM(bytes) FROM runs r WHERE r.site=b.site AND r.thread=b.thread),0)+b.livebytes AS bytes FROM books b JOIN sites s USING(site) LEFT JOIN runs v ON v.run=b.visible WHERE b.site=:site AND (:mode='all' OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER)))) ORDER BY b.touched,b.key"
   ],
-  "clear": [
-    "INSERT OR IGNORE INTO removed SELECT site,key FROM books WHERE site=:site",
-    "DELETE FROM books WHERE site=:site","UPDATE sites SET fence=fence+1 WHERE site=:site","@sweep"
+  "cleanselected": [
+    "INSERT OR IGNORE INTO removed SELECT b.site,b.key FROM books b JOIN sites s USING(site) WHERE b.site=:site AND s.fence=CAST(:fence AS INTEGER) AND s.locked=CAST(:locked AS INTEGER) AND instr(:choices, ',' || b.key || '.' || b.touched || '.' || (b.thread=:reading) || ',')>0 AND (:mode='all' OR (:mode='old' AND b.thread<>:reading AND (b.closed OR b.touched<=CAST(:before AS INTEGER))))",
+    "DELETE FROM books WHERE site=:site AND key IN (SELECT key FROM removed WHERE site=:site) AND instr(:choices, ',' || key || '.')>0",
+    "?SELECT changes() AS removed",
+    "UPDATE sites SET fence=fence+1 WHERE site=:site AND changes()>0",
+    "@sweep"
   ],
   "forget": ["DELETE FROM books WHERE site=:site","DELETE FROM removed WHERE site=:site","DELETE FROM sites WHERE site=:site","@sweep"],
   "sweep": [

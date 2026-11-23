@@ -77,7 +77,7 @@ def store():
     def call(op, **data):
         args = dict(site="entry-a|https://a", scope="f"*64, thread="thread", key="hash", title="title",
                     now="100", mark="epoch:generation:observation", head="fingerprint", run="run-a",
-                    fence="1", seq="0", body='[{"kind":"user","text":"hello"}]', edge="", oldest='["turn","first"]')
+                    reading="", before="100", mode="all", fence="1", seq="0", body='[{"kind":"user","text":"hello"}]', edge="", oldest='["turn","first"]')
         args.update(data)
         def execute(name):
             rows = []
@@ -105,6 +105,10 @@ def enroll(store, **kw):
     store("auth",**kw)
 
 
+def clean_copy(store, row):
+    return store("cleanselected",choices=","+row["choice"]+",",locked=row["locked"],fence=row["fence"])
+
+
 def test_fenced_publication_and_cleanup(store):
     enroll(store)
     opts = {"fence":"2"}
@@ -118,11 +122,11 @@ def test_fenced_publication_and_cleanup(store):
     assert store("book")[0]["complete"] == 1
     store("start",run="refresh",**opts)
     assert store("book")[0]["run"] == "run-a"  # Old complete edition survives interrupted replacement.
-    store("remove")
+    assert clean_copy(store,store("candidates")[0]) == [{"removed":1}]
     for op, args in [("finish",opts),("write",opts),("start",{"fence":"3"})]:
         with pytest.raises(ValueError):
             store(op,run="refresh",**args)
-    assert store("list") == store("count") == store("chunk") == []
+    assert store("list") == store("candidates") == store("chunk") == []
     store("allow")
     store("start",run="deliberate",fence="3")
     store("write",run="deliberate",fence="3")
@@ -142,14 +146,14 @@ def test_exact_instance_scope_and_retention(store):
     store("auth",site="a")
     assert store("book",site="a")[0]["run"] == "a"
     store("auth",site="a",scope="d"*64)
-    assert store("count",site="a") == []
+    assert store("candidates",site="a") == []
     store("enable",site="b",enable=0)
     assert store("list",site="b")[0]["bytes"] > 0
     store("closed",site="b")
-    assert store("count",site="b")[0]["closed"] == 1
+    assert store("candidates",site="b")[0]["closed"] == 1
     store("enable",site="b",enable=1)
     store("checkpoint",site="b",fence=store("status",site="b")[0]["fence"])
-    assert store("count",site="b")[0]["closed"] == 0
+    assert store("candidates",site="b")[0]["closed"] == 0
     store("forget",site="b")
     assert store("status",site="b") == store("chunk",site="b",run="b") == []
 
@@ -160,9 +164,9 @@ def test_outer_identity_change_and_late_revocation(store):
     store("write", fence=2)
     store("reauthorize")
     assert store("book") == store("capture") == []
-    assert store("count")  # The old edition stays locked until authorization.
+    assert store("candidates")  # The old edition stays locked until authorization.
     store("auth")
-    assert store("book") == store("count") == []
+    assert store("book") == store("candidates") == []
     assert store("capture")  # Preserve the opt-in with the same shared-proxy session.
     fence = store("status")[0]["fence"]
     store("start", fence=fence)
@@ -171,7 +175,7 @@ def test_outer_identity_change_and_late_revocation(store):
         store("revoke", scope="d" * 64)
     assert store("book")
     store("revoke")
-    assert store("book") == store("count") == store("capture") == []
+    assert store("book") == store("candidates") == store("capture") == []
 
 
 def test_quota_and_removed_thread_do_not_restart_writes(store):
@@ -181,9 +185,69 @@ def test_quota_and_removed_thread_do_not_restart_writes(store):
     with pytest.raises(ValueError):
         store("write", fence=2, seq=1, body="x" * (16 * 1024 * 1024))
     assert store("book")[0]["seq"] == 1
-    store("remove")
+    assert clean_copy(store,store("candidates")[0]) == [{"removed":1}]
     store("enable", enable=0)
     store("enable", enable=1)
     assert store("capture") == []
     store("allow")
     assert store("capture")
+
+
+def test_cleanup_rechecks_selected_copies_in_one_site_transaction(store):
+    def save(site, thread, touched):
+        data = dict(site=site, thread=thread, key=thread, title=thread, now=str(touched),
+                    run=site+"-"+thread, fence=store("status",site=site)[0]["fence"])
+        store("start",**data)
+        store("write",**data)
+
+    for site in ("a","b"):
+        enroll(store,site=site)
+    for thread in ("boundary","reread","closed","reopened","closed-reread","omitted","current"):
+        save("a",thread,101 if thread in ("closed","reopened","closed-reread") else 100)
+    for thread in ("closed","reopened","closed-reread"):
+        store("closed",site="a",thread=thread)
+    save("b","boundary",100)
+    store("finish",site="a",thread="boundary",run="a-boundary",fence=2)
+    store("start",site="a",thread="boundary",key="boundary",title="boundary",run="replacement",fence=2)
+    store("write",site="a",thread="boundary",run="replacement",fence=2)
+    old = dict(site="a", mode="old", before="100", reading="current")
+    preview = {r["title"]:r for r in store("candidates",**old)}
+    assert set(preview) == {"boundary","reread","closed","reopened","closed-reread","omitted"}
+    assert preview["boundary"]["complete"] == 1
+    visible = next(r for r in store("list",site="a") if r["title"]=="boundary")
+    assert preview["boundary"]["bytes"] == 2*visible["bytes"]
+    chosen = [r["choice"] for name,r in preview.items() if name != "omitted"]
+    store("touch",site="a",thread="reread",now="110")
+    store("touch",site="a",thread="closed-reread",now="110")
+    store("checkpoint",site="a",thread="reopened",fence=2)
+    save("a","arrived-after-preview",90)
+    request = dict(**old, fence="2", locked="0", choices=","+",".join(chosen)+",")
+    assert store("cleanselected",**request) == [{"removed":2}]
+    assert store("cleanselected",**request) == [{"removed":0}]
+    assert store("status",site="a")[0]["fence"] == 3
+    assert {r["title"] for r in store("candidates",site="a")} == {
+        "current","omitted","reread","reopened","closed-reread","arrived-after-preview"}
+    assert store("candidates",site="b")[0]["title"] == "boundary"
+    assert store("capture",site="a",key="boundary") == []
+
+
+def test_cleanup_locked_preview_and_current_reader(store):
+    enroll(store)
+    store("start",fence=2,title="private title")
+    preview = store("candidates")[0]
+    assert preview["complete"] == -1  # No readable edition yet.
+    request = dict(choices=","+preview["choice"]+",",fence="2",locked="0")
+    assert store("cleanselected",reading="thread",**request) == [{"removed":0}]
+    store("lock")
+    assert store("cleanselected",**request) == [{"removed":0}]
+    locked = store("candidates",reading="thread")[0]
+    assert locked["locked"] == 1 and locked["reading"] == 1 and locked["title"] == ""
+    assert store("candidates",mode="old",reading="thread") == []
+    locked_request = dict(reading="thread",choices=","+locked["choice"]+",",fence=locked["fence"],locked="1")
+    store("auth")
+    assert store("status")[0]["fence"] == locked["fence"]
+    assert store("cleanselected",**locked_request) == [{"removed":0}]
+    store("lock")
+    locked_request["fence"] = store("candidates",reading="thread")[0]["fence"]
+    assert store("cleanselected",**locked_request) == [{"removed":1}]
+    assert store("candidates") == []

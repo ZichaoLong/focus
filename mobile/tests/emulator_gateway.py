@@ -31,7 +31,7 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
     if not (ROOT / "bot/web_assets/dist/focus-connect.txt").is_file():
         raise SystemExit("Build web/ before running the emulator fixture")
     prefix = "https://10.0.2.2:"
-    config = ["{", "admin off", "auto_https off", "persist_config off", "}"]
+    config = ["{", "admin off", "auto_https off", "persist_config off", "default_sni 10.0.2.2", "}"]
     gateways = []
     runtimes = []
     entries = []

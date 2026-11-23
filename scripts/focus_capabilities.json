@@ -3936,6 +3936,7 @@
           "runner": "vitest",
           "targets": [
             "web/test/focus-mobile-records.test.ts",
+            "web/test/focus-mobile-record-cleanup.test.ts",
             "web/test/focus-mobile-host.test.ts"
           ]
         }

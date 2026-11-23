@@ -51,7 +51,7 @@ export async function recordCall(ctx: common.UIAbilityContext, id: string, origi
 }
 
 export function recordAllowed(local: boolean, op: string): boolean {
-  const list = local ? ' status enable list book chunk bookmark touch count remove clear allow ' :
+  const list = local ? ' status enable list book chunk bookmark touch candidates cleanselected allow ' :
     ' auth lock revoke note touch capture checkpoint start write finish live bookmark closed revert allow ';
   return /^[a-z]+$/.test(op) && list.includes(' '+op+' ');
 }
