@@ -441,6 +441,7 @@
     "test/focus-instance-inventory-surface.test.ts",
     "test/focus-mobile-editor-browser.test.ts",
     "test/focus-mobile-host.test.ts",
+    "test/focus-mobile-record-cleanup.test.ts",
     "test/focus-mobile-records.test.ts",
     "test/focus-mobile-server-updates.test.ts",
     "test/focus-next-turn-settings-surface.test.ts",
