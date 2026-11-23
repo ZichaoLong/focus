@@ -4,7 +4,7 @@
   const host = (name, value = '') => prompt('focus-updates/' + name, value);
   const config = JSON.parse(host('init'));
   const $ = id => document.getElementById(id);
-  const rows = config.sites.map(site => ({site, note: '待检查', fresh: false, selected: true}));
+  const rows = config.sites.map(site => ({site, note: '待检查', fresh: false, checkSelected: false, applySelected: true}));
   const saved = config.records || {};
   $('channel').value = ['main', 'stable'].includes(config.channel) ? config.channel : 'installed';
   const activeStates = ['checking', 'cancelling', 'applying'];
@@ -44,7 +44,10 @@
     for (const r of group) saved[r.site.id] = value;
     persist();
   }
-  function representative(group) { return group.find(row => row.fresh) || group[0]; }
+  function representative(group) {
+    return group.find(row => row.fresh && row.op.operation_id && record(row)?.op === row.op.operation_id)
+      || group.find(row => row.fresh) || group[0];
+  }
   function eligible(row) {
     const savedOp = record(row);
     const channel = $('channel').value;
@@ -57,20 +60,33 @@
     if (cls) el.className = cls;
     return el;
   }
+  const selectedForCheck = group => group.some(row => row.checkSelected);
+  const selectedForApply = group => group.every(row => row.applySelected);
+  function checkbox(label, names, checked, onChange) {
+    const box = node('input'); box.type = 'checkbox'; box.checked = checked; box.disabled = busy;
+    box.setAttribute('aria-label',label + ' ' + names);
+    box.onchange = () => { onChange(box.checked); render(); };
+    const control = node('label'); control.append(box,label);
+    return control;
+  }
   function render() {
     const list = $('list'); list.replaceChildren();
-    let ready = 0;
+    let checked = 0, ready = 0;
     for (const group of groups()) {
       const row = representative(group);
       const card = node('section', '', 'card'), header = node('header');
       const names = group.map(r => r.site.name).join('、');
-      header.append(node('h2',names));
+      const checkSelected = selectedForCheck(group);
+      header.append(node('h2',names), checkbox('检查',names,checkSelected, value => {
+        for (const item of group) item.checkSelected = value;
+      }));
+      if (checkSelected) checked++;
       if (eligible(row)) {
-        const box = node('input'); box.type = 'checkbox'; box.checked = row.selected; box.disabled = busy;
-        box.setAttribute('aria-label','更新 ' + names);
-        box.onchange = () => { for (const r of group) r.selected = box.checked; render(); };
-        header.append(box);
-        if (row.selected) ready++;
+        const applySelected = selectedForApply(group);
+        header.append(checkbox('更新',names,applySelected, value => {
+          for (const item of group) item.applySelected = value;
+        }));
+        if (applySelected) ready++;
       }
       card.append(header);
       const installed = row.installed;
@@ -93,6 +109,8 @@
     }
     $('apply').textContent = ready ? '确认更新已就绪的 ' + ready + ' 套安装' : '确认更新已就绪的安装';
     $('apply').disabled = !ready || busy;
+    $('check-selected').textContent = checked ? '检查并准备所选（' + checked + '）' : '检查并准备所选';
+    $('check-selected').disabled = busy || !checked;
     $('check').disabled = busy || !rows.length; $('channel').disabled = busy;
   }
   function targetLabel(channel, revision, version) {
@@ -128,22 +146,30 @@
     row.detail = record(row)?.sent ? (row.blocked ? '请在实例设置中核对上次操作 ID' : '等待服务恢复后核对操作记录') : '';
   }
   async function read(row, n) {
-    try { const data = await rpc(row,'status'); if (live(n)) observe(row,data); }
+    try {
+      const data = await rpc(row,'status');
+      if (live(n)) {
+        observe(row,data);
+        for (const alias of rows) if (alias !== row && alias.install === row.install) observe(alias,data);
+      }
+    }
     catch (e) { if (live(n)) failure(row,e); }
     if (live(n)) render();
   }
-  async function check(n) {
-    for (const row of rows) {
+  async function check(n, scope) {
+    backoff = 0;
+    for (const row of scope) {
       if (!live(n)) return;
-      row.install = ''; row.to = ''; row.lastError = ''; row.fresh = false; row.selected = true; row.note = '正在读取安装记录'; render();
+      row.install = ''; row.to = ''; row.lastError = ''; row.fresh = false; row.note = '正在读取安装记录'; render();
       await read(row,n);
     }
     // Limit builds launched by this click. The server workers outlive their HTTP requests.
     let preparing = [];
     for (const group of groups()) {
       if (!live(n)) return;
-      const row = representative(group);
-      if (!row.fresh || activeStates.includes(row.op.state) || row.op.state === 'unknown') continue;
+      // A retry can discover a known installation through a previously offline alias.
+      const row = group.find(item => scope.has(item) && item.fresh);
+      if (!row || activeStates.includes(row.op.state) || row.op.state === 'unknown') continue;
       while (preparing.length >= 2) {
         await sleep(3500);
         if (!live(n)) return;
@@ -220,12 +246,7 @@
     for (const group of groups()) {
       if (!live(n)) return;
       const row = representative(group);
-      if (watch(row)) {
-        await read(row,n);
-        if (live(n) && row.fresh) for (const alias of group) {
-          if (alias !== row && alias.install === row.install) Object.assign(alias,{fresh:row.fresh,op:row.op,note:row.note,detail:row.detail,to:row.to,installed:row.installed});
-        }
-      }
+      if (watch(row)) await read(row,n);
     }
     backoff = rows.some(row => watch(row) && !row.fresh) ? Math.min(backoff + 1,4) : 0;
   }
@@ -255,9 +276,13 @@
     persist(); clearTimeout(timer); render();
   };
   $('back').onclick = () => host('back');
-  $('check').onclick = () => { backoff = 0; start(check); };
+  $('check').onclick = () => start(n => check(n,new Set(rows)));
+  $('check-selected').onclick = () => {
+    const scope = new Set(groups().filter(selectedForCheck).flat());
+    if (scope.size) start(n => check(n,scope));
+  };
   $('apply').onclick = () => {
-    const choices = groups().map(group => ({group, row:representative(group)})).filter(({row}) => eligible(row) && row.selected)
+    const choices = groups().map(group => ({group, row:representative(group)})).filter(({group,row}) => eligible(row) && selectedForApply(group))
       .map(({group,row}) => ({group,row,install:row.install,op:row.op.operation_id}));
     if (choices.length) start(n => apply(n,choices));
   };
