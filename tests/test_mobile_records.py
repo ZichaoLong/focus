@@ -3,17 +3,25 @@
 import json
 from pathlib import Path
 import sqlite3
+import tempfile
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+from aiohttp import ClientSession, CookieJar
 
 from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
 from bot.web_runtime.auth import WebAuthManager
 from bot.codex_protocol.client import CodexRpcError
+from bot.focus_runtime.web_gateway_composition import compose_web_gateway
+from bot.service_runtime_lifecycle import ServiceRuntimeIngressDispatcher
+from bot.web_runtime.gateway import WebGatewayConfig
 from bot.web_runtime.mobile_records import reading_rows, record_states
 from bot.web_runtime.transcript_window import project_transcript_item
+from tests.test_service_runtime_lifecycle import _LifecycleFixture
 from tests.test_web_transcript_window import inspection, read  # noqa: F401 -- shared admitted inspection fixture
 from tests.web_runtime.gateway_harness import WebGatewayHarness
+from tests.web_runtime.harness import WebRuntimeControllerHarness
 
 
 def test_projection_keeps_prose_and_semantic_breaks_without_tool_payload(inspection):  # noqa: F811
@@ -36,20 +44,64 @@ def test_projection_keeps_prose_and_semantic_breaks_without_tool_payload(inspect
     assert reading_rows(project_transcript_item("one", items[-1])) == [result["rows"][-1]]
 
 
-class MobileRouteTests(WebGatewayHarness):
-    async def test_ordinary_head_can_carry_its_admitted_read_observation(self):
+class MobileTranscriptRouteTests(WebGatewayHarness):
+    async def asyncSetUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        root = Path(self.temp_dir.name)
+        assets = root / "static"
+        assets.mkdir()
+        (assets / "index.html").write_text("<html></html>", encoding="utf-8")
+        self.runtime = WebRuntimeControllerHarness()
+        self.runtime.setUp()
+        self.addCleanup(self.runtime.doCleanups)
+        self.runtime.fake.history_mode = "paginated"
+        self.lifecycle = _LifecycleFixture().lifecycle
+        self.lifecycle.start()
+
+        def call(callback, *args, **kwargs):
+            return callback(*args, **kwargs)
+
+        ingress = ServiceRuntimeIngressDispatcher(self.lifecycle, call, call)
+        self.gateway = compose_web_gateway(
+            config=WebGatewayConfig(static_dir=assets), data_dir=root,
+            projection=self.runtime.projection, web_runtime=self.runtime.controller,
+            ingress=lambda: ingress, runtime_call=call, backend_reset=Mock(),
+            operator_status=Mock(), data_retention=Mock(),
+        )
+        self.endpoint = self.gateway.start()
+        self.session = ClientSession(cookie_jar=CookieJar(unsafe=True))
+
+    async def test_retry_with_reading_mark_through_production_ingress(self):
         await self._authenticate()
         document = await self._register_document(incarnation_id="reading-window")
-        receipt = SimpleNamespace(connection_generation=7, observation=SimpleNamespace(revision=13))
-        self.gateway._ports.prepare_transcript_window = lambda *args, **kwargs: receipt
-        self.gateway._ports.run_prepared_thread_read = lambda admitted: {"turns": [], "thread_id": "thread-1"}
+        headers = self._client_headers(document)
+        async with self.session.post(self.endpoint + "/api/threads/thread-1/open", headers=headers) as response:
+            self.assertEqual(response.status, 200)
+        page = ThreadItemsPage(items=[ThreadItemEntry("turn-1", {"id": "reply", "type": "agentMessage", "text": "Recovered"})])
+        self.runtime.fake.list_thread_items = Mock(side_effect=[TimeoutError(), page, page, page])
         url = self.endpoint + "/api/threads/thread-1/transcript"
-        for headers, mark in [({}, None), ({"X-Focus-Reading-Window": "1"}, "7:13")]:
-            async with self.session.get(url, headers={**self._client_headers(document), **headers}) as response:
-                self.assertEqual(response.status, 200)
-                self.assertEqual(response.headers.get("X-Focus-Reading-Mark"), mark)
-                self.assertEqual((await response.json())["turns"], [])
+        marked = {**headers, "X-Focus-Reading-Window": "1"}
+        async with self.session.get(url, headers=marked) as response:
+            self.assertEqual(response.status, 504)
+            self.assertNotIn("X-Focus-Reading-Mark", response.headers)
+        async with self.session.get(url, headers=marked) as response:
+            self.assertEqual(response.status, 200)
+            mark = response.headers["X-Focus-Reading-Mark"]
+            body = await response.json()
+            self.assertEqual(body["turns"][0]["text"], "Recovered")
+            self.assertNotIn("reading_mark", body)
+        async with self.session.get(url, headers=headers) as response:
+            self.assertNotIn("X-Focus-Reading-Mark", response.headers)
+            self.assertEqual(await response.json(), body)
+        async with self.session.get(self.endpoint + "/api/threads/thread-1/mobile-records", headers=headers) as response:
+            self.assertEqual((await response.json())["mark"], mark)
+        # A failed read or retry must not strand an ingress receipt that blocks maintenance.
+        self.assertTrue(self.lifecycle.prepare_offline_maintenance(lambda: True))
+        self.lifecycle.stop()
 
+
+class MobileRouteTests(WebGatewayHarness):
     async def test_status_checks_exact_document_scope_and_bounded_batch(self):
         await self._authenticate()
         async with self.session.post(self.endpoint+"/api/client/register", json={"incarnation_id":"checker"},

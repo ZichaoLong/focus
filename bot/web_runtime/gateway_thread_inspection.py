@@ -31,19 +31,14 @@ class WebGatewayThreadInspectionMixin:
         client_id = self._required_client_id(request)
         query = request_decoder.decode_transcript_query(request.query)
         fill = query.pop("fill", None)
-        record_mark = ""
-
-        def prepare_reading_window(*args, **kwargs):
-            nonlocal record_mark
-            receipt = self._ports.prepare_transcript_window(*args, **kwargs)
-            record_mark = f"{receipt.connection_generation}:{receipt.observation.revision}"
-            return receipt
-
-        wants_mark = request.headers.get("X-Focus-Reading-Window") == "1"
-        response = self._json_response(await self._staged_document_request_to_thread(
-            prepare_reading_window if wants_mark else self._ports.prepare_transcript_window, request, client_id,
+        if request.headers.get("X-Focus-Reading-Window") == "1":
+            query["include_reading_mark"] = True
+        page = await self._staged_document_request_to_thread(
+            self._ports.prepare_transcript_window, request, client_id,
             request.match_info["thread_id"], **query,
-        ))
+        )
+        record_mark = page.pop("reading_mark", None)
+        response = self._json_response(page)
         if record_mark:
             response.headers["X-Focus-Reading-Mark"] = record_mark
         # Cap the actual serialized mobile/browser response, including timing

@@ -222,6 +222,7 @@ class WebThreadInspectionService:
         full: bool = False,
         view: str = "transcript",
         source_cursor: str | None = None,
+        include_reading_mark: bool = False,
     ) -> WebThreadTranscriptPreparation:
         if direction not in {"asc", "desc"} or type(full) is not bool:
             raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
@@ -245,7 +246,7 @@ class WebThreadInspectionService:
             document=document, observation=observation,
             connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
             runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
-            view=view, source_cursor=source_cursor,
+            view=view, source_cursor=source_cursor, include_reading_mark=include_reading_mark,
             live_item=self._ports.live_transcript_item(thread_id, turn_id, item_id)
             if full and turn_id and item_id else None,
         )
@@ -632,6 +633,8 @@ class WebThreadInspectionService:
         assert effect.snapshot is not None
         assert effect.payload is not None
         self._direct_targets.remember_verified_snapshot(effect.snapshot)
+        if isinstance(prepared, WebThreadTranscriptPreparation) and prepared.include_reading_mark:
+            return {**effect.payload, "reading_mark": prepared.reading_mark}
         return effect.payload
 
     def _require_current_coordinates(

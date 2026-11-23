@@ -49,6 +49,11 @@ class WebThreadTranscriptPreparation:
     source_cursor: str | None = None
     page_limit: int = TRANSCRIPT_PAGE_ITEMS
     live_item: dict[str, Any] | None = None
+    include_reading_mark: bool = False
+
+    @property
+    def reading_mark(self) -> str:
+        return f"{self.connection_generation}:{self.observation.revision}"
 
 
 def _tool_summary(
@@ -283,7 +288,7 @@ def read_transcript_window(
         first = entries[0] if entries else None
         payload = {
             "version": 1, "thread": prepared.thread_id, "epoch": prepared.runtime_epoch,
-            "mark": f"{prepared.connection_generation}:{prepared.observation.revision}",
+            "mark": prepared.reading_mark,
             "oldest": [first.turn_id, first.item["id"]] if first and first.item.get("id") else None,
             "older": payload["older_cursor"], "rows": reading_rows(turns),
         }
