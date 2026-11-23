@@ -50,7 +50,7 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
         runtime = WebRuntimeControllerHarness()
         runtime.setUp()
         runtimes.append(runtime)
-        runtime.fake.history_mode = "legacy"
+        runtime.fake.history_mode = "paginated" if records else "legacy"
         runtime.fake.extra_summaries.append(replace(runtime.fake.summary(), thread_id="thread-2", name="Second conversation"))
         runtime.fake.turns = [
             {"id": f"mobile-{n}", "status": "completed", "items": [
@@ -65,7 +65,7 @@ def serve(lab, disconnect_grace, forward_port, session_lifetime, second_basic, h
             runtime.fake.turns[-1]["items"][-1]["text"] += f"\n\n[Navigation catalog]({catalog})\n\n[Open article]({guest}/jump)"
         if records:
             from records_history import install_record_history
-            install_record_history(runtime.fake, index)
+            install_record_history(runtime.fake, index, lab / f"arrived-{index}")
         controller = runtime.controller
         retention = DataRetentionService(DataRetentionStore(runtime.workspace.parent, config_dir=runtime.workspace.parent / "config"), {})
         for tid in ("thread-1", "thread-2"):

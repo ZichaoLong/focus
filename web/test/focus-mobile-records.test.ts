@@ -87,6 +87,16 @@ describe('foreground mobile reader',()=>{
       expect(host).not.toHaveBeenCalledWith('closed',expect.anything());
     } finally { feature.mockReturnValue(false); owner.dispose(); }
   });
+  it('uses the accepted head for a complete edition without downloading its messages again',async()=>{
+    const {owner,connected,api}=fixture();
+    try {
+      owner.acceptHead({thread_id:'thread',turn_id:null,view:'transcript',revision:2,runtime_epoch:'epoch',
+        readingMark:'1:2',older_cursor:null,newer_cursor:null,target_pending:false,full_text:null,turns:[]});
+      connected.value=true;
+      await vi.waitFor(()=>expect(mobileRecords).toHaveBeenCalledWith('checkpoint',expect.anything()));
+      expect(api.readMobileRecords).not.toHaveBeenCalled();
+    } finally { owner.dispose(); }
+  });
   it('reattaches live partial text to a completed edition after parking',async()=>{
     const {owner,host,connected,api}=fixture();
     try {
@@ -115,5 +125,41 @@ describe('foreground mobile reader',()=>{
       await vi.waitFor(()=>expect(host).toHaveBeenCalledWith('result',{id:'open',open:true}));
       expect(ctx.locate).toHaveBeenCalledWith('one','first');
     } finally { owner.dispose(); }
+  });
+});
+
+describe('saved messages in the ordinary conversation', () => {
+  it('reads and pages while open is held, then adopts the authoritative item exactly once',async () => {
+    const { createFocusTranscript } = await import('../src/focus/focusTranscript');
+    const scope='e'.repeat(64);
+    const feature=vi.mocked(hasMobileFeature);
+    feature.mockImplementation(name=>name==='conversation-windows');
+    const stored=(item:string,text:string)=>({kind:'assistant',turn:'turn',item,text});
+    const native=vi.mocked(mobileRecords).mockReset().mockImplementation((op,data)=>{
+      const request=data as {direction:string};
+      if(op!=='readwindow') return 'ok';
+      return JSON.stringify({thread:'t',title:'saved',anchor:{},older:true,newer:false,
+        rows:request.direction==='older'?[stored('0','older')]:[stored('1','cached')]});
+    });
+    const thread=ref('');
+    const snapshot=ref<FocusThreadSnapshot|null>(null);
+    const read=vi.fn(async () => ({thread_id:'t',turn_id:null,runtime_epoch:'e',revision:3,view:'transcript' as const,
+      target_pending:false,turns:[{id:'turn:item:1:0',rawTurnId:'turn',itemId:'1',role:'assistant' as const,text:'updated',no:0}],
+      older_cursor:null,newer_cursor:null,full_text:null}));
+    const owner=createFocusTranscript({api:{mobileReadScope:scope,readTranscriptWindow:read},snapshot,activeThreadId:thread,isDisposed:()=>false});
+    try {
+      thread.value='t'; await nextTick();
+      expect(owner.visibleTurns.value.map(t=>t.text)).toEqual(['cached']);
+      expect(await owner.older()).toBe(true);
+      expect(owner.visibleTurns.value.map(t=>t.text)).toEqual(['older','cached']);
+      expect(read).not.toHaveBeenCalled();
+      owner.updateViewport(null,true);
+      snapshot.value={runtime_epoch:'e',thread:{id:'t',history_mode:'paginated'},revision:3} as FocusThreadSnapshot;
+      await vi.waitFor(()=>expect(owner.visibleTurns.value.map(t=>t.text)).toEqual(['updated']));
+      expect(native).toHaveBeenCalledWith('putwindow',expect.objectContaining({thread:'t',scope,tail:true}));
+      thread.value='another';
+      await nextTick();
+      expect(owner.visibleTurns.value).toEqual([]);
+    } finally { owner.dispose(); feature.mockReturnValue(false); }
   });
 });

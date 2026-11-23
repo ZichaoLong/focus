@@ -185,8 +185,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     turnWindowLimit: turnWindow.limit,
     navigation,
     settings,
-    onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail); records?.live(); promptHistory?.handleDelta(detail); },
+    onTranscriptDelta: (event, detail) => { transcript?.handleDelta(event, detail);
+      if (!hasMobileFeature('conversation-windows')) records?.live();
+      promptHistory?.handleDelta(detail); },
     onHistoryInvalidated: () => {
+      transcript?.clearSaved();
       clearHistoryView();
       promptHistory?.reset();
       threadInspection.clearToolDetail();
@@ -252,6 +255,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   } = projection;
   transcript = createFocusTranscript({
     api, snapshot, activeThreadId,
+    acceptedHead: page => records?.acceptHead(page),
     savedReadingItem: thread => threadReading(thread)?.bookmark ?? null,
     forgetReadingItem: (thread, turn, item) => {
       const saved = threadReading(thread)?.bookmark;
@@ -264,7 +268,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // navigation converges through fresh metadata and projection recovery stays
   // in the background. Keep that selected target in an honest loading state;
   // only an authoritative targetless profile may expose the new-chat surface.
-  const conversationLoading = computed(() => (
+  const onlineConversationLoading = computed(() => (
     loading.value
     || (transcript.enabled.value && transcript.loading.value && transcript.turns.value.length === 0)
     || (
@@ -272,6 +276,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
       && snapshot.value?.thread.id !== activeThreadId.value
     )
   ));
+  const conversationLoading = computed(() => onlineConversationLoading.value && !transcript.showingSaved.value);
   promptHistory = createFocusPromptHistory({ api, snapshot, enabled: transcript.enabled, reportError,
     isDisposed: () => navigation.isDisposed || authRequired.value || documentReloadRequired.value });
   const historyNavigation = createFocusHistoryNavigation({
@@ -411,6 +416,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     snapshot: () => snapshot.value, selected: () => scopeReady.value ? activeThreadId.value : '',
     connected: () => initialized.value && !authRequired.value && !documentReloadRequired.value && connection.value === 'connected',
     turns: () => transcript.turns.value,
+    foregroundRead: () => loading.value || transcript.loading.value,
     locate: (turn,item) => transcript.locate(turn,item),
     selectOpen: thread => canRebuildPage() ? navigation.confirmUnconfirmedThread(thread) : Promise.resolve(false),
   });
@@ -515,7 +521,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   // snapshot. Presentation alone may replace that snapshot's recent tail with
   // one bounded historical detail page.
   void snapshotTurns;
-  const turns = computed(() => transcript.enabled.value ? transcript.turns.value : historyNavigation.visibleTurns.value);
+  const turns = computed(() => transcript.showingSaved.value || transcript.enabled.value ? transcript.visibleTurns.value : historyNavigation.visibleTurns.value);
   const viewingHistory = computed(() => transcript.enabled.value
     ? transcript.historical.value : historyNavigation.historyWindow.value !== null);
   const composerScopeId = navigation.composerScopeId;
@@ -964,6 +970,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
   }
 
   async function selectThread(threadId: string): Promise<void> {
+    transcript.flushLive();
     await navigation.selectThread(threadId);
     records?.deliberate(threadId);
     reconcileMaterializedPromptResults();
@@ -1022,7 +1029,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
 
   async function loadOlderMessages(sessionId: string, tailContext?: AbortSignal): Promise<boolean> {
     if (sessionId !== activeThreadId.value || parked || (tailContext && hostPaused)) return false;
-    if (transcript.enabled.value) return transcript.older(tailContext);
+    if (transcript.enabled.value || transcript.showingSaved.value) return transcript.older(tailContext);
     return !tailContext && historyNavigation.loadOlderPage();
   }
 
@@ -1085,11 +1092,13 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     wakeDocument();
   }
   function hostDidPause(): void {
+    transcript.flushLive();
     records?.pause();
     hostPaused = true;
     rememberForegroundThread();
   }
   function hostDidResume(): void {
+    transcript.recheckSaved();
     hostPaused = false;
     if (!parked) records?.resume();
     resumeVisibleDocument();
@@ -1253,11 +1262,11 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     updateStatusStale,
     updateNotice,
     updateObservedAt,
-    conversationLoading,
+    conversationLoading, onlineConversationLoading,
     starting,
     loadingMore: computed(() => transcript.enabled.value ? transcript.loading.value : historyNavigation.loading.value),
     loadingMoreError: computed(() => transcript.enabled.value ? !!transcript.error.value : historyNavigation.error.value),
-    historyHasMore: computed(() => transcript.enabled.value ? transcript.hasOlder.value : historyNavigation.hasMore.value),
+    historyHasMore: computed(() => transcript.showingSaved.value || transcript.enabled.value ? transcript.hasOlder.value : historyNavigation.hasMore.value),
     transcript,
     viewingHistory,
     historyOutline: computed(() => transcript.enabled.value ? promptHistory.outline.value : historyNavigation.outline.value),

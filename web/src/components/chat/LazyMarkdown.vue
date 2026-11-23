@@ -5,7 +5,7 @@ let loadedMarkdown: Component | null = null;
 let markdownLoad: Promise<Component> | null = null;
 let markdownLoadError: unknown = null;
 
-function loadMarkdown(): Promise<Component> {
+export function loadMarkdown(): Promise<Component> {
   if (loadedMarkdown) return Promise.resolve(loadedMarkdown);
   if (markdownLoadError) return Promise.reject(markdownLoadError);
   if (!markdownLoad) {

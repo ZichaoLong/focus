@@ -6,7 +6,7 @@ from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
 from bot.codex_protocol.client import CodexRpcError
 
 
-def install_record_history(fake, instance: int) -> None:
+def install_record_history(fake, instance: int, arrival=None) -> None:
     fake.history_mode = "paginated"
     read_thread = fake.read_thread
 
@@ -35,9 +35,14 @@ def install_record_history(fake, instance: int) -> None:
     fake.turns = turns
 
     def page(thread_id, **options):
-        if thread_id != "thread-1":
+        if thread_id == "thread-2":
+            items=[ThreadItemEntry("other-turn",{"id":"other-reply","type":"agentMessage","text":"First visit saved immediately"})]
+        elif thread_id == "thread-1":
+            items = [ThreadItemEntry(turn["id"], item) for turn in turns for item in turn["items"]]
+            if arrival is not None and arrival.exists():
+                items.append(ThreadItemEntry("turn-230",{"id":"after-reopen","type":"agentMessage","text":"**Arrived while away**"}))
+        else:
             return ThreadItemsPage()
-        items = [ThreadItemEntry(turn["id"], item) for turn in turns for item in turn["items"]]
         step = 1 if options["sort_direction"] == "asc" else -1
         cursor = options.get("cursor")
         start = int(cursor) - (step < 0) if cursor is not None else (0 if step == 1 else len(items)-1)

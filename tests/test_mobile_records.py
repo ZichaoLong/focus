@@ -37,6 +37,19 @@ def test_projection_keeps_prose_and_semantic_breaks_without_tool_payload(inspect
 
 
 class MobileRouteTests(WebGatewayHarness):
+    async def test_ordinary_head_can_carry_its_admitted_read_observation(self):
+        await self._authenticate()
+        document = await self._register_document(incarnation_id="reading-window")
+        receipt = SimpleNamespace(connection_generation=7, observation=SimpleNamespace(revision=13))
+        self.gateway._ports.prepare_transcript_window = lambda *args, **kwargs: receipt
+        self.gateway._ports.run_prepared_thread_read = lambda admitted: {"turns": [], "thread_id": "thread-1"}
+        url = self.endpoint + "/api/threads/thread-1/transcript"
+        for headers, mark in [({}, None), ({"X-Focus-Reading-Window": "1"}, "7:13")]:
+            async with self.session.get(url, headers={**self._client_headers(document), **headers}) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers.get("X-Focus-Reading-Mark"), mark)
+                self.assertEqual((await response.json())["turns"], [])
+
     async def test_status_checks_exact_document_scope_and_bounded_batch(self):
         await self._authenticate()
         async with self.session.post(self.endpoint+"/api/client/register", json={"incarnation_id":"checker"},
@@ -145,7 +158,7 @@ def test_fenced_publication_and_cleanup(store):
     store("start",run="refresh",**opts)
     assert store("book")[0]["run"] == "run-a"  # Old complete edition survives interrupted replacement.
     assert clean_copy(store,store("candidates")[0]) == [{"removed":1}]
-    for op, args in [("finish",opts),("write",opts),("start",{"fence":"3"})]:
+    for op, args in [("finish",opts),("write",opts),("windowlive",opts),("start",{"fence":"3"})]:
         with pytest.raises(ValueError):
             store(op,run="refresh",**args)
     assert store("list") == store("candidates") == store("chunk") == []

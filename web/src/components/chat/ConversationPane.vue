@@ -102,6 +102,7 @@ const props = withDefaults(defineProps<{
   transcriptError?: string;
   hasNewerMessages?: boolean;
   continuousTranscript?: boolean;
+  savedTranscript?: boolean;
   updateTranscriptViewport?: (anchorId: string | null, following: boolean) => void;
   loadNewerMessages?: () => Promise<boolean>;
   /** Live compaction state of the active session (non-null while running). */
@@ -745,14 +746,14 @@ function checkpointReading(): void {
   clearTimeout(savingBookmark);
   savingBookmark = undefined;
   const pane = panesRef.value;
-  if (!props.threadBookmarks || !pane || !props.composerSessionId || !props.sessionId || !props.turns.length || props.sessionLoading || bookmark || landingAnchor.value) return;
+  if (!props.threadBookmarks || !pane || (!props.composerSessionId && !props.savedTranscript) || !props.sessionId || !props.turns.length || props.sessionLoading || bookmark || landingAnchor.value) return;
   if (following.value && !props.hasNewerMessages) { saveReadingBookmark(props.sessionId, null); return; }
   const anchor = currentTranscriptAnchor(pane);
   const row = anchor && props.turns.find(turn => turn.id === anchor.id);
   if (anchor && row) saveReadingBookmark(props.sessionId, { turn: row.rawTurnId ?? '', item: row.itemId ?? '', anchor });
 }
 watch(() => [props.composerSessionId, props.turns, props.sessionLoading] as const, async () => {
-  if (!bookmark || !props.composerSessionId || props.sessionLoading || !props.turns.length) return;
+  if (!bookmark || (!props.composerSessionId && !props.savedTranscript) || props.sessionLoading || !props.turns.length) return;
   const saved = bookmark;
   bookmark = null;
   if (!props.turns.some(row => row.id === saved.anchor.id)) return;
@@ -2035,6 +2036,15 @@ defineExpose({
   openPromptHistory,
   prepareTimelineMutation: followAfterUserAction,
   scrollToRenderedTurn,
+  returnToLiveTail: handleReturnToLiveTail,
+  restoreSavedPosition(id: string, offset: number) {
+    const pane=panesRef.value;
+    if (!pane || !props.turns.some(row=>row.id===id)) return;
+    claimOrdinaryScrollAuthority();
+    bookmark=null; following.value=false;
+    landingAnchor.value={id,offset,scrollTop:pane.scrollTop};
+    landBookmark(pane); reportTranscriptViewport();
+  },
 });
 </script>
 

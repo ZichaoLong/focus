@@ -147,7 +147,7 @@ async function ensureDetailPanelLoaded(): Promise<void> {
 provide('resolveImage', async () => null);
 const activeSessionTitle = computed(() => {
   if (!client.activeThreadId.value) return t('focus.newConversation');
-  return client.activeThread.value?.title ?? '';
+  return client.activeThread.value?.title || client.transcript.savedTitle.value || '';
 });
 syncFocusDocumentTitle(
   () => client.meta.value?.web_display_name ?? DEFAULT_WEB_DISPLAY_NAME,
@@ -833,6 +833,7 @@ onMounted(() => {
   if (hasMobileFeature('android-update')) window.addEventListener('focus-host-about', openMobileAbout);
   if (mobileTabs) window.addEventListener('focus-host-ready', syncHostChrome);
   if (hasMobileFeature('records-v1')) window.addEventListener('focus-record-position',returnToOnlineRecord);
+  if (hasMobileFeature('conversation-windows')) window.addEventListener('focus-conversation-position',landSavedPosition);
   void client.load();
 });
 
@@ -849,6 +850,22 @@ function openMobileAbout(event: Event): void {
 function openRecords(): void {
   showNarrowSwitcher.value = false;
   mobileRecords('show',{thread:client.activeThreadId.value});
+}
+async function landSavedPosition(event: Event) {
+  const { thread, position }=(event as CustomEvent<{thread:string;position:string}>).detail;
+  if (thread!==client.activeThreadId.value) return;
+  event.preventDefault();
+  try {
+    const anchor=JSON.parse(position);
+    if (!anchor.item) {
+      await conversationPaneRef.value?.returnToLiveTail();
+      return;
+    }
+    const row=client.turns.value.find(r=>r.rawTurnId===anchor.turn && r.itemId===anchor.item);
+    const id=row?.id ?? await client.transcript.locate(anchor.turn,anchor.item);
+    await nextTick();
+    if (id && thread===client.activeThreadId.value) conversationPaneRef.value?.restoreSavedPosition(id,Number(anchor.offset) || 0);
+  } finally { mobileRecords('positioned',{position}); }
 }
 async function returnToOnlineRecord(event: Event): Promise<void> {
   const data = (event as CustomEvent).detail;
@@ -891,6 +908,7 @@ onUnmounted(() => {
   window.removeEventListener('focus-host-about', openMobileAbout);
   window.removeEventListener('focus-host-ready', syncHostChrome);
   window.removeEventListener('focus-record-position',returnToOnlineRecord);
+  window.removeEventListener('focus-conversation-position',landSavedPosition);
   historyEditConfirmation?.abort();
   client.dispose();
   viewport.value?.dispose();
@@ -898,7 +916,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="focusShell" class="focus-shell" :data-first-screen="client.initialized.value
+  <div ref="focusShell" class="focus-shell" :data-online-conversation="currentDocumentAccessAvailable
+    && (!client.initialized.value || !client.meta.value || (client.onlineConversationLoading.value && !client.errorMessage.value)) ? 'pending' : 'ready'" :data-first-screen="client.initialized.value
     && (!currentDocumentAccessAvailable || !client.activeThreadId.value || !client.conversationLoading.value || client.turns.value.length || client.errorMessage.value) ? 'ready' : 'loading'">
     <section v-if="client.authRequired.value" class="auth-page">
       <div class="auth-page-inner">
@@ -1149,7 +1168,8 @@ onUnmounted(() => {
           :session-loading="client.conversationLoading.value"
           :transcript-error="client.transcript.error.value"
           :has-newer-messages="client.transcript.hasNewer.value"
-          :continuous-transcript="client.transcript.enabled.value"
+          :saved-transcript="client.transcript.showingSaved.value"
+          :continuous-transcript="client.transcript.enabled.value || client.transcript.showingSaved.value"
           :update-transcript-viewport="client.transcript.updateViewport"
           thread-bookmarks
           :load-newer-messages="client.transcript.newer"

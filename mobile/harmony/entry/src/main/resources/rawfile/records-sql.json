@@ -5,7 +5,11 @@
     "CREATE TABLE IF NOT EXISTS runs (site TEXT, thread TEXT, run TEXT PRIMARY KEY, edge TEXT DEFAULT '', stamp INTEGER DEFAULT 0, complete INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0, seq INTEGER DEFAULT 0, mark TEXT, head TEXT, oldest TEXT DEFAULT '')",
     "CREATE TABLE IF NOT EXISTS chunks (run TEXT, seq INTEGER, body TEXT, PRIMARY KEY(run,seq))",
     "CREATE TABLE IF NOT EXISTS removed (site TEXT, key TEXT, PRIMARY KEY(site,key))",
-    "CREATE INDEX IF NOT EXISTS runs_site ON runs(site,thread)"
+    "CREATE INDEX IF NOT EXISTS runs_site ON runs(site,thread)",
+    "CREATE TABLE IF NOT EXISTS reading_pages (run TEXT PRIMARY KEY, site TEXT, thread TEXT, tail INTEGER, older INTEGER, newer INTEGER, first TEXT, last TEXT)",
+    "CREATE INDEX IF NOT EXISTS reading_thread ON reading_pages(site,thread)",
+    "CREATE TABLE IF NOT EXISTS reading_positions (run TEXT, turn TEXT, item TEXT, seq INTEGER, PRIMARY KEY(run,turn,item,seq))",
+    "CREATE TRIGGER IF NOT EXISTS forget_reading_run AFTER DELETE ON runs BEGIN DELETE FROM reading_positions WHERE run=OLD.run; DELETE FROM reading_pages WHERE run=OLD.run; DELETE FROM chunks WHERE run=OLD.run; END"
   ],
   "register": ["INSERT OR IGNORE INTO sites(site) VALUES(:site)"],
   "status": ["?SELECT enabled, locked, fence,note,CASE WHEN locked THEN '' ELSE scope END AS scope FROM sites WHERE site=:site"],
@@ -50,6 +54,10 @@
     "@sweep"
   ],
   "writer": ["!SELECT 1 FROM sites JOIN books USING(site) WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER) AND thread=:thread AND building=:run"],
+  "windowlive": [
+    "!SELECT 1 FROM sites WHERE site=:site AND scope=:scope AND fence=CAST(:fence AS INTEGER) AND enabled AND NOT locked",
+    "@live"
+  ],
   "live": [
     "!SELECT 1 WHERE length(CAST(:body AS BLOB))<524288 AND COALESCE((SELECT SUM(bytes) FROM runs WHERE site=:site),0)+COALESCE((SELECT SUM(livebytes) FROM books WHERE site=:site AND thread<>:thread),0)+length(CAST(:body AS BLOB))<=67108864 AND COALESCE((SELECT SUM(bytes) FROM runs),0)+COALESCE((SELECT SUM(livebytes) FROM books WHERE site<>:site OR thread<>:thread),0)+length(CAST(:body AS BLOB))<=201326592",
     "UPDATE books SET live=:body,livebytes=length(CAST(:body AS BLOB)) WHERE site=:site AND thread=:thread AND NOT closed AND :run IN (building,visible) AND EXISTS(SELECT 1 FROM sites WHERE site=:site AND enabled AND NOT locked AND scope=:scope AND fence=CAST(:fence AS INTEGER))"],
@@ -77,7 +85,7 @@
   ],
   "forget": ["DELETE FROM books WHERE site=:site","DELETE FROM removed WHERE site=:site","DELETE FROM sites WHERE site=:site","@sweep"],
   "sweep": [
-    "DELETE FROM runs WHERE NOT EXISTS(SELECT 1 FROM books b WHERE b.site=runs.site AND b.thread=runs.thread AND (b.visible=runs.run OR b.building=runs.run))",
+    "DELETE FROM runs WHERE NOT EXISTS(SELECT 1 FROM books b WHERE b.site=runs.site AND b.thread=runs.thread AND (b.visible=runs.run OR b.building=runs.run)) AND NOT EXISTS(SELECT 1 FROM reading_pages p JOIN books b ON b.site=p.site AND b.thread=p.thread WHERE p.run=runs.run)",
     "DELETE FROM chunks WHERE NOT EXISTS(SELECT 1 FROM runs WHERE runs.run=chunks.run)"
   ]
 }

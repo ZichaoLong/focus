@@ -4,6 +4,7 @@ import type { FocusWebApiPort } from './api';
 import { FocusApiError, isStaleWebReadError, type FocusProjectionEvent, type FocusThreadDeltaDetail,
   type FocusThreadSnapshot, type FocusTranscriptQuery } from './types';
 import { appendTranscriptDelta } from './transcriptItems';
+import { readSavedWindow, savedTurns, saveConversationWindow, type SavedWindow } from './mobileConversation';
 import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
 import { MAX_TAIL_FILL_READS, TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
@@ -18,7 +19,8 @@ type InstanceReturn = {
 
 /** One bounded visible item window; navigation never accumulates full turns. */
 export function createFocusTranscript(options: {
-  api: Pick<FocusWebApiPort, 'readTranscriptWindow'>;
+  api: Pick<FocusWebApiPort, 'readTranscriptWindow' | 'mobileReadScope'>;
+  acceptedHead?(page: import('./types').FocusTranscriptPage): void;
   snapshot: Readonly<Ref<FocusThreadSnapshot | null>>;
   activeThreadId: Readonly<Ref<string>>;
   isDisposed(): boolean;
@@ -28,6 +30,29 @@ export function createFocusTranscript(options: {
 }) {
   const turns = shallowRef<ChatTurn[]>([]);
   const cache = new TranscriptPageWindow();
+  // Device rows are presentation only. They never mint a writer scope, a server cursor, or event revision evidence.
+  const saved = shallowRef<{page: SavedWindow; rows: ChatTurn[]} | null>(null);
+  const showingSaved = computed(() => !!saved.value && saved.value.page.thread === options.activeThreadId.value && !options.isDisposed());
+  const visibleTurns = computed(() => showingSaved.value ? saved.value!.rows : turns.value);
+  function restoreSaved(thread: string) {
+    saved.value = null;
+    if (options.isDisposed()) return;
+    const page = readSavedWindow(thread,options.api.mobileReadScope,{direction:'open'});
+    if (page) saved.value = {page, rows:savedTurns(page)};
+  }
+  function saveRows(rows: ChatTurn[], tail: boolean, older: boolean, newer: boolean) {
+    const snapshot = options.snapshot.value;
+    if (snapshot?.thread.id !== options.activeThreadId.value || !enabled.value || !snapshot) return;
+    saveConversationWindow(snapshot.thread.id,snapshot.thread.title || snapshot.thread.name || snapshot.thread.id,
+      options.api.mobileReadScope,rows,tail,older,newer);
+  }
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingWrite: (()=>void) | undefined;
+  function flushLive() {
+    if (saveTimer === undefined) return;
+    clearTimeout(saveTimer); saveTimer=undefined;
+    const write=pendingWrite; pendingWrite=undefined; write?.();
+  }
   const edges = shallowRef({ older: null as string | null, newer: null as string | null, atTail: false });
   const unseenNewer = ref(false);
   let protectedRow: string | null = null;
@@ -215,8 +240,9 @@ export function createFocusTranscript(options: {
 
   function loadInitialWindow(automatic = false) {
     if (!turns.value.length) {
-      const saved = options.savedReadingItem?.(options.activeThreadId.value);
-      if (saved?.turn && saved.item) return load({ turn_id: saved.turn, item_id: saved.item, direction: 'asc' }, 'restore', automatic);
+      const stored = showingSaved.value ? saved.value?.page.anchor : undefined;
+      const bookmark = stored?.turn && stored.item ? stored : options.savedReadingItem?.(options.activeThreadId.value);
+      if (bookmark?.turn && bookmark.item) return load({ turn_id: bookmark.turn, item_id: bookmark.item, direction: 'asc' }, 'restore', automatic);
     }
     return load({}, 'sync', automatic);
   }
@@ -304,6 +330,16 @@ export function createFocusTranscript(options: {
       scheduleHead();
     }
     publishWindow();
+    if (showingSaved.value && !following) unseenNewer.value=true;
+    const scope=options.api.mobileReadScope, thread=options.snapshot.value?.thread;
+    if (cache.atTail && scope && thread) {
+      const partial=!!detail.stream_delta;
+      const currentRows=partial ? turns.value.filter(row=>row.rawTurnId===detail.stream_delta!.turn_id && row.itemId===detail.stream_delta!.item_id) : turns.value.slice(-80);
+      const older=!!cache.older || turns.value.length>80;
+      pendingWrite=()=>saveConversationWindow(thread.id,thread.title || thread.name || thread.id,scope,currentRows,true,older,false,partial);
+      if (saveTimer === undefined) saveTimer=setTimeout(flushLive,400);
+      if (detail.method==='turn/completed' || detail.method==='item/completed') flushLive();
+    }
     const completedDetail = (detail.item_turns ?? []).find(turn => turn.id === fullTarget?.id
       && fullTool.value?.status === 'running' && turn.tools?.[0]?.status !== 'running');
     if (completedDetail) void openFull(completedDetail);
@@ -397,7 +433,10 @@ export function createFocusTranscript(options: {
       // stop following while the tail request is pending; revalidate their
       // current anchor instead of merging into that empty cache and publishing
       // an empty transcript. The anchor read also handles a disjoint live tail.
-      const anchor = mode === 'sync' && cache.pageCount === 0 ? readingAnchor() : undefined;
+      const savedAnchor = showingSaved.value && !following ? saved.value!.rows.find(r => r.id===protectedRow) : undefined;
+      // A reader may have scrolled the disk page while this network request was outstanding.
+      const anchor = mode === 'sync' ? savedAnchor ?? (cache.pageCount===0 ? readingAnchor() : undefined)
+        : mode==='restore' && savedAnchor && (savedAnchor.rawTurnId!==query.turn_id || savedAnchor.itemId!==query.item_id) ? savedAnchor : undefined;
       if (anchor?.rawTurnId && anchor.itemId) {
         return await load({ turn_id: anchor.rawTurnId, item_id: anchor.itemId, direction: 'asc' }, 'restore');
       }
@@ -411,6 +450,13 @@ export function createFocusTranscript(options: {
         turn.rawTurnId === query.turn_id && turn.itemId === query.item_id)) {
         throw new Error('Transcript target was not found.');
       }
+      const sourceTail = mode === 'head' || mode === 'latest' || mode === 'sync';
+      const adjacent = mode === 'older' ? turns.value[0] : mode === 'newer' ? turns.value.at(-1) : undefined;
+      const pageRows = adjacent && !result.turns.some(row=>row.id===adjacent.id)
+        ? (mode==='older' ? [...result.turns,adjacent] : [adjacent,...result.turns]) : result.turns;
+      saveRows(pageRows,sourceTail,!!result.older_cursor || mode==='newer',!sourceTail && (!!result.newer_cursor || mode==='older'));
+      if (sourceTail) options.acceptedHead?.(result);
+      saved.value=null;
       if (mode === 'older' || mode === 'newer') {
         lastDirection = query.fill ? 'newer' : mode;
         cache.extend(result, query.fill ? 'tail-context' : mode, protectedRow);
@@ -482,7 +528,36 @@ export function createFocusTranscript(options: {
     }
   }
 
+  function extendSaved(direction: 'older'|'newer'): boolean {
+    const current = visibleTurns.value;
+    const edge = direction==='older' ? current[0] : current.at(-1);
+    if (!edge?.rawTurnId || !edge.itemId) return false;
+    const page=readSavedWindow(options.activeThreadId.value,options.api.mobileReadScope,{direction,turn:edge.rawTurnId,item:edge.itemId});
+    if (!page) return false;
+    const ids = new Set(current.map(row=>row.id));
+    const extra = savedTurns(page).filter(row=>!ids.has(row.id));
+    if (!extra.length) return false;
+    const older=direction==='older';
+    const joined=older ? [...extra,...current] : [...current,...extra];
+    if (older) page.newer=joined.length>108 || (showingSaved.value ? saved.value!.page.newer : hasNewer.value);
+    else page.older=joined.length>108 || (showingSaved.value ? saved.value!.page.older : hasOlder.value);
+    saved.value={page,rows:older ? joined.slice(0,108) : joined.slice(-108)};
+    if (older) { following=false; protectedRow ??= edge.id; }
+    return true;
+  }
+  async function fetchMissing(direction: 'older'|'newer') {
+    const edge = direction==='older' ? visibleTurns.value[0] : visibleTurns.value.at(-1);
+    if (!enabled.value || !edge?.rawTurnId || !edge.itemId) { error.value='这部分记录需要联网加载'; return false; }
+    // Reopen a stable item online to obtain fresh page bounds. Disk never supplies an upstream cursor.
+    if (!await load({turn_id:edge.rawTurnId,item_id:edge.itemId,direction:'asc'},'restore')) return false;
+    const i=turns.value.findIndex(row=>row.id===edge.id || (row.rawTurnId===edge.rawTurnId && row.itemId===edge.itemId));
+    if (direction==='older' ? i>0 : i>=0 && i+1<turns.value.length) return true;
+    const cursor=direction==='older' ? edges.value.older : edges.value.newer;
+    return !!cursor && load({cursor,direction:direction==='older'?'desc':'asc'},direction);
+  }
   function older(intent?: AbortSignal) {
+    if (!intent && extendSaved('older')) return Promise.resolve(true);
+    if (!intent && showingSaved.value) return fetchMissing('older');
     if (!hasOlder.value || loading.value) return Promise.resolve(false);
     if (intent) {
       if (intent.aborted || intent !== latestIntent || !tailReadsLeft || !cache.atTail || pendingHead
@@ -494,6 +569,8 @@ export function createFocusTranscript(options: {
   }
 
   function newer() {
+    if (extendSaved('newer')) return Promise.resolve(true);
+    if (showingSaved.value) return fetchMissing('newer');
     if (!hasNewer.value || loading.value) return Promise.resolve(false);
     const last = turns.value.at(-1);
     const query: FocusTranscriptQuery = edges.value.newer
@@ -543,6 +620,7 @@ export function createFocusTranscript(options: {
     }
   }
 
+  const stopSaved = watch(options.activeThreadId, restoreSaved, {flush:'post'});
   const stopIdentity = watch(identity, reset, { flush: 'sync' });
   const stopSnapshot = watch([enabled, () => options.snapshot.value?.revision], () => {
     if (awaitingProjection || !enabled.value) return;
@@ -550,9 +628,15 @@ export function createFocusTranscript(options: {
     else if (loading.value) scheduleHead();
     else void loadInitialWindow();
   }, { immediate: true });
-  function dispose() { disposed = true; reset(); stopIdentity(); stopSnapshot(); }
+  function dispose() { flushLive(); disposed = true; saved.value=null; reset(); stopIdentity(); stopSnapshot(); stopSaved(); }
 
-  return { enabled, turns, loading, error, historical, hasOlder, hasNewer,
+  return { enabled, turns, visibleTurns, showingSaved, savedTitle:computed(()=>showingSaved.value ? saved.value!.page.title : ''),
+    recheckSaved() {
+      if (showingSaved.value && !readSavedWindow(options.activeThreadId.value,options.api.mobileReadScope,{direction:'open'})) saved.value=null;
+    },
+    clearSaved:()=>{saved.value=null; clearTimeout(saveTimer); saveTimer=undefined; pendingWrite=undefined;}, flushLive, loading, error, historical,
+    hasOlder:computed(()=>showingSaved.value ? saved.value!.page.older : hasOlder.value),
+    hasNewer:computed(()=>showingSaved.value ? saved.value!.page.newer || unseenNewer.value : hasNewer.value),
     fullText, fullTool, fullLoading, fullError, openFull, closeFull,
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),

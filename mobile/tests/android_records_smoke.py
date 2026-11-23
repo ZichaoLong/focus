@@ -18,7 +18,7 @@ from android_webview_smoke import ACTIVITY, PACKAGE, attach, emulator_adb, evalu
 
 
 @asynccontextmanager
-async def panel(session, adb):
+async def panel(session, adb, url="file:///android_asset/records.html"):
     port = None
     ws = None
     try:
@@ -30,7 +30,7 @@ async def panel(session, adb):
                         port = adb("forward", "tcp:0", "localabstract:webview_devtools_remote_" + pid)
                     async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
                         pages = await response.json()
-                    page = next((p for p in pages if p["url"] == "file:///android_asset/records.html"), None)
+                    page = next((p for p in pages if p["url"] == url), None)
                     if page:
                         ws = await session.ws_connect(page["webSocketDebuggerUrl"])
                 except (ValueError, aiohttp.ClientError, OSError, subprocess.SubprocessError):
@@ -69,6 +69,30 @@ async def assert_online_only(session, port):
         assert all(page["url"] != "file:///android_asset/records.html" for page in await response.json())
 
 
+async def wait_for_online_handoff(session, adb, origin):
+    port, live = await attach(session, adb, origin)
+    try:
+        async with asyncio.timeout(35):
+            while True:
+                async with session.get("http://127.0.0.1:" + port + "/json/list") as response:
+                    pages = await response.json()
+                if all(page["url"] != "https://conversation.focus.invalid/conversation.html" for page in pages):
+                    break
+                await asyncio.sleep(.1)
+        await wait_for(live, """(() => {
+          const pane=document.querySelector('.panes'), box=pane?.getBoundingClientRect();
+          if (!box) return false;
+          return Array.from(pane.querySelectorAll('[data-turn-id^="turn-0:item:"]')).some(node=>{
+            const row=node.getBoundingClientRect();
+            return row.height>0 && row.bottom>box.top && row.top<box.bottom;
+          });
+        })()""")
+        print("Ordinary online chat resumed at the saved first turn", flush=True)
+    finally:
+        await live.close()
+        adb("forward","--remove","tcp:"+port)
+
+
 async def check_server_cleanup(adb, local, site):
     for thread in ("fixture-external-gone", "fixture-archived"):
         key = sha256(thread.encode()).hexdigest()
@@ -96,7 +120,35 @@ async def open_reader(live):
     await evaluate(live,button+".click()")
 
 
+async def switch_with_server_held(live, lab, adb):
+    await evaluate(live,"document.querySelector('.tb-mid').click()")
+    await wait_for(live,"!!document.querySelector('.srow:not(.cur)')")
+    await evaluate(live,"document.querySelector('.srow:not(.cur)').click()")
+    await wait_for(live,"location.search.includes('thread-2') && !!document.querySelector('textarea:not(:disabled)')")
+    await wait_for(live,"document.querySelector('.panes')?.innerText.includes('First visit saved immediately')")
+    await evaluate(live,"""window.testFetch=window.fetch; window.fetch=async (...args)=>{
+      if(String(args[0]).includes('/threads/thread-1/open')) await new Promise(r=>window.releaseOpen=r);
+      return window.testFetch(...args)};
+      document.querySelector('.tb-mid').click()""")
+    await wait_for(live,"!!document.querySelector('.srow:not(.cur)')")
+    await evaluate(live,"window.tapped=performance.now(); document.querySelector('.srow:not(.cur)').click()")
+    await wait_for(live,"!!window.releaseOpen && document.querySelector('.panes')?.innerText.includes('right reply')")
+    print("warm tap to readable while server open is held: %.0f ms" %
+          await evaluate(live,"performance.now()-window.tapped"),flush=True)
+    # The new thread got its first reading window on the foreground read, even after immediately leaving.
+    query=shlex.join(["run-as",PACKAGE,"sqlite3","-cmd",".timeout 3000","databases/offline-records-v1.db",
+                      "SELECT COUNT(*) FROM reading_pages p JOIN chunks c USING(run) WHERE thread='thread-2' AND instr(body,'First visit saved immediately')"])
+    assert int(adb("shell",query))>0
+    (lab/"arrived-1").touch()
+    await evaluate(live,"window.releaseOpen(); window.fetch=window.testFetch")
+    await wait_for(live,"!!document.querySelector('textarea:not(:disabled)') && document.querySelector('.panes')?.innerText.includes('right reply')")
+    await wait_for(live,"document.querySelector('.panes')?.innerText.includes('Arrived while away')")
+    assert await evaluate(live,"document.querySelectorAll('[data-turn-id*=\"item:after-reopen:0\"]').length") == 1
+    assert await evaluate(live,"document.querySelectorAll('[data-turn-id*=\"item:right:0\"]').length") == 1
+
+
 async def smoke(args):
+    (args.lab/"arrived-1").unlink(missing_ok=True)
     entries = json.loads((args.lab/"instances.json").read_text())
     if not all(e["origin"].startswith("https://10.0.2.2:") for e in entries[:2]):
         raise ValueError("Expected the isolated emulator HTTPS gateways")
@@ -118,7 +170,13 @@ async def smoke(args):
                 await wait_for(local,"!!document.querySelector('input[type=checkbox]')")
                 await evaluate(local,"document.querySelector('input').click()")
                 await evaluate(local,"setTimeout(()=>document.querySelector('#back').click(),50);true")
-            await asyncio.sleep(5)
+            # The management page shows the edition opened by the user. Wait for durable completion
+            # before opening it, including on slow emulators.
+            async with asyncio.timeout(60):
+                query=shlex.join(["run-as",PACKAGE,"sqlite3","-cmd",".timeout 3000","databases/offline-records-v1.db",
+                                  "SELECT complete FROM runs JOIN books ON visible=run WHERE books.thread='thread-1'"])
+                while adb("shell",query)!="1":
+                    await asyncio.sleep(.2)
             await open_reader(live)
             async with panel(session,adb) as local:
                 await wait_for(local,"document.body?.innerText.includes('已完整保存')")
@@ -126,6 +184,8 @@ async def smoke(args):
                 await evaluate(local,click('线程列表'))
                 print("stored:",await evaluate(local,"document.querySelector('.entry small').innerText"),flush=True)
                 await check_server_cleanup(adb, local, site)
+                await evaluate(local,"setTimeout(()=>document.querySelector('#back').click(),50);true")
+            await switch_with_server_held(live,args.lab,adb)
             adb("shell","am","force-stop",PACKAGE)
         finally:
             await live.close()
@@ -135,7 +195,10 @@ async def smoke(args):
             await asyncio.sleep(1)
             started=time.monotonic()
             launch(adb)
-            await pick(adb,"查看离线副本")
+            async with panel(session,adb,"https://conversation.focus.invalid/conversation.html") as chat:
+                await wait_for(chat,"[...document.querySelectorAll('main strong')].some(n=>n.textContent==='Arrived while away')")
+                print(f"offline cold start to ordinary chat: {time.monotonic()-started:.2f}s",flush=True)
+                await evaluate(chat,click('查看离线副本'))
             async with panel(session,adb) as local:
                 await wait_for(local,"document.querySelectorAll('[data-item]').length>0")
                 print(f"offline cold start until readable: {time.monotonic()-started:.2f}s",flush=True)
@@ -151,7 +214,16 @@ async def smoke(args):
                 print("earliest item after force-stop with airplane mode enabled",flush=True)
             adb("shell","am","force-stop",PACKAGE)
             launch(adb)
-            await pick(adb,"查看离线副本")
+            async with panel(session,adb,"https://conversation.focus.invalid/conversation.html") as chat:
+                await wait_for(chat,"/site-1 (question|answer) 0(\\D|$)/.test(document.querySelector('main')?.innerText)")
+                adb("shell","cmd","connectivity","airplane-mode","disable")
+            await wait_for_online_handoff(session, adb, site["origin"])
+            adb("shell","am","force-stop",PACKAGE)
+            adb("shell","cmd","connectivity","airplane-mode","enable")
+            launch(adb)
+            async with panel(session,adb,"https://conversation.focus.invalid/conversation.html") as chat:
+                await wait_for(chat,"!!document.querySelector('main [data-turn-id]')")
+                await evaluate(chat,click('查看离线副本'))
             async with panel(session,adb) as local:
                 await wait_for(local,"document.body?.innerText.includes('site-1 question 0')")
                 print("offline reading position restored",flush=True)

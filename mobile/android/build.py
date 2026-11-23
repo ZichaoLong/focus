@@ -13,6 +13,7 @@ from urllib.request import urlopen
 from xml.etree import ElementTree as xml
 
 ROOT = Path(__file__).resolve().parent
+WEB = ROOT.parent.parent / "web"
 MANAGER_ASSETS = ROOT.parent / "harmony/entry/src/main/resources/rawfile"
 WEBKIT = "https://dl.google.com/dl/android/maven2/androidx/webkit/webkit/1.12.1/webkit-1.12.1.aar"
 WEBKIT_SHA256 = "18a0a51ad129e0c8563f031d46c8a7e61169f56ae84e562a0d75686941262111"
@@ -21,7 +22,7 @@ WEBKIT_SHA256 = "18a0a51ad129e0c8563f031d46c8a7e61169f56ae84e562a0d7568694126211
 def clean_source_revision():
     try:
         revision = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
-        changes = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all", "--", ".", str(MANAGER_ASSETS)], cwd=ROOT)
+        changes = subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=all", "--", ".", str(MANAGER_ASSETS), str(WEB)], cwd=ROOT)
     except (OSError, subprocess.CalledProcessError):
         return "working-tree"
     return revision if not changes else "working-tree"
@@ -116,6 +117,9 @@ def main():
         run("java", "-cp", tools / "lib/d8.jar", "com.android.tools.r8.R8", "--release",
             "--min-api", "28", "--lib", platform, "--pg-conf", keep,
             "--pg-conf", ROOT / "keep.pro", "--output", work, jar, webkit)
+        conversation = work / "conversation"
+        subprocess.run(["npm.cmd" if os.name == "nt" else "npm", "run", "build", "--", "--mode", "android-conversation", "--outDir", str(conversation)],
+                       cwd=WEB, check=True)
         if clean_source_revision() != source_id:
             source_id = "working-tree"
         with zipfile.ZipFile(apk, "a", zipfile.ZIP_DEFLATED) as archive:
@@ -123,6 +127,9 @@ def main():
             archive.write(work / "classes.dex", "classes.dex")
             for asset in ("server-updates.html", "server-updates.js", "first-screen.js", "records.html", "records.js", "records-sql.json"):
                 archive.write(MANAGER_ASSETS / asset, "assets/" + asset)
+            for asset in sorted(conversation.rglob("*")):
+                if asset.is_file():
+                    archive.write(asset, "assets/conversation/" + asset.relative_to(conversation).as_posix())
             archive.writestr("META-INF/androidx/webkit/LICENSE.txt", license_text)
         result = build / (name + ".apk")
         aligned = work / "aligned.apk"

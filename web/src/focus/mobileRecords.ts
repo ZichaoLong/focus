@@ -2,8 +2,9 @@ import { watch } from 'vue';
 import { hasMobileFeature, mobileRecords } from '../lib/mobileHost';
 import type { ChatTurn } from '../types';
 import type { FocusWebApiPort } from './api';
-import { FocusApiError, type FocusProjectionEvent, type FocusThreadSnapshot } from './types';
-import { classifyRecordTurn, foldRecordPage, recordHash, type RecordItem, type ToolCount } from './mobileRecordPage';
+import { FocusApiError, type FocusProjectionEvent, type FocusThreadSnapshot, type FocusTranscriptPage } from './types';
+import { classifyRecordTurn, foldRecordPage, recordHash, type RecordItem, type RecordPage, type ToolCount } from './mobileRecordPage';
+import { saveConversationWindow } from './mobileConversation';
 import { readTranscriptTarget } from './transcriptRead';
 
 interface ReaderIntent {
@@ -14,6 +15,7 @@ interface Context {
   snapshot(): FocusThreadSnapshot | null;
   selected(): string;
   connected(): boolean;
+  foregroundRead?(): boolean;
   turns(): readonly ChatTurn[];
   selectOpen(thread: string): Promise<boolean>;
   locate(turn: string, item: string): Promise<string | null>;
@@ -39,6 +41,14 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
   const stop = () => { clearTimeout(retry); scan?.abort(); expansion?.abort(); clearTimeout(timer); clearTimeout(liveTimer); liveTimer = undefined; writer = null; };
   const reply = (id: string, value: object) => mobileRecords('result',{id,...value});
 
+  let accepted: RecordPage | null = null;
+  function fromTranscript(page: FocusTranscriptPage): RecordPage | null {
+    if (!api.mobileReadScope || !page.readingMark) return null;
+    const first=page.turns[0];
+    return {version:1,thread:page.thread_id,epoch:page.runtime_epoch,mark:page.readingMark,scope:api.mobileReadScope,
+      oldest:first?.rawTurnId && first.itemId ? [first.rawTurnId,first.itemId] : null,older:page.older_cursor,
+      rows:page.turns.map(classifyRecordTurn).filter((r): r is RecordItem=>r!==null)};
+  }
   async function capture(signal: AbortSignal) {
     const thread = ctx.selected(), snap = ctx.snapshot()!, scope = api.mobileReadScope!;
     const key = await recordHash(thread);
@@ -50,7 +60,17 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
       mobileRecords('note',{note:'unsupported'}); return;
     }
     const base = { thread, scope, fence:state.fence!, key, run:String(crypto.randomUUID()) };
-    const first = await read(thread,null,signal);
+    let seed=accepted?.thread===thread && accepted.scope===scope && accepted.epoch===snap.runtime_epoch ? accepted : null;
+    accepted=null;
+    // A restored historical viewport still needs a fresh, durable live edge. This read does not move the reader.
+    if (!seed && hasMobileFeature('conversation-windows')) {
+      const tail=await api.readTranscriptWindow(thread,{},signal);
+      signal.throwIfAborted();
+      if (!online() || ctx.selected()!==thread || tail.thread_id!==thread || tail.runtime_epoch!==snap.runtime_epoch) return;
+      seed=fromTranscript(tail);
+      if (seed) saveConversationWindow(thread,snap.thread.title || snap.thread.name || thread,scope,tail.turns,true,!!tail.older_cursor,false);
+    }
+    const first = seed ?? await read(thread,null,signal);
     const fingerprint = (p: typeof first) => recordHash(JSON.stringify(p.rows));
     const head = await fingerprint(first);
     const mark = JSON.stringify([first.epoch,first.mark]);
@@ -113,7 +133,8 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
       page = await read(thread,page.older,signal);
     }
     if (first.older) {
-      const verified = await read(thread,null,signal);
+      const verified = seed ? fromTranscript(await api.readTranscriptWindow(thread,{},signal)) : await read(thread,null,signal);
+      if (!verified) return;
       check(verified);
       if (verified.mark !== first.mark || await fingerprint(verified) !== head) { schedule(650); return; }
     }
@@ -125,6 +146,7 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
     clearTimeout(timer);
     if (!online()) return;
     timer = setTimeout(() => {
+      if (ctx.foregroundRead?.()) { schedule(300); return; }
       scan?.abort();
       scan = new AbortController();
       const signal = scan.signal;
@@ -260,6 +282,10 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
     pending=data; reply(data.id,{waiting:true}); attempt();
   }
   window.addEventListener('focus-record-action',action);
+  const stopPriority = ctx.foregroundRead ? watch(ctx.foregroundRead, busy => {
+    if (busy) { clearTimeout(timer); scan?.abort(); }
+    else if (online()) schedule(500);
+  }) : undefined;
   const unwatch = watch([ctx.selected,ctx.connected,()=>ctx.snapshot()?.thread.id],() => {
     stop();
     if (active !== ctx.selected()) { if (active && (!selecting || (ctx.selected() && ctx.selected() !== selecting))) pending = null; active = ctx.selected(); }
@@ -272,10 +298,15 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
   });
   return {
     live,
+    acceptHead(page: FocusTranscriptPage) {
+      accepted=fromTranscript(page);
+      if (accepted && online()) schedule(500);
+    },
     event(e: FocusProjectionEvent) {
       if (e.type === 'session_expired' && e.reason === 'session_revoked') mobileRecords('revoke',{scope:api.mobileReadScope});
       if (!e.thread_id) return;
       const reason = e.reason;
+      if (accepted?.thread===e.thread_id) accepted=null;
       if (reason && ['thread/closed','thread/archived','thread/deleted','web_thread_closed','web_thread_opened','thread/unarchived'].includes(reason)) {
         const state = reason.replace('thread/', '').replace('web_thread_', '');
         if (hasMobileFeature('record-states')) mobileRecords('lifecycle',{thread:e.thread_id,reason:state,scope:api.mobileReadScope});
@@ -293,6 +324,6 @@ export function installMobileRecords(api: Pick<FocusWebApiPort,'readTranscriptWi
     deliberate(thread: string) { void recordHash(thread).then(key => {
       if (current() && thread === ctx.selected()) { mobileRecords('allow',{key}); schedule(200); }
     }); },
-    dispose() { disposed = true; stop(); unwatch(); window.removeEventListener('focus-record-action',action); },
+    dispose() { disposed = true; stop(); unwatch(); stopPriority?.(); window.removeEventListener('focus-record-action',action); },
   };
 }

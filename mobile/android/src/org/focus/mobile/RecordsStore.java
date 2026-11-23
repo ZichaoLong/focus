@@ -19,7 +19,8 @@ final class RecordsStore extends SQLiteOpenHelper {
     private final JSONObject commands;
 
     RecordsStore(Context context) {
-        super(context, "offline-records-v1.db", null, 1);
+        super(context, "offline-records-v1.db", null, 2);
+        setWriteAheadLoggingEnabled(true);
         try (InputStream input = context.getAssets().open("records-sql.json");
              Scanner scanner = new Scanner(input, "UTF-8").useDelimiter("\\A")) {
             commands = new JSONObject(scanner.next());
@@ -34,7 +35,7 @@ final class RecordsStore extends SQLiteOpenHelper {
         for (int i = 0; i < schema.length(); i++) db.execSQL(schema.optString(i));
     }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        throw new IllegalStateException("不支持的记录版本");
+        onCreate(db);
     }
 
     private void run(SQLiteDatabase db, String op, JSONObject data, JSONArray rows) throws JSONException {
@@ -71,6 +72,7 @@ final class RecordsStore extends SQLiteOpenHelper {
         db.beginTransaction();
         try {
             run(db, op, data, rows);
+            if ("write".equals(op)) ConversationStore.index(db,data.getString("run"),data.getInt("seq"),new JSONArray(data.getString("body")));
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
         return rows.toString();

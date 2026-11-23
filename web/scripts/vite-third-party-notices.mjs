@@ -10,7 +10,7 @@ import {
  * JavaScript and worker chunk.  Their contents are derived from chunk.modules,
  * while the Gateway deliberately gives these filenames a no-store policy.
  */
-export function focusThirdPartyNoticesPlugin() {
+export function focusThirdPartyNoticesPlugin(canonical = true) {
   const renderedModuleIds = new Set();
   let outputDirectory = '';
 
@@ -33,7 +33,7 @@ export function focusThirdPartyNoticesPlugin() {
       }
       const artifacts = buildThirdPartyArtifacts([...renderedModuleIds]);
       writeThirdPartyArtifacts(artifacts, outputDirectory);
-      writeCanonicalNoticeCopies(artifacts);
+      if (canonical) writeCanonicalNoticeCopies(artifacts);
     },
   };
 }

@@ -816,6 +816,7 @@ export interface FocusTranscriptQuery {
 }
 
 export interface FocusTranscriptPage extends FocusCoordinates {
+  readingMark?: string;
   thread_id: string;
   turn_id: string | null;
   view: FocusWebWireEnum<'transcript_view'>;

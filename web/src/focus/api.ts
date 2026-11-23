@@ -667,14 +667,19 @@ export class FocusWebApi implements FocusWebApiPort {
     });
   }
 
-  readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}, signal?: AbortSignal): Promise<FocusTranscriptPage> {
+  async readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}, signal?: AbortSignal): Promise<FocusTranscriptPage> {
     const params = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) {
       if (value !== undefined) params.set(key, String(value));
     }
-    return this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
+    let mark = '';
+    const wantsMark = !!this.mobileReadScope && hasMobileFeature('conversation-windows') && !params.size;
+    const page = await this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
       parameters: { thread_id: threadId }, query: params, signal,
+      ...(wantsMark ? {headers:{'X-Focus-Reading-Window':'1'}, onResponse:(r: Response) => { mark=r.headers.get('X-Focus-Reading-Mark') ?? ''; }} : {}),
     });
+    if (mark) page.readingMark=mark;
+    return page;
   }
 
   fileInfo(path: string, cwd: string, signal?: AbortSignal): Promise<FocusFileInfo> {
@@ -1125,6 +1130,7 @@ export class FocusWebApi implements FocusWebApiPort {
       signal?: AbortSignal;
       headers?: Record<string, string>;
       preEffectFocusErrorCodes?: ReadonlySet<string>;
+      onResponse?(response: Response): void;
   } = {},
   ): Promise<T> {
     const endpoint = FOCUS_WEB_ENDPOINTS[endpointName];
@@ -1155,6 +1161,7 @@ export class FocusWebApi implements FocusWebApiPort {
         preEffectFocusErrorCodes: options.preEffectFocusErrorCodes,
       });
     }
+    options.onResponse?.(response);
     return decodedJson(response, decoder, contract);
   }
 

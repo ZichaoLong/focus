@@ -42,6 +42,8 @@ public class ClientActivity extends Activity {
     private ApkUpdate apkUpdate;
     private RecordsStore records;
     private RecordsPanel reader;
+    private ConversationStore conversation;
+    private SavedConversation savedChat;
     private LinearLayout opening;
     private TextView openingMessage;
     private Button retryEntry, savedRecords;
@@ -82,6 +84,7 @@ public class ClientActivity extends Activity {
             String requested = new JSONObject(getIntent().getStringExtra("site")).optString("recordThread");
             records = new RecordsStore(this);
             records.call("register",id,origin,new JSONObject());
+            conversation=new ConversationStore(this,records,id,origin);
             if (!requested.isEmpty()) openRecords(requested);
         } catch (Exception unavailable) { /* The online client works without a readable disk. */ }
         try (java.util.Scanner scanner=new java.util.Scanner(getAssets().open("first-screen.js"),"UTF-8").useDelimiter("\\A")) {
@@ -153,6 +156,17 @@ public class ClientActivity extends Activity {
         savedRecords.setVisibility(View.INVISIBLE);
         if (web != null) web.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         frame.addView(opening, new FrameLayout.LayoutParams(-1,-1));
+        String thread=presentation.getString("thread","");
+        if (conversation!=null && !Site.root(link,origin) && conversation.available(thread)) {
+            savedChat=new SavedConversation(this,frame,records,conversation,id,origin,name,thread,(op,target) -> {
+                if ("instances".equals(op)) showDrawer("",false);
+                else if ("records".equals(op)) openRecords(target);
+                else if ("select".equals(op)) {
+                    presentation.edit().putString("thread",target).apply();
+                    openProbe(false);
+                }
+            });
+        }
         final LinearLayout cover = opening;
         main.postDelayed(() -> {
             if (opening == cover) savedRecords.setVisibility(View.VISIBLE);
@@ -162,15 +176,18 @@ public class ClientActivity extends Activity {
     private void revealScreen(int epoch, WebView view) {
         if (opening==null || checkingScreen || epoch!=generation || web!=view || retryNeeded || rejected) return;
         checkingScreen=true;
-        view.evaluateJavascript(firstScreen, value -> {
+        String ready=firstScreen;
+        if (savedChat!=null) ready="("+firstScreen+"\n"+") && (!document.querySelector('.focus-shell') || document.querySelector('.focus-shell').dataset.onlineConversation !== 'pending')";
+        view.evaluateJavascript(ready, value -> {
             if (epoch!=generation || web!=view) return;
             checkingScreen=false;
             if (retryNeeded || rejected || opening==null) return;
             if (!"true".equals(value)) { main.postDelayed(() -> revealScreen(epoch,view),150); return; }
+            if (savedChat!=null && savedChat.waitingForPosition(view)) { main.postDelayed(() -> revealScreen(epoch,view),100); return; }
             view.postVisualStateCallback(epoch,new WebView.VisualStateCallback() {
                 @Override public void onComplete(long request) {
                     if (generation!=epoch || web!=view || opening==null || retryNeeded || rejected) return;
-                    frame.removeView(opening); opening=null;
+                    closeSavedChat(); frame.removeView(opening); opening=null;
                     openingMessage=null; retryEntry=null; savedRecords=null;
                     view.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
                     notice.setVisibility(View.GONE);
@@ -190,7 +207,14 @@ public class ClientActivity extends Activity {
         if (foreground) main.postDelayed(retry, Math.min(30000L, 1000L << Math.min(backoff++, 5)));
     }
 
+    private void closeSavedChat() {
+        if(savedChat!=null) { savedChat.close(); savedChat=null; }
+    }
+    private void checkSavedAccess() {
+        if(savedChat!=null && !savedChat.hasAccess(conversation)) closeSavedChat();
+    }
     private void retireView() {
+        if(savedChat!=null) savedChat.reconnect();
         checkingScreen=false; generation++; ticket = ""; pendingBack = null;
         if (apkUpdate != null) apkUpdate.cancel();
         if (files != null) files.cancel();
@@ -340,17 +364,29 @@ public class ClientActivity extends Activity {
                         if (!foreground || switching) { result.cancel(); return true; }
                         JSONObject data = new JSONObject(value);
                         String operation = op.substring(8);
-                        if ("show".equals(operation)) {
+                        if ("positioned".equals(operation)) {
+                            if(savedChat!=null) savedChat.positioned(data.optString("position"));
+                            result.confirm("ok");
+                        } else if ("readwindow".equals(operation) || "putwindow".equals(operation)) {
+                            if (!recordScopeConfirmed || data.optString("scope").length()!=64) { result.cancel(); return true; }
+                            if ("putwindow".equals(operation)) result.confirm(conversation.enqueue(data)?"ok":"");
+                            else {
+                                JSONObject cached=conversation.read(data.getString("thread"),data.getString("scope"),data);
+                                result.confirm(cached==null?"null":cached.toString());
+                            }
+                        } else if ("show".equals(operation)) {
                             result.confirm("ok"); main.post(() -> { if (epoch == generation) openRecords(data.optString("thread")); });
                         } else if ("ready".equals(operation) || "result".equals(operation)) {
                             result.confirm("ok"); if (reader != null) reader.notify(data.put("event",operation).toString());
-                        } else if ("bookmark".equals(operation) && reader != null) {
+                        } else if ("bookmark".equals(operation) && (reader != null || savedChat!=null)) {
                             result.confirm("[]");
                         } else {
                             if (data.has("thread") && !"lifecycle".equals(operation) && !"closed".equals(operation) && !"revert".equals(operation)
                                 && !presentation.getString("thread","").equals(data.getString("thread"))) { result.cancel(); return true; }
                             result.confirm(records.request(false,id,origin,operation,data));
                             if ("auth".equals(operation)) recordScopeConfirmed = true;
+                            if ("lock".equals(operation) || "revoke".equals(operation)) recordScopeConfirmed=false;
+                            if ("auth".equals(operation) || "lock".equals(operation) || "revoke".equals(operation) || "revert".equals(operation)) checkSavedAccess();
                             if (reader != null && ("lifecycle".equals(operation) || "closed".equals(operation) || "revert".equals(operation)))
                                 reader.notify(data.put("event",operation).toString());
                             if (reader != null && ("auth".equals(operation) || "lock".equals(operation) || "revoke".equals(operation)))
@@ -465,7 +501,7 @@ public class ClientActivity extends Activity {
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
             + "url.searchParams.set('focusApp','1');location.replace(url.href)}else{"
-            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','record-states','android-update'" + printFeature + "]});"
+            + "window.__focusMobile=Object.assign(window.__focusMobile||{},{version:1,instance:'" + id + "',name:" + JSONObject.quote(name) + ",ticket:'" + ticket + "',features:['wake','resume','save','thread','tabs','drawer','navigation','records-v1','record-states','conversation-windows','android-update'" + printFeature + "]});"
             + "dispatchEvent(new Event('focus-host-ready'))}}";
         view.evaluateJavascript(js, null);
     }
@@ -473,7 +509,7 @@ public class ClientActivity extends Activity {
         if (web != null && !probe && Site.root(web.getUrl(), origin))
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
-    @Override protected void onResume() { super.onResume(); foreground = true; if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
+    @Override protected void onResume() { super.onResume(); foreground = true; checkSavedAccess(); if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
     @Override protected void onPause() { if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; drawerExitDeadline = 0; main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onStop() {
         super.onStop();
@@ -508,13 +544,14 @@ public class ClientActivity extends Activity {
                 + "){dispatchEvent(new CustomEvent('focus-record-action',{detail:JSON.parse(" + JSONObject.quote(value) + ")}))}",null);
     }
     private void closeRecords() {
-        if (reader != null) { reader.close(); reader=null; }
+        if (reader != null) { reader.close(); reader=null; checkSavedAccess(); }
     }
     private void lockRecords() {
         lockRecords("lock");
     }
     private void lockRecords(String operation) {
         try { records.call(operation,id,origin,new JSONObject()); } catch (Exception unavailable) { /* Optional store. */ }
+        recordScopeConfirmed=false; checkSavedAccess();
         if (reader != null) reader.notify("{\"event\":\"access\"}");
     }
 
@@ -621,7 +658,7 @@ public class ClientActivity extends Activity {
     void releaseTask() { selected = false; retireView(); finishAndRemoveTask(); }
 
     @Override protected void onDestroy() {
-        closeRecords(); if (records != null) records.close();
+        closeSavedChat(); closeRecords(); if (records != null) records.close();
         main.removeCallbacksAndMessages(null); retireView(); if (files != null) files.dispose();
         if (pages != null) pages.finishOpening();
         PageSlots.detached(this);

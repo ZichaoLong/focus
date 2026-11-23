@@ -28,11 +28,11 @@ const apiProxyOptions = {
   },
 };
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    focusPdfAssetsPlugin(),
-    focusBundleBoundaryPlugin(),
+    mode !== 'android-conversation' && focusPdfAssetsPlugin(),
+    mode !== 'android-conversation' && focusBundleBoundaryPlugin(),
     Icons({
       compiler: 'vue3',
       // Keep the existing internal collection name so current icon imports stay
@@ -42,8 +42,8 @@ export default defineConfig({
         kimi: FileSystemIconLoader(fileURLToPath(new URL('./src/icons/kimi', import.meta.url))),
       },
     }),
-    focusThirdPartyNoticesPlugin(),
-    focusStaticCompressionPlugin(),
+    focusThirdPartyNoticesPlugin(mode !== 'android-conversation'),
+    mode !== 'android-conversation' && focusStaticCompressionPlugin(),
   ],
   define: {
     __KIMI_WEB_DESKTOP__: JSON.stringify(false),
@@ -60,8 +60,8 @@ export default defineConfig({
   build: {
     outDir: '../bot/web_assets/dist',
     emptyOutDir: true,
-    rollupOptions: { input: { app: 'index.html', update: 'focus-update.html' } },
+    rollupOptions: { input: mode === 'android-conversation' ? 'conversation.html' : { app: 'index.html', update: 'focus-update.html' } },
     target: 'es2022',
   },
   worker: { format: 'es' },
-});
+}));
