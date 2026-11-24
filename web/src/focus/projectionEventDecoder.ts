@@ -171,11 +171,15 @@ export function isFocusWireToolInspectionLocator(
     && value.change_index <= 0xffff_ffff;
 }
 
+export function isFocusWireToolStatus(value: unknown): value is ToolCall['status'] {
+  return value === 'ok' || value === 'running' || value === 'error';
+}
+
 function isToolCall(value: unknown): value is ToolCall {
   if (!isFocusWireRecord(value)) return false;
   if (!isTrimmedString(value.id, false)) return false;
   if (typeof value.name !== 'string' || typeof value.arg !== 'string') return false;
-  if (!['ok', 'running', 'error'].includes(String(value.status))) return false;
+  if (!isFocusWireToolStatus(value.status)) return false;
   if (!optionalProperty(value, 'outputDeferred', (item) => item === true)) return false;
   if (value.outputDeferred === true && (
     value.status === 'running' || !isFocusWireToolInspectionLocator(value.inspectionLocator)
@@ -363,7 +367,7 @@ function isCronTurnData(value: unknown): boolean {
 }
 
 export function isFocusWireChatTurn(value: unknown): value is Record<string, unknown> {
-  if (!isFocusWireRecord(value)) return false;
+  if (!isFocusWireRecord(value) || hasOwn(value, 'compactTool')) return false;
   if (!optionalProperty(value, 'codexRecordedAtMs', item => isNonNegativeSafeInteger(item) && item <= 8_640_000_000_000_000)) return false;
   if (!optionalProperty(value, 'clientUserMessageId', item => typeof item === 'string' && item.startsWith('focus-web:') && isCanonicalWebMutationId(item.slice(10)))) return false;
   if (!optionalProperty(value, 'promptTiming', item => isFocusWireRecord(item)

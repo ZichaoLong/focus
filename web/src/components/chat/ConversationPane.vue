@@ -1,7 +1,7 @@
 <!-- apps/kimi-web/src/components/chat/ConversationPane.vue -->
 <script setup lang="ts">
 import { threadReading, saveReadingBookmark } from './readingBookmark';
-import { canScrollVertically, captureTranscriptScrollAnchor, restoreTranscriptScrollAnchor, type TranscriptScrollAnchor } from './transcriptScrollAnchor';
+import { toolGroupFor, canScrollVertically, captureTranscriptScrollAnchor, restoreTranscriptScrollAnchor, type TranscriptScrollAnchor } from './transcriptScrollAnchor';
 import type { SummaryExportRequest } from '../../types';
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type ComponentPublicInstance } from 'vue';
 import { useI18n } from 'vue-i18n';
@@ -119,8 +119,11 @@ const props = withDefaults(defineProps<{
   /** Leave a replacement history page before scrolling to the live tail. */
   returnToLiveTail?: (intent?: AbortSignal) => Promise<boolean>;
   /** Current cursor authority for filling a host-selected instance's live tail. */
-  restoredTailContext?: AbortController | null;
-  cancelInstanceReturn?: () => void;
+  tailContext?: AbortController | null;
+  tailFilled?: () => void;
+  finishLatest?: (intent: AbortSignal) => void;
+  loadToolMembers?: (turn: ChatTurn, signal: AbortSignal) => Promise<boolean>;
+  cancelTailContext?: () => void;
   /** Available models for the quick-switch dropdown in the composer toolbar. */
   models?: AppModel[];
   /** Product-owned notice shown beside model/effort controls. */
@@ -464,7 +467,7 @@ watch(() => props.readingMode, (reading) => {
   latestReturn?.abort();
   // A rebuilt instance can restore its saved mode after its head has arrived.
   // Measure that layout with the same return budget.
-  scheduleRestoredTailMeasure();
+  scheduleTailMeasure();
   if (reading) closeDockPanel();
 });
 
@@ -821,12 +824,12 @@ const promptNavigationResolving = ref(false);
 const BOTTOM_THRESHOLD = 80;
 const USER_ACTION_FOLLOW_LOCK_MS = 1000;
 let latestReturn: AbortController | null = null;
-let measuringReturn: AbortController | null = null;
-let returnLayoutFrame = 0;
+let measuringTail: AbortController | null = null;
+let tailMeasureFrame = 0;
 
 function cancelTailReturn(): void {
   latestReturn?.abort();
-  props.cancelInstanceReturn?.();
+  props.cancelTailContext?.();
 }
 
 function distanceFromBottom(): number {
@@ -913,7 +916,7 @@ function onPanesScroll(): void {
     return;
   }
   if (top < lastScrollTop - 1 && dist > 1) {
-    const restore = props.restoredTailContext;
+    const restore = props.tailContext;
     // Measuring a newly installed prefix can clamp scrollTop, then grow the
     // range again before the browser delivers its scroll event. A collapse
     // to zero can even restore the exact old range after follow frames settle.
@@ -982,23 +985,40 @@ async function handleReturnToLiveTail(): Promise<void> {
     scrollToBottom(true);
     scheduleStableFollow(16);
     await fillShortTail(intent, fence);
+    props.finishLatest?.(intent.signal);
   } finally {
     if (latestReturn === intent) latestReturn = null;
   }
 }
 
+let shortTail: { session: string; width: number; height: number; last?: string; length: number } | null = null;
+
 async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): Promise<void> {
   for (let i = 0; i < MAX_TAIL_FILL_READS; i++) {
-    if (!props.continuousTranscript || !props.hasMoreMessages || !props.sessionId || !props.loadOlderMessages) break;
+    if (!props.continuousTranscript || !props.sessionId || !props.loadOlderMessages) break;
     await new Promise<void>(resolve => raf(resolve));
     const pane = fence.pane;
     if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence) || !following.value || !pane
       || mobileEditorExpanded.value || props.hasNewerMessages || document.visibilityState === 'hidden'
-      || !pane.clientHeight || pane.scrollHeight > pane.clientHeight + 1) break;
+      || !pane.clientHeight) break;
     // Measure the flow after all rows, activity and queued prompts, before normal bottom padding.
     const end = pane.querySelector('[data-transcript-end]');
-    if (!end || pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top
-      < Math.max(96, pane.clientHeight * 0.2)) break;
+    if (!end) break;
+    const gap = pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top;
+    if (pane.scrollHeight > pane.clientHeight + 1 || gap < Math.max(96, pane.clientHeight * 0.2)) {
+      // A remounted prefix can finish measuring after the initial follow
+      // frames, with the browser still at its old (short) scroll range.
+      if (!isPinned() && distanceFromBottom() > 1) scheduleStableFollow(8);
+      if (shortTail?.session === props.sessionId && shortTail.width === pane.clientWidth
+        && pane.clientHeight >= shortTail.height && (shortTail.last !== props.turns.at(-1)?.id
+          || shortTail.length !== props.turns.at(-1)?.text.length)) {
+        shortTail = null;
+        props.tailFilled?.();
+      }
+      break;
+    }
+    if (!props.hasMoreMessages) break;
+    shortTail ??= { session: props.sessionId, width: pane.clientWidth, height: pane.clientHeight, last: props.turns.at(-1)?.id, length: props.turns.at(-1)?.text.length ?? 0 };
     if (!await props.loadOlderMessages(props.sessionId, intent.signal)) break;
     await nextTick();
     if (intent.signal.aborted || !scrollWriteFenceIsCurrent(fence)) return;
@@ -1007,25 +1027,29 @@ async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): 
   }
 }
 
-function scheduleRestoredTailMeasure(): void {
-  const intent = props.restoredTailContext;
-  if (!intent || intent.signal.aborted || document.visibilityState === 'hidden' || componentDisposed) return;
+watch(() => props.sessionId, () => { shortTail = null; });
+watch(() => props.turns, () => scheduleTailMeasure(), { flush: 'post' });
+
+function scheduleTailMeasure(): void {
+  const intent = props.tailContext;
+  if (!intent || intent.signal.aborted || tailMeasureFrame || measuringTail === intent
+    || document.visibilityState === 'hidden' || componentDisposed) return;
   const fence = captureScrollWriteFence();
-  if (returnLayoutFrame) cancelRaf(returnLayoutFrame);
   // Coalesce viewport changes for a frame. fillShortTail measures on the next
   // frame and after each installed page, using this return's remaining reads.
-  returnLayoutFrame = raf(async () => {
-    returnLayoutFrame = 0;
-    if (intent !== props.restoredTailContext || intent.signal.aborted || measuringReturn === intent) return;
-    measuringReturn = intent;
+  tailMeasureFrame = raf(async () => {
+    tailMeasureFrame = 0;
+    if (intent !== props.tailContext || intent.signal.aborted || measuringTail === intent) return;
+    measuringTail = intent;
     try { await fillShortTail(intent, fence); }
-    finally { if (measuringReturn === intent) measuringReturn = null; }
+    finally { if (measuringTail === intent) measuringTail = null; }
   });
 }
 
-watch(() => props.restoredTailContext, (intent, previous) => {
+watch(() => props.tailContext, (intent, previous) => {
   previous?.abort();
-  if (intent) scheduleRestoredTailMeasure();
+  if (tailMeasureFrame) { cancelRaf(tailMeasureFrame); tailMeasureFrame = 0; }
+  if (intent) scheduleTailMeasure();
 }, { flush: 'post' });
 
 async function handleLoadOlderMessages(source: 'sentinel' | 'button'): Promise<void> {
@@ -1117,7 +1141,7 @@ function attrEscape(value: string): string {
 function findTurnTarget(container: HTMLElement, turnId: string): HTMLElement | null {
   return container.querySelector<HTMLElement>(
     `.turn-anchor[data-turn-id="${attrEscape(turnId)}"], .turn-anchor[data-prompt-id="${attrEscape(turnId)}"]`,
-  );
+  ) ?? toolGroupFor(container, turnId) ?? null;
 }
 
 function openPromptHistory(): void {
@@ -1285,7 +1309,7 @@ async function scrollToRenderedTurn(turnId: string): Promise<boolean> {
 }
 
 function handleConversationSearch(): void {
-  props.cancelInstanceReturn?.();
+  props.cancelTailContext?.();
   claimOrdinaryScrollAuthority();
   historyAutoLoadArmed.value = false;
   emit('searchConversation');
@@ -1413,10 +1437,9 @@ watch(scrollKey, async (next, prev) => {
     || historyLoadInProgress.value
   ) return;
   if (following.value || hasUserActionFollowLock()) {
-    // Compaction can shorten the transcript — glide to the new bottom
-    // smoothly; growth (new turns / streaming) snaps instantly so the follow
-    // keeps up with the tail.
-    scheduleFollow(next.length < prev.length ? 'smooth' : 'instant');
+    // A paginated head can shrink before its prefix returns. A smooth scroll
+    // to that intermediate height can land at the old destination after fill.
+    scheduleFollow(!props.continuousTranscript && next.length < prev.length ? 'smooth' : 'instant');
   } else showPill.value = true;
   updateActiveTocQuery();
 });
@@ -1670,7 +1693,7 @@ function cancelOrdinaryScrollWrites(): void {
 
 /** Called by the Prompt owner before it publishes a new exclusive intent. */
 function stopPromptCompetingScrollWrites(): void {
-  props.cancelInstanceReturn?.();
+  props.cancelTailContext?.();
   scrollWriteGeneration += 1;
   cancelOrdinaryScrollWrites();
 }
@@ -1684,7 +1707,7 @@ function claimOrdinaryScrollAuthority(): ScrollWriteFence {
 }
 
 function claimUserScrollAuthority(): void {
-  props.cancelInstanceReturn?.();
+  props.cancelTailContext?.();
   bookmark = null;
   // An already-authorized older-page read still owns its post-install landing.
   // A gesture may stop competing follow writes, but it must not strand the
@@ -1890,6 +1913,7 @@ function restoreReadingAnchor(): void {
 function onContentMutated(): void {
   if (componentDisposed) return;
   ensureContentObserved();
+  scheduleTailMeasure();
   restoreReadingAnchor();
   promptNavigation.notifyLayoutChange();
   scheduleFollow();
@@ -1901,7 +1925,7 @@ function onVisibilityChange(): void {
   if (document.visibilityState === 'hidden') leaveVisibleTranscript();
   if (document.visibilityState === 'visible' && following.value) {
     scheduleStableFollow();
-    scheduleRestoredTailMeasure();
+    scheduleTailMeasure();
   }
 }
 
@@ -1921,7 +1945,7 @@ function handleInterrupt(): void {
 // user has manually scrolled away (following === false).
 function onVisualViewportResize(): void {
   if (following.value) scheduleFollow();
-  scheduleRestoredTailMeasure();
+  scheduleTailMeasure();
 }
 
 onMounted(() => {
@@ -1941,7 +1965,8 @@ onMounted(() => {
         const el = panesRef.value;
         if (!el) return;
         const { scrollHeight, clientHeight, clientWidth } = el;
-        if (clientHeight !== lastObservedClientHeight || clientWidth !== lastObservedClientWidth) scheduleRestoredTailMeasure();
+        if (clientHeight !== lastObservedClientHeight || clientWidth !== lastObservedClientWidth
+          || scrollHeight !== lastObservedScrollHeight) scheduleTailMeasure();
         const grew = scrollHeight > lastObservedScrollHeight + 1;
         const viewportShrank = clientHeight < lastObservedClientHeight - 1;
         lastObservedScrollHeight = scrollHeight;
@@ -1976,7 +2001,7 @@ onUnmounted(() => {
   if (contentObserver) contentObserver.disconnect();
   if (resizeObserver) resizeObserver.disconnect();
   cancelTailReturn();
-  if (returnLayoutFrame) cancelRaf(returnLayoutFrame);
+  if (tailMeasureFrame) cancelRaf(tailMeasureFrame);
   cancelScheduledFollow();
   promptNavigation.cancel();
   abandonScrollbarDrag();
@@ -2289,6 +2314,7 @@ defineExpose({
               :fast-moon="fastMoon"
               :session-loading="sessionLoading"
               :transcript-error="transcriptError"
+              :load-tool-members="loadToolMembers"
               :has-newer-messages="hasNewerMessages"
               :compaction="compaction"
               :has-more-messages="hasMoreMessages"

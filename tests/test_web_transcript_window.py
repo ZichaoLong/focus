@@ -503,3 +503,63 @@ def test_invalid_query_combinations_fail_before_upstream_io(inspection, query):
     with pytest.raises(WebRuntimeError):
         read(inspection, **query)
     inspection.list_items.assert_not_called()
+
+
+def test_cold_folded_context_crosses_1050_calls_with_bounded_replayable_pages(inspection):
+    items = entries(1, text="Before the tools") + [
+        ThreadItemEntry("turn-1", {"id": f"tool-{i}", "type": "commandExecution", "command": f"cmd {i}",
+                                  "status": "failed" if i == 37 else "completed", "aggregatedOutput": "output"})
+        for i in range(1050)
+    ]
+
+    def page(_thread, *, cursor, sort_direction, limit, **kwargs):
+        assert sort_direction == "desc" and limit <= 40
+        end = int(cursor) if cursor else len(items)
+        start = max(0, end - limit)
+        return ThreadItemsPage(items=list(reversed(items[start:end])), next_cursor=str(start) if start else None,
+                               backwards_cursor=str(end))
+
+    inspection.list_items.side_effect = page
+    head = read(inspection)
+    cursor = head["older_cursor"]
+    seen = list(row["itemId"] for row in head["turns"])
+    for _ in range(2):
+        inspection.list_items.reset_mock()
+        part = read(inspection, cursor=cursor, fold_tools=True)
+        assert inspection.list_items.call_count <= 14
+        assert len(json.dumps(part).encode()) < 128 * 1024
+        ids = [item for chunk in part["tool_pages"] for item, _ in chunk["items"]]
+        seen = [row["itemId"] for row in part["turns"]] + ids + seen
+        assert part["newer_cursor"] == cursor
+        cursor = part["older_cursor"]
+    assert cursor is None
+    assert seen == [entry.item["id"] for entry in items]
+    chunk = next(chunk for chunk in part["tool_pages"] if ["tool-37", "error"] in chunk["items"])
+    inspection.list_items.reset_mock()
+    expanded = read(inspection, cursor=chunk["cursor"])
+    assert inspection.list_items.call_count == 1
+    assert [(row["itemId"], row["tools"][0]["status"]) for row in expanded["turns"]] == [
+        tuple(member) for member in chunk["items"]]
+
+
+@pytest.mark.parametrize("boundary", ["prose", "reasoning", "turn"])
+def test_context_stops_on_a_semantic_or_turn_boundary(inspection, boundary):
+    def tool(i):
+        return {"type": "commandExecution", "id": f"tool-{i}", "command": "cmd", "status": "completed"}
+    # Descending wire order. Anything other than one complete single-turn
+    # tool page must keep its ordinary projected content and source cursor.
+    mixed = [ThreadItemEntry("t", tool(0)), ThreadItemEntry("t", tool(1))]
+    if boundary == "prose":
+        mixed[1] = ThreadItemEntry("t", {"type": "agentMessage", "id": "reply", "text": "progress"})
+    elif boundary == "reasoning":
+        mixed[1] = ThreadItemEntry("t", {"type": "reasoning", "id": "think", "summary": ["reason"]})
+    else:
+        mixed[1] = ThreadItemEntry("other", tool(1))
+    inspection.list_items.side_effect = [
+        ThreadItemsPage([ThreadItemEntry("t", tool(2))], "next", "back"),
+        ThreadItemsPage(mixed, "older", "ignored"),
+    ]
+    result = read(inspection, cursor="edge", fold_tools=True)
+    assert result["tool_pages"] == [{"turn_id": "t", "cursor": "edge", "items": [["tool-2", "ok"]]}]
+    assert [row["itemId"] for row in result["turns"]] == [entry.item["id"] for entry in reversed(mixed)]
+    assert (result["older_cursor"], result["newer_cursor"]) == ("older", "back")

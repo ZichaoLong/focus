@@ -780,6 +780,7 @@ FOCUS_WEB_RECORDS: Final = (
         "runtime_epoch revision thread_id turn_id view target_pending turns older_cursor newer_cursor full_text",
         "view:transcript_view",
     ),
+    _record("transcript_tool_page", "FocusTranscriptToolPage", "turn_id cursor items"),
     _record("token_breakdown", "FocusTokenBreakdown", ""),
     _record(
         "summary_prompt",

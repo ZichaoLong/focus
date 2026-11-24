@@ -429,6 +429,9 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   assistant occurrence；每条 snippet 最多 1,024 个 Unicode code points，并携 UTF-16 character-boundary
   match range 与 opaque turn cursor。tool、diff、reasoning、plan、MCP 与 subagent 内容不进入搜索；序列化
   response 的 Focus 硬上限为 64 KiB。该 endpoint 不承诺完整全文索引，也不承担 Prompt outline。
+- 正文补读协商后可返回可选的 `tool_pages`，顺序接在普通 `turns` 之后。
+  每页含 `turn_id`、真实请求 `cursor`、按时间顺序排列的 `items` 条目标识与工具状态对。
+  展开时使用相同 cursor 经所选线程的普通正文接口重读。
 - paginated 正文的所有工具均遵循[有界正文窗口合同](./focus-web-transcript-window.zh-CN.md)：仅加载一行调用摘要，
   无默认 output/diff/媒体正文。`contentDeferred=true` 只用于工具，不用于 Prompt、回复或可见推理。
   运行中日志不进入普通正文 stream；点击时读取记录，已打开的运行中通用详情在完成时刷新。

@@ -89,6 +89,10 @@ export default {
     hours: '{value} hr',
   },
   group: {
+    loaded: '{count} tool call loaded | {count} tool calls loaded',
+    runningCount: '{count} running',
+    loadPage: 'Load {count} tool calls',
+    retryPage: 'Retry loading tool calls',
     failedCount: '{count} failed',
     title: '{count} tool call | {count} tool calls',
     running: 'running',

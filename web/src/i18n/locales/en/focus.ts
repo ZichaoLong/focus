@@ -352,7 +352,7 @@ export default {
   turnWindow: 'Recent turn summaries',
   threadReadingLimit: 'Remember recent threads per instance',
   serverUpdateTitle: 'Focus Web server update',
-  turnWindowDescription: 'Read 5, 10, or 20 turn summaries when opening a paginated thread. Message pages contain up to 40 items and the live window retains up to 80. Page back for earlier content.',
+  turnWindowDescription: 'Choose how many turn summaries to read when opening a thread. Messages load separately. While following the latest messages, the page fills visible space with earlier content. You can also page back manually.',
   activityFavicon: 'Tab activity animation',
   activityFaviconDescription: 'Rotate the tab icon while the current conversation is working. This setting is stored only in this browser.',
   activityFaviconEnabledOption: 'On',

@@ -19,7 +19,7 @@ import Spinner from '../ui/Spinner.vue';
 import Icon from '../ui/Icon.vue';
 import Tooltip from '../ui/Tooltip.vue';
 import TranscriptRow from './TranscriptRow.vue';
-import { isTranscriptRowPinned } from './transcriptScrollAnchor';
+import { isTranscriptRowPinned, toolGroupFor } from './transcriptScrollAnchor';
 import { readingLimit } from './readingBookmark';
 import { createToolGroupExpansion, threadToolExpansion, projectTranscriptToolGroups, toolGroupMember, type ToolGroup as ExpansionGroup } from '../toolGroupPresentation';
 import { copyTextToClipboard } from '../../lib/clipboard';
@@ -69,6 +69,7 @@ const props = withDefaults(
      */
     sessionLoading?: boolean;
     transcriptError?: string;
+    loadToolMembers?: (turn: ChatTurn, signal: AbortSignal) => Promise<boolean>;
     hasNewerMessages?: boolean;
     newerAutoLoadArmed?: boolean;
     loadingNewer?: boolean;
@@ -217,7 +218,7 @@ const toolGroupExpansionRevision = ref(0);
 const renderedBlocks = computed(() => new Map(props.turns.map(turn => [turn.id,
   turn.role === 'assistant' && !turn.contentDeferred ? assistantRenderBlocks(turn) : [],
 ])));
-const deferredProjection = computed(() => projectTranscriptToolGroups(props.turns));
+const deferredProjection = computed(() => projectTranscriptToolGroups(props.turns, props.hasMoreMessages, props.hasNewerMessages));
 
 function legacyGroup(turn: ChatTurn, block: ToolStackBlock): ExpansionGroup {
   return { members: block.tools.map(item => toolGroupMember(turn.id, item.tool.id || String(item.sourceIndex))),
@@ -235,6 +236,14 @@ const expansionGroups = computed(() => {
 });
 
 watch(expansionGroups, groups => {
+  const active = chatElement.value?.ownerDocument.activeElement;
+  const previousLeader = active?.closest<HTMLElement>('[data-transcript-tool-group]')?.dataset.turnId;
+  if (previousLeader && active) void nextTick(() => {
+    const pane = chatElement.value;
+    if (pane && !active.isConnected && pane.ownerDocument.activeElement === pane.ownerDocument.body) {
+      toolGroupFor(pane, previousLeader)?.querySelector('button')?.focus({ preventScroll: true });
+    }
+  });
   toolGroupExpansion.reconcile(groups);
   // A split or merge can move a row into a folded group during interaction.
   // Preserve that interaction before Vue removes any folded content.
@@ -258,16 +267,59 @@ function toggleToolGroup(turn: ChatTurn, block: ToolStackBlock): void {
   toolGroupExpansionRevision.value += 1;
 }
 
-function deferredGroupOpen(turn: ChatTurn): boolean {
+const openGroups = computed(() => {
   void toolGroupExpansionRevision.value;
-  const group = deferredProjection.value.members.get(turn.id);
-  return !group || toolGroupExpansion.isOpen(group);
+  return new Set([...deferredProjection.value.leaders.values()].filter(group => toolGroupExpansion.isOpen(group)));
+});
+
+// Preserve source indices for reply actions. A folded group produces one
+// header; an expanded compact page produces one loader until explicitly read.
+const presentedTurns = computed(() => {
+  const seenPages = new Set<string>();
+  return props.turns.flatMap((turn, ti) => {
+    const group = deferredProjection.value.members.get(turn.id);
+    const leader = deferredProjection.value.leaders.get(turn.id);
+    const showRow = !group || openGroups.value.has(group);
+    const cursor = turn.compactTool?.cursor;
+    const showLoader = showRow && !!cursor && !seenPages.has(cursor);
+    if (showLoader) seenPages.add(cursor!);
+    return leader || (showRow && (!cursor || showLoader)) ? [{ turn, ti, leader, showRow, showLoader }] : [];
+  });
+});
+
+let memberRequest: AbortController | null = null;
+const loadingMembers = ref('');
+const failedMembers = ref('');
+function cancelMemberRead() {
+  memberRequest?.abort();
+  memberRequest = null;
+  loadingMembers.value = '';
+  failedMembers.value = '';
+}
+onUnmounted(cancelMemberRead);
+async function readMembers(turn: ChatTurn) {
+  cancelMemberRead();
+  if (!turn.compactTool || !props.loadToolMembers) return;
+  const request = new AbortController();
+  memberRequest = request;
+  loadingMembers.value = turn.compactTool.cursor;
+  try {
+    if (!await props.loadToolMembers(turn, request.signal) && !request.signal.aborted) failedMembers.value = turn.compactTool.cursor;
+  } finally {
+    if (memberRequest === request) { memberRequest = null; loadingMembers.value = ''; }
+  }
 }
 
 function toggleDeferredGroup(turn: ChatTurn): void {
   const group = deferredProjection.value.leaders.get(turn.id);
-  if (group) toolGroupExpansion.toggle(group);
+  if (!group) return;
+  toolGroupExpansion.toggle(group);
   toolGroupExpansionRevision.value += 1;
+  cancelMemberRead();
+  if (toolGroupExpansion.isOpen(group)) {
+    const first = props.turns.find(row => row.compactTool && deferredProjection.value.members.get(row.id) === group);
+    if (first) void readMembers(first);
+  }
 }
 
 // Trailing "working" moon: shown while the main conversation has an unfinished
@@ -516,18 +568,22 @@ function isStreamingRenderBlock(turn: ChatTurn, block: { sourceIndex: number }):
       </span>
     </div>
 
-    <template v-for="(turn, ti) in turns" :key="turn.id">
+    <template v-for="{ turn, ti, leader, showRow, showLoader } in presentedTurns" :key="turn.id">
       <div v-if="turn.savedToolCount" class="transcript-tool-group"
         :data-turn-id="turn.id" :data-transcript-tool-group="JSON.stringify([turn.id])">
         <ToolGroupHeader :tools="[]" :open="false" :saved-count="turn.savedToolCount" />
       </div>
-      <div v-else-if="deferredProjection.leaders.has(turn.id)" class="transcript-tool-group"
+      <div v-else-if="leader" class="transcript-tool-group"
         :data-turn-id="turn.id"
-        :data-transcript-tool-group="JSON.stringify(deferredProjection.leaders.get(turn.id)!.sourceIds)">
-        <ToolGroupHeader :tools="deferredProjection.leaders.get(turn.id)!.tools"
-          :open="deferredGroupOpen(turn)" @toggle="toggleDeferredGroup(turn)" />
+        :data-transcript-tool-group="JSON.stringify(leader.sourceIds)">
+        <ToolGroupHeader :tools="leader.tools" :summary="leader.summary"
+          :open="showRow" @toggle="toggleDeferredGroup(turn)" />
       </div>
-      <TranscriptRow v-if="!turn.savedToolCount" :turn="turn" :folded="!deferredGroupOpen(turn)">
+      <button v-if="showLoader" type="button" class="top-sentinel-btn tool-member-page"
+        :disabled="!!loadingMembers" @click="readMembers(turn)">
+        {{ t(failedMembers === turn.compactTool!.cursor ? 'tools.group.retryPage' : 'tools.group.loadPage', { count: turn.compactTool!.count }) }}
+      </button>
+      <TranscriptRow v-else-if="showRow && !turn.compactTool && !turn.savedToolCount" :turn="turn">
       <!-- User turn → right-aligned soft-blue bubble with actions below. -->
       <template v-if="turn.role === 'user'">
         <div v-if="userTurnHasPresentation(turn)" class="u-turn">

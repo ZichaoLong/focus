@@ -9,9 +9,7 @@ from aiohttp import web
 from bot.web_runtime import gateway_request_decoder as request_decoder
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.thread_inspection_wire import encode_thread_inspection_json
-
-
-_TAIL_CONTEXT_PAGE_BYTES = 128 * 1024
+from bot.web_runtime.transcript_budget import TAIL_CONTEXT_BYTES
 
 
 def _inspection_json_response(payload: Any) -> web.Response:
@@ -31,6 +29,8 @@ class WebGatewayThreadInspectionMixin:
         client_id = self._required_client_id(request)
         query = request_decoder.decode_transcript_query(request.query)
         fill = query.pop("fill", None)
+        if fill and request.headers.get("X-Focus-Folded-Tools") == "1":
+            query["fold_tools"] = True
         if request.headers.get("X-Focus-Reading-Window") == "1":
             query["include_reading_mark"] = True
         page = await self._staged_document_request_to_thread(
@@ -43,7 +43,7 @@ class WebGatewayThreadInspectionMixin:
             response.headers["X-Focus-Reading-Mark"] = record_mark
         # Cap the actual serialized mobile/browser response, including timing
         # enrichment and JSON escaping. Leave the cursor available for manual use.
-        if fill and len(response.body) > _TAIL_CONTEXT_PAGE_BYTES:
+        if fill and len(response.body) > TAIL_CONTEXT_BYTES:
             raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
         return response
 

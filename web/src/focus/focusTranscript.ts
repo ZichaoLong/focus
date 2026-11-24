@@ -53,7 +53,7 @@ export function createFocusTranscript(options: {
     clearTimeout(saveTimer); saveTimer=undefined;
     const write=pendingWrite; pendingWrite=undefined; write?.();
   }
-  const edges = shallowRef({ older: null as string | null, newer: null as string | null, atTail: false });
+  const edges = shallowRef({ older: null as string | null, newer: null as string | null, atTail: false, needsOlderAnchor: false });
   const unseenNewer = ref(false);
   let protectedRow: string | null = null;
   let following = true;
@@ -63,7 +63,7 @@ export function createFocusTranscript(options: {
   let lastDirection: 'older' | 'newer' = 'newer';
   function publishWindow() {
     turns.value = cache.rows;
-    edges.value = { older: cache.older, newer: cache.newer, atTail: cache.atTail };
+    edges.value = { older: cache.older, newer: cache.newer, atTail: cache.atTail, needsOlderAnchor: cache.needsOlderAnchor };
     historical.value = turns.value.length > 0 && !cache.atTail;
     const ids = new Set(turns.value.map(row => row.id));
     for (const id of rowReadRevisions.keys()) if (!ids.has(id)) rowReadRevisions.delete(id);
@@ -87,16 +87,20 @@ export function createFocusTranscript(options: {
   let pendingHead = false;
   let automaticAttempts = 0;
   let controller: AbortController | null = null;
+  let memberController: AbortController | null = null;
   let fullController: AbortController | null = null;
   let refreshTimer: ReturnType<typeof setTimeout> | null = null;
   let disposed = false;
   let awaitingProjection = false;
   let activeMode = 'head';
+  let filling = false;
   let latestIntent: AbortSignal | undefined;
-  let tailReadsLeft = 0;
+  let tailReadsLeft = MAX_TAIL_FILL_READS;
+  let ordinaryTail = true;
+  let budgetThread = options.activeThreadId.value;
   let pendingInstanceReturn: InstanceReturn | null = null;
-  const restoredTailContext = shallowRef<AbortController | null>(null);
-  const hasOlder = computed(() => !needsHead.value && !!edges.value.older);
+  const tailContext = shallowRef<AbortController | null>(null);
+  const hasOlder = computed(() => !needsHead.value && (!!edges.value.older || edges.value.needsOlderAnchor));
   const hasNewer = computed(() => turns.value.length > 0 && (!edges.value.atTail || unseenNewer.value));
 
   function identity() {
@@ -104,22 +108,23 @@ export function createFocusTranscript(options: {
   }
 
   function retireConfirmedCursor() {
-    const previous = restoredTailContext.value;
-    restoredTailContext.value = null;
+    const previous = tailContext.value;
+    tailContext.value = null;
     previous?.abort();
   }
 
-  function cancelInstanceReturn() {
+  function cancelTailContext() {
+    ordinaryTail = false;
     pendingInstanceReturn = null;
     retireConfirmedCursor();
   }
 
   function startInstanceReturn(threadId: string, wake: 'none' | 'pending' = 'none') {
-    cancelInstanceReturn();
+    cancelTailContext();
     const scope = enabled.value && threadId === options.activeThreadId.value ? identity() : null;
     const returning: InstanceReturn = { threadId, scope, recoveryStarted: false, wake };
     pendingInstanceReturn = returning;
-    tailReadsLeft = MAX_TAIL_FILL_READS;
+    if (wake === 'none') tailReadsLeft = MAX_TAIL_FILL_READS;
     return returning;
   }
 
@@ -129,14 +134,14 @@ export function createFocusTranscript(options: {
     const returning = startInstanceReturn('');
     return (threadId: string) => {
       if (pendingInstanceReturn !== returning) return;
-      if (!threadId) { cancelInstanceReturn(); return; }
+      if (!threadId) { cancelTailContext(); return; }
       returning.threadId = threadId;
     };
   }
 
   function expectInstanceReturn(threadId: string) {
     if (threadId) startInstanceReturn(threadId);
-    else cancelInstanceReturn();
+    else cancelTailContext();
   }
 
   function captureForegroundReturn() {
@@ -148,10 +153,12 @@ export function createFocusTranscript(options: {
   }
 
   function offerTailContext() {
-    if (!tailReadsLeft || !cache.atTail || !cache.older || restoredTailContext.value) return;
+    // Keep measuring a verified tail even after both reads were spent: new
+    // content can fill the viewport. older() alone admits another request.
+    if (!cache.atTail || !cache.older || tailContext.value) return;
     const context = new AbortController();
     latestIntent = context.signal;
-    restoredTailContext.value = context;
+    tailContext.value = context;
   }
 
   function confirmForegroundWake() {
@@ -168,8 +175,11 @@ export function createFocusTranscript(options: {
     latestIntent = undefined;
     retireConfirmedCursor();
     controller?.abort();
+    memberController?.abort();
+    memberController = null;
     controller = null;
     loading.value = false;
+    filling = false;
     buffer = [];
     bufferBytes = 0;
     if (refreshTimer !== null) clearTimeout(refreshTimer);
@@ -193,7 +203,12 @@ export function createFocusTranscript(options: {
   function reset() {
     // A cold thread hint precedes its first snapshot. Once bound, a change
     // of thread, epoch or access retires the entire return.
-    if (pendingInstanceReturn?.scope) cancelInstanceReturn();
+    if (pendingInstanceReturn?.scope) cancelTailContext();
+    if (budgetThread !== options.activeThreadId.value) {
+      budgetThread = options.activeThreadId.value;
+      ordinaryTail = true;
+      tailReadsLeft = MAX_TAIL_FILL_READS;
+    }
     awaitingProjection = false;
     cancel();
     closeFull();
@@ -216,7 +231,7 @@ export function createFocusTranscript(options: {
     // Keep rendered rows/viewport while control state is replaced, but retire
     // all cursors and revision evidence: a missed revert may have removed them.
     cache.clear();
-    edges.value = { ...edges.value, older: null, newer: null };
+    edges.value = { ...edges.value, older: null, newer: null, needsOlderAnchor: false };
     rowReadRevisions.clear();
     eventRevision = tailReadRevision = -1;
   }
@@ -284,6 +299,9 @@ export function createFocusTranscript(options: {
         const previous = next[index]!;
         // A delayed start skeleton cannot erase text already streamed for the
         // same item. Completed snapshots remain authoritative, including edits.
+        const priorStatus = previous.compactTool?.status ?? previous.tools?.[0]?.status;
+        if (detail.method === 'item/started' && priorStatus && priorStatus !== 'running'
+          && incoming.tools?.[0]?.status === 'running') continue;
         const reply = previous.reply?.state === 'complete' ? previous.reply : incoming.reply ?? previous.reply;
         next[index] = detail.method === 'item/started' && previous.text.length > incoming.text.length
           && previous.text.startsWith(incoming.text) ? { ...previous, reply,
@@ -325,8 +343,11 @@ export function createFocusTranscript(options: {
         };
       });
     }
+    if (filling) {
+      const previous = new Map(turns.value.map(row => [row.id, row]));
+      for (const row of next) if (previous.get(row.id) !== row) rowReadRevisions.set(row.id, event.revision);
+    }
     if (cache.update(next, lastDirection, protectedRow)) {
-      needsHead.value = cache.atTail;
       scheduleHead();
     }
     publishWindow();
@@ -348,7 +369,7 @@ export function createFocusTranscript(options: {
   function handleDelta(event: FocusProjectionEvent, detail: FocusThreadDeltaDetail) {
     if (awaitingProjection || !enabled.value || disposed || event.thread_id !== options.activeThreadId.value
       || event.runtime_epoch !== options.snapshot.value?.runtime_epoch) return;
-    if (loading.value) {
+    if (loading.value && !filling) {
       if (overflowed) return;
       bufferBytes += JSON.stringify(detail).length * 2;
       if (buffer.length >= 256 || bufferBytes > 512 * 1024) {
@@ -368,23 +389,28 @@ export function createFocusTranscript(options: {
     refreshTimer = null;
     pendingHead = false;
     if (!automatic) automaticAttempts = 0;
-    const keepLiveContext = mode === 'sync' && !needsHead.value && cache.atTail && cache.pageCount > 1;
+    const keepLiveContext = mode === 'sync' && !needsHead.value && cache.atTail && cache.pageCount > 0;
     if (mode === 'sync') needsHead.value = true;
     controller?.abort();
     const requestController = new AbortController();
     controller = requestController;
     const request = ++generation;
     activeMode = mode;
+    if (mode !== 'sync' && !query.fill) memberController?.abort();
+    filling = !!query.fill;
     latestIntent = intent;
     const startedAt = Date.now();
     const scope = identity();
     const threadId = options.activeThreadId.value;
     // A retained tab must complete its fresh recovery read. Its old window
     // can still be on screen when the host selects it again.
-    const instanceFill = !!query.fill && !!intent && intent === restoredTailContext.value?.signal;
+    const confirmedFill = !!query.fill && !!intent && intent === tailContext.value?.signal;
     if (mode === 'sync') retireConfirmedCursor();
-    else if (!instanceFill) cancelInstanceReturn();
-    if (mode === 'latest' && intent) tailReadsLeft = MAX_TAIL_FILL_READS;
+    else if (!query.fill) cancelTailContext();
+    if (mode === 'latest' && intent) {
+      ordinaryTail = true;
+      tailReadsLeft = MAX_TAIL_FILL_READS;
+    } else if (mode === 'head' && following) ordinaryTail = true;
     const returning = pendingInstanceReturn;
     if (returning?.threadId === threadId && !cache.pageCount) {
       returning.scope = scope;
@@ -451,6 +477,14 @@ export function createFocusTranscript(options: {
         throw new Error('Transcript target was not found.');
       }
       const sourceTail = mode === 'head' || mode === 'latest' || mode === 'sync';
+      if (query.fill) {
+        const currentRows = new Map(cache.rows.map(row => [row.id, row]));
+        result.turns = result.turns.map(row => {
+          const current = currentRows.get(row.id);
+          return current && ((rowReadRevisions.get(row.id) ?? -1) > result.revision
+            || (row.compactTool && current.tools?.[0]?.status === row.compactTool.status)) ? current : row;
+        });
+      }
       const adjacent = mode === 'older' ? turns.value[0] : mode === 'newer' ? turns.value.at(-1) : undefined;
       const pageRows = adjacent && !result.turns.some(row=>row.id===adjacent.id)
         ? (mode==='older' ? [...result.turns,adjacent] : [adjacent,...result.turns]) : result.turns;
@@ -470,7 +504,7 @@ export function createFocusTranscript(options: {
         cache.replace(result, mode === 'head' || mode === 'latest' || mode === 'sync' || !result.newer_cursor);
         rowReadRevisions.clear();
       }
-      for (const row of result.turns) rowReadRevisions.set(row.id, result.revision);
+      for (const row of result.turns) rowReadRevisions.set(row.id, Math.max(rowReadRevisions.get(row.id) ?? -1, result.revision));
       if (cache.atTail && mode !== 'older') tailReadRevision = result.revision;
       focusPerformance.record('transcript', { durationMs: Date.now() - startedAt });
       publishWindow();
@@ -485,8 +519,10 @@ export function createFocusTranscript(options: {
       const activeReturn = pendingInstanceReturn;
       if (mode === 'sync' && activeReturn?.scope === scope && !needsHead.value && !pendingHead
         && ((returning === activeReturn && activeReturn.recoveryStarted) || activeReturn.wake === 'confirmed')) {
-        if (!followingAtStart || !following) cancelInstanceReturn();
+        if (!followingAtStart || !following) cancelTailContext();
         else offerTailContext();
+      } else if ((mode === 'sync' || mode === 'head') && !activeReturn && ordinaryTail && following && !needsHead.value && !pendingHead) {
+        offerTailContext();
       }
       if (query.fill && cache.older === query.cursor) {
         tailReadsLeft = 0;
@@ -500,7 +536,7 @@ export function createFocusTranscript(options: {
           return await reloadWithoutAnchor(query);
         }
         if (query.fill) {
-          if (instanceFill && returning === pendingInstanceReturn && tailReadsLeft && following
+          if (confirmedFill && returning === pendingInstanceReturn && tailReadsLeft && following
             && isStaleWebReadError(failure, 'stale_thread_read')) {
             // Revalidate from the head. Even an overlapping head cannot
             // authorize reuse of the refused cursor from an older source page.
@@ -517,6 +553,7 @@ export function createFocusTranscript(options: {
       intent?.removeEventListener('abort', abandonIntent);
       if (current()) {
         loading.value = false;
+        filling = false;
         buffer = [];
         bufferBytes = 0;
         controller = null;
@@ -560,11 +597,12 @@ export function createFocusTranscript(options: {
     if (!intent && showingSaved.value) return fetchMissing('older');
     if (!hasOlder.value || loading.value) return Promise.resolve(false);
     if (intent) {
-      if (intent.aborted || intent !== latestIntent || !tailReadsLeft || !cache.atTail || pendingHead
+      if (intent.aborted || intent !== latestIntent || !tailReadsLeft || !cache.older || !cache.atTail || pendingHead
         || cache.pageCount >= TRANSCRIPT_CACHE_PAGES || cache.bytes >= TRANSCRIPT_CACHE_BYTES) return Promise.resolve(false);
       tailReadsLeft--;
       return load({ cursor: edges.value.older!, direction: 'desc', fill: true }, 'older', false, intent);
     }
+    if (!edges.value.older && edges.value.needsOlderAnchor) return fetchMissing('older');
     return load({ cursor: edges.value.older!, direction: 'desc' }, 'older');
   }
 
@@ -579,7 +617,22 @@ export function createFocusTranscript(options: {
     return load(query, 'newer');
   }
 
+  function finishLatest(intent: AbortSignal) {
+    if (!intent.aborted && latestIntent === intent && ordinaryTail && following && !awaitingProjection
+      && !loading.value && !needsHead.value && !pendingHead && !error.value) offerTailContext();
+  }
+
+  function tailFilled() {
+    if (!following || !cache.atTail || (!ordinaryTail && !pendingInstanceReturn)) return;
+    tailReadsLeft = MAX_TAIL_FILL_READS;
+    if (!awaitingProjection && !loading.value && !needsHead.value && !pendingHead) offerTailContext();
+  }
+
   function updateViewport(anchorId: string | null, isFollowing: boolean) {
+    if (isFollowing && !following && cache.atTail && !loading.value) {
+      ordinaryTail = true;
+      if (!pendingInstanceReturn && activeMode !== 'latest') offerTailContext();
+    }
     following = isFollowing;
     protectedRow = isFollowing ? null : anchorId;
   }
@@ -587,6 +640,40 @@ export function createFocusTranscript(options: {
   async function locate(turnId: string, itemId?: string, intent?: AbortSignal): Promise<string | null> {
     if (!await load({ turn_id: turnId, direction: 'asc', ...(itemId ? { item_id: itemId } : {}) }, 'target', false, intent)) return null;
     return turns.value.find((turn) => turn.rawTurnId === turnId && (!itemId || turn.itemId === itemId))?.id ?? null;
+  }
+
+  async function loadToolMembers(turn: ChatTurn, signal: AbortSignal): Promise<boolean> {
+    const compact = turn.compactTool;
+    if (!compact || !enabled.value || signal.aborted || awaitingProjection) return false;
+    if (!cache.rows.includes(turn)) return false;
+    memberController?.abort();
+    const request = new AbortController();
+    memberController = request;
+    const cancelMember = () => request.abort();
+    signal.addEventListener('abort', cancelMember, { once: true });
+    const scope = identity();
+    try {
+      const page = await readTranscriptTarget(options.api, options.activeThreadId.value, options.snapshot.value!.runtime_epoch,
+        { cursor: compact.cursor, direction: 'desc' }, request.signal, () => scope === identity() && !disposed);
+      if (request.signal.aborted || scope !== identity() || awaitingProjection) return false;
+      const installed = cache.hydrateTools(compact.cursor, page, protectedRow);
+      if (!installed.length) {
+        if (cache.rows.some(row => row.compactTool?.cursor === compact.cursor)) {
+          prepareReload();
+          await resumeAfterReload();
+        }
+        return false;
+      }
+      for (const id of installed) rowReadRevisions.set(id, page.revision);
+      publishWindow();
+      return true;
+    } catch (failure) {
+      if (!request.signal.aborted && scope === identity()) options.reportFatalError?.(failure);
+      return false;
+    } finally {
+      signal.removeEventListener('abort', cancelMember);
+      if (memberController === request) memberController = null;
+    }
   }
 
   async function openFull(turn: ChatTurn) {
@@ -637,10 +724,10 @@ export function createFocusTranscript(options: {
     clearSaved:()=>{saved.value=null; clearTimeout(saveTimer); saveTimer=undefined; pendingWrite=undefined;}, flushLive, loading, error, historical,
     hasOlder:computed(()=>showingSaved.value ? saved.value!.page.older : hasOlder.value),
     hasNewer:computed(()=>showingSaved.value ? saved.value!.page.newer || unseenNewer.value : hasNewer.value),
-    fullText, fullTool, fullLoading, fullError, openFull, closeFull,
+    fullText, fullTool, fullLoading, fullError, loadToolMembers, openFull, closeFull,
     refreshFull: () => { if (fullTarget) void openFull(fullTarget); },
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
     older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload,
     prepareInitialReturn, expectInstanceReturn, captureForegroundReturn, confirmForegroundWake,
-    cancelInstanceReturn, restoredTailContext, reset, dispose };
+    cancelTailContext, tailContext, tailFilled, finishLatest, reset, dispose };
 }

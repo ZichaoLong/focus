@@ -32,19 +32,22 @@ function tools(start: number, count: number): ChatTurn[] {
     return { ...reply(id, ''), contentDeferred: true, tools: [tool], blocks: [{ kind: 'tool', tool }] };
   });
 }
-type Fixture = { page: Page; reads: string[]; pings(): number; disconnect(): void; refuseNextCursor(): void };
+type Fixture = { page: Page; reads: string[]; pings(): number; update(row: ChatTurn): void; disconnect(): void; refuseNextCursor(): void };
 type FixtureOptions = {
   onFill?(cursor: number): Promise<void> | void;
   pages?: ChatTurn[][];
   mobileTabs?: boolean;
   running?: boolean;
   fromProfile?: boolean;
+  height?: number;
+  compactPages?: boolean;
 };
 async function fixture(width: number, prosePage: number, run: (f: Fixture) => Promise<void>,
-  { onFill, pages, mobileTabs, running, fromProfile }: FixtureOptions = {}) {
-  const page = await browser.newPage({ viewport: { width, height: width < 500 ? 844 : 880 }, hasTouch: width < 500 });
+  { onFill, pages, mobileTabs, running, fromProfile, height, compactPages }: FixtureOptions = {}) {
+  const page = await browser.newPage({ viewport: { width, height: height ?? (width < 500 ? 844 : 880) }, hasTouch: width < 500 });
   page.setDefaultTimeout(12_000);
   const reads: string[] = [], errors: string[] = [];
+  let update: (row: ChatTurn) => void, revision = 1;
   let closeSocket: () => void, refuseFill = false, cursorBase = 0, pings = 0;
   page.on('pageerror', err => errors.push(err.message));
   if (mobileTabs) await page.addInitScript(() => {
@@ -55,6 +58,8 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
   const source = { ...thread(), name: 'Folded tools', title: 'Folded tools', source: 'cli', ephemeral: false,
     session_id: '', parent_thread_id: '', can_accept_direct_input: true, thread_source: '', agent_nickname: '', agent_role: '', subagent_kind: '' };
   await page.routeWebSocket('**/api/events?*', socket => {
+    update = row => socket.send(JSON.stringify({ type: 'thread_delta', runtime_epoch: 'epoch-1', revision: ++revision,
+      thread_id: source.id, reason: 'item/completed', detail: { method: 'item/completed', turn_id: 'turn-1', item_turns: [row] } }));
     closeSocket = () => socket.close({ code: 1011, reason: 'Test reconnect' });
     socket.onMessage(msg => { if (msg === 'ping') { pings++; socket.send('pong'); } });
     setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 })), 10);
@@ -70,6 +75,7 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
       archived: false, limit: 100, truncated: false, threads: [source] };
     else if (pathname.endsWith('/transcript')) {
       let rows: ChatTurn[] = [], older: string | null = null;
+      let toolPages: { turn_id: string; cursor: string; items: string[][] }[] | undefined;
       const view = query.get('view') ?? 'transcript', wireCursor = query.get('cursor');
       const cursor = wireCursor ? Number(wireCursor) - cursorBase : 0;
       const anchor = query.get('item_id');
@@ -85,14 +91,24 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
           cursorBase += 10;
           return route.fulfill({ status: 409, json: { error: { code: 'stale_thread_read', message: 'Read superseded' } } });
         }
-        if (pages) rows = pages[cursor]!;
+        if (compactPages && fill) {
+          expect(route.request().headers()['x-focus-folded-tools']).toBe('1');
+          rows = [reply('earlier', 'Previous discussion.\n\n'.repeat(60))];
+          toolPages = [[1, 20], [21, 40]].map(([start, size]) => ({
+            turn_id: 'turn-1', cursor: 'members-' + start,
+            items: tools(start!, size!).map(row => [row.itemId!, 'ok']),
+          }));
+        } else if (compactPages && wireCursor?.startsWith('members-')) {
+          const start = Number(wireCursor.slice(8));
+          rows = tools(start, start === 1 ? 20 : 40);
+        } else if (pages) rows = pages[cursor]!;
         else if (!cursor) rows = [...tools(1, 17), reply('middle', reads.length === 1 ? 'First read.' : 'Confirmed latest.'), ...tools(18, 22)];
         else if (cursor === prosePage) rows = [reply('earlier', 'Previous discussion.\n\n'.repeat(60))];
         else rows = tools(-40 * cursor, 40);
         older = cursor < prosePage ? String(cursorBase + cursor + 1) : null;
       }
       payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: source.id, turn_id: query.get('turn_id'), view, target_pending: false,
-        turns: rows, older_cursor: older, newer_cursor: anchor ? 'after-anchor' : cursor ? 'forward-' + cursor : null, full_text: null };
+        turns: rows, ...(toolPages ? { tool_pages: toolPages } : {}), older_cursor: older, newer_cursor: anchor ? 'after-anchor' : cursor ? 'forward-' + cursor : null, full_text: null };
     } else if (/\/api\/threads\/thread-1(?:\/open)?$/.test(pathname)) {
       const unknown = { value: '', source: 'unknown' };
       payload = { ...snapshot('none', 'thread-1', 1), revision: 1, thread: source,
@@ -107,7 +123,7 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
     const first = pages ? page.locator('.tool-group-head').first() : page.locator('.md').getByText('First read.', { exact: true });
     await first.waitFor({ timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready);
-    await run({ page, reads, pings: () => pings, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
+    await run({ page, reads, update: row => update(row), pings: () => pings, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
     expect(errors).toEqual([]);
   } catch (error) {
     const viewport = await page.locator('.panes').evaluateAll(panes => panes.map(pane => ({
@@ -182,7 +198,7 @@ it.each(['server selection', 'healthy socket', 'reconnect before resume', 'recon
 
 it('fills the reselected instance after its confirmed tail, and restores a historical reader at the exact item', async () => {
   await fixture(390, 2, async ({ page, reads }) => {
-    await expect.poll(() => page.locator('.transcript-row').count()).toBe(81);
+    await expect.poll(() => page.locator('.transcript-row').count()).toBe(2);
     expect(reads).toEqual(['head', 'fill-1', 'fill-2']);
     await page.locator('.reading-mode-entry:visible').click();
     async function reselect() {
@@ -318,60 +334,51 @@ it('fills past 57 folded calls that span two source pages on a running instance 
   } finally { release(); }
 }, 45_000);
 
-it.each([1280, 390])('retains previously read folded history and refreshes the tail at width %s', async width => {
+it.each([1280, 390])('fills the ordinary live tail and keeps the read prefix on Latest at width %s', async width => {
   await fixture(width, 2, async ({ page, reads }) => {
+    await page.locator('[data-turn-id*=":earlier:"]').waitFor({ state: 'attached' });
+    await expectVisibleTail(page);
+    expect(reads).toEqual(['head', 'fill-1', 'fill-2']);
+    expect(await page.locator('.transcript-row').count()).toBe(2);
     if (width < 500) {
       await page.locator('.reading-mode-entry:visible').click();
       await swipeEarlier(page);
     } else {
       await page.locator('.panes').hover();
-      await page.mouse.wheel(0, -90);
+      await page.mouse.wheel(0, -700);
     }
-    await expect.poll(() => page.locator('.transcript-row').count()).toBe(80);
-    expect(await gap(page)).toBeGreaterThan(96);
-    expect(reads).toEqual(['head', 'older-1']);
-    await page.locator('.top-sentinel-btn').click();
-    await page.locator('[data-turn-id*=":earlier:"]').first().waitFor({ state: 'attached' });
     await page.locator('.newmsg-pill').click();
     await page.getByText('Confirmed latest.', { exact: true }).first().waitFor();
     await expectVisibleTail(page);
-    expect(await page.locator('.transcript-row').count()).toBe(81);
+    expect(await page.locator('.transcript-row').count()).toBe(2);
     expect(await page.locator('.tool-group-head[aria-expanded="true"]').count()).toBe(0);
-    expect(reads).toEqual(['head', 'older-1', 'older-2', 'head']);
+    expect(reads).toEqual(['head', 'fill-1', 'fill-2', 'head']);
   });
 }, 45_000);
 
-it.each([2, 4])('stops filling on visible prose or at the request limit (prose page %s)', async prosePage => {
-  await fixture(390, prosePage, async ({ page, reads }) => {
-    await page.locator('.top-sentinel-btn').click();
-    await page.locator('.newmsg-pill').click();
-    await expect.poll(() => page.locator('.transcript-row').count()).toBe(prosePage === 2 ? 81 : 160);
-    await page.locator('.panes.is-following').waitFor();
-    if (prosePage === 2) {
-      await expectVisibleTail(page);
-      expect(reads).toEqual(['head', 'older-1', 'head', 'fill-2']);
-    } else {
-      expect(await gap(page)).toBeGreaterThan(96);
-      await page.locator('.reading-mode-entry:visible').click();
-      await page.locator('.top-sentinel-btn').click();
-      await expect.poll(() => page.locator('.transcript-row').count()).toBe(161);
-      expect(reads).toEqual(['head', 'older-1', 'head', 'fill-2', 'fill-3', 'older-4']);
-    }
+it('limits one persistent shortfall across mode, resize and reconnect and keeps manual paging', async () => {
+  await fixture(390, 4, async ({ page, reads, disconnect }) => {
+    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2']);
+    await page.locator('.top-sentinel-btn:enabled').waitFor();
+    await page.locator('.reading-mode-entry:visible').click();
+    await page.setViewportSize({ width: 390, height: 664 });
+    await page.setViewportSize({ width: 390, height: 880 });
+    disconnect();
+    await page.getByText('Confirmed latest.', { exact: true }).first().waitFor();
+    await expect.poll(() => reads.at(-1)).toBe('head');
+    expect(await gap(page)).toBeGreaterThan(96);
+    await page.locator('.top-sentinel-btn:enabled').click();
+    await expect.poll(() => reads.at(-1)).toBe('older-1');
+    expect(reads.filter(read => read.startsWith('fill-'))).toHaveLength(2);
   });
 }, 45_000);
 
 it('leaves a small gap without requesting an extra page', async () => {
   await fixture(1280, 3, async ({ page, reads }) => {
-    await page.locator('.top-sentinel-btn').click();
-    await page.locator('.newmsg-pill').waitFor();
-    await page.setViewportSize({ width: 1280, height: Math.round(880 - await gap(page) + 60) });
-    await expect.poll(() => gap(page)).toBeLessThan(96);
-    expect(await gap(page)).toBeGreaterThan(32);
-    await page.locator('.newmsg-pill').click();
-    await page.getByText('Confirmed latest.', { exact: true }).first().waitFor();
     await page.locator('.panes.is-following').waitFor();
-    expect(reads).toEqual(['head', 'older-1', 'head']);
-  });
+    expect(await gap(page)).toBeLessThan(96);
+    expect(reads).toEqual(['head']);
+  }, { height: 420 });
 }, 45_000);
 
 it.each(['wheel', 'host-pause'])('retires an in-flight optional page on %s', async action => {
@@ -379,19 +386,47 @@ it.each(['wheel', 'host-pause'])('retires an in-flight optional page on %s', asy
   const pending = new Promise<void>(resolve => { release = resolve; });
   try {
     await fixture(1280, 3, async ({ page, reads }) => {
-      await page.locator('.top-sentinel-btn').click();
-      await page.locator('.newmsg-pill').click();
-      await expect.poll(() => reads.at(-1)).toBe('fill-2');
+      await expect.poll(() => reads.at(-1)).toBe('fill-1');
       if (action === 'wheel') {
         await page.locator('.panes').hover();
         await page.mouse.wheel(0, -65);
       } else await page.evaluate(() => window.dispatchEvent(new Event('focus-host-pause')));
       await page.locator('.top-sentinel-btn:enabled').waitFor();
       release();
-      expect(await page.locator('.transcript-row').count()).toBe(80);
+      expect(await page.locator('.transcript-row').count()).toBe(1);
       await page.locator('.top-sentinel-btn').click();
-      await expect.poll(() => page.locator('.transcript-row').count()).toBe(120);
-      expect(reads).toEqual(['head', 'older-1', 'head', 'fill-2', 'older-2']);
+      await expect.poll(() => reads.at(-1)).toBe('older-1');
+      expect(reads).toEqual(['head', 'fill-1', 'older-1']);
     }, { onFill: () => pending });
   } finally { release(); }
+}, 45_000);
+
+it('opens a verified cold tool range one member page at a time', async () => {
+  await fixture(1280, 1, async ({ page, reads }) => {
+    await page.locator('[data-turn-id*=":earlier:"]').waitFor({ state: 'attached' });
+    const header = page.locator('.tool-group-head');
+    expect(await header.innerText()).toContain('100 tool calls');
+    expect(await page.locator('.transcript-row').count()).toBe(1);
+    expect(reads).toEqual(['head', 'fill-1']);
+    await header.click();
+    await expect.poll(() => page.locator('.transcript-row').count()).toBe(61);
+    await page.locator('.tool-member-page').click();
+    await expect.poll(() => page.locator('.transcript-row').count()).toBe(101);
+    expect(reads).toEqual(['head', 'fill-1', 'older-members-1', 'older-members-21']);
+    await header.click();
+    expect(await page.locator('.transcript-row').count()).toBe(1);
+  }, { pages: [tools(61, 40)], compactPages: true });
+}, 45_000);
+
+it('rearms after new prose fills the viewport and a later edit makes it short again', async () => {
+  await fixture(1280, 4, async ({ page, reads, update }) => {
+    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2']);
+    await page.locator('.top-sentinel-btn:enabled').waitFor();
+    update(reply('live', 'Arrived during work.\n\n'.repeat(70)));
+    await expectVisibleTail(page);
+    update(reply('live', 'Short edit.'));
+    await page.locator('[data-turn-id*=":earlier:"]').waitFor({ state: 'attached' });
+    await expectVisibleTail(page);
+    expect(reads).toEqual(['head', 'fill-1', 'fill-2', 'fill-3', 'fill-4']);
+  });
 }, 45_000);

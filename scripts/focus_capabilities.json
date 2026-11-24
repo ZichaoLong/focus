@@ -1249,6 +1249,10 @@
         },
         {
           "path": "bot/web_runtime/transcript_window.py",
+          "symbol": "_read_transcript_page"
+        },
+        {
+          "path": "bot/web_runtime/transcript_window.py",
           "symbol": "project_transcript_item"
         },
         {

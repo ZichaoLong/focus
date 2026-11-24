@@ -91,7 +91,7 @@ describe('conversation ordinary follow frame', () => {
     );
 
     expect(pane).toContain('createConversationFollowFrame((mode) => {');
-    expect(watcher).toContain("scheduleFollow(next.length < prev.length ? 'smooth' : 'instant');");
+    expect(watcher).toContain("scheduleFollow(!props.continuousTranscript && next.length < prev.length ? 'smooth' : 'instant');");
     expect(watcher).not.toContain('scrollToBottom(');
     expect(pane).toContain('ordinaryFollowFrame.request(mode);');
     expect(pane).toContain('ordinaryFollowFrame.cancel();');

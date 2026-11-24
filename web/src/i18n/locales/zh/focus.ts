@@ -352,7 +352,7 @@ export default {
   turnWindow: '近期轮次摘要',
   threadReadingLimit: '每个实例记住的最近线程数',
   serverUpdateTitle: 'Focus Web 服务端更新',
-  turnWindowDescription: '打开新格式线程时读取 5、10 或 20 个轮次摘要。正文每页最多 40 个条目，实时窗口最多保留 80 个；更早内容可继续翻页。',
+  turnWindowDescription: '选择打开线程时读取的轮次摘要数。正文独立分页。跟随最新时，页面会根据可见空白补读较早内容，也可以手动上翻。',
   activityFavicon: '标签页工作动画',
   activityFaviconDescription: '当前会话工作时旋转标签页图标；此设置仅保存在当前浏览器。',
   activityFaviconEnabledOption: '开启',

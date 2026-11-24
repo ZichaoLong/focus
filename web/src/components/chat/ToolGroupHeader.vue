@@ -2,15 +2,17 @@
 <script setup lang="ts">
 import { computed, inject, nextTick, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
+import type { ToolGroupSummary } from '../toolGroupPresentation';
 import type { ToolCall } from '../../types';
 import Icon from '../ui/Icon.vue';
 import StatusDot from '../ui/StatusDot.vue';
 
-const props = defineProps<{ tools: readonly ToolCall[]; open: boolean; savedCount?: number }>();
+const props = defineProps<{ tools: readonly ToolCall[]; open: boolean; savedCount?: number; summary?: ToolGroupSummary }>();
 const emit = defineEmits<{ toggle: [] }>();
 const { t } = useI18n();
-const failed = computed(() => props.tools.filter(tool => tool.status === 'error').length);
-const status = computed(() => props.tools.some(tool => tool.status === 'running') ? 'running'
+const failed = computed(() => props.summary?.failed ?? props.tools.filter(tool => tool.status === 'error').length);
+const running = computed(() => props.summary?.running ?? props.tools.filter(tool => tool.status === 'running').length);
+const status = computed(() => running.value ? 'running'
   : failed.value ? 'error' : 'done');
 const pinScroll = inject<(el: HTMLElement, ms?: number) => void>('pinScroll', () => {});
 const element = ref<HTMLElement | null>(null);
@@ -26,8 +28,8 @@ function toggle(): void {
     <StatusDot v-if="savedCount === undefined" :status="status" />
     <span v-else class="saved-tool-dot" aria-hidden="true" />
     <Icon class="tg-ic" name="list" size="sm" />
-    <span class="tg-title">{{ t('tools.group.title', savedCount ?? tools.length) }}</span>
-    <span class="tg-meta" v-if="savedCount === undefined && status !== 'error'">· {{ t(`tools.group.${status}`) }}</span>
+    <span class="tg-title">{{ t(summary?.partial ? 'tools.group.loaded' : 'tools.group.title', savedCount ?? summary?.count ?? tools.length) }}</span>
+    <span class="tg-meta" v-if="savedCount === undefined && status !== 'error'">· {{ running ? t('tools.group.runningCount', { count: running }) : t(`tools.group.${status}`) }}</span>
     <span class="tg-failed" v-if="failed">· {{ t('tools.group.failedCount', { count: failed }) }}</span>
     <Icon class="tg-car" name="chevron-right" size="sm" />
   </button>

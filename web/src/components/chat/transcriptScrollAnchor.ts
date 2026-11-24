@@ -8,7 +8,7 @@ export function isTranscriptRowPinned(element: HTMLElement): boolean {
       && (element.contains(selection.anchorNode) || element.contains(selection.focusNode)));
 }
 
-function toolGroupFor(pane: HTMLElement, member: string): HTMLElement | undefined {
+export function toolGroupFor(pane: HTMLElement, member: string): HTMLElement | undefined {
   return [...pane.querySelectorAll<HTMLElement>('[data-transcript-tool-group]')].find(group => {
     try {
       const members: unknown = JSON.parse(group.dataset.transcriptToolGroup ?? 'null');

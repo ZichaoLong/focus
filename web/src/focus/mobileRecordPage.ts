@@ -51,7 +51,7 @@ export async function foldRecordPage(items: readonly RecordItem[], edge: ToolCou
 export function classifyRecordTurn(row: ChatTurn): RecordItem | null {
   if (!row.rawTurnId || !row.itemId) return null;
   const key = { turn:row.rawTurnId, item:row.itemId };
-  if (row.contentDeferred && row.tools?.length) return { ...key, kind:'tool' };
+  if (row.compactTool || (row.contentDeferred && row.tools?.length)) return { ...key, kind:'tool' };
   if ((row.role === 'user' || row.role === 'assistant') && row.text.trim()) {
     return { ...key, kind:row.role, text:row.text, partial:row.reply?.state === 'generating' };
   }

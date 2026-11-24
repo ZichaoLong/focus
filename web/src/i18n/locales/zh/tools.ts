@@ -89,6 +89,10 @@ export default {
     hours: '{value} 小时',
   },
   group: {
+    loaded: '工具调用 · 已加载 {count} 次',
+    runningCount: '运行中 {count} 次',
+    loadPage: '加载这 {count} 次工具调用',
+    retryPage: '重新加载工具调用',
     failedCount: '失败 {count} 次',
     title: '{count} 个工具调用',
     running: '运行中',

@@ -43,6 +43,7 @@ import type {
   FocusToolInspectionLocator,
   FocusTurnPage,
   FocusTranscriptPage,
+  FocusTranscriptToolPage,
   FocusUpdateInstallation,
   FocusUpdatePreparation,
   FocusUpdateProgress,
@@ -61,6 +62,7 @@ import {
   canonicalizeFocusWireChatTurn,
   decodeFocusOperatorStatus,
   isFocusWireChatTurnWindow,
+  isFocusWireToolStatus,
   isFocusTranscriptWindow,
   isFocusWireGoal,
   isFocusWireRecord,
@@ -823,9 +825,18 @@ export const decodeFocusThreadSnapshot: FocusHttpDecoder<FocusThreadSnapshot> = 
   };
 };
 
+function isTranscriptToolPage(value: unknown): value is FocusTranscriptToolPage {
+  return isRequiredRecord('transcript_tool_page', value) && hasExactRequiredFields('transcript_tool_page', value)
+    && isNonEmptyTrimmedString(value.turn_id) && isNonEmptyTrimmedString(value.cursor)
+    && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 40
+    && value.items.every(member => Array.isArray(member) && member.length === 2
+      && isNonEmptyTrimmedString(member[0]) && isFocusWireToolStatus(member[1]));
+}
+
 export const decodeFocusTranscriptPage: FocusHttpDecoder<FocusTranscriptPage> = (value) => {
   if (!isRequiredRecord('transcript_page', value)
-    || !hasExactRequiredFields('transcript_page', value) || !hasCoordinates(value)
+    || Object.keys(value).length !== FOCUS_WEB_RECORDS.transcript_page.requiredFields.length + Number('tool_pages' in value)
+    || !hasCoordinates(value)
     || !isNonEmptyTrimmedString(value.thread_id)
     || !isFocusWebWireEnum('transcript_view', value.view)
     || typeof value.target_pending !== 'boolean'
@@ -841,6 +852,22 @@ export const decodeFocusTranscriptPage: FocusHttpDecoder<FocusTranscriptPage> = 
       || value.target_pending || !value.turns.every((turn) => turn.role === 'user')))) return null;
   if (!value.turns.every((turn) => isNonEmptyTrimmedString(turn.rawTurnId)
     && isNonEmptyTrimmedString(turn.itemId))) return null;
+  if ('tool_pages' in value) {
+    const pages = value.tool_pages;
+    if (value.view !== 'transcript' || value.turn_id !== null || value.target_pending || value.full_text !== null
+      || !Array.isArray(pages) || !pages.length || pages.length > 14 || !pages.every(isTranscriptToolPage)) return null;
+    const ids = new Set(value.turns.map(row => row.id));
+    const cursors = new Set([value.older_cursor]);
+    for (const page of pages) {
+      if (cursors.has(page.cursor)) return null;
+      cursors.add(page.cursor);
+      for (const [item] of page.items) {
+        const id = page.turn_id + ':item:' + item + ':0';
+        if (ids.has(id)) return null;
+        ids.add(id);
+      }
+    }
+  }
   return { ...(value as unknown as FocusTranscriptPage), turns: canonicalizeTurns(value.turns) };
 };
 

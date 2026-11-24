@@ -92,6 +92,23 @@ describe('tool groups in the real conversation scroll owner', () => {
     });
   }, 30_000);
 
+  it('keeps tool 37 focused and its exact detail selected when tool 101 arrives', async () => {
+    await fixture('working', async page => {
+      await page.evaluate(() => window.toolGroupFixture.grow(100));
+      expect(await page.locator('.transcript-row').count()).toBe(0);
+      await page.locator('.tool-group-head').click();
+      await page.locator('.panes').hover();
+      await page.mouse.wheel(0, (await page.locator(row('37')).boundingBox())!.y - 220);
+      await page.locator(tool('37')).waitFor();
+      const detail = page.locator(tool('37')).getByRole('button').last();
+      await detail.click();
+      await detail.focus();
+      await page.evaluate(() => window.toolGroupFixture.grow(101));
+      expect(await detail.evaluate(button => button === document.activeElement)).toBe(true);
+      expect(await page.evaluate(() => window.toolGroupFixture.details)).toEqual(['37']);
+    });
+  }, 30_000);
+
   it.each([1000, 390].flatMap(width => (['text', 'thinking'] as const).flatMap(kind =>
     ['', '\n\n'].map(text => ({ width, kind, text })),
   )))('keeps blank $kind rows out of layout at width $width (text=$text)', async ({ width, kind, text }) => {
@@ -260,7 +277,7 @@ describe('tool groups in the real conversation scroll owner', () => {
         return element && Math.abs(element.getBoundingClientRect().y - before) < 1;
       }, { selector, before });
       expect(await page.locator('.tool-group-head').getAttribute('aria-expanded')).toBe(String(open));
-      expect(await page.locator(row('b')).count()).toBe(1);
+      expect(await page.locator(row('b')).count()).toBe(open ? 1 : 0);
     });
   }, 30_000);
 

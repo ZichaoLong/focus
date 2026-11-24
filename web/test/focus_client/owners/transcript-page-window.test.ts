@@ -48,14 +48,46 @@ describe('contiguous transcript cache', () => {
     expect([cache.older, cache.atTail]).toEqual([tail.older_cursor, true]);
   });
 
-  it('cannot reuse a clipped live page as evidence for an adjacent older prefix', () => {
+  it('partitions a fast live burst and verifies its overlap before retaining the prefix', () => {
     const cache = new TranscriptPageWindow();
     cache.replace(page(40), true);
     cache.extend(page(0), 'older');
     expect(cache.update(page(0, 125).turns, 'newer')).toBe(true);
     const latest = page(95);
     cache.returnToLatest(latest);
-    expect(cache.rows).toEqual(latest.turns);
+    expect(cache.rows.map(row => row.id)).toEqual(page(0, 135).turns.map(row => row.id));
+    expect(cache.older).toBe('before-0');
+  });
+
+  it('rejects changed compact members and pages verified headers within the normal cache', () => {
+    const cache = new TranscriptPageWindow();
+    const compact = page(1).turns.map((r, index) => ({ ...r, contentDeferred: true,
+      compactTool: { cursor: 'members', index, count: 40, status: 'ok' as const } }));
+    cache.replace(page(41), true);
+    cache.extend({ ...page(0), turns: [row(0), ...compact] }, 'tail-context');
+    const headers = page(1).turns.map(r => ({ ...r, contentDeferred: true,
+      tools: [{ id: r.id, arg: 'sample', name: 'Shell', status: 'ok' as const }] }));
+    expect(cache.hydrateTools('members', { ...page(1), turns: [...headers].reverse() }, null)).toEqual([]);
+    expect(cache.rows[1]!.compactTool?.cursor).toBe('members');
+    const continuous = cache.rows;
+    const interrupted = [...continuous.slice(0, 12), row(99, 'interleaved prose'), ...continuous.slice(12)];
+    const changed = new TranscriptPageWindow();
+    changed.replace({ ...page(0), turns: interrupted }, true);
+    expect(changed.hydrateTools('members', { ...page(1), turns: headers }, null)).toEqual([]);
+    expect(cache.hydrateTools('members', { ...page(1), turns: headers }, null)).toEqual(headers.map(r => r.id));
+    expect(cache.pageCount).toBe(3);
+    expect(cache.rows.map(r => r.id)).toEqual(page(0, 81).turns.map(r => r.id));
+    expect(cache.rows[1]).toBe(headers[0]);
+  });
+
+  it('honors an ordered live update across page boundaries', () => {
+    const cache = new TranscriptPageWindow();
+    cache.replace(page(40), true);
+    cache.extend(page(0), 'older');
+    const ordered = cache.rows;
+    [ordered[39], ordered[40]] = [ordered[40]!, ordered[39]!];
+    cache.update(ordered, 'newer');
+    expect(cache.rows).toEqual(ordered);
   });
 
   it('retains ten visited pages, evicts the distant edge, and keeps continuation cursors', () => {

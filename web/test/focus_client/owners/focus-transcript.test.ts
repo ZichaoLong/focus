@@ -44,6 +44,34 @@ function harness(initial = page(), reading: Pick<Parameters<typeof createFocusTr
 const settle = async () => { await nextTick(); await Promise.resolve(); await nextTick(); };
 
 describe('bounded transcript owner', () => {
+  it('retains the only read page across a live 40-to-60 control refresh and later overlapping heads', async () => {
+    const h = harness(page(Array.from({ length: 40 }, (_, i) => row(i + 1)), { older_cursor: null }));
+    await settle();
+    let revision = 1;
+    for (let n = 41; n <= 100; n++) {
+      h.event(++revision, { method: 'item/completed', item_turns: [row(n)] });
+      if (n >= 60) {
+        h.read.mockResolvedValueOnce(page(Array.from({ length: 40 }, (_, i) => row(n - 39 + i)), { revision }));
+        h.state.value = { ...h.state.value!, revision };
+        await settle();
+      }
+    }
+    expect(h.owner.turns.value.map(r => r.id)).toEqual(Array.from({ length: 100 }, (_, i) => row(i + 1).id));
+    expect(h.owner.hasOlder.value).toBe(false);
+  });
+
+  it('renders arriving replies during an optional history read and rejects its stale overlapping copy', async () => {
+    const h = harness(page([row(2)])); await settle();
+    const pending = deferred<FocusTranscriptPage>();
+    h.read.mockReturnValueOnce(pending.promise);
+    const fill = h.owner.older(h.owner.tailContext.value!.signal);
+    h.event(4, { method: 'item/completed', item_turns: [row(2, 'edited'), row(3, 'arrived')] });
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['edited', 'arrived']);
+    pending.resolve(page([row(1), row(2, 'old')], { revision: 2, older_cursor: null }));
+    expect(await fill).toBe(true);
+    expect(h.owner.turns.value.map(r => r.text)).toEqual(['1', 'edited', 'arrived']);
+  });
+
   it('confirms Latest while preserving the original revision of earlier cached rows', async () => {
     const h = harness(page([row(2), row(3)])); await settle();
     h.read.mockResolvedValueOnce(page([row(1)], { older_cursor: 'before-1' }));
@@ -63,15 +91,28 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older(intent.signal)).toBe(false);
   });
 
+  it('hands an explicit Latest back to ordinary following with the same remaining allowance', async () => {
+    const h = harness(page([row(4)])); await settle();
+    const explicit = new AbortController();
+    await h.owner.load({}, 'latest', false, explicit.signal);
+    h.read.mockResolvedValueOnce(page([row(3)], { older_cursor: 'before-3' }));
+    expect(await h.owner.older(explicit.signal)).toBe(true);
+    h.owner.finishLatest(explicit.signal);
+    const ordinary = h.owner.tailContext.value!.signal;
+    h.read.mockResolvedValueOnce(page([row(2)], { older_cursor: 'before-2' }));
+    expect(await h.owner.older(ordinary)).toBe(true);
+    expect(await h.owner.older(ordinary)).toBe(false);
+  });
+
   it('leaves a cancelled startup return cancelled when navigation later resolves its target', async () => {
     const h = harness();
     await settle();
     const bindTarget = h.owner.prepareInitialReturn();
-    h.owner.cancelInstanceReturn();
+    h.owner.cancelTailContext();
     bindTarget('thread-1');
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.owner.tailContext.value).toBeNull();
   });
 
   it('shares the foreground allowance across duplicate wake confirmations and another handshake', async () => {
@@ -79,16 +120,16 @@ describe('bounded transcript owner', () => {
     await settle();
     const resume = h.owner.captureForegroundReturn()!;
     resume();
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.owner.tailContext.value).toBeNull();
     h.owner.confirmForegroundWake();
-    const intent = h.owner.restoredTailContext.value!;
+    const intent = h.owner.tailContext.value!;
     h.owner.confirmForegroundWake();
-    expect(h.owner.restoredTailContext.value).toBe(intent);
+    expect(h.owner.tailContext.value).toBe(intent);
     h.read.mockResolvedValueOnce(page([row(0)], { older_cursor: 'more' }));
     expect(await h.owner.older(intent.signal)).toBe(true);
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
-    const fresh = h.owner.restoredTailContext.value!;
+    const fresh = h.owner.tailContext.value!;
     h.read.mockResolvedValueOnce(page([row(0)], { older_cursor: 'more' }));
     expect(await h.owner.older(fresh.signal)).toBe(true);
     h.owner.confirmForegroundWake();
@@ -106,12 +147,12 @@ describe('bounded transcript owner', () => {
     h.owner.expectInstanceReturn('thread-1');
     delayed.resolve(page([row(4)], { older_cursor: 'from-previous-selection' }));
     await previous;
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.owner.tailContext.value).toBeNull();
 
     h.owner.prepareReload();
     h.read.mockResolvedValueOnce(page([row(5)], { older_cursor: 'fresh' }));
     expect(await h.owner.resumeAfterReload()).toBe(true);
-    const intent = h.owner.restoredTailContext.value!;
+    const intent = h.owner.tailContext.value!;
     h.read.mockResolvedValueOnce(page([row(3), row(4)]));
     expect(await h.owner.older(intent.signal)).toBe(true);
     expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'fresh', direction: 'desc', fill: true }, expect.any(AbortSignal));
@@ -127,17 +168,17 @@ describe('bounded transcript owner', () => {
     h.owner.expectInstanceReturn('thread-1');
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
-    const first = h.owner.restoredTailContext.value!;
+    const first = h.owner.tailContext.value!;
     const stale = new FocusApiError('superseded', { status: 409, code: 'stale_thread_read' });
     h.read.mockRejectedValueOnce(stale).mockResolvedValueOnce(page([row(5)], { older_cursor: 'reconfirmed' }));
     expect(await h.owner.older(first.signal)).toBe(false);
     expect(first.signal.aborted).toBe(true);
-    const second = h.owner.restoredTailContext.value!;
+    const second = h.owner.tailContext.value!;
     h.read.mockRejectedValueOnce(stale);
     expect(await h.owner.older(second.signal)).toBe(false);
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(await h.owner.older(h.owner.tailContext.value!.signal)).toBe(false);
     expect(await h.owner.older(second.signal)).toBe(false);
     expect(h.read.mock.calls.map(([, q]) => q)).toEqual([{}, {},
       { cursor: 'older', direction: 'desc', fill: true }, {},
@@ -154,13 +195,13 @@ describe('bounded transcript owner', () => {
     await h.owner.resumeAfterReload();
     const delayed = deferred<FocusTranscriptPage>();
     h.read.mockReturnValueOnce(delayed.promise);
-    const oldFill = h.owner.older(h.owner.restoredTailContext.value!.signal);
+    const oldFill = h.owner.older(h.owner.tailContext.value!.signal);
     const request = h.read.mock.calls.at(-1)![2]!;
     h.owner.prepareReload();
     expect(request.aborted).toBe(true);
     h.read.mockResolvedValueOnce(page([row(8)], { older_cursor: 'after-reconnect' }));
     await h.owner.resumeAfterReload();
-    const fresh = h.owner.restoredTailContext.value!;
+    const fresh = h.owner.tailContext.value!;
     h.read.mockResolvedValueOnce(page([row(7)], { older_cursor: 'before-7' }));
     expect(await h.owner.older(fresh.signal)).toBe(true);
     delayed.resolve(page([row(2)]));
@@ -175,7 +216,7 @@ describe('bounded transcript owner', () => {
     h.owner.expectInstanceReturn('thread-1');
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
-    const intent = h.owner.restoredTailContext.value!;
+    const intent = h.owner.tailContext.value!;
     h.read.mockRejectedValueOnce(new FocusApiError('refused', { status, code: status === 409 ? 'transcript_fill_limit' : 'unavailable' }));
     expect(await h.owner.older(intent.signal)).toBe(false);
     expect(await h.owner.older(intent.signal)).toBe(false);
@@ -190,7 +231,7 @@ describe('bounded transcript owner', () => {
     const pending = deferred<FocusTranscriptPage>();
     h.read.mockReturnValueOnce(pending.promise);
     const head = h.owner.resumeAfterReload();
-    if (action === 'reader') h.owner.cancelInstanceReturn();
+    if (action === 'reader') h.owner.cancelTailContext();
     if (action === 'park') h.owner.expectInstanceReturn('');
     if (action === 'epoch') {
       h.read.mockResolvedValue(page([row(7)], { runtime_epoch: 'next' }));
@@ -198,7 +239,7 @@ describe('bounded transcript owner', () => {
     }
     pending.resolve(page());
     await head; await settle();
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.owner.tailContext.value).toBeNull();
     expect(h.read.mock.calls.some(([, query]) => query?.fill)).toBe(false);
   });
 
@@ -208,7 +249,7 @@ describe('bounded transcript owner', () => {
     h.owner.prepareReload();
     await h.owner.resumeAfterReload();
     h.read.mockResolvedValueOnce(page([row(1), row(2)], { older_cursor: 'before-1' }));
-    expect(await h.owner.older(h.owner.restoredTailContext.value!.signal)).toBe(true);
+    expect(await h.owner.older(h.owner.tailContext.value!.signal)).toBe(true);
     h.read.mockResolvedValueOnce(page([row(3, 'fresh'), row(4)], { revision: 2 }));
     h.state.value = { ...h.state.value!, revision: 2 };
     await settle();
@@ -232,12 +273,12 @@ describe('bounded transcript owner', () => {
     await settle();
     delayed.resolve(page([row(2)], { older_cursor: 'superseded' }));
     await recovery;
-    expect(h.owner.restoredTailContext.value).toBeNull();
+    expect(h.owner.tailContext.value).toBeNull();
 
     h.read.mockResolvedValueOnce(page([row(3)], { older_cursor: 'confirmed', revision: 2 }));
     await vi.advanceTimersByTimeAsync(1000);
     h.read.mockResolvedValueOnce(page([row(1), row(2)], { older_cursor: null }));
-    expect(await h.owner.older(h.owner.restoredTailContext.value!.signal)).toBe(true);
+    expect(await h.owner.older(h.owner.tailContext.value!.signal)).toBe(true);
     expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'confirmed', direction: 'desc', fill: true }, expect.any(AbortSignal));
     expect(h.read).toHaveBeenCalledTimes(4);
   });

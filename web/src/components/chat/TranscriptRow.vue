@@ -6,14 +6,13 @@ import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights'
 import { isTranscriptRowPinned } from './transcriptScrollAnchor';
 import { observeTranscriptVisibility } from './transcriptVisibility';
 
-const props = withDefaults(defineProps<{ turn: ChatTurn; folded?: boolean }>(), { folded: false });
+const props = defineProps<{ turn: ChatTurn }>();
 provide(markdownChunkHeightsKey, new Map());
 const element = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === 'undefined');
 const height = ref<number | null>(null);
 const empty = computed(() => isEmptyAssistantTurn(props.turn));
-const hidden = computed(() => props.folded || empty.value);
-// Cleared content has no reusable height; folding real content keeps its measurement.
+// Cleared content has no reusable height.
 watch(empty, value => { if (value) height.value = null; });
 const estimate = computed(() => Math.min(1200, Math.max(64,
   Math.ceil((props.turn.text.length + (props.turn.thinking?.length ?? 0)) / 45) * 22)));
@@ -27,13 +26,13 @@ onMounted(() => {
     if (isVisible) visible.value = true;
     else if (!isTranscriptRowPinned(el)) {
       const measured = el.getBoundingClientRect().height;
-      if (!hidden.value && visible.value && measured > 0) height.value = measured;
+      if (!empty.value && visible.value && measured > 0) height.value = measured;
       visible.value = false;
     }
   });
   if (typeof ResizeObserver !== 'undefined') {
     resize = new ResizeObserver(() => {
-      if (!hidden.value && visible.value && el.getBoundingClientRect().height > 0) height.value = el.getBoundingClientRect().height;
+      if (!empty.value && visible.value && el.getBoundingClientRect().height > 0) height.value = el.getBoundingClientRect().height;
     });
     resize.observe(el);
   }
@@ -42,13 +41,13 @@ onBeforeUnmount(() => { stopVisibility?.(); resize?.disconnect(); });
 </script>
 <template>
   <div v-if="turn.itemId" ref="element" class="transcript-row turn-anchor"
-    :hidden="hidden"
+    :hidden="empty"
     :class="{ 'transcript-assistant': turn.role === 'assistant' }"
     :data-turn-id="turn.id"
     :data-raw-turn-id="turn.rawTurnId"
     :data-prompt-id="turn.role === 'user' ? turn.id : undefined"
-    :style="visible || hidden ? undefined : { height: `${height ?? estimate}px` }">
-    <slot v-if="visible && !hidden" />
+    :style="visible || empty ? undefined : { height: `${height ?? estimate}px` }">
+    <slot v-if="visible && !empty" />
   </div>
   <slot v-else />
 </template>

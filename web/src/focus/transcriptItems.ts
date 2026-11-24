@@ -2,6 +2,7 @@ import type { ChatTurn, TurnBlock } from '../types';
 import type { FocusStreamDelta } from './types';
 import { appendBoundedToolOutput } from './toolOutputPresentation';
 
+export const TRANSCRIPT_PAGE_ITEMS = 40;
 export const TRANSCRIPT_WINDOW_ITEMS = 80;
 
 /** Apply one ordered delta to one bounded item, without scanning a whole turn. */

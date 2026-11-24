@@ -6,7 +6,15 @@ export interface ToolGroup {
   readonly collapsedByDefault: boolean;
 }
 
+export interface ToolGroupSummary {
+  count: number;
+  failed: number;
+  running: number;
+  partial: boolean;
+}
+
 export interface TranscriptToolGroup extends ToolGroup {
+  readonly summary: ToolGroupSummary;
   readonly sourceIds: readonly string[];
   readonly tools: readonly ToolCall[];
 }
@@ -22,21 +30,26 @@ export interface TranscriptToolGroups {
 
 /** Empty stream targets keep their identity without taking up transcript space. */
 export function isEmptyAssistantTurn(turn: ChatTurn): boolean {
-  return turn.role === 'assistant' && !turn.tools?.length && (turn.blocks
+  return turn.role === 'assistant' && !turn.compactTool && !turn.tools?.length && (turn.blocks
     ? turn.blocks.every(block => (block.kind === 'text' && !block.text.trim())
       || (block.kind === 'thinking' && !block.thinking.trim()))
     : !turn.text.trim() && !turn.thinking?.trim());
 }
 
 /** Annotate source rows without replacing, reparenting, or copying their content. */
-export function projectTranscriptToolGroups(turns: readonly ChatTurn[]): TranscriptToolGroups {
+export function projectTranscriptToolGroups(turns: readonly ChatTurn[], older = false, newer = false): TranscriptToolGroups {
   const leaders = new Map<string, TranscriptToolGroup>();
   const members = new Map<string, TranscriptToolGroup>();
   let run: ChatTurn[] = [];
-  const flush = () => {
+  let leftOpen = older;
+  let rawTurn = turns[0]?.rawTurnId;
+  const flush = (rightOpen = false) => {
     const first = run[0];
     if (first) {
+      const statuses = run.flatMap(turn => turn.compactTool ? [turn.compactTool.status] : turn.tools!.map(tool => tool.status));
       const group: TranscriptToolGroup = {
+        summary: { count: statuses.length, failed: statuses.filter(s => s === 'error').length,
+          running: statuses.filter(s => s === 'running').length, partial: leftOpen || rightOpen },
         sourceIds: run.map(turn => turn.id),
         members: run.map(turn => toolGroupMember(turn.id)),
         tools: run.flatMap(turn => turn.tools ?? []),
@@ -49,14 +62,15 @@ export function projectTranscriptToolGroups(turns: readonly ChatTurn[]): Transcr
   };
 
   turns.forEach(turn => {
-    if (run.length && run[0]!.rawTurnId !== turn.rawTurnId) flush();
-    if (turn.role === 'assistant' && turn.contentDeferred && turn.tools?.length) {
+    if (rawTurn !== turn.rawTurnId) { flush(); leftOpen = false; rawTurn = turn.rawTurnId; }
+    if (turn.role === 'assistant' && turn.contentDeferred && (turn.compactTool || turn.tools?.length)) {
       run.push(turn);
     } else if (!isEmptyAssistantTurn(turn)) {
       flush();
+      leftOpen = false;
     }
   });
-  flush();
+  flush(newer);
   return { leaders, members };
 }
 

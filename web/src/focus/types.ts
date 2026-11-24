@@ -815,7 +815,14 @@ export interface FocusTranscriptQuery {
   source_cursor?: string;
 }
 
+export interface FocusTranscriptToolPage {
+  turn_id: string;
+  cursor: string;
+  items: [string, ToolCall['status']][];
+}
+
 export interface FocusTranscriptPage extends FocusCoordinates {
+  tool_pages?: FocusTranscriptToolPage[];
   readingMark?: string;
   thread_id: string;
   turn_id: string | null;

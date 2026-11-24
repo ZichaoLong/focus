@@ -117,25 +117,36 @@ Items containing only blank text/reasoning retain their source-row identity for 
 stream deltas, but mount no content and occupy no height, margins or offscreen placeholder
 space. Metadata such as timestamps does not make an empty item visible. Real content
 restores presentation and measurement under the same identity. Clearing content discards
-its old measurement; folding tools still retains valid measurements. User messages, tools
+its old measurement. User messages, tools
 and other semantic items are not hidden based on blank prose.
 
 Explicit expansion/collapse overrides the default. Retain choices by stable source-row
 identity across prepends, leader changes, splits and merges. The most recent choice wins
 when differently toggled groups join and propagates to new members. Choices survive page eviction, same-tab thread changes and warm instance switches. Each retained document keeps choices for recently used threads up to the thread preference, with at most 2,048 member identities per thread. Document replacement and choice eviction restore the collapsed default. Headers support keyboard operation. Automatic updates preserve reader focus and selection. Legacy whole-turn groups identify members by turn and tool and keep inline media results visible.
 
-Presentation groups never replace, reparent or merge source rows. Each tool keeps its own
-`TranscriptRow` and exact-item detail action. Folding unmounts member tool components,
-retaining source-row shells and a separate header. Expansion still virtualizes each row
-within the existing approximately 900px overscan, without mounting an entire large group.
-Zero heights caused by folding must not overwrite valid row measurements.
+Each tool retains its source identity and exact detail action. A folded group mounts a single header.
+Its members create no DOM nodes, Vue components or size observers. A group touching an unread boundary
+reports the number of calls loaded. Running and failure counts describe verified members. Expanded rows
+use the existing approximately 900px overscan. Resolve keyboard focus and reading anchors by source member
+when a group's leader changes.
+
+A cold open delivers an ordinary head first. A visible shortfall can then request `fill=true` with
+`X-Focus-Folded-Tools: 1`. The server follows the supplied older cursor for at most 14 upstream
+reads of up to 40 items each, including size retries. A source page qualifies for compact `tool_pages`
+only if every source item projects to one tool from the same turn. Each compact page carries the actual
+request cursor, turn_id and chronological `[itemId, status]` pairs. A mixed page supplies ordinary rows.
+The response orders `turns` first and compact pages chronologically after them. When a budget ends the
+scan before the preceding prose, return the verified portion and its continuation. The selected thread,
+document, observation and connection-generation checks apply to every request. Member IDs count toward
+the window's data budget. Opening a group reads one original member page. The reader can request subsequent
+pages. Verify member positions and length on replay and preserve newer live states. Expanded pages use the
+same page cache. Reconnect, revert and thread changes retire old read evidence.
 
 Resolve header anchors through a retained source member, so prepending an earlier leader
 does not invalidate an anchor. When folding hides an anchored source row, the existing
 transcript scroll owner resolves it to the current header containing that member and
 preserves the reading position. Layout corrections continue to preserve touch/inertia,
-without adding another scroll owner. Grouping does not change DTOs, cursors, page budgets,
-source copy/export or exact turn/item detail reads.
+without adding another scroll owner. Presentation and paging preserve source copy/export and exact turn/item detail reads.
 If paging replaces a header during its click pin, release the detached DOM pin and hand
 position keeping back to the same source-member anchor.
 
@@ -225,8 +236,8 @@ Deduplicate and refresh inclusive cursor anchors by stable ID; retain actual edg
 without gaps. A late page must not evict the reader's visible anchor page; discard the
 new distant page instead when necessary. When only the anchor page and one adjacent page
 remain, temporarily allow their combined bytes above the target so the reader can scroll
-out of a large item; moving the anchor permits eviction. The live tail page retains at most 80 rows before
-bounded head resynchronization. New live items never pull a historical viewport to the tail.
+out of a large item; moving the anchor permits eviction. The live tail requests head confirmation as it approaches 80 rows. It continues receiving ordered updates
+and splits bursts into adjacent 40-row chunks. A boundary without an upstream cursor reopens by exact item. New live items never pull a historical viewport to the tail.
 Scrolling and body reception are independent: while the cache still includes the tail,
 slight upward scrolling or reading adjacent older pages does not stop new replies. Control
 refreshes and event-gap recovery reread the bounded latest body. While not following, merge
@@ -250,10 +261,10 @@ Clicking “Latest messages” rereads the server's latest page. Keep the alread
 has an older cursor and its initial row IDs match the cached suffix in order, with no duplicate in the retained prefix.
 Install the entire fresh page. A gap, order conflict or retired cache uses just the new page. A split source page
 can resume toward newer history from its exact last item. Retained rows keep their own read revisions.
-While following the tail, ordinary control refreshes preserve adjacent pages under the same continuity rule.
+While following the tail, ordinary control refreshes preserve the read prefix under the same continuity rule, including a single cached page.
 Reconnection still retires the old window.
 
-Clicking “Latest messages” or returning to an instance in a host that negotiated `tabs` can request extra context.
+Normal online following, clicking “Latest messages” and returning to an instance in a host that negotiated `tabs` can request extra context.
 An instance return, including reopening its saved thread in a rebuilt document, first completes the authoritative
 read of the selected thread. Use that result for extra context only if the reader is following the tail when the
 read starts and finishes, and the confirmed tail has an older cursor. Measure once the page is visible,
@@ -266,12 +277,12 @@ A pong on the current socket permits measuring its confirmed live window. After 
 authoritative reread, including one completed in the background. A full viewport needs no extra body read.
 Duplicate visibility and host signals share one allowance per background-to-foreground transition.
 Restore historical positions from their item anchor.
-Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position to the top.
+While following a paginated transcript, refresh and fill use instant scroll positioning. Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position to the top.
 A reader following the tail stays at the end even if the content returns to its original height. Actual scroll input takes over immediately.
 Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.
-Each return allows at most two fill requests, counting failures and cancellations. Layout changes, stream
+Each persistent shortfall allows at most two fill requests, counting failures and cancellations. Fresh messages render during those reads. When new content fills the original viewport, a later shortfall can start another allowance. Layout changes, stream
 events and repeated handshakes share that budget. If an instance fill receives `409 stale_thread_read` with
 an attempt left, reread the head and continue from its current cursor. Each complete successful fill response is limited to 128 KiB
 of serialized JSON before HTTP compression. The gateway returns a small `transcript_fill_limit` refusal for a larger page.

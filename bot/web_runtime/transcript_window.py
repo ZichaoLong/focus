@@ -24,6 +24,8 @@ from bot.web_runtime.transcript_budget import (
     PREVIEW_METADATA_KEY,
     TRANSCRIPT_PAGE_BYTES,
     TRANSCRIPT_PAGE_ITEMS,
+    TAIL_CONTEXT_BYTES,
+    TAIL_CONTEXT_SOURCE_READS,
     PROSE_ITEM_TYPES,
     TranscriptPreview,
     bounded_transcript_item,
@@ -50,6 +52,7 @@ class WebThreadTranscriptPreparation:
     page_limit: int = TRANSCRIPT_PAGE_ITEMS
     live_item: dict[str, Any] | None = None
     include_reading_mark: bool = False
+    fold_tools: bool = False
 
     @property
     def reading_mark(self) -> str:
@@ -177,6 +180,71 @@ def read_transcript_window(
     attachment_url_for_path: Callable[[str], str] | None = None,
     attachment_url_for_id: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
+    options = dict(remaining=remaining, attachment_url_for_path=attachment_url_for_path,
+                   attachment_url_for_id=attachment_url_for_id)
+    if not prepared.fold_tools:
+        return _read_transcript_page(prepared, list_thread_items=list_thread_items, **options)
+
+    # Only all-tool source pages can be summarized. The first mixed page
+    # supplies normal rows and stops the scan. Cursor and item order are kept
+    # so expansion can replay precisely one original bounded request.
+    class ReadLimit(Exception):
+        pass
+
+    calls = 0
+    def bounded_list(*args, **kwargs):
+        nonlocal calls
+        if calls >= TAIL_CONTEXT_SOURCE_READS:
+            raise ReadLimit
+        calls += 1
+        return list_thread_items(*args, **kwargs)
+
+    cursor = prepared.cursor
+    seen_cursors: set[str] = set()
+    members_seen: set[str] = set()
+    ranges: list[dict] = []
+    cost = 0
+    accepted = None
+    while cursor and calls < TAIL_CONTEXT_SOURCE_READS:
+        if cursor in seen_cursors:
+            raise WebRuntimeError("Transcript cursor did not advance.", code="transcript_protocol_error", status=502)
+        seen_cursors.add(cursor)
+        try:
+            page = _read_transcript_page(replace(prepared, cursor=cursor), list_thread_items=bounded_list, **options)
+        except ReadLimit:
+            break
+        size = len(json.dumps(page, ensure_ascii=False).encode("utf-8"))
+        if accepted and cost + size > TAIL_CONTEXT_BYTES:
+            break
+        current = page.pop("tool_pages", [])
+        ids = ([f"{part['turn_id']}:item:{item}:0" for part in current for item, _ in part["items"]]
+               if current else [row["id"] for row in page["turns"]])
+        if len(set(ids)) != len(ids) or members_seen.intersection(ids) or page["older_cursor"] in seen_cursors:
+            raise WebRuntimeError("Overlapping transcript continuation.", code="transcript_protocol_error", status=502)
+        members_seen.update(ids)
+        if accepted:
+            page["newer_cursor"] = accepted["newer_cursor"]
+        accepted = page
+        if not current:
+            break
+        ranges.extend(current)
+        cost += size
+        cursor = page["older_cursor"]
+    if accepted is None:
+        raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
+    if ranges:
+        accepted["tool_pages"] = list(reversed(ranges))
+    return accepted
+
+
+def _read_transcript_page(
+    prepared: WebThreadTranscriptPreparation,
+    *,
+    list_thread_items: Callable[..., ThreadItemsPage],
+    remaining: Callable[[], float],
+    attachment_url_for_path: Callable[[str], str] | None = None,
+    attachment_url_for_id: Callable[[str], str] | None = None,
+) -> dict[str, Any]:
     if prepared.live_item is not None:
         return {
             "runtime_epoch": prepared.runtime_epoch, "revision": prepared.revision,
@@ -284,6 +352,14 @@ def read_transcript_window(
         "newer_cursor": page.backwards_cursor if direction == "desc" else page.next_cursor,
         "full_text": None,
     }
+    if (prepared.fold_tools and entries and len(entries) == len(turns)
+            and all(row.get("contentDeferred") and len(row["tools"]) == 1
+                    and row["itemId"] == entry.item.get("id") and entry.turn_id == entries[0].turn_id
+                    for row, entry in zip(turns, entries, strict=True))):
+        members = [[row["itemId"], row["tools"][0]["status"]] for row in turns]
+        if len({item for item, _ in members}) != len(members):
+            raise WebRuntimeError("Duplicate transcript item.", code="transcript_protocol_error", status=502)
+        payload.update(turns=[], tool_pages=[{"turn_id": entries[0].turn_id, "cursor": cursor, "items": members}])
     if prepared.view == "mobile_records":
         first = entries[0] if entries else None
         payload = {
@@ -313,7 +389,7 @@ def read_transcript_window(
           and len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > TRANSCRIPT_PAGE_BYTES):
         # Re-read fewer complete source items from the same authoritative
         # anchor. Never truncate a message or fabricate continuation cursors.
-        return read_transcript_window(
+        return _read_transcript_page(
             replace(prepared, page_limit=max(1, min(limit, len(entries)) // 2)),
             list_thread_items=list_thread_items, remaining=remaining,
             attachment_url_for_path=attachment_url_for_path,

@@ -1083,7 +1083,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     else if (initialReadFailed && !loading.value) void load();
   }
   function rememberForegroundThread(): void {
-    if (mobileTabs && !parked) resumeTranscript ??= transcript.captureForegroundReturn();
+    if (!parked) resumeTranscript ??= transcript.captureForegroundReturn();
   }
   function resumeVisibleDocument(): void {
     if (parked || hostPaused || typeof document !== 'undefined' && document.visibilityState === 'hidden') return;

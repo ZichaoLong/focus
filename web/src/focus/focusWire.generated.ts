@@ -1424,6 +1424,15 @@ export const FOCUS_WEB_RECORDS = {
       "view": "transcript_view"
     }
   },
+  "transcript_tool_page": {
+    "typescriptType": "FocusTranscriptToolPage",
+    "requiredFields": [
+      "turn_id",
+      "cursor",
+      "items"
+    ],
+    "enumFields": {}
+  },
   "token_breakdown": {
     "typescriptType": "FocusTokenBreakdown",
     "requiredFields": [],
