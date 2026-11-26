@@ -82,6 +82,10 @@ long formulas; fonts and browsers need not produce identical pixels.
 
 With the negotiated mobile `print` capability, Web hands the complete export to `SummaryPrintApp` in the current document's memory. The preview occupies the visible and printable layout. The shell uses the WebView's system print adapter. Closing the preview or going back returns to the conversation. A reload requires a new export. [Mobile host contract](focus-mobile.md)
 
+Print diagnostics in the mobile preview start disabled. Once enabled by the user, the preview records the reported app and engine versions, print button taps, host bridge replies, host pause/resume signals, page visibility and window focus changes in memory. It retains the latest 40 events with elapsed times, the total number of taps and a count of discarded events. A bridge reply and visibility changes each describe a limited observation. The user confirms whether a panel appeared or a file was saved.
+
+Stopping, copying, saving or a five-minute timeout ends recording. Copy and save freeze the same JSON for inspection, clipboard export or saving through the negotiated system file picker. Starting again replaces the report. Closing or reloading the preview clears it. Only predefined fields and events are collected. Document content, titles, filenames, URLs, credentials, raw errors and unrecognized host reply text are excluded. Reports remain local.
+
 ## Verification boundaries
 
 Unit tests cover complete code, math grammar and fallback, safe escaping, full

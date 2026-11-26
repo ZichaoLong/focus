@@ -6,6 +6,8 @@ import { normalizeSummaryTitle, summaryDocumentBody } from './summaryDocumentTit
 import { receiveSummaryPrint, type PrintPayload } from './summaryPrintWindow';
 import { renderSummaryPrintMarkdown } from './summaryPrintMarkdown';
 import { prepareSummaryPrint } from './summaryPrintPreparation';
+import { createSummaryPrintDiagnostics } from './summaryPrintDiagnostics';
+import SummaryPrintDiagnostic from './SummaryPrintDiagnostic.vue';
 import 'katex/dist/katex.min.css';
 import './summaryPrint.css';
 
@@ -20,6 +22,7 @@ const printedTitle = computed(() => normalizeSummaryTitle(documentTitle.value));
 const status = ref<'loading' | 'ready' | 'error'>('loading');
 const fallback = ref(false);
 const printFailed = ref(false);
+const diagnostic = props.preview ? createSummaryPrintDiagnostics() : null;
 let jobName = 'Focus';
 let dispose = () => {};
 
@@ -51,8 +54,10 @@ async function render(markdown: string, suggestedFilename: string, title: string
 
 function print(): void {
   if (status.value !== 'ready') return;
-  if (props.preview) printFailed.value = !printMobileSummary(jobName);
-  else window.print();
+  if (props.preview) {
+    diagnostic?.click();
+    printFailed.value = !printMobileSummary(jobName, diagnostic?.reply);
+  } else window.print();
 }
 
 onMounted(() => {
@@ -68,7 +73,11 @@ onMounted(() => {
   document.title = 'Focus — Q&A';
   dispose = receiveSummaryPrint((markdown, filename, title) => { void render(markdown, filename, title); }, () => { status.value = 'error'; });
 });
-onUnmounted(() => { dispose(); document.documentElement.classList.remove('summary-print-page', 'summary-mobile-print'); });
+onUnmounted(() => {
+  diagnostic?.stop();
+  dispose();
+  document.documentElement.classList.remove('summary-print-page', 'summary-mobile-print');
+});
 </script>
 
 <template>
@@ -79,6 +88,8 @@ onUnmounted(() => { dispose(); document.documentElement.classList.remove('summar
         <button type="button" :disabled="status !== 'ready'" @click="print">{{ t('focus.printButton') }}</button>
         <button v-if="preview" type="button" @click="$emit('close')">{{ t('focus.closePrintPreview') }}</button>
       </div>
+      <p v-if="printFailed" class="summary-print-error" role="status">{{ t('focus.printSystemUnavailable') }}</p>
+      <SummaryPrintDiagnostic v-if="diagnostic" :diagnostic="diagnostic" :status="status" />
       <div v-if="status === 'ready'" class="summary-title-editor">
         <label for="summary-document-title">{{ t('focus.exportDocumentTitle') }}</label>
         <input id="summary-document-title" v-model="documentTitle" type="text" :placeholder="printedTitle" aria-describedby="summary-title-help" />
@@ -87,7 +98,6 @@ onUnmounted(() => { dispose(); document.documentElement.classList.remove('summar
       <p>{{ t('focus.printScope') }}</p>
       <p>{{ t('focus.printHelp') }}</p>
       <p v-if="!preview">{{ t('focus.printMobileHelp') }}</p>
-      <p v-if="printFailed" role="status">{{ t('focus.printSystemUnavailable') }}</p>
       <p v-if="fallback" role="status">{{ t('focus.printFallback') }}</p>
     </header>
     <p v-if="status !== 'ready'" class="summary-print-status" role="status">

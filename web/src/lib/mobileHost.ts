@@ -86,8 +86,19 @@ export function showMobileWebChrome(available: boolean): void {
   if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/chrome', available ? 'web' : 'native');
 }
 
-export function printMobileSummary(filename: string): boolean {
-  return !!host && hasMobileFeature('print') && window.prompt('focus/1/' + host.ticket + '/print', filename.slice(0, 255)) === 'ok';
+export type MobilePrintReply = 'ok' | 'error' | 'no-reply' | 'unexpected-reply' | 'exception' | 'unavailable';
+
+export function printMobileSummary(filename: string, observe?: (reply: MobilePrintReply) => void): boolean {
+  let result: MobilePrintReply = 'unavailable';
+  if (host && hasMobileFeature('print')) {
+    try {
+      const reply = window.prompt('focus/1/' + host.ticket + '/print', filename.slice(0, 255));
+      if (reply === 'ok' || reply === 'error') result = reply;
+      else result = reply === null ? 'no-reply' : 'unexpected-reply';
+    } catch { result = 'exception'; }
+  }
+  observe?.(result);
+  return result === 'ok';
 }
 
 let lastThreadHint: string | undefined;

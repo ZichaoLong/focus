@@ -72,6 +72,16 @@ describe('copyTextToClipboard', () => {
     expect(doc.execCommand).toHaveBeenCalledWith('copy');
   });
 
+  it('keeps the fallback selection inside the visible print preview', async () => {
+    installNavigator(undefined);
+    const doc = installDocument(true);
+    const panel = { appendChild: vi.fn(), removeChild: vi.fn() };
+    expect(await copyTextToClipboard('report', panel as unknown as HTMLElement)).toBe(true);
+    expect(panel.appendChild).toHaveBeenCalledWith(doc.textarea);
+    expect(panel.removeChild).toHaveBeenCalledWith(doc.textarea);
+    expect(doc.body.appendChild).not.toHaveBeenCalled();
+  });
+
   it('resolves false when both paths fail', async () => {
     installNavigator(undefined);
     installDocument(false);

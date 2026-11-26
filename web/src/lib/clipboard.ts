@@ -15,7 +15,7 @@
  * Resolves to `true` when the copy succeeded and `false` otherwise. Never
  * rejects, so callers can safely `await` it without a try/catch.
  */
-export async function copyTextToClipboard(text: string): Promise<boolean> {
+export async function copyTextToClipboard(text: string, container?: HTMLElement): Promise<boolean> {
   // Preferred path: the async Clipboard API (secure contexts only).
   const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
   if (clipboard && typeof clipboard.writeText === 'function') {
@@ -27,7 +27,7 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
     }
   }
 
-  return legacyCopy(text);
+  return legacyCopy(text, container);
 }
 
 /**
@@ -42,7 +42,7 @@ export function copyCodeBlockFallback(payload: unknown): void {
   void copyTextToClipboard(payload);
 }
 
-function legacyCopy(text: string): boolean {
+function legacyCopy(text: string, container?: HTMLElement): boolean {
   if (typeof document === 'undefined' || typeof document.execCommand !== 'function') {
     return false;
   }
@@ -55,7 +55,8 @@ function legacyCopy(text: string): boolean {
   textarea.style.top = '-9999px';
   textarea.style.left = '-9999px';
   textarea.style.opacity = '0';
-  document.body.appendChild(textarea);
+  const parent = container ?? document.body;
+  parent.appendChild(textarea);
 
   let ok = false;
   try {
@@ -65,7 +66,7 @@ function legacyCopy(text: string): boolean {
   } catch {
     ok = false;
   } finally {
-    document.body.removeChild(textarea);
+    parent.removeChild(textarea);
   }
   return ok;
 }

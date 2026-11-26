@@ -8,7 +8,7 @@ function memory() {
     removeItem: (k: string) => data.delete(k) };
 }
 function setup(instance = id) {
-  const win = Object.assign(new EventTarget(), { top: {}, __focusMobile: { version: 1, instance, ticket, features: ['resume', 'save', 'wake'] }, prompt: vi.fn(() => 'ok') });
+  const win = Object.assign(new EventTarget(), { top: {}, __focusMobile: { version: 1, instance, ticket, features: ['resume', 'save', 'wake'] }, prompt: vi.fn<() => string | null>(() => 'ok') });
   win.top = win;
   vi.stubGlobal('window', win);
   vi.stubGlobal('location', new URL('https://site.test/?focusApp=1'));
@@ -168,6 +168,64 @@ describe('negotiated mobile host', () => {
     expect(win.prompt).toHaveBeenCalledWith('focus/1/' + ticket + '/print', 'summary');
     closeMobilePrintPreview();
     expect(mobilePrintPreview.value).toBeNull();
+  });
+
+  it('captures bounded print evidence only while enabled and freezes it before export', async () => {
+    vi.useFakeTimers();
+    const win = setup();
+    win.__focusMobile.features.push('print', 'android-update');
+    const doc = Object.assign(new EventTarget(), { visibilityState: 'visible', hidden: false });
+    vi.stubGlobal('document', doc);
+    vi.stubGlobal('navigator', { userAgent: 'Android 15; private-device Chrome/124.0.0.0' });
+    const host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const { createSummaryPrintDiagnostics } = await import('../src/focus/summaryPrintDiagnostics');
+    const trace = createSummaryPrintDiagnostics();
+    trace.click();
+    expect(trace.report.value).toBeNull();
+    expect(win.prompt).not.toHaveBeenCalled();
+
+    win.prompt.mockReturnValueOnce('{"version":"1.12.1","other":"private-extra"}');
+    trace.start('ready');
+    for (const reply of ['error', null, 'private-unexpected-response', 'ok']) {
+      trace.click();
+      win.prompt.mockReturnValueOnce(reply);
+      expect(host.printMobileSummary('private-title', trace.reply)).toBe(reply === 'ok');
+    }
+    trace.click();
+    win.prompt.mockImplementationOnce(() => { throw new Error('private-exception'); });
+    expect(host.printMobileSummary('private-title', trace.reply)).toBe(false);
+    win.dispatchEvent(new Event('focus-host-pause'));
+    doc.hidden = true;
+    doc.dispatchEvent(new Event('visibilitychange'));
+    win.dispatchEvent(new Event('focus-host-resume'));
+    trace.stop();
+    const report = trace.report.value!;
+    expect(report.environment).toMatchObject({ appVersion: '1.12.1', reportedAndroid: '15', reportedChromium: '124.0.0.0' });
+    expect(report.events.map(row => row.event)).toEqual([
+      'print-click', 'bridge-error', 'print-click', 'bridge-no-reply', 'print-click', 'bridge-unexpected-reply',
+      'print-click', 'bridge-ok', 'print-click', 'bridge-exception', 'host-pause', 'page-hidden', 'host-resume',
+    ]);
+    expect(report.events.at(-1)?.attempt).toBe(5);
+    const frozen = JSON.stringify(report);
+    for (const sensitive of ['private', ticket, id, 'site.test']) expect(frozen).not.toContain(sensitive);
+    win.dispatchEvent(new Event('blur'));
+    trace.click();
+    expect(JSON.stringify(report)).toBe(frozen);
+
+    trace.start('ready');
+    for (let i = 0; i < 45; i++) win.dispatchEvent(new Event('focus'));
+    expect(trace.report.value).toMatchObject({ attempts: 0, droppedEvents: 5 });
+    expect(trace.report.value?.events).toHaveLength(40);
+    await vi.advanceTimersByTimeAsync(300_001);
+    expect(trace.recording.value).toBe(false);
+    trace.start('ready');
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 300_001);
+    win.dispatchEvent(new Event('focus-host-resume'));
+    clock.mockRestore();
+    expect(trace.recording.value).toBe(false);
+    expect(trace.report.value).toMatchObject({ elapsedMs: 300_000, events: [] });
+    expect(createSummaryPrintDiagnostics().report.value).toBeNull();
   });
 });
 

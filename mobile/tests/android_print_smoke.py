@@ -13,9 +13,10 @@ from android_webview_smoke import emulator_adb, evaluate, wait_for
 
 
 async def run(args):
-    origin = json.loads((args.lab / "instances.json").read_text())[1]["origin"]
-    if urlsplit(origin).hostname != "10.0.2.2":
-        raise ValueError("Expected the emulator gateway's second HTTPS entry")
+    entries = json.loads((args.lab / "instances.json").read_text())
+    origin = entries[-1 if args.loopback else 1]["origin"]
+    if urlsplit(origin).hostname != ("127.0.0.1" if args.loopback else "10.0.2.2"):
+        raise ValueError("Expected an isolated emulator gateway")
     adb = emulator_adb(args.adb, args.serial)
     user = adb("shell", "am", "get-current-user")
     policy = ("--user", user, "no_printing")
@@ -31,17 +32,23 @@ async def run(args):
         await evaluate(ws, item + ".click()")
         await click_web(ws, "button[form=focus-export-options]:enabled")
         button = "#focus-mobile-print .summary-print-actions button:first-of-type:enabled"
-        notice = "document.querySelector('#focus-mobile-print .summary-print-toolbar [role=status]')"
+        notice = "document.querySelector('#focus-mobile-print .summary-print-error')"
         content = "document.querySelector('#focus-mobile-print .summary-print-content').innerText"
+        diagnostic = "#focus-mobile-print .summary-print-diagnostic"
+        report = f"JSON.parse(document.querySelector('{diagnostic} pre').textContent)"
         await wait_for(ws, "!!document.querySelector('#focus-mobile-print [data-status=ready]')")
         body = await evaluate(ws, content)
         assert body.strip() and not await evaluate(ws, "!!" + notice)
+        await click_web(ws, diagnostic + " > summary")
+        assert not await evaluate(ws, f"!!document.querySelector('{diagnostic} pre')")
+        await click_web(ws, diagnostic + " .diagnostic-actions button")
 
         try:
             adb("shell", "pm", "set-user-restriction", *policy, "1")
             await click_web(ws, button)
             await wait_for(ws, f"!!{notice}?.offsetHeight")
             assert await evaluate(ws, content) == body
+            assert await evaluate(ws, f"{report}.events.some(e => e.attempt === 1 && e.event === 'bridge-error')")
         finally:
             adb("shell", "pm", "set-user-restriction", *policy, "0")
 
@@ -52,7 +59,13 @@ async def run(args):
         adb("shell", "input", "keyevent", "KEYCODE_BACK")
         await wait_for(ws, f"document.visibilityState === 'visible' && !{notice}")
         assert await evaluate(ws, content) == body
-        print("Rejected print job showed an error; retry from the same preview opened system printing.")
+        await wait_for(ws, f"{report}.events.some(e => e.attempt === 2 && e.event === 'host-resume')")
+        await click_web(ws, diagnostic + " .diagnostic-actions button")
+        snapshot = await evaluate(ws, report)
+        events = [row["event"] for row in snapshot["events"] if row["attempt"] == 2]
+        assert snapshot["attempts"] == 2 and "bridge-ok" in events and "host-pause" in events and "host-resume" in events
+        assert body.strip() not in json.dumps(snapshot)
+        print("The opt-in report recorded rejection, retry, and foreground signals. The preview retained its content.")
 
 
 if __name__ == "__main__":
@@ -60,4 +73,5 @@ if __name__ == "__main__":
     parser.add_argument("lab", type=Path)
     parser.add_argument("--serial", required=True)
     parser.add_argument("--adb", default="adb")
+    parser.add_argument("--loopback", action="store_true", help="use the authorized adb-reversed loopback entry")
     asyncio.run(run(parser.parse_args()))

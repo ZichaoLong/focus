@@ -1567,6 +1567,10 @@
           "symbol": "prepareSummaryPrint"
         },
         {
+          "path": "web/src/focus/summaryPrintDiagnostics.ts",
+          "symbol": "createSummaryPrintDiagnostics"
+        },
+        {
           "path": "web/src/lib/download.ts",
           "symbol": "downloadBlob"
         },
@@ -1662,6 +1666,7 @@
             "web/test/summary-print-markdown.test.ts",
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
+            "web/test/clipboard.test.ts",
             "web/test/focus-mobile-host.test.ts",
             "web/test/focus-thread-actions.test.ts",
             "web/test/export-filename.test.ts",
