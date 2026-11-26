@@ -674,7 +674,8 @@ Their fields, limits and non-renewing session rule follow the [submission time c
   decoded strings, not UTF-16 code units or encoded bytes. A conceptual LF
   between adjacent line-array entries counts as one code point.
 - A negotiated transcript fill may return optional `tool_pages` after ordinary `turns`. Each verified page
-  carries `turn_id`, its upstream request `cursor`, and ordered `items` pairs of item ID and tool status.
+  carries `turn_id`, its upstream request `cursor`, and ordered source `items`. Tool members pair their ID
+  with their status. With `X-Focus-Folded-Tools: 2`, `[itemId, null]` preserves a verified empty reasoning item for replay.
   Replay that cursor through the ordinary selected-thread transcript endpoint to expand its members.
 - Every tool in a paginated transcript follows the [transcript contract](./focus-web-transcript-window.md):
   one invocation-summary row, with no default output/diff/media body. `contentDeferred=true`

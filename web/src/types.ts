@@ -304,7 +304,7 @@ export interface ChatTurn {
   /** Opaque source-page receipt for an exact full-content reread. */
   sourceCursor?: string;
   /** One verified member of an on-demand upstream page, in chronological order. */
-  compactTool?: { cursor: string; index: number; count: number; status: ToolStatus };
+  compactTool?: { cursor: string; index: number; pageSize: number; count: number; status: ToolStatus };
   role: TurnRole;
   no: number; // terminal line number
   text: string;

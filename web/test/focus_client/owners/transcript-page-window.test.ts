@@ -62,7 +62,7 @@ describe('contiguous transcript cache', () => {
   it('rejects changed compact members and pages verified headers within the normal cache', () => {
     const cache = new TranscriptPageWindow();
     const compact = page(1).turns.map((r, index) => ({ ...r, contentDeferred: true,
-      compactTool: { cursor: 'members', index, count: 40, status: 'ok' as const } }));
+      compactTool: { cursor: 'members', index, count: 40, pageSize: 40, status: 'ok' as const } }));
     cache.replace(page(41), true);
     cache.extend({ ...page(0), turns: [row(0), ...compact] }, 'tail-context');
     const headers = page(1).turns.map(r => ({ ...r, contentDeferred: true,
@@ -88,6 +88,23 @@ describe('contiguous transcript cache', () => {
     [ordered[39], ordered[40]] = [ordered[40]!, ordered[39]!];
     cache.update(ordered, 'newer');
     expect(cache.rows).toEqual(ordered);
+  });
+
+  it('replays mixed source positions without counting blank reasoning or replacing newer live content', () => {
+    const blank = { ...row(2, ''), blocks: [{ kind: 'thinking' as const, itemId: 'item-2', thinking: '' }] };
+    const readable = { ...blank, blocks: [{ ...blank.blocks[0]!, thinking: 'New reasoning' }] };
+    const headers = [1, 3].map(n => ({ ...row(n, ''), contentDeferred: true,
+      tools: [{ id: row(n).itemId!, name: 'Shell', arg: 'sample', status: 'ok' as const }] }));
+    const compact = headers.map((header, i) => ({ ...row(i * 2 + 1, ''), contentDeferred: true,
+      compactTool: { cursor: 'mixed', index: i * 2, count: 2, pageSize: 3, status: header.tools[0]!.status } }));
+    const cache = new TranscriptPageWindow();
+    cache.replace({ ...page(0), turns: [compact[0]!, readable, compact[1]!] }, true);
+    const replay = (rows: ChatTurn[]) => cache.hydrateTools('mixed', { ...page(0), turns: rows }, null);
+    expect(replay([headers[0]!, readable, headers[1]!])).toEqual([]); // Source page changed kind or content.
+    expect(replay([blank, ...headers])).toEqual([]);
+    expect(replay(headers)).toEqual([]);
+    expect(replay([headers[0]!, blank, headers[1]!])).toEqual(headers.map(r => r.id));
+    expect(cache.rows).toEqual([headers[0], readable, headers[1]]);
   });
 
   it('retains ten visited pages, evicts the distant edge, and keeps continuation cursors', () => {

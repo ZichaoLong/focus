@@ -29,8 +29,9 @@ class WebGatewayThreadInspectionMixin:
         client_id = self._required_client_id(request)
         query = request_decoder.decode_transcript_query(request.query)
         fill = query.pop("fill", None)
-        if fill and request.headers.get("X-Focus-Folded-Tools") == "1":
-            query["fold_tools"] = True
+        folded_version = request.headers.get("X-Focus-Folded-Tools")
+        if fill and folded_version in {"1", "2"}:
+            query["folded_tools_version"] = int(folded_version)
         if request.headers.get("X-Focus-Reading-Window") == "1":
             query["include_reading_mark"] = True
         page = await self._staged_document_request_to_thread(

@@ -37,6 +37,12 @@ class ThreadInspectionGatewayTests(WebGatewayHarness):
             self.assertEqual(response.status, 400)
             self.assertEqual((await response.json())["error"]["code"], "invalid_client")
         self.assertEqual(len(calls), 1)
+        for header, version in (("1", 1), ("2", 2), ("unknown", None)):
+            async with self.session.get(path + "?cursor=c&fill=true", headers={
+                **headers, "X-Focus-Folded-Tools": header,
+            }) as response:
+                self.assertEqual(response.status, 200)
+            self.assertEqual(calls[-1][1].get("folded_tools_version"), version)
 
     async def test_tail_context_limits_serialized_bytes_only_on_the_optional_read(self) -> None:
         await self._authenticate()

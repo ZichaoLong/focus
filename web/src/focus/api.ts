@@ -1,3 +1,4 @@
+import type { ChatTurn } from '../types';
 import { decodeRecordPage, type RecordPage } from './mobileRecordPage';
 import { recoveryStorage, hasMobileFeature, mobileRecords } from '../lib/mobileHost';
 import { decodeDataRetention, decodeDataPrune } from './dataRetentionDecoder';
@@ -676,16 +677,24 @@ export class FocusWebApi implements FocusWebApiPort {
     const wantsMark = !!this.mobileReadScope && hasMobileFeature('conversation-windows') && !params.size;
     const page = await this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
       parameters: { thread_id: threadId }, query: params, signal,
-      ...(query.fill ? { headers: { 'X-Focus-Folded-Tools': '1' } } : {}),
+      ...(query.fill ? { headers: { 'X-Focus-Folded-Tools': '2' } } : {}),
       ...(wantsMark ? {headers:{'X-Focus-Reading-Window':'1'}, onResponse:(r: Response) => { mark=r.headers.get('X-Focus-Reading-Mark') ?? ''; }} : {}),
     });
     if (page.tool_pages) {
       if (!query.fill) throw new Error('Unexpected folded transcript page.');
       for (const { turn_id: turn, cursor, items } of page.tool_pages) {
-        items.forEach(([item, status], index) => page.turns.push({
-          id: turn + ':item:' + item + ':0', rawTurnId: turn, itemId: item, role: 'assistant', no: 0, text: '',
-          contentDeferred: true, compactTool: { cursor, index, count: items.length, status },
-        }));
+        const count = items.filter(([, status]) => status !== null).length;
+        items.forEach(([item, status], index) => {
+          const row: ChatTurn = {
+            id: turn + ':item:' + item + ':0', rawTurnId: turn, itemId: item, role: 'assistant', no: 0, text: '',
+          };
+          if (status === null) row.blocks = [{ kind: 'thinking', itemId: item, thinking: '' }];
+          else {
+            row.contentDeferred = true;
+            row.compactTool = { cursor, index, pageSize: items.length, count, status };
+          }
+          page.turns.push(row);
+        });
       }
       delete page.tool_pages;
     }

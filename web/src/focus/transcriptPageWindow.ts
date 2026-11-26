@@ -13,6 +13,12 @@ interface CachedPage {
   needsOlderAnchor?: boolean;
 }
 
+function isEmptyReasoningItem(row: ChatTurn): boolean {
+  const block = row.blocks?.[0];
+  return row.role === 'assistant' && !row.contentDeferred && !row.tools?.length && !row.text && !row.thinking
+    && row.blocks?.length === 1 && block?.kind === 'thinking' && block.itemId === row.itemId && block.thinking === '';
+}
+
 /** Contiguous source pages, with one copy of each row and no durable cache. */
 export class TranscriptPageWindow {
   private pages: CachedPage[] = [];
@@ -114,8 +120,18 @@ export class TranscriptPageWindow {
     const rows = source.turns;
     const resident = this.rows;
     const pending = resident.filter(row => row.compactTool?.cursor === cursor);
-    if (!pending.length || !rows.every(row => row.contentDeferred && row.tools?.length === 1)
-      || !pending.every(row => row.compactTool!.count === rows.length && rows[row.compactTool!.index]?.id === row.id)) return [];
+    if (!pending.length) return [];
+    let toolCount = 0;
+    for (const row of rows) {
+      if (row.contentDeferred && row.tools?.length === 1) toolCount++;
+      else if (!isEmptyReasoningItem(row)) return [];
+    }
+    for (const row of pending) {
+      const member = row.compactTool!;
+      const replayed = rows[member.index];
+      if (member.pageSize !== rows.length || member.count !== toolCount
+        || replayed?.id !== row.id || !replayed.contentDeferred) return [];
+    }
     const start = resident.indexOf(pending[0]!) - pending[0]!.compactTool!.index;
     const first = Math.max(0, start);
     if (resident.slice(first, start + rows.length).some((row, i) => row.id !== rows[first + i - start]?.id)) return [];

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, provide, ref, watch } from 'vue';
+import { computed, provide, ref, watch } from 'vue';
 import type { ChatTurn } from '../../types';
 import { isEmptyAssistantTurn } from '../toolGroupPresentation';
 import { markdownChunkHeightsKey } from '../../composables/markdownChunkHeights';
@@ -12,17 +12,17 @@ const element = ref<HTMLElement | null>(null);
 const visible = ref(typeof IntersectionObserver === 'undefined');
 const height = ref<number | null>(null);
 const empty = computed(() => isEmptyAssistantTurn(props.turn));
-// Cleared content has no reusable height.
-watch(empty, value => { if (value) height.value = null; });
 const estimate = computed(() => Math.min(1200, Math.max(64,
   Math.ceil((props.turn.text.length + (props.turn.thinking?.length ?? 0)) / 45) * 22)));
-let stopVisibility: (() => void) | null = null;
-let resize: ResizeObserver | null = null;
 
-onMounted(() => {
-  const el = element.value;
-  if (!el || !props.turn.itemId) return;
-  stopVisibility = observeTranscriptVisibility(el, isVisible => {
+watch([element, empty], ([el, blank], _, onCleanup) => {
+  if (blank) {
+    height.value = null;
+    visible.value = false;
+    return;
+  }
+  if (!el) return;
+  const stopVisibility = observeTranscriptVisibility(el, isVisible => {
     if (isVisible) visible.value = true;
     else if (!isTranscriptRowPinned(el)) {
       const measured = el.getBoundingClientRect().height;
@@ -30,14 +30,13 @@ onMounted(() => {
       visible.value = false;
     }
   });
-  if (typeof ResizeObserver !== 'undefined') {
-    resize = new ResizeObserver(() => {
-      if (!empty.value && visible.value && el.getBoundingClientRect().height > 0) height.value = el.getBoundingClientRect().height;
-    });
-    resize.observe(el);
-  }
-});
-onBeforeUnmount(() => { stopVisibility?.(); resize?.disconnect(); });
+  const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => {
+    const measured = el.getBoundingClientRect().height;
+    if (!empty.value && visible.value && measured > 0) height.value = measured;
+  }) : null;
+  resize?.observe(el);
+  onCleanup(() => { stopVisibility(); resize?.disconnect(); });
+}, { flush: 'post' });
 </script>
 <template>
   <div v-if="turn.itemId" ref="element" class="transcript-row turn-anchor"

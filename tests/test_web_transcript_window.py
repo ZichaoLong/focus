@@ -505,12 +505,20 @@ def test_invalid_query_combinations_fail_before_upstream_io(inspection, query):
     inspection.list_items.assert_not_called()
 
 
-def test_cold_folded_context_crosses_1050_calls_with_bounded_replayable_pages(inspection):
+@pytest.mark.parametrize("fold_version", [1, 2])
+def test_cold_folded_context_crosses_1050_items_with_bounded_replayable_pages(inspection, fold_version):
     items = entries(1, text="Before the tools") + [
         ThreadItemEntry("turn-1", {"id": f"tool-{i}", "type": "commandExecution", "command": f"cmd {i}",
                                   "status": "failed" if i == 37 else "completed", "aggregatedOutput": "output"})
         for i in range(1050)
     ]
+    if fold_version == 2:
+        # Include a complete page of invisible reasoning, as well as mixed tool pages.
+        for i in range(1050):
+            if i % 3 == 0 or 710 <= i < 790:
+                items[i + 1] = ThreadItemEntry("turn-1", {
+                    "id": f"think-{i}", "type": "reasoning", "summary": ["  "], "content": [],
+                })
 
     def page(_thread, *, cursor, sort_direction, limit, **kwargs):
         assert sort_direction == "desc" and limit <= 40
@@ -525,7 +533,7 @@ def test_cold_folded_context_crosses_1050_calls_with_bounded_replayable_pages(in
     seen = list(row["itemId"] for row in head["turns"])
     for _ in range(2):
         inspection.list_items.reset_mock()
-        part = read(inspection, cursor=cursor, fold_tools=True)
+        part = read(inspection, cursor=cursor, folded_tools_version=fold_version)
         assert inspection.list_items.call_count <= 14
         assert len(json.dumps(part).encode()) < 128 * 1024
         ids = [item for chunk in part["tool_pages"] for item, _ in chunk["items"]]
@@ -538,16 +546,19 @@ def test_cold_folded_context_crosses_1050_calls_with_bounded_replayable_pages(in
     inspection.list_items.reset_mock()
     expanded = read(inspection, cursor=chunk["cursor"])
     assert inspection.list_items.call_count == 1
-    assert [(row["itemId"], row["tools"][0]["status"]) for row in expanded["turns"]] == [
+    assert [(row["itemId"], row["tools"][0]["status"] if row["tools"] else None) for row in expanded["turns"]] == [
         tuple(member) for member in chunk["items"]]
+    if fold_version == 2:
+        empty = next(row for row in expanded["turns"] if not row["tools"])
+        live = project_transcript_item("turn-1", {"id": empty["itemId"], "type": "reasoning"}, status="inProgress")[0]
+        assert (empty["id"], empty["blocks"]) == (live["id"], live["blocks"])
 
 
 @pytest.mark.parametrize("boundary", ["prose", "reasoning", "turn"])
 def test_context_stops_on_a_semantic_or_turn_boundary(inspection, boundary):
     def tool(i):
         return {"type": "commandExecution", "id": f"tool-{i}", "command": "cmd", "status": "completed"}
-    # Descending wire order. Anything other than one complete single-turn
-    # tool page must keep its ordinary projected content and source cursor.
+    # Descending wire order. Readable content and turn boundaries remain ordinary rows.
     mixed = [ThreadItemEntry("t", tool(0)), ThreadItemEntry("t", tool(1))]
     if boundary == "prose":
         mixed[1] = ThreadItemEntry("t", {"type": "agentMessage", "id": "reply", "text": "progress"})
@@ -559,7 +570,17 @@ def test_context_stops_on_a_semantic_or_turn_boundary(inspection, boundary):
         ThreadItemsPage([ThreadItemEntry("t", tool(2))], "next", "back"),
         ThreadItemsPage(mixed, "older", "ignored"),
     ]
-    result = read(inspection, cursor="edge", fold_tools=True)
+    result = read(inspection, cursor="edge", folded_tools_version=2)
     assert result["tool_pages"] == [{"turn_id": "t", "cursor": "edge", "items": [["tool-2", "ok"]]}]
     assert [row["itemId"] for row in result["turns"]] == [entry.item["id"] for entry in reversed(mixed)]
     assert (result["older_cursor"], result["newer_cursor"]) == ("older", "back")
+
+
+def test_v1_fold_keeps_a_mixed_reasoning_page_ordinary(inspection):
+    inspection.list_items.return_value = ThreadItemsPage([
+        ThreadItemEntry("t", {"type": "reasoning", "id": "empty"}),
+        ThreadItemEntry("t", {"type": "commandExecution", "id": "call", "command": "cmd", "status": "completed"}),
+    ], "older", "back")
+    page = read(inspection, cursor="edge", folded_tools_version=1)
+    assert "tool_pages" not in page
+    assert [row["itemId"] for row in page["turns"]] == ["call", "empty"]

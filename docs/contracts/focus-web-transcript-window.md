@@ -114,8 +114,8 @@ user messages and other semantic items do. Groups stay within a source turn. A s
 
 Tool grouping and transcript rows share the same blank-assistant-content predicate.
 Items containing only blank text/reasoning retain their source-row identity for later
-stream deltas, but mount no content and occupy no height, margins or offscreen placeholder
-space. Metadata such as timestamps does not make an empty item visible. Real content
+stream deltas, with no mounted content, visibility or size observers, height, margins or
+offscreen placeholder space. Metadata such as timestamps does not make an empty item visible. Real content
 restores presentation and measurement under the same identity. Clearing content discards
 its old measurement. User messages, tools
 and other semantic items are not hidden based on blank prose.
@@ -131,10 +131,13 @@ use the existing approximately 900px overscan. Resolve keyboard focus and readin
 when a group's leader changes.
 
 A cold open delivers an ordinary head first. A visible shortfall can then request `fill=true` with
-`X-Focus-Folded-Tools: 1`. The server follows the supplied older cursor for at most 14 upstream
-reads of up to 40 items each, including size retries. A source page qualifies for compact `tool_pages`
-only if every source item projects to one tool from the same turn. Each compact page carries the actual
-request cursor, turn_id and chronological `[itemId, status]` pairs. A mixed page supplies ordinary rows.
+`X-Focus-Folded-Tools: 2`. The server follows the supplied older cursor for at most 14 upstream
+reads of up to 40 items each, including size retries. The scan can continue across a source page when
+each item is a verified tool or empty reasoning from the same turn. Compact `tool_pages` carry the actual
+request cursor, turn_id and all source items in chronological order. Tools use `[itemId, status]` and
+empty reasoning uses `[itemId, null]`. Tool counts and statuses cover tools alone. A page of entirely
+empty reasoning preserves every identity and position. Version 1 compacts all-tool pages only.
+A page with visible reasoning, prose, other semantic items, or a turn boundary supplies ordinary rows.
 The response orders `turns` first and compact pages chronologically after them. When a budget ends the
 scan before the preceding prose, return the verified portion and its continuation. The selected thread,
 document, observation and connection-generation checks apply to every request. Member IDs count toward
@@ -259,6 +262,8 @@ invalidation still clear the old window; late recovery cannot overwrite a new ta
 
 Clicking “Latest messages” rereads the server's latest page. Keep the already-read prefix only when the new page
 has an older cursor and its initial row IDs match the cached suffix in order, with no duplicate in the retained prefix.
+Empty reasoning retains the same source row ID in the live stream, ordinary history and compact pages.
+Its identity participates in this order check and continues to accept later deltas.
 Install the entire fresh page. A gap, order conflict or retired cache uses just the new page. A split source page
 can resume toward newer history from its exact last item. Retained rows keep their own read revisions.
 While following the tail, ordinary control refreshes preserve the read prefix under the same continuity rule, including a single cached page.
@@ -277,8 +282,8 @@ A pong on the current socket permits measuring its confirmed live window. After 
 authoritative reread, including one completed in the background. A full viewport needs no extra body read.
 Duplicate visibility and host signals share one allowance per background-to-foreground transition.
 Restore historical positions from their item anchor.
-While following a paginated transcript, refresh and fill use instant scroll positioning. Measuring the inserted prefix can temporarily shrink the scroll range and clamp the scroll position to the top.
-A reader following the tail stays at the end even if the content returns to its original height. Actual scroll input takes over immediately.
+While following a paginated transcript, refresh and fill use instant scroll positioning. Measuring rows during a live update, head confirmation or fill can temporarily shrink the scroll range.
+The reader stays at the end through that layout change, including when the position is clamped partway up and the original height returns before the scroll event. Actual scroll input takes over immediately.
 Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.

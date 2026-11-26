@@ -917,13 +917,14 @@ function onPanesScroll(): void {
   }
   if (top < lastScrollTop - 1 && dist > 1) {
     const restore = props.tailContext;
-    // Measuring a newly installed prefix can clamp scrollTop, then grow the
-    // range again before the browser delivers its scroll event. A collapse
-    // to zero can even restore the exact old range after follow frames settle.
-    // Actual input has already revoked the return in claimUserScrollAuthority.
-    const clampedFromTail = top <= 1 && Math.abs(lastScrollTop - lastFollowRange) <= 1;
-    if (following.value && restore && !restore.signal.aborted
-      && (clampedFromTail || stableFollowRaf || Math.abs(el.scrollHeight - el.clientHeight - lastFollowRange) > 1)) {
+    // Remeasuring rows can briefly clamp scrollTop at any height, then restore
+    // the old range before dispatching scroll. Input cancels queued follow
+    // writes first. A pending layout frame also covers live head confirmation.
+    const wasAtTail = Math.abs(lastScrollTop - lastFollowRange) <= 1;
+    const layoutFollowPending = props.continuousTranscript && wasAtTail && ordinaryFollowFrame.pending;
+    const restoringTail = restore && !restore.signal.aborted && ((top <= 1 && wasAtTail)
+      || stableFollowRaf || Math.abs(el.scrollHeight - el.clientHeight - lastFollowRange) > 1);
+    if (following.value && (layoutFollowPending || restoringTail)) {
       scheduleFollow();
     } else {
       following.value = false;

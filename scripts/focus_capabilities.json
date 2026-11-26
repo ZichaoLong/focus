@@ -1288,6 +1288,10 @@
           "symbol": "captureTranscriptScrollAnchor"
         },
         {
+          "path": "web/src/focus/conversationFollowFrame.ts",
+          "symbol": "createConversationFollowFrame"
+        },
+        {
           "path": "bot/web_runtime/reply_metadata.py",
           "symbol": "project_reply_metadata"
         },
@@ -1404,6 +1408,7 @@
           "runner": "vitest",
           "targets": [
             "web/test/conversation-history-navigation-surface.test.ts",
+            "web/test/conversation-follow-frame.test.ts",
             "web/test/prompt-navigation-intent.test.ts",
             "web/test/focus-turn-window-settings-surface.test.ts",
             "web/test/focus_client/owners/browser-turn-window.test.ts",

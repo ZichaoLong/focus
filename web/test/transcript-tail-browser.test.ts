@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { meta, registration } from './focus-api-test-support';
 import { snapshot, thread } from './focus_client/support';
 import type { ChatTurn } from '../src/types';
+import type { FocusTranscriptToolPage } from '../src/focus/types';
 
 let server: ViteDevServer, browser: Browser, url: string;
 const cacheDir = mkdtempSync(join(tmpdir(), 'focus-transcript-tail-'));
@@ -32,6 +33,10 @@ function tools(start: number, count: number): ChatTurn[] {
     return { ...reply(id, ''), contentDeferred: true, tools: [tool], blocks: [{ kind: 'tool', tool }] };
   });
 }
+function emptyReasoning(itemId: string): ChatTurn {
+  return { id: 'turn-1:item:' + itemId + ':0', rawTurnId: 'turn-1', itemId, role: 'assistant', no: 0,
+    text: '', blocks: [{ kind: 'thinking', itemId, thinking: '' }] };
+}
 type Fixture = { page: Page; reads: string[]; pings(): number; update(row: ChatTurn): void; disconnect(): void; refuseNextCursor(): void };
 type FixtureOptions = {
   onFill?(cursor: number): Promise<void> | void;
@@ -40,7 +45,7 @@ type FixtureOptions = {
   running?: boolean;
   fromProfile?: boolean;
   height?: number;
-  compactPages?: boolean;
+  compactPages?: ChatTurn[][];
 };
 async function fixture(width: number, prosePage: number, run: (f: Fixture) => Promise<void>,
   { onFill, pages, mobileTabs, running, fromProfile, height, compactPages }: FixtureOptions = {}) {
@@ -75,7 +80,7 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
       archived: false, limit: 100, truncated: false, threads: [source] };
     else if (pathname.endsWith('/transcript')) {
       let rows: ChatTurn[] = [], older: string | null = null;
-      let toolPages: { turn_id: string; cursor: string; items: string[][] }[] | undefined;
+      let toolPages: FocusTranscriptToolPage[] | undefined;
       const view = query.get('view') ?? 'transcript', wireCursor = query.get('cursor');
       const cursor = wireCursor ? Number(wireCursor) - cursorBase : 0;
       const anchor = query.get('item_id');
@@ -92,22 +97,21 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
           return route.fulfill({ status: 409, json: { error: { code: 'stale_thread_read', message: 'Read superseded' } } });
         }
         if (compactPages && fill) {
-          expect(route.request().headers()['x-focus-folded-tools']).toBe('1');
+          expect(route.request().headers()['x-focus-folded-tools']).toBe('2');
           rows = [reply('earlier', 'Previous discussion.\n\n'.repeat(60))];
-          toolPages = [[1, 20], [21, 40]].map(([start, size]) => ({
-            turn_id: 'turn-1', cursor: 'members-' + start,
-            items: tools(start!, size!).map(row => [row.itemId!, 'ok']),
+          toolPages = compactPages.map((members, index) => ({
+            turn_id: 'turn-1', cursor: 'members-' + index,
+            items: members.map(row => [row.itemId!, row.tools?.[0]?.status ?? null]),
           }));
         } else if (compactPages && wireCursor?.startsWith('members-')) {
-          const start = Number(wireCursor.slice(8));
-          rows = tools(start, start === 1 ? 20 : 40);
+          rows = compactPages[Number(wireCursor.slice(8))]!;
         } else if (pages) rows = pages[cursor]!;
         else if (!cursor) rows = [...tools(1, 17), reply('middle', reads.length === 1 ? 'First read.' : 'Confirmed latest.'), ...tools(18, 22)];
         else if (cursor === prosePage) rows = [reply('earlier', 'Previous discussion.\n\n'.repeat(60))];
         else rows = tools(-40 * cursor, 40);
         older = cursor < prosePage ? String(cursorBase + cursor + 1) : null;
       }
-      payload = { runtime_epoch: 'epoch-1', revision: 1, thread_id: source.id, turn_id: query.get('turn_id'), view, target_pending: false,
+      payload = { runtime_epoch: 'epoch-1', revision, thread_id: source.id, turn_id: query.get('turn_id'), view, target_pending: false,
         turns: rows, ...(toolPages ? { tool_pages: toolPages } : {}), older_cursor: older, newer_cursor: anchor ? 'after-anchor' : cursor ? 'forward-' + cursor : null, full_text: null };
     } else if (/\/api\/threads\/thread-1(?:\/open)?$/.test(pathname)) {
       const unknown = { value: '', source: 'unknown' };
@@ -401,21 +405,78 @@ it.each(['wheel', 'host-pause'])('retires an in-flight optional page on %s', asy
   } finally { release(); }
 }, 45_000);
 
-it('opens a verified cold tool range one member page at a time', async () => {
+it.each([false, true])('opens verified member pages with interleaved empty reasoning: %s', async mixed => {
+  const compactPages = [tools(1, 20), tools(21, 40)];
+  if (mixed) {
+    compactPages[0]![4] = emptyReasoning('empty-middle');
+    compactPages[1]![0] = emptyReasoning('empty-first');
+  }
+  const hidden = Number(mixed);
   await fixture(1280, 1, async ({ page, reads }) => {
     await page.locator('[data-turn-id*=":earlier:"]').waitFor({ state: 'attached' });
     const header = page.locator('.tool-group-head');
-    expect(await header.innerText()).toContain('100 tool calls');
-    expect(await page.locator('.transcript-row').count()).toBe(1);
+    const rows = page.locator('.transcript-row:not([hidden])');
+    expect(await header.innerText()).toContain((100 - 2 * hidden) + ' tool calls');
+    expect(await rows.count()).toBe(1);
     expect(reads).toEqual(['head', 'fill-1']);
     await header.click();
-    await expect.poll(() => page.locator('.transcript-row').count()).toBe(61);
+    await expect.poll(() => rows.count()).toBe(61 - hidden);
+    expect(await page.locator('.tool-member-page').innerText()).toContain(String(40 - hidden));
     await page.locator('.tool-member-page').click();
-    await expect.poll(() => page.locator('.transcript-row').count()).toBe(101);
-    expect(reads).toEqual(['head', 'fill-1', 'older-members-1', 'older-members-21']);
+    await expect.poll(() => rows.count()).toBe(101 - 2 * hidden);
+    expect(reads).toEqual(['head', 'fill-1', 'older-members-0', 'older-members-1']);
     await header.click();
-    expect(await page.locator('.transcript-row').count()).toBe(1);
-  }, { pages: [tools(61, 40)], compactPages: true });
+    expect(await rows.count()).toBe(1);
+  }, { pages: [tools(61, 40)], compactPages });
+}, 45_000);
+
+it.each([1280, 390])('keeps readable history while confirming a live tool burst at width %s', async width => {
+  const previous = reply('previous', 'Previous readable discussion.\n\n'.repeat(60));
+  const burst: ChatTurn[] = [];
+  for (const [i, tool] of tools(1, 66).entries()) {
+    if (i >= 43 && i < 50) tool.tools![0]!.status = 'error';
+    burst.push(tool);
+    if (Math.floor((i + 1) * 39 / 66) !== Math.floor(i * 39 / 66)) burst.push(emptyReasoning('think-' + i));
+  }
+  burst.push(reply('progress', 'Progress update.'), ...tools(67, 4));
+  const pages = [[...tools(-39, 39), previous]];
+  await fixture(width, 1, async ({ page, reads, update }) => {
+    await expectVisibleTail(page);
+    pages[0] = burst.slice(-40).map(row => row.itemId === 'progress' ? reply('progress', 'Confirmed progress.') : row);
+    for (const row of burst) update(row);
+    await expect.poll(() => reads.filter(read => read === 'head').length, { timeout: 10_000 }).toBe(2);
+    await page.locator('.md').getByText('Confirmed progress.', { exact: true }).waitFor();
+    const groups = page.locator('.tool-group-head');
+    await expect.poll(() => groups.allTextContents()).toEqual([
+      expect.stringContaining('39 tool calls loaded'), expect.stringContaining('66 tool calls'),
+      expect.stringContaining('4 tool calls'),
+    ]);
+    expect(await groups.nth(1).innerText()).toContain('7 failed');
+    expect(await page.locator('[data-turn-id="turn-1:item:previous:0"]').count()).toBeGreaterThan(0);
+    await expectVisibleTail(page);
+    expect(reads).toEqual(['head', 'head']);
+
+    // A shorter control can clamp a nonzero scrollTop while the refresh
+    // replaces it. Restore its exact height before the native scroll event.
+    const clamp = await page.locator('.panes').evaluate(async pane => {
+      for (let i = 0; i < 8; i++) await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const button = pane.querySelector('.top-sentinel-btn')!;
+      const shorter = document.createElement('span');
+      shorter.style.height = (button.getBoundingClientRect().height - 8) + 'px';
+      const start = pane.scrollTop;
+      button.replaceWith(shorter);
+      const top = pane.scrollTop;
+      shorter.replaceWith(button);
+      return { start, top };
+    });
+    expect(clamp.top).toBeGreaterThan(0);
+    expect(clamp.top).toBeLessThan(clamp.start - 1);
+    await expect.poll(() => page.locator('.panes').evaluate(pane => pane.scrollTop)).toBe(clamp.start);
+    await expectVisibleTail(page);
+    if (width < 500) await swipeEarlier(page);
+    else { await page.locator('.panes').hover(); await page.mouse.wheel(0, -180); }
+    await page.locator('.panes:not(.is-following)').waitFor();
+  }, { pages, running: true });
 }, 45_000);
 
 it('rearms after new prose fills the viewport and a later edit makes it short again', async () => {

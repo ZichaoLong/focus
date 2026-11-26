@@ -580,6 +580,7 @@ def project_turns(
     turns: Iterable[dict[str, Any]],
     *,
     defer_tool_output: bool = False,
+    retain_empty_reasoning: bool = False,
     attachment_url_for_path: Callable[[str], str] | None = None,
     attachment_url_for_id: Callable[[str], str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -805,7 +806,7 @@ def project_turns(
                     if str(part or "").strip()
                 )
                 item_id = str(raw_item.get("id", "") or "")
-                if reasoning or (turn_status == "inProgress" and item_id):
+                if reasoning or (item_id and (retain_empty_reasoning or turn_status == "inProgress")):
                     _append_assistant_block(
                         {
                             "kind": "thinking",

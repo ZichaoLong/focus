@@ -43,12 +43,15 @@ describe('conversation ordinary follow frame', () => {
     const modes: ConversationFollowMode[] = [];
     const frame = createFrameHarness((mode) => modes.push(mode));
 
+    expect(frame.owner.pending).toBe(false);
     frame.owner.request('instant');
     frame.owner.request('smooth');
     frame.owner.request('instant');
 
     expect(frame.callbacks).toHaveLength(1);
+    expect(frame.owner.pending).toBe(true);
     frame.runNext();
+    expect(frame.owner.pending).toBe(false);
     expect(modes).toEqual(['smooth']);
   });
 
@@ -73,8 +76,10 @@ describe('conversation ordinary follow frame', () => {
     const [cancelledId, lateCallback] = frame.callbacks.entries().next().value as [number, () => void];
 
     frame.owner.cancel();
+    expect(frame.owner.pending).toBe(false);
     frame.owner.request('smooth');
     lateCallback();
+    expect(frame.owner.pending).toBe(true);
 
     expect(frame.cancelled).toEqual([cancelledId]);
     expect(modes).toEqual([]);

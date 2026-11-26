@@ -4,6 +4,7 @@ type RequestFrame = (callback: () => void) => number;
 type CancelFrame = (frameId: number) => void;
 
 export type ConversationFollowFrame = {
+  readonly pending: boolean;
   request: (mode?: ConversationFollowMode) => void;
   cancel: () => void;
 };
@@ -56,5 +57,5 @@ export function createConversationFollowFrame(
     cancelFrame(frameId);
   }
 
-  return { request, cancel };
+  return { get pending() { return scheduledFrame !== null; }, request, cancel };
 }

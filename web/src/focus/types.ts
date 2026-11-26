@@ -818,7 +818,8 @@ export interface FocusTranscriptQuery {
 export interface FocusTranscriptToolPage {
   turn_id: string;
   cursor: string;
-  items: [string, ToolCall['status']][];
+  /** Null preserves a source reasoning item with no displayable text. */
+  items: [string, ToolCall['status'] | null][];
 }
 
 export interface FocusTranscriptPage extends FocusCoordinates {

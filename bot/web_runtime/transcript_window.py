@@ -11,7 +11,7 @@ import json
 from dataclasses import dataclass, replace
 from typing import Any, Callable
 
-from bot.adapters.base import ThreadItemsPage
+from bot.adapters.base import ThreadItemEntry, ThreadItemsPage
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.document_registry import WebDocumentOperationReceipt
 from bot.web_runtime.mobile_records import reading_rows
@@ -52,7 +52,7 @@ class WebThreadTranscriptPreparation:
     page_limit: int = TRANSCRIPT_PAGE_ITEMS
     live_item: dict[str, Any] | None = None
     include_reading_mark: bool = False
-    fold_tools: bool = False
+    folded_tools_version: int = 0
 
     @property
     def reading_mark(self) -> str:
@@ -127,6 +127,7 @@ def project_transcript_item(
     projected = project_turns(
         [{"id": turn_id, "status": status, "items": [source]}],
         defer_tool_output=not full,
+        retain_empty_reasoning=True,
         attachment_url_for_path=attachment_url_for_path,
         attachment_url_for_id=attachment_url_for_id,
     )
@@ -172,6 +173,25 @@ def project_transcript_item(
     return projected
 
 
+def _folded_members(entries: list[ThreadItemEntry], rows: list[dict[str, Any]], version: int) -> list[list[str | None]]:
+    """One ordered receipt per source item. Null identifies an empty reasoning block."""
+    if not entries or len(entries) != len(rows):
+        return []
+    members = []
+    for entry, row in zip(entries, rows, strict=True):
+        item_id = entry.item.get("id")
+        if entry.turn_id != entries[0].turn_id or row["itemId"] != item_id:
+            return []
+        if row.get("contentDeferred") and len(row["tools"]) == 1:
+            members.append([item_id, row["tools"][0]["status"]])
+        elif (version == 2 and entry.item.get("type") == "reasoning"
+              and row["blocks"] == [{"kind": "thinking", "itemId": item_id, "thinking": ""}]):
+            members.append([item_id, None])
+        else:
+            return []
+    return members
+
+
 def read_transcript_window(
     prepared: WebThreadTranscriptPreparation,
     *,
@@ -182,12 +202,11 @@ def read_transcript_window(
 ) -> dict[str, Any]:
     options = dict(remaining=remaining, attachment_url_for_path=attachment_url_for_path,
                    attachment_url_for_id=attachment_url_for_id)
-    if not prepared.fold_tools:
+    if not prepared.folded_tools_version:
         return _read_transcript_page(prepared, list_thread_items=list_thread_items, **options)
 
-    # Only all-tool source pages can be summarized. The first mixed page
-    # supplies normal rows and stops the scan. Cursor and item order are kept
-    # so expansion can replay precisely one original bounded request.
+    # Every compact member has a verified source position. Return the first
+    # page with readable content in full, along with the newer compact pages.
     class ReadLimit(Exception):
         pass
 
@@ -352,13 +371,7 @@ def _read_transcript_page(
         "newer_cursor": page.backwards_cursor if direction == "desc" else page.next_cursor,
         "full_text": None,
     }
-    if (prepared.fold_tools and entries and len(entries) == len(turns)
-            and all(row.get("contentDeferred") and len(row["tools"]) == 1
-                    and row["itemId"] == entry.item.get("id") and entry.turn_id == entries[0].turn_id
-                    for row, entry in zip(turns, entries, strict=True))):
-        members = [[row["itemId"], row["tools"][0]["status"]] for row in turns]
-        if len({item for item, _ in members}) != len(members):
-            raise WebRuntimeError("Duplicate transcript item.", code="transcript_protocol_error", status=502)
+    if prepared.folded_tools_version and (members := _folded_members(entries, turns, prepared.folded_tools_version)):
         payload.update(turns=[], tool_pages=[{"turn_id": entries[0].turn_id, "cursor": cursor, "items": members}])
     if prepared.view == "mobile_records":
         first = entries[0] if entries else None

@@ -223,14 +223,14 @@ class WebThreadInspectionService:
         view: str = "transcript",
         source_cursor: str | None = None,
         include_reading_mark: bool = False,
-        fold_tools: bool = False,
+        folded_tools_version: int = 0,
     ) -> WebThreadTranscriptPreparation:
-        if direction not in {"asc", "desc"} or type(full) is not bool:
+        if direction not in {"asc", "desc"} or type(full) is not bool or folded_tools_version not in {0, 1, 2}:
             raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
         if ((item_id and not turn_id) or (full and not item_id)
                 or view not in {"transcript", "prompts", "mobile_records"}
                 or (view == "prompts" and (turn_id or item_id or full or source_cursor or direction != "desc"))
-                or (fold_tools and (view != "transcript" or not cursor or direction != "desc" or turn_id or full or source_cursor))
+                or (folded_tools_version and (view != "transcript" or not cursor or direction != "desc" or turn_id or full or source_cursor))
                 or (source_cursor and (not full or cursor))):
             raise WebRuntimeError("Invalid transcript locator.", code="invalid_transcript_query", status=400)
         turn_id = self._require_locator(turn_id, field="turn_id") if turn_id is not None else None
@@ -248,7 +248,7 @@ class WebThreadInspectionService:
             document=document, observation=observation,
             connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
             runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
-            view=view, source_cursor=source_cursor, include_reading_mark=include_reading_mark, fold_tools=fold_tools,
+            view=view, source_cursor=source_cursor, include_reading_mark=include_reading_mark, folded_tools_version=folded_tools_version,
             live_item=self._ports.live_transcript_item(thread_id, turn_id, item_id)
             if full and turn_id and item_id else None,
         )

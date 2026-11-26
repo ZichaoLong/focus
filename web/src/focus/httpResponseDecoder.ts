@@ -830,7 +830,7 @@ function isTranscriptToolPage(value: unknown): value is FocusTranscriptToolPage 
     && isNonEmptyTrimmedString(value.turn_id) && isNonEmptyTrimmedString(value.cursor)
     && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 40
     && value.items.every(member => Array.isArray(member) && member.length === 2
-      && isNonEmptyTrimmedString(member[0]) && isFocusWireToolStatus(member[1]));
+      && isNonEmptyTrimmedString(member[0]) && (member[1] === null || isFocusWireToolStatus(member[1])));
 }
 
 export const decodeFocusTranscriptPage: FocusHttpDecoder<FocusTranscriptPage> = (value) => {
