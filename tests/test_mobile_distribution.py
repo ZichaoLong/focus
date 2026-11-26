@@ -2,6 +2,7 @@ from dataclasses import asdict
 import hashlib
 import json
 import os
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -56,6 +57,51 @@ def test_git_cache_pins_replaced_bytes_and_reports_offline(repository, tmp_path)
     cache.apk(second.sha256).write_bytes(b"wrong!")
     with pytest.raises(ValueError, match="differs"):
         cache.check("main")
+
+
+def test_check_recovers_from_legacy_shallow_lock(repository, tmp_path):
+    previous = publish(repository, b"previous")
+    directory = tmp_path / "cache"
+    directory.mkdir()
+    git(directory, "init", "-q", "--bare", "git")
+    legacy = directory / "git"
+    git(legacy, "fetch", "-q", "--depth=1", repository.as_uri(), "refs/heads/main")
+    (legacy / "shallow.lock").write_bytes((legacy / "shallow").read_bytes())
+    (directory / "main.json").write_text(json.dumps(asdict(previous)))
+    (directory / (previous.sha256 + ".apk")).write_bytes(b"previous")
+
+    current = publish(repository, b"current")
+    cache = MobileDistribution(repository.as_uri(), directory)
+    result = cache.check("main")
+    assert result["release"] == asdict(current) and not result["stale"]
+    assert cache.apk(previous.sha256).read_bytes() == b"previous"
+    assert cache.apk(current.sha256).read_bytes() == b"current"
+
+
+def test_timed_out_fetch_keeps_download_and_next_check_recovers(repository, tmp_path, monkeypatch):
+    cache = MobileDistribution(repository.as_uri(), tmp_path / "cache")
+    previous = publish(repository, b"previous")
+    first = cache.check("main")
+    current = publish(repository, b"current")
+    real_run = subprocess.run
+
+    def timeout_fetch(command, **kwargs):
+        if "fetch" in command:
+            repo = Path(command[command.index("--git-dir") + 1])
+            (repo / "shallow.lock").write_bytes(b"interrupted")
+            with pytest.raises(DistributionUnavailable, match="check in progress"):
+                MobileDistribution(cache.source, cache.directory).check("stable")
+            assert (repo / "shallow.lock").is_file()
+            assert cache.apk(previous.sha256).read_bytes() == b"previous"
+            raise subprocess.TimeoutExpired(command, 50)
+        return real_run(command, **kwargs)
+
+    with monkeypatch.context() as m:
+        m.setattr(subprocess, "run", timeout_fetch)
+        assert cache.check("main") == {**first, "stale": True}
+    assert cache.apk(previous.sha256).read_bytes() == b"previous"
+    result = cache.check("main")
+    assert result["release"] == asdict(current) and not result["stale"]
 
 
 def test_invalid_published_bytes_do_not_replace_verified_channel(repository, tmp_path):

@@ -50,6 +50,8 @@ An explicit Android publication writes `channels/{main|stable}.json` and `androi
 
 An instance reads `FOCUS_MOBILE_DIST_URL` (HTTPS or SSH Git URL), defaulting to `https://github.com/ZichaoLong/focus-mobile-dist.git`. Authenticated, CSRF- and document-protected `POST /api/mobile/android/{channel}/check` accepts an empty object and returns release, checked_at and stale. An unpublished channel has a null release. Network failure marks a cached release stale; invalid artifacts never replace the channel. Source-specific durable files live under mobile-updates in the Focus data root, outside server install operations. Authenticated `GET /api/mobile/android/apk/{digest}` serves exact cached bytes. Phones contact their instance and grant the installer temporary read access only to a verified APK. Signing keys stay with the publisher.
 
+Only one check per source can run at a time. Each fetch runs in a separate directory, and subsequent checks reuse its Git data only after it succeeds. Users can retry after a fetch timeout or an interrupted service process, including when an older version left a Git lock behind. Previously verified APKs remain available for download during a check.
+
 ## Managing server updates across entries
 
 Manage instances → Server updates opens a bundled local dashboard. Each request uses a short-lived `/focus-update.html` document in the entry's own Web profile. It registers with a separate client hint, calls same-origin update endpoints and is released after the call. It has no native bridge or conversation WebSocket. Only the restricted probe can answer matching saved Basic challenges. Login and reauthorization take place in the individual entry. Older servers can upgrade from their instance settings.

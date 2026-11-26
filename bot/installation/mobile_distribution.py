@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -78,11 +79,12 @@ class MobileDistribution:
     def __init__(self, source: str, directory: Path):
         self.source = source
         self.directory = directory
-        self.git_dir = directory / "git"
+        # Older versions fetched directly into "git", which may still have a writer.
+        self.git_dir = directory / "ready.git"
 
-    def _git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+    def _git(self, *args: str, check: bool = True, git_dir: Path | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["git", "--git-dir", str(self.git_dir), *args], check=check, timeout=50,
+            ["git", "--git-dir", str(git_dir or self.git_dir), *args], check=check, timeout=50,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
@@ -122,11 +124,26 @@ class MobileDistribution:
             finally:
                 release_file_lock(lock)
 
+    def _fetch(self) -> bool:
+        # The source lock excludes other checks. A killed checker can leave a
+        # workspace behind, but no later Git process will reuse its path.
+        for abandoned in self.directory.glob("git-fetch-*"):
+            shutil.rmtree(abandoned, ignore_errors=True)
+        with tempfile.TemporaryDirectory(dir=self.directory, prefix="git-fetch-", ignore_cleanup_errors=True) as work:
+            repo = Path(work) / "repo.git"
+            if self.git_dir.exists():
+                self.git_dir.rename(repo)
+            try:
+                self._git("init", "--bare", "--quiet", git_dir=repo)
+                self._git("fetch", "--quiet", "--no-tags", "--no-auto-gc", "--depth=1",
+                          self.source, "+refs/heads/main:refs/heads/main", git_dir=repo)
+            except (OSError, subprocess.SubprocessError):
+                return False
+            repo.rename(self.git_dir)
+        return True
+
     def _sync(self, channel: str) -> dict:
-        try:
-            self._git("init", "--bare", "--quiet")
-            self._git("fetch", "--quiet", "--no-tags", "--depth=1", self.source, "refs/heads/main")
-        except (OSError, subprocess.SubprocessError):
+        if not self._fetch():
             return self._cached(channel, True)
         channel_path = f"channels/{channel}.json"
         index = self.directory / f"{channel}.json"

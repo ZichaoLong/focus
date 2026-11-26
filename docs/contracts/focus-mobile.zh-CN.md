@@ -46,6 +46,8 @@ Android 宿主另提供 `android-update`。用户在抽屉选「关于 Focus Mob
 
 服务端读取独立的 `FOCUS_MOBILE_DIST_URL`（HTTPS 或 SSH Git URL），默认 `https://github.com/ZichaoLong/focus-mobile-dist.git`。已认证、带 CSRF 和文档身份的 `POST /api/mobile/android/{channel}/check` 接受空对象，按需同步，返回 release、checked_at、stale。未发布渠道返回空 release。网络中断时标记最后成功缓存；不将损坏内容提升为当前版本。缓存按发布源隔离在 Focus 数据目录的 mobile-updates 下，独立于服务端安装事务。已认证的 `GET /api/mobile/android/apk/{digest}` 从该源返回确切缓存文件。手机端不向 Git 源发请求；向安装器只授予私有缓存中已校验 APK 的临时读权限。签名密钥属于发布端。
 
+同一发布源同时只允许一项检查。每次拉取在独立目录中运行，成功后才复用其中的 Git 数据。拉取超时或服务进程中断后，可以再次点击「检查客户端更新」。旧版遗留的 Git 锁也不会阻塞重试。检查期间仍可下载上次校验过的 APK。
+
 ## 批量管理服务端
 
 「管理实例 → 服务端更新」由壳内置的本地页面汇总实例。每次请求仅打开一个短时管理文档 `/focus-update.html`，与该入口共用网页配置。独立管理文档使用专用 client hint，在同源注册后仅调用更新 API，处理完回收。它没有宿主桥接和业务 WebSocket。只在受限探针上响应已保存且匹配的 Basic 挑战，网页登录或新授权回到具体实例办理。旧服务端可从实例设置先升级。
