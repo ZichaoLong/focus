@@ -17,7 +17,7 @@ export function openSummaryPrintWindow(): {
   deliver(markdown: string, suggestedFilename: string, documentTitle: string): void;
   fail(): void;
 } | null {
-  if (hasMobileFeature('print')) {
+  if (hasMobileFeature('print') || hasMobileFeature('save')) {
     if (mobilePrintPreview.value) return null;
     const preview = shallowReactive<{ content: PrintPayload | null }>({ content: null });
     history.pushState({ ...history.state, focusSummaryPrint: true }, '');

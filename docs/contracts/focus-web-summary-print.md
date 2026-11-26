@@ -6,7 +6,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 The desktop conversation menu, sidebar session menu, narrow top export menu,
 narrow session switcher and reading-mode export menu at every viewport size offer
-both Export Q&A Markdown and Print / Save as PDF
+both Export Q&A Markdown and Save PDF or print
 when the existing `export` capability is available. Printing shares the busy
 gate with Markdown and thread-data exports.
 Filename dialogs and PDF default suggestions follow the
@@ -54,6 +54,12 @@ title and complete Q&A source.
   exceptions fall back to the entire original Markdown. An export read failure
   shows an error and never enables the print button.
 
+## Direct PDF saving
+
+Once the preview is ready, Save PDF directly generates an A4 document on the client from the complete selection and the current document title. The browser uses the shared file picker or download, and mobile hosts use their existing `save` file protocol. The click chooses the destination first. Cancelling leaves the preview available. Duplicate submissions are disabled during saving. Closing the preview releases its worker and staged mobile file. The UI distinguishes a completed write from handing a file to the browser download flow.
+
+The shared Web client loads the layout worker, WebAssembly and the font subsets used by this document from the instance on demand. Chinese prose is selectable and searchable. Code spans pages and tables repeat their headers. Formulas and Mermaid diagrams use the prepared preview graphics, and images use pixels already loaded by the preview. A failed graphic conversion retains its source or address and shows a notice. Missing glyphs produce a PDF with a visible placeholder notice. Desktop and mobile use the same path. Linux hosts provide the existing Q&A export and static assets.
+
 ## Printing and lifecycle
 
 `summaryPrintWindow.ts` synchronously opens the same-origin `?print=summary`
@@ -72,7 +78,7 @@ Keep the original tab open until content arrives, after which the preview can
 be used independently and printed repeatedly. Enable printing only after
 rendering and resource preparation finish.
 
-The button calls native `window.print()`. The browser owns printing, PDF saving,
+The System print button calls native `window.print()`. The browser owns printing, PDF saving,
 paper, scale and headers/footers. Neither its return nor `afterprint` proves a
 file was saved; cancelling permits retry. Provide instructions for desktop Save
 as PDF, Android Chrome Share → Print and iPhone Safari Share → Markup. Actual
@@ -80,7 +86,7 @@ menus vary with platform and browser version; do not promise universal mobile
 one-click downloads. Users can adjust landscape or scale for wide tables and
 long formulas; fonts and browsers need not produce identical pixels.
 
-With the negotiated mobile `print` capability, Web hands the complete export to `SummaryPrintApp` in the current document's memory. The preview occupies the visible and printable layout. The shell uses the WebView's system print adapter. Closing the preview or going back returns to the conversation. A reload requires a new export. [Mobile host contract](focus-mobile.md)
+With the negotiated mobile `save` or `print` capability, Web hands the complete export to `SummaryPrintApp` in the current document's memory. The preview occupies the visible and printable layout. Hosts offering `print` use the WebView's system print adapter for System print. Closing the preview or going back returns to the conversation. A reload requires a new export. [Mobile host contract](focus-mobile.md)
 
 Print diagnostics in the mobile preview start disabled. Once enabled by the user, the preview records the reported app and engine versions, print button taps, host bridge replies, host pause/resume signals, page visibility and window focus changes in memory. It retains the latest 40 events with elapsed times, the total number of taps and a count of discarded events. A bridge reply and visibility changes each describe a limited observation. The user confirms whether a panel appeared or a file was saved.
 

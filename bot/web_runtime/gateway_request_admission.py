@@ -35,6 +35,7 @@ from bot.web_runtime.auth import (
 )
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.html_preview import HTML_PREVIEW_CSP
+from bot.web_runtime.static_assets import StaticAssetResponse
 
 _SESSION_COOKIE_PREFIX = "focus_web_session_"
 _CSRF_HEADER = "X-Focus-Web-Csrf"
@@ -150,6 +151,15 @@ class WebGatewayRequestAdmission:
             "img-src 'self' data: blob:; media-src 'self' data: blob:; "
             "font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:"
         )
+        # Only the built, same-origin PDF worker compiles the local typesetter. Documents
+        # and user-supplied file responses retain their own script policy.
+        if (isinstance(response, StaticAssetResponse) and response.status == 200
+                and response.content_type in {"text/javascript", "application/javascript"}
+                and re.fullmatch(r"/assets/summaryPdf\.worker-[A-Za-z0-9_-]{8}\.js", request.path)):
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; "
+                "base-uri 'none'; frame-ancestors 'none'"
+            )
         if request.path == "/api/files/html-preview" and response.status == 200:
             # Only this authenticated, fixed bootstrap receives the preview
             # policy. Errors never receive this exception.

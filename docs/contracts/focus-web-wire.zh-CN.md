@@ -606,7 +606,7 @@ subscriber 和 runtime-holder 证据安全清理。它不 stop、archive、delet
 
 ### 静态资源交付
 
-Web production build 为至少 1 KiB 且压缩后更小的 JS、CSS、HTML 构建输出生成确定性的
+Web production build 为至少 1 KiB 且压缩后更小的 JS、CSS、HTML 和 WebAssembly 构建输出生成确定性的
 `.gz` 同名副本；原文件及其内容哈希 URL 保留，压缩副本随既有 wheel／安装包交付。
 构建使用 Node 内置 gzip，不增加浏览器或 Python 运行依赖，也不在请求到达时压缩。
 
@@ -615,6 +615,8 @@ Web production build 为至少 1 KiB 且压缩后更小的 JS、CSS、HTML 构�
 Content-Type 始终属于原资源；ETag、HEAD 和 Range 使用实际选择的 representation。
 gzip、identity 与 304 响应均携 `Vary: Accept-Encoding`。入口 HTML 及既有 notices 继续
 `no-store`，内容哈希资源继续长期 immutable 缓存。该路径不改变 API JSON 压缩或用户文件下载。
+
+带构建哈希的客户端 PDF worker 脚本使用独立的 CSP，可以编译同源的 WebAssembly 排版资源。该策略仅用于实际存在的 worker JavaScript 文件。
 
 ## 7. 变更与验证纪律
 

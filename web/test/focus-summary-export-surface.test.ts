@@ -30,8 +30,8 @@ describe('Focus Q&A Markdown export surface', () => {
     expect(actions).toContain('(id, selection) => client.exportThreadSummary(id, selection)');
     expect(actions).toContain('client.summaryExporting.value || client.threadDataExporting.value');
     expect(actions).toContain("preparing: 'focus.summaryExportPreparing'");
-    expect(actions).toContain("import { downloadBlob } from '../lib/download';");
-    expect(actions).toContain('downloadBlob(blob, filename);');
+    expect(actions).toContain('saveExportBlob(destination, download, filename)');
+    expect(source('../src/focus/browserFileSave.ts')).toContain('downloadBlob(blob, filename)');
   });
 
   it('keeps the Q&A export but removes the misleading loaded-window copy actions', () => {

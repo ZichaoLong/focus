@@ -1,4 +1,5 @@
-import { hasMobileFeature, chooseMobileFile, type MobileFileDestination } from '../lib/mobileHost';
+import { downloadBlob } from '../lib/download';
+import { hasMobileFeature, chooseMobileFile, saveMobileFile, type MobileFileDestination } from '../lib/mobileHost';
 /** Shared native save-picker policy; callers own content and fallback UX. */
 export type FileDestination = MobileFileDestination | { kind: 'download' } | { kind: 'file'; handle: FileSystemFileHandle };
 type FilePickerType = { description: string; accept: Record<string, string[]> };
@@ -63,5 +64,26 @@ export async function saveFileResponse(
   } finally {
     await reader.cancel().catch(() => {});
     reader.releaseLock();
+  }
+}
+
+export async function saveExportBlob(destination: FileDestination, blob: Blob, filename: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  if (destination.kind === 'mobile') return saveMobileFile(new Response(blob), signal);
+  if (destination.kind === 'download') {
+    downloadBlob(blob, filename);
+    return;
+  }
+  // Do not open a writable stream until the complete export is available.
+  const stream = await destination.handle.createWritable();
+  try {
+    signal?.throwIfAborted();
+    await stream.write(blob);
+    signal?.throwIfAborted();
+    await stream.close();
+  } catch (error) {
+    // Discard staged writes where possible, preserving the original failure.
+    await stream.abort().catch(() => {});
+    throw error;
   }
 }

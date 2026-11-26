@@ -4,7 +4,7 @@
 
 ## 范围与内容
 
-所有问答 Markdown 和打印／另存为 PDF 入口共用 `FocusThreadActions.vue` 的两项独立选择：
+所有问答 Markdown 和保存 PDF 或打印 入口共用 `FocusThreadActions.vue` 的两项独立选择：
 范围 `all`（默认）、`last_turn`、`selected`；内容 `qa`（默认）、`final_answers`、`prompts`。
 JSONL 仍是独立的整线程数据导出。
 

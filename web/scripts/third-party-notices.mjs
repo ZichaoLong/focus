@@ -41,6 +41,9 @@ export const NOTICE_FILENAMES = Object.freeze({
 // as ordinary JS module paths.  Keep the reason explicit so a future icon or
 // font replacement cannot disappear from the legal inventory unnoticed.
 const EXPLICIT_ASSET_PACKAGES = Object.freeze([
+  { name: 'takumi-pdf', reason: 'local PDF export worker and WebAssembly typesetter' },
+  { name: '@fontsource-variable/noto-sans-sc', reason: 'PDF export CJK font subsets' },
+  { name: '@fontsource-variable/noto-emoji', reason: 'PDF export emoji font subsets' },
   { name: 'pdfjs-dist', reason: 'self-hosted PDF worker, CMaps, standard fonts and JavaScript image decoders' },
   {
     name: '@fontsource-variable/inter',
@@ -95,6 +98,7 @@ const KNOWN_LICENSE_EXPRESSIONS = new Set([
   'OFL-1.1',
   'Unlicense',
   'MPL-2.0 OR Apache-2.0',
+  'MIT OR Apache-2.0',
 ]);
 
 function sha256(value) {
@@ -213,6 +217,11 @@ function packageLicenseFiles(packageDir) {
 }
 
 function readPackageLicenseDocuments(packageDir, packageDisplayName) {
+  if (packageDisplayName === 'takumi-pdf@0.21.3' || packageDisplayName === '@takumi-rs/helpers@2.22.1') {
+    // The npm tarballs omit the upstream license files and the WASM's bundled notices.
+    const source = 'provenance/takumi-pdf-0.21.3-NOTICES.txt';
+    return [{ source, text: readText(path.join(WEB_ROOT, source)) }];
+  }
   const files = packageLicenseFiles(packageDir);
   if (packageDisplayName.startsWith('pdfjs-dist@')) files.push(...PDFJS_ASSET_LICENSES);
   return files.map((name) => ({

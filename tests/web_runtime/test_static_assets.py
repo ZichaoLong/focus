@@ -45,6 +45,16 @@ class StaticAssetDeliveryTests(WebGatewayHarness):
                     if compressed:
                         self.assertEqual(gzip.decompress(body), self.source)
 
+    async def test_only_the_packaged_pdf_worker_can_compile_wasm(self):
+        worker = self.asset.with_name('summaryPdf.worker-aB1x_2-3.js')
+        worker.write_text('self.onmessage = () => {};')
+        for path, allowed in [(f'/assets/{worker.name}', True), ('/assets/app-123.js', False),
+                              ('/assets/summaryPdf.worker-12345678.js', False), ('/', False)]:
+            async with self.session.get(self.endpoint + path) as response:
+                policy = response.headers.get('Content-Security-Policy', '')
+                self.assertEqual("'wasm-unsafe-eval'" in policy, allowed)
+                self.assertNotIn("'unsafe-eval'", policy)
+
     async def test_validators_and_head_use_the_selected_representation(self):
         etags = {}
         for coding, body in (('identity', self.source), ('gzip', self.compressed)):

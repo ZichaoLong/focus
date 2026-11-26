@@ -27,6 +27,10 @@ async def system_control(adb, matches):
 async def save_pdf(adb):
     button = await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/print_button")
     tap(adb, button)
+    return await save_document(adb)
+
+
+async def save_document(adb):
     field = await system_control(adb, lambda n: "documentsui" in n.get("package", "") and n.get("class") == "android.widget.EditText")
     filename = "focus-print-" + uuid4().hex + ".pdf"
     tap(adb, field)
@@ -72,7 +76,7 @@ async def run(args):
         await wait_for(ws, "!!" + item)
         await evaluate(ws, item + ".click()")
         await click_web(ws, "button[form=focus-export-options]:enabled")
-        button = "#focus-mobile-print .summary-print-actions button:first-of-type:enabled"
+        button = "#focus-mobile-print button.system-print:enabled"
         notice = "document.querySelector('#focus-mobile-print .summary-print-error')"
         content = "document.querySelector('#focus-mobile-print .summary-print-content').innerText"
         diagnostic = "#focus-mobile-print .summary-print-diagnostic"
@@ -88,6 +92,15 @@ async def run(args):
 
         try:
             adb("shell", "pm", "set-user-restriction", *policy, "1")
+            # The bridge's synchronous prompt returns after DocumentsUI closes.
+            await ws.send_json({"id": 50, "method": "Runtime.evaluate", "params": {
+                "expression": "document.querySelector('#focus-mobile-print button.save-pdf:enabled').click()",
+                "userGesture": True,
+            }})
+            direct_text, _ = await save_document(adb)
+            assert "Reading position" in direct_text
+            await wait_for(ws, "!!document.querySelector('#focus-mobile-print button.save-pdf:enabled')")
+            assert await evaluate(ws, f"{report}.attempts") == 0
             await click_web(ws, button)
             await wait_for(ws, f"!!{notice}?.offsetHeight")
             assert await evaluate(ws, content) == body
@@ -116,7 +129,7 @@ async def run(args):
             events = {r["event"] for r in rows if r["attempt"] == attempt and r["source"] == source}
             assert {"request", "adapter-created", "job-returned", "start", "layout", "write", "finish"} <= events, events
         assert "Reading position" not in json.dumps(snapshot) and await evaluate(ws, content) == body
-        print("Read back the conversation PDF and one-page native PDF. The report distinguished both adapters and rejection.")
+        print("Saved a direct PDF with printing disabled, then read back both system-printed PDFs and checked their diagnostics.")
 
 
 if __name__ == "__main__":

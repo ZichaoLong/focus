@@ -75,3 +75,5 @@ browsers to use as a default save name. The preview has an editable document tit
 defaulting to the clicked thread's title, that immediately updates the printed H1
 through plain text binding. It leaves the suggested filename in `document.title`
 independent. Browsers need not adopt that name; users can rename in the system save UI. Lifecycle and device limits follow the [Q&A print contract](focus-web-summary-print.md).
+
+Save PDF directly passes the same `.pdf` suggestion to the shared file picker on click. A browser download uses that filename. [Q&A print contract](focus-web-summary-print.md)

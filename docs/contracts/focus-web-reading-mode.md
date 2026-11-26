@@ -133,7 +133,7 @@ emulation alone cannot establish success.
 
 `ReadingModeControls.vue` offers the current session's export menu in wide and
 narrow layouts. The existing `export` capability enables Q&A Markdown and
-Print / Save as PDF; paginated history additionally enables thread JSONL. Hide
+Save PDF or print; paginated history additionally enables thread JSONL. Hide
 the entry without a session or export capabilities, and disable it while loading
 a conversation or fetching export content. The existing export gate still covers
 the entire naming and saving flow. Close the menu when the session or capabilities

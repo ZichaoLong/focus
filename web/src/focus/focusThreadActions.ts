@@ -1,8 +1,7 @@
-import { cancelMobileFile, saveMobileFile } from '../lib/mobileHost';
-import { chooseFileDestination, type FileDestination } from './browserFileSave';
+import { cancelMobileFile } from '../lib/mobileHost';
+import { chooseFileDestination, saveExportBlob } from './browserFileSave';
 import type { SummaryExportRequest } from '../types';
 import type { FocusSummaryExportSelection } from './types';
-import { downloadBlob } from '../lib/download';
 import { normalizeExportFilename, suggestExportFilename } from './exportFilename';
 import { normalizeSummaryTitle, titleSummaryMarkdown } from './summaryDocumentTitle';
 import { openSummaryPrintWindow } from './summaryPrintWindow';
@@ -44,24 +43,6 @@ export interface FocusThreadActionsOptions {
   }): Promise<boolean>;
   notify(message: string): void;
   translate(key: string): string;
-}
-
-async function saveExportBlob(destination: FileDestination, blob: Blob, filename: string): Promise<void> {
-  if (destination.kind === 'mobile') return saveMobileFile(new Response(blob));
-  if (destination.kind === 'download') {
-    downloadBlob(blob, filename);
-    return;
-  }
-  // Do not open a writable stream until the complete export is available.
-  const stream = await destination.handle.createWritable();
-  try {
-    await stream.write(blob);
-    await stream.close();
-  } catch (error) {
-    // Discard staged writes where possible, preserving the original failure.
-    await stream.abort().catch(() => {});
-    throw error;
-  }
 }
 
 export function createFocusThreadActions(options: FocusThreadActionsOptions) {

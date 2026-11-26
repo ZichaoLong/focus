@@ -23,6 +23,7 @@ export async function prepareSummaryPrint(root: HTMLElement): Promise<boolean> {
       if (safe) {
         const figure = document.createElement('figure');
         figure.className = 'summary-diagram';
+        figure.dataset.source = diagram.textContent ?? '';
         figure.innerHTML = safe;
         diagram.replaceWith(figure);
       } else fallback = true;

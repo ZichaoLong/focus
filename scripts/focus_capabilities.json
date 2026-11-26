@@ -1569,6 +1569,14 @@
           "path": "mobile/android/src/org/focus/mobile/PrintTestPage.java"
         },
         {
+          "path": "web/src/focus/SummaryPrintApp.vue",
+          "symbol": "savePdf"
+        },
+        {
+          "path": "web/src/focus/browserFileSave.ts",
+          "symbol": "saveExportBlob"
+        },
+        {
           "path": "web/src/focus/summaryPrintPreparation.ts",
           "symbol": "prepareSummaryPrint"
         },
@@ -1613,6 +1621,10 @@
         {
           "path": "docs/contracts/focus-web-wire.zh-CN.md",
           "heading": "5. DTO admission 与能力值"
+        },
+        {
+          "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
+          "heading": "直接保存 PDF"
         },
         {
           "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
@@ -1670,6 +1682,7 @@
             "web/test/focus-summary-export-surface.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/summary-print-markdown.test.ts",
+            "web/test/summary-pdf-browser.test.ts",
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
             "web/test/clipboard.test.ts",

@@ -13,7 +13,7 @@ export function focusStaticCompressionPlugin(): Plugin {
       order: 'post',
       handler(_options, bundle) {
         for (const output of Object.values(bundle)) {
-          if (!/\.(?:m?js|css|html)$/.test(output.fileName)) continue;
+          if (!/\.(?:m?js|css|html|wasm)$/.test(output.fileName)) continue;
           const source = Buffer.from(output.type === 'chunk' ? output.code : output.source);
           if (source.length < 1024) continue;
           const compressed = gzipSync(source, { level: constants.Z_BEST_COMPRESSION });
