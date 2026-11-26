@@ -23,6 +23,7 @@ from bot.platform_paths import default_data_root
 DEFAULT_MOBILE_DIST = "https://github.com/ZichaoLong/focus-mobile-dist.git"
 MAX_APK_BYTES = 32 * 1024 * 1024
 CHANNELS = ("main", "stable")
+CACHE_GRACE_SECONDS = 7 * 86400
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,9 +83,9 @@ class MobileDistribution:
         # Older versions fetched directly into "git", which may still have a writer.
         self.git_dir = directory / "ready.git"
 
-    def _git(self, *args: str, check: bool = True, git_dir: Path | None = None) -> subprocess.CompletedProcess:
+    def _git(self, repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
         return subprocess.run(
-            ["git", "--git-dir", str(git_dir or self.git_dir), *args], check=check, timeout=50,
+            ["git", "--git-dir", str(repo), *args], check=check, timeout=50,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, stdin=subprocess.DEVNULL,
             env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
@@ -124,71 +125,104 @@ class MobileDistribution:
             finally:
                 release_file_lock(lock)
 
-    def _fetch(self) -> bool:
+    def _sync(self, channel: str) -> dict:
         # The source lock excludes other checks. A killed checker can leave a
         # workspace behind, but no later Git process will reuse its path.
         for abandoned in self.directory.glob("git-fetch-*"):
             shutil.rmtree(abandoned, ignore_errors=True)
         with tempfile.TemporaryDirectory(dir=self.directory, prefix="git-fetch-", ignore_cleanup_errors=True) as work:
-            repo = Path(work) / "repo.git"
+            workspace = Path(work)
+            self._prune_cache(workspace)
+            repo = workspace / "repo.git"
             if self.git_dir.exists():
                 self.git_dir.rename(repo)
             try:
-                self._git("init", "--bare", "--quiet", git_dir=repo)
-                self._git("fetch", "--quiet", "--no-tags", "--no-auto-gc", "--depth=1",
-                          self.source, "+refs/heads/main:refs/heads/main", git_dir=repo)
+                self._git(repo, "init", "--bare", "--quiet")
+                self._git(repo, "fetch", "--quiet", "--no-tags", "--no-auto-gc", "--depth=1",
+                          self.source, "+refs/heads/main:refs/heads/main")
             except (OSError, subprocess.SubprocessError):
-                return False
-            repo.rename(self.git_dir)
-        return True
+                return self._cached(channel, True)
+            result = self._read_channel(repo, channel)
+            self._keep_git_cache(repo)
+            return result
 
-    def _sync(self, channel: str) -> dict:
-        if not self._fetch():
-            return self._cached(channel, True)
+    def _keep_git_cache(self, repo: Path) -> None:
+        # Only this check can write the staging repo. Discard it if maintenance
+        # fails; the channel and verified APK have already been published.
+        try:
+            revision = self._git(repo, "rev-parse", "--verify", "refs/heads/main").stdout
+            marker = repo / "focus-compacted-head"
+            if not marker.is_file() or marker.read_bytes() != revision:
+                self._git(repo, "-c", "gc.reflogExpire=now", "-c", "gc.reflogExpireUnreachable=now",
+                          "-c", "gc.cruftPacks=false", "-c", "gc.bigPackThreshold=0",
+                          "gc", "--quiet", "--prune=now")
+                marker.write_bytes(revision)
+            repo.rename(self.git_dir)
+        except (OSError, subprocess.SubprocessError):
+            return
+
+    def _read_channel(self, repo: Path, channel: str) -> dict:
         channel_path = f"channels/{channel}.json"
         index = self.directory / f"{channel}.json"
         previous = AndroidRelease.parse(index.read_bytes()) if index.exists() else None
-        if not self._git("ls-tree", "FETCH_HEAD", "--", channel_path).stdout:
+        if not self._git(repo, "ls-tree", "FETCH_HEAD", "--", channel_path).stdout:
             if previous:
                 self._retain_pin(previous)
             index.unlink(missing_ok=True)
             return self._cached(channel, False)
-        release = AndroidRelease.parse(self._blob(channel_path, 4096))
+        release = AndroidRelease.parse(self._blob(repo, channel_path, 4096))
         destination = self.directory / (release.sha256 + ".apk")
         if (not destination.exists() or destination.stat().st_size != release.size
                 or hashlib.sha256(destination.read_bytes()).hexdigest() != release.sha256):
-            data = self._blob(release.blob_path, release.size)
+            data = self._blob(repo, release.blob_path, release.size)
             if len(data) != release.size or hashlib.sha256(data).hexdigest() != release.sha256:
                 raise ValueError("Mobile package bytes do not match the channel manifest")
-            with tempfile.NamedTemporaryFile(dir=self.directory, delete=False) as stream:
-                temporary = Path(stream.name)
-            try:
-                temporary.write_bytes(data)
-                temporary.replace(destination)
-            finally:
-                temporary.unlink(missing_ok=True)
+            with tempfile.NamedTemporaryFile(dir=repo.parent, delete=False) as stream:
+                stream.write(data)
+            Path(stream.name).replace(destination)
         if previous and previous.sha256 != release.sha256:
             self._retain_pin(previous)
         atomic_write_text(index, json.dumps(asdict(release)) + "\n", mode=0o600)
-        # Give a phone time to finish a pinned download across channel updates.
-        in_use = {release.sha256}
-        for other in CHANNELS:
-            descriptor = self.directory / f"{other}.json"
-            if descriptor.is_file():
-                in_use.add(AndroidRelease.parse(descriptor.read_bytes()).sha256)
-        for apk in self.directory.glob("*.apk"):
-            if apk.stem not in in_use and time.time() - apk.stat().st_mtime > 7 * 86400:
-                apk.unlink(missing_ok=True)
         return self._cached(channel, False)
+
+    def _prune_cache(self, workspace: Path) -> None:
+        cutoff = time.time() - CACHE_GRACE_SECONDS
+        legacy = self.directory / "git"
+        try:
+            if legacy.is_dir() and not legacy.is_symlink() and legacy.stat().st_mtime < cutoff:
+                head = legacy / "FETCH_HEAD"
+                if not head.exists() or head.stat().st_mtime < cutoff:
+                    legacy.rename(workspace / "retired.git")
+        except OSError:
+            pass  # A legacy writer can still hold this directory on Windows.
+
+        try:
+            pinned = set()
+            for channel in CHANNELS:
+                index = self.directory / f"{channel}.json"
+                try:
+                    raw = index.read_bytes()
+                except FileNotFoundError:
+                    continue
+                pinned.add(AndroidRelease.parse(raw).sha256)
+        except (OSError, ValueError):
+            return  # Keep downloads until both sets of pins can be read.
+        for apk in self.directory.glob("*.apk"):
+            if apk.stem not in pinned and re.fullmatch("[0-9a-f]{64}", apk.stem):
+                try:
+                    if apk.stat().st_mtime < cutoff:
+                        apk.unlink(missing_ok=True)
+                except OSError:
+                    pass  # Retry an open download at the next check.
 
     def _retain_pin(self, previous: AndroidRelease) -> None:
         path = self.directory / (previous.sha256 + ".apk")
         if path.exists():
             path.touch()
 
-    def _blob(self, path: str, limit: int) -> bytes:
+    def _blob(self, repo: Path, path: str, limit: int) -> bytes:
         spec = "FETCH_HEAD:" + path
-        size = self._git("cat-file", "-s", spec, check=False)
+        size = self._git(repo, "cat-file", "-s", spec, check=False)
         if size.returncode or not size.stdout.strip().isdigit() or int(size.stdout) > limit:
             raise ValueError("Missing or oversized mobile distribution file")
-        return self._git("cat-file", "blob", spec).stdout
+        return self._git(repo, "cat-file", "blob", spec).stdout

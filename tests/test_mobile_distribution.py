@@ -76,6 +76,89 @@ def test_check_recovers_from_legacy_shallow_lock(repository, tmp_path):
     assert result["release"] == asdict(current) and not result["stale"]
     assert cache.apk(previous.sha256).read_bytes() == b"previous"
     assert cache.apk(current.sha256).read_bytes() == b"current"
+    assert (legacy / "shallow.lock").exists()
+    os.utime(legacy / "FETCH_HEAD", (1, 1))
+    os.utime(legacy, (1, 1))
+    assert cache.check("main")["release"] == asdict(current)
+    assert not legacy.exists()
+
+
+def test_reused_git_cache_drops_obsolete_apks_and_skips_repeat_compaction(repository, tmp_path, monkeypatch):
+    prior = publish(repository, b"old package")
+    cache = MobileDistribution(repository.as_uri(), tmp_path / "cache")
+    cache.check("main")
+    old_blob = git(repository, "rev-parse", "HEAD:" + prior.blob_path).decode("ascii")
+    (repository / prior.blob_path).unlink()
+    current = publish(repository, b"current package")
+    # Earlier checkers could already have fetched this tip and retained the old blob.
+    git(cache.git_dir, "config", "core.logAllRefUpdates", "true")
+    git(cache.git_dir, "config", "gc.bigPackThreshold", "1")
+    git(cache.git_dir, "fetch", "-q", "--depth=1", cache.source, "+refs/heads/main:refs/heads/main")
+    git(cache.git_dir, "cat-file", "-e", old_blob)
+    real_run = subprocess.run
+    compactions = []
+
+    def record_git(command, **kwargs):
+        if "gc" in command:
+            compactions.append(command)
+        return real_run(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record_git)
+    for _ in range(2):
+        result = cache.check("main")
+        assert not result["stale"] and result["release"] == asdict(current)
+    assert len(compactions) == 1
+    assert subprocess.run(["git", "-C", str(cache.git_dir), "cat-file", "-e", old_blob]).returncode != 0
+    assert cache.apk(prior.sha256).read_bytes() == b"old package"
+    assert not list(cache.directory.glob("git-fetch-*"))
+
+
+def test_interrupted_compaction_keeps_verified_release(repository, tmp_path, monkeypatch):
+    cache = MobileDistribution(repository.as_uri(), tmp_path / "cache")
+    current = publish(repository, b"verified")
+    real_run = subprocess.run
+
+    def timeout_gc(command, **kwargs):
+        if "gc" in command:
+            raise subprocess.TimeoutExpired(command, 50)
+        return real_run(command, **kwargs)
+
+    with monkeypatch.context() as m:
+        m.setattr(subprocess, "run", timeout_gc)
+        result = cache.check("main")
+    assert result["release"] == asdict(current) and not result["stale"]
+    assert cache.apk(current.sha256).read_bytes() == b"verified"
+    assert not cache.git_dir.exists()
+    assert cache.check("main")["release"] == asdict(current)
+    assert cache.git_dir.is_dir()
+
+
+def test_expired_apks_are_pruned_on_offline_and_unpublished_checks(repository, tmp_path):
+    cache = MobileDistribution(repository.as_uri(), tmp_path / "cache")
+    stable = publish(repository, b"stable", "stable")
+    cache.check("stable")
+    previous = publish(repository, b"previous")
+    cache.check("main")
+    current = publish(repository, b"current")
+    cache.check("main")
+    for release in (stable, previous, current):
+        os.utime(cache.apk(release.sha256), (1, 1))
+    offline = repository.rename(tmp_path / "offline")
+    assert cache.check("main")["stale"]
+    with pytest.raises(FileNotFoundError):
+        cache.apk(previous.sha256)
+    assert cache.apk(stable.sha256).read_bytes() == b"stable"
+    assert cache.apk(current.sha256).read_bytes() == b"current"
+    offline.rename(repository)
+    (repository / "channels/main.json").unlink()
+    git(repository, "commit", "-qam", "withdraw main")
+    assert cache.check("main")["release"] is None
+    assert cache.apk(current.sha256).read_bytes() == b"current"
+    os.utime(cache.apk(current.sha256), (1, 1))
+    assert cache.check("main")["release"] is None
+    with pytest.raises(FileNotFoundError):
+        cache.apk(current.sha256)
+    assert cache.apk(stable.sha256).read_bytes() == b"stable"
 
 
 def test_timed_out_fetch_keeps_download_and_next_check_recovers(repository, tmp_path, monkeypatch):

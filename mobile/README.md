@@ -77,6 +77,8 @@ Basic 凭据只在 HTTPS 上响应。Basic 处理适用于首页、静态资源�
 
 部署机器需要能用 Git 读取移动分发仓库。默认地址为 `https://github.com/ZichaoLong/focus-mobile-dist.git`。服务账户可沿用其 Git 代理、凭据助手或 SSH 配置。fork 的运营者在启动 Focus 服务的环境中设置 `FOCUS_MOBILE_DIST_URL` 为自己的 HTTPS 或 SSH Git URL 后重启服务。该设置与 Web 的「Git 更新源」独立。分发仓库有一个 `main` 分支，`channels/main.json` 和 `channels/stable.json` 可指向同一或不同的 APK。各源的清单与安装包保存在 `<FOCUS_DATA_ROOT>/mobile-updates/<源地址哈希>/`。只在用户检查时联网；源暂时不可达时显示上次校验时间。普通用户的 Focus 机器和手机均无需 Android SDK 或发布密钥。
 
+检查更新时会自动回收临时目录和过期缓存。两个渠道各自当前使用的 APK 会保留，被替换或撤回的包再保留七天，供已选好版本的手机完成下载。
+
 ### Android 客户端更新验收
 
 在专用测试实例和 Android 模拟器或手机上，以测试签名安装前一版，从测试分发源提供签名兼容的新包。分别走「另存 APK」和系统覆盖安装，核对文件摘要、安装版本及原实例数据。使用不同签名的测试包时，核对安装请求被拒绝。分发源配置见上节。

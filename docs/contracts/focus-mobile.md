@@ -52,6 +52,8 @@ An instance reads `FOCUS_MOBILE_DIST_URL` (HTTPS or SSH Git URL), defaulting to 
 
 Only one check per source can run at a time. Each fetch runs in a separate directory, and subsequent checks reuse its Git data only after it succeeds. Users can retry after a fetch timeout or an interrupted service process, including when an older version left a Git lock behind. Previously verified APKs remain available for download during a check.
 
+Temporary directories are removed after use. The next check cleans up any left by an interrupted check. The server prunes obsolete Git objects from the shallow cache once per distribution commit. Checks also reclaim a legacy Git cache after seven idle days. Each source retains the APKs named by its locally checked `main` and `stable` channels. A replaced or withdrawn APK remains downloadable by digest for seven days. Subsequent checks remove expired APKs even when the source is offline or the channel has been withdrawn.
+
 ## Managing server updates across entries
 
 Manage instances → Server updates opens a bundled local dashboard. Each request uses a short-lived `/focus-update.html` document in the entry's own Web profile. It registers with a separate client hint, calls same-origin update endpoints and is released after the call. It has no native bridge or conversation WebSocket. Only the restricted probe can answer matching saved Basic challenges. Login and reauthorization take place in the individual entry. Older servers can upgrade from their instance settings.
