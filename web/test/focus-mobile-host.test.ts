@@ -8,7 +8,7 @@ function memory() {
     removeItem: (k: string) => data.delete(k) };
 }
 function setup(instance = id) {
-  const win = Object.assign(new EventTarget(), { top: {}, __focusMobile: { version: 1, instance, ticket, features: ['resume', 'save', 'wake'] }, prompt: vi.fn<() => string | null>(() => 'ok') });
+  const win = Object.assign(new EventTarget(), { top: {}, __focusMobile: { version: 1, instance, ticket, features: ['resume', 'save', 'wake'] }, prompt: vi.fn<(operation: string, value: string) => string | null>(() => 'ok') });
   win.top = win;
   vi.stubGlobal('window', win);
   vi.stubGlobal('location', new URL('https://site.test/?focusApp=1'));
@@ -181,20 +181,18 @@ describe('negotiated mobile host', () => {
     await host.negotiateMobileHost();
     const { createSummaryPrintDiagnostics } = await import('../src/focus/summaryPrintDiagnostics');
     const trace = createSummaryPrintDiagnostics();
-    trace.click();
+    expect(trace.print('private-title', 'native-test')).toBe(false);
     expect(trace.report.value).toBeNull();
     expect(win.prompt).not.toHaveBeenCalled();
 
     win.prompt.mockReturnValueOnce('{"version":"1.12.1","other":"private-extra"}');
     trace.start('ready');
     for (const reply of ['error', null, 'private-unexpected-response', 'ok']) {
-      trace.click();
       win.prompt.mockReturnValueOnce(reply);
-      expect(host.printMobileSummary('private-title', trace.reply)).toBe(reply === 'ok');
+      expect(trace.print('private-title')).toBe(reply === 'ok');
     }
-    trace.click();
     win.prompt.mockImplementationOnce(() => { throw new Error('private-exception'); });
-    expect(host.printMobileSummary('private-title', trace.reply)).toBe(false);
+    expect(trace.print('private-title')).toBe(false);
     win.dispatchEvent(new Event('focus-host-pause'));
     doc.hidden = true;
     doc.dispatchEvent(new Event('visibilitychange'));
@@ -210,7 +208,7 @@ describe('negotiated mobile host', () => {
     const frozen = JSON.stringify(report);
     for (const sensitive of ['private', ticket, id, 'site.test']) expect(frozen).not.toContain(sensitive);
     win.dispatchEvent(new Event('blur'));
-    trace.click();
+    trace.print('private-title');
     expect(JSON.stringify(report)).toBe(frozen);
 
     trace.start('ready');
@@ -226,6 +224,44 @@ describe('negotiated mobile host', () => {
     expect(trace.recording.value).toBe(false);
     expect(trace.report.value).toMatchObject({ elapsedMs: 300_000, events: [] });
     expect(createSummaryPrintDiagnostics().report.value).toBeNull();
+  });
+
+  it('correlates native callbacks to their original attempts and exports only recognized fields', async () => {
+    const win = setup();
+    win.__focusMobile.features.push('print', 'print-diagnostics');
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const { createSummaryPrintDiagnostics } = await import('../src/focus/summaryPrintDiagnostics');
+    const trace = createSummaryPrintDiagnostics();
+    expect(trace.print('private-title')).toBe(true);
+    expect(win.prompt).toHaveBeenLastCalledWith('focus/1/' + ticket + '/print', 'private-title');
+    const session = '94c41aa6-2ea3-4064-9324-af002068796f';
+    win.prompt.mockReturnValueOnce(session);
+    trace.start('ready');
+    trace.print('private-title');
+    trace.print('private-title', 'native-test');
+    const tracedCalls = win.prompt.mock.calls.filter(([op]) => op.endsWith('/print-diag-run')).map(([, v]) => JSON.parse(v));
+    expect(tracedCalls).toEqual([
+      { source: 'webview', attempt: 1, session, name: 'private-title' }, { source: 'native-test', attempt: 2, session },
+    ]);
+    const snapshot = { sdk: 35, elapsedMs: 11, droppedEvents: 0, extra: 'private-extra',
+      events: [[6, 2, 'native-test', 'layout'], [9, 1, 'webview', 'finish']] };
+    win.prompt.mockReturnValueOnce(JSON.stringify(snapshot));
+    trace.stop();
+    expect(trace.report.value?.native).toEqual({ status: 'collected', sdk: 35, elapsedMs: 11, droppedEvents: 0, events: [
+      { ms: 6, attempt: 2, source: 'native-test', event: 'layout' }, { ms: 9, attempt: 1, source: 'webview', event: 'finish' },
+    ] });
+    expect(JSON.stringify(trace.report.value)).not.toContain('private');
+    expect(JSON.stringify(trace.report.value)).not.toContain(session);
+    expect(trace.print('private-title', 'native-test')).toBe(false);
+    expect(win.prompt).toHaveBeenLastCalledWith('focus/1/' + ticket + '/print-diag-stop', session);
+    win.prompt.mockReturnValueOnce(session);
+    trace.start('ready');
+    trace.print('private-title');
+    win.prompt.mockReturnValueOnce(JSON.stringify({ ...snapshot, events: [[1, 1, 'webview', 'private-error']] }));
+    trace.stop();
+    expect(trace.report.value?.native).toEqual({ status: 'unavailable' });
   });
 });
 

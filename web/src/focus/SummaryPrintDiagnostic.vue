@@ -9,6 +9,7 @@ const props = defineProps<{
   diagnostic: ReturnType<typeof createSummaryPrintDiagnostics>;
   status: 'loading' | 'ready' | 'error';
 }>();
+defineEmits<{ testPage: [] }>();
 const { t } = useI18n();
 const { report, recording, start, stop } = props.diagnostic;
 const panel = ref<HTMLElement>();
@@ -47,6 +48,7 @@ async function exportReport(kind: 'copy' | 'save'): Promise<void> {
   <details ref="panel" class="summary-print-diagnostic">
     <summary>{{ t('focus.printDiagnosticTitle') }}</summary>
     <p>{{ t('focus.printDiagnosticHint') }}</p>
+    <p v-if="recording && report?.native?.status === 'recording'">{{ t('focus.printDiagnosticNativeHint') }}</p>
     <p v-if="report" role="status">
       {{ t(recording ? 'focus.printDiagnosticRecording' : 'focus.printDiagnosticStopped', { count: report.attempts }) }}
     </p>
@@ -54,6 +56,8 @@ async function exportReport(kind: 'copy' | 'save'): Promise<void> {
       <button type="button" :disabled="exporting" @click="toggle">
         {{ t(recording ? 'focus.viewportDiagnosticStop' : report ? 'focus.viewportDiagnosticRestart' : 'focus.viewportDiagnosticStart') }}
       </button>
+      <button v-if="recording && report?.native?.status === 'recording'" type="button" class="print-test-page"
+        :disabled="status !== 'ready'" @click="$emit('testPage')">{{ t('focus.printDiagnosticTestPage') }}</button>
       <template v-if="report">
         <button type="button" :disabled="exporting" @click="exportReport('copy')">{{ t('focus.promptDiagnosticCopy') }}</button>
         <button v-if="canSave" type="button" :disabled="exporting" @click="exportReport('save')">{{ t('focus.printDiagnosticSave') }}</button>

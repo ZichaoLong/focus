@@ -1,15 +1,56 @@
-"""Verify print-job rejection and retry on a dedicated Android userdebug emulator."""
+"""Exercise the diagnostic WebView and native PDF paths on an Android userdebug emulator."""
 import argparse
 import asyncio
 import json
 from pathlib import Path
+import subprocess
+from tempfile import TemporaryDirectory
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import aiohttp
 
-from android_navigation_smoke import resumed
+from android_page_retention import nodes, tap
 from android_tabs_smoke import click_web, tab
 from android_webview_smoke import emulator_adb, evaluate, wait_for
+
+
+async def system_control(adb, matches):
+    async with asyncio.timeout(35):
+        while True:
+            for node in await asyncio.to_thread(nodes, adb):
+                if node.get("enabled") == "true" and matches(node):
+                    return node
+            await asyncio.sleep(.2)
+
+
+async def save_pdf(adb):
+    button = await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/print_button")
+    tap(adb, button)
+    field = await system_control(adb, lambda n: "documentsui" in n.get("package", "") and n.get("class") == "android.widget.EditText")
+    filename = "focus-print-" + uuid4().hex + ".pdf"
+    tap(adb, field)
+    adb("shell", "input", "keycombination", "KEYCODE_CTRL_LEFT", "KEYCODE_A")
+    adb("shell", "input", "text", filename)
+    save = await system_control(adb, lambda n: "documentsui" in n.get("package", "") and n.get("resource-id", "").endswith(":id/button1"))
+    tap(adb, save)
+    async with asyncio.timeout(25):
+        while not (remote := adb("shell", "find", "/storage/emulated/0", "-name", filename)):
+            await asyncio.sleep(.3)
+    try:
+        with TemporaryDirectory() as tmp:
+            local = Path(tmp) / filename
+            # DocumentsUI creates the destination before the spooler finishes writing it.
+            async with asyncio.timeout(25):
+                while True:
+                    adb("pull", remote, str(local))
+                    if local.read_bytes().rstrip().endswith(b"%%EOF"):
+                        break
+                    await asyncio.sleep(.3)
+            text = subprocess.check_output(["pdftotext", local, "-"], text=True)
+            return text.strip(), text.count("\f")
+    finally:
+        adb("shell", "rm", remote)
 
 
 async def run(args):
@@ -41,6 +82,8 @@ async def run(args):
         assert body.strip() and not await evaluate(ws, "!!" + notice)
         await click_web(ws, diagnostic + " > summary")
         assert not await evaluate(ws, f"!!document.querySelector('{diagnostic} pre')")
+        test_page = diagnostic + " .print-test-page"
+        assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
         await click_web(ws, diagnostic + " .diagnostic-actions button")
 
         try:
@@ -53,19 +96,27 @@ async def run(args):
             adb("shell", "pm", "set-user-restriction", *policy, "0")
 
         await click_web(ws, button)
-        async with asyncio.timeout(15):
-            while "com.android.printspooler/" not in resumed(adb):
-                await asyncio.sleep(.2)
-        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        text, _ = await save_pdf(adb)
+        assert "Reading position" in text and "Focus Mobile print test" not in text
         await wait_for(ws, f"document.visibilityState === 'visible' && !{notice}")
         assert await evaluate(ws, content) == body
         await wait_for(ws, f"{report}.events.some(e => e.attempt === 2 && e.event === 'host-resume')")
+
+        await click_web(ws, test_page)
+        text, count = await save_pdf(adb)
+        assert text == "Focus Mobile print test" and count == 1
+        await wait_for(ws, f"{report}.events.some(e => e.attempt === 3 && e.event === 'host-resume')")
         await click_web(ws, diagnostic + " .diagnostic-actions button")
         snapshot = await evaluate(ws, report)
-        events = [row["event"] for row in snapshot["events"] if row["attempt"] == 2]
-        assert snapshot["attempts"] == 2 and "bridge-ok" in events and "host-pause" in events and "host-resume" in events
-        assert body.strip() not in json.dumps(snapshot)
-        print("The opt-in report recorded rejection, retry, and foreground signals. The preview retained its content.")
+        assert snapshot["attempts"] == 3 and snapshot["native"]["status"] == "collected"
+        assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
+        rows = snapshot["native"]["events"]
+        assert any(r["attempt"] == 1 and r["event"] == "printing-restricted" for r in rows)
+        for attempt, source in ((2, "webview"), (3, "native-test")):
+            events = {r["event"] for r in rows if r["attempt"] == attempt and r["source"] == source}
+            assert {"request", "adapter-created", "job-returned", "start", "layout", "write", "finish"} <= events, events
+        assert "Reading position" not in json.dumps(snapshot) and await evaluate(ws, content) == body
+        print("Read back the conversation PDF and one-page native PDF. The report distinguished both adapters and rejection.")
 
 
 if __name__ == "__main__":

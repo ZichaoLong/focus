@@ -86,6 +86,8 @@ Print diagnostics in the mobile preview start disabled. Once enabled by the user
 
 Stopping, copying, saving or a five-minute timeout ends recording. Copy and save freeze the same JSON for inspection, clipboard export or saving through the negotiated system file picker. Starting again replaces the report. Closing or reloading the preview clears it. Only predefined fields and events are collected. Document content, titles, filenames, URLs, credentials, raw errors and unrecognized host reply text are excluded. Reports remain local.
 
+When the host negotiates `print-diagnostics` and recording has started, the preview also offers “Print one test page”. On stop, the `native` field in the same report identifies conversation and native test requests by tap number. It includes host results and the system's start, layout, write and finish calls into each adapter. Web and native elapsed times use separate clocks and share the tap numbers. A callback records a requested stage. Panel visibility and the saved PDF require separate confirmation. An expired or invalidated native session without a readable snapshot is marked unavailable. Hosts offering only `print` keep the existing Web diagnostics.
+
 ## Verification boundaries
 
 Unit tests cover complete code, math grammar and fallback, safe escaping, full

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
-import { printMobileSummary } from '../lib/mobileHost';
+import type { MobilePrintSource } from '../lib/mobileHost';
 import { normalizeSummaryTitle, summaryDocumentBody } from './summaryDocumentTitle';
 import { receiveSummaryPrint, type PrintPayload } from './summaryPrintWindow';
 import { renderSummaryPrintMarkdown } from './summaryPrintMarkdown';
@@ -52,12 +52,10 @@ async function render(markdown: string, suggestedFilename: string, title: string
   status.value = 'ready';
 }
 
-function print(): void {
+function print(source: MobilePrintSource = 'webview'): void {
   if (status.value !== 'ready') return;
-  if (props.preview) {
-    diagnostic?.click();
-    printFailed.value = !printMobileSummary(jobName, diagnostic?.reply);
-  } else window.print();
+  if (diagnostic) printFailed.value = !diagnostic.print(jobName, source);
+  else window.print();
 }
 
 onMounted(() => {
@@ -85,11 +83,11 @@ onUnmounted(() => {
     <header class="summary-print-toolbar">
       <div class="summary-print-actions">
         <h1>{{ t('focus.printSummary') }}</h1>
-        <button type="button" :disabled="status !== 'ready'" @click="print">{{ t('focus.printButton') }}</button>
+        <button type="button" :disabled="status !== 'ready'" @click="print()">{{ t('focus.printButton') }}</button>
         <button v-if="preview" type="button" @click="$emit('close')">{{ t('focus.closePrintPreview') }}</button>
       </div>
       <p v-if="printFailed" class="summary-print-error" role="status">{{ t('focus.printSystemUnavailable') }}</p>
-      <SummaryPrintDiagnostic v-if="diagnostic" :diagnostic="diagnostic" :status="status" />
+      <SummaryPrintDiagnostic v-if="diagnostic" :diagnostic="diagnostic" :status="status" @test-page="print('native-test')" />
       <div v-if="status === 'ready'" class="summary-title-editor">
         <label for="summary-document-title">{{ t('focus.exportDocumentTitle') }}</label>
         <input id="summary-document-title" v-model="documentTitle" type="text" :placeholder="printedTitle" aria-describedby="summary-title-help" />

@@ -166,6 +166,8 @@ export default {
   closePrintPreview: '返回对话',
   printSystemUnavailable: '系统未能创建打印任务。你可以在当前预览中重试。',
   printDiagnosticTitle: '打印诊断',
+  printDiagnosticTestPage: '打印一页测试文本',
+  printDiagnosticNativeHint: '点过上方的打印按钮后，再试一次安卓生成的单页文本。停止记录时，两次请求的原生打印回调会一起写入报告。',
   printDiagnosticHint: '复现前点「开始记录」，再点上方的打印按钮。记录包含版本、打印请求结果和页面前后台变化。复制或保存会停止记录，五分钟后也会自动停止。关闭预览会清空记录。',
   printDiagnosticRecording: '正在记录，已收到 {count} 次打印点击。',
   printDiagnosticStopped: '记录已停止，共收到 {count} 次打印点击。',

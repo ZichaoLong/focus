@@ -1563,6 +1563,12 @@
           "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
         },
         {
+          "path": "mobile/android/src/org/focus/mobile/AndroidPrinting.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/PrintTestPage.java"
+        },
+        {
           "path": "web/src/focus/summaryPrintPreparation.ts",
           "symbol": "prepareSummaryPrint"
         },

@@ -87,12 +87,25 @@ export function showMobileWebChrome(available: boolean): void {
 }
 
 export type MobilePrintReply = 'ok' | 'error' | 'no-reply' | 'unexpected-reply' | 'exception' | 'unavailable';
+export type MobilePrintSource = 'webview' | 'native-test';
+interface MobilePrintTrace { session: string; attempt: number; source: MobilePrintSource }
 
-export function printMobileSummary(filename: string, observe?: (reply: MobilePrintReply) => void): boolean {
+export function mobilePrintRecording(action: 'start' | 'stop', session = ''): string | null {
+  if (!host || !hasMobileFeature('print-diagnostics')) return null;
+  try {
+    const reply = window.prompt('focus/1/' + host.ticket + '/print-diag-' + action, session);
+    return reply && (action === 'stop' || uuid.test(reply)) ? reply : null;
+  } catch { return null; }
+}
+
+export function printMobileSummary(filename: string, observe?: (reply: MobilePrintReply) => void, trace?: MobilePrintTrace): boolean {
   let result: MobilePrintReply = 'unavailable';
-  if (host && hasMobileFeature('print')) {
+  if (host && hasMobileFeature('print') && (!trace || hasMobileFeature('print-diagnostics'))) {
     try {
-      const reply = window.prompt('focus/1/' + host.ticket + '/print', filename.slice(0, 255));
+      const name = filename.slice(0, 255);
+      const op = trace ? 'print-diag-run' : 'print';
+      const value = trace ? JSON.stringify({ ...trace, name: trace.source === 'webview' ? name : undefined }) : name;
+      const reply = window.prompt('focus/1/' + host.ticket + '/' + op, value);
       if (reply === 'ok' || reply === 'error') result = reply;
       else result = reply === null ? 'no-reply' : 'unexpected-reply';
     } catch { result = 'exception'; }
