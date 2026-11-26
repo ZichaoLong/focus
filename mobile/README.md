@@ -186,6 +186,16 @@ adb install -r mobile/android/build/focus-debug-test-ca.apk
 
 在该目录的 `instances.json` 读取两个临时地址和第一个入口的临时测试密码，用户名为 `tester`。第二个入口由测试代理放行。第三个条目用于本地模式测试，可用 `adb reverse tcp:<第三个条目的端口> tcp:<同一端口>` 建立模拟器回环通路，再通过 App 的「使用 Focus 授权链接」打开测试目录的 `local-link.txt`。每次重启测试服务会生成新的一次性链接。测试包有不同的 Android 包名和专用信任锚。系统选择器保存 Demo 线程里的 `sample.txt` 后可与测试目录中的文件比较 SHA-256。退出测试进程即可关闭测试入口。
 
+### Android 打印重试验收
+
+在 Android 15 userdebug 专用模拟器中打开上节隔离网关的第二个 HTTPS 入口，保持竖屏普通模式。用 `adb -s emulator-5554 root` 允许测试临时切换用户的系统打印限制。
+
+```sh
+.venv/bin/python mobile/tests/android_print_smoke.py "$lab" --serial emulator-5554
+```
+
+脚本在打开的问答预览中限制打印，检查错误提示和正文，再恢复权限，点同一个按钮验证系统打印面板打开。按系统返回仍可阅读原预览。
+
 ### Android 模拟器验证返回和外链
 
 按上节准备隔离网关，启动时加 `--navigation` 以提供跨站跳转夹具。在专用测试 APK 中添加前两个 HTTPS 入口并完成首次登录后执行：

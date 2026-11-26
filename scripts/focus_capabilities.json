@@ -1556,6 +1556,13 @@
           "symbol": "openSummaryPrintWindow"
         },
         {
+          "path": "web/src/lib/mobileHost.ts",
+          "symbol": "printMobileSummary"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/ClientActivity.java"
+        },
+        {
           "path": "web/src/focus/summaryPrintPreparation.ts",
           "symbol": "prepareSummaryPrint"
         },
@@ -1604,6 +1611,10 @@
         {
           "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
           "heading": "打印与生命周期"
+        },
+        {
+          "path": "docs/contracts/focus-mobile.zh-CN.md",
+          "heading": "宿主协议 v1"
         },
         {
           "path": "docs/contracts/focus-web-markdown-rendering.zh-CN.md",
@@ -1676,6 +1687,16 @@
         "web-wire",
         "web-dependency-direction",
         "web-typecheck"
+      ],
+      "platform-check": [
+        "android-build",
+        {
+          "path": "mobile/README.md",
+          "heading": "Android 打印重试验收"
+        },
+        {
+          "path": "mobile/tests/android_print_smoke.py"
+        }
       ]
     },
     "focus-web-thread-data-export": {

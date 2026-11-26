@@ -426,8 +426,10 @@ public class ClientActivity extends Activity {
                     PrintManager printer = getSystemService(PrintManager.class);
                     if (printer == null || value == null || value.isEmpty() || value.length() > 255) result.confirm("error");
                     else {
-                        try { printer.print(value, v.createPrintDocumentAdapter(value), null); result.confirm("ok"); }
-                        catch (RuntimeException error) { result.confirm("error"); }
+                        try {
+                            boolean created = printer.print(value, v.createPrintDocumentAdapter(value), null) != null;
+                            result.confirm(created ? "ok" : "error");
+                        } catch (RuntimeException error) { result.confirm("error"); }
                     }
                 } else files.handle(op, value == null ? "" : value, result);
                 return true;

@@ -164,7 +164,7 @@ export default {
   printSummary: '打印／另存为 PDF',
   printButton: '打印／另存为 PDF',
   closePrintPreview: '返回对话',
-  printSystemUnavailable: '无法打开系统打印服务。',
+  printSystemUnavailable: '系统未能创建打印任务。你可以在当前预览中重试。',
   printScope: '按所选轮次和内容导出，不包含工具过程与用户图片附件。',
   printHelp: '预览准备好后点击打印，在浏览器中选择“另存为 PDF”。宽表格或长公式可尝试横向纸张或缩小比例；取消打印后可以重试。',
   printMobileHelp: '手机：Android Chrome 可从浏览器菜单选择“分享 → 打印 → 另存为 PDF”；iPhone Safari 可用“分享 → 标记 → 存储到文件”。具体选项因浏览器而异。',

@@ -164,7 +164,7 @@ export default {
   printSummary: 'Print / Save as PDF',
   printButton: 'Print / Save as PDF',
   closePrintPreview: 'Return to conversation',
-  printSystemUnavailable: 'The system print service could not open.',
+  printSystemUnavailable: 'The system could not create a print job. You can retry from this preview.',
   printScope: 'Exports the selected turns and content, excluding tool activity and user image attachments.',
   printHelp: 'When the preview is ready, print and choose Save as PDF in your browser. Try landscape or a smaller scale for wide tables or long formulas. You can retry after cancelling.',
   printMobileHelp: 'On Android Chrome, try the browser menu: Share → Print → Save as PDF. On iPhone Safari, try Share → Markup → Save to Files. Options vary by browser.',
