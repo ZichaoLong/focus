@@ -94,6 +94,8 @@ Stopping, copying, saving or a five-minute timeout ends recording. Copy and save
 
 When the host negotiates `print-diagnostics` and recording has started, the preview also offers “Print one test page”. On stop, the `native` field in the same report identifies conversation and native test requests by tap number. It includes host results and the system's start, layout, write and finish calls into each adapter. Web and native elapsed times use separate clocks and share the tap numbers. A callback records a requested stage. Panel visibility and the saved PDF require separate confirmation. An expired or invalidated native session without a readable snapshot is marked unavailable. Hosts offering only `print` keep the existing Web diagnostics.
 
+With `print-job-diagnostics`, the preview asks the user to wait about 35 seconds after the last tap before copying. The separate `native.observations` field contains system UI launch calls, Focus window and Activity changes, and timed samples for the matching job. Each row carries native elapsed time, tap number and source. A `job-not-listed` sample means the query did not find this job. Its final outcome is unknown from that sample. Missing or malformed observations leave the adapter callbacks available.
+
 ## Verification boundaries
 
 Unit tests cover complete code, math grammar and fallback, safe escaping, full

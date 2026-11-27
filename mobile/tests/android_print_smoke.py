@@ -25,7 +25,15 @@ async def system_control(adb, matches):
 
 
 async def save_pdf(adb):
-    button = await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/print_button")
+    button_id = "com.android.printspooler:id/print_button"
+    button = await system_control(adb, lambda n: n.get("resource-id") == button_id
+                                  or (n.get("package") == "com.android.printspooler" and n.get("text") == "Select a printer"))
+    if button.get("resource-id") != button_id:
+        tap(adb, button)
+        target = await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/title"
+                                      and n.get("text") == "Save as PDF")
+        tap(adb, target)
+        button = await system_control(adb, lambda n: n.get("resource-id") == button_id)
     tap(adb, button)
     return await save_document(adb)
 
@@ -89,6 +97,7 @@ async def run(args):
         test_page = diagnostic + " .print-test-page"
         assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
         await click_web(ws, diagnostic + " .diagnostic-actions button")
+        assert await evaluate(ws, "window.__focusMobile.features.includes('print-job-diagnostics')")
 
         try:
             adb("shell", "pm", "set-user-restriction", *policy, "1")
@@ -116,6 +125,9 @@ async def run(args):
         await wait_for(ws, f"{report}.events.some(e => e.attempt === 2 && e.event === 'host-resume')")
 
         await click_web(ws, test_page)
+        # Keep this job in the chooser through the last scheduled sample.
+        await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/destination_spinner")
+        await asyncio.sleep(31)
         text, count = await save_pdf(adb)
         assert text == "Focus Mobile print test" and count == 1
         await wait_for(ws, f"{report}.events.some(e => e.attempt === 3 && e.event === 'host-resume')")
@@ -124,12 +136,30 @@ async def run(args):
         assert snapshot["attempts"] == 3 and snapshot["native"]["status"] == "collected"
         assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
         rows = snapshot["native"]["events"]
+        observations = snapshot["native"]["observations"]
+        assert observations["status"] == "collected"
         assert any(r["attempt"] == 1 and r["event"] == "printing-restricted" for r in rows)
         for attempt, source in ((2, "webview"), (3, "native-test")):
             events = {r["event"] for r in rows if r["attempt"] == attempt and r["source"] == source}
             assert {"request", "adapter-created", "job-returned", "start", "layout", "write", "finish"} <= events, events
+            signals = {r["event"] for r in observations["events"] if r["attempt"] == attempt and r["source"] == source}
+            assert signals & {"window-initial-focused", "window-initial-unfocused"}, signals
+            assert {"intent-start", "intent-returned", "window-unfocused", "activity-paused", "activity-resumed",
+                    "job-query-start"} <= signals, signals
+            assert signals & {"job-created", "job-queued", "job-started", "job-completed", "job-not-listed"}, signals
+        pending_states = {"job-created", "job-queued", "job-started", "job-blocked", "job-not-listed"}
+        samples = [r for r in observations["events"] if r["attempt"] == 3 and r["event"] in pending_states]
+        returned = next(r["ms"] for r in rows if r["attempt"] == 3 and r["event"] == "job-returned")
+        assert len(samples) == 4 and samples[-1]["ms"] - returned >= 30_000, samples
+        # The start/stop protocol used by an older instance still returns its original shape.
+        legacy = await evaluate(ws, """(() => {
+          const op = 'focus/1/' + window.__focusMobile.ticket + '/print-diag-';
+          const id = prompt(op + 'start', '');
+          return JSON.parse(prompt(op + 'stop', id));
+        })()""")
+        assert legacy["events"] == [] and "observations" not in legacy
         assert "Reading position" not in json.dumps(snapshot) and await evaluate(ws, content) == body
-        print("Saved a direct PDF with printing disabled, then read back both system-printed PDFs and checked their diagnostics.")
+        print("Read back the direct and both system-printed PDFs and checked launch, window, job and adapter evidence.")
 
 
 if __name__ == "__main__":

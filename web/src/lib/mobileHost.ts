@@ -93,7 +93,8 @@ interface MobilePrintTrace { session: string; attempt: number; source: MobilePri
 export function mobilePrintRecording(action: 'start' | 'stop', session = ''): string | null {
   if (!host || !hasMobileFeature('print-diagnostics')) return null;
   try {
-    const reply = window.prompt('focus/1/' + host.ticket + '/print-diag-' + action, session);
+    const value = action === 'start' && hasMobileFeature('print-job-diagnostics') ? 'print-job-diagnostics' : session;
+    const reply = window.prompt('focus/1/' + host.ticket + '/print-diag-' + action, value);
     return reply && (action === 'stop' || uuid.test(reply)) ? reply : null;
   } catch { return null; }
 }

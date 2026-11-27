@@ -16,6 +16,7 @@ const panel = ref<HTMLElement>();
 const feedback = ref('');
 const exporting = ref(false);
 const canSave = hasMobileFeature('save');
+const observesPrintJobs = hasMobileFeature('print-job-diagnostics');
 
 function toggle(): void {
   feedback.value = '';
@@ -48,7 +49,9 @@ async function exportReport(kind: 'copy' | 'save'): Promise<void> {
   <details ref="panel" class="summary-print-diagnostic">
     <summary>{{ t('focus.printDiagnosticTitle') }}</summary>
     <p>{{ t('focus.printDiagnosticHint') }}</p>
-    <p v-if="recording && report?.native?.status === 'recording'">{{ t('focus.printDiagnosticNativeHint') }}</p>
+    <p v-if="recording && report?.native?.status === 'recording'">
+      {{ t(observesPrintJobs ? 'focus.printDiagnosticJobHint' : 'focus.printDiagnosticNativeHint') }}
+    </p>
     <p v-if="report" role="status">
       {{ t(recording ? 'focus.printDiagnosticRecording' : 'focus.printDiagnosticStopped', { count: report.attempts }) }}
     </p>

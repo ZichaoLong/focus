@@ -4,12 +4,14 @@ import android.app.Activity;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.SystemClock;
 import android.os.UserManager;
 import android.print.PageRange;
 import android.print.PrintAttributes;
 import android.print.PrintDocumentAdapter;
+import android.print.PrintJob;
 import android.print.PrintManager;
 import android.webkit.WebView;
 import java.util.UUID;
@@ -20,17 +22,22 @@ import org.json.JSONObject;
 
 /** The current trusted document owns one optional, bounded print recording. */
 final class AndroidPrinting {
-    private static final long LIMIT_MS = 300_000;
+    static final long LIMIT_MS = 300_000;
     private final Activity activity;
     private Recording recording;
+    private boolean dispatchingPrint;
 
     AndroidPrinting(Activity activity) { this.activity = activity; }
 
     private static final class Recording {
         final String id = UUID.randomUUID().toString();
         final long started = SystemClock.elapsedRealtime();
+        final PrintJobDiagnostics observations;
         JSONArray events = new JSONArray();
         int lastAttempt, dropped;
+        String lastSource;
+
+        Recording(boolean observeJobs) { observations = observeJobs ? new PrintJobDiagnostics(started) : null; }
 
         long elapsed() { return SystemClock.elapsedRealtime() - started; }
 
@@ -44,15 +51,28 @@ final class AndroidPrinting {
     }
 
     void clear() {
-        if (recording != null) recording.events = null;
+        if (recording != null) {
+            if (recording.observations != null) recording.observations.close();
+            recording.events = null;
+        }
         recording = null;
+    }
+
+    void hostEvent(String event) {
+        Recording current = recording;
+        if (current != null && current.observations != null && current.lastAttempt > 0)
+            current.observations.record(current.lastAttempt, current.lastSource, event);
+    }
+
+    void intentEvent(String event) {
+        if (Looper.myLooper() == Looper.getMainLooper() && dispatchingPrint) hostEvent(event);
     }
 
     String handle(WebView view, String operation, String value) {
         if ("print".equals(operation)) return print(view, value, false, null);
         if ("print-diag-start".equals(operation)) {
             clear();
-            recording = new Recording();
+            recording = new Recording("print-job-diagnostics".equals(value));
             return recording.id;
         }
         Recording current = recording;
@@ -60,7 +80,9 @@ final class AndroidPrinting {
         try {
             if ("print-diag-stop".equals(operation) && current.id.equals(value)) {
                 try {
-                    return new JSONObject().put("sdk", Build.VERSION.SDK_INT)
+                    JSONObject snapshot = new JSONObject();
+                    if (current.observations != null) snapshot.put("observations", current.observations.finish());
+                    return snapshot.put("sdk", Build.VERSION.SDK_INT)
                         .put("elapsedMs", Math.min(current.elapsed(), LIMIT_MS)).put("droppedEvents", current.dropped)
                         .put("events", current.events).toString();
                 } finally { clear(); }
@@ -74,17 +96,24 @@ final class AndroidPrinting {
                     || (!test && !"webview".equals(source))) return "error";
             String name = test ? "Focus Mobile print test" : request.getString("name");
             current.lastAttempt = number;
-            Consumer<String> trace = event -> current.record(number, source, event);
-            trace.accept("request");
+            current.lastSource = source;
+            current.record(number, source, "request");
+            if (current.observations != null)
+                hostEvent(activity.hasWindowFocus() ? "window-initial-focused" : "window-initial-unfocused");
             try {
                 UserManager users = activity.getSystemService(UserManager.class);
-                if (users != null && users.hasUserRestriction(UserManager.DISALLOW_PRINTING)) trace.accept("printing-restricted");
+                if (users != null && users.hasUserRestriction(UserManager.DISALLOW_PRINTING))
+                    current.record(number, source, "printing-restricted");
             } catch (RuntimeException unavailable) { /* An optional policy query cannot block printing. */ }
-            return print(view, name, test, trace);
+            return print(view, name, test, current);
         } catch (JSONException | RuntimeException invalid) { return "error"; }
     }
 
-    private String print(WebView view, String name, boolean test, Consumer<String> trace) {
+    private String print(WebView view, String name, boolean test, Recording current) {
+        int attempt = current == null ? 0 : current.lastAttempt;
+        String source = test ? "native-test" : "webview";
+        Consumer<String> trace = current == null ? null : event -> current.record(attempt, source, event);
+        PrintJobDiagnostics observations = current == null ? null : current.observations;
         try {
             PrintManager manager = activity.getSystemService(PrintManager.class);
             if (manager == null) return failed(trace, "no-service");
@@ -95,8 +124,16 @@ final class AndroidPrinting {
                 trace.accept("adapter-created");
                 adapter = new ObservedAdapter(adapter, trace);
             }
-            if (manager.print(name, adapter, null) == null) return failed(trace, "no-job");
+            PrintJob job;
+            dispatchingPrint = observations != null;
+            try { job = manager.print(name, adapter, null); }
+            finally { dispatchingPrint = false; }
+            if (job == null) return failed(trace, "no-job");
             if (trace != null) trace.accept("job-returned");
+            if (observations != null) {
+                try { observations.watch(manager, job, attempt, source); }
+                catch (RuntimeException unavailable) { observations.record(attempt, source, "job-query-error"); }
+            }
             return "ok";
         } catch (SecurityException denied) { return failed(trace, "security-exception"); }
         catch (RuntimeException unavailable) { return failed(trace, "exception"); }

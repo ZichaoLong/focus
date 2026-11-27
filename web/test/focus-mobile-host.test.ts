@@ -239,6 +239,7 @@ describe('negotiated mobile host', () => {
     const session = '94c41aa6-2ea3-4064-9324-af002068796f';
     win.prompt.mockReturnValueOnce(session);
     trace.start('ready');
+    expect(win.prompt).toHaveBeenLastCalledWith('focus/1/' + ticket + '/print-diag-start', '');
     trace.print('private-title');
     trace.print('private-title', 'native-test');
     const tracedCalls = win.prompt.mock.calls.filter(([op]) => op.endsWith('/print-diag-run')).map(([, v]) => JSON.parse(v));
@@ -262,6 +263,40 @@ describe('negotiated mobile host', () => {
     win.prompt.mockReturnValueOnce(JSON.stringify({ ...snapshot, events: [[1, 1, 'webview', 'private-error']] }));
     trace.stop();
     expect(trace.report.value?.native).toEqual({ status: 'unavailable' });
+  });
+
+  it('negotiates timed job observations and keeps adapter evidence if the extension is unreadable', async () => {
+    const win = setup();
+    win.__focusMobile.features.push('print', 'print-diagnostics', 'print-job-diagnostics');
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+    const host = await import('../src/lib/mobileHost');
+    await host.negotiateMobileHost();
+    const { createSummaryPrintDiagnostics } = await import('../src/focus/summaryPrintDiagnostics');
+    const trace = createSummaryPrintDiagnostics();
+    const capture = (observations: unknown) => {
+      win.prompt.mockReturnValueOnce(id);
+      trace.start('ready');
+      expect(win.prompt).toHaveBeenLastCalledWith('focus/1/' + ticket + '/print-diag-start', 'print-job-diagnostics');
+      trace.print('private-title');
+      trace.print('private-title', 'native-test');
+      win.prompt.mockReturnValueOnce(JSON.stringify({ sdk: 36, elapsedMs: 35_000, droppedEvents: 0,
+        events: [[10, 1, 'webview', 'job-returned']], observations }));
+      trace.stop();
+      return trace.report.value?.native;
+    };
+    const rows = [[5, 1, 'webview', 'intent-returned'], [25, 2, 'native-test', 'job-created'],
+      [2000, 1, 'webview', 'job-created'], [30010, 1, 'webview', 'job-created'], [30025, 2, 'native-test', 'job-not-listed']];
+    expect(capture({ events: rows, droppedEvents: 1, jobId: 'private-id', printer: 'private-printer' }))
+      .toMatchObject({ observations: { status: 'collected', droppedEvents: 1,
+        events: rows.map(([ms, attempt, source, event]) => ({ ms, attempt, source, event })) } });
+    expect(JSON.stringify(trace.report.value)).not.toContain('private');
+    for (const observations of [undefined, { events: rows, droppedEvents: -1 },
+      ...[Array(41).fill(rows[0]), [[35001, 1, 'webview', 'job-created']], [[1, 3, 'webview', 'job-failed']],
+        [[1, 1, 'webview', 'private-error']]].map(events => ({ events, droppedEvents: 0 }))]) {
+      expect(capture(observations)).toMatchObject({ status: 'collected', events: [{ event: 'job-returned' }],
+        observations: { status: 'unavailable' } });
+      expect(JSON.stringify(trace.report.value)).not.toContain('private');
+    }
   });
 });
 

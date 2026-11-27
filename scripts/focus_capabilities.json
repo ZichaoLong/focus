@@ -1571,6 +1571,9 @@
           "path": "mobile/android/src/org/focus/mobile/AndroidPrinting.java"
         },
         {
+          "path": "mobile/android/src/org/focus/mobile/PrintJobDiagnostics.java"
+        },
+        {
           "path": "mobile/android/src/org/focus/mobile/PrintTestPage.java"
         },
         {

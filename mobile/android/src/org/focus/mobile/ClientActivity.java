@@ -507,7 +507,7 @@ public class ClientActivity extends Activity {
     private void offer(WebView view) {
         if (!selected) return;
         if (ticket.isEmpty()) ticket = UUID.randomUUID().toString();
-        String printFeature = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PRINTING) ? ",'print','print-diagnostics'" : "";
+        String printFeature = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PRINTING) ? ",'print','print-diagnostics','print-job-diagnostics'" : "";
         String js = "if(window===top && location.origin===" + JSONObject.quote(origin)
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"
@@ -520,8 +520,25 @@ public class ClientActivity extends Activity {
         if (web != null && !probe && Site.root(web.getUrl(), origin))
             web.evaluateJavascript("if(window.__focusMobile)dispatchEvent(new Event('focus-host-" + event + "'))", null);
     }
-    @Override protected void onResume() { super.onResume(); foreground = true; checkSavedAccess(); if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
-    @Override protected void onPause() { if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; if (drawer != null) drawer.disarmExit(); main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
+    @Override public void startIntentSender(IntentSender sender, Intent fillIn, int mask, int values, int extra, Bundle options)
+            throws IntentSender.SendIntentException {
+        printing.intentEvent("intent-start");
+        try { super.startIntentSender(sender, fillIn, mask, values, extra, options); }
+        catch (IntentSender.SendIntentException | RuntimeException failure) {
+            if (failure instanceof ActivityNotFoundException) printing.intentEvent("intent-no-activity");
+            else if (failure instanceof SecurityException) printing.intentEvent("intent-denied");
+            else if (failure instanceof IntentSender.SendIntentException) printing.intentEvent("intent-send-error");
+            else printing.intentEvent("intent-error");
+            throw failure;
+        }
+        printing.intentEvent("intent-returned");
+    }
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        printing.hostEvent(focused ? "window-focused" : "window-unfocused");
+    }
+    @Override protected void onResume() { super.onResume(); printing.hostEvent("activity-resumed"); foreground = true; checkSavedAccess(); if (web != null) web.onResume(); signal("resume"); if (retryNeeded) main.post(retry); }
+    @Override protected void onPause() { printing.hostEvent("activity-paused"); if(reader!=null) reader.cancelCheck(); foreground = false; pendingBack = null; if (drawer != null) drawer.disarmExit(); main.removeCallbacks(retry); signal("pause"); if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onStop() {
         super.onStop();
         if (!selected && !isFinishing()) moveTaskToBack(true);

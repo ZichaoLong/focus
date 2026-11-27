@@ -175,6 +175,7 @@ export default {
   printDiagnosticTitle: '打印诊断',
   printDiagnosticTestPage: '打印一页测试文本',
   printDiagnosticNativeHint: '点过上方的打印按钮后，再试一次安卓生成的单页文本。停止记录时，两次请求的原生打印回调会一起写入报告。',
+  printDiagnosticJobHint: '点「系统打印」，再点「打印一页测试文本」做对照。如果出现打印面板，返回此预览。最后一次点击后请等约 35 秒再复制，报告会包含两次请求的任务状态和窗口变化。',
   printDiagnosticHint: '复现前点「开始记录」，再点上方的打印按钮。记录包含版本、打印请求结果和页面前后台变化。复制或保存会停止记录，五分钟后也会自动停止。关闭预览会清空记录。',
   printDiagnosticRecording: '正在记录，已收到 {count} 次打印点击。',
   printDiagnosticStopped: '记录已停止，共收到 {count} 次打印点击。',
