@@ -37,7 +37,7 @@ function emptyReasoning(itemId: string): ChatTurn {
   return { id: 'turn-1:item:' + itemId + ':0', rawTurnId: 'turn-1', itemId, role: 'assistant', no: 0,
     text: '', blocks: [{ kind: 'thinking', itemId, thinking: '' }] };
 }
-type Fixture = { page: Page; reads: string[]; pings(): number; update(row: ChatTurn): void; disconnect(): void; refuseNextCursor(): void };
+type Fixture = { page: Page; reads: string[]; pings(): number; resync(): void; update(row: ChatTurn): void; disconnect(): void; refuseNextCursor(): void };
 type FixtureOptions = {
   onFill?(cursor: number): Promise<void> | void;
   pages?: ChatTurn[][];
@@ -53,7 +53,7 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
   page.setDefaultTimeout(12_000);
   const reads: string[] = [], errors: string[] = [];
   let update: (row: ChatTurn) => void, revision = 1;
-  let closeSocket: () => void, refuseFill = false, cursorBase = 0, pings = 0;
+  let resync: () => void, closeSocket: () => void, refuseFill = false, cursorBase = 0, pings = 0;
   page.on('pageerror', err => errors.push(err.message));
   if (mobileTabs) await page.addInitScript(() => {
     window.__focusMobile = { version: 1, instance: '7ebb390f-2699-49de-ab09-95c6c5f53b76',
@@ -65,6 +65,8 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
   await page.routeWebSocket('**/api/events?*', socket => {
     update = row => socket.send(JSON.stringify({ type: 'thread_delta', runtime_epoch: 'epoch-1', revision: ++revision,
       thread_id: source.id, reason: 'item/completed', detail: { method: 'item/completed', turn_id: 'turn-1', item_turns: [row] } }));
+    resync = () => socket.send(JSON.stringify({ type: 'projection_invalidated', runtime_epoch: 'epoch-1',
+      revision: ++revision, reason: 'projection_membership_changed', detail: { reload: true } }));
     closeSocket = () => socket.close({ code: 1011, reason: 'Test reconnect' });
     socket.onMessage(msg => { if (msg === 'ping') { pings++; socket.send('pong'); } });
     setTimeout(() => socket.send(JSON.stringify({ type: 'hello', runtime_epoch: 'epoch-1', revision: 1 })), 10);
@@ -73,10 +75,10 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
     const { pathname, searchParams: query } = new URL(route.request().url());
     let payload: unknown;
     if (pathname === '/api/client/register') payload = registration();
-    else if (pathname === '/api/meta') payload = { ...meta, revision: 1, writer_profile: { ...meta.writer_profile, selected_thread_id: 'thread-1' } };
-    else if (pathname === '/api/settings/next-turn') payload = { runtime_epoch: 'epoch-1', revision: 1, next_turn_settings: meta.next_turn_settings };
+    else if (pathname === '/api/meta') payload = { ...meta, revision, writer_profile: { ...meta.writer_profile, selected_thread_id: 'thread-1' } };
+    else if (pathname === '/api/settings/next-turn') payload = { runtime_epoch: 'epoch-1', revision, next_turn_settings: meta.next_turn_settings };
     else if (pathname === '/api/operator-status') payload = { status: 'ok', observed_at: 1, poll_after_seconds: 60, warnings: [], runtime_loop: {} };
-    else if (pathname === '/api/threads') payload = { runtime_epoch: 'epoch-1', revision: 1, scope: query.get('scope') ?? 'global',
+    else if (pathname === '/api/threads') payload = { runtime_epoch: 'epoch-1', revision, scope: query.get('scope') ?? 'global',
       archived: false, limit: 100, truncated: false, threads: [source] };
     else if (pathname.endsWith('/transcript')) {
       let rows: ChatTurn[] = [], older: string | null = null;
@@ -115,19 +117,21 @@ async function fixture(width: number, prosePage: number, run: (f: Fixture) => Pr
         turns: rows, ...(toolPages ? { tool_pages: toolPages } : {}), older_cursor: older, newer_cursor: anchor ? 'after-anchor' : cursor ? 'forward-' + cursor : null, full_text: null };
     } else if (/\/api\/threads\/thread-1(?:\/open)?$/.test(pathname)) {
       const unknown = { value: '', source: 'unknown' };
-      payload = { ...snapshot('none', 'thread-1', 1), revision: 1, thread: source,
+      payload = { ...snapshot('none', 'thread-1', revision), revision, thread: source,
         active_turn_id: running ? 'turn-1' : '', active_turn_status: running ? 'inProgress' : '',
         active_turn_context: running ? { turn_id: 'turn-1', initiator: { kind: 'fcodex', binding_id: '' }, feishu_audience: [],
           settings: { model: unknown, reasoning_effort: unknown, approval_policy: unknown, permissions_profile_id: unknown } } : null };
     } else return route.fulfill({ status: 404, json: { error: { code: 'unavailable', message: pathname } } });
-    await route.fulfill({ json: payload });
+    await route.fulfill({ json: payload, headers: query.has('fill') ? {
+      'X-Focus-Fill-Reads': '1', 'X-Focus-Fill-Bytes': String(Buffer.byteLength(JSON.stringify(payload))),
+    } : {} });
   });
   try {
     await page.goto(fromProfile ? new URL('/?focusApp=1', url).href : url);
     const first = pages ? page.locator('.tool-group-head').first() : page.locator('.md').getByText('First read.', { exact: true });
     await first.waitFor({ timeout: 30_000 });
     await page.evaluate(() => document.fonts.ready);
-    await run({ page, reads, update: row => update(row), pings: () => pings, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
+    await run({ page, reads, resync: () => resync(), update: row => update(row), pings: () => pings, disconnect: () => closeSocket(), refuseNextCursor: () => { refuseFill = true; } });
     expect(errors).toEqual([]);
   } catch (error) {
     const viewport = await page.locator('.panes').evaluateAll(panes => panes.map(pane => ({
@@ -360,9 +364,35 @@ it.each([1280, 390])('fills the ordinary live tail and keeps the read prefix on 
   });
 }, 45_000);
 
+it.each([[935, 697, false], [1004, 806, false], [390, 700, false], [390, 865, true]] as const)(
+  'restores visible prose after repeated resync at %s × %s, reading %s', async (width, height, reading) => {
+    const calls = tools(1, 21);
+    const head = calls.flatMap((row, i) => [
+      ...(i === 7 ? [reply('status', '打印任务已创建，正在检查输出。')] : []),
+      row, ...(i < 18 ? [emptyReasoning('reason-' + i)] : []),
+    ]);
+    const earlier = reply('context', 'Earlier readable context.\n\n'.repeat(55));
+    const pages = [head, tools(-40, 40), [reply('short', '仍在处理。')], [earlier]];
+    await fixture(width, 3, async ({ page, reads, resync }) => {
+      if (reading) await page.locator('.reading-mode-entry:visible').click();
+      for (let i = 0; i <= 10; i++) {
+        if (i) {
+          const heads = reads.filter(r => r === 'head').length;
+          resync();
+          await expect.poll(() => reads.filter(r => r === 'head').length).toBeGreaterThan(heads);
+        }
+        const readable = width === 390 && !reading ? 'short' : 'context';
+        await page.locator('[data-turn-id*=":' + readable + ':"]').waitFor({ state: 'attached' });
+        await expect.poll(() => gap(page)).toBeLessThan(96);
+      }
+      expect(reads.filter(r => r.startsWith('fill-')).length).toBeLessThanOrEqual(33);
+    }, { height, pages, running: true });
+  }, 90_000,
+);
+
 it('limits one persistent shortfall across mode, resize and reconnect and keeps manual paging', async () => {
   await fixture(390, 4, async ({ page, reads, disconnect }) => {
-    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2']);
+    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2', 'fill-3']);
     await page.locator('.top-sentinel-btn:enabled').waitFor();
     await page.locator('.reading-mode-entry:visible').click();
     await page.setViewportSize({ width: 390, height: 664 });
@@ -373,7 +403,7 @@ it('limits one persistent shortfall across mode, resize and reconnect and keeps 
     expect(await gap(page)).toBeGreaterThan(96);
     await page.locator('.top-sentinel-btn:enabled').click();
     await expect.poll(() => reads.at(-1)).toBe('older-1');
-    expect(reads.filter(read => read.startsWith('fill-'))).toHaveLength(2);
+    expect(reads.filter(read => read.startsWith('fill-'))).toHaveLength(3);
   });
 }, 45_000);
 
@@ -481,7 +511,7 @@ it.each([1280, 390])('keeps readable history while confirming a live tool burst 
 
 it('rearms after new prose fills the viewport and a later edit makes it short again', async () => {
   await fixture(1280, 4, async ({ page, reads, update }) => {
-    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2']);
+    await expect.poll(() => reads).toEqual(['head', 'fill-1', 'fill-2', 'fill-3']);
     await page.locator('.top-sentinel-btn:enabled').waitFor();
     update(reply('live', 'Arrived during work.\n\n'.repeat(70)));
     await expectVisibleTail(page);

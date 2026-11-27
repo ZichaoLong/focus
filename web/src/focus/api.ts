@@ -670,14 +670,23 @@ export class FocusWebApi implements FocusWebApiPort {
 
   async readTranscriptWindow(threadId: string, query: FocusTranscriptQuery = {}, signal?: AbortSignal): Promise<FocusTranscriptPage> {
     const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) {
+    const { fillBudget, ...locator } = query;
+    for (const [key, value] of Object.entries(locator)) {
       if (value !== undefined) params.set(key, String(value));
     }
+    let fillCost: FocusTranscriptPage['fillCost'];
     let mark = '';
     const wantsMark = !!this.mobileReadScope && hasMobileFeature('conversation-windows') && !params.size;
     const page = await this.request('thread_transcript', decodeFocusTranscriptPage, 'transcript page', {
       parameters: { thread_id: threadId }, query: params, signal,
-      ...(query.fill ? { headers: { 'X-Focus-Folded-Tools': '2' } } : {}),
+      ...(query.fill ? { headers: { 'X-Focus-Folded-Tools': '2', ...(fillBudget && {
+        'X-Focus-Fill-Reads': String(fillBudget.reads), 'X-Focus-Fill-Bytes': String(fillBudget.bytes),
+      }) }, onResponse: (response: Response) => {
+        const reads = Number(response.headers.get('X-Focus-Fill-Reads'));
+        const bytes = Number(response.headers.get('X-Focus-Fill-Bytes'));
+        if (fillBudget && Number.isInteger(reads) && reads > 0 && reads <= fillBudget.reads
+          && Number.isInteger(bytes) && bytes > 0 && bytes <= fillBudget.bytes) fillCost = { reads, bytes };
+      } } : {}),
       ...(wantsMark ? {headers:{'X-Focus-Reading-Window':'1'}, onResponse:(r: Response) => { mark=r.headers.get('X-Focus-Reading-Mark') ?? ''; }} : {}),
     });
     if (page.tool_pages) {
@@ -698,6 +707,7 @@ export class FocusWebApi implements FocusWebApiPort {
       }
       delete page.tool_pages;
     }
+    if (fillCost) page.fillCost = fillCost;
     if (mark) page.readingMark=mark;
     return page;
   }

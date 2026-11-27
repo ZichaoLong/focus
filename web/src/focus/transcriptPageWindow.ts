@@ -4,7 +4,7 @@ import { TRANSCRIPT_PAGE_ITEMS, TRANSCRIPT_WINDOW_ITEMS } from './transcriptItem
 
 export const TRANSCRIPT_CACHE_PAGES = 10;
 export const TRANSCRIPT_CACHE_BYTES = 8 * 1024 * 1024;
-export const MAX_TAIL_FILL_READS = 2;
+export const MAX_TAIL_FILL_READS = 3;
 
 interface CachedPage {
   rows: ChatTurn[];

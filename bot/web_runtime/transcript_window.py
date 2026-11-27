@@ -53,6 +53,7 @@ class WebThreadTranscriptPreparation:
     live_item: dict[str, Any] | None = None
     include_reading_mark: bool = False
     folded_tools_version: int = 0
+    fill_reads: int = TAIL_CONTEXT_SOURCE_READS
 
     @property
     def reading_mark(self) -> str:
@@ -213,7 +214,7 @@ def read_transcript_window(
     calls = 0
     def bounded_list(*args, **kwargs):
         nonlocal calls
-        if calls >= TAIL_CONTEXT_SOURCE_READS:
+        if calls >= prepared.fill_reads:
             raise ReadLimit
         calls += 1
         return list_thread_items(*args, **kwargs)
@@ -224,7 +225,7 @@ def read_transcript_window(
     ranges: list[dict] = []
     cost = 0
     accepted = None
-    while cursor and calls < TAIL_CONTEXT_SOURCE_READS:
+    while cursor and calls < prepared.fill_reads:
         if cursor in seen_cursors:
             raise WebRuntimeError("Transcript cursor did not advance.", code="transcript_protocol_error", status=502)
         seen_cursors.add(cursor)
@@ -253,6 +254,7 @@ def read_transcript_window(
         raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
     if ranges:
         accepted["tool_pages"] = list(reversed(ranges))
+    accepted["fill_reads"] = calls
     return accepted
 
 

@@ -287,8 +287,11 @@ The reader stays at the end through that layout change, including when the posit
 Parked instances make no fill requests. After rendering, normal and reading modes measure the gap
 from the end of all content, including activity and queued prompts, to the transcript viewport bottom. When the content
 fits and the gap is at least both 96 CSS pixels and 20% of that viewport, load one older page and measure again.
-Each persistent shortfall allows at most two fill requests, counting failures and cancellations. Fresh messages render during those reads. When new content fills the original viewport, a later shortfall can start another allowance. Layout changes, stream
-events and repeated handshakes share that budget. If an instance fill receives `409 stale_thread_read` with
+One fill allows three attempts, 256 KiB of successful response bodies, and 28 upstream item-page reads.
+The request bounds each read with X-Focus-Fill-Reads and X-Focus-Fill-Bytes; response headers report actual costs.
+Remember the earliest visible prose and whether the viewport was filled. After a full resync discards old cursors and
+removes previously read context, restore from the confirmed head with one fresh bounded allowance. Repeated invalidations
+coalesce. New content filling the viewport or reader input ends recovery. Fresh messages continue throughout. If an instance fill receives `409 stale_thread_read` with
 an attempt left, reread the head and continue from its current cursor. Each complete successful fill response is limited to 128 KiB
 of serialized JSON before HTTP compression. The gateway returns a small `transcript_fill_limit` refusal for a larger page.
 Other fill failures, a full cache, an exhausted budget or the reader taking control end the fill. Keep the live tail and the manual paging control.

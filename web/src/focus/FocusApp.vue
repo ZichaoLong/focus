@@ -1221,6 +1221,7 @@ onUnmounted(() => {
           :tail-context="client.connection.value === 'connected' ? client.transcript.tailContext.value : null"
           :cancel-tail-context="client.transcript.cancelTailContext"
           :tail-filled="client.transcript.tailFilled"
+          :measure-tail="client.transcript.measureTail"
           :finish-latest="client.transcript.finishLatest"
           :load-tool-members="client.transcript.loadToolMembers"
           :workspace-name="client.visibleWorkspace.value?.name"

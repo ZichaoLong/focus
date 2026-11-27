@@ -34,6 +34,7 @@ from bot.web_runtime.selection_coordinator import (
     WebSelectionNotReady,
 )
 from bot.web_runtime.thread_inspection_wire import encode_thread_inspection_json
+from bot.web_runtime.transcript_budget import TAIL_CONTEXT_SOURCE_READS
 from bot.web_runtime.transcript_window import (
     WebThreadTranscriptPreparation,
     read_transcript_window,
@@ -224,6 +225,7 @@ class WebThreadInspectionService:
         source_cursor: str | None = None,
         include_reading_mark: bool = False,
         folded_tools_version: int = 0,
+        fill_reads: int = TAIL_CONTEXT_SOURCE_READS,
     ) -> WebThreadTranscriptPreparation:
         if direction not in {"asc", "desc"} or type(full) is not bool or folded_tools_version not in {0, 1, 2}:
             raise WebRuntimeError("Invalid transcript query.", code="invalid_transcript_query", status=400)
@@ -248,7 +250,7 @@ class WebThreadInspectionService:
             document=document, observation=observation,
             connection_generation=generation, deadline=self._monotonic() + self._timeout_seconds,
             runtime_epoch=str(coordinates["runtime_epoch"]), revision=int(coordinates["revision"]),
-            view=view, source_cursor=source_cursor, include_reading_mark=include_reading_mark, folded_tools_version=folded_tools_version,
+            fill_reads=fill_reads, view=view, source_cursor=source_cursor, include_reading_mark=include_reading_mark, folded_tools_version=folded_tools_version,
             live_item=self._ports.live_transcript_item(thread_id, turn_id, item_id)
             if full and turn_id and item_id else None,
         )

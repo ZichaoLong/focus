@@ -44,6 +44,23 @@ class ThreadInspectionGatewayTests(WebGatewayHarness):
                 self.assertEqual(response.status, 200)
             self.assertEqual(calls[-1][1].get("folded_tools_version"), version)
 
+    async def test_fill_honors_remaining_work_and_reports_actual_cost(self) -> None:
+        await self._authenticate()
+        document = await self._register_document(resume_client_id="cost", incarnation_id="cost-doc")
+        headers = {**self._client_headers(document), "X-Focus-Folded-Tools": "2",
+                   "X-Focus-Fill-Reads": "3", "X-Focus-Fill-Bytes": "100"}
+        def prepare(client, thread, **options):
+            self.assertEqual(options["fill_reads"], 3)
+            return ("transcript", {"fill_reads": 2, "turns": []})
+        self.gateway._ports.prepare_transcript_window = prepare
+        path = f"{self.endpoint}/api/threads/thread-1/transcript?cursor=c&fill=true"
+        async with self.session.get(path, headers=headers) as response:
+            self.assertEqual(response.headers["X-Focus-Fill-Reads"], "2")
+            self.assertEqual(int(response.headers["X-Focus-Fill-Bytes"]), len(await response.read()))
+        for field, value, status in (("Bytes", "3", 409), ("Reads", "15", 400)):
+            async with self.session.get(path, headers={**headers, "X-Focus-Fill-" + field: value}) as response:
+                self.assertEqual(response.status, status)
+
     async def test_tail_context_limits_serialized_bytes_only_on_the_optional_read(self) -> None:
         await self._authenticate()
         document = await self._register_document(resume_client_id="context", incarnation_id="context-doc")

@@ -806,6 +806,7 @@ export interface FocusThreadDeltaDetail {
 
 export interface FocusTranscriptQuery {
   fill?: true;
+  fillBudget?: { reads: number; bytes: number };
   turn_id?: string;
   cursor?: string;
   direction?: 'asc' | 'desc';
@@ -825,6 +826,7 @@ export interface FocusTranscriptToolPage {
 export interface FocusTranscriptPage extends FocusCoordinates {
   tool_pages?: FocusTranscriptToolPage[];
   readingMark?: string;
+  fillCost?: { reads: number; bytes: number };
   thread_id: string;
   turn_id: string | null;
   view: FocusWebWireEnum<'transcript_view'>;

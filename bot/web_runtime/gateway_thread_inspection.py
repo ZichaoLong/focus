@@ -9,7 +9,7 @@ from aiohttp import web
 from bot.web_runtime import gateway_request_decoder as request_decoder
 from bot.web_runtime.contract import WebRuntimeError
 from bot.web_runtime.thread_inspection_wire import encode_thread_inspection_json
-from bot.web_runtime.transcript_budget import TAIL_CONTEXT_BYTES
+from bot.web_runtime.transcript_budget import TAIL_CONTEXT_BYTES, TAIL_CONTEXT_SOURCE_READS
 
 
 def _inspection_json_response(payload: Any) -> web.Response:
@@ -30,8 +30,17 @@ class WebGatewayThreadInspectionMixin:
         query = request_decoder.decode_transcript_query(request.query)
         fill = query.pop("fill", None)
         folded_version = request.headers.get("X-Focus-Folded-Tools")
+        def allowance(header: str, maximum: int) -> int:
+            raw = request.headers.get(header, str(maximum))
+            if not raw.isascii() or not raw.isdecimal() or len(raw) > 6 or not 1 <= int(raw) <= maximum:
+                raise WebRuntimeError("Invalid fill budget.", code="invalid_transcript_query", status=400)
+            return int(raw)
+
+        byte_limit = allowance("X-Focus-Fill-Bytes", TAIL_CONTEXT_BYTES) if fill else 0
         if fill and folded_version in {"1", "2"}:
             query["folded_tools_version"] = int(folded_version)
+            if "X-Focus-Fill-Reads" in request.headers:
+                query["fill_reads"] = allowance("X-Focus-Fill-Reads", TAIL_CONTEXT_SOURCE_READS)
         if request.headers.get("X-Focus-Reading-Window") == "1":
             query["include_reading_mark"] = True
         page = await self._staged_document_request_to_thread(
@@ -39,12 +48,16 @@ class WebGatewayThreadInspectionMixin:
             request.match_info["thread_id"], **query,
         )
         record_mark = page.pop("reading_mark", None)
+        reads = page.pop("fill_reads", None)
         response = self._json_response(page)
+        if fill and reads is not None:
+            response.headers["X-Focus-Fill-Reads"] = str(reads)
+            response.headers["X-Focus-Fill-Bytes"] = str(len(response.body))
         if record_mark:
             response.headers["X-Focus-Reading-Mark"] = record_mark
         # Cap the actual serialized mobile/browser response, including timing
         # enrichment and JSON escaping. Leave the cursor available for manual use.
-        if fill and len(response.body) > TAIL_CONTEXT_BYTES:
+        if fill and len(response.body) > byte_limit:
             raise WebRuntimeError("Load this history page manually.", code="transcript_fill_limit", status=409)
         return response
 

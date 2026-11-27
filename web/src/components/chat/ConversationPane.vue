@@ -121,6 +121,7 @@ const props = withDefaults(defineProps<{
   /** Current cursor authority for filling a host-selected instance's live tail. */
   tailContext?: AbortController | null;
   tailFilled?: () => void;
+  measureTail?: (anchor: string | null, filled: boolean, gap: number) => boolean;
   finishLatest?: (intent: AbortSignal) => void;
   loadToolMembers?: (turn: ChatTurn, signal: AbortSignal) => Promise<boolean>;
   cancelTailContext?: () => void;
@@ -995,7 +996,7 @@ async function handleReturnToLiveTail(): Promise<void> {
 let shortTail: { session: string; width: number; height: number; last?: string; length: number } | null = null;
 
 async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): Promise<void> {
-  for (let i = 0; i < MAX_TAIL_FILL_READS; i++) {
+  for (let i = 0; i <= MAX_TAIL_FILL_READS; i++) {
     if (!props.continuousTranscript || !props.sessionId || !props.loadOlderMessages) break;
     await new Promise<void>(resolve => raf(resolve));
     const pane = fence.pane;
@@ -1006,7 +1007,16 @@ async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): 
     const end = pane.querySelector('[data-transcript-end]');
     if (!end) break;
     const gap = pane.getBoundingClientRect().bottom - end.getBoundingClientRect().top;
-    if (pane.scrollHeight > pane.clientHeight + 1 || gap < Math.max(96, pane.clientHeight * 0.2)) {
+    const full = pane.scrollHeight > pane.clientHeight + 1 || gap <= 32;
+    const viewport = pane.getBoundingClientRect();
+    const prose = new Set(props.turns.filter(turn => turn.text.trim()).map(turn => turn.id));
+    const anchor = [...pane.querySelectorAll<HTMLElement>('.turn-anchor[data-turn-id]')].find(row => {
+      const box = row.getBoundingClientRect();
+      return box.height > 0 && box.bottom > viewport.top && box.top < viewport.bottom
+        && prose.has(row.dataset.turnId ?? '');
+    });
+    const restoring = props.measureTail?.(anchor?.dataset.turnId ?? null, full, gap);
+    if (full || (!restoring && gap < Math.max(96, pane.clientHeight * 0.2))) {
       // A remounted prefix can finish measuring after the initial follow
       // frames, with the browser still at its old (short) scroll range.
       if (!isPinned() && distanceFromBottom() > 1) scheduleStableFollow(8);
@@ -1018,7 +1028,7 @@ async function fillShortTail(intent: AbortController, fence: ScrollWriteFence): 
       }
       break;
     }
-    if (!props.hasMoreMessages) break;
+    if (!props.hasMoreMessages || i === MAX_TAIL_FILL_READS) break;
     shortTail ??= { session: props.sessionId, width: pane.clientWidth, height: pane.clientHeight, last: props.turns.at(-1)?.id, length: props.turns.at(-1)?.text.length ?? 0 };
     if (!await props.loadOlderMessages(props.sessionId, intent.signal)) break;
     await nextTick();

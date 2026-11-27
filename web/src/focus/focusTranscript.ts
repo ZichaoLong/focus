@@ -9,6 +9,7 @@ import { focusPerformance } from './focusPerformance';
 import { readTranscriptTarget } from './transcriptRead';
 import { MAX_TAIL_FILL_READS, TranscriptPageWindow, TRANSCRIPT_CACHE_BYTES, TRANSCRIPT_CACHE_PAGES } from './transcriptPageWindow';
 
+type TailLayout = { anchor: string; filled: boolean };
 type BufferedDelta = { event: FocusProjectionEvent; detail: FocusThreadDeltaDetail };
 type InstanceReturn = {
   threadId: string;
@@ -95,7 +96,11 @@ export function createFocusTranscript(options: {
   let activeMode = 'head';
   let filling = false;
   let latestIntent: AbortSignal | undefined;
-  let tailReadsLeft = MAX_TAIL_FILL_READS;
+  const freshFill = () => ({ requests: MAX_TAIL_FILL_READS, reads: 28, bytes: 256 * 1024 });
+  let fillBudget = freshFill();
+  let measuredTail: TailLayout | null = null;
+  let restoreTail: TailLayout | null = null;
+  let restorePending = false;
   let ordinaryTail = true;
   let budgetThread = options.activeThreadId.value;
   let pendingInstanceReturn: InstanceReturn | null = null;
@@ -115,6 +120,8 @@ export function createFocusTranscript(options: {
 
   function cancelTailContext() {
     ordinaryTail = false;
+    measuredTail = restoreTail = null;
+    restorePending = false;
     pendingInstanceReturn = null;
     retireConfirmedCursor();
   }
@@ -124,7 +131,7 @@ export function createFocusTranscript(options: {
     const scope = enabled.value && threadId === options.activeThreadId.value ? identity() : null;
     const returning: InstanceReturn = { threadId, scope, recoveryStarted: false, wake };
     pendingInstanceReturn = returning;
-    if (wake === 'none') tailReadsLeft = MAX_TAIL_FILL_READS;
+    if (wake === 'none') fillBudget = freshFill();
     return returning;
   }
 
@@ -207,8 +214,12 @@ export function createFocusTranscript(options: {
     if (budgetThread !== options.activeThreadId.value) {
       budgetThread = options.activeThreadId.value;
       ordinaryTail = true;
-      tailReadsLeft = MAX_TAIL_FILL_READS;
+      measuredTail = restoreTail = null;
+      restorePending = false;
+      fillBudget = freshFill();
     }
+    measuredTail = restoreTail = null;
+    restorePending = false;
     awaitingProjection = false;
     cancel();
     closeFull();
@@ -225,6 +236,10 @@ export function createFocusTranscript(options: {
   }
 
   function prepareReload() {
+    if (following && cache.atTail && cache.pageCount > 1 && measuredTail && !restoreTail) {
+      restoreTail = measuredTail;
+      restorePending = true;
+    }
     cancel();
     closeFull();
     awaitingProjection = true;
@@ -383,7 +398,7 @@ export function createFocusTranscript(options: {
   }
 
   async function load(query: FocusTranscriptQuery = {}, mode: 'head' | 'latest' | 'sync' | 'older' | 'newer' | 'target' | 'restore' = 'head',
-    automatic = false, intent?: AbortSignal): Promise<boolean> {
+    automatic = false, intent?: AbortSignal, settleFill?: (cost: { reads: number; bytes: number }) => void): Promise<boolean> {
     if (awaitingProjection || !enabled.value || disposed || options.isDisposed() || intent?.aborted) return false;
     if (refreshTimer !== null) clearTimeout(refreshTimer);
     refreshTimer = null;
@@ -409,7 +424,7 @@ export function createFocusTranscript(options: {
     else if (!query.fill) cancelTailContext();
     if (mode === 'latest' && intent) {
       ordinaryTail = true;
-      tailReadsLeft = MAX_TAIL_FILL_READS;
+      fillBudget = freshFill();
     } else if (mode === 'head' && following) ordinaryTail = true;
     const returning = pendingInstanceReturn;
     if (returning?.threadId === threadId && !cache.pageCount) {
@@ -448,6 +463,7 @@ export function createFocusTranscript(options: {
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
         return false;
       }
+      if (result.fillCost) settleFill?.(result.fillCost);
       if (result.thread_id !== threadId || result.runtime_epoch !== options.snapshot.value?.runtime_epoch
         || result.turn_id !== (query.turn_id ?? null)) throw new Error('Transcript identity changed.');
       if (overflowed) {
@@ -489,7 +505,14 @@ export function createFocusTranscript(options: {
       const pageRows = adjacent && !result.turns.some(row=>row.id===adjacent.id)
         ? (mode==='older' ? [...result.turns,adjacent] : [adjacent,...result.turns]) : result.turns;
       saveRows(pageRows,sourceTail,!!result.older_cursor || mode==='newer',!sourceTail && (!!result.newer_cursor || mode==='older'));
-      if (sourceTail) options.acceptedHead?.(result);
+      if (sourceTail) {
+        options.acceptedHead?.(result);
+        if (restorePending && restoreTail) {
+          restorePending = false;
+          if (result.turns.some(row => row.id === restoreTail!.anchor)) restoreTail = null;
+          else fillBudget = freshFill();
+        }
+      }
       saved.value=null;
       if (mode === 'older' || mode === 'newer') {
         lastDirection = query.fill ? 'newer' : mode;
@@ -525,7 +548,7 @@ export function createFocusTranscript(options: {
         offerTailContext();
       }
       if (query.fill && cache.older === query.cursor) {
-        tailReadsLeft = 0;
+        fillBudget.requests = 0;
         return false;
       }
       return true;
@@ -536,7 +559,8 @@ export function createFocusTranscript(options: {
           return await reloadWithoutAnchor(query);
         }
         if (query.fill) {
-          if (confirmedFill && returning === pendingInstanceReturn && tailReadsLeft && following
+          if (failure instanceof FocusApiError && query.fillBudget) settleFill?.({ reads: query.fillBudget.reads, bytes: 0 });
+          if (confirmedFill && returning === pendingInstanceReturn && fillBudget.requests && following
             && isStaleWebReadError(failure, 'stale_thread_read')) {
             // Revalidate from the head. Even an overlapping head cannot
             // authorize reuse of the refused cursor from an older source page.
@@ -544,7 +568,8 @@ export function createFocusTranscript(options: {
             await load({}, 'sync');
             return false;
           }
-          tailReadsLeft = 0;
+          focusPerformance.record('tail_stop', { reason: 'read_error', remaining: fillBudget.requests });
+          fillBudget.requests = 0;
         } else error.value = failure instanceof Error ? failure.message : String(failure);
         for (const pending of buffer) applyDelta(pending.event, pending.detail);
       }
@@ -597,10 +622,26 @@ export function createFocusTranscript(options: {
     if (!intent && showingSaved.value) return fetchMissing('older');
     if (!hasOlder.value || loading.value) return Promise.resolve(false);
     if (intent) {
-      if (intent.aborted || intent !== latestIntent || !tailReadsLeft || !cache.older || !cache.atTail || pendingHead
-        || cache.pageCount >= TRANSCRIPT_CACHE_PAGES || cache.bytes >= TRANSCRIPT_CACHE_BYTES) return Promise.resolve(false);
-      tailReadsLeft--;
-      return load({ cursor: edges.value.older!, direction: 'desc', fill: true }, 'older', false, intent);
+      if (intent.aborted || intent !== latestIntent || !cache.older || !cache.atTail || pendingHead) return Promise.resolve(false);
+      if (!fillBudget.requests || !fillBudget.reads || !fillBudget.bytes
+        || cache.pageCount >= TRANSCRIPT_CACHE_PAGES || cache.bytes >= TRANSCRIPT_CACHE_BYTES) {
+        focusPerformance.record('tail_stop', { reason: 'budget', remaining: fillBudget.requests });
+        return Promise.resolve(false);
+      }
+      focusPerformance.record('tail_fill', { reason: restoreTail ? 'recover' : 'shortfall', remaining: fillBudget.requests });
+      const budget = fillBudget;
+      // Reserve pessimistically. Lost or cancelled responses cannot mint work.
+      // Reserve nine of the 28 upstream reads for each later request. Earlier savings can be used immediately.
+      const reads = Math.min(14, budget.reads - 9 * (budget.requests - 1));
+      const bytes = Math.min(128 * 1024, budget.bytes);
+      budget.requests--;
+      budget.reads -= reads;
+      budget.bytes -= bytes;
+      return load({ cursor: edges.value.older!, direction: 'desc', fill: true, fillBudget: { reads, bytes } },
+        'older', false, intent, cost => {
+          budget.reads += reads - cost.reads;
+          budget.bytes += bytes - cost.bytes;
+        });
     }
     if (!edges.value.older && edges.value.needsOlderAnchor) return fetchMissing('older');
     return load({ cursor: edges.value.older!, direction: 'desc' }, 'older');
@@ -622,9 +663,17 @@ export function createFocusTranscript(options: {
       && !loading.value && !needsHead.value && !pendingHead && !error.value) offerTailContext();
   }
 
+  function measureTail(anchor: string | null, filled: boolean, gap: number) {
+    if (!following || awaitingProjection || !cache.atTail) return false;
+    if (anchor) measuredTail = { anchor, filled };
+    if (filled || (restoreTail && cache.rows.some(row => row.id === restoreTail!.anchor))) restoreTail = null;
+    focusPerformance.record('tail_measure', { gap: Math.round(gap), remaining: fillBudget.requests });
+    return !!restoreTail?.filled;
+  }
+
   function tailFilled() {
     if (!following || !cache.atTail || (!ordinaryTail && !pendingInstanceReturn)) return;
-    tailReadsLeft = MAX_TAIL_FILL_READS;
+    fillBudget = freshFill();
     if (!awaitingProjection && !loading.value && !needsHead.value && !pendingHead) offerTailContext();
   }
 
@@ -729,5 +778,5 @@ export function createFocusTranscript(options: {
     handleDelta, load, retry: () => cache.pageCount === 0 ? loadReadingWindow() : load(),
     older, newer, locate, updateViewport, cancelTarget, prepareReload, resumeAfterReload,
     prepareInitialReturn, expectInstanceReturn, captureForegroundReturn, confirmForegroundWake,
-    cancelTailContext, tailContext, tailFilled, finishLatest, reset, dispose };
+    cancelTailContext, tailContext, measureTail, tailFilled, finishLatest, reset, dispose };
 }

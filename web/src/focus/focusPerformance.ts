@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue';
 
-type Sample = { at: number; kind: string; durationMs?: number; bytes?: number; code?: number };
+type Sample = { at: number; kind: string; durationMs?: number; bytes?: number; code?: number; gap?: number; remaining?: number; reason?: 'shortfall' | 'recover' | 'budget' | 'read_error' };
 const samples = shallowRef<Sample[]>([]);
 let enabled = false;
 let longTasks: PerformanceObserver | null = null;
@@ -10,7 +10,7 @@ export const focusPerformance = {
   samples,
   get enabled() { return enabled; },
   record(kind: 'socket_open' | 'socket_close' | 'event' | 'socket_backpressure'
-    | 'transcript' | 'transcript_overflow' | 'projection_overflow' | 'long_task',
+    | 'tail_measure' | 'tail_fill' | 'tail_stop' | 'transcript' | 'transcript_overflow' | 'projection_overflow' | 'long_task',
   data: Omit<Sample, 'at' | 'kind'> = {}) {
     if (!enabled) return;
     samples.value = [...samples.value.slice(-63), { at: Date.now(), kind, ...data }];

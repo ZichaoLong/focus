@@ -102,8 +102,10 @@ describe('composer sizing in the conversation scroll owner', () => {
       await expect.poll(requests).toEqual(['newer', 'older', 'older']);
       await page.getByText('Short page 0', { exact: true }).waitFor();
       await page.locator('.newmsg-pill').click();
-      await expect.poll(requests).toEqual(['newer', 'older', 'older', 'latest', 'context', 'context']);
       await page.getByText('Short page 4', { exact: true }).waitFor();
+      await page.getByText('Short page 1', { exact: true }).waitFor();
+      await settleLayout(page);
+      expect(await requests()).toEqual(['newer', 'older', 'older', 'latest', 'context', 'context', 'context']);
     }, { paging: true });
   }, 30_000);
 

@@ -86,7 +86,7 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older(intent.signal)).toBe(false);
     expect(h.owner.error.value).toBe('');
     expect(h.read).toHaveBeenCalledTimes(4);
-    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'before-1', direction: 'desc', fill: true }, expect.any(AbortSignal));
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'before-1', direction: 'desc', fill: true, fillBudget: { reads: 10, bytes: 131072 } }, expect.any(AbortSignal));
     h.owner.prepareReload();
     expect(await h.owner.older(intent.signal)).toBe(false);
   });
@@ -155,7 +155,7 @@ describe('bounded transcript owner', () => {
     const intent = h.owner.tailContext.value!;
     h.read.mockResolvedValueOnce(page([row(3), row(4)]));
     expect(await h.owner.older(intent.signal)).toBe(true);
-    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'fresh', direction: 'desc', fill: true }, expect.any(AbortSignal));
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'fresh', direction: 'desc', fill: true, fillBudget: { reads: 10, bytes: 131072 } }, expect.any(AbortSignal));
 
     h.owner.expectInstanceReturn('');
     expect(intent.signal.aborted).toBe(true);
@@ -163,7 +163,7 @@ describe('bounded transcript owner', () => {
     expect(h.read).toHaveBeenCalledTimes(4);
   });
 
-  it('spends the same two attempts across stale cursors and subsequent handshakes', async () => {
+  it('spends the same three attempts across stale cursors and subsequent handshakes', async () => {
     const h = harness(page([row(4)])); await settle();
     h.owner.expectInstanceReturn('thread-1');
     h.owner.prepareReload();
@@ -181,8 +181,9 @@ describe('bounded transcript owner', () => {
     expect(await h.owner.older(h.owner.tailContext.value!.signal)).toBe(false);
     expect(await h.owner.older(second.signal)).toBe(false);
     expect(h.read.mock.calls.map(([, q]) => q)).toEqual([{}, {},
-      { cursor: 'older', direction: 'desc', fill: true }, {},
-      { cursor: 'reconfirmed', direction: 'desc', fill: true }, {}]);
+      { cursor: 'older', direction: 'desc', fill: true, fillBudget: { reads: 10, bytes: 131072 } }, {},
+      { cursor: 'reconfirmed', direction: 'desc', fill: true, fillBudget: { reads: 9, bytes: 131072 } }, {}, {},
+      { cursor: 'older', direction: 'desc', fill: true, fillBudget: { reads: 9, bytes: 131072 } }]);
     expect(h.owner.error.value).toBe('');
     h.read.mockResolvedValueOnce(page([row(2)], { older_cursor: null }));
     expect(await h.owner.older()).toBe(true);
@@ -279,7 +280,7 @@ describe('bounded transcript owner', () => {
     await vi.advanceTimersByTimeAsync(1000);
     h.read.mockResolvedValueOnce(page([row(1), row(2)], { older_cursor: null }));
     expect(await h.owner.older(h.owner.tailContext.value!.signal)).toBe(true);
-    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'confirmed', direction: 'desc', fill: true }, expect.any(AbortSignal));
+    expect(h.read).toHaveBeenLastCalledWith('thread-1', { cursor: 'confirmed', direction: 'desc', fill: true, fillBudget: { reads: 10, bytes: 131072 } }, expect.any(AbortSignal));
     expect(h.read).toHaveBeenCalledTimes(4);
   });
 
