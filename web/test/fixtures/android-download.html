@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Android download test</title></head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp } from 'vue';
+      import FocusMobileAbout from '../../src/focus/FocusMobileAbout.vue';
+      import { i18n } from '../../src/i18n';
+      import { negotiateMobileHost } from '../../src/lib/mobileHost';
+
+      history.replaceState(null, '', '/');
+      await negotiateMobileHost();
+      const app = createApp(FocusMobileAbout, {
+        instance: 'test',
+        check: async () => (await fetch('/test-channel')).json(),
+        onClose: () => app.unmount(),
+      });
+      app.use(i18n).mount('#app');
+    </script>
+  </body>
+</html>

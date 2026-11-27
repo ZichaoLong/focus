@@ -3784,7 +3784,8 @@
         {
           "runner": "vitest",
           "targets": [
-            "web/test/focus-android-distribution.test.ts"
+            "web/test/focus-android-distribution.test.ts",
+            "web/test/focus-android-download-browser.test.ts"
           ]
         }
       ],

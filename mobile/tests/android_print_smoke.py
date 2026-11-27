@@ -80,7 +80,8 @@ async def run(args):
         await ws.send_json({"id": 1, "method": "Page.navigate",
                             "params": {"url": origin + "/?focusApp=1&thread=thread-1"}})
         await click_web(ws, ".tb-session-actions button:enabled")
-        item = "[...document.querySelectorAll('[role=menuitem]')].find(el => /打印|Print/.test(el.textContent))"
+        item = ("[...document.querySelectorAll('[role=menuitem]')]"
+                ".find(el => ['打印或保存 PDF','Print or save PDF'].includes(el.textContent.trim()))")
         await wait_for(ws, "!!" + item)
         await evaluate(ws, item + ".click()")
         await click_web(ws, "button[form=focus-export-options]:enabled")
@@ -88,6 +89,8 @@ async def run(args):
         notice = "document.querySelector('#focus-mobile-print .summary-print-offer')"
         content = "document.querySelector('#focus-mobile-print .summary-print-content').innerText"
         await wait_for(ws, "!!document.querySelector('#focus-mobile-print [data-status=ready]')")
+        title = await evaluate(ws, "document.querySelector('#focus-mobile-print header h1').textContent")
+        assert title in ("打印预览", "Print preview")
         body = await evaluate(ws, content)
         assert body.strip() and not await evaluate(ws, "!!" + notice)
         try:
@@ -112,6 +115,9 @@ async def run(args):
         try:
             await click_web(ws, button)
             await wait_for(ws, f"!!{notice}?.innerText.match(/打印面板|print dialog/)")
+            assert await evaluate(ws, f"/可能不支持|may not support/.test({notice}.innerText)")
+            download = await evaluate(ws, f"{notice}.querySelector('button').textContent.trim()")
+            assert download in ("试试下载 PDF", "Try downloading the PDF")
             assert await evaluate(ws, content) == body
         finally:
             await evaluate(ws, "window.prompt = window.originalPrintPrompt; delete window.originalPrintPrompt; true")

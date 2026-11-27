@@ -6,8 +6,8 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 The desktop conversation menu, sidebar session menu, narrow top export menu,
 narrow session switcher and reading-mode export menu at every viewport size offer
-both Export Q&A Markdown and Print preview
-when the existing `export` capability is available. Printing shares the busy
+both “Export Q&A Markdown” and “Print or save PDF”
+when the existing `export` capability is available. After choosing the turns and content, “Open preview” opens the “Print preview” page. Printing shares the busy
 gate with Markdown and thread-data exports.
 Filename dialogs and PDF default suggestions follow the
 [export filename contract](focus-web-export-filenames.md).
@@ -56,7 +56,7 @@ title and complete Q&A source.
 
 ## Server PDF download
 
-Tapping Download PDF and confirming the destination starts a server job using the authorized Markdown snapshot, selected turns and edited plain-text title. Focus tries a locally installed Chromium-family browser first. A missing, failed or timed-out browser (25 seconds) selects the built-in renderer. Both paths use fonts, formula assets and print styles delivered at installation. Export works without outbound network access. Preparing main uses the existing build and locked Python dependency installation. Browser availability is checked at export time.
+Choosing to download the PDF and confirming the destination starts a server job using the authorized Markdown snapshot, selected turns and edited plain-text title. Focus tries a locally installed Chromium-family browser first. A missing, failed or timed-out browser (25 seconds) selects the built-in renderer. Both paths use fonts, formula assets and print styles delivered at installation. Export works without outbound network access. Preparing main uses the existing build and locked Python dependency installation. Browser availability is checked at export time.
 
 The built-in renderer embeds Chinese text, mathematical symbols and formula graphics, paginates long code and expands wide tables into labeled rows. Only available embedded images are loaded. Other images retain their address or alternative text. Unrenderable formulas and diagrams retain their source. Detected missing glyphs are identified by Unicode code point. Rich layout failure triggers an attempt to preserve the complete source. The result names the engine, detected issues and affected turns where known. Resource exhaustion, timeout and write errors are reported.
 
@@ -64,7 +64,7 @@ An installation data root runs one renderer at a time. Snapshots expire after on
 
 ## Printing and lifecycle
 
-Print invokes the browser print interface or the current mobile WebView's system print adapter. An explicit rejection shows the reason immediately. When the preview stays in the foreground for about three seconds after a job receipt, it offers “Didn’t see a print dialog?” with the download action. Users can retry printing. Cancellation preserves the selection, title and preview. Only a completed file write confirms a save. Mobile Back or closing the preview returns to the original conversation. [Mobile host contract](focus-mobile.md)
+Print invokes the browser print interface or the current mobile WebView's system print adapter. An explicit rejection shows the reason immediately. If the preview stays in the foreground for about three seconds after the receipt without observing a panel handoff, it explains that the environment may not support system printing. A preview with a download available offers “Try downloading the PDF”. After an observed handoff and return, the available action reads “Download PDF”. Users can retry printing. Cancellation preserves the selection, title and preview. Only a completed file write confirms a save. Mobile Back or closing the preview returns to the original conversation. [Mobile host contract](focus-mobile.md)
 
 The selection dialog opens the same-origin print window during its confirmation gesture. A blocked popup preserves the options for retry. Sender and receiver verify origin, exact window and a one-time rendezvous ID before transferring content and download credentials in memory. Only the rendezvous ID appears in the URL. Successful handoff removes the listeners and detaches the opener. The preview renders independently without registering a second active document. Reloading requires a new export.
 

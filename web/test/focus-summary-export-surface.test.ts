@@ -9,6 +9,14 @@ function source(relativePath: string): string {
 
 
 describe('Focus Q&A Markdown export surface', () => {
+  it('names the print and PDF entry consistently across the conversation menus', () => {
+    for (const menu of ['chat/ChatHeader', 'SessionRow', 'narrow/NarrowTopBar', 'narrow/NarrowSwitcherSheet', 'chat/ReadingModeControls']) {
+      expect(source('../src/components/' + menu + '.vue')).toContain("t('focus.printSummary')");
+    }
+    expect(source('../src/i18n/locales/zh/focus.ts')).toContain("printSummary: '打印或保存 PDF'");
+    expect(source('../src/i18n/locales/en/focus.ts')).toContain("printSummary: 'Print or save PDF'");
+  });
+
   it('wires wide and narrow export intents to the shared named Blob download', () => {
     const app = source('../src/focus/FocusApp.vue');
     const actions = source('../src/focus/focusThreadActions.ts');

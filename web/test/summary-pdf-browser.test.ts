@@ -40,6 +40,8 @@ it('offers a server download after a silent print receipt and reconnects without
     });
     const page = await popup;
     await page.locator('.summary-print[data-status="ready"]').waitFor();
+    expect(await page.locator('.summary-print-actions h1').innerText()).toBe('Print preview');
+    expect(await page.locator('.system-print').innerText()).toBe('Print');
     const save = page.locator('button.save-pdf');
     expect(await save.count()).toBe(0);
     const ids: string[] = [];
@@ -67,7 +69,11 @@ it('offers a server download after a silent print receipt and reconnects without
     await page.locator('#summary-document-title').fill('新的标题');
     await page.locator('.system-print').click();
     await save.waitFor();
-    expect(await page.locator('.summary-print-offer').innerText()).toMatch(/dialog/);
+    expect(await page.locator('.summary-print-offer').innerText()).toContain('may not support system printing');
+    expect(await save.innerText()).toBe('Try downloading the PDF');
+    await page.evaluate(() => dispatchEvent(new Event('afterprint')));
+    await page.getByText('Need a server copy?', { exact: false }).waitFor();
+    expect(await save.innerText()).toBe('Download PDF');
     await save.click();
     await expect.poll(() => save.isEnabled()).toBe(true);
     expect(ids).toHaveLength(0);
@@ -87,6 +93,7 @@ it('offers a server download after a silent print receipt and reconnects without
     await page.locator('.system-print').click();
     await save.waitFor();
     expect(await page.locator('.summary-print-offer').innerText()).toContain('Need a server copy');
+    expect(await save.innerText()).toBe('Download PDF');
     expect(await page.locator('#summary-document-title').inputValue()).toBe('新的标题');
   } finally { await context.close(); }
 }, 60_000);

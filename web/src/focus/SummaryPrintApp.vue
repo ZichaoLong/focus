@@ -24,6 +24,7 @@ const status = ref<'loading' | 'ready' | 'error'>('loading');
 const fallback = ref(false);
 const offer = ref('');
 const ticket = ref<PdfPreview>();
+const canDownloadPdf = computed(() => Boolean(ticket.value) && (!props.preview || hasMobileFeature('save')));
 const saving = ref(false);
 const pdfMessage = ref('');
 const progress = ref<PdfStatus>();
@@ -118,7 +119,7 @@ async function savePdf(): Promise<void> {
   }
 }
 
-function panelObserved(): void { observedPanel = true; }
+function panelObserved(): void { observedPanel = true; showDownloadOption(); }
 function showDownloadOption(): void {
   if (waitingForPanel && !document.hidden) offer.value = observedPanel ? 'printAlternative' : 'printNoPanel';
 }
@@ -175,13 +176,15 @@ onUnmounted(() => {
   <main class="summary-print" :data-status="status">
     <header class="summary-print-toolbar">
       <div class="summary-print-actions">
-        <h1>{{ t('focus.printSummary') }}</h1>
+        <h1>{{ t('focus.printPreviewTitle') }}</h1>
         <button type="button" class="system-print" :disabled="status !== 'ready' || saving" @click="print">{{ t('focus.printButton') }}</button>
         <button v-if="preview" type="button" @click="$emit('close')">{{ t('focus.closePrintPreview') }}</button>
       </div>
-      <div v-if="offer" class="summary-print-offer" role="status">
+      <div v-if="offer && (offer !== 'printAlternative' || canDownloadPdf)" class="summary-print-offer" role="status">
         {{ t('focus.' + offer) }}
-        <button v-if="ticket && (!preview || hasMobileFeature('save'))" class="save-pdf" :disabled="saving" @click="savePdf">{{ t('focus.savePdf') }}</button>
+        <button v-if="canDownloadPdf" class="save-pdf" :disabled="saving" @click="savePdf">
+          {{ t(offer === 'printNoPanel' ? 'focus.tryDownloadPdf' : 'focus.savePdf') }}
+        </button>
       </div>
       <p v-if="pdfMessage" class="summary-pdf-status" role="status">
         {{ t('focus.' + pdfMessage, { done: progress?.done ?? 0, total: progress?.total ?? 0, kb: Math.round(bytes / 1024) }) }}
