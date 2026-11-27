@@ -171,6 +171,7 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
 - v42 增加按安装读取更新身份和按指定渠道准备最新构建的入口。[更新合同](./focus-web-update.zh-CN.md#多安装批量更新)
 - v43 增加按已选线程读取紧凑离线文字页的 GET、按需返回的注册范围响应头，以及显式撤销会话时的 `session_revoked` 原因。读取和查找沿用现有 document 屏障。[移动端记录合同](./focus-mobile.zh-CN.md#本机离线记录)
 - v44 增加清理页的只读 `POST /api/mobile/record-status`，核对当前 document 与离线副本的授权范围，按本机线程 ID 批量返回元数据状态。该请求不续期会话。
+- v45 增加会话内打印快照、限时 PDF 任务与文件下载，正文由原有导出接口授权。
 
 ## 4. Endpoint 与 event admission
 
@@ -314,6 +315,8 @@ required field 与 catalog 一致；decoder 必须消费 generated guard，不�
   thread/mutation/server-derived client-message coordinates，以及封闭的 status/mode、`turn_id`、`reason_code` 和
   `observed_thread_status`、`diagnostic_stage`、`recorded_at` 三项诊断字段；
   empty optional coordinate 仍以 required empty string 表示，不能通过缺字段制造另一种 shape。
+
+打印预览可在已授权的导出请求中传 `X-Focus-Print-Preview: 1`，响应的 `X-Focus-Pdf-Preview` 标识不可变 Markdown 快照。独立预览在原会话内向 `/api/pdf-previews/{preview_id}/jobs/{job_id}` POST 标题和语言，GET 读取状态，GET 同路径下的 `/file` 获取完成文件。创建校验 Origin 与 CSRF。PDF 请求不续期。[问答打印合同](focus-web-summary-print.zh-CN.md)
 
 ## 5. DTO admission 与能力值
 

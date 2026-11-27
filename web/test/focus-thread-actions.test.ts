@@ -66,7 +66,7 @@ describe('Q&A print action', () => {
     const selection = { scope: 'selected' as const, turn_ids: ['later', 'earlier'], content: 'final_answers' as const };
     choice.resolve({ filename: 'Selected Q&A', documentTitle: 'My selection', selection });
     await exporting;
-    expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('chosen-thread', selection);
+    expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('chosen-thread', selection, ...(format === 'print' ? [true] : []));
   });
 
   it('cancels the print selection before opening a window or reading history', async () => {
@@ -84,8 +84,8 @@ describe('Q&A print action', () => {
       return new Blob(['Full history']);
     });
     await actions.exportThreadSummary({ threadId: 'not-the-active-thread', format: 'print' });
-    expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('not-the-active-thread', undefined);
-    expect(preview.deliver).toHaveBeenCalledExactlyOnceWith('Full history', '目标会话.pdf', '目标会话');
+    expect(client.exportThreadSummary).toHaveBeenCalledExactlyOnceWith('not-the-active-thread', undefined, true);
+    expect(preview.deliver).toHaveBeenCalledExactlyOnceWith('Full history', '目标会话.pdf', '目标会话', undefined);
     expect(getThreadTitle).toHaveBeenCalledExactlyOnceWith('not-the-active-thread');
     expect(requestExportOptions).toHaveBeenCalledOnce();
     expect(notify).not.toHaveBeenCalled();
@@ -126,7 +126,7 @@ describe('Q&A print action', () => {
     expect(requestExportOptions).toHaveBeenCalledOnce();
     content.resolve('Full original Markdown');
     await printing;
-    expect(preview.deliver).toHaveBeenCalledWith('Full original Markdown', '目标会话.pdf', '目标会话');
+    expect(preview.deliver).toHaveBeenCalledWith('Full original Markdown', '目标会话.pdf', '目标会话', undefined);
   });
 });
 

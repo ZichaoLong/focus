@@ -139,7 +139,6 @@ public final class MainActivity extends Activity {
                     pages.setLimit(index + 1); dialog.dismiss(); render();
                 }).setNegativeButton("取消", null).show()));
         ui.gap(list, 8);
-        list.addView(ui.button("系统打印诊断", false, () -> startActivity(new Intent(this, PrintDiagnosticActivity.class))));
     }
 
     @Override protected void onActivityResult(int code, int result, Intent data) {

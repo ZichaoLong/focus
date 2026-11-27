@@ -51,4 +51,4 @@ Markdown 一起在内存传递；打印页以不含扩展名的建议名设置 `
 正文标题采用纯文本绑定，不改变 `document.title` 的建议文件名。浏览器不保证采用建议名；用户可在
 系统保存界面修改名称。生命周期和设备限制遵循[问答打印合同](focus-web-summary-print.zh-CN.md)。
 
-「直接保存 PDF」使用同一个 `.pdf` 建议名。点按后通过共享系统文件选择器选择目标，普通下载使用该建议名。[问答打印合同](focus-web-summary-print.zh-CN.md)
+「下载 PDF」使用同一个 `.pdf` 建议名。点按后通过共享系统文件选择器选择目标，普通下载使用该建议名。[问答打印合同](focus-web-summary-print.zh-CN.md)

@@ -1,4 +1,4 @@
-"""Exercise the diagnostic WebView and native PDF paths on an Android userdebug emulator."""
+"""Exercise system printing and server PDF fallback on an Android userdebug emulator."""
 import argparse
 import asyncio
 import json
@@ -80,86 +80,47 @@ async def run(args):
         await ws.send_json({"id": 1, "method": "Page.navigate",
                             "params": {"url": origin + "/?focusApp=1&thread=thread-1"}})
         await click_web(ws, ".tb-session-actions button:enabled")
-        item = "[...document.querySelectorAll('[role=menuitem]')].find(el => el.textContent.includes('PDF'))"
+        item = "[...document.querySelectorAll('[role=menuitem]')].find(el => /打印|Print/.test(el.textContent))"
         await wait_for(ws, "!!" + item)
         await evaluate(ws, item + ".click()")
         await click_web(ws, "button[form=focus-export-options]:enabled")
         button = "#focus-mobile-print button.system-print:enabled"
-        notice = "document.querySelector('#focus-mobile-print .summary-print-error')"
+        notice = "document.querySelector('#focus-mobile-print .summary-print-offer')"
         content = "document.querySelector('#focus-mobile-print .summary-print-content').innerText"
-        diagnostic = "#focus-mobile-print .summary-print-diagnostic"
-        report = f"JSON.parse(document.querySelector('{diagnostic} pre').textContent)"
         await wait_for(ws, "!!document.querySelector('#focus-mobile-print [data-status=ready]')")
         body = await evaluate(ws, content)
         assert body.strip() and not await evaluate(ws, "!!" + notice)
-        await click_web(ws, diagnostic + " > summary")
-        assert not await evaluate(ws, f"!!document.querySelector('{diagnostic} pre')")
-        test_page = diagnostic + " .print-test-page"
-        assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
-        await click_web(ws, diagnostic + " .diagnostic-actions button")
-        assert await evaluate(ws, "window.__focusMobile.features.includes('print-job-diagnostics')")
-
         try:
             adb("shell", "pm", "set-user-restriction", *policy, "1")
-            # The bridge's synchronous prompt returns after DocumentsUI closes.
+            await click_web(ws, button)
+            await wait_for(ws, f"!!{notice}?.offsetHeight")
+            assert await evaluate(ws, content) == body
+            # The picker returns to the exact preview before the job starts.
             await ws.send_json({"id": 50, "method": "Runtime.evaluate", "params": {
-                "expression": "document.querySelector('#focus-mobile-print button.save-pdf:enabled').click()",
+                "expression": "document.querySelector('#focus-mobile-print .save-pdf').click()",
                 "userGesture": True,
             }})
             direct_text, _ = await save_document(adb)
             assert "Reading position" in direct_text
-            await wait_for(ws, "!!document.querySelector('#focus-mobile-print button.save-pdf:enabled')")
-            assert await evaluate(ws, f"{report}.attempts") == 0
-            await click_web(ws, button)
-            await wait_for(ws, f"!!{notice}?.offsetHeight")
-            assert await evaluate(ws, content) == body
-            assert await evaluate(ws, f"{report}.events.some(e => e.attempt === 1 && e.event === 'bridge-error')")
+            await wait_for(ws, "!!document.querySelector('#focus-mobile-print .save-pdf:enabled')")
         finally:
             adb("shell", "pm", "set-user-restriction", *policy, "0")
-
+        # Simulate the receipt seen in environments where Android never opens the panel.
+        # Only intercept the print operation. The picker, gateway and file transfer stay real.
+        await evaluate(ws, """window.originalPrintPrompt = window.prompt;
+          window.prompt = (op, data) => op.endsWith('/print') ? 'ok' : window.originalPrintPrompt(op, data); true""")
+        try:
+            await click_web(ws, button)
+            await wait_for(ws, f"!!{notice}?.innerText.match(/打印面板|print dialog/)")
+            assert await evaluate(ws, content) == body
+        finally:
+            await evaluate(ws, "window.prompt = window.originalPrintPrompt; delete window.originalPrintPrompt; true")
         await click_web(ws, button)
         text, _ = await save_pdf(adb)
-        assert "Reading position" in text and "Focus Mobile print test" not in text
-        await wait_for(ws, f"document.visibilityState === 'visible' && !{notice}")
+        assert "Reading position" in text
+        await wait_for(ws, "document.visibilityState === 'visible'")
         assert await evaluate(ws, content) == body
-        await wait_for(ws, f"{report}.events.some(e => e.attempt === 2 && e.event === 'host-resume')")
-
-        await click_web(ws, test_page)
-        # Keep this job in the chooser through the last scheduled sample.
-        await system_control(adb, lambda n: n.get("resource-id") == "com.android.printspooler:id/destination_spinner")
-        await asyncio.sleep(31)
-        text, count = await save_pdf(adb)
-        assert text == "Focus Mobile print test" and count == 1
-        await wait_for(ws, f"{report}.events.some(e => e.attempt === 3 && e.event === 'host-resume')")
-        await click_web(ws, diagnostic + " .diagnostic-actions button")
-        snapshot = await evaluate(ws, report)
-        assert snapshot["attempts"] == 3 and snapshot["native"]["status"] == "collected"
-        assert not await evaluate(ws, f"!!document.querySelector('{test_page}')")
-        rows = snapshot["native"]["events"]
-        observations = snapshot["native"]["observations"]
-        assert observations["status"] == "collected"
-        assert any(r["attempt"] == 1 and r["event"] == "printing-restricted" for r in rows)
-        for attempt, source in ((2, "webview"), (3, "native-test")):
-            events = {r["event"] for r in rows if r["attempt"] == attempt and r["source"] == source}
-            assert {"request", "adapter-created", "job-returned", "start", "layout", "write", "finish"} <= events, events
-            signals = {r["event"] for r in observations["events"] if r["attempt"] == attempt and r["source"] == source}
-            assert signals & {"window-initial-focused", "window-initial-unfocused"}, signals
-            assert {"intent-start", "intent-returned", "window-unfocused", "activity-paused", "activity-resumed",
-                    "job-query-start"} <= signals, signals
-            assert signals & {"job-created", "job-queued", "job-started", "job-completed", "job-not-listed"}, signals
-        pending_states = {"job-created", "job-queued", "job-started", "job-blocked", "job-not-listed"}
-        samples = [r for r in observations["events"] if r["attempt"] == 3 and r["event"] in pending_states]
-        returned = next(r["ms"] for r in rows if r["attempt"] == 3 and r["event"] == "job-returned")
-        assert len(samples) == 4 and samples[-1]["ms"] - returned >= 30_000, samples
-        # The start/stop protocol used by an older instance still returns its original shape.
-        legacy = await evaluate(ws, """(() => {
-          const op = 'focus/1/' + window.__focusMobile.ticket + '/print-diag-';
-          const id = prompt(op + 'start', '');
-          return JSON.parse(prompt(op + 'stop', id));
-        })()""")
-        assert legacy["events"] == [] and "observations" not in legacy
-        assert "Reading position" not in json.dumps(snapshot) and await evaluate(ws, content) == body
-        print("Read back the direct and both system-printed PDFs and checked launch, window, job and adapter evidence.")
+        print("Read back both the server download and the Android system-printed PDF.")
 
 
 if __name__ == "__main__":

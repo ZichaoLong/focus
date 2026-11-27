@@ -1,12 +1,13 @@
 /** Ephemeral, same-origin handoff to the standalone Q&A print document. */
 import { shallowReactive, shallowRef } from 'vue';
 import { hasMobileFeature } from '../lib/mobileHost';
+import { isPdfPreview, type PdfPreview } from './summaryServerPdf';
 import { DEFAULT_SUMMARY_TITLE } from './summaryDocumentTitle';
 
 const CHANNEL = 'focus-summary-print';
 const HANDOFF_TIMEOUT_MS = 90_000;
 
-export type PrintPayload = { markdown: string; suggestedFilename: string; documentTitle: string } | { error: true };
+export type PrintPayload = { markdown: string; suggestedFilename: string; documentTitle: string; pdfPreview?: PdfPreview } | { error: true };
 export const mobilePrintPreview = shallowRef<{ content: PrintPayload | null } | null>(null);
 
 export function closeMobilePrintPreview(): void {
@@ -14,7 +15,7 @@ export function closeMobilePrintPreview(): void {
 }
 
 export function openSummaryPrintWindow(): {
-  deliver(markdown: string, suggestedFilename: string, documentTitle: string): void;
+  deliver(markdown: string, suggestedFilename: string, documentTitle: string, pdfPreview?: PdfPreview): void;
   fail(): void;
 } | null {
   if (hasMobileFeature('print') || hasMobileFeature('save')) {
@@ -24,7 +25,7 @@ export function openSummaryPrintWindow(): {
     mobilePrintPreview.value = preview;
     window.addEventListener('popstate', () => { mobilePrintPreview.value = null; }, { once: true });
     return {
-      deliver(markdown, suggestedFilename, documentTitle) { preview.content = { markdown, suggestedFilename, documentTitle }; },
+      deliver(markdown, suggestedFilename, documentTitle, pdfPreview) { preview.content = { markdown, suggestedFilename, documentTitle, ...(pdfPreview && { pdfPreview }) }; },
       fail() { preview.content = { error: true }; },
     };
   }
@@ -65,13 +66,13 @@ export function openSummaryPrintWindow(): {
   }, 1000);
   window.addEventListener('message', receive);
   return {
-    deliver(markdown, suggestedFilename, documentTitle) { if (!finished) { payload = { markdown, suggestedFilename, documentTitle }; send(); } },
+    deliver(markdown, suggestedFilename, documentTitle, pdfPreview) { if (!finished) { payload = { markdown, suggestedFilename, documentTitle, ...(pdfPreview && { pdfPreview }) }; send(); } },
     fail() { if (!finished) { payload = { error: true }; send(); } },
   };
 }
 
 export function receiveSummaryPrint(
-  onContent: (markdown: string, suggestedFilename: string, documentTitle: string) => void,
+  onContent: (markdown: string, suggestedFilename: string, documentTitle: string, preview?: PdfPreview) => void,
   onError: () => void,
 ): () => void {
   const token = window.location.hash.slice(1);
@@ -96,7 +97,8 @@ export function receiveSummaryPrint(
       cleanup();
       onContent(event.data.markdown, typeof event.data.suggestedFilename === 'string'
         ? event.data.suggestedFilename : 'codex-conversation-summary.pdf',
-      typeof event.data.documentTitle === 'string' ? event.data.documentTitle : DEFAULT_SUMMARY_TITLE);
+      typeof event.data.documentTitle === 'string' ? event.data.documentTitle : DEFAULT_SUMMARY_TITLE,
+      ...(isPdfPreview(event.data.pdfPreview) ? [event.data.pdfPreview] : []));
     } else if (event.data.error === true) {
       cleanup();
       onError();

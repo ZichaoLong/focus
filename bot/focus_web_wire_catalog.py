@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Final, Mapping, TypeVar
 
 
-FOCUS_WEB_WIRE_VERSION: Final = 44
+FOCUS_WEB_WIRE_VERSION: Final = 45
 FOCUS_WEB_RUNTIME_NOTICE_FIELD_LIMIT_BYTES: Final = 16 * 1024
 _NAME_RE = re.compile(r"\A[a-z][a-z0-9_]*\Z")
 _PATH_PARAMETER_RE = re.compile(r"\{([a-z][a-z0-9_]*)\}")
@@ -258,6 +258,9 @@ FOCUS_WEB_ENDPOINTS: Final = (
         "/api/threads/{thread_id}/export-summary",
         "_handle_thread_summary_export",
     ),
+    FocusWebEndpointSpec("pdf_job_start", "POST", "/api/pdf-previews/{preview_id}/jobs/{job_id}", "_handle_pdf_job_start"),
+    FocusWebEndpointSpec("pdf_job_status", "GET", "/api/pdf-previews/{preview_id}/jobs/{job_id}", "_handle_pdf_job_status"),
+    FocusWebEndpointSpec("pdf_job_file", "GET", "/api/pdf-previews/{preview_id}/jobs/{job_id}/file", "_handle_pdf_job_file"),
     FocusWebEndpointSpec(
         "thread_export_turns", "GET", "/api/threads/{thread_id}/export-turns",
         "_handle_thread_export_turns",
@@ -425,6 +428,7 @@ _FOCUS_WEB_NON_RENEWING_MUTATION_ENDPOINT_NAMES: Final = frozenset(
         "auth_logout",
         "client_register",
         "thread_summary_export",
+        "pdf_job_start",
     }
 )
 
@@ -465,6 +469,9 @@ FOCUS_WEB_ENUMS: Final = (
     _enum("thread_scope", "current global"),
     _enum("thread_history_mode", "legacy paginated unknown"),
     _enum("turn_items_view", "summary full"),
+    _enum("pdf_phase", "queued preparing formulas browser layout ready failed"),
+    _enum("pdf_engine", "browser basic"),
+    _enum("pdf_warning", "browser formula image table diagram glyph source unicode font more"),
     _enum("summary_export_scope", "all last_turn selected"),
     _enum("summary_export_content", "qa final_answers prompts"),
     _enum("export_turn_status", "completed interrupted failed inProgress"),
@@ -532,6 +539,8 @@ FOCUS_WEB_RECORDS: Final = (
     _record('browser_timing', 'BrowserTimingRecord', 'submission_id thread_id submitted_at_ms browser'),
     _record("data_retention", "FocusDataRetentionPolicy", "records_days attachments_days"),
     _record("data_prune", "FocusDataPruneResult", "policy results errors records bytes_freed"),
+    _record("pdf_job", "", "phase done total warnings", "phase:pdf_phase engine:pdf_engine"),
+    _record("pdf_warning", "", "kind", "kind:pdf_warning"),
     _record("file_info", "FocusFileInfo", "path name size"),
     _record("coordinates", "FocusCoordinates", "runtime_epoch revision"),
     _record(

@@ -1523,9 +1523,6 @@
           "symbol": "createFocusThreadActions"
         },
         {
-          "path": "mobile/android/src/org/focus/mobile/MainActivity.java"
-        },
-        {
           "path": "web/src/components/chat/ReadingModeControls.vue",
           "symbol": "exportSession"
         },
@@ -1536,6 +1533,10 @@
         {
           "path": "bot/web_runtime/controller.py",
           "symbol": "WebRuntimeController.run_prepared_thread_export_turns"
+        },
+        {
+          "path": "bot/web_runtime/gateway_summary_pdf.py",
+          "symbol": "WebGatewaySummaryPdfMixin"
         }
       ],
       "owner": [
@@ -1574,21 +1575,6 @@
           "path": "mobile/android/src/org/focus/mobile/AndroidPrinting.java"
         },
         {
-          "path": "mobile/android/src/org/focus/mobile/PrintHostActivity.java"
-        },
-        {
-          "path": "mobile/android/src/org/focus/mobile/PrintDiagnosticActivity.java"
-        },
-        {
-          "path": "mobile/android/src/org/focus/mobile/PrintComponents.java"
-        },
-        {
-          "path": "mobile/android/src/org/focus/mobile/PrintJobDiagnostics.java"
-        },
-        {
-          "path": "mobile/android/src/org/focus/mobile/PrintTestPage.java"
-        },
-        {
           "path": "web/src/focus/SummaryPrintApp.vue",
           "symbol": "savePdf"
         },
@@ -1599,10 +1585,6 @@
         {
           "path": "web/src/focus/summaryPrintPreparation.ts",
           "symbol": "prepareSummaryPrint"
-        },
-        {
-          "path": "web/src/focus/summaryPrintDiagnostics.ts",
-          "symbol": "createSummaryPrintDiagnostics"
         },
         {
           "path": "web/src/lib/download.ts",
@@ -1631,6 +1613,14 @@
         {
           "path": "bot/web_runtime/thread_export_selection.py",
           "symbol": "require_exportable_turn"
+        },
+        {
+          "path": "bot/web_runtime/summary_pdf.py",
+          "symbol": "SummaryPdfJobs"
+        },
+        {
+          "path": "web/src/focus/summaryServerPdf.ts",
+          "symbol": "fetchSummaryPdf"
         }
       ],
       "contract": [
@@ -1644,7 +1634,7 @@
         },
         {
           "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
-          "heading": "直接保存 PDF"
+          "heading": "服务端 PDF 下载"
         },
         {
           "path": "docs/contracts/focus-web-summary-print.zh-CN.md",
@@ -1692,7 +1682,8 @@
             "tests/focus_runtime/test_focus_runtime_web_gateway_composition.py",
             "tests/test_web_thread_export_selection.py",
             "tests/test_web_thread_export_content.py",
-            "tests/test_codex_app_server.py"
+            "tests/test_codex_app_server.py",
+            "tests/web_runtime/test_summary_pdf.py"
           ]
         },
         {
@@ -1702,6 +1693,7 @@
             "web/test/focus-summary-export-surface.test.ts",
             "web/test/focus_client/owners/use-focus-web-client.test.ts",
             "web/test/summary-print-markdown.test.ts",
+            "web/test/summary-server-pdf.test.ts",
             "web/test/summary-pdf-browser.test.ts",
             "web/test/markdown-emphasis.test.ts",
             "web/test/summary-print-window.test.ts",
@@ -1740,9 +1732,6 @@
         },
         {
           "path": "mobile/tests/android_print_smoke.py"
-        },
-        {
-          "path": "mobile/tests/android_native_print_smoke.py"
         }
       ]
     },

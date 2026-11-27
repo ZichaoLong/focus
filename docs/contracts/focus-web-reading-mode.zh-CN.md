@@ -93,7 +93,7 @@
 ## 导出
 
 宽屏和窄屏的 `ReadingModeControls.vue` 均提供当前会话的导出菜单：既有 `export`
-capability 可用时显示问答 Markdown 与保存 PDF 或打印；当前会话还采用 paginated
+capability 可用时显示问答 Markdown 与「打印预览」；当前会话还采用 paginated
 历史时显示线程 JSONL。没有会话或没有可用导出能力时隐藏入口，加载会话或读取导出内容时
 禁用入口；整个命名及保存过程仍由现有导出互斥控制。切换会话、能力改变、打开会话切换器、切换屏幕布局或退出阅读模式时关闭菜单；
 点击菜单外部、移出键盘焦点或 Escape 也可收起，Escape 将焦点返回导出按钮。

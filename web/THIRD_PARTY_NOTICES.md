@@ -5,8 +5,8 @@
 ## Build provenance
 
 - Generator version: 2
-- npm lockfile: `web/package-lock.json` (SHA-256 `7381fda7ee39886960fac2c54c68330035f11db0bf1d1e4a1b3b7dff4baff507`)
-- Rendered Rollup module identifiers inspected: 1590
+- npm lockfile: `web/package-lock.json` (SHA-256 `074e87993b465c380f141eddee7146a9ee295f2abbaa383927ae8efeaa274647`)
+- Rendered Rollup module identifiers inspected: 1556
 - kimi-web source: https://github.com/MoonshotAI/kimi-code at `c497af60e6cd20aab05e590f98a28fb15dd3491d` (package 0.1.2, imported 2026-07-27)
 
 The component table starts with the copied kimi-web source.  For npm code, it records
@@ -20,6 +20,7 @@ as fonts or icons are emitted by build tooling rather than normal JavaScript imp
 | Component | Version | License | Attribution | Included because |
 | --- | --- | --- | --- | --- |
 | kimi-web | 0.1.2 (c497af60e6cd) | MIT | Copyright (c) 2026 Moonshot AI | upstream-derived Focus Web source |
+| DejaVu Sans | 2.37 | Bitstream-Vera | Copyright (c) 2003 by Bitstream, Inc. DejaVu changes are in the public domain. | server PDF mathematical symbols |
 | @antfu/install-pkg | 1.1.0 | MIT | Anthony Fu &lt;anthonyfu117@hotmail.com&gt; | declared runtime dependency closure |
 | @babel/helper-string-parser | 7.29.7 | MIT | The Babel Team (https://babel.dev/team) | declared runtime dependency closure |
 | @babel/helper-validator-identifier | 7.29.7 | MIT | The Babel Team (https://babel.dev/team) | declared runtime dependency closure |
@@ -165,14 +166,13 @@ as fonts or icons are emitted by build tooling rather than normal JavaScript imp
 | hachure-fill | 0.5.2 | MIT | Preet Shihn | declared runtime dependency closure |
 | hast-util-to-html | 9.0.5 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | rendered Rollup module graph (12); declared runtime dependency closure |
 | hast-util-whitespace | 3.0.0 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | rendered Rollup module graph (1); declared runtime dependency closure |
-| html-to-image | 1.11.13 | MIT |  | rendered Rollup module graph (10) |
 | html-void-elements | 3.0.0 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | rendered Rollup module graph (1); declared runtime dependency closure |
 | iconv-lite | 0.6.3 | MIT | Alexander Shtuchkin &lt;ashtuchkin@gmail.com&gt; | declared runtime dependency closure |
 | import-meta-resolve | 4.2.0 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | declared runtime dependency closure |
 | internmap | 1.0.1 | ISC |  | declared runtime dependency closure |
 | internmap | 2.0.3 | ISC |  | rendered Rollup module graph (1); declared runtime dependency closure |
 | katex | 0.16.47 | MIT |  | rendered Rollup module graph (1); declared runtime dependency closure |
-| katex | 0.17.0 | MIT |  | rendered Rollup module graph (23) |
+| katex | 0.17.0 | MIT |  | rendered Rollup module graph (3) |
 | khroma | 2.1.0 | MIT |  | rendered Rollup module graph (26); declared runtime dependency closure |
 | layout-base | 1.0.2 | MIT |  | rendered Rollup module graph (2); declared runtime dependency closure |
 | layout-base | 2.0.1 | MIT |  | rendered Rollup module graph (2); declared runtime dependency closure |
@@ -190,6 +190,7 @@ as fonts or icons are emitted by build tooling rather than normal JavaScript imp
 | marked | 16.4.2 | MIT | Christopher Jeffrey | rendered Rollup module graph (1); declared runtime dependency closure |
 | markstream-core | 1.0.3 | MIT | Simon He | rendered Rollup module graph (1); declared runtime dependency closure |
 | markstream-vue | 1.0.7 | MIT | Simon He | rendered Rollup module graph (20) |
+| mathjax-full | 3.2.2 | Apache-2.0 |  | server PDF mathematical glyph paths and formula layout |
 | mdast-util-to-hast | 13.2.1 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | declared runtime dependency closure |
 | mdurl | 2.1.0 | MIT |  | declared runtime dependency closure |
 | mermaid | 11.17.2 | MIT | Knut Sveidqvist | rendered Rollup module graph (66) |
@@ -225,7 +226,7 @@ as fonts or icons are emitted by build tooling rather than normal JavaScript imp
 | strictdom | 1.0.1 | MIT |  | declared runtime dependency closure |
 | stringify-entities | 4.0.4 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | rendered Rollup module graph (7); declared runtime dependency closure |
 | stylis | 4.4.0 | MIT | Sultan Tarimo &lt;sultantarimo@me.com&gt; | rendered Rollup module graph (6); declared runtime dependency closure |
-| takumi-pdf | 0.21.3 | MIT OR Apache-2.0 |  | local PDF export worker and WebAssembly typesetter |
+| takumi-pdf | 0.21.3 | MIT OR Apache-2.0 |  | server PDF export worker and WebAssembly typesetter |
 | tinyexec | 1.2.4 | MIT | James Garbutt (https://github.com/43081j) | declared runtime dependency closure |
 | trim-lines | 3.0.1 | MIT | Titus Wormer &lt;tituswormer@gmail.com&gt; (https://wooorm.com) | declared runtime dependency closure |
 | ts-dedent | 2.3.0 | MIT | Tamino Martinius &lt;dev@zaku.eu&gt; | rendered Rollup module graph (1); declared runtime dependency closure |
@@ -276,6 +277,91 @@ SOFTWARE.
 
 ### L002
 
+Sources: `server-pdf/DejaVu-LICENSE.txt`
+
+```text
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: DejaVu fonts
+Upstream-Author: Stepan Roh <src@users.sourceforge.net> (original author),
+                  see /usr/share/doc/fonts-dejavu-core/AUTHORS for full list
+Source: https://dejavu-fonts.github.io/
+
+Files: *
+Copyright: Copyright (c) 2003 by Bitstream, Inc. All Rights Reserved.
+ Bitstream Vera is a trademark of Bitstream, Inc.
+ DejaVu changes are in public domain.
+License: bitstream-vera
+ Permission is hereby granted, free of charge, to any person obtaining a copy
+ of the fonts accompanying this license ("Fonts") and associated
+ documentation files (the "Font Software"), to reproduce and distribute the
+ Font Software, including without limitation the rights to use, copy, merge,
+ publish, distribute, and/or sell copies of the Font Software, and to permit
+ persons to whom the Font Software is furnished to do so, subject to the
+ following conditions:
+ .
+ The above copyright and trademark notices and this permission notice shall
+ be included in all copies of one or more of the Font Software typefaces.
+ .
+ The Font Software may be modified, altered, or added to, and in particular
+ the designs of glyphs or characters in the Fonts may be modified and
+ additional glyphs or characters may be added to the Fonts, only if the fonts
+ are renamed to names not containing either the words "Bitstream" or the word
+ "Vera".
+ .
+ This License becomes null and void to the extent applicable to Fonts or Font
+ Software that has been modified and is distributed under the "Bitstream
+ Vera" names.
+ .
+ The Font Software may be sold as part of a larger software package but no
+ copy of one or more of the Font Software typefaces may be sold by itself.
+ .
+ THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+ OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+ TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL BITSTREAM OR THE GNOME
+ FOUNDATION BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, INCLUDING
+ ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL DAMAGES,
+ WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+ THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE
+ FONT SOFTWARE.
+ .
+ Except as contained in this notice, the names of Gnome, the Gnome
+ Foundation, and Bitstream Inc., shall not be used in advertising or
+ otherwise to promote the sale, use or other dealings in this Font Software
+ without prior written authorization from the Gnome Foundation or Bitstream
+ Inc., respectively. For further information, contact: fonts at gnome dot
+ org.
+
+Files: debian/*
+Copyright: (C) 2005-2006 Peter Cernak <pce@users.sourceforge.net>
+           (C) 2006-2011 Davide Viti <zinosat@tiscali.it>
+           (C) 2011-2013 Christian Perrier <bubulle@debian.org>
+           (C) 2013 Fabian Greffrath <fabian+debian@greffrath.com>
+License: GPL-2+
+ This program is free software; you can redistribute it
+ and/or modify it under the terms of the GNU General Public
+ License as published by the Free Software Foundation; either
+ version 2 of the License, or (at your option) any later
+ version.
+ .
+ This program is distributed in the hope that it will be
+ useful, but WITHOUT ANY WARRANTY; without even the implied
+ warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ PURPOSE.  See the GNU General Public License for more
+ details.
+ .
+ You should have received a copy of the GNU General Public
+ License along with this package; if not, write to the Free
+ Software Foundation, Inc., 51 Franklin St, Fifth Floor,
+ Boston, MA  02110-1301 USA
+ .
+ On Debian systems, the full text of the GNU General Public
+ License version 2 can be found in the file
+ /usr/share/common-licenses/GPL-2'.
+```
+
+### L003
+
 Sources: `@antfu/install-pkg@1.1.0/LICENSE`, `@antfu/install-pkg@1.1.0/LICENSE (canonical MIT text used because this package ships no license file)`
 
 ```text
@@ -302,7 +388,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L003
+### L004
 
 Sources: `@babel/helper-string-parser@7.29.7/LICENSE`, `@babel/helper-validator-identifier@7.29.7/LICENSE`, `@babel/types@7.29.7/LICENSE`
 
@@ -331,7 +417,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L004
+### L005
 
 Sources: `@babel/parser@7.29.7/LICENSE`
 
@@ -357,7 +443,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### L005
+### L006
 
 Sources: `@braintree/sanitize-url@7.1.2/LICENSE`
 
@@ -385,7 +471,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L006
+### L007
 
 Sources: `@chenglou/pretext@0.0.8/LICENSE`
 
@@ -413,9 +499,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L007
+### L008
 
-Sources: `@chevrotain/types@11.1.2/LICENSE.txt`, `dompurify@3.4.14/LICENSE`
+Sources: `@chevrotain/types@11.1.2/LICENSE.txt`, `dompurify@3.4.14/LICENSE`, `mathjax-full@3.2.2/LICENSE`
 
 ```text
 
@@ -622,7 +708,7 @@ Sources: `@chevrotain/types@11.1.2/LICENSE.txt`, `dompurify@3.4.14/LICENSE`
    limitations under the License.
 ```
 
-### L008
+### L009
 
 Sources: `@floating-ui/core@1.8.0/LICENSE`, `@floating-ui/dom@1.8.0/LICENSE`, `@floating-ui/utils@0.2.12/LICENSE`
 
@@ -649,7 +735,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L009
+### L010
 
 Sources: `@fontsource-variable/inter@5.2.8/LICENSE`
 
@@ -749,7 +835,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-### L010
+### L011
 
 Sources: `@fontsource-variable/jetbrains-mono@5.3.0/LICENSE`
 
@@ -849,7 +935,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-### L011
+### L012
 
 Sources: `@fontsource-variable/noto-emoji@5.3.2/LICENSE`
 
@@ -949,7 +1035,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-### L012
+### L013
 
 Sources: `@fontsource-variable/noto-sans-sc@5.3.1/LICENSE`
 
@@ -1049,7 +1135,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-### L013
+### L014
 
 Sources: `licenses/apache-2.0.txt`
 
@@ -1257,7 +1343,7 @@ Sources: `licenses/apache-2.0.txt`
    limitations under the License.
 ```
 
-### L014
+### L015
 
 Sources: `licenses/tabler-icons-MIT.txt`
 
@@ -1285,7 +1371,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L015
+### L016
 
 Sources: `@iconify/types@2.0.0/license.txt`
 
@@ -1313,7 +1399,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L016
+### L017
 
 Sources: `@iconify/utils@3.1.4/license.txt`
 
@@ -1341,7 +1427,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L017
+### L018
 
 Sources: `@intlify/core-base@11.4.8/LICENSE`, `@intlify/message-compiler@11.4.8/LICENSE`, `@intlify/shared@11.4.8/LICENSE`, `vue-i18n@11.4.8/LICENSE`
 
@@ -1368,7 +1454,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L018
+### L019
 
 Sources: `@intlify/devtools-types@11.4.8/LICENSE`
 
@@ -1395,7 +1481,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L019
+### L020
 
 Sources: `@jridgewell/sourcemap-codec@1.5.5/LICENSE`
 
@@ -1421,7 +1507,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L020
+### L021
 
 Sources: `@mermaid-js/parser@1.2.1/LICENSE`
 
@@ -1449,7 +1535,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L021
+### L022
 
 Sources: `@shikijs/core@4.3.1/LICENSE`, `@shikijs/engine-javascript@4.3.1/LICENSE`, `@shikijs/engine-oniguruma@4.3.1/LICENSE`, `@shikijs/langs@4.3.1/LICENSE`, `@shikijs/primitive@4.3.1/LICENSE`, `@shikijs/themes@4.3.1/LICENSE`, `@shikijs/types@4.3.1/LICENSE`, `shiki@4.3.1/LICENSE`
 
@@ -1478,7 +1564,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L022
+### L023
 
 Sources: `@shikijs/vscode-textmate@10.0.2/LICENSE.md`
 
@@ -1506,7 +1592,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L023
+### L024
 
 Sources: `@types/d3-array@3.2.2/LICENSE`, `@types/d3-axis@3.0.6/LICENSE`, `@types/d3-brush@3.0.6/LICENSE`, `@types/d3-chord@3.0.6/LICENSE`, `@types/d3-color@3.1.3/LICENSE`, `@types/d3-contour@3.0.6/LICENSE`, `@types/d3-delaunay@6.0.4/LICENSE`, `@types/d3-dispatch@3.0.7/LICENSE`, `@types/d3-drag@3.0.7/LICENSE`, `@types/d3-dsv@3.0.7/LICENSE`, `@types/d3-ease@3.0.2/LICENSE`, `@types/d3-fetch@3.0.7/LICENSE`, `@types/d3-force@3.0.10/LICENSE`, `@types/d3-format@3.0.4/LICENSE`, `@types/d3-geo@3.1.0/LICENSE`, `@types/d3-hierarchy@3.1.7/LICENSE`, `@types/d3-interpolate@3.0.4/LICENSE`, `@types/d3-path@3.1.1/LICENSE`, `@types/d3-polygon@3.0.2/LICENSE`, `@types/d3-quadtree@3.0.6/LICENSE`, `@types/d3-random@3.0.4/LICENSE`, `@types/d3-scale-chromatic@3.1.0/LICENSE`, `@types/d3-scale@4.0.9/LICENSE`, `@types/d3-selection@3.0.11/LICENSE`, `@types/d3-shape@3.1.8/LICENSE`, `@types/d3-time-format@4.0.3/LICENSE`, `@types/d3-time@3.0.4/LICENSE`, `@types/d3-timer@3.0.2/LICENSE`, `@types/d3-transition@3.0.9/LICENSE`, `@types/d3-zoom@3.0.8/LICENSE`, `@types/d3@7.4.3/LICENSE`, `@types/geojson@7946.0.16/LICENSE`, `@types/hast@3.0.5/LICENSE`, `@types/linkify-it@5.0.0/LICENSE`, `@types/mdast@4.0.4/LICENSE`, `@types/mdurl@2.0.0/LICENSE`, `@types/unist@3.0.3/LICENSE`
 
@@ -1534,7 +1620,7 @@ Sources: `@types/d3-array@3.2.2/LICENSE`, `@types/d3-axis@3.0.6/LICENSE`, `@type
     SOFTWARE
 ```
 
-### L024
+### L025
 
 Sources: `@ungap/structured-clone@1.3.3/LICENSE`
 
@@ -1556,7 +1642,7 @@ OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-### L025
+### L026
 
 Sources: `@upsetjs/venn.js@2.0.0/LICENSE`
 
@@ -1585,7 +1671,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L026
+### L027
 
 Sources: `@vitejs/plugin-vue@5.2.4/LICENSE`
 
@@ -1613,7 +1699,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L027
+### L028
 
 Sources: `@vue/compiler-core@3.5.40/LICENSE`, `@vue/compiler-dom@3.5.40/LICENSE`, `@vue/compiler-sfc@3.5.40/LICENSE`, `@vue/compiler-ssr@3.5.40/LICENSE`, `@vue/reactivity@3.5.40/LICENSE`, `@vue/runtime-core@3.5.40/LICENSE`, `@vue/runtime-dom@3.5.40/LICENSE`, `@vue/server-renderer@3.5.40/LICENSE`, `@vue/shared@3.5.40/LICENSE`, `vue@3.5.40/LICENSE`
 
@@ -1641,7 +1727,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### L028
+### L029
 
 Sources: `ccount@2.0.1/license`, `character-entities-html4@2.1.0/license`, `character-entities-legacy@3.0.0/license`, `unist-util-position@5.0.0/license`, `unist-util-visit@5.1.0/license`
 
@@ -1670,7 +1756,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L029
+### L030
 
 Sources: `comma-separated-tokens@2.0.3/license`, `hast-util-whitespace@3.0.0/license`, `html-void-elements@3.0.0/license`, `mdast-util-to-hast@13.2.1/license`, `space-separated-tokens@2.0.2/license`, `unist-util-stringify-position@4.0.0/license`, `unist-util-visit-parents@6.0.2/license`, `zwitch@2.0.4/license`
 
@@ -1699,7 +1785,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L030
+### L031
 
 Sources: `commander@7.2.0/LICENSE`, `commander@8.3.0/LICENSE`
 
@@ -1728,7 +1814,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L031
+### L032
 
 Sources: `cose-base@1.0.3/LICENSE`, `cose-base@2.2.0/LICENSE`
 
@@ -1756,7 +1842,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L032
+### L033
 
 Sources: `csstype@3.2.3/LICENSE`
 
@@ -1782,7 +1868,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L033
+### L034
 
 Sources: `cytoscape@3.34.0/LICENSE`
 
@@ -1808,7 +1894,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L034
+### L035
 
 Sources: `cytoscape-cose-bilkent@4.1.0/LICENSE`
 
@@ -1836,7 +1922,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L035
+### L036
 
 Sources: `cytoscape-fcose@2.2.0/LICENSE`
 
@@ -1862,7 +1948,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L036
+### L037
 
 Sources: `d3-array@3.2.4/LICENSE`, `d3@7.9.0/LICENSE`
 
@@ -1882,7 +1968,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L037
+### L038
 
 Sources: `d3-array@2.12.1/LICENSE`
 
@@ -1916,7 +2002,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L038
+### L039
 
 Sources: `d3-axis@3.0.0/LICENSE`, `d3-brush@3.0.0/LICENSE`, `d3-chord@3.0.1/LICENSE`, `d3-dispatch@3.0.1/LICENSE`, `d3-drag@3.0.0/LICENSE`, `d3-force@3.0.0/LICENSE`, `d3-hierarchy@3.1.2/LICENSE`, `d3-interpolate@3.0.1/LICENSE`, `d3-polygon@3.0.1/LICENSE`, `d3-quadtree@3.0.1/LICENSE`, `d3-random@3.0.1/LICENSE`, `d3-scale@4.0.2/LICENSE`, `d3-selection@3.0.0/LICENSE`, `d3-time-format@4.1.0/LICENSE`, `d3-timer@3.0.1/LICENSE`, `d3-transition@3.0.1/LICENSE`, `d3-zoom@3.0.0/LICENSE`
 
@@ -1936,7 +2022,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L039
+### L040
 
 Sources: `d3-color@3.1.0/LICENSE`, `d3-shape@3.2.0/LICENSE`, `d3-time@3.1.0/LICENSE`
 
@@ -1956,7 +2042,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L040
+### L041
 
 Sources: `d3-contour@4.0.2/LICENSE`
 
@@ -1976,7 +2062,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L041
+### L042
 
 Sources: `d3-delaunay@6.0.4/LICENSE`
 
@@ -1997,7 +2083,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L042
+### L043
 
 Sources: `d3-dsv@3.0.1/LICENSE`
 
@@ -2017,7 +2103,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L043
+### L044
 
 Sources: `d3-ease@3.0.1/LICENSE`
 
@@ -2052,7 +2138,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L044
+### L045
 
 Sources: `d3-fetch@3.0.1/LICENSE`
 
@@ -2072,7 +2158,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L045
+### L046
 
 Sources: `d3-format@3.1.2/LICENSE`
 
@@ -2092,7 +2178,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L046
+### L047
 
 Sources: `d3-geo@3.1.1/LICENSE`
 
@@ -2133,7 +2219,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L047
+### L048
 
 Sources: `d3-path@1.0.9/LICENSE`
 
@@ -2167,7 +2253,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L048
+### L049
 
 Sources: `d3-path@3.1.0/LICENSE`
 
@@ -2187,7 +2273,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L049
+### L050
 
 Sources: `d3-sankey@0.12.3/LICENSE`
 
@@ -2221,7 +2307,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L050
+### L051
 
 Sources: `d3-scale-chromatic@3.1.0/LICENSE`
 
@@ -2256,7 +2342,7 @@ CONDITIONS OF ANY KIND, either express or implied. See the License for the
 specific language governing permissions and limitations under the License.
 ```
 
-### L051
+### L052
 
 Sources: `d3-shape@1.3.7/LICENSE`
 
@@ -2290,7 +2376,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L052
+### L053
 
 Sources: `dagre-d3-es@7.0.14/LICENSE.md`
 
@@ -2320,7 +2406,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### L053
+### L054
 
 Sources: `dayjs@1.11.21/LICENSE`
 
@@ -2348,7 +2434,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L054
+### L055
 
 Sources: `delaunator@5.1.0/LICENSE`
 
@@ -2370,7 +2456,7 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 ```
 
-### L055
+### L056
 
 Sources: `dequal@2.0.3/license`
 
@@ -2398,7 +2484,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### L056
+### L057
 
 Sources: `devlop@1.1.0/license`
 
@@ -2427,7 +2513,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L057
+### L058
 
 Sources: `dompurify@3.4.14/LICENSE-MPL`
 
@@ -2807,7 +2893,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 ```
 
-### L058
+### L059
 
 Sources: `entities@4.5.0/LICENSE`, `entities@7.0.1/LICENSE`
 
@@ -2825,7 +2911,7 @@ THIS IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRE
 EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-### L059
+### L060
 
 Sources: `es-toolkit@1.50.0/LICENSE`
 
@@ -2853,7 +2939,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L060
+### L061
 
 Sources: `estree-walker@2.0.2/LICENSE`
 
@@ -2867,7 +2953,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-### L061
+### L062
 
 Sources: `hachure-fill@0.5.2/LICENSE`
 
@@ -2895,7 +2981,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### L062
+### L063
 
 Sources: `hast-util-to-html@9.0.5/license`, `micromark-util-character@2.1.1/license`, `micromark-util-encode@2.0.1/license`, `micromark-util-sanitize-uri@2.0.1/license`, `micromark-util-symbol@2.0.1/license`, `micromark-util-types@2.0.2/license`, `vfile-message@4.0.3/license`
 
@@ -2922,34 +3008,6 @@ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-### L063
-
-Sources: `html-to-image@1.11.13/LICENSE`
-
-```text
-MIT License
-
-Copyright (c) 2017-2025 W.Y.
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 ### L064

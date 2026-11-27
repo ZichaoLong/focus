@@ -26,6 +26,8 @@ html.summary-print-page,
 .summary-print-toolbar p { margin: 8px 0; font-size: 14px; }
 .summary-title-editor { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; font-size: 14px; }
 .summary-title-editor input { min-width: 0; padding: 8px 10px; color: #171717; background: white; border: 1px solid #888; border-radius: 6px; }
+.summary-print-offer button { margin: 4px 8px; padding: 4px 8px; text-decoration: underline; cursor: pointer; }
+.summary-pdf-warnings { padding-inline-start: 20px; }
 .summary-print-status { max-width: 900px; margin: 24px auto; }
 @media (max-width: 600px) {
   .summary-print { padding: 12px; }

@@ -45,6 +45,7 @@ import type {
   FocusWriterProfile,
   FocusWriterProfileResult,
 } from './types';
+import { isPdfPreview, type SummaryExportBlob } from './summaryServerPdf';
 import { FocusApiError } from './types';
 import { decodeFocusProjectionEvent } from './projectionEventDecoder';
 import {
@@ -276,7 +277,7 @@ export interface FocusWebApiPort {
     itemsView?: FocusTurnPage['items_view'],
     turnLimit?: number,
   ): Promise<FocusTurnPage>;
-  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, signal?: AbortSignal): Promise<Blob>;
+  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, signal?: AbortSignal, forPrint?: boolean): Promise<SummaryExportBlob>;
   listExportTurns(threadId: string, cursor?: string, signal?: AbortSignal): Promise<FocusExportTurnPage>;
   mobileReadScope?: string;
   readMobileRecords?(thread: string, cursor: string | null, signal: AbortSignal): Promise<RecordPage>;
@@ -747,8 +748,8 @@ export class FocusWebApi implements FocusWebApiPort {
   }
 
   async exportThreadSummary(
-    threadId: string, selection: FocusSummaryExportSelection = { scope: 'all', turn_ids: [], content: 'qa' }, signal?: AbortSignal,
-  ): Promise<Blob> {
+    threadId: string, selection: FocusSummaryExportSelection = { scope: 'all', turn_ids: [], content: 'qa' }, signal?: AbortSignal, forPrint = false,
+  ): Promise<SummaryExportBlob> {
     const response = await fetch(focusWebEndpointPath(
       'thread_summary_export',
       { thread_id: threadId },
@@ -760,6 +761,7 @@ export class FocusWebApi implements FocusWebApiPort {
         'X-Focus-Web-Document': this.requireDocumentToken(),
         'Content-Type': 'application/json',
         'X-Focus-Web-Csrf': this.csrfToken,
+        ...(forPrint && { 'X-Focus-Print-Preview': '1' }),
       },
       body: JSON.stringify(selection),
       signal,
@@ -777,7 +779,11 @@ export class FocusWebApi implements FocusWebApiPort {
         details: { contract: 'thread summary export' },
       });
     }
-    return await response.blob();
+    const blob: SummaryExportBlob = await response.blob();
+    const id = response.headers.get('X-Focus-Pdf-Preview');
+    const ticket = { id, csrf: this.csrfToken };
+    if (forPrint && isPdfPreview(ticket)) blob.pdfPreview = ticket;
+    return blob;
   }
 
   async exportThreadData(threadId: string): Promise<Blob> {

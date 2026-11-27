@@ -987,7 +987,7 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     return api.attachmentBlob(fileId);
   }
 
-  async function exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection): Promise<Blob | null> {
+  async function exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, forPrint = false) {
     const normalizedThreadId = threadId.trim();
     if (
       !normalizedThreadId
@@ -998,7 +998,8 @@ export function useFocusWebClient(api: FocusWebApiPort = new FocusWebApi()) {
     summaryExporting.value = true;
     clearError();
     try {
-      return await api.exportThreadSummary(normalizedThreadId, selection);
+      return forPrint ? await api.exportThreadSummary(normalizedThreadId, selection, undefined, true)
+        : await api.exportThreadSummary(normalizedThreadId, selection);
     } catch (error) {
       if (!navigation.isDisposed) reportError(error);
       return null;

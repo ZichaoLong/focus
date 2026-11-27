@@ -18,7 +18,7 @@
 .summary-print-content :is(th, td) { border: 1px solid #aaa; padding: 6px; vertical-align: top; overflow-wrap: anywhere; }
 .summary-print-content thead { display: table-header-group; }
 .summary-print-content tr { break-inside: avoid; }
-.summary-print-content :is(img, svg) { max-width: 100%; height: auto; }
+.summary-print-content :is(img, figure svg) { max-width: 100%; height: auto; }
 .summary-print-content figure { break-inside: avoid; }
 .summary-print-content .summary-source { white-space: pre-wrap; overflow-wrap: anywhere; }
 .summary-print-content .katex-display { margin: .8em 0; }

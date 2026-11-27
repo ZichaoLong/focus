@@ -47,6 +47,8 @@ from bot.web_runtime.gateway_prompt_timing import WebGatewayPromptTimingMixin
 from bot.web_runtime.prompt_timing import WebPromptTimingRecorder
 from bot.web_runtime.auth import WebAuthManager, WebAuthSession
 from bot.web_runtime.gateway_request_admission import WebGatewayRequestAdmission
+from bot.web_runtime.gateway_summary_pdf import WebGatewaySummaryPdfMixin
+from bot.web_runtime.summary_pdf import SummaryPdfJobs
 from bot.web_runtime.gateway_thread_inspection import WebGatewayThreadInspectionMixin
 from bot.web_runtime.file_download import WebGatewayFileDownloadMixin
 from bot.web_runtime.static_assets import StaticAssetResponse
@@ -208,7 +210,7 @@ class WebGatewayPorts:
     mobile_record_states: Callable[[list[str]], list[str]] | None = None
 
 
-class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,
+class WebGateway(WebGatewaySummaryPdfMixin, WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMixin, WebGatewayFileDownloadMixin, WebGatewayPromptTimingMixin,
                  WebGatewayDataRetentionMixin):
     def __init__(
         self,
@@ -220,6 +222,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
     ) -> None:
         self._config = config
         self._data_dir = pathlib.Path(data_dir)
+        self._pdf_jobs = SummaryPdfJobs(self._static_dir() / "server-pdf")
         self._projection = projection
         self._ports = ports
         self._runtime_store = WebGatewayRuntimeStore(self._data_dir)
@@ -560,6 +563,7 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
         if self._runner is not None:
             await self._runner.cleanup()
             self._runner = None
+        await self._pdf_jobs.close()
 
     @staticmethod
     def _json_response(data: Any, **kwargs: Any) -> web.Response:
@@ -1162,12 +1166,17 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
                 code="thread_summary_export_protocol_error",
                 status=502,
             )
+        preview_headers = {}
+        if request.headers.get("X-Focus-Print-Preview") == "1":
+            owner = self._request_admission.session(request).mobile_read_scope
+            preview_headers["X-Focus-Pdf-Preview"] = self._pdf_jobs.remember(owner, markdown)
         return web.Response(
             body=markdown,
             headers={
                 "Cache-Control": "no-store",
                 "Content-Disposition": f'attachment; filename="{SUMMARY_EXPORT_FILENAME}"',
                 "Content-Type": "text/markdown; charset=utf-8",
+                **preview_headers,
             },
         )
 
@@ -1766,6 +1775,8 @@ class WebGateway(WebGatewayMobileDistributionMixin, WebGatewayThreadInspectionMi
         try:
             target.relative_to(static_dir)
         except ValueError:
+            raise web.HTTPNotFound()
+        if target.is_relative_to(static_dir / "server-pdf"):
             raise web.HTTPNotFound()
         if not target.is_file():
             if "." in pathlib.PurePosixPath(path).name:

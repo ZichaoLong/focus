@@ -6,7 +6,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 The desktop conversation menu, sidebar session menu, narrow top export menu,
 narrow session switcher and reading-mode export menu at every viewport size offer
-both Export Q&A Markdown and Save PDF or print
+both Export Q&A Markdown and Print preview
 when the existing `export` capability is available. Printing shares the busy
 gate with Markdown and thread-data exports.
 Filename dialogs and PDF default suggestions follow the
@@ -18,7 +18,7 @@ authenticated `exportThreadSummary` operation. Content and limits belong to
 `POST /api/threads/{thread_id}/export-summary` in the [Web wire contract](focus-web-wire.md).
 Never export a subset from the chat DOM, loaded history window or reading mode.
 Keep the exclusions for tool activity, reasoning and non-text attachments.
-The PDF consumer adds no PDF endpoint, server browser dependency, external conversion service or PDF-specific wire DTO.
+Print exports may request a short-lived server snapshot. Ordinary Markdown exports retain their existing response.
 
 ## Completeness and rendering
 
@@ -54,47 +54,19 @@ title and complete Q&A source.
   exceptions fall back to the entire original Markdown. An export read failure
   shows an error and never enables the print button.
 
-## Direct PDF saving
+## Server PDF download
 
-Once the preview is ready, Save PDF directly generates an A4 document on the client from the complete selection and the current document title. The browser uses the shared file picker or download, and mobile hosts use their existing `save` file protocol. The click chooses the destination first. Cancelling leaves the preview available. Duplicate submissions are disabled during saving. Closing the preview releases its worker and staged mobile file. The UI distinguishes a completed write from handing a file to the browser download flow.
+Tapping Download PDF and confirming the destination starts a server job using the authorized Markdown snapshot, selected turns and edited plain-text title. Focus tries a locally installed Chromium-family browser first. A missing, failed or timed-out browser (25 seconds) selects the built-in renderer. Both paths use fonts, formula assets and print styles delivered at installation. Export works without outbound network access. Preparing main uses the existing build and locked Python dependency installation. Browser availability is checked at export time.
 
-The shared Web client loads the layout worker, WebAssembly and the font subsets used by this document from the instance on demand. Chinese prose is selectable and searchable. Code spans pages and tables repeat their headers. Formulas and Mermaid diagrams use the prepared preview graphics, and images use pixels already loaded by the preview. A failed graphic conversion retains its source or address and shows a notice. Missing glyphs produce a PDF with a visible placeholder notice. Desktop and mobile use the same path. Linux hosts provide the existing Q&A export and static assets.
+The built-in renderer embeds Chinese text, mathematical symbols and formula graphics, paginates long code and expands wide tables into labeled rows. Only available embedded images are loaded. Other images retain their address or alternative text. Unrenderable formulas and diagrams retain their source. Detected missing glyphs are identified by Unicode code point. Rich layout failure triggers an attempt to preserve the complete source. The result names the engine, detected issues and affected turns where known. Resource exhaustion, timeout and write errors are reported.
+
+An installation data root runs one renderer at a time. Snapshots expire after one hour and completed files after fifteen minutes, subject to count and space bounds. Creation, status and file delivery require the matching session and snapshot. Creation also requires same-origin CSRF admission. Repeated submissions with the original job identifier reuse the result. A short disconnection resumes polling the same job. The preview reports queuing, formula counts, pagination, transfer and elapsed time. It distinguishes a completed file write from handing a file to the browser download manager.
 
 ## Printing and lifecycle
 
-`summaryPrintWindow.ts` synchronously opens the same-origin `?print=summary`
-page during the range dialog's confirmation click, avoiding popup blocking caused by waiting for history
-first. A blocked popup retains the options and prompts the user to allow popups and retry, without
-starting an export. The preview accepts content only from the exact opener,
-origin and one-use rendezvous ID; the sender validates the exact child, origin
-and ID as well. Transfer content only in memory, never in URLs, localStorage or
-server files. The page URL carries neither conversation content nor authentication
-parameters. Successful delivery removes listeners and detaches the opener;
-closure, timeout and read failures have cleanup/error paths. Reloading, directly
-opening or sharing the preview URL does not restore its content.
+Print invokes the browser print interface or the current mobile WebView's system print adapter. An explicit rejection shows the reason immediately. When the preview stays in the foreground for about three seconds after a job receipt, it offers “Didn’t see a print dialog?” with the download action. Users can retry printing. Cancellation preserves the selection, title and preview. Only a completed file write confirms a save. Mobile Back or closing the preview returns to the original conversation. [Mobile host contract](focus-mobile.md)
 
-The print entry never mounts `FocusApp` or registers a second active document.
-Keep the original tab open until content arrives, after which the preview can
-be used independently and printed repeatedly. Enable printing only after
-rendering and resource preparation finish.
-
-The System print button calls native `window.print()`. The browser owns printing, PDF saving,
-paper, scale and headers/footers. Neither its return nor `afterprint` proves a
-file was saved; cancelling permits retry. Provide instructions for desktop Save
-as PDF, Android Chrome Share → Print and iPhone Safari Share → Markup. Actual
-menus vary with platform and browser version; do not promise universal mobile
-one-click downloads. Users can adjust landscape or scale for wide tables and
-long formulas; fonts and browsers need not produce identical pixels.
-
-With the negotiated mobile `save` or `print` capability, Web hands the complete export to `SummaryPrintApp` in the current document's memory. The preview occupies the visible and printable layout. Hosts offering `print` use the WebView's system print adapter for System print. Closing the preview or going back returns to the conversation. A reload requires a new export. [Mobile host contract](focus-mobile.md)
-
-Print diagnostics in the mobile preview start disabled. Once enabled by the user, the preview records the reported app and engine versions, print button taps, host bridge replies, host pause/resume signals, page visibility and window focus changes in memory. It retains the latest 40 events with elapsed times, the total number of taps and a count of discarded events. A bridge reply and visibility changes each describe a limited observation. The user confirms whether a panel appeared or a file was saved.
-
-Stopping, copying, saving or a five-minute timeout ends recording. Copy and save freeze the same JSON for inspection, clipboard export or saving through the negotiated system file picker. Starting again replaces the report. Closing or reloading the preview clears it. Only predefined fields and events are collected. Document content, titles, filenames, URLs, credentials, raw errors and unrecognized host reply text are excluded. Reports remain local.
-
-When the host negotiates `print-diagnostics` and recording has started, the preview also offers “Print one test page”. On stop, the `native` field in the same report identifies conversation and native test requests by tap number. It includes host results and the system's start, layout, write and finish calls into each adapter. Web and native elapsed times use separate clocks and share the tap numbers. A callback records a requested stage. Panel visibility and the saved PDF require separate confirmation. An expired or invalidated native session without a readable snapshot is marked unavailable. Hosts offering only `print` keep the existing Web diagnostics.
-
-With `print-job-diagnostics`, the preview asks the user to wait about 35 seconds after the last tap before copying. The separate `native.observations` field contains system UI launch calls, Focus window and Activity changes, and timed samples for the matching job. Each row carries native elapsed time, tap number and source. A `job-not-listed` sample means the query did not find this job. Its final outcome is unknown from that sample. Missing or malformed observations leave the adapter callbacks available.
+The selection dialog opens the same-origin print window during its confirmation gesture. A blocked popup preserves the options for retry. Sender and receiver verify origin, exact window and a one-time rendezvous ID before transferring content and download credentials in memory. Only the rendezvous ID appears in the URL. Successful handoff removes the listeners and detaches the opener. The preview renders independently without registering a second active document. Reloading requires a new export.
 
 ## Verification boundaries
 

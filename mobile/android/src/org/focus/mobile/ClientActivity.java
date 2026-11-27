@@ -15,7 +15,7 @@ import java.net.URI;
 import java.util.*;
 import org.json.*;
 
-public class ClientActivity extends PrintHostActivity {
+public class ClientActivity extends Activity {
     public static final class Third extends ClientActivity {}
     public static final class Fourth extends ClientActivity {}
     public static final class Fifth extends ClientActivity {}
@@ -222,7 +222,6 @@ public class ClientActivity extends PrintHostActivity {
         }
     }
     private void retireView() {
-        printing.clear();
         if(savedChat!=null) savedChat.reconnect();
         checkingScreen=false; generation++; ticket = ""; pendingBack = null;
         if (apkUpdate != null) apkUpdate.cancel();
@@ -301,7 +300,6 @@ public class ClientActivity extends PrintHostActivity {
             }
             @Override public void onPageStarted(WebView v, String url, Bitmap icon) {
                 if (epoch != generation) return;
-                printing.clear();
                 ticket = ""; recordScopeConfirmed = false; pendingBack = null; files.cancel(); apkUpdate.cancel();
                 if (page && sso && Site.httpsPage(url) && !Site.sameOrigin(url, origin)) lockRecords("reauthorize");
                 if (selected) awaitWebSwitcher();
@@ -423,8 +421,8 @@ public class ClientActivity extends PrintHostActivity {
                 } else if ("thread".equals(op)) {
                     boolean saved = value != null && value.length() <= 256 && presentation.edit().putString("thread", value).commit();
                     result.confirm(saved ? "ok" : "error");
-                } else if ("print".equals(op) || op.startsWith("print-diag-")) {
-                    result.confirm(printing.handle(v, op, value));
+                } else if ("print".equals(op)) {
+                    result.confirm(AndroidPrinting.print(ClientActivity.this, v, value));
                 } else files.handle(op, value == null ? "" : value, result);
                 return true;
             }
@@ -506,7 +504,7 @@ public class ClientActivity extends PrintHostActivity {
     private void offer(WebView view) {
         if (!selected) return;
         if (ticket.isEmpty()) ticket = UUID.randomUUID().toString();
-        String printFeature = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PRINTING) ? ",'print','print-diagnostics','print-job-diagnostics'" : "";
+        String printFeature = getPackageManager().hasSystemFeature(android.content.pm.PackageManager.FEATURE_PRINTING) ? ",'print'" : "";
         String js = "if(window===top && location.origin===" + JSONObject.quote(origin)
             + " && location.pathname==='/' && window.__focusMobile?.ticket!=='" + ticket + "' && document.querySelector('meta[name=focus-mobile-contract][content=\"1\"]')){"
             + "const url=new URL(location.href);if(!url.searchParams.has('focusApp') && !url.searchParams.has('print') && !url.hash){"

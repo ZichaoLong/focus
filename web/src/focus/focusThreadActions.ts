@@ -4,13 +4,14 @@ import type { SummaryExportRequest } from '../types';
 import type { FocusSummaryExportSelection } from './types';
 import { normalizeExportFilename, suggestExportFilename } from './exportFilename';
 import { normalizeSummaryTitle, titleSummaryMarkdown } from './summaryDocumentTitle';
+import type { SummaryExportBlob } from './summaryServerPdf';
 import { openSummaryPrintWindow } from './summaryPrintWindow';
 
 interface FocusThreadActionClient {
   readonly summaryExporting: { readonly value: boolean };
   readonly threadDataExporting: { readonly value: boolean };
   readonly errorMessage?: { readonly value: string };
-  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection): Promise<Blob | null>;
+  exportThreadSummary(threadId: string, selection?: FocusSummaryExportSelection, forPrint?: boolean): Promise<SummaryExportBlob | null>;
   exportThreadData(threadId: string): Promise<Blob | null>;
   archiveThread(threadId: string): Promise<boolean>;
 }
@@ -134,12 +135,12 @@ export function createFocusThreadActions(options: FocusThreadActionsOptions) {
           notify(translate('focus.summaryExportBusy'));
           return;
         }
-        const blob = await client.exportThreadSummary(threadId, chosen.selection);
+        const blob = await client.exportThreadSummary(threadId, chosen.selection, true);
         if (blob === null) {
           print.preview.fail();
           notify(client.errorMessage?.value || translate('focus.exportSaveFailed'));
         }
-        else print.preview.deliver(await blob.text(), filename, normalizeSummaryTitle(chosen.documentTitle ?? documentTitle));
+        else print.preview.deliver(await blob.text(), filename, normalizeSummaryTitle(chosen.documentTitle ?? documentTitle), blob.pdfPreview);
       } catch {
         print.preview?.fail();
       } finally {

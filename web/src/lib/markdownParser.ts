@@ -1,4 +1,4 @@
-import type { MarkdownIt } from 'markstream-vue';
+import type { MarkdownIt } from 'stream-markdown-parser';
 import { configureFocusMarkdownMath } from './markdownMath';
 
 const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;

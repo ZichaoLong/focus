@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { focusThirdPartyNoticesPlugin } from './scripts/vite-third-party-notices.mjs';
 import { focusBundleBoundaryPlugin } from './scripts/focus-bundle-boundary';
 import { focusStaticCompressionPlugin } from './scripts/focus-static-compression';
+import { summaryPdfRendererPlugin } from './scripts/build-summary-pdf.mjs';
 import { focusPdfAssetsPlugin } from './scripts/focus-pdf-assets';
 
 const webPort = Number(process.env.WEB_PORT) || 5175;
@@ -32,6 +33,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
     mode !== 'android-conversation' && focusPdfAssetsPlugin(),
+    mode !== 'android-conversation' && summaryPdfRendererPlugin(),
     mode !== 'android-conversation' && focusBundleBoundaryPlugin(),
     Icons({
       compiler: 'vue3',

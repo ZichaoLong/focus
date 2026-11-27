@@ -231,6 +231,7 @@ guards and may not retain parallel key or enum inventories.
 - v42 adds per-installation update identity reads and pinned channel preparation. [Update contract](./focus-web-update.md#updates-across-installations)
 - v43 adds compact mobile reading pages for the selected thread, an opt-in registration scope header, and the `session_revoked` reason on explicit revocation. [Mobile record contract](./focus-mobile.md#on-device-offline-records)
 - v44 adds the read-only `POST /api/mobile/record-status` for scope-bound metadata checks of local thread ids in the cleanup view. This request does not renew the session.
+- v45 adds session-bound print snapshots, expiring PDF jobs and file delivery. The existing export endpoint authorizes the source.
 
 ## 4. Endpoint and Event Admission
 
@@ -475,6 +476,8 @@ Their fields, limits and non-renewing session rule follow the [submission time c
   diagnostic fields `observed_thread_status`, `diagnostic_stage`, and `recorded_at`.
   An empty optional coordinate is still represented by a required empty string;
   omitting a field cannot create another shape.
+
+An authorized export can request an immutable Markdown snapshot with `X-Focus-Print-Preview: 1`. The response returns `X-Focus-Pdf-Preview`. The standalone preview POSTs title and language to `/api/pdf-previews/{preview_id}/jobs/{job_id}` within the original session, GETs status, and GETs its `/file` child for the completed PDF. Creation checks Origin and CSRF. PDF requests do not renew the session. [Q&A printing contract](focus-web-summary-print.md)
 
 ## 5. DTO Admission and Capability Values
 

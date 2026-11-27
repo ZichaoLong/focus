@@ -41,7 +41,8 @@ export const NOTICE_FILENAMES = Object.freeze({
 // as ordinary JS module paths.  Keep the reason explicit so a future icon or
 // font replacement cannot disappear from the legal inventory unnoticed.
 const EXPLICIT_ASSET_PACKAGES = Object.freeze([
-  { name: 'takumi-pdf', reason: 'local PDF export worker and WebAssembly typesetter' },
+  { name: 'mathjax-full', reason: 'server PDF mathematical glyph paths and formula layout' },
+  { name: 'takumi-pdf', reason: 'server PDF export worker and WebAssembly typesetter' },
   { name: '@fontsource-variable/noto-sans-sc', reason: 'PDF export CJK font subsets' },
   { name: '@fontsource-variable/noto-emoji', reason: 'PDF export emoji font subsets' },
   { name: 'pdfjs-dist', reason: 'self-hosted PDF worker, CMaps, standard fonts and JavaScript image decoders' },
@@ -669,7 +670,17 @@ export function buildThirdPartyArtifacts(moduleIds) {
     }))
     .sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 
-  const components = [kimiComponent, ...packageComponents].map((component) => ({
+  const fontLicense = 'server-pdf/DejaVu-LICENSE.txt';
+  const symbolFont = {
+    key: 'source:dejavu-sans', name: 'DejaVu Sans', version: '2.37', license: 'Bitstream-Vera',
+    integrity: sha256(fs.readFileSync(path.join(WEB_ROOT, 'server-pdf/DejaVuSans.ttf'))),
+    repository: 'https://github.com/dejavu-fonts/dejavu-fonts', homepage: 'https://dejavu-fonts.github.io/',
+    author: 'DejaVu fonts contributors', sourceEvidence: 'server-pdf/DejaVuSans.ttf',
+    attribution: 'Copyright (c) 2003 by Bitstream, Inc. DejaVu changes are in the public domain.',
+    documents: [{ source: fontLicense, text: readText(path.join(WEB_ROOT, fontLicense)) }],
+    bundledModuleCount: 0, explicitReasons: new Set(['server PDF mathematical symbols']), declaredDependencyOf: new Set(),
+  };
+  const components = [kimiComponent, symbolFont, ...packageComponents].map((component) => ({
     ...component,
     licenseDocumentIds: component.documents.map((document) => registry.add(document)),
     declaredDependencyOf: new Set(component.declaredDependencyOf),

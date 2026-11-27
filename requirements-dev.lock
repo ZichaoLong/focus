@@ -45,6 +45,8 @@ multidict==6.7.1
     # via
     #   aiohttp
     #   yarl
+nodejs-wheel-binaries==24.19.0
+    # via focus (pyproject.toml)
 packaging==26.2
     # via
     #   pytest

@@ -86,33 +86,14 @@ export function showMobileWebChrome(available: boolean): void {
   if (host && hasMobileFeature('tabs')) window.prompt('focus/1/' + host.ticket + '/chrome', available ? 'web' : 'native');
 }
 
-export type MobilePrintReply = 'ok' | 'error' | 'no-reply' | 'unexpected-reply' | 'exception' | 'unavailable';
-export type MobilePrintSource = 'webview' | 'native-test';
-interface MobilePrintTrace { session: string; attempt: number; source: MobilePrintSource }
-
-export function mobilePrintRecording(action: 'start' | 'stop', session = ''): string | null {
-  if (!host || !hasMobileFeature('print-diagnostics')) return null;
+export type MobilePrintReply = 'ok' | 'restricted' | 'unavailable' | 'error';
+export function printMobileSummary(filename: string): MobilePrintReply {
+  if (!host || !hasMobileFeature('print')) return 'unavailable';
   try {
-    const value = action === 'start' && hasMobileFeature('print-job-diagnostics') ? 'print-job-diagnostics' : session;
-    const reply = window.prompt('focus/1/' + host.ticket + '/print-diag-' + action, value);
-    return reply && (action === 'stop' || uuid.test(reply)) ? reply : null;
-  } catch { return null; }
-}
-
-export function printMobileSummary(filename: string, observe?: (reply: MobilePrintReply) => void, trace?: MobilePrintTrace): boolean {
-  let result: MobilePrintReply = 'unavailable';
-  if (host && hasMobileFeature('print') && (!trace || hasMobileFeature('print-diagnostics'))) {
-    try {
-      const name = filename.slice(0, 255);
-      const op = trace ? 'print-diag-run' : 'print';
-      const value = trace ? JSON.stringify({ ...trace, name: trace.source === 'webview' ? name : undefined }) : name;
-      const reply = window.prompt('focus/1/' + host.ticket + '/' + op, value);
-      if (reply === 'ok' || reply === 'error') result = reply;
-      else result = reply === null ? 'no-reply' : 'unexpected-reply';
-    } catch { result = 'exception'; }
-  }
-  observe?.(result);
-  return result === 'ok';
+    const reply = window.prompt('focus/1/' + host.ticket + '/print', filename.slice(0, 255));
+    if (reply === 'ok' || reply === 'restricted' || reply === 'unavailable') return reply;
+  } catch { /* The preview can still offer the server copy. */ }
+  return 'error';
 }
 
 let lastThreadHint: string | undefined;

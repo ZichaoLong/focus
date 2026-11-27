@@ -2,7 +2,7 @@ import {
   getMarkdown,
   setDefaultMathOptions,
   type MarkdownIt,
-} from 'markstream-vue';
+} from 'stream-markdown-parser';
 
 const INLINE_OPEN = '\\(';
 const INLINE_CLOSE = '\\)';

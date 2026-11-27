@@ -4,7 +4,7 @@ Document role: synchronized English peer. Canonical Chinese: `docs/contracts/foc
 
 ## Scope and content
 
-All Markdown and Save PDF or print entries share two independent options in
+All Markdown and Print preview entries share two independent options in
 `FocusThreadActions.vue`: range `all` (default), `last_turn`, or `selected`, and
 content `qa` (default), `final_answers`, or `prompts`. JSONL remains a separate
 whole-thread data export.
