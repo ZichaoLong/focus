@@ -20,9 +20,10 @@ import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-/** The current trusted document owns one optional, bounded print recording. */
+/** A print host owns at most one bounded recording. */
 final class AndroidPrinting {
     static final long LIMIT_MS = 300_000;
+    private static final String TEST_PAGE_NAME = "Focus Mobile print test";
     private final Activity activity;
     private Recording recording;
     private boolean dispatchingPrint;
@@ -68,6 +69,23 @@ final class AndroidPrinting {
         if (Looper.myLooper() == Looper.getMainLooper() && dispatchingPrint) hostEvent(event);
     }
 
+    /** Called directly by the native Activity's button listener. */
+    boolean startNativeButtonTest() {
+        clear();
+        recording = new Recording(true);
+        return "ok".equals(recordedPrint(null, TEST_PAGE_NAME, true, recording, 1, "native-button"));
+    }
+
+    JSONObject finishRecording() throws JSONException {
+        Recording current = recording;
+        try {
+            JSONObject snapshot = new JSONObject();
+            if (current.observations != null) snapshot.put("observations", current.observations.finish());
+            return snapshot.put("sdk", Build.VERSION.SDK_INT).put("elapsedMs", Math.min(current.elapsed(), LIMIT_MS))
+                .put("droppedEvents", current.dropped).put("events", current.events);
+        } finally { clear(); }
+    }
+
     String handle(WebView view, String operation, String value) {
         if ("print".equals(operation)) return print(view, value, false, null);
         if ("print-diag-start".equals(operation)) {
@@ -78,15 +96,7 @@ final class AndroidPrinting {
         Recording current = recording;
         if (current == null || value == null) return "error";
         try {
-            if ("print-diag-stop".equals(operation) && current.id.equals(value)) {
-                try {
-                    JSONObject snapshot = new JSONObject();
-                    if (current.observations != null) snapshot.put("observations", current.observations.finish());
-                    return snapshot.put("sdk", Build.VERSION.SDK_INT)
-                        .put("elapsedMs", Math.min(current.elapsed(), LIMIT_MS)).put("droppedEvents", current.dropped)
-                        .put("events", current.events).toString();
-                } finally { clear(); }
-            }
+            if ("print-diag-stop".equals(operation) && current.id.equals(value)) return finishRecording().toString();
             if (!"print-diag-run".equals(operation) || value.length() > 2048 || current.elapsed() >= LIMIT_MS) return "error";
             JSONObject request = new JSONObject(value);
             int number = request.getInt("attempt");
@@ -94,24 +104,28 @@ final class AndroidPrinting {
             boolean test = "native-test".equals(source);
             if (!current.id.equals(request.getString("session")) || number <= current.lastAttempt
                     || (!test && !"webview".equals(source))) return "error";
-            String name = test ? "Focus Mobile print test" : request.getString("name");
-            current.lastAttempt = number;
-            current.lastSource = source;
-            current.record(number, source, "request");
-            if (current.observations != null)
-                hostEvent(activity.hasWindowFocus() ? "window-initial-focused" : "window-initial-unfocused");
-            try {
-                UserManager users = activity.getSystemService(UserManager.class);
-                if (users != null && users.hasUserRestriction(UserManager.DISALLOW_PRINTING))
-                    current.record(number, source, "printing-restricted");
-            } catch (RuntimeException unavailable) { /* An optional policy query cannot block printing. */ }
-            return print(view, name, test, current);
+            String name = test ? TEST_PAGE_NAME : request.getString("name");
+            return recordedPrint(view, name, test, current, number, source);
         } catch (JSONException | RuntimeException invalid) { return "error"; }
+    }
+
+    private String recordedPrint(WebView view, String name, boolean test, Recording current, int number, String source) {
+        current.lastAttempt = number;
+        current.lastSource = source;
+        current.record(number, source, "request");
+        if (current.observations != null)
+            hostEvent(activity.hasWindowFocus() ? "window-initial-focused" : "window-initial-unfocused");
+        try {
+            UserManager users = activity.getSystemService(UserManager.class);
+            if (users != null && users.hasUserRestriction(UserManager.DISALLOW_PRINTING))
+                current.record(number, source, "printing-restricted");
+        } catch (RuntimeException unavailable) { /* An optional policy query cannot block printing. */ }
+        return print(view, name, test, current);
     }
 
     private String print(WebView view, String name, boolean test, Recording current) {
         int attempt = current == null ? 0 : current.lastAttempt;
-        String source = test ? "native-test" : "webview";
+        String source = current == null ? "webview" : current.lastSource;
         Consumer<String> trace = current == null ? null : event -> current.record(attempt, source, event);
         PrintJobDiagnostics observations = current == null ? null : current.observations;
         try {

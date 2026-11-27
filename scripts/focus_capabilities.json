@@ -1523,6 +1523,9 @@
           "symbol": "createFocusThreadActions"
         },
         {
+          "path": "mobile/android/src/org/focus/mobile/MainActivity.java"
+        },
+        {
           "path": "web/src/components/chat/ReadingModeControls.vue",
           "symbol": "exportSession"
         },
@@ -1569,6 +1572,15 @@
         },
         {
           "path": "mobile/android/src/org/focus/mobile/AndroidPrinting.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/PrintHostActivity.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/PrintDiagnosticActivity.java"
+        },
+        {
+          "path": "mobile/android/src/org/focus/mobile/PrintComponents.java"
         },
         {
           "path": "mobile/android/src/org/focus/mobile/PrintJobDiagnostics.java"
@@ -1728,6 +1740,9 @@
         },
         {
           "path": "mobile/tests/android_print_smoke.py"
+        },
+        {
+          "path": "mobile/tests/android_native_print_smoke.py"
         }
       ]
     },
